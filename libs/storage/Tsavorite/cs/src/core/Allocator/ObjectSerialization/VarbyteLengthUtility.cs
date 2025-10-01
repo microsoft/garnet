@@ -110,15 +110,23 @@ namespace Tsavorite.core
         ///     which combine with the indicator byte to fit into a 'long'. The shift operations are faster than the pointer-based alternative implementation
         ///     used for disk-image generation, which has the data expanded inline so may have 4-byte keys and 8-byte values.</summary>
         /// <param name="word">The word being updated</param>
-        /// <param name="value">The value being set into the word</param>
+        /// <param name="targetValue">The target value being set into the word (key or value length)</param>
         /// <param name="precedingNumBytes">If we are setting the value, this is the number of bytes in the key; otherwise it is 0</param>
         /// <param name="targetNumBytes">The number of bytes in the target (key or value)</param>
-        /// <remark>This assumes little-endian; thus, the indicator byte is the low byte of the word, then keyLengthBytes, valueLengthBytes, keyLength, valueLength in ascending address order</remark>
+        /// <remark>This assumes little-endian; thus, the indicator byte (containing flags, keyLengthBytes, valueLengthBytes) is the low byte of the word,
+        ///     then keyLength, then valueLength, in ascending address order</remark>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void WriteVarbyteLengthInWord(ref long word, int value, int precedingNumBytes, int targetNumBytes)
+        internal static void WriteVarbyteLengthInWord(ref long word, int targetValue, int precedingNumBytes, int targetNumBytes)
         {
-            var shift = (1 + precedingNumBytes) * 8;
-            word = (word & ~(((1L << (targetNumBytes * 8)) - 1) << shift)) | ((long)value << shift);
+            // This is ascending order, so we will shift over the lower-order bytes.
+            var shift = (NumIndicatorBytes + precedingNumBytes) * 8;
+            var targetMask = (1L << (targetNumBytes * 8)) - 1;
+
+            // Mask off the target area of the word (i.e. keep everything except where we will shift-OR the target into.
+            word &= ~(targetMask << shift);
+
+            // Now mask the target value to include only what we are going to keep, then shift that into the target area of the word.
+            word |= (targetValue & targetMask) << shift;
         }
 
         internal static int GetKeyLength(int numBytes, byte* ptrToFirstByte) => (int)ReadVarbyteLength(numBytes, ptrToFirstByte);
@@ -152,8 +160,29 @@ namespace Tsavorite.core
             return (keyLengthBytes, valueLengthBytes, hasFiller);
         }
 
-        internal static long CreateIgnoreOptionalsVarbyteWord(int keyLengthBytes, int keyLength, int valueLengthBytes, int valueLength)
-            => ConstructInlineVarbyteLengthWord(keyLengthBytes, keyLength, valueLengthBytes, valueLength, flagBits: kIgnoreOptionalsBitMask);
+        /// <summary>
+        /// Create a copy of the word with the value length taking up all the record after the key and with the IgnoreOptionals flag set.
+        /// This is used to ensure consistent Scan while a record is undergoing modification.
+        /// </summary>
+        /// <param name="originalWord">The varbyte length word we're "updating".</param>
+        /// <param name="keyLengthBytes">Number of bytes in the key length</param>
+        /// <param name="valueLengthBytes">Number of bytes in the value length</param>
+        /// <param name="valueLength">Length of the value</param>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long CreateIgnoreOptionalsVarbyteWord(long originalWord, int keyLengthBytes, int valueLengthBytes, int valueLength)
+        {
+            // The key remains the same so we don't need to rewrite its length. And the byte counts do not change.
+            Debug.Assert(valueLength < (1 << (valueLengthBytes * 8)), $"ValueLength {valueLength} overflows valueLengthBytes {valueLengthBytes}");
+            var word = originalWord;
+            var ptr = (byte*)&word;
+            *ptr = (byte)((*ptr & ~kHasFillerBitMask) | kIgnoreOptionalsBitMask);
+            WriteVarbyteLengthInWord(ref word, valueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);
+            return word;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool HasIgnoreOptionals(byte indicatorByte) => (indicatorByte & kIgnoreOptionalsBitMask) != 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static bool HasFiller(byte indicatorByte) => (indicatorByte & kHasFillerBitMask) != 0;
@@ -269,8 +298,7 @@ namespace Tsavorite.core
         {
             var word = (long)0;
             var ptr = (byte*)&word;
-            var indicatorByte = (byte)(ConstructIndicatorByte(keyLengthBytes, valueLengthBytes) | flagBits);
-            *ptr++ = indicatorByte;
+            *ptr++ = (byte)(ConstructIndicatorByte(keyLengthBytes, valueLengthBytes) | flagBits);
 
             WriteVarbyteLengthInWord(ref word, keyLength, precedingNumBytes: 0, keyLengthBytes);
             WriteVarbyteLengthInWord(ref word, valueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);
@@ -299,12 +327,12 @@ namespace Tsavorite.core
         /// Update the key and value lengths in the in-memory inline varbyte indicator word 
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static unsafe void UpdateInlineVarbyteLengthWord(long indicatorAddress, int keyLengthBytes, int valueLengthBytes, int valueLength, long hasFillerBit)
+        internal static unsafe long CreateUpdatedInlineVarbyteLengthWord(long originalWord, int keyLengthBytes, int valueLengthBytes, int valueLength, long hasFillerBit)
         {
             // Mask off the filler bit; we'll reset it on return.
-            var word = *(long*)indicatorAddress & ~kHasFillerBitMask;
+            var word = originalWord & ~(kHasFillerBitMask | kIgnoreOptionalsBitMask);
             WriteVarbyteLengthInWord(ref word, valueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);
-            *(long*)indicatorAddress = word | hasFillerBit;
+            return word | hasFillerBit;
         }
 
         /// <summary>

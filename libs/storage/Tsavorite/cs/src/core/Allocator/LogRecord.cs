@@ -273,21 +273,28 @@ namespace Tsavorite.core
             // Set varbyte lengths
             *(long*)IndicatorAddress = sizeInfo.IndicatorWord;
 
+            var keyAddress = sizeInfo.GetKeyAddress(physicalAddress);
+            var keySize = sizeInfo.FieldInfo.KeySize;
+            var valueAddress = keyAddress + keySize;
+
             // Serialize Key
             if (sizeInfo.KeyIsInline)
             {
                 InfoRef.SetKeyIsInline();
-                key.CopyTo(new Span<byte>((byte*)sizeInfo.GetKeyAddress(physicalAddress), sizeInfo.FieldInfo.KeySize));
+                key.CopyTo(new Span<byte>((byte*)keyAddress, keySize));
             }
             else
             {
-                Debug.Assert(objectIdMap is not null, "Inconsistent setting of maxInlineKeySize with null objectIdMap");
+                Debug.Assert(sizeInfo.FieldInfo.KeySize == ObjectIdMap.ObjectIdSize, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for KeySize but was {sizeInfo.FieldInfo.KeySize}");
 
-                // There is no "overflow" bit; the lack of "KeyIsInline" marks that. But if it's a revivified record, it may have KeyIsInline set, so clear that.
-                InfoRef.ClearKeyIsInline();
+                InfoRef.SetKeyIsOverflow();
                 var overflow = new OverflowByteArray(key.Length, startOffset: 0, endOffset: 0, zeroInit: false);
-                LogField.SetOverflowAllocation(physicalAddress, overflow, objectIdMap, isKey: true);
                 key.CopyTo(overflow.Span);
+
+                // This is record initialization so no object has been allocated for this field yet.
+                var objectId = objectIdMap.Allocate();
+                *(int*)keyAddress = objectId;
+                objectIdMap.Set(objectId, overflow);
             }
 
             // Initialize Value metadata
@@ -295,16 +302,14 @@ namespace Tsavorite.core
                 InfoRef.SetValueIsInline();
             else
             {
-                // If it's a revivified record, it may have ValueIsInline set, so clear that if it's not an object (SetValueIsObject clears it).
-                if (sizeInfo.ValueIsObject)
-                {
-                    Debug.Assert(sizeInfo.FieldInfo.ValueSize == ObjectIdMap.ObjectIdSize, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for ValueSize but was {sizeInfo.FieldInfo.ValueSize}");
-                    InfoRef.SetValueIsObject();
-                }
-                else
-                    InfoRef.ClearValueIsInline();
+                Debug.Assert(sizeInfo.FieldInfo.ValueSize == ObjectIdMap.ObjectIdSize, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for ValueSize but was {sizeInfo.FieldInfo.ValueSize}");
 
-                *(int*)sizeInfo.GetValueAddress(physicalAddress) = ObjectIdMap.InvalidObjectId;
+                // Unlike for Keys, we do not set the objectId here; we wait for the UMD operation to do that.
+                *(int*)valueAddress = ObjectIdMap.InvalidObjectId;
+                if (sizeInfo.ValueIsObject)
+                    InfoRef.SetValueIsObject();
+                else
+                    InfoRef.SetValueIsOverflow();
             }
 
             // The rest is considered filler
@@ -426,11 +431,7 @@ namespace Tsavorite.core
             // directly from RecordInfo's HasETag and HasExpiration bits, which we do not change here). Scan will now be able to navigate to the end of
             // the record via GetInlineRecordSizes().allocatedSize.
             var oldValueAndFillerSize = (int)(oldInlineValueSize + fillerLen);
-            
-            //TODOnow: about to be replaced
-            //Debug.Assert(GetByteCount(oldValueAndFillerSize + oldOptionalSize) == valueLengthBytes,
-            //        $"GetByteCount(postKeySpace + oldOptionalSize) {GetByteCount(oldValueAndFillerSize + oldOptionalSize)} to equal valueLengthBytes {valueLengthBytes}");
-            //UpdateInlineVarbyteLengthWord(IndicatorAddress, keyLengthBytes, valueLengthBytes, oldValueAndFillerSize, hasFillerBit: 0);
+            *(long*)IndicatorAddress = CreateIgnoreOptionalsVarbyteWord(*(long*)IndicatorAddress, keyLengthBytes, valueLengthBytes, oldValueAndFillerSize);
 
             // Update record part 2: Save the optionals if shifting is needed. We can't just shift now because we may be e.g. converting from inline to
             // overflow and they'd overwrite needed data.
@@ -534,7 +535,7 @@ namespace Tsavorite.core
 
             // Update record part 6: Finally, set varbyte value length to the actual new value length, with filler bit if we have it.
             // We'll be consistent internally and Scan will be able to navigate to the end of the record with GetInlineRecordSizes().allocatedSize.
-            UpdateInlineVarbyteLengthWord(IndicatorAddress, keyLengthBytes, valueLengthBytes, newInlineValueSize, hasFillerBit);
+            *(long*)IndicatorAddress = CreateUpdatedInlineVarbyteLengthWord(*(long*)IndicatorAddress, keyLengthBytes, valueLengthBytes, newInlineValueSize, hasFillerBit);
 
             Debug.Assert(Info.ValueIsInline == sizeInfo.ValueIsInline, "Final ValueIsInline is inconsistent");
             Debug.Assert(!Info.ValueIsInline || ValueSpan.Length <= sizeInfo.MaxInlineValueSize, $"Inline ValueSpan.Length {ValueSpan.Length} is greater than sizeInfo.MaxInlineValueSpanSize {sizeInfo.MaxInlineValueSize}");
@@ -975,25 +976,73 @@ namespace Tsavorite.core
             _ = RemoveETag();
         }
 
+        /// <summary>
+        /// Clears any heap-allocated Value: Object or Overflow. Does not clear key (if it is Overflow).
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly bool ClearKeyIfOverflow()
+        public readonly void ClearValueIfHeap(Action<IHeapObject> objectDisposer)
         {
-            if (Info.KeyIsInline)
-                return false;
-            LogField.ClearObjectIdAndConvertToInline(ref InfoRef, physicalAddress, objectIdMap, isKey: true);
-            return true;
+            if (Info.ValueIsInline)
+                return;
+
+            if (!Info.KeyIsInline)
+            {
+                // The key is overflow and will remain that way, so we won't be changing ObjectLogPosition or filler.
+                // Just call this directly.
+                var (_ /*valueLength*/, valueAddress) = GetValueFieldInfo(IndicatorAddress);
+                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false, objectDisposer);
+                return;
+            }
+
+            // The key is not overflow so we must remove ObjectLogPosition and update filler.
+            ClearHeapFields(clearKey: false, objectDisposer);
         }
 
         /// <summary>
-        /// Clears any heap-allocated value: Object or Overflow
+        /// Clears any heap-allocated field, Object or Overflow, in the Value and optionally the Key. If we go from 
+        /// <see cref="RecordInfo.RecordIsInline"/> being false to true, then we need to adjust filler as well.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool ClearValueIfHeap(Action<IHeapObject> objectDisposer)
+        public readonly void ClearHeapFields(bool clearKey, Action<IHeapObject> objectDisposer)
         {
-            if (Info.ValueIsInline)
-                return false;
-            LogField.ClearObjectIdAndConvertToInline(ref InfoRef, physicalAddress, objectIdMap, isKey: false, objectDisposer);
-            return true;
+            if (Info.RecordIsInline)
+                return;
+            var (valueLength, valueAddress) = GetValueFieldInfo(IndicatorAddress);
+
+            // If we're not clearing the key and it's Heap, then we don't need the operations below to change ObjectLogPosition and filler.
+            if (!clearKey && !Info.KeyIsInline)
+            {
+                if (!Info.ValueIsInline)
+                    LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false, objectDisposer);
+                return;
+            }
+
+            // First create a varbyte word that uses the value length to be the full space from end of key to end of record.
+            var (keyLengthBytes, valueLengthBytes, hasFillerBit) = DeconstructIndicatorByte(*(byte*)IndicatorAddress);
+            var allocatedSize = GetInlineRecordSizes().allocatedSize;
+            var fullValueLength = (int)(physicalAddress + allocatedSize - valueAddress);
+            *(long*)IndicatorAddress = CreateIgnoreOptionalsVarbyteWord(*(long*)IndicatorAddress, keyLengthBytes, valueLengthBytes, fullValueLength);
+
+            // Clear the filler if we have it set. Note that this offset still includes ObjectLogPosition.
+            var usedLength = (int)(valueAddress - physicalAddress + valueLength + ETagLen + ExpirationLen);
+            if (hasFillerBit)
+                *(int*)(physicalAddress + usedLength + ObjectLogPositionSize) = 0;
+
+            // If we're here and the key is overflow we're clearing it.
+            if (!Info.KeyIsInline)
+            {
+                var keyAddress = IndicatorAddress + NumIndicatorBytes + keyLengthBytes + valueLengthBytes;
+                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, keyAddress, objectIdMap, isKey: true);
+            }
+            if (!Info.ValueIsInline)
+                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false, objectDisposer);
+
+            // We know we have cleared out the ObjectLogPosition field, so we also know we have at least sizeof(int) bytes of filler.
+            // Set the current number of filler bytes.
+            *(int*)(physicalAddress + usedLength) = allocatedSize - usedLength;
+
+            // Set varbyte value length to the actual new value length, with filler bit if we have it. valueLength has not changed.
+            // We'll be consistent internally and Scan will be able to navigate to the end of the record with GetInlineRecordSizes().allocatedSize.
+            *(long*)IndicatorAddress = CreateUpdatedInlineVarbyteLengthWord(*(long*)IndicatorAddress, keyLengthBytes, valueLengthBytes, (int)valueLength, kHasFillerBitMask);
         }
 
         /// <summary>
@@ -1107,8 +1156,7 @@ namespace Tsavorite.core
 
         public void Dispose(Action<IHeapObject> objectDisposer)
         {
-            _ = ClearKeyIfOverflow();
-            _ = ClearValueIfHeap(objectDisposer);
+            ClearHeapFields(clearKey: true, objectDisposer);
         }
 
         public override readonly string ToString()

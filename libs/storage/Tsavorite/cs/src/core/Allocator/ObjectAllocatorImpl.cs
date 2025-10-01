@@ -232,10 +232,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
         {
+            logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted, obj => storeFunctions.DisposeValueObject(obj, disposeReason));
             logRecord.ClearOptionals();
-            if (disposeReason != DisposeReason.Deleted)
-                _ = logRecord.ClearKeyIfOverflow();
-            _ = logRecord.ClearValueIfHeap(obj => storeFunctions.DisposeValueObject(obj, disposeReason));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -543,7 +543,7 @@ namespace Tsavorite.core
                         if (pcuSuccess)
                         {
                             if (!newLogRecord.Info.IsInNewVersion && isMemoryLogRecord)
-                                _ = srcLogRecord.AsMemoryLogRecordRef().ClearValueIfHeap(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated));
+                                srcLogRecord.AsMemoryLogRecordRef().ClearValueIfHeap(obj => storeFunctions.DisposeValueObject(obj, DisposeReason.CopyUpdated));
                         }
                         else if (rmwInfo.Action == RMWAction.ExpireAndStop)
                         {

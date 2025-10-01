@@ -113,6 +113,24 @@ namespace Tsavorite.core
             return GetAndInitializeCurrentBuffer();
         }
 
+        /// <summary>Called when a <see cref="LogRecord"/> Write is completed. Ensures end-of-record alignment.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal unsafe void OnRecordComplete()
+        {
+            var buffer = GetCurrentBuffer();
+            var recordAlignedCurrentPosition = RoundUp(buffer.currentPosition, Constants.kRecordAlignment);
+            var padding = recordAlignedCurrentPosition - buffer.currentPosition;
+            if (padding > 0)
+            {
+                // Assert there is still room in the buffer for the expansion (should always be as buffersize is a power of 2 much greater than kRecordAlignment)
+                Debug.Assert(recordAlignedCurrentPosition <= buffer.memory.RequiredCapacity,
+                            $"recordAlignedCurrentPosition {recordAlignedCurrentPosition} exceeds memory.RequiredTotalCapacity {buffer.memory.RequiredCapacity}");
+
+                new Span<byte>(buffer.memory.GetValidPointer() + buffer.currentPosition, padding).Clear();
+                buffer.currentPosition += padding;
+            }
+        }
+
         /// <summary>
         /// Finish all the current partial flush, including flushing any as-yet-unflushed data in the current buffer then calling the caller's callbacks
         /// so flushedUntilAddresses can be updated. When this function exits, there will be IOs in flight.
@@ -134,7 +152,7 @@ namespace Tsavorite.core
             countdownCallbackAndContext.Increment();
             countdownCallbackAndContext.Set(externalCallback, externalContext, (uint)mainLogPageSpan.Length);
 
-            // Issue the last ObjectLog write for this partial flush. buffer.currentPosition should have been record-aligned by DiskStreamWriter.OnRecordComplete.
+            // Issue the last ObjectLog write for this partial flush. buffer.currentPosition should have been record-aligned by ObjectLogWriter.OnRecordComplete.
             var buffer = GetCurrentBuffer();
             Debug.Assert(IsAligned(buffer.currentPosition, Constants.kRecordAlignment), $"buffer.currentPosition {buffer.currentPosition} is not record-aligned");
             Debug.Assert(IsAligned(buffer.flushedUntilPosition, (int)device.SectorSize), $"flushedUntilOffset {buffer.flushedUntilPosition} is not sector-aligned");

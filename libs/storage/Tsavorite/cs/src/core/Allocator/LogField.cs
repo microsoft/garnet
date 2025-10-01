@@ -125,22 +125,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Utility function to set the overflow allocation at the given Span field's address. Assumes caller has ensured no existing overflow
-        /// allocation is there; e.g. SerializeKey and InitializeValue.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void SetOverflowAllocation(long physicalAddress, OverflowByteArray overflow, ObjectIdMap objectIdMap, bool isKey)
-        {
-            var objIdPtr = (int*)GetFieldPtr(physicalAddress + RecordInfo.Size, isKey, out var lengthPtr, out var lengthBytes, out _ /*length*/);
-
-            // Assumes no object allocated for this field yet.
-            var objectId = objectIdMap.Allocate();
-            WriteVarbyteLength(ObjectIdMap.ObjectIdSize, lengthBytes, lengthPtr);
-            *objIdPtr = objectId;
-            objectIdMap.Set(objectId, overflow);
-        }
-
-        /// <summary>
         /// Convert a Span field from overflow to inline.
         /// </summary>
         /// <remarks>
@@ -175,17 +159,19 @@ namespace Tsavorite.core
         /// Called when disposing a record, to free an Object or Overflow allocation and convert to inline so the lengths are set for record scanning or revivification.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static void ClearObjectIdAndConvertToInline(ref RecordInfo recordInfo, long physicalAddress, ObjectIdMap objectIdMap, bool isKey, Action<IHeapObject> objectDisposer = null)
+        internal static void ClearObjectIdAndConvertToInline(ref RecordInfo recordInfo, long fieldAddress, ObjectIdMap objectIdMap, bool isKey, Action<IHeapObject> objectDisposer = null)
         {
             Debug.Assert(isKey ? !recordInfo.KeyIsInline : !recordInfo.ValueIsInline);
 
             // We don't have to adjust the filler length, since the field size here isn't changing; we'll just have int-sized "data". This method is called by record disposal, which
             // also clears the optionals, which may adjust filler length. Consistency Note: LogRecord.InitializeForReuse also sets field lengths to zero and sets the filler length.
-            var fieldAddress = GetFieldPtr(physicalAddress + RecordInfo.Size, isKey, out _ /*lengthPtr*/, out _ /*lengthBytes*/, out _ /*length*/);
+            // However, here we may be called after setting the IgnoreOptionals word, so we don't want to decode the indicator.
             var objectId = *(int*)fieldAddress;
             if (objectId != ObjectIdMap.InvalidObjectId)
+            {
                 objectIdMap.Free(objectId, objectDisposer);
-            *(int*)fieldAddress = ObjectIdMap.InvalidObjectId;
+                *(int*)fieldAddress = ObjectIdMap.InvalidObjectId;
+            }
 
             // We don't need to change the length; we'll keep the current length and just convert to inline.
             if (isKey)

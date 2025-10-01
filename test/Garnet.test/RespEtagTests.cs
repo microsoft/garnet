@@ -288,7 +288,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SetWithEtagWorksWithMetadata()
+        public void SetWithEtagWorksWithExpiration()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);

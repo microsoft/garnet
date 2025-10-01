@@ -144,8 +144,7 @@ namespace Tsavorite.core
 
         public void Dispose()
         {
-            _ = logRecord.ClearKeyIfOverflow();
-            _ = logRecord.ClearValueIfHeap(objectDisposer);
+            logRecord.ClearHeapFields(clearKey: true, objectDisposer);
             logRecord = default;
 
             recordBuffer?.Return();
@@ -204,7 +203,7 @@ namespace Tsavorite.core
         public readonly long Expiration => logRecord.Expiration;
 
         /// <inheritdoc/>
-        public readonly bool ClearValueIfHeap(Action<IHeapObject> disposer) => false;  // Nothing to do here; we dispose the object in the pending operation or iteration completion
+        public readonly void ClearValueIfHeap(Action<IHeapObject> disposer) { }  // Nothing to do here; we dispose the object in the pending operation or iteration completion
 
         /// <inheritdoc/>
         public readonly bool IsMemoryLogRecord => false;

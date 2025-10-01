@@ -494,20 +494,31 @@ namespace Garnet.server
                     if (!logRecord.TrySetValueSpan(setValue, in sizeInfo))
                         return false;
 
-                    // If shouldUpdateEtag != inputHeaderHasEtag, then either there is one that nextUpdate will remove, or there isn't one and nextUpdate will add it.
+                    // If shouldUpdateEtag != inputHeaderHasEtag, then if inputHeaderHasEtag is true there is one that nextUpdate will remove (so we don't want to
+                    // update it), else there isn't one and nextUpdate will add it.
                     shouldUpdateEtag = inputHeaderHasEtag;
+
+                    // Update expiration
+                    if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
+                        return false;
+
+                    // If withEtag is called we return the etag back in the response
                     if (inputHeaderHasEtag)
                     {
                         var newETag = functionsState.etagState.ETag + 1;
-                        logRecord.TrySetETag(newETag);
+                        if (!logRecord.TrySetETag(newETag))
+                            return false;
                         functionsState.CopyRespNumber(newETag, ref output);
+                        // reset etag state after done using
+                        ETagState.ResetState(ref functionsState.etagState);
                     }
                     else
-                        logRecord.RemoveETag();
-                    shouldUpdateEtag = false;   // since we already updated the ETag
+                    {
+                        if (!logRecord.RemoveETag())
+                            return false;
+                    }
 
-                    if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
-                        return false;
+                    shouldUpdateEtag = false;   // since we already updated the ETag
                     break;
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
@@ -1039,9 +1050,6 @@ namespace Garnet.server
                 case RespCommand.SETEXXX:
                     bool inputHeaderHasEtag = input.header.CheckWithETagFlag();
 
-                    if (inputHeaderHasEtag != shouldUpdateEtag)
-                        shouldUpdateEtag = inputHeaderHasEtag;
-
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
                     {
@@ -1057,21 +1065,29 @@ namespace Garnet.server
                     if (!dstLogRecord.TrySetValueSpan(newInputValue, in sizeInfo) || !dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
                         return false;
 
-                    if (inputHeaderHasEtag != shouldUpdateEtag)
-                        shouldUpdateEtag = inputHeaderHasEtag;
-                    if (inputHeaderHasEtag)
-                    {
-                        var newETag = functionsState.etagState.ETag + 1;
-                        dstLogRecord.TrySetETag(newETag);
-                        functionsState.CopyRespNumber(newETag, ref output);
-                    }
-                    else
-                        dstLogRecord.RemoveETag();
-                    shouldUpdateEtag = false;   // since we already updated the ETag
-
                     // Update expiration if it was supplied.
                     if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                         return false;
+
+                    // If shouldUpdateEtag != inputHeaderHasEtag, then if inputHeaderHasEtag is true there is one that nextUpdate will remove (so we don't want to
+                    // update it), else there isn't one and nextUpdate will add it.
+                    shouldUpdateEtag = inputHeaderHasEtag;
+
+                    if (inputHeaderHasEtag)
+                    {
+                        var newETag = functionsState.etagState.ETag + 1;
+                        if (!dstLogRecord.TrySetETag(newETag))
+                            return false;
+                        functionsState.CopyRespNumber(newETag, ref output);
+                        ETagState.ResetState(ref functionsState.etagState);
+                    }
+                    else
+                    {
+                        if (!dstLogRecord.RemoveETag())
+                            return false;
+                    }
+                    shouldUpdateEtag = false;   // since we already updated the ETag
+
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
@@ -1459,6 +1475,8 @@ namespace Garnet.server
 
             if (shouldUpdateEtag)
             {
+                if (cmd is not RespCommand.SETIFGREATER)
+                    functionsState.etagState.ETag++;
                 dstLogRecord.TrySetETag(functionsState.etagState.ETag + 1);
                 ETagState.ResetState(ref functionsState.etagState);
             }

@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using static Tsavorite.core.Utility;
@@ -120,6 +119,7 @@ namespace Tsavorite.core
                 if (!obj.SerializedSizeIsExact && obj.SerializedSize >= IHeapObject.MaxSerializedObjectSize)
                     throw new TsavoriteException($"Object size exceeds max serialization limit of {IHeapObject.MaxSerializedObjectSize}");
             }
+            flushBuffers.OnRecordComplete();
             return valueObjectBytesWritten;
         }
 
@@ -272,24 +272,6 @@ namespace Tsavorite.core
             else
                 valueObject.SerializedSize = (long)valueObjectBytesWritten;
             inSerialize = false;
-        }
-
-        /// <summary>Called when a <see cref="LogRecord"/> Write is completed. Ensures end-of-record alignment.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void OnRecordComplete()
-        {
-            var recordAlignedCurrentPosition = RoundUp(writeBuffer.currentPosition, Constants.kRecordAlignment);
-            var alignmentIncrease = recordAlignedCurrentPosition - writeBuffer.currentPosition;
-            if (alignmentIncrease > 0)
-            {
-                // Assert there is still room in the buffer for the expansion (should always be as buffersize is a power of 2 much greater than kRecordAlignment)
-                Debug.Assert(recordAlignedCurrentPosition <= writeBuffer.memory.RequiredCapacity,
-                            $"recordAlignedCurrentPosition {recordAlignedCurrentPosition} exceeds memory.RequiredTotalCapacity {writeBuffer.memory.RequiredCapacity}");
-
-                // Write a zero'd span to align to end of record (this is automatically zero'd because we don't specify SkipLocalsInit).
-                Span<byte> padSpan = stackalloc byte[alignmentIncrease];
-                Write(padSpan);
-            }
         }
 
         /// <inheritdoc/>

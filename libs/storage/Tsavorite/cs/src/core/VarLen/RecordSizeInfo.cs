@@ -24,7 +24,7 @@ namespace Tsavorite.core
         /// <summary>Whether the value was within the inline max value length.</summary>
         public bool ValueIsInline;
 
-        /// <summary>Varbyte indicator byte; see <see cref="VarbyteLengthUtility"/>.</summary>
+        /// <summary>Varbyte indicator word, containing the Indicator Byte as well as the key and value lengths; see <see cref="VarbyteLengthUtility"/>.</summary>
         public long IndicatorWord;
 
         /// <summary>Number of bytes in key length; see <see cref="VarbyteLengthUtility"/>.</summary>

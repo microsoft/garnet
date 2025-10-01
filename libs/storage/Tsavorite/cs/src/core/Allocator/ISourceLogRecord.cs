@@ -56,7 +56,7 @@ namespace Tsavorite.core
         ///     This is called after we have either ensured there is a newer record inserted at tail, or after we have tombstoned the record; either way, we won't be accessing its value.</summary>
         /// <remarks>The disposer is not inlined, but this is called after object cloning, so the perf hit won't matter</remarks>
         /// <returns>True if we did clear a heap object or overflow, else false</returns>
-        bool ClearValueIfHeap(Action<IHeapObject> disposer);
+        void ClearValueIfHeap(Action<IHeapObject> disposer);
 
         /// <summary>Whether this is an instance of <see cref="LogRecord"/></summary>
         bool IsMemoryLogRecord { get; }
