@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Numerics.Tensors;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
+using Garnet.common;
 using Garnet.common.Numerics;
 
 namespace Garnet.server
@@ -24,13 +25,15 @@ namespace Garnet.server
         /// <param name="shortestSrcLength">The length of shortest source buffer.</param>
         public static void InvokeBitOperationUnsafe(BitmapOperation op, int srcCount, byte** srcPtrs, byte** srcEndPtrs, byte* dstPtr, int dstLength, int shortestSrcLength)
         {
-            Debug.Assert(op is BitmapOperation.NOT or BitmapOperation.AND or BitmapOperation.OR or BitmapOperation.XOR);
+            Debug.Assert(op is BitmapOperation.NOT or BitmapOperation.AND or BitmapOperation.OR or BitmapOperation.XOR or BitmapOperation.DIFF);
             Debug.Assert(srcCount > 0);
             Debug.Assert(dstLength >= 0 && shortestSrcLength >= 0);
             Debug.Assert(dstLength >= shortestSrcLength);
 
             if (srcCount == 1)
             {
+                if (op == BitmapOperation.DIFF) throw new GarnetException("BITOP DIFF operation requires at least two source bitmaps");
+
                 var srcBitmap = new ReadOnlySpan<byte>(srcPtrs[0], checked((int)(srcEndPtrs[0] - srcPtrs[0])));
                 var dstBitmap = new Span<byte>(dstPtr, dstLength);
 
@@ -42,14 +45,12 @@ namespace Garnet.server
                 {
                     srcBitmap.CopyTo(dstBitmap);
                 }
-
-                return;
             }
-
-            // Fallback for n-ary source bitmaps, for some n ≥ 2
-            if (op == BitmapOperation.AND) InvokeNaryBitwiseOperation<BitwiseAndOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
+            // srcCount ≥ 2
+            else if (op == BitmapOperation.AND) InvokeNaryBitwiseOperation<BitwiseAndOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
             else if (op == BitmapOperation.OR) InvokeNaryBitwiseOperation<BitwiseOrOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
             else if (op == BitmapOperation.XOR) InvokeNaryBitwiseOperation<BitwiseXorOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
+            else if (op == BitmapOperation.DIFF) InvokeNaryBitwiseOperation<BitwiseAndNotOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
         }
 
         /// <summary>

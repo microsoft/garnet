@@ -842,7 +842,7 @@ namespace Garnet.test
         [Category("BITOP")]
         public void BitOp_Binary_SameSize(
             [Values("DOTNET_EnableHWIntrinsic=1", "DOTNET_PreferredVectorBitWidth=128", "DOTNET_EnableHWIntrinsic=0")] string environment,
-            [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor)] Bitwise op,
+            [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.Diff)] Bitwise op,
             [Values(512 + 32 + 3)] int bitmapSize,
             [Values(2, 3, 4)] int keys)
         {
@@ -853,7 +853,7 @@ namespace Garnet.test
         [Test]
         [Category("BITOP")]
         public void BitOp_Binary_SameSize(
-            [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor)] Bitwise op,
+            [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.Diff)] Bitwise op,
             [Values(1, 2, 16, 32 + 3, 128 + 32 + 3, 256 + 32 + 3, 512 + 32 + 3, 4096, 4096 + 32, 4096 + 32 + 3)] int bitmapSize,
             [Values(2, 3, 4)] int keys)
         {
@@ -871,6 +871,7 @@ namespace Garnet.test
                 Bitwise.And => static (a, b) => (byte)(a & b),
                 Bitwise.Or => static (a, b) => (byte)(a | b),
                 Bitwise.Xor => static (a, b) => (byte)(a ^ b),
+                Bitwise.Diff => static (a, b) => (byte)(a & ~b),
 
                 _ => throw new NotSupportedException()
             };
@@ -910,7 +911,7 @@ namespace Garnet.test
         [Test, Order(20)]
         [Category("BITOP")]
         public void BitOp_Binary_DifferentTails(
-            [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor)] Bitwise op,
+            [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.Diff)] Bitwise op,
             [Values(1, 2, 16, 32 + 3, 128 + 32 + 3, 256 + 32 + 3, 512 + 32 + 3, 4096, 4096 + 32, 4096 + 32 + 3)] int sharedLength,
             [Values(new int[] { 0, 7 }, new int[] { 16, 0, 7 }, new int[] { 1, 16, 1, 32 })] int[] additionalLengths)
         {
@@ -919,6 +920,7 @@ namespace Garnet.test
                 Bitwise.And => static (a, b) => (byte)(a & b),
                 Bitwise.Or => static (a, b) => (byte)(a | b),
                 Bitwise.Xor => static (a, b) => (byte)(a ^ b),
+                Bitwise.Diff => static (a, b) => (byte)(a & ~b),
 
                 _ => throw new NotSupportedException()
             };

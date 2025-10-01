@@ -64,4 +64,17 @@ namespace Garnet.common.Numerics
         /// <inheritdoc/>
         public static Vector512<byte> Invoke(Vector512<byte> x, Vector512<byte> y) => x ^ y;
     }
+
+    /// <summary><c>x &amp; ~y</c></summary>
+    public readonly struct BitwiseAndNotOperator : IBinaryOperator
+    {
+        /// <inheritdoc/>
+        public static T Invoke<T>(T x, T y) where T : IBinaryInteger<T> => x & ~y;
+        /// <inheritdoc/>
+        public static Vector128<byte> Invoke(Vector128<byte> x, Vector128<byte> y) => x & ~y;
+        /// <inheritdoc/>
+        public static Vector256<byte> Invoke(Vector256<byte> x, Vector256<byte> y) => x & ~y;
+        /// <inheritdoc/>
+        public static Vector512<byte> Invoke(Vector512<byte> x, Vector512<byte> y) => x & ~y;
+    }
 }
