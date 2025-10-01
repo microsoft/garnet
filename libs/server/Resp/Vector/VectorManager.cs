@@ -73,10 +73,6 @@ namespace Garnet.server
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
 
-        private VectorReadDelegate ReadCallbackDel { get; } = ReadCallbackManaged;
-        private VectorWriteDelegate WriteCallbackDel { get; } = WriteCallbackManaged;
-        private VectorDeleteDelegate DeleteCallbackDel { get; } = DeleteCallbackManaged;
-
         private IVectorService Service { get; } = new DiskANNService();
 
         private ulong nextContextValue;
@@ -149,28 +145,13 @@ namespace Garnet.server
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe int ReadCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
-        => ReadCallbackManaged(context, MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((void*)keyData), (int)keyLength), MemoryMarshal.CreateSpan(ref Unsafe.AsRef<byte>((void*)writeData), (int)writeLength));
-
-        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
-        => WriteCallbackManaged(context, MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((void*)keyData), (int)keyLength), MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((void*)writeData), (int)writeLength)) ? (byte)1 : default;
-
-        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static unsafe byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
-        => DeleteCallbackManaged(context, MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((void*)keyData), (int)keyLength)) ? (byte)1 : default;
-
-        private static int ReadCallbackManaged(ulong context, ReadOnlySpan<byte> key, Span<byte> value)
         {
-            Span<byte> distinctKey = stackalloc byte[key.Length + 1];
-            var keyWithNamespace = SpanByte.FromPinnedSpan(distinctKey);
-            keyWithNamespace.MarkNamespace();
-            keyWithNamespace.SetNamespaceInPayload((byte)context);
-            key.CopyTo(keyWithNamespace.AsSpan());
+            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength);
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
-            VectorInput input = new();
-            input.ReadDesiredSize = value.Length;
-            var outputSpan = SpanByte.FromPinnedSpan(value);
+            VectorInput input = default;
+            input.ReadDesiredSize = (int)writeLength;
+            var outputSpan = SpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
 
             var status = ctx.Read(ref keyWithNamespace, ref input, ref outputSpan);
             if (status.IsPending)
@@ -184,6 +165,60 @@ namespace Garnet.server
             }
 
             return 0;
+        }
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
+        {
+            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength);
+
+            ref var ctx = ref ActiveThreadSession.vectorContext;
+            VectorInput input = default;
+            var valueSpan = SpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
+            SpanByte outputSpan = default;
+
+            var status = ctx.Upsert(ref keyWithNamespace, ref input, ref valueSpan, ref outputSpan);
+            if (status.IsPending)
+            {
+                CompletePending(ref status, ref outputSpan, ref ctx);
+            }
+
+            return status.IsCompletedSuccessfully ? (byte)1 : default;
+        }
+
+        private static unsafe bool WriteCallbackManaged(ulong context, ReadOnlySpan<byte> key, ReadOnlySpan<byte> data)
+        {
+            // TODO: this whole method goes away once DiskANN is setting attributes
+            Span<byte> keySpace = stackalloc byte[sizeof(int) + key.Length];
+            key.CopyTo(keySpace[sizeof(int)..]);
+
+            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, (nint)Unsafe.AsPointer(ref keySpace[sizeof(int)]), (nuint)key.Length);
+
+            ref var ctx = ref ActiveThreadSession.vectorContext;
+            VectorInput input = default;
+            var valueSpan = SpanByte.FromPinnedSpan(data);
+            SpanByte outputSpan = default;
+
+            var status = ctx.Upsert(ref keyWithNamespace, ref input, ref valueSpan, ref outputSpan);
+            if (status.IsPending)
+            {
+                CompletePending(ref status, ref outputSpan, ref ctx);
+            }
+
+            return status.IsCompletedSuccessfully;
+        }
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        private static unsafe byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
+        {
+            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength);
+
+            ref var ctx = ref ActiveThreadSession.vectorContext;
+
+            var status = ctx.Delete(ref keyWithNamespace);
+            Debug.Assert(!status.IsPending, "Deletes should never go async");
+
+            return status.IsCompletedSuccessfully ? (byte)1 : default;
         }
 
         private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
@@ -228,64 +263,25 @@ namespace Garnet.server
             }
         }
 
-        private static bool WriteCallbackManaged(ulong context, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value)
-        {
-            Span<byte> distinctKey = stackalloc byte[key.Length + 1];
-            var keyWithNamespace = SpanByte.FromPinnedSpan(distinctKey);
-            keyWithNamespace.MarkNamespace();
-            keyWithNamespace.SetNamespaceInPayload((byte)context);
-            key.CopyTo(keyWithNamespace.AsSpan());
-
-            ref var ctx = ref ActiveThreadSession.vectorContext;
-            VectorInput input = new();
-            var valueSpan = SpanByte.FromPinnedSpan(value);
-            SpanByte outputSpan = default;
-
-            var status = ctx.Upsert(ref keyWithNamespace, ref input, ref valueSpan, ref outputSpan);
-            if (status.IsPending)
-            {
-                CompletePending(ref status, ref outputSpan, ref ctx);
-            }
-
-            return status.IsCompletedSuccessfully;
-        }
-
-        private static bool DeleteCallbackManaged(ulong context, ReadOnlySpan<byte> key)
-        {
-            Span<byte> distinctKey = stackalloc byte[key.Length + 1];
-            var keyWithNamespace = SpanByte.FromPinnedSpan(distinctKey);
-            keyWithNamespace.MarkNamespace();
-            keyWithNamespace.SetNamespaceInPayload((byte)context);
-            key.CopyTo(keyWithNamespace.AsSpan());
-
-            ref var ctx = ref ActiveThreadSession.vectorContext;
-
-            var status = ctx.Delete(ref keyWithNamespace);
-            Debug.Assert(!status.IsPending, "Deletes should never go async");
-
-            return status.IsCompletedSuccessfully;
-        }
-
         /// <summary>
-        /// Mutate <paramref name="key"/> so that the same value with different <paramref name="context"/>'s won't clobber each other.
+        /// Get a <see cref="SpanByte"/> which covers (keyData, keyLength), but has a namespace component based on <paramref name="context"/>.
+        /// 
+        /// Attempts to do this in place.
         /// </summary>
-        public static void DistinguishVectorElementKey(ulong context, ReadOnlySpan<byte> key, ref Span<byte> distinguishedKey, out byte[] rented)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static unsafe SpanByte MarkDiskANNKeyWithNamespace(ulong context, nint keyData, nuint keyLength)
         {
-            if (key.Length + sizeof(byte) > distinguishedKey.Length)
-            {
-                distinguishedKey = rented = ArrayPool<byte>.Shared.Rent(key.Length + sizeof(byte));
-                distinguishedKey = distinguishedKey[..^(key.Length + sizeof(byte))];
-            }
-            else
-            {
-                rented = null;
-                distinguishedKey = distinguishedKey[..(key.Length + sizeof(byte))];
-            }
+            // DiskANN guarantees we have 4-bytes worth of unused data right before the key
+            var keyPtr = (byte*)keyData;
+            var keyNamespaceByte = keyPtr - 1;
 
-            key.CopyTo(distinguishedKey);
+            // TODO: if/when namespace can be > 4-bytes, we'll need to copy here
 
-            var suffix = (byte)(0b1100_0000 | (byte)context);
-            distinguishedKey[^1] = suffix;
+            var keyWithNamespace = SpanByte.FromPinnedPointer(keyNamespaceByte, (int)(keyLength + 1));
+            keyWithNamespace.MarkNamespace();
+            keyWithNamespace.SetNamespaceInPayload((byte)context);
+
+            return keyWithNamespace;
         }
 
         private static void CompletePending<TContext>(ref Status status, ref SpanByte output, ref TContext objectContext)
@@ -323,7 +319,7 @@ namespace Garnet.server
             }
             else
             {
-                indexPtr = Service.CreateIndexManaged(context, dimensions, reduceDims, quantType, buildExplorationFactory, numLinks, ReadCallbackDel, WriteCallbackDel, DeleteCallbackDel);
+                throw new NotImplementedException();
             }
 
             var indexSpan = indexValue.AsSpan();

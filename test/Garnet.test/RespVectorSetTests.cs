@@ -242,32 +242,6 @@ namespace Garnet.test
 
             Span<byte> buffer = stackalloc byte[128];
 
-            // Attempt read and writes against the "true" element key names
-            var manager = GetVectorManager(server);
-            var ctx = manager.HighestContext();
-            for (var i = 0UL; i <= ctx; i++)
-            {
-                VectorManager.DistinguishVectorElementKey(i, [0, 0, 0, 0], ref buffer, out var rented);
-
-                try
-                {
-                    var mangled = buffer.ToArray();
-
-                    var res5 = (string)db.StringGet(mangled);
-                    ClassicAssert.IsNull(res5);
-
-                    var res6 = db.StringSet(mangled, "!!!!", when: When.NotExists);
-                    ClassicAssert.IsTrue(res6);
-                }
-                finally
-                {
-                    if (rented != null)
-                    {
-                        ArrayPool<byte>.Shared.Return(rented);
-                    }
-                }
-            }
-
             // TODO: restore once VEMB is re-implemented
             // Check we haven't messed up the element
             //var res7 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
