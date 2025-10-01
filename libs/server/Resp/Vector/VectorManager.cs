@@ -39,6 +39,57 @@ namespace Garnet.server
         internal const long VADDAppendLogArg = long.MinValue;
         internal const long DeleteAfterDropArg = VADDAppendLogArg + 1;
 
+        private unsafe struct KeyVectorEnumerable : IKeyEnumerable<SpanByte>
+        {
+            public int Count { get; }
+
+            private readonly ulong context;
+            private readonly SpanByte lengthPrefixedKeys;
+
+            private VectorInput* input;
+            private byte* nextKey;
+            private int* lastLengthPtr;
+            private int lastLength;
+
+            internal KeyVectorEnumerable(ref VectorInput input, ulong context, uint keyCount, SpanByte lengthPrefixedKeys)
+            {
+                this.input = (VectorInput*)Unsafe.AsPointer(ref input);
+                this.context = context;
+                this.lengthPrefixedKeys = lengthPrefixedKeys;
+
+                nextKey = lengthPrefixedKeys.ToPointer();
+
+                lastLengthPtr = null;
+            }
+
+            public void GetAndMoveNext(ref SpanByte into)
+            {
+                if (lastLengthPtr != null)
+                {
+                    *lastLengthPtr = lastLength;
+                }
+
+                lastLengthPtr = (int*)nextKey;
+                lastLength = *lastLengthPtr;
+
+                into = MarkDiskANNKeyWithNamespace(context, (nint)(nextKey + 4), (nuint)lastLength);
+
+                input->Index++;
+                nextKey += 4 + lastLength;
+            }
+
+            public void Reset()
+            {
+                if (lastLengthPtr != null)
+                {
+                    *lastLengthPtr = lastLength;
+                }
+
+                input->Index = 0;
+                nextKey = lengthPrefixedKeys.ToPointer();
+            }
+        }
+
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         private struct Index
         {
@@ -69,7 +120,7 @@ namespace Garnet.server
         /// </summary>
         private const int MinimumSpacePerId = sizeof(int) + 4;
 
-        private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, int> ReadCallbackPtr { get; } = &ReadCallbackUnmanaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> ReadCallbackPtr { get; } = &ReadCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
 
@@ -144,27 +195,35 @@ namespace Garnet.server
         => nextContextValue;
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-        private static unsafe int ReadCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
+        private static unsafe void ReadCallbackUnmanaged(
+            ulong context,
+            uint numKeys,
+            nint keysData,
+            nuint keysLength,
+            nint dataCallback,
+            nint dataCallbackContext
+        )
         {
-            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength);
+            // Takes: index, dataCallbackContext, data pointer, data length, and returns nothing
+            var dataCallbackDel = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)dataCallback;
+
+            VectorInput input = default;
+            ref var inputRef = ref input;
+
+            var enumerable = new KeyVectorEnumerable(ref inputRef, context, numKeys, SpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength));
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
-            VectorInput input = default;
-            input.ReadDesiredSize = (int)writeLength;
-            var outputSpan = SpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
 
-            var status = ctx.Read(ref keyWithNamespace, ref input, ref outputSpan);
+            input.Callback = dataCallbackDel;
+            input.CallbackContext = dataCallbackContext;
+
+            SpanByte outputSpan = default;
+
+            var status = ctx.ReadWithPrefetch(ref enumerable, ref inputRef, ref outputSpan);
             if (status.IsPending)
             {
                 CompletePending(ref status, ref outputSpan, ref ctx);
             }
-
-            if (status.Found)
-            {
-                return outputSpan.Length;
-            }
-
-            return 0;
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]

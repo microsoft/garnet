@@ -48,6 +48,15 @@ namespace Garnet.server
         {
             Debug.Assert(key.MetadataSize == 1, "Should never read a non-namespaced value with VectorSessionFunctions");
 
+            unsafe
+            {
+                if (input.Callback != null)
+                {
+                    input.Callback(input.Index, input.CallbackContext, (nint)value.ToPointer(), (nuint)value.Length);
+                    return true;
+                }
+            }
+
             if (input.ReadDesiredSize > 0)
             {
                 Debug.Assert(dst.Length >= value.Length, "Should always have space for vector point reads");
@@ -69,28 +78,8 @@ namespace Garnet.server
         }
         /// <inheritdoc />
         public bool ConcurrentReader(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-        {
-            Debug.Assert(key.MetadataSize == 1, "Should never read a non-namespaced value with VectorSessionFunctions");
+        => SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
 
-            if (input.ReadDesiredSize > 0)
-            {
-                Debug.Assert(dst.Length >= value.Length, "Should always have space for vector point reads");
-
-                dst.Length = value.Length;
-                value.AsReadOnlySpan(functionsState.etagState.etagSkippedStart).CopyTo(dst.AsSpan());
-            }
-            else
-            {
-                input.ReadDesiredSize = value.Length;
-                if (dst.Length >= value.Length)
-                {
-                    value.AsReadOnlySpan(functionsState.etagState.etagSkippedStart).CopyTo(dst.AsSpan());
-                    dst.Length = value.Length;
-                }
-            }
-
-            return true;
-        }
         /// <inheritdoc />
         public void ReadCompletionCallback(ref SpanByte key, ref VectorInput input, ref SpanByte output, long ctx, Status status, RecordMetadata recordMetadata)
         {

@@ -84,6 +84,22 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status ReadWithPrefetch<TEnumerable>(ref TEnumerable key, ref TInput input, ref TOutput output, TContext userContext = default)
+            where TEnumerable : IKeyEnumerable<TKey>
+        {
+            UnsafeResumeThread();
+            try
+            {
+                return clientSession.store.ContextReadWithPrefetch(ref key, ref input, ref output, userContext, sessionFunctions);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
             => Read(ref key, ref input, ref output, ref readOptions, out _, userContext);
 

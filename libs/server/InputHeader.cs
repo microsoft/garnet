@@ -539,6 +539,10 @@ namespace Garnet.server
 
         public int ReadDesiredSize { get; set; }
 
+        public int Index { get; set; }
+        public nint CallbackContext { get; set; }
+        public unsafe delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void> Callback { get; set; }
+
         public VectorInput()
         {
         }

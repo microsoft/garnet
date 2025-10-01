@@ -88,7 +88,7 @@ namespace Garnet.server
             VectorQuantType quantType,
             uint buildExplorationFactor,
             uint numLinks,
-            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, int> readCallback,
+            delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback
         )
