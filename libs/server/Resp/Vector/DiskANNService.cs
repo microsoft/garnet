@@ -6,7 +6,72 @@ using System.Runtime.InteropServices;
 
 namespace Garnet.server
 {
-    internal sealed unsafe class DiskANNService : IVectorService
+
+    /// <summary>
+    /// For passing multiple Span-like values at once with well defined layout and offset on the native side.
+    /// 
+    /// Struct is 16 bytes for alignment purposes, although only 13 are used at maximum.
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = 16)]
+    public readonly struct PointerLengthPair
+    {
+        /// <summary>
+        /// Pointer to a memory chunk.
+        /// </summary>
+        [FieldOffset(0)]
+        public readonly nint Pointer;
+
+        /// <summary>
+        /// Length of a memory chunk, in whatever units were intended.
+        /// </summary>
+        [FieldOffset(8)]
+        public readonly uint Length;
+
+        /// <summary>
+        /// Size of an individual unit in the <see cref="PointerLengthPair"/>.
+        /// For example, if we're storing bytes this is 1, floats this is 4, doubles this is 8, etc.
+        /// </summary>
+        [FieldOffset(12)]
+        public readonly byte UnitSizeBytes;
+
+        private unsafe PointerLengthPair(void* pointer, uint length, byte unitSize)
+        {
+            Pointer = (nint)pointer;
+            Length = length;
+        }
+
+        /// <summary>
+        /// Create a <see cref="PointerLengthPair"/> from a byte Span.
+        /// </summary>
+        public static unsafe PointerLengthPair From(ReadOnlySpan<byte> data)
+        => new(Unsafe.AsPointer(ref MemoryMarshal.GetReference(data)), (uint)data.Length, sizeof(byte));
+
+        /// <summary>
+        /// Create a <see cref="PointerLengthPair"/> from a float Span.
+        /// </summary>
+        public static unsafe PointerLengthPair From(ReadOnlySpan<float> data)
+        => new(Unsafe.AsPointer(ref MemoryMarshal.GetReference(data)), (uint)data.Length, sizeof(float));
+
+        /// <summary>
+        /// Convert this <see cref="PointerLengthPair"/> into a Span of bytes.
+        /// </summary>
+        public readonly unsafe Span<byte> AsByteSpan()
+        {
+            Debug.Assert(UnitSizeBytes == sizeof(byte), "Incompatible conversion");
+            return MemoryMarshal.CreateSpan(ref Unsafe.AsRef<byte>((void*)Pointer), (int)Length);
+        }
+
+        /// <summary>
+        /// Convert this <see cref="PointerLengthPair"/> into a Span of floats.
+        /// </summary>
+        public readonly unsafe Span<float> AsFloatSpan()
+        {
+            Debug.Assert(UnitSizeBytes == sizeof(float), "Incompatible conversion");
+            return MemoryMarshal.CreateSpan(ref Unsafe.AsRef<float>((void*)Pointer), (int)Length);
+        }
+    }
+
+    internal sealed unsafe class DiskANNService
     {
         private static readonly bool UseMultiInsertCallback = false;
 
@@ -15,23 +80,6 @@ namespace Garnet.server
         private const byte NeighborList = 1;
         private const byte QuantizedVector = 2;
         internal const byte Attributes = 3;
-
-        public bool UseUnmanagedCallbacks { get; } = true;
-
-        public nint CreateIndexManaged(
-            ulong context,
-            uint dimensions,
-            uint reduceDims,
-            VectorQuantType quantType,
-            uint buildExplorationFactor,
-            uint numLinks,
-            VectorReadDelegate readCallback,
-            VectorWriteDelegate writeCallback,
-            VectorDeleteDelegate deleteCallback
-        )
-        {
-            throw new NotImplementedException();
-        }
 
         public nint CreateIndexUnmanaged(
             ulong context,

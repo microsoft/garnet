@@ -73,7 +73,7 @@ namespace Garnet.server
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
 
-        private IVectorService Service { get; } = new DiskANNService();
+        private DiskANNService Service { get; } = new DiskANNService();
 
         private ulong nextContextValue;
 
@@ -310,16 +310,9 @@ namespace Garnet.server
             var context = NextContext();
 
             nint indexPtr;
-            if (Service.UseUnmanagedCallbacks)
+            unsafe
             {
-                unsafe
-                {
-                    indexPtr = Service.CreateIndexUnmanaged(context, dimensions, reduceDims, quantType, buildExplorationFactory, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
-                }
-            }
-            else
-            {
-                throw new NotImplementedException();
+                indexPtr = Service.CreateIndexUnmanaged(context, dimensions, reduceDims, quantType, buildExplorationFactory, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
             }
 
             var indexSpan = indexValue.AsSpan();
