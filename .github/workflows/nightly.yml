@@ -86,9 +86,10 @@ jobs:
         if: ${{ matrix.test == 'Tsavorite.test' }}
         run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
 
-      - name: Build ${{ matrix.test }}
+      - name: Build Garnet
         if: ${{ matrix.test != 'Tsavorite.test' }}
-        run: dotnet build ${{ matrix.test }} --configuration ${{ matrix.configuration }}
+        run: dotnet build --configuration ${{ matrix.configuration }}
+
 
 # DEBUG      - name: Run tests ${{ matrix.test }}
 # DEBUG Garnet & cluster        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
