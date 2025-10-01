@@ -45,27 +45,6 @@ namespace Garnet.server
 
                 return;
             }
-            else if (srcCount == 2)
-            {
-                var firstSrcLength = checked((int)(srcEndPtrs[0] - srcPtrs[0]));
-                var secondSrcLength = checked((int)(srcEndPtrs[1] - srcPtrs[1]));
-
-                // Use fast-path for two-equal-length inputs
-                if (firstSrcLength == secondSrcLength)
-                {
-                    var firstSrcBitmap = new ReadOnlySpan<byte>(srcPtrs[0], firstSrcLength);
-                    var secondSrcBitmap = new ReadOnlySpan<byte>(srcPtrs[1], secondSrcLength);
-                    var dstBitmap = new Span<byte>(dstPtr, dstLength);
-
-                    if (op == BitmapOperation.AND) TensorPrimitives.BitwiseAnd(firstSrcBitmap, secondSrcBitmap, dstBitmap);
-                    else if (op == BitmapOperation.OR) TensorPrimitives.BitwiseOr(firstSrcBitmap, secondSrcBitmap, dstBitmap);
-                    else if (op == BitmapOperation.XOR) TensorPrimitives.Xor(firstSrcBitmap, secondSrcBitmap, dstBitmap);
-
-                    return;
-                }
-
-                // If the source bitmaps are not the same length, fallback to the n-ary path for the tail handling
-            }
 
             // Fallback for n-ary source bitmaps, for some n ≥ 2
             if (op == BitmapOperation.AND) InvokeNaryBitwiseOperation<BitwiseAndOperator>(srcCount, srcPtrs, srcEndPtrs, dstPtr, dstLength, shortestSrcLength);
