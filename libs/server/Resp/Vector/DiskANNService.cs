@@ -61,25 +61,16 @@ namespace Garnet.server
             var id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(id));
             var id_len = id.Length;
 
-            void* vector_data;
+            var vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
             int vector_len;
 
-            Span<float> temp = vectorType == VectorValueType.XB8 ? stackalloc float[vector.Length] : default;
             if (vectorType == VectorValueType.FP32)
             {
-                vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
                 vector_len = vector.Length / sizeof(float);
             }
             else if (vectorType == VectorValueType.XB8)
             {
-                // TODO: Eventually DiskANN will just take this directly, for now map to a float
-                for (var i = 0; i < vector.Length; i++)
-                {
-                    temp[i] = vector[i];
-                }
-
-                vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(temp));
-                vector_len = temp.Length;
+                vector_len = vector.Length;
             }
             else
             {
@@ -89,7 +80,7 @@ namespace Garnet.server
             var attributes_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(attributes));
             var attributes_len = attributes.Length;
 
-            return NativeDiskANNMethods.insert(context, index, (nint)id_data, (nuint)id_len, (nint)vector_data, (nuint)vector_len, (nint)attributes_data, (nuint)attributes_len) == 1;
+            return NativeDiskANNMethods.insert(context, index, (nint)id_data, (nuint)id_len, vectorType, (nint)vector_data, (nuint)vector_len, (nint)attributes_data, (nuint)attributes_len) == 1;
         }
 
         public void MultiInsert(ulong context, nint index, ReadOnlySpan<PointerLengthPair> ids, VectorValueType vectorType, ReadOnlySpan<PointerLengthPair> vectors, ReadOnlySpan<PointerLengthPair> attributes, Span<bool> insertSuccess)
@@ -187,25 +178,16 @@ namespace Garnet.server
             out nint continuation
         )
         {
-            void* vector_data;
+            var vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
             int vector_len;
 
-            Span<float> temp = vectorType == VectorValueType.XB8 ? stackalloc float[vector.Length] : default;
             if (vectorType == VectorValueType.FP32)
             {
-                vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(vector));
                 vector_len = vector.Length / sizeof(float);
             }
             else if (vectorType == VectorValueType.XB8)
             {
-                // TODO: Eventually DiskANN will just take this directly, for now map to a float
-                for (var i = 0; i < vector.Length; i++)
-                {
-                    temp[i] = vector[i];
-                }
-
-                vector_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(temp));
-                vector_len = temp.Length;
+                vector_len = vector.Length;
             }
             else
             {
@@ -229,6 +211,7 @@ namespace Garnet.server
             return NativeDiskANNMethods.search_vector(
                 context,
                 index,
+                vectorType,
                 (nint)vector_data,
                 (nuint)vector_len,
                 delta,
@@ -273,7 +256,7 @@ namespace Garnet.server
             ref var continuationRef = ref continuation;
             var continuationAddr = (nint)Unsafe.AsPointer(ref continuationRef);
 
-            return NativeDiskANNMethods.search_vector(
+            return NativeDiskANNMethods.search_element(
                 context,
                 index,
                 (nint)id_data,
@@ -286,7 +269,7 @@ namespace Garnet.server
                 (nint)output_ids,
                 (nuint)output_ids_len,
                 (nint)output_distances,
-                (nuint)output_distances_len, 
+                (nuint)output_distances_len,
                 continuationAddr
             );
         }
@@ -331,6 +314,7 @@ namespace Garnet.server
             nint index,
             nint id_data,
             nuint id_len,
+            VectorValueType vector_value_type,
             nint vector_data,
             nuint vector_len,
             nint attribute_data,
@@ -365,6 +349,7 @@ namespace Garnet.server
         public static partial int search_vector(
             ulong context,
             nint index,
+            VectorValueType vector_value_type,
             nint vector_data,
             nuint vector_len,
             float delta,

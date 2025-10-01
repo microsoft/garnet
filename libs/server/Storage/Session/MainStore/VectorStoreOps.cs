@@ -44,7 +44,7 @@ namespace Garnet.server
     /// <summary>
     /// Supported formats for Vector value data.
     /// </summary>
-    public enum VectorValueType
+    public enum VectorValueType : int
     {
         Invalid = 0,
 
