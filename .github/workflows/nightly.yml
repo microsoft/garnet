@@ -47,7 +47,6 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      # Specific to Tsav
       - name: Set workaround for libaio on Ubuntu 24.04 (see https://askubuntu.com/questions/1512196/libaio1-on-noble/1512197#1512197)
         run: |
            sudo ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
@@ -59,7 +58,7 @@ jobs:
 
       - name: Set environment variable for Windows
         run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
-        if: ${{ matrix.os == 'windows-latest' }}
+        if: ${{ matrix.os == 'windows-2025' }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -74,7 +73,6 @@ jobs:
         run: |
           npm install -g azurite
           azurite &
-      # Specific to Tsav
           
       - name: Install dependencies
         run: dotnet restore
@@ -115,13 +113,6 @@ jobs:
             Write-Host "Source path does NOT exist."
           }
 
-# DELETE      - name: Copy mock allure-results to test output - just use until get real allure results in place
-# DEBUG        shell: pwsh
-# DEBUG        run: |
-# DEBUG          $source = "${{ github.workspace }}/test/Allure/TestData/${{ matrix.framework }}/allure-results"
-# DEBUG          $dest   = "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-# DEBUG          Copy-Item -Path $source -Destination $dest -Recurse -Force
-
       - name: Copy mock allure-results to test output
         shell: pwsh
         run: |
@@ -137,6 +128,13 @@ jobs:
           if (-Not (Test-Path $path)) {
             Write-Host "No $path found for this matrix combination."
           }
+
+      - name: DEBUG Verify allure-results were copied
+        shell: pwsh
+        run: |
+          $dest = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          Write-Host "Contents of $dest:"
+          Get-ChildItem -Path $dest -Recurse | ForEach-Object { Write-Host $_.FullName }
 
       - name: Stage allure-results into test/Allure/AllResults
         shell: pwsh
