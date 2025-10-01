@@ -84,6 +84,14 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe Status Read(TKey[] keys, ref TInput input, ref TOutput output, TContext userContext = default)
+        {
+            Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
+            return clientSession.store.ContextRead(keys, ref input, ref output, userContext, sessionFunctions);
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());

@@ -95,7 +95,7 @@ namespace Tsavorite.benchmark
                 IndexSize = testLoader.GetHashTableSize(),
                 LogDevice = device,
                 PreallocateLog = true,
-                MemorySize = 1L << 35,
+                MemorySize = 1L << 36,
                 RevivificationSettings = revivificationSettings,
                 CheckpointDir = testLoader.BackupPath
             };
@@ -134,6 +134,7 @@ namespace Tsavorite.benchmark
 
             var sw = Stopwatch.StartNew();
 
+            KeySpanByte key = new() { length = kKeySize - 4 };
             Span<byte> value = stackalloc byte[kValueSize];
             Span<byte> input = stackalloc byte[kValueSize];
             Span<byte> output = stackalloc byte[kValueSize];
@@ -150,6 +151,16 @@ namespace Tsavorite.benchmark
             var uContext = session.UnsafeContext;
             uContext.BeginUnsafe();
 
+            const int kPrefetchCount = 8;
+            Span<KeySpanByte> keyspanbytes = stackalloc KeySpanByte[kPrefetchCount];
+            var keys = new SpanByte[kPrefetchCount];
+
+            for (int la = 0; la < kPrefetchCount; la++)
+            {
+                keyspanbytes[la].length = kKeySize - 4;
+                keys[la] = SpanByte.Reinterpret(ref keyspanbytes[la]).Deserialize();
+            }
+
             try
             {
                 while (!done)
@@ -162,7 +173,7 @@ namespace Tsavorite.benchmark
                         chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                     }
 
-                    for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; ++idx)
+                    for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize && !done; idx += kPrefetchCount)
                     {
                         if (idx % 512 == 0)
                         {
@@ -170,27 +181,40 @@ namespace Tsavorite.benchmark
                             uContext.CompletePending(false);
                         }
 
-                        int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
+                        for (int la = 0; la < kPrefetchCount; la++)
+                        {
+                            keyspanbytes[la].value = (long)rng.Generate64((ulong)InitCount);
+                        }
+
+                        int r = (int)(keyspanbytes[0].value % 100);
+
                         if (r < readPercent)
                         {
-                            uContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
-                            ++reads_done;
+                            uContext.Read(keys, ref _input, ref _output, Empty.Default);
+                            reads_done += kPrefetchCount;
                             continue;
                         }
-                        if (r < upsertPercent)
+
+                        for (int la = 0; la < kPrefetchCount; la++)
                         {
-                            uContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
-                            ++writes_done;
-                            continue;
+                            long r0 = keyspanbytes[la].value;
+                            key.value = r0;
+                            r = (int)(r0 % 100);
+                            if (r < upsertPercent)
+                            {
+                                uContext.Upsert(ref SpanByte.Reinterpret(ref key), ref _value, Empty.Default);
+                                ++writes_done;
+                                continue;
+                            }
+                            if (r < rmwPercent)
+                            {
+                                uContext.RMW(ref SpanByte.Reinterpret(ref key), ref _input, Empty.Default);
+                                ++writes_done;
+                                continue;
+                            }
+                            uContext.Delete(ref SpanByte.Reinterpret(ref key), Empty.Default);
+                            ++deletes_done;
                         }
-                        if (r < rmwPercent)
-                        {
-                            uContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
-                            ++writes_done;
-                            continue;
-                        }
-                        uContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
-                        ++deletes_done;
                     }
                 }
 

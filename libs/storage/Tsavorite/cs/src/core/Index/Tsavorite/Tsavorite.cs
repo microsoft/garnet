@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics.X86;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -485,6 +486,36 @@ namespace Tsavorite.core
 
             var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
 
+            return status;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal unsafe Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey[] keys, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        {
+            Status status = default;
+            var hashes = stackalloc long[keys.Length];
+            for (var i = 0; i < keys.Length; i++)
+            {
+                var key = keys[i];
+                hashes[i] = storeFunctions.GetKeyHashCode64(ref key);
+                if (Sse.IsSupported)
+                    Sse.Prefetch0(state[resizeInfo.version].tableAligned + (hashes[i] & state[resizeInfo.version].size_mask));
+            }
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                var key = keys[i];
+
+                var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                OperationStatus internalStatus;
+
+                do
+                    internalStatus = InternalRead(ref key, hashes[i], ref input, ref output, context, ref pcontext, sessionFunctions);
+                while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+
+                status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+            }
             return status;
         }
 
