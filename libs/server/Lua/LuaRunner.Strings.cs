@@ -161,6 +161,8 @@ namespace Garnet.server
             internal int XOR { get; }
             /// <see cref="CmdStrings.LUA_NOT"/>
             internal int NOT { get; }
+            /// <see cref="CmdStrings.LUA_DIFF"/>
+            internal int DIFF { get; }
             /// <see cref="CmdStrings.LUA_KEYS"/>
             internal int KEYS { get; }
             /// <see cref="CmdStrings.LUA_ARGV"/>
