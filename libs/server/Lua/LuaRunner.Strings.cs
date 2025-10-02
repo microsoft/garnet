@@ -248,6 +248,7 @@ namespace Garnet.server
                 OR = ConstantStringToRegistry(ref state, CmdStrings.LUA_OR);
                 XOR = ConstantStringToRegistry(ref state, CmdStrings.LUA_XOR);
                 NOT = ConstantStringToRegistry(ref state, CmdStrings.LUA_NOT);
+                DIFF = ConstantStringToRegistry(ref state, CmdStrings.LUA_DIFF);
                 KEYS = ConstantStringToRegistry(ref state, CmdStrings.LUA_KEYS);
                 ARGV = ConstantStringToRegistry(ref state, CmdStrings.LUA_ARGV);
             }
