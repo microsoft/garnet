@@ -395,5 +395,57 @@ namespace Garnet.test.cluster
             for (var replica = 1; replica < nodes_count; replica++)
                 Validate(nOffsets[primary], nOffsets[replica], disableObjects);
         }
+
+        [Test, Order(6)]
+        public void ClusterDisklessSyncObjectStore()
+        {
+            var nodes_count = 3;
+            var primary = 0;
+            var replicaOne = 1;
+            var replicaTwo = 2;
+
+            context.CreateInstances(nodes_count, enableAOF: true, useTLS: useTLS, enableDisklessSync: true, timeout: timeout);
+            context.CreateConnection(useTLS: useTLS);
+
+            // Setup primary and introduce it to future replica
+            _ = context.clusterTestUtils.AddDelSlotsRange(primary, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primary, primary + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaOne, replicaOne + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaTwo, replicaTwo + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primary, replicaOne, logger: context.logger);
+            context.clusterTestUtils.Meet(primary, replicaTwo, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primary, replicaOne, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaTwo, replicaOne, logger: context.logger);
+
+            var keyLength = 16;
+            var kvpairCount = keyCount;
+            context.kvPairsObj = [];
+
+            // Populate Primary
+            context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primary);
+
+            // Initiate replication
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOne, primaryNodeIndex: primary, logger: context.logger);
+
+            // Wait for replica to catch up and validate node objects
+            context.clusterTestUtils.WaitForReplicaAofSync(primary, replicaOne);
+            context.ValidateNodeObjects(ref context.kvPairsObj, replicaOne);
+
+            // Kill primary
+            context.nodes[primary].Dispose();
+
+            // Replica takes over
+            Failover(replicaOne, "TAKEOVER");
+
+            context.clusterTestUtils.Meet(replicaOne, replicaTwo, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaTwo, replicaOne, logger: context.logger);
+
+            // Initiate replication with backup node
+            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaTwo, primaryNodeIndex: replicaOne, logger: context.logger);
+
+            // Wait for replica to catch up and validate node objects
+            context.clusterTestUtils.WaitForReplicaAofSync(replicaOne, replicaTwo);
+            context.ValidateNodeObjects(ref context.kvPairsObj, replicaTwo);
+        }
     }
 }
