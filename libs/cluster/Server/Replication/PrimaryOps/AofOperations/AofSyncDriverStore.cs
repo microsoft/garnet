@@ -20,7 +20,7 @@ namespace Garnet.cluster
         {
             readonly int logIdx = logIdx;
             readonly AofSyncDriverStore store = store;
-            
+
             internal void SafeTailShiftCallback(long oldTailAddress, long newTailAddress)
             {
                 var oldPage = oldTailAddress >> store.logPageSizeBits;
@@ -58,10 +58,10 @@ namespace Garnet.cluster
             numTasks = 0;
             if (clusterProvider.storeWrapper.appendOnlyFile != null)
             {
-                logPageSizeBits = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits();
+                logPageSizeBits = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
                 var logPageSize = 1 << logPageSizeBits;
                 logPageSizeMask = logPageSize - 1;
-                TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.UnsafeGetReadOnlyAddressLagOffset() - 2 * logPageSize;
+                TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetReadOnlyAddressLagOffset() - 2 * logPageSize;
                 if (clusterProvider.serverOptions.FastAofTruncate)
                 {
                     for (var i = 0; i < clusterProvider.serverOptions.AofSublogCount; i++)
@@ -71,16 +71,16 @@ namespace Garnet.cluster
                     }
                 }
             }
-            TruncatedUntil = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount,0);
+            TruncatedUntil = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, 0);
         }
 
         /// <summary>
         /// Safely truncate AOF sublog
         /// </summary>
         /// <param name="truncateUntil"></param>
-        /// <param name="subLogIdx"></param>
+        /// <param name="sublogIdx"></param>
         /// <returns></returns>
-        long SafeTruncateAof(long truncateUntil, int subLogIdx)
+        long SafeTruncateAof(long truncateUntil, int sublogIdx)
         {
             _lock.WriteLock();
 
@@ -95,27 +95,27 @@ namespace Garnet.cluster
             for (var i = 0; i < numTasks; i++)
             {
                 Debug.Assert(syncDrivers[i] != null);
-                if (syncDrivers[i].PreviousAddress[subLogIdx] < TruncatedUntil)
-                    TruncatedUntil = syncDrivers[i].PreviousAddress[subLogIdx];
+                if (syncDrivers[i].PreviousAddress[sublogIdx] < TruncatedUntil)
+                    TruncatedUntil = syncDrivers[i].PreviousAddress[sublogIdx];
             }
 
             // Inform that we have logically truncatedUntil
-            this.TruncatedUntil.MonotonicUpdate(TruncatedUntil, subLogIdx);
+            this.TruncatedUntil.MonotonicUpdate(TruncatedUntil, sublogIdx);
             // Release lock early
             _lock.WriteUnlock();
 
             if (clusterProvider.serverOptions.FastAofTruncate)
             {
-                clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, subLogIdx, snapToPageStart: true, truncateLog: true);
+                clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(sublogIdx, TruncatedUntil, snapToPageStart: true, truncateLog: true);
             }
             else
             {
-                clusterProvider.storeWrapper.appendOnlyFile?.TruncateUntil(TruncatedUntil, subLogIdx);
-                clusterProvider.storeWrapper.appendOnlyFile?.Commit();
+                clusterProvider.storeWrapper.appendOnlyFile?.TruncateUntil(sublogIdx, TruncatedUntil);
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.Commit();
             }
 
             return TruncatedUntil;
-        }        
+        }
 
         /// <summary>
         /// Safely truncate AOF until provided address by checking against active AofSyncDrivers
@@ -145,12 +145,12 @@ namespace Garnet.cluster
 
                 if (clusterProvider.serverOptions.FastAofTruncate)
                 {
-                    clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
+                    clusterProvider.storeWrapper.appendOnlyFile?.Log.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
                 }
                 else
                 {
-                    clusterProvider.storeWrapper.appendOnlyFile?.TruncateUntil(TruncatedUntil);
-                    clusterProvider.storeWrapper.appendOnlyFile?.Commit();
+                    clusterProvider.storeWrapper.appendOnlyFile?.Log.TruncateUntil(TruncatedUntil);
+                    clusterProvider.storeWrapper.appendOnlyFile?.Log.Commit();
                 }
             }
             finally

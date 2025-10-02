@@ -254,7 +254,7 @@ namespace Garnet.server
         {
             try
             {
-                await AppendOnlyFile.CommitAsync(token: token);
+                await AppendOnlyFile.Log.CommitAsync(token: token);
             }
             catch (Exception ex)
             {
@@ -276,7 +276,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override async Task WaitForCommitToAofAsync(CancellationToken token = default, ILogger logger = null)
         {
-            await AppendOnlyFile.WaitForCommitAsync(token: token);
+            await AppendOnlyFile.Log.WaitForCommitAsync(token: token);
         }
 
         /// <inheritdoc/>

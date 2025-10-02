@@ -109,8 +109,8 @@ namespace Garnet.cluster
                     // If FastCommit is enabled, we commit during AOF stream processing
                     if (!clusterProvider.serverOptions.EnableFastCommit)
                     {
-                        storeWrapper.appendOnlyFile?.Commit();
-                        storeWrapper.appendOnlyFile?.WaitForCommit();
+                        storeWrapper.appendOnlyFile?.Log.Commit();
+                        storeWrapper.appendOnlyFile?.Log.WaitForCommit();
                     }
 
                     // Reset background replay iterator

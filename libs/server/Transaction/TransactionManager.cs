@@ -261,7 +261,7 @@ namespace Garnet.server
         {
             Debug.Assert(functionsState.StoredProcMode);
 
-            appendOnlyFile?.Enqueue(
+            appendOnlyFile?.EnqueueCustomProc(
                 new AofHeader { opType = AofEntryType.StoredProcedure, procedureId = id, storeVersion = txnVersion, sessionID = basicContext.Session.ID },
                 ref procInput,
                 out _);

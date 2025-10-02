@@ -131,8 +131,8 @@ namespace Garnet.cluster
         {
             if (!clusterProvider.serverOptions.EnableFastCommit)
             {
-                storeWrapper.appendOnlyFile?.Commit();
-                storeWrapper.appendOnlyFile?.WaitForCommit();
+                storeWrapper.appendOnlyFile?.Log.Commit();
+                storeWrapper.appendOnlyFile?.Log.WaitForCommit();
             }
             while (true)
             {

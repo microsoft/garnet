@@ -334,7 +334,7 @@ namespace Garnet.server
                     var db = databasesMapSnapshot[dbId];
                     Debug.Assert(db != null);
 
-                    aofTasks[i] = db.AppendOnlyFile.CommitAsync(token: token).AsTask().ContinueWith(_ => (db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress), token);
+                    aofTasks[i] = db.AppendOnlyFile.Log.CommitAsync(token: token).AsTask().ContinueWith(_ => (db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress), token);
                 }
 
                 var exThrown = false;
@@ -374,7 +374,7 @@ namespace Garnet.server
             var databasesMapSnapshot = databases.Map;
             Debug.Assert(dbId < databasesMapSize && databasesMapSnapshot[dbId] != null);
 
-            await databasesMapSnapshot[dbId].AppendOnlyFile.CommitAsync(token: token);
+            await databasesMapSnapshot[dbId].AppendOnlyFile.Log.CommitAsync(token: token);
         }
 
         /// <inheritdoc/>
@@ -398,7 +398,7 @@ namespace Garnet.server
                     var db = databasesMapSnapshot[dbId];
                     Debug.Assert(db != null);
 
-                    aofTasks[i] = db.AppendOnlyFile.WaitForCommitAsync(token: token).AsTask();
+                    aofTasks[i] = db.AppendOnlyFile.Log.WaitForCommitAsync(token: token).AsTask();
                 }
 
                 await Task.WhenAll(aofTasks);

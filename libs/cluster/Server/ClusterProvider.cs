@@ -193,11 +193,11 @@ namespace Garnet.cluster
             else
             {
                 if (serverOptions.FastAofTruncate)
-                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(truncateUntil, truncateLog: true);
+                    storeWrapper.appendOnlyFile?.Log.UnsafeShiftBeginAddress(truncateUntil, truncateLog: true);
                 else
                 {
-                    storeWrapper.appendOnlyFile?.TruncateUntil(truncateUntil);
-                    if (!serverOptions.EnableFastCommit) storeWrapper.appendOnlyFile?.Commit();
+                    storeWrapper.appendOnlyFile?.Log.TruncateUntil(truncateUntil);
+                    if (!serverOptions.EnableFastCommit) storeWrapper.appendOnlyFile?.Log.Commit();
                 }
             }
         }

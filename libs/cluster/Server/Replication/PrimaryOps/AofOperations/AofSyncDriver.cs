@@ -45,7 +45,7 @@ namespace Garnet.cluster
             for (var i = 0; i < aofSyncTasks.Length; i++)
                 startAddress[i] = aofSyncTasks[i].StartAddress;
             return startAddress;
-        }        
+        }
 
         /// <summary>
         /// Return previous address for underlying AofSyncTask
@@ -81,7 +81,7 @@ namespace Garnet.cluster
 
             aofSyncTasks = new AofSyncTask[clusterProvider.serverOptions.AofSublogCount];
             for (var i = 0; i < aofSyncTasks.Length; i++)
-                aofSyncTasks[i] = new AofSyncTask(this, (uint)i, endPoint, startAddress[i], cts);
+                aofSyncTasks[i] = new AofSyncTask(this, i, endPoint, startAddress[i], cts);
         }
 
         public void Dispose()
@@ -90,7 +90,7 @@ namespace Garnet.cluster
             cts?.Cancel();
 
             // Then, dispose the iterator. This will also signal the iterator so that it can observe the canceled token
-            foreach(var aofSyncTask in aofSyncTasks)
+            foreach (var aofSyncTask in aofSyncTasks)
                 aofSyncTask?.Dispose();
 
             // Finally, dispose the cts
@@ -99,7 +99,7 @@ namespace Garnet.cluster
 
         public void DisposeClient()
         {
-            foreach(var aofSyncTask in aofSyncTasks)
+            foreach (var aofSyncTask in aofSyncTasks)
                 aofSyncTask.garnetClient?.Dispose();
         }
 
@@ -140,7 +140,7 @@ namespace Garnet.cluster
         public void ConnectClient()
         {
             if (!IsConnected)
-                foreach(var aofSyncTask in aofSyncTasks)
+                foreach (var aofSyncTask in aofSyncTasks)
                     aofSyncTask.garnetClient.Connect();
         }
 

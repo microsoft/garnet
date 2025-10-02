@@ -153,7 +153,7 @@ namespace Garnet.cluster
                 // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
                 if (clusterProvider.storeWrapper.appendOnlyFile != null && clusterProvider.storeWrapper.serverOptions.WaitForCommit)
                 {
-                    var task = clusterProvider.storeWrapper.appendOnlyFile.WaitForCommitAsync();
+                    var task = clusterProvider.storeWrapper.appendOnlyFile.Log.WaitForCommitAsync();
                     if (!task.IsCompleted) task.AsTask().GetAwaiter().GetResult();
                 }
                 int sendBytes = (int)(dcurr - d);

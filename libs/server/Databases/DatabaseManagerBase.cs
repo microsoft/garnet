@@ -357,7 +357,7 @@ namespace Garnet.server
             db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
 
             if (truncateAof)
-                db.AppendOnlyFile?.TruncateUntil(db.AppendOnlyFile.TailAddress);
+                db.AppendOnlyFile?.Log.TruncateUntil(db.AppendOnlyFile.TailAddress);
         }
 
         /// <summary>
@@ -601,11 +601,11 @@ namespace Garnet.server
                 if (StoreWrapper.serverOptions.EnableCluster && StoreWrapper.clusterProvider.IsReplica())
                 {
                     if (!StoreWrapper.serverOptions.EnableFastCommit)
-                        db.AppendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                        db.AppendOnlyFile?.Log.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
                 }
                 else
                 {
-                    db.AppendOnlyFile?.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                    db.AppendOnlyFile?.Log.CommitAsync().ConfigureAwait(false).GetAwaiter().GetResult();
                 }
             }
         }
@@ -678,8 +678,8 @@ namespace Garnet.server
             }
             else
             {
-                db.AppendOnlyFile?.TruncateUntil(checkpointCoveredAofAddress);
-                db.AppendOnlyFile?.Commit();
+                db.AppendOnlyFile?.Log.TruncateUntil(checkpointCoveredAofAddress);
+                db.AppendOnlyFile?.Log.Commit();
             }
 
             if (db.ObjectStore != null)

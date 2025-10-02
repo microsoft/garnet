@@ -42,6 +42,11 @@ namespace Garnet.server
         ArgSlice[] rootBuffer;
 
         /// <summary>
+        /// Hashslot calculated for cluster redirection logic
+        /// </summary>
+        public int Slot { get; set; }
+
+        /// <summary>
         /// Get a Span of the parsed parameters in the form an ArgSlice
         /// </summary>
         public ReadOnlySpan<ArgSlice> Parameters => new(bufferPtr, Count);
@@ -52,6 +57,7 @@ namespace Garnet.server
             this.rootCount = rootCount;
             this.bufferPtr = bufferPtr;
             this.Count = count;
+            this.Slot = -1;
         }
 
         /// <summary>
@@ -63,6 +69,7 @@ namespace Garnet.server
             rootCount = 0;
             rootBuffer = GC.AllocateArray<ArgSlice>(MinParams, true);
             bufferPtr = (ArgSlice*)Unsafe.AsPointer(ref rootBuffer[0]);
+            this.Slot = -1;
         }
 
         /// <summary>

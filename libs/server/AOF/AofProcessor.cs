@@ -7,11 +7,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
-using System.Threading.Tasks;
 
 namespace Garnet.server
 {
@@ -135,15 +135,15 @@ namespace Garnet.server
                 for (var i = 0; i < untilAddress.Length; i++)
                 {
                     var taskId = i;
-                    tasks[i] = Task.Run(() => RecoverReplayTask(taskId, appendOnlyFile.BeginAddress, untilAddress));
+                    tasks[i] = Task.Run(() => RecoverReplayTask(taskId, untilAddress));
                 }
 
                 Task.WaitAll(tasks);
 
-                void RecoverReplayTask(int taskId, AofAddress beginAddress, AofAddress untilAddress)
+                void RecoverReplayTask(int taskId, AofAddress untilAddress)
                 {
                     var count = 0;
-                    using var scan = appendOnlyFile.Scan(appendOnlyFile.BeginAddress[taskId], untilAddress[taskId]);
+                    using var scan = appendOnlyFile.Scan(taskId, ref appendOnlyFile.BeginAddress, ref untilAddress);
 
                     // Replay each AOF record in the current database context
                     while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))

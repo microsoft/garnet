@@ -1,12 +1,14 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
 using System;
 using System.Net;
 using System.Threading;
-using Tsavorite.core;
-using Garnet.client;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -15,7 +17,7 @@ namespace Garnet.cluster
         public class AofSyncTask : IBulkLogEntryConsumer, IDisposable
         {
             readonly AofSyncDriver aofSyncDriver;
-            readonly uint taskId;
+            readonly int sublogIdx;
             public readonly GarnetClientSession garnetClient;
             readonly CancellationTokenSource cts;
             readonly long startAddress;
@@ -41,19 +43,19 @@ namespace Garnet.cluster
             /// AofSyncTask constructor
             /// </summary>
             /// <param name="aofSyncDriver"></param>
-            /// <param name="taskId"></param>
+            /// <param name="sublogIdx"></param>
             /// <param name="endPoint"></param>
             /// <param name="startAddress"></param>
             /// <param name="cts"></param>
             public AofSyncTask(
                 AofSyncDriver aofSyncDriver,
-                uint taskId,
+                int sublogIdx,
                 IPEndPoint endPoint,
                 long startAddress,
                 CancellationTokenSource cts)
             {
                 this.aofSyncDriver = aofSyncDriver;
-                this.taskId = taskId;
+                this.sublogIdx = sublogIdx;
                 this.startAddress = startAddress;
                 previousAddress = startAddress;
                 this.cts = cts;
@@ -96,7 +98,7 @@ namespace Garnet.cluster
                     // This is called under epoch protection, so we have to wait for appending to complete
                     garnetClient.ExecuteClusterAppendLog(
                         aofSyncDriver.localNodeId,
-                        taskId,
+                        sublogIdx,
                         previousAddress,
                         currentAddress,
                         nextAddress,
@@ -113,7 +115,7 @@ namespace Garnet.cluster
                         ex,
                         "{Consume}[{taskId}]: exception consuming AOF payload to sync {remoteNodeId} ({currenAddress}, {nextAddress})",
                         nameof(AofSyncTask.Consume),
-                        taskId,
+                        sublogIdx,
                         aofSyncDriver.remoteNodeId,
                         currentAddress,
                         nextAddress);
@@ -133,13 +135,13 @@ namespace Garnet.cluster
                 aofSyncDriver.logger?.LogInformation(
                     "{RunAofSyncTask}[{taskId}]: syncing {remoteNodeId} starting from address {address}",
                     nameof(AofSyncTask.RunAofSyncTask),
-                    taskId,
+                    sublogIdx,
                     aofSyncDriver.remoteNodeId,
                     startAddress);
 
                 if (!IsConnected) garnetClient.Connect();
 
-                iter = aofSyncDriver.clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: aofSyncDriver.logger);
+                iter = aofSyncDriver.clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(sublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: aofSyncDriver.logger);
 
                 while (true)
                 {

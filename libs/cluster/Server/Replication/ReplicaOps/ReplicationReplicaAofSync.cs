@@ -2,9 +2,9 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using System.Threading.Tasks;
 
 namespace Garnet.cluster
 {
@@ -61,7 +61,7 @@ namespace Garnet.cluster
                             )
                         {
                             logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", ReplicationOffset, currentAddress);
-                            storeWrapper.appendOnlyFile.SafeInitialize(currentAddress, currentAddress);
+                            storeWrapper.appendOnlyFile.SafeInitialize(sublogIdx, currentAddress, currentAddress);
                             replicationOffset[0] = currentAddress;
                         }
                     }
@@ -92,7 +92,10 @@ namespace Garnet.cluster
                 }
 
                 // Enqueue to AOF
-                _ = clusterProvider.storeWrapper.appendOnlyFile?.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: clusterProvider.serverOptions.EnableFastCommit);
+                _ = clusterProvider.storeWrapper.appendOnlyFile?.UnsafeEnqueueRaw(
+                    sublogIdx,
+                    new Span<byte>(record, recordLength),
+                    noCommit: clusterProvider.serverOptions.EnableFastCommit);
 
                 replicaAofSyncTask ??= new ReplicaAofSyncReplayTask(sublogIdx, clusterProvider, logger);
 

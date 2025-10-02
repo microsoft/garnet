@@ -116,7 +116,7 @@ namespace Garnet.cluster
             this.logger = logger;
             this.clusterProvider = clusterProvider;
             this.storeWrapper = clusterProvider.storeWrapper;
-            this.pageSizeBits = storeWrapper.appendOnlyFile == null ? 0 : storeWrapper.appendOnlyFile.UnsafeGetLogPageSizeBits();
+            this.pageSizeBits = storeWrapper.appendOnlyFile == null ? 0 : storeWrapper.appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
 
             networkBufferSettings.Log(logger, nameof(ReplicationManager));
             this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
@@ -524,7 +524,7 @@ namespace Garnet.cluster
             {
                 // If recovered checkpoint corresponds to an unavailable AOF address, we initialize AOF to that address
                 var recoveredSafeAofAddress = GetRecoveredSafeAofAddress();
-                storeWrapper.appendOnlyFile.InitializeIf(ref recoveredSafeAofAddress);
+                storeWrapper.appendOnlyFile.Log.InitializeIf(ref recoveredSafeAofAddress);
                 logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
                 ReplicationOffset = storeWrapper.ReplayAOF(AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, -1));
             }
