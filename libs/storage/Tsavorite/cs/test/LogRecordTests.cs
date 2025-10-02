@@ -99,49 +99,49 @@ namespace Tsavorite.test.LogRecordTests
 
             // Test 1- and 2-byte valueLengthByte boundary with 1-keyLengthByte key
             Assert.That(GetByteCount(inputValueLength), Is.EqualTo(1));
-            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out int keyLengthBytes, out int valueLengthBytes);
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, flagBits: 0, out int keyLengthBytes, out int valueLengthBytes);
             Assert.That(keyLengthBytes, Is.EqualTo(1));
             Assert.That(valueLengthBytes, Is.EqualTo(1));
             VerifyKeyAndValue();
 
             inputValueLength = 1 << 8;
             Assert.That(GetByteCount(inputValueLength), Is.EqualTo(2));
-            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, flagBits: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
             Assert.That(valueLengthBytes, Is.EqualTo(2));
             VerifyKeyAndValue();
 
             // Test 2- and 3-byte valueLengthByte boundary with 2-keyLengthByte key
             inputKeyLength = inputValueLength = (1 << 16) - 1;
             Assert.That(GetByteCount(inputValueLength), Is.EqualTo(2));
-            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out keyLengthBytes, out valueLengthBytes);
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, flagBits: 0, out keyLengthBytes, out valueLengthBytes);
             Assert.That(keyLengthBytes, Is.EqualTo(2));
             Assert.That(valueLengthBytes, Is.EqualTo(2));
             VerifyKeyAndValue();
 
             inputValueLength = 1 << 16;
             Assert.That(GetByteCount(inputValueLength), Is.EqualTo(3));
-            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, flagBits: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
             Assert.That(valueLengthBytes, Is.EqualTo(3));
             VerifyKeyAndValue();
 
             // Test 3- and 4-byte valueLengthByte boundary with 3-keyLengthByte key
             inputKeyLength = inputValueLength = (1 << 24) - 1;
             Assert.That(GetByteCount(inputValueLength), Is.EqualTo(3));
-            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out keyLengthBytes, out valueLengthBytes);
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, flagBits: 0, out keyLengthBytes, out valueLengthBytes);
             Assert.That(keyLengthBytes, Is.EqualTo(3));
             Assert.That(valueLengthBytes, Is.EqualTo(3));
             VerifyKeyAndValue();
 
             inputValueLength = 1 << 24;
             Assert.That(GetByteCount(inputValueLength), Is.EqualTo(4));
-            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, flagBits: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
             Assert.That(valueLengthBytes, Is.EqualTo(4));
             VerifyKeyAndValue();
 
             // Test max ValueLength
             inputValueLength = int.MaxValue;
             Assert.That(GetByteCount(inputValueLength), Is.EqualTo(4));
-            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, hasFillerBit: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
+            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, flagBits: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
             Assert.That(valueLengthBytes, Is.EqualTo(4));
             VerifyKeyAndValue();
 

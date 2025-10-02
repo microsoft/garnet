@@ -37,6 +37,8 @@ namespace Tsavorite.test.Revivification
 
 namespace Tsavorite.test.Revivification
 {
+    using static VarbyteLengthUtility;
+
 #if LOGRECORD_TODO
     using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
     using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
@@ -524,7 +526,10 @@ namespace Tsavorite.test.Revivification
                 // If an overflow logRecord is from new record creation it has not had its overflow set yet; it has just been initialized to inline length of ObjectIdMap.ObjectIdSize,
                 // and we'll call LogField.ConvertToOverflow later in this ISessionFunctions call to do the actual overflow allocation.
                 if (!logRecord.Info.ValueIsInline || (sizeInfo.IsSet && !sizeInfo.ValueIsInline))
-                    ClassicAssert.AreEqual(ObjectIdMap.ObjectIdSize, LogField.GetInlineDataLength(logRecord.physicalAddress, isKey: false));
+                {
+                    var (valueLength, valueAddress) = GetValueFieldInfo(logRecord.IndicatorAddress);
+                    ClassicAssert.AreEqual(ObjectIdMap.ObjectIdSize, (int)valueLength);
+                }
                 if (sizeInfo.ValueIsInline)
                     ClassicAssert.AreEqual(expectedValueLength, logRecord.ValueSpan.Length);
                 else

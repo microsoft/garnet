@@ -79,7 +79,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="mainLogPageSpan">The main log page span to write</param>
         /// <param name="mainLogDevice">The main log device to write to</param>
-        /// <param name="alignedMainLogFlushAddress">The offset in the main log to write at</param>
+        /// <param name="alignedMainLogFlushAddress">The offset in the main log to write at; aligned to sector</param>
         /// <param name="externalCallback">Callback sent to the initial Flush() command. Called when we are done with this partial flush operation.</param>
         /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
         /// <param name="endFilePosition">The ending file position after the partial flush is complete</param>
@@ -96,7 +96,7 @@ namespace Tsavorite.core
         /// <returns>The number of bytes written for the value object, if any (Overflow lengths and the length of objects that support
         ///     <see cref="IHeapObject.SerializedSizeIsExact"/> are already known, but an object that does not support that will not know its
         ///     <see cref="IHeapObject.SerializedSize"/>) until we've serialized it).</returns>
-        public ulong WriteObjects(in LogRecord logRecord)
+        public ulong WriteRecordObjects(in LogRecord logRecord)
         {
             Debug.Assert(!logRecord.Info.RecordIsInline, "Cannot call ObjectLogWriter with an inline record");
 

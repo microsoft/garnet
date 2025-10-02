@@ -167,7 +167,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Actual memory used by log
         /// </summary>
-        public long MemorySizeBytes => allocator.GetAbsoluteLogicalAddressOfStartOfPage(allocator.AllocatedPageCount + allocator.OverflowPageCount);
+        public long MemorySizeBytes => allocator.GetLogicalAddressOfStartOfPage(allocator.AllocatedPageCount + allocator.OverflowPageCount);
 
         /// <summary>
         /// Create new log instance

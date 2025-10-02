@@ -470,7 +470,7 @@ namespace Tsavorite.core
                     else
                     {
                         Debug.Assert(sizeInfo.ValueIsObject, "Expected ValueIsObject to be set, pt 1");
-                        _ = LogField.ConvertInlineToHeapObject(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertInlineToValueObject(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
                     }
                 }
                 else if (Info.ValueIsOverflow)
@@ -480,7 +480,7 @@ namespace Tsavorite.core
                     else
                     {
                         Debug.Assert(sizeInfo.ValueIsObject, "Expected ValueIsObject to be set, pt 2");
-                        _ = LogField.ConvertOverflowToHeapObject(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertOverflowToValueObject(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
                     }
                 }
                 else
@@ -488,11 +488,11 @@ namespace Tsavorite.core
                     Debug.Assert(Info.ValueIsObject, "Expected ValueIsObject to be set, pt 3");
 
                     if (sizeInfo.ValueIsInline)
-                        _ = LogField.ConvertHeapObjectToInline(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertValueObjectToInline(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
                     else
                     {
                         Debug.Assert(sizeInfo.ValueIsOverflow, "Expected ValueIsOverflow to be true");
-                        _ = LogField.ConvertHeapObjectToOverflow(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
+                        _ = LogField.ConvertValueObjectToOverflow(ref InfoRef, physicalAddress, valueAddress, in sizeInfo, objectIdMap);
                     }
                 }
             }
@@ -581,12 +581,12 @@ namespace Tsavorite.core
                 return false;
             }
 
-            var objIdPtr = (int*)GetFieldPtr(IndicatorAddress, isKey: false, out _ /*lengthPtr*/, out _ /*lengthBytes*/, out _ /*length*/);
+            var (valueLength, valueAddress) = GetValueFieldInfo(IndicatorAddress);
 
             // If there is no object there yet, allocate a slot
-            var objectId = *objIdPtr;
+            var objectId = *(int*)valueAddress;
             if (objectId == ObjectIdMap.InvalidObjectId)
-                objectId = *objIdPtr = objectIdMap.Allocate();
+                objectId = *(int*)valueAddress = objectIdMap.Allocate();
 
             // Set the new object into the slot
             objectIdMap.Set(objectId, value);
@@ -609,8 +609,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetOptionalStartAddress()
         {
-            var fieldAddress = (long)GetFieldPtr(IndicatorAddress, isKey: false, out _ /*lengthPtr*/, out _ /*lengthBytes*/, out var length);
-            return fieldAddress + length;
+            var (valueLength, valueAddress) = GetValueFieldInfo(IndicatorAddress);
+            return valueAddress + valueLength;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -622,8 +622,6 @@ namespace Tsavorite.core
         internal readonly long GetETagAddress() => GetOptionalStartAddress();
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetExpirationAddress() => GetETagAddress() + ETagLen;
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly long GetObjectLogPositionAddress() => GetExpirationAddress() + ExpirationLen;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetFillerLengthAddress() => physicalAddress + ActualRecordSize;
@@ -1097,61 +1095,71 @@ namespace Tsavorite.core
         /// </remarks>
         internal readonly void SetObjectLogRecordStartPositionAndLength(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength)
         {
-            var objLogPositionPtr = (ulong*)GetObjectLogPositionAddress();
-            *objLogPositionPtr = objectLogFilePosition.word;
             if (Info.KeyIsOverflow)
             {
-                var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
-                var overflow = objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
-                *(int*)dataAddress = overflow.Length;
+                var (keyLength, keyAddress) = GetKeyFieldInfo(IndicatorAddress);
+                var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
+                *(int*)keyAddress = overflow.Length;
             }
 
+            var (valueLength, valueAddress) = GetValueFieldInfo(IndicatorAddress);
             if (Info.ValueIsOverflow)
             {
-                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
-                var overflow = objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
-                *(int*)dataAddress = overflow.Length;
+                var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
+                *(int*)valueAddress = overflow.Length;
             }
             else if (Info.ValueIsObject)
             {
-                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
-                *(uint*)dataAddress = (uint)(valueObjectLength & 0xFFFFFFFF);
+                *(uint*)valueAddress = (uint)(valueObjectLength & 0xFFFFFFFF);
                 // Update the high byte in the value length metadata (it is combined with the length that is stored in the ObjectId field data of the record).
                 UpdateVarbyteValueLengthByteInWord(IndicatorAddress, (byte)((valueObjectLength >> 32) & 0xFF));
             }
+            else if (Info.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
+            {
+                Debug.Fail("Cannot call SetObjectLogRecordStartPositionAndLength for an inline record");
+                return;
+            }
+
+            // If we've replaced the varbyte valueLength with the upper byte of valueObjectLength, the usual optional accessors (e.g.GetExpirationAddress()) won't work.
+            *(ulong*)(valueAddress + valueLength + ETagLen + ExpirationLen) = objectLogFilePosition.word;
         }
 
         /// <summary>
         /// Returns the object log position for the start of the key (if any) and value (if any).
         /// </summary>
         /// <param name="keyLength">Outputs key length; will always be for overflow</param>
-        /// <param name="valueLength">Outputs key length; will be for overflow or object</param>
+        /// <param name="valueObjectLength">Outputs key length; will be for overflow or object</param>
         /// <returns>The object log position for this record</returns>
-        internal readonly ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueLength)
+        internal readonly ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueObjectLength)
         {
-            var objLogPositionPtr = (ulong*)GetObjectLogPositionAddress();
             if (Info.KeyIsOverflow)
             {
-                var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
-                keyLength = *(int*)dataAddress;
+                (keyLength, var keyAddress) = GetKeyFieldInfo(IndicatorAddress);
+                keyLength = *(int*)keyAddress;
             }
-            else
+            else // KeyIsInline is true
                 keyLength = 0;
 
+            var (valueLength, valueAddress) = GetValueFieldInfo(IndicatorAddress);
             if (Info.ValueIsOverflow)
-            {
-                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
-                valueLength = (ulong)*(int*)dataAddress;
-            }
+                valueObjectLength = (ulong)*(int*)valueAddress;
             else if (Info.ValueIsObject)
             {
-                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
-                valueLength = *(uint*)dataAddress | (((ulong)length & 0xFF) << 32);
+                valueObjectLength = *(uint*)valueAddress | (((ulong)valueLength & 0xFF) << 32);
+                valueLength = ObjectIdMap.ObjectIdSize; // locally only, restore this. We will restore it for real later, when we read the objects.
             }
-            else
-                valueLength = 0;
+            else // ValueIsInline is true
+            {
+                valueObjectLength = 0;
+                if (Info.RecordIsInline) // If the record is fully inline, we should not be called here
+                {
+                    Debug.Fail("Cannot call GetObjectLogRecordStartPositionAndLength for an inline record");
+                    return 0;
+                }
+            }
 
-            return *objLogPositionPtr;
+            // If we've replaced the varbyte valueLength with the upper byte of valueObjectLength, the usual optional accessors (e.g.GetExpirationAddress()) won't work.
+            return *(ulong*)(valueAddress + valueLength + ETagLen + ExpirationLen);
         }
 
         public void Dispose(Action<IHeapObject> objectDisposer)

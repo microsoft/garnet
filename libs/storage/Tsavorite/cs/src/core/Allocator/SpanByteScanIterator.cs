@@ -203,7 +203,7 @@ namespace Tsavorite.core
                     // If record does not fit on page, skip to the next page.
                     if (offset + allocatedSize > hlogBase.PageSize)
                     {
-                        nextAddress = hlogBase.GetAbsoluteLogicalAddressOfStartOfPage(1 + hlogBase.GetPage(currentAddress));
+                        nextAddress = hlogBase.GetLogicalAddressOfStartOfPage(1 + hlogBase.GetPage(currentAddress));
                         continue;
                     }
 

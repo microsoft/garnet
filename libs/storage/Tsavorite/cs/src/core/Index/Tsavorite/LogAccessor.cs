@@ -106,7 +106,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Actual memory used by log (not including heap objects) and overflow pages
         /// </summary>
-        public long MemorySizeBytes => allocatorBase.GetAbsoluteLogicalAddressOfStartOfPage((long)(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount));
+        public long MemorySizeBytes => allocatorBase.GetLogicalAddressOfStartOfPage((long)(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount));
 
         /// <summary>
         /// Maximum memory size in bytes

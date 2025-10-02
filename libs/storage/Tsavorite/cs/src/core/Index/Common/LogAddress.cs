@@ -42,7 +42,7 @@ namespace Tsavorite.core
 
         /// <summary>Utility shared between AllocatorBase and ScanIteratorBase</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long GetAbsoluteLogicalAddressOfStartOfPage(long page, int logPageSizeBits) => page << logPageSizeBits;
+        internal static long GetLogicalAddressOfStartOfPage(long page, int logPageSizeBits) => page << logPageSizeBits;
 
         /// <summary>Pretty-print the address</summary>
         public static string AddressString(long address)

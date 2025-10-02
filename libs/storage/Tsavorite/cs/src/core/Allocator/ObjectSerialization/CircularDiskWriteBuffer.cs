@@ -113,22 +113,11 @@ namespace Tsavorite.core
             return GetAndInitializeCurrentBuffer();
         }
 
-        /// <summary>Called when a <see cref="LogRecord"/> Write is completed. Ensures end-of-record alignment.</summary>
+        /// <summary>Called when a <see cref="LogRecord"/> Write is completed.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal unsafe void OnRecordComplete()
         {
-            var buffer = GetCurrentBuffer();
-            var recordAlignedCurrentPosition = RoundUp(buffer.currentPosition, Constants.kRecordAlignment);
-            var padding = recordAlignedCurrentPosition - buffer.currentPosition;
-            if (padding > 0)
-            {
-                // Assert there is still room in the buffer for the expansion (should always be as buffersize is a power of 2 much greater than kRecordAlignment)
-                Debug.Assert(recordAlignedCurrentPosition <= buffer.memory.RequiredCapacity,
-                            $"recordAlignedCurrentPosition {recordAlignedCurrentPosition} exceeds memory.RequiredTotalCapacity {buffer.memory.RequiredCapacity}");
-
-                new Span<byte>(buffer.memory.GetValidPointer() + buffer.currentPosition, padding).Clear();
-                buffer.currentPosition += padding;
-            }
+            // Currently nothing to do. We do not do end-of-record alignment in the ObjectLog file.
         }
 
         /// <summary>
@@ -152,9 +141,9 @@ namespace Tsavorite.core
             countdownCallbackAndContext.Increment();
             countdownCallbackAndContext.Set(externalCallback, externalContext, (uint)mainLogPageSpan.Length);
 
-            // Issue the last ObjectLog write for this partial flush. buffer.currentPosition should have been record-aligned by ObjectLogWriter.OnRecordComplete.
+            // Issue the last ObjectLog write for this partial flush.
             var buffer = GetCurrentBuffer();
-            Debug.Assert(IsAligned(buffer.currentPosition, Constants.kRecordAlignment), $"buffer.currentPosition {buffer.currentPosition} is not record-aligned");
+            Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)device.SectorSize), "mainLogAlignedDeviceOffset is not aligned to sector size");
             Debug.Assert(IsAligned(buffer.flushedUntilPosition, (int)device.SectorSize), $"flushedUntilOffset {buffer.flushedUntilPosition} is not sector-aligned");
             Debug.Assert(buffer.currentPosition >= buffer.flushedUntilPosition, $"buffer.currentPosition {buffer.currentPosition} must be >= buffer.flushedUntilPosition {buffer.flushedUntilPosition}");
 
@@ -207,7 +196,8 @@ namespace Tsavorite.core
             filePosition.Offset += (uint)span.Length;
         }
 
-        /// <summary>Flush a main-log page span to the main log device.</summary>
+        /// <summary>Flush a main-log page span to the main log device. This lets us coordinate the callbacks to be called on the last write, regardless of whether
+        /// that write is to main or object log.</summary>
         internal unsafe void FlushToMainLogDevice(ReadOnlySpan<byte> span, IDevice mainLogDevice, ulong alignedMainLogFlushAddress, DiskWriteCallbackContext writeCallbackContext)
         {
             Debug.Assert(IsAligned(span.Length, (int)device.SectorSize), "Span is not aligned to sector size");
@@ -264,7 +254,13 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override string ToString() 
-            => $"currIdx {currentIndex}; bufSize {bufferSize}; filePos {filePosition}, SecSize {(int)device.SectorSize}";
+        public override string ToString()
+        {
+            var result = $"currIdx {currentIndex}; bufSize {bufferSize}; filePos {filePosition}, SecSize {(int)device.SectorSize}";
+            var buffer = GetCurrentBuffer();
+            if (buffer is not null)
+                result += $"; currBuf: [{buffer}]";
+            return result;
+        }
     }
 }

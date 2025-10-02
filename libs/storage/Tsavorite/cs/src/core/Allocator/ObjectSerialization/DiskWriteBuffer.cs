@@ -109,6 +109,8 @@ namespace Tsavorite.core
             var spanPtr = memory.GetValidPointer() + flushedUntilPosition;
             device.WriteAsync((IntPtr)spanPtr, filePosition.SegmentId, filePosition.Offset, flushLength, callback, pageWriteCallbackContext);
             flushedUntilPosition = currentPosition;
+
+            // This does not use .Advance() because we are already checking boundary conditions and calling .AdvanceToNextSegment() in ObjectLogWriter.
             filePosition.Offset += flushLength;
         }
 

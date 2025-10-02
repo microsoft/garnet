@@ -27,6 +27,8 @@ namespace Tsavorite.core
             public ObjectPage() => objectIdMap = new();
 
             internal readonly void Clear() => objectIdMap?.Clear();       // TODO: Ensure we have already called the RecordDisposer
+
+            public override readonly string ToString() => $"oidMap {objectIdMap}";
         }
 
         /// <summary>The pages of the log, containing object storage. In parallel with AllocatorBase.pagePointers</summary>
@@ -287,7 +289,7 @@ namespace Tsavorite.core
             var epochTaken = epoch.ResumeIfNotProtected();
             try
             {
-                if (HeadAddress >= GetAbsoluteLogicalAddressOfStartOfPage(flushPage) + possiblyPartialPageSize)
+                if (HeadAddress >= GetLogicalAddressOfStartOfPage(flushPage) + possiblyPartialPageSize)
                 {
                     // Requested page is unavailable in memory, ignore
                     callback(0, 0, asyncResult);
@@ -350,26 +352,39 @@ namespace Tsavorite.core
 
             // Initialize offsets into the allocator page based on full-page (including the page header), then override them if partial.
             // asyncResult.fromAddress is either start of page or start of a record past the page header
-            int startOffset = 0, endOffset = (int)numBytesToWrite + PageHeader.Size;
-            var pageStart = GetAbsoluteLogicalAddressOfStartOfPage(asyncResult.page);
+            var pageStart = GetLogicalAddressOfStartOfPage(asyncResult.page);
+            Debug.Assert(asyncResult.fromAddress - pageStart is >= PageHeader.Size or 0, $"fromAddress ({asyncResult.fromAddress}, offset {asyncResult.fromAddress - pageStart}) must be 0 or after the PageHeader");
+            Debug.Assert(asyncResult.untilAddress - pageStart >= PageHeader.Size, $"untilAddress ({asyncResult.untilAddress}, offset {asyncResult.untilAddress - pageStart}) must be past PageHeader {flushPage}");
+            int startOffset = (int)(asyncResult.fromAddress - pageStart), endOffset = startOffset + (int)numBytesToWrite;
             if (asyncResult.partial)
             {
-                // We're writing only a subset of the page, so align relative to page start (so we include PageHeader, which is important).
-                startOffset = (int)(asyncResult.fromAddress - pageStart);
+                // We're writing only a subset of the page.
                 endOffset = (int)(asyncResult.untilAddress - pageStart);
                 numBytesToWrite = (uint)(endOffset - startOffset);
             }
+
+            // Adjust so the first record on the page includes the page header. We've already asserted fromAddress such that startOffset is either 0 or >= PageHeader.
+            var logicalAddress = asyncResult.fromAddress;
+            var isFirstRecordOnPage = startOffset <= PageHeader.Size;
+            var firstRecordOffset = startOffset;
+            if (isFirstRecordOnPage)
+            {
+                if (startOffset == 0)
+                {
+                    // For the first record on the page the caller may have passed the address of the start of the page rather than the offset at the end of the PageHeader.
+                    firstRecordOffset = PageHeader.Size;
+                    logicalAddress += firstRecordOffset;
+                }
+                else
+                {
+                    startOffset = 0;    // Include the PageHeader
+                    numBytesToWrite = (uint)(endOffset - startOffset);
+                }
+            }
+
             var alignedStartOffset = RoundDown(startOffset, (int)device.SectorSize);
             var startPadding = startOffset - alignedStartOffset;
             var alignedBufferSize = RoundUp(startPadding + (int)numBytesToWrite, (int)device.SectorSize);
-
-            // Initialize disk offset from logicalAddress to subtract the GetFirstValidLogicalAddressOnPage(), then ensure we are aligned to the PageHeader
-            // (for the first record on the page the caller probably passed the address of the start of the page rather than the offset of the header position).
-            Debug.Assert(asyncResult.fromAddress - pageStart is >= PageHeader.Size or 0, $"fromAddress ({asyncResult.fromAddress}, offset {asyncResult.fromAddress - pageStart}) must be 0 or after the PageHeader");
-            var logicalAddress = asyncResult.fromAddress;
-            if (startOffset == 0)
-                logicalAddress += PageHeader.Size;
-            var isFirstRecordOnPage = startOffset <= PageHeader.Size;   // We've already asserted fromAddress such that startOffset is either 0 or at/after PageHeader
 
             // We suspend epoch during the time-consuming actual flush. Note: The ShiftHeadAddress check to always remain below FlushedUntilAddress
             // means the actual log page, inluding ObjectIdMap, will remain valid until we complete this partial flush.
@@ -398,6 +413,7 @@ namespace Tsavorite.core
                     result.DisposeHandle();
                 }
 
+                // Copy from the record start position (startOffset) in the main log page to the src buffer starting at its offset in the first sector (startPadding).
                 var allocatorPageSpan = new Span<byte>((byte*)pagePointers[flushPage % BufferSize] + startOffset, (int)numBytesToWrite);
                 allocatorPageSpan.CopyTo(srcBuffer.TotalValidSpan.Slice(startPadding));
                 srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
@@ -406,11 +422,12 @@ namespace Tsavorite.core
                 var logWriter = new ObjectLogWriter<TStoreFunctions>(device, flushBuffers, storeFunctions);
                 _ = logWriter.OnBeginPartialFlush(objectLogNextRecordStartPosition);
 
-                // Include page header when calculating end address
-                var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + numBytesToWrite;
-                for (var physicalAddress = (long)srcBuffer.GetValidPointer() + (isFirstRecordOnPage ? PageHeader.Size : 0); physicalAddress < endPhysicalAddress; /* incremented in loop */)
+                // Include page header when calculating end address.
+                var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + startPadding + numBytesToWrite;
+                var physicalAddress = (long)srcBuffer.GetValidPointer() + firstRecordOffset - alignedStartOffset;
+                while (physicalAddress < endPhysicalAddress)
                 {
-                    // LogRecord is in the *copy of* the log buffer. We will update it without affecting the actual record in the log.
+                    // LogRecord is in the *copy of* the log buffer. We will update it (for objectIds) without affecting the actual record in the log.
                     var logRecord = new LogRecord(physicalAddress, objectIdMap);
 
                     // Use allocatedSize here because that is what LogicalAddress is based on.
@@ -431,7 +448,7 @@ namespace Tsavorite.core
                                     ((PageHeader*)srcBuffer.GetValidPointer())->SetLowestObjectLogPosition(recordStartPosition);
                                     isFirstRecordOnPage = false;
                                 }
-                                var valueObjectLength = logWriter.WriteObjects(in logRecord);
+                                var valueObjectLength = logWriter.WriteRecordObjects(in logRecord);
                                 logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength);
                             }
                         }
@@ -455,12 +472,9 @@ namespace Tsavorite.core
                     numBytesToWrite = (uint)(aligned_end - alignedStartOffset);
                 }
 
-                // Round up the number of byte to write to sector alignment.
-                var alignedNumBytesToWrite = RoundUp(numBytesToWrite, (int)device.SectorSize);
-
                 // Finally write the main log page as part of OnPartialFlushComplete.
                 // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
-                var mainLogSpan = new ReadOnlySpan<byte>(srcBuffer.GetValidPointer() + alignedStartOffset, (int)alignedNumBytesToWrite);
+                var mainLogSpan = new ReadOnlySpan<byte>(srcBuffer.GetValidPointer(), alignedBufferSize);
                 logWriter.OnPartialFlushComplete(mainLogSpan, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, out objectLogNextRecordStartPosition);
             }
             finally
@@ -494,10 +508,15 @@ namespace Tsavorite.core
             if (diskLogRecord.Info.RecordIsInline)
                 return true;
 
-            var readBuffers = diskLogRecord.Info.ValueIsObject ? CreateCircularReadBuffers(objectLogDevice, logger) : default;
+            var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength),
+                                                              objectLogNextRecordStartPosition.SegmentSizeBits);
+            var totalBytesToRead = (ulong)keyLength + valueLength;
+
+            using var readBuffers = diskLogRecord.Info.ValueIsObject ? CreateCircularReadBuffers(objectLogDevice, logger) : default;
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
-            if (logReader.ReadObjects(diskLogRecord.logRecord.physicalAddress, diskLogRecord.logRecord.GetInlineRecordSizes().actualSize,
+            logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
+            if (logReader.ReadRecordObjects(diskLogRecord.logRecord.physicalAddress, diskLogRecord.logRecord.GetInlineRecordSizes().actualSize,
                     ctx.request_key, transientObjectIdMap, objectLogNextRecordStartPosition.SegmentSizeBits, out var logRecord))
             {
                 // Success; set the DiskLogRecord. We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
@@ -558,7 +577,8 @@ namespace Tsavorite.core
                 // We have already incremented record address to get to the next record; if it is at or beyond the maxPtr, we have processed all records.
                 if (recordAddress >= physicalAddress + result.maxPtr)
                 {
-                    ObjectLogFilePositionInfo endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength), objectLogNextRecordStartPosition.SegmentSizeBits);
+                    ObjectLogFilePositionInfo endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength),
+                                                                objectLogNextRecordStartPosition.SegmentSizeBits);
                     endPosition.Advance((ulong)keyLength + valueLength);
                     totalBytesToRead = endPosition - startPosition;
                     break;
@@ -588,7 +608,7 @@ namespace Tsavorite.core
 
                     // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
                     // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
-                    _ = logReader.ReadObjects(physicalAddress, logRecordSize, noKey, transientObjectIdMap, startPosition.SegmentSizeBits, out _ /*diskLogRecord*/);
+                    _ = logReader.ReadRecordObjects(physicalAddress, logRecordSize, noKey, transientObjectIdMap, startPosition.SegmentSizeBits, out _ /*diskLogRecord*/);
 
                     // If the incremented record address is at or beyond the maxPtr, we have processed all records.
                 } while (recordAddress < physicalAddress + result.maxPtr);

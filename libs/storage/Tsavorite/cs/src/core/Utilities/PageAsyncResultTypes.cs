@@ -41,12 +41,11 @@ namespace Tsavorite.core
         /// <summary>Read buffers if Reading ObjectAllocator.</summary>
         public CircularDiskReadBuffer readBuffers;
 
-        /// <summary>Position at which to resume the iteration of records on the log page, one ObjectBlockSize chunk of object-log records at a time.</summary>
-        internal long resumePtr;
-        /// <summary>How far we got during the iteration of records on the log page until we reached an ObjectBlockSize chunk of object-log records.</summary>
-        internal long untilPtr;
-        /// <summary>The max offset on the main log page to iterate records, one ObjectBlockSize chunk of object-log records at a time.</summary>
+        /// <summary>The max offset on the main log page to iterate records when determining how many bytes in the ObjectLog to read.</summary>
         internal long maxPtr;
+
+        public override string ToString()
+            => $"page {page}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} ({destinationPtr:X}), maxPtr {maxPtr}";
 
         /// <summary>Currently nothing to free.</summary>
         public void Free()
@@ -79,6 +78,13 @@ namespace Tsavorite.core
         /// Number of pages being flushed
         /// </summary>
         int count;
+
+        public override string ToString()
+        {
+            var compSemCount = completedSemaphore?.CurrentCount.ToString() ?? "null";
+            var flushSemCount = completedSemaphore?.CurrentCount.ToString() ?? "null";
+            return $"count {count}, compSemCount {compSemCount}, flushSemCount {flushSemCount}";
+        }
 
         /// <summary>
         /// Create a flush completion tracker
@@ -152,6 +158,12 @@ namespace Tsavorite.core
 
         internal FlushCompletionTracker flushCompletionTracker;
 
+        public override string ToString()
+        {
+            static string bstr(bool value) => value ? "T" : "F";
+            return $"page {page}, ctx {context}, count {count}, partial {bstr(partial)}, fromAddr {fromAddress} ({untilAddress:X}), fromAddr {untilAddress} ({untilAddress:X}), flushCompTrack [{flushCompletionTracker}], circFlushBufs [{flushBuffers}]";
+        }
+
         /// <summary>
         /// Free
         /// </summary>
@@ -194,6 +206,12 @@ namespace Tsavorite.core
 
         /// <summary>The countdown event if this write is associated with a <see cref="DiskWriteBuffer"/>.</summary>
         private CountdownEvent bufferCountdownEvent;
+
+        public override string ToString()
+        {
+            static string bstr(bool value) => value ? "T" : "F";
+            return $"refCntGcH {refCountedGCHandle}, gcH {bstr(gcHandle.IsAllocated)}, countdown {bufferCountdownEvent?.CurrentCount}, cb&c {countdownCallbackAndContext}";
+        }
 
         public DiskWriteCallbackContext(CountdownCallbackAndContext callbackAndContext)
         {
@@ -249,6 +267,9 @@ namespace Tsavorite.core
         /// <summary>Number of in-flight operations</summary>
         internal long count;
 
+        public override string ToString()
+            => $"numBytes {numBytes}, count {count}, callback {callback ?? null}, context {context}";
+
         public void Set(DeviceIOCompletionCallback callback, object context, uint numBytes)
         {
             this.callback = callback;
@@ -274,19 +295,25 @@ namespace Tsavorite.core
     internal sealed class RefCountedPinnedGCHandle
     {
         /// <summary>The <see cref="GCHandle"/> being held.</summary>
-        private GCHandle handle;
+        private GCHandle gcHandle;
         /// <summary>Number of in-flight operations</summary>
         private long count;
 
+        public override string ToString()
+        {
+            static string bstr(bool value) => value ? "T" : "F";
+            return $"gcH {bstr(gcHandle.IsAllocated)}, count {count}";
+        }
+
         internal RefCountedPinnedGCHandle(object targetObject, long initialCount)
         {
-            handle = GCHandle.Alloc(targetObject, GCHandleType.Pinned);
+            gcHandle = GCHandle.Alloc(targetObject, GCHandleType.Pinned);
             count = initialCount;
         }
 
         internal RefCountedPinnedGCHandle(GCHandle gcHandle, long initialCount)
         {
-            handle = gcHandle;
+            this.gcHandle = gcHandle;
             count = initialCount;
         }
 
@@ -299,20 +326,20 @@ namespace Tsavorite.core
         internal void Release()
         {
             ObjectDisposedException.ThrowIf(count <= 0, $"Uninitialized or final-released {nameof(RefCountedPinnedGCHandle)}");
-            if (Interlocked.Decrement(ref count) == 0 && handle.IsAllocated)
-                handle.Free();
+            if (Interlocked.Decrement(ref count) == 0 && gcHandle.IsAllocated)
+                gcHandle.Free();
         }
 
         internal object Target
         {
             get
             {
-                ObjectDisposedException.ThrowIf(count <= 0 || !handle.IsAllocated, $"Uninitialized or final-released {nameof(RefCountedPinnedGCHandle)}");
-                return handle.Target;
+                ObjectDisposedException.ThrowIf(count <= 0 || !gcHandle.IsAllocated, $"Uninitialized or final-released {nameof(RefCountedPinnedGCHandle)}");
+                return gcHandle.Target;
             }
         }
 
-        internal bool IsAllocated => handle.IsAllocated;
+        internal bool IsAllocated => gcHandle.IsAllocated;
     }
 
     /// <summary>
@@ -339,6 +366,12 @@ namespace Tsavorite.core
         /// <summary>If we had a Read directly into the byte[] of an <see cref="OverflowByteArray"/>, this is the <see cref="GCHandle"/> that keps it pinned during the Read.
         /// After the Read it is freed (and the object unpinned).</summary>
         public GCHandle gcHandle;
+
+        public override string ToString()
+        {
+            static string bstr(bool value) => value ? "T" : "F";
+            return $"refCntGcH {refCountedGCHandle}, gcH {bstr(gcHandle.IsAllocated)}, countdown {countdownEvent?.CurrentCount}";
+        }
 
         /// <summary>If non-null, this is the target buffer to copy data to (the copy is done by the caller's callback).</summary>
         public byte[] CopyTarget => (byte[])(gcHandle.IsAllocated ? gcHandle.Target : refCountedGCHandle.Target);

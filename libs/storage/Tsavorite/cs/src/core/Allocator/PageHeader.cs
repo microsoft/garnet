@@ -10,8 +10,11 @@ namespace Tsavorite.core
     {
         const ushort CurrentVersion = 1;
 
+        /// <summary>The number of bits in the size of the struct. Currently set to make <see cref="Size"/> the size that the 0'th page offset was in earlier versions; 64 bytes</summary>
+        internal const int SizeBits = 6;
+
         /// <summary>The size of the struct. Must be a power of 2. Currently set to the size that the 0'th page offset was; 64 bytes</summary>
-        internal const int Size = sizeof(long) * 8;
+        internal const int Size = 1 << SizeBits;
 
         /// <summary>Version of this page header.</summary>
         [FieldOffset(0)]

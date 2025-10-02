@@ -283,7 +283,7 @@ namespace Tsavorite.core
             NextRecord:
                 if (readCacheBase.GetOffsetOnPage(rcLogicalAddress) + rcAllocatedSize > readCacheBase.PageSize)
                 {
-                    rcLogicalAddress = readCacheBase.GetAbsoluteLogicalAddressOfStartOfPage(1 + readCacheBase.GetPage(rcLogicalAddress));
+                    rcLogicalAddress = readCacheBase.GetLogicalAddressOfStartOfPage(1 + readCacheBase.GetPage(rcLogicalAddress));
                     continue;
                 }
                 rcLogicalAddress += rcAllocatedSize;

@@ -5,13 +5,8 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
-
 namespace Tsavorite.core
 {
-#pragma warning disable IDE0065 // Misplaced using directive
-    using static VarbyteLengthUtility;
-
     /// <summary>
     /// Static class providing functions to operate on a Log field (Key Span, or Value Span or Object) at a certain address. Since (small) Objects can be represented
     /// as inline spans, this applies to those forms as well as the inline component of the Object, which is the ObjectId. The layout is:
@@ -28,7 +23,7 @@ namespace Tsavorite.core
     ///         due to size changes altering whether the Value overflows is handled as part of normal Value-sizechange operations</item>
     /// </list>
     /// </remarks>
-    public static unsafe class LogField
+    internal static unsafe class LogField
     {
         /// <summary>
         /// Convert a Span field from inline to overflow.
@@ -69,7 +64,7 @@ namespace Tsavorite.core
         /// prepared to convert from Object format to inline format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ConvertHeapObjectToOverflow(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertValueObjectToOverflow(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             Debug.Assert(recordInfo.ValueIsObject);
             var overflow = new OverflowByteArray(sizeInfo.FieldInfo.ValueSize, startOffset: 0, endOffset: 0, zeroInit: false);
@@ -91,7 +86,7 @@ namespace Tsavorite.core
         /// created an object that has converted from inline format to object format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int ConvertInlineToHeapObject(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static int ConvertInlineToValueObject(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             Debug.Assert(recordInfo.ValueIsInline);
             var objectId = objectIdMap.Allocate();
@@ -110,7 +105,7 @@ namespace Tsavorite.core
         /// created an object that has converted from inline format to object format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static int ConvertOverflowToHeapObject(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static int ConvertOverflowToValueObject(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             Debug.Assert(recordInfo.ValueIsOverflow);
 
@@ -189,7 +184,7 @@ namespace Tsavorite.core
         /// the caller will have already prepared to convert from Object format to inline format.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static Span<byte> ConvertHeapObjectToInline(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        internal static Span<byte> ConvertValueObjectToInline(ref RecordInfo recordInfo, long physicalAddress, long valueAddress, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             var objIdPtr = (int*)valueAddress;
             var objectId = *objIdPtr;
@@ -199,16 +194,6 @@ namespace Tsavorite.core
 
             recordInfo.SetValueIsInline();
             return new((byte*)valueAddress, sizeInfo.FieldInfo.ValueSize);
-        }
-
-        /// <summary>
-        /// Utility function to get the inline length of a Span field; this is either the datalength if the field is inline, or <see cref="ObjectIdMap.ObjectIdSize"/>
-        /// for Overflow or Object.
-        /// </summary>
-        internal static int GetInlineDataLength(long physicalAddress, bool isKey)
-        {
-            _ = GetFieldPtr(physicalAddress + RecordInfo.Size, isKey, out _ /*lengthPtr*/, out var _ /*lengthBytes*/, out var length);
-            return (int)length;
         }
 
         /// <summary>

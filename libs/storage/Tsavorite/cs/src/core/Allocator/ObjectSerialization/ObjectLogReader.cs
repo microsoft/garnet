@@ -75,11 +75,11 @@ namespace Tsavorite.core
         /// <param name="segmentSizeBits">Number of bits in segment size</param>
         /// <param name="logRecord">The output <see cref="LogRecord"/>, which has its Key and Value ObjectIds filled in in the log record.</param>
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
-        public bool ReadObjects(long physicalAddress, int recordSize, ReadOnlySpan<byte> requestedKey, ObjectIdMap transientObjectIdMap, int segmentSizeBits, out LogRecord logRecord)
+        public bool ReadRecordObjects(long physicalAddress, int recordSize, ReadOnlySpan<byte> requestedKey, ObjectIdMap transientObjectIdMap, int segmentSizeBits, out LogRecord logRecord)
         {
             logRecord = new LogRecord(physicalAddress, transientObjectIdMap);
             Debug.Assert(logRecord.GetInlineRecordSizes().actualSize <= recordSize, $"RecordSize ({recordSize}) is less than required LogRecord size ({logRecord.GetInlineRecordSizes().actualSize})");
-            return logRecord.Info.RecordIsInline || ReadObjects(ref logRecord, requestedKey, segmentSizeBits);
+            return logRecord.Info.RecordIsInline || ReadRecordObjects(ref logRecord, requestedKey, segmentSizeBits);
         }
 
         /// <summary>
@@ -90,8 +90,8 @@ namespace Tsavorite.core
         /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
         /// <param name="segmentSizeBits">Number of bits in segment size</param>
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
-        public bool ReadObjects(ref DiskLogRecord diskLogRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
-            => diskLogRecord.logRecord.Info.RecordIsInline || ReadObjects(ref diskLogRecord.logRecord, requestedKey, segmentSizeBits);
+        public bool ReadRecordObjects(ref DiskLogRecord diskLogRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
+            => diskLogRecord.logRecord.Info.RecordIsInline || ReadRecordObjects(ref diskLogRecord.logRecord, requestedKey, segmentSizeBits);
 
         /// <summary>
         /// Get the object log entries for Overflow Keys and Values and Object Values for the <paramref name="logRecord"/>:
@@ -106,7 +106,7 @@ namespace Tsavorite.core
         /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
         /// <param name="segmentSizeBits">Number of bits in segment size</param>
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
-        public bool ReadObjects(ref LogRecord logRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
+        public bool ReadRecordObjects(ref LogRecord logRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
         {
             Debug.Assert(!logRecord.Info.RecordIsInline, $"Inline records should have been checked by the caller");
 
