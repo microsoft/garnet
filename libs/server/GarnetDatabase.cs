@@ -180,7 +180,7 @@ namespace Garnet.server
             MainStore?.Dispose();
             ObjectStore?.Dispose();
             AofDevice?.Dispose();
-            AppendOnlyFile?.Dispose();
+            AppendOnlyFile?.Log.Dispose();
             ObjectStoreCollectionDbStorageSession?.Dispose();
             MainStoreExpiredKeyDeletionDbStorageSession?.Dispose();
             ObjectStoreExpiredKeyDeletionDbStorageSession?.Dispose();

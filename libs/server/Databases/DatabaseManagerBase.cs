@@ -272,7 +272,7 @@ namespace Garnet.server
         {
             if (db.AppendOnlyFile == null) return;
 
-            db.AppendOnlyFile.Recover();
+            db.AppendOnlyFile.Log.Recover();
             Logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}, DB ID: {id}",
                 db.AppendOnlyFile.BeginAddress, db.AppendOnlyFile.TailAddress, db.Id);
         }
@@ -314,7 +314,7 @@ namespace Garnet.server
                     db.MainStore.Reset();
                 if (db.ObjectStore?.Log.TailAddress > 64)
                     db.ObjectStore?.Reset();
-                db.AppendOnlyFile?.Reset();
+                db.AppendOnlyFile?.Log.Reset();
 
                 var lastSave = DateTimeOffset.FromUnixTimeSeconds(0);
                 db.LastSaveTime = lastSave;

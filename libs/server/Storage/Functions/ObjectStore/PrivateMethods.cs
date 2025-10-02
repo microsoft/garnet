@@ -34,7 +34,6 @@ namespace Garnet.server
                     var valSB = SpanByte.FromPinnedPointer(valPtr, valueBytes.Length);
 
                     functionsState.appendOnlyFile.Enqueue(
-                        input.parseState.Slot,
                         new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
                         ref keySB,
                         ref valSB,
@@ -60,7 +59,6 @@ namespace Garnet.server
                 var sbKey = SpanByte.FromPinnedPointer(keyPtr, key.Length);
 
                 functionsState.appendOnlyFile.Enqueue(
-                    input.parseState.Slot,
                     new AofHeader { opType = AofEntryType.ObjectStoreRMW, storeVersion = version, sessionID = sessionID },
                     ref sbKey,
                     ref input,
@@ -82,7 +80,6 @@ namespace Garnet.server
                 SpanByte valSB = default;
 
                 functionsState.appendOnlyFile.Enqueue(
-                    -1,
                     new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID },
                     ref keySB,
                     ref valSB,

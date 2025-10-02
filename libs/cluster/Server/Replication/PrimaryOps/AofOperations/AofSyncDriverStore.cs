@@ -67,7 +67,7 @@ namespace Garnet.cluster
                     for (var i = 0; i < clusterProvider.serverOptions.AofSublogCount; i++)
                     {
                         var logShiftTailCallback = new LogShiftTailCallback(i, this);
-                        clusterProvider.storeWrapper.appendOnlyFile.SetLogShiftTailCallback(logShiftTailCallback.SafeTailShiftCallback, i);
+                        clusterProvider.storeWrapper.appendOnlyFile.SetLogShiftTailCallback(i, logShiftTailCallback.SafeTailShiftCallback);
                     }
                 }
             }
