@@ -8,6 +8,7 @@ using Garnet.common;
 using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using System.Diagnostics;
 
 namespace Garnet.server
 {
@@ -431,7 +432,8 @@ namespace Garnet.server
                     storeVersion = 0,
                     sessionID = -1,
                     unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
-                    databaseId = (byte)defaultDatabase.Id
+                    databaseId = (byte)defaultDatabase.Id,
+                    timestamp = Stopwatch.GetTimestamp()
                 };
                 AppendOnlyFile?.Enqueue(header, out _);
             }

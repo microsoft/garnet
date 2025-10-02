@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using System.Diagnostics;
 
 namespace Garnet.server
 {
@@ -339,7 +340,8 @@ namespace Garnet.server
             {
                 opType = entryType,
                 storeVersion = version,
-                sessionID = -1
+                sessionID = -1,
+                timestamp = Stopwatch.GetTimestamp()
             };
 
             db.AppendOnlyFile.Enqueue(header, out _);

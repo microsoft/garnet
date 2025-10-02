@@ -262,7 +262,7 @@ namespace Garnet.server
             Debug.Assert(functionsState.StoredProcMode);
 
             appendOnlyFile?.EnqueueCustomProc(
-                new AofHeader { opType = AofEntryType.StoredProcedure, procedureId = id, storeVersion = txnVersion, sessionID = basicContext.Session.ID },
+                new AofHeader { opType = AofEntryType.StoredProcedure, procedureId = id, storeVersion = txnVersion, sessionID = basicContext.Session.ID, timestamp = Stopwatch.GetTimestamp() },
                 ref procInput,
                 out _);
         }
@@ -271,7 +271,7 @@ namespace Garnet.server
         {
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnCommit, storeVersion = txnVersion, sessionID = basicContext.Session.ID }, out _);
+                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnCommit, storeVersion = txnVersion, sessionID = basicContext.Session.ID, timestamp = Stopwatch.GetTimestamp() }, out _);
             }
             if (!internal_txn)
                 watchContainer.Reset();
@@ -390,7 +390,7 @@ namespace Garnet.server
 
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnStart, storeVersion = txnVersion, sessionID = basicContext.Session.ID }, out _);
+                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnStart, storeVersion = txnVersion, sessionID = basicContext.Session.ID, timestamp = Stopwatch.GetTimestamp() }, out _);
             }
 
             state = TxnState.Running;
