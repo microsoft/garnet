@@ -302,9 +302,9 @@ namespace Garnet
         {
             var store = CreateMainStore(dbId, clusterFactory, out var epoch, out var stateMachineDriver);
             var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, epoch, stateMachineDriver, out var objectStoreSizeTracker);
-            var (aofDevice, aof) = CreateAOF(dbId);
+            var aof = CreateAOF(dbId);
             return new GarnetDatabase(dbId, store, objectStore, epoch, stateMachineDriver, objectStoreSizeTracker,
-                aofDevice, aof, serverOptions.AdjustedIndexMaxCacheLines == 0,
+                aof, serverOptions.AdjustedIndexMaxCacheLines == 0,
                 serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0);
         }
 
@@ -389,24 +389,23 @@ namespace Garnet
 
         }
 
-        private (IDevice, GarnetAppendOnlyFile) CreateAOF(int dbId)
+        private GarnetAppendOnlyFile CreateAOF(int dbId)
         {
             if (!opts.EnableAOF)
             {
                 if (opts.CommitFrequencyMs != 0 || opts.WaitForCommit)
                     throw new Exception("Cannot use CommitFrequencyMs or CommitWait without EnableAOF");
-                return (null, null);
+                return null;
             }
 
             if (opts.FastAofTruncate && opts.CommitFrequencyMs != -1)
                 throw new Exception("Need to set CommitFrequencyMs to -1 (manual commits) with FastAofTruncate");
 
             opts.GetAofSettings(dbId, out var aofSettings);
-            var aofDevice = aofSettings.LogDevice;
-            var appendOnlyFile = new GarnetAppendOnlyFile(opts, [aofSettings], logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
+            var appendOnlyFile = new GarnetAppendOnlyFile(opts, aofSettings, logger: this.loggerFactory?.CreateLogger("TsavoriteLog [aof]"));
             if (opts.CommitFrequencyMs < 0 && opts.WaitForCommit)
                 throw new Exception("Cannot use CommitWait with manual commits");
-            return (aofDevice, appendOnlyFile);
+            return appendOnlyFile;
         }
 
         /// <summary>

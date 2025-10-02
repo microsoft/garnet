@@ -56,11 +56,6 @@ namespace Garnet.server
         public CacheSizeTracker ObjectStoreSizeTracker { get; }
 
         /// <summary>
-        /// Device used for AOF logging
-        /// </summary>
-        public IDevice AofDevice { get; }
-
-        /// <summary>
         /// AOF log
         /// </summary>
         public GarnetAppendOnlyFile AppendOnlyFile { get; }
@@ -123,7 +118,7 @@ namespace Garnet.server
         public GarnetDatabase(int id, TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
             TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
             LightEpoch epoch, StateMachineDriver stateMachineDriver,
-            CacheSizeTracker objectStoreSizeTracker, IDevice aofDevice, GarnetAppendOnlyFile appendOnlyFile,
+            CacheSizeTracker objectStoreSizeTracker, GarnetAppendOnlyFile appendOnlyFile,
             bool mainStoreIndexMaxedOut, bool objectStoreIndexMaxedOut) : this()
         {
             Id = id;
@@ -132,7 +127,6 @@ namespace Garnet.server
             Epoch = epoch;
             StateMachineDriver = stateMachineDriver;
             ObjectStoreSizeTracker = objectStoreSizeTracker;
-            AofDevice = aofDevice;
             AppendOnlyFile = appendOnlyFile;
             MainStoreIndexMaxedOut = mainStoreIndexMaxedOut;
             ObjectStoreIndexMaxedOut = objectStoreIndexMaxedOut;
@@ -146,7 +140,6 @@ namespace Garnet.server
             Epoch = srcDb.Epoch;
             StateMachineDriver = srcDb.StateMachineDriver;
             ObjectStoreSizeTracker = srcDb.ObjectStoreSizeTracker;
-            AofDevice = enableAof ? srcDb.AofDevice : null;
             AppendOnlyFile = enableAof ? srcDb.AppendOnlyFile : null;
             MainStoreIndexMaxedOut = srcDb.MainStoreIndexMaxedOut;
             ObjectStoreIndexMaxedOut = srcDb.ObjectStoreIndexMaxedOut;
@@ -179,7 +172,6 @@ namespace Garnet.server
 
             MainStore?.Dispose();
             ObjectStore?.Dispose();
-            AofDevice?.Dispose();
             AppendOnlyFile?.Log.Dispose();
             ObjectStoreCollectionDbStorageSession?.Dispose();
             MainStoreExpiredKeyDeletionDbStorageSession?.Dispose();
