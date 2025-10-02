@@ -131,13 +131,12 @@ namespace Tsavorite.core
                 // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
                 logRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
                 _ = Read(logRecord.ValueOverflow.Span);
-
-                // If value is overflow, there's no object to read
-                return true;
             }
-
-            // This assignment also allocates the slot in ObjectIdMap and updates the varbyte length to be ObjectIdSize.
-            logRecord.ValueObject = DoDeserialize();
+            else if (logRecord.Info.ValueIsObject)
+            {
+                // Info.ValueIsObject is true. This assignment also allocates the slot in ObjectIdMap and updates the varbyte length to be ObjectIdSize.
+                logRecord.ValueObject = DoDeserialize();
+            }
             return true;
         }
 

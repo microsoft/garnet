@@ -115,6 +115,9 @@ namespace Tsavorite.core
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquision");
             newRequest = default;
 
+            if (request.diskLogRecord.IsSet)
+                pendingContext.TransferFrom(ref request.diskLogRecord);
+
             var internalStatus = pendingContext.type switch
             {
                 OperationType.READ => ContinuePendingRead(request, ref pendingContext, sessionFunctions),

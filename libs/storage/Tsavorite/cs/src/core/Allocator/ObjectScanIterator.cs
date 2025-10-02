@@ -199,10 +199,12 @@ namespace Tsavorite.core
                     var physicalAddress = GetPhysicalAddressAndAllocatedSize(currentAddress, headAddress, currentPage, offset, out var allocatedSize);
                     var recordInfo = LogRecord.GetInfo(physicalAddress);
 
-                    // If record does not fit on page, skip to the next page.
-                    if (offset + allocatedSize > hlogBase.PageSize)
+                    // If record does not fit on page, skip to the next page. Offset should always be at least PageHeader.Size; if it's zero, it means
+                    // our record size aligned perfectly with end of page, so we must move to the next page (skipping its PageHeader).
+                    if (offset == 0 || offset + allocatedSize > hlogBase.PageSize)
                     {
-                        nextAddress = hlogBase.GetLogicalAddressOfStartOfPage(1 + hlogBase.GetPage(currentAddress));
+                        var nextPage = hlogBase.GetPage(currentAddress);
+                        nextAddress = hlogBase.GetFirstValidLogicalAddressOnPage(offset == 0 ? nextPage : nextPage + 1);
                         continue;
                     }
 

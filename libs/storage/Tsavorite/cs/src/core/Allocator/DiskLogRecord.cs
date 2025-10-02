@@ -30,6 +30,9 @@ namespace Tsavorite.core
         /// <summary>The action to perform when disposing the contained LogRecord; the objects may have been transferred.</summary>
         Action<IHeapObject> objectDisposer;
 
+        public override readonly string ToString()
+            => $"logRec [{logRecord}], recordBuffer [{recordBuffer}], objDisp [{objectDisposer}]";
+
         /// <summary>
         /// Constructor taking the record buffer and out-of-line objects. Private; use either CopyFrom or TransferFrom.
         /// </summary>

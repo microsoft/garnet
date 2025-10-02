@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -35,6 +36,11 @@ namespace Tsavorite.core
         /// must move to the next buffer.</summary>
         internal int endPosition;
 
+        /// <summary>
+        /// The starting position in the file that we read this buffer from.
+        /// </summary>
+        internal ObjectLogFilePositionInfo startFilePosition;
+
         internal int AvailableLength => endPosition - currentPosition;
 
         internal ReadOnlySpan<byte> AvailableSpan => new(memory.GetValidPointer() + currentPosition, endPosition - currentPosition);
@@ -64,6 +70,7 @@ namespace Tsavorite.core
         internal void ReadFromDevice(ObjectLogFilePositionInfo filePosition, int startPosition, uint alignedReadLength, DeviceIOCompletionCallback callback)
         {
             IncrementOrResetCountdown(ref countdownEvent);
+            startFilePosition = filePosition;
 
             currentPosition = endPosition = startPosition;
             device.ReadAsync(filePosition.SegmentId, filePosition.Offset, (IntPtr)memory.aligned_pointer, (uint)alignedReadLength, callback, context: this);
@@ -79,6 +86,16 @@ namespace Tsavorite.core
 
             countdownEvent.Wait();
             return true;
+        }
+
+        internal ObjectLogFilePositionInfo GetCurrentFilePosition()
+        {
+            var bufferFilePos = startFilePosition;
+            bufferFilePos.Offset += (uint)currentPosition;
+
+            // We only read from one segment into one buffer, so we should never exceed the segment size with this increment.
+            Debug.Assert(bufferFilePos.Offset < bufferFilePos.SegmentSize, $"Incremented bufferFilePos.Offset {bufferFilePos.Offset} should be < bufferFilePos.SegmentSize {bufferFilePos.SegmentSize}");
+            return bufferFilePos;
         }
 
         public void Dispose()

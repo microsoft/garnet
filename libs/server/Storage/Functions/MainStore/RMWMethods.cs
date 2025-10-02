@@ -1477,7 +1477,7 @@ namespace Garnet.server
             {
                 if (cmd is not RespCommand.SETIFGREATER)
                     functionsState.etagState.ETag++;
-                dstLogRecord.TrySetETag(functionsState.etagState.ETag + 1);
+                dstLogRecord.TrySetETag(functionsState.etagState.ETag);
                 ETagState.ResetState(ref functionsState.etagState);
             }
             else if (recordHadEtagPreMutation)

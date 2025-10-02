@@ -176,8 +176,10 @@ namespace Tsavorite.core
             internal set
             {
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
-                if (!Info.ValueIsObject || length != ObjectIdMap.ObjectIdSize)
-                    throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord or Deserialization with ValueIsObject==true and value.Length=+ObjectIdSize");
+
+                // We cannot verify that value.Length==ObjectIdSize because we have reused the varbyte length as the high byte of the 5-byte length.
+                if (!Info.ValueIsObject)
+                    throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord or Deserialization with ValueIsObject==true");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
 
                 // We reused the varbyte length as the high byte of the 5-byte length, so reset it now to ObjectIdSize.

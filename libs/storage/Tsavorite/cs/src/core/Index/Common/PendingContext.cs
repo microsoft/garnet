@@ -177,6 +177,12 @@ namespace Tsavorite.core
                 diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord);
             }
 
+            internal void TransferFrom(ref DiskLogRecord inputDiskLogRecord)
+            {
+                Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
+                diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord);
+            }
+
             #endregion // Serialized Record Creation
 
             #region ISourceLogRecord

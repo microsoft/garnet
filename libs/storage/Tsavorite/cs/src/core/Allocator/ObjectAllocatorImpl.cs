@@ -589,7 +589,7 @@ namespace Tsavorite.core
             if (startPosition.IsSet)
             {
                 // Iterate all records again to actually do the deserialization.
-                result.readBuffers.filePosition = startPosition;
+                result.readBuffers.nextReadFilePosition = startPosition;
                 recordAddress = physicalAddress;
                 ReadOnlySpan<byte> noKey = default;
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
