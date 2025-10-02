@@ -274,7 +274,7 @@ namespace Garnet.server
 
             db.AppendOnlyFile.Log.Recover();
             Logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}, DB ID: {id}",
-                db.AppendOnlyFile.BeginAddress, db.AppendOnlyFile.TailAddress, db.Id);
+                db.AppendOnlyFile.Log.BeginAddress, db.AppendOnlyFile.Log.TailAddress, db.Id);
         }
 
         /// <summary>
@@ -357,7 +357,7 @@ namespace Garnet.server
             db.ObjectStore?.Log.ShiftBeginAddress(db.ObjectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
 
             if (truncateAof)
-                db.AppendOnlyFile?.Log.TruncateUntil(db.AppendOnlyFile.TailAddress);
+                db.AppendOnlyFile?.Log.TruncateUntil(db.AppendOnlyFile.Log.TailAddress);
         }
 
         /// <summary>
@@ -456,7 +456,7 @@ namespace Garnet.server
             {
                 logger?.LogError(ex,
                     "Exception raised during compaction. AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; DB ID = {id}",
-                    db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress, db.Id);
+                    db.AppendOnlyFile.Log.TailAddress, db.AppendOnlyFile.Log.CommittedUntilAddress, db.Id);
                 throw;
             }
         }
@@ -631,7 +631,7 @@ namespace Garnet.server
                     StoreWrapper.clusterProvider.OnCheckpointInitiated(ref checkpointCoveredAofAddress);
                 else
                 {
-                    checkpointCoveredAofAddress = db.AppendOnlyFile.TailAddress;
+                    checkpointCoveredAofAddress = db.AppendOnlyFile.Log.TailAddress;
                     StoreWrapper.StoreCheckpointManager.CurrentSafeAofAddress = checkpointCoveredAofAddress;
                 }
 

@@ -355,7 +355,7 @@ namespace Garnet.server
                 {
                     RecoverCheckpoint();
                     RecoverAOF();
-                    ReplayAOF(appendOnlyFile.TailAddress);
+                    ReplayAOF(appendOnlyFile.Log.TailAddress);
                 }
             }
         }

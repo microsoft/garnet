@@ -58,7 +58,7 @@ namespace Garnet.cluster
                 // Replica will adjust replication offset as it receives data from primary (TODO: since AOFs are synced this might obsolete)
                 var role = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
                 if (role == NodeRole.PRIMARY && clusterProvider.serverOptions.EnableAOF)
-                    replicationOffset.MaxExchange(storeWrapper.appendOnlyFile.TailAddress);
+                    replicationOffset.MaxExchange(storeWrapper.appendOnlyFile.Log.TailAddress);
                 return ref replicationOffset;
             }
         }
@@ -525,7 +525,7 @@ namespace Garnet.cluster
                 // If recovered checkpoint corresponds to an unavailable AOF address, we initialize AOF to that address
                 var recoveredSafeAofAddress = GetRecoveredSafeAofAddress();
                 storeWrapper.appendOnlyFile.Log.InitializeIf(ref recoveredSafeAofAddress);
-                logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.BeginAddress, storeWrapper.appendOnlyFile.TailAddress);
+                logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.Log.BeginAddress, storeWrapper.appendOnlyFile.Log.TailAddress);
                 ReplicationOffset = storeWrapper.ReplayAOF(AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, -1));
             }
 

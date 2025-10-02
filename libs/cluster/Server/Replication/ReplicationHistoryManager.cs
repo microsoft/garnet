@@ -136,7 +136,7 @@ namespace Garnet.cluster
             }
             while (true)
             {
-                var replicationOffset2 = storeWrapper.appendOnlyFile.CommittedUntilAddress;
+                var replicationOffset2 = storeWrapper.appendOnlyFile.Log.CommittedUntilAddress;
                 var current = currentReplicationConfig;
                 var newConfig = current.FailoverUpdate(replicationOffset2);
                 if (Interlocked.CompareExchange(ref currentReplicationConfig, newConfig, current) == current)

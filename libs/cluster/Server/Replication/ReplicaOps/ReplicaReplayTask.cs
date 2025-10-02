@@ -108,7 +108,7 @@ namespace Garnet.cluster
             public void ThrottlePrimary()
             {
                 while (clusterProvider.serverOptions.ReplicationOffsetMaxLag != -1 && replayIterator != null &&
-                    clusterProvider.storeWrapper.appendOnlyFile.TailAddress.AggregateDiff(clusterProvider.replicationManager.ReplicationOffset) > clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag)
+                    clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress.AggregateDiff(clusterProvider.replicationManager.ReplicationOffset) > clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag)
                 {
                     replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
                     Thread.Yield();

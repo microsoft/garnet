@@ -216,7 +216,7 @@ namespace Garnet.cluster
                 CheckpointCoveredAofAddress = replicationManager.ReplicationCheckpointStartOffset;
             }
             else
-                CheckpointCoveredAofAddress = storeWrapper.appendOnlyFile.TailAddress;
+                CheckpointCoveredAofAddress = storeWrapper.appendOnlyFile.Log.TailAddress;
 
             replicationManager?.UpdateCommitSafeAofAddress(ref CheckpointCoveredAofAddress);
         }
@@ -254,7 +254,7 @@ namespace Garnet.cluster
                 {
                     var (address, port) = config.GetLocalNodePrimaryAddress();
                     var primaryLinkStatus = clusterManager.GetPrimaryLinkStatus(config);
-                    var replicationOffsetLag = storeWrapper.appendOnlyFile.TailAddress.AggregateDiff(replicationManager.ReplicationOffset);
+                    var replicationOffsetLag = storeWrapper.appendOnlyFile.Log.TailAddress.AggregateDiff(replicationManager.ReplicationOffset);
                     replicationInfo.Add(new("master_host", address));
                     replicationInfo.Add(new("master_port", port.ToString()));
                     replicationInfo.Add(primaryLinkStatus[0]);

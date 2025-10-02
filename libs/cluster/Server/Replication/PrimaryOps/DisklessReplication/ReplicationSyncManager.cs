@@ -230,7 +230,7 @@ namespace Garnet.cluster
                 while (true)
                 {
                     // Minimum address that we can serve assuming aof-locking and no aof-null-device
-                    var minServiceableAofAddress = ClusterProvider.storeWrapper.appendOnlyFile.BeginAddress;
+                    var minServiceableAofAddress = ClusterProvider.storeWrapper.appendOnlyFile.Log.BeginAddress;
 
                     // Lock AOF address for sync streaming
                     // If clusterProvider.allowDataLoss is set the addition never fails,

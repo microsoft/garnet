@@ -290,7 +290,7 @@ namespace Garnet.server
                     var db = databasesMapSnapshot[dbId];
                     Debug.Assert(db != null);
 
-                    var dbAofSize = db.AppendOnlyFile.TailAddress.AggregateDiff(db.AppendOnlyFile.BeginAddress);
+                    var dbAofSize = db.AppendOnlyFile.Log.TailAddress.AggregateDiff(db.AppendOnlyFile.Log.BeginAddress);
                     if (dbAofSize > aofSizeLimit)
                     {
                         logger?.LogInformation("Enforcing AOF size limit currentAofSize: {dbAofSize} > AofSizeLimit: {aofSizeLimit} (Database ID: {dbId})",
@@ -334,7 +334,7 @@ namespace Garnet.server
                     var db = databasesMapSnapshot[dbId];
                     Debug.Assert(db != null);
 
-                    aofTasks[i] = db.AppendOnlyFile.Log.CommitAsync(token: token).AsTask().ContinueWith(_ => (db.AppendOnlyFile.TailAddress, db.AppendOnlyFile.CommittedUntilAddress), token);
+                    aofTasks[i] = db.AppendOnlyFile.Log.CommitAsync(token: token).AsTask().ContinueWith(_ => (db.AppendOnlyFile.Log.TailAddress, db.AppendOnlyFile.Log.CommittedUntilAddress), token);
                 }
 
                 var exThrown = false;

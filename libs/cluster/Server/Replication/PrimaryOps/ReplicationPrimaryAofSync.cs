@@ -53,7 +53,7 @@ namespace Garnet.cluster
                 return false;
             }
 
-            var tailAddress = storeWrapper.appendOnlyFile.TailAddress;
+            var tailAddress = storeWrapper.appendOnlyFile.Log.TailAddress;
             // Check if requested AOF address goes beyond the maximum available AOF address of this primary
             if (startAddress.AnyGreater(tailAddress))
             {

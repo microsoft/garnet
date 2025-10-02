@@ -208,8 +208,8 @@ namespace Garnet.cluster
             var sendMainStore = !sameHistory || replicaSyncMetadata.currentStoreVersion != currentStoreVersion;
             var sendObjectStore = !sameHistory || replicaSyncMetadata.currentObjectStoreVersion != currentObjectStoreVersion;
 
-            var aofBeginAddress = clusterProvider.storeWrapper.appendOnlyFile.BeginAddress;
-            var aofTailAddress = clusterProvider.storeWrapper.appendOnlyFile.TailAddress;
+            var aofBeginAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.BeginAddress;
+            var aofTailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
             var outOfRangeAof = replicaSyncMetadata.currentAofTailAddress.IsOutOfRange(aofBeginAddress,aofTailAddress);
 
             var aofTooLarge = aofTailAddress.AggregateDiff(replicaSyncMetadata.currentAofTailAddress) > clusterProvider.serverOptions.ReplicaDisklessSyncFullSyncAofThresholdValue();
@@ -233,7 +233,7 @@ namespace Garnet.cluster
             try
             {
                 var currentAofBeginAddress = fullSync ? checkpointCoveredAofAddress : aofSyncDriver.StartAddress;
-                var currentAofTailAddress = clusterProvider.storeWrapper.appendOnlyFile.TailAddress;
+                var currentAofTailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
 
                 var recoverSyncMetadata = new SyncMetadata(
                     fullSync: fullSync,

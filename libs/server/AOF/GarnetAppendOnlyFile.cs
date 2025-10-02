@@ -20,20 +20,6 @@ namespace Garnet.server
 
         public AofAddress MaxAofAddress = AofAddress.SetValue(length: serverOptions.AofSublogCount, value: long.MaxValue);
 
-        public ref AofAddress BeginAddress => ref Log.BeginAddress;
-
-        public ref AofAddress TailAddress => ref Log.TailAddress;
-
-        public ref AofAddress CommittedUntilAddress => ref Log.CommittedUntilAddress;
-
-        public ref AofAddress CommittedBeginAddress => ref Log.CommittedBeginAddress;
-
-        public ref AofAddress FlushedUntilAddress => ref Log.FlushedUntilAddress;
-
-        public ref AofAddress MaxMemorySizeBytes => ref Log.MaxMemorySizeBytes;
-
-        public ref AofAddress MemorySizeBytes => ref Log.MemorySizeBytes;
-
         public void Dispose() => Log.Dispose();
 
         public void SetLogShiftTailCallback(int sublogIdx,Action<long, long> SafeTailShiftCallback)
@@ -119,8 +105,8 @@ namespace Garnet.server
                     // If we are behind this primary we need to decide until where to replay
                     var replayUntilAddress = replicaAofTailAddress;
                     // Replica tail is further ahead than committed address of primary
-                    if (CommittedUntilAddress[0] < replayUntilAddress[0])
-                        replayUntilAddress[0] = CommittedUntilAddress[0];
+                    if (Log.CommittedUntilAddress[0] < replayUntilAddress[0])
+                        replayUntilAddress[0] = Log.CommittedUntilAddress[0];
 
                     // Replay only if records not included in checkpoint
                     if (replayUntilAddress[0] > checkpointAofBeginAddress[0])
@@ -150,17 +136,17 @@ namespace Garnet.server
             var softDataLoss = false;
             if (!possibleAofDataLoss)
             {
-                if (syncFromAofAddress[0] < BeginAddress[0])
+                if (syncFromAofAddress[0] < Log.BeginAddress[0])
                 {
-                    logger?.LogError("syncFromAofAddress: {syncFromAofAddress} < beginAofAddress: {storeWrapper.appendOnlyFile.BeginAddress}", syncFromAofAddress[0], BeginAddress[0]);
+                    logger?.LogError("syncFromAofAddress: {syncFromAofAddress} < beginAofAddress: {storeWrapper.appendOnlyFile.BeginAddress}", syncFromAofAddress[0], Log.BeginAddress[0]);
                     throw new Exception("Failed syncing because replica requested truncated AOF address");
                 }
             }
             else // possible AOF data loss
             {
-                if (syncFromAofAddress[0] < BeginAddress[0])
+                if (syncFromAofAddress[0] < Log.BeginAddress[0])
                 {
-                    logger?.LogWarning("AOF truncated, unsafe attach: syncFromAofAddress: {syncFromAofAddress} < beginAofAddress: {storeWrapper.appendOnlyFile.BeginAddress}", syncFromAofAddress, BeginAddress[0]);
+                    logger?.LogWarning("AOF truncated, unsafe attach: syncFromAofAddress: {syncFromAofAddress} < beginAofAddress: {storeWrapper.appendOnlyFile.BeginAddress}", syncFromAofAddress, Log.BeginAddress[0]);
                     softDataLoss = true;
                 }
             }

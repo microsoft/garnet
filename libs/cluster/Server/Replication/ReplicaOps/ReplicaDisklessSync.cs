@@ -117,8 +117,8 @@ namespace Garnet.cluster
                         currentPrimaryReplId: PrimaryReplId,
                         currentStoreVersion: storeWrapper.store.CurrentVersion,
                         currentObjectStoreVersion: disableObjects ? -1 : storeWrapper.objectStore.CurrentVersion,
-                        currentAofBeginAddress: storeWrapper.appendOnlyFile.BeginAddress,
-                        currentAofTailAddress: storeWrapper.appendOnlyFile.TailAddress,
+                        currentAofBeginAddress: storeWrapper.appendOnlyFile.Log.BeginAddress,
+                        currentAofTailAddress: storeWrapper.appendOnlyFile.Log.TailAddress,
                         currentReplicationOffset: ReplicationOffset,
                         checkpointEntry: checkpointEntry);
 

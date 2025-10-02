@@ -129,7 +129,7 @@ namespace Garnet.server
                 SwitchActiveDatabaseContext(db);
 
                 // Set the tail address for replay recovery to the tail address of the AOF if none specified)
-                untilAddress.SetValueIf(appendOnlyFile.TailAddress, -1);
+                untilAddress.SetValueIf(appendOnlyFile.Log.TailAddress, -1);
 
                 var tasks = new Task[untilAddress.Length];
                 for (var i = 0; i < untilAddress.Length; i++)
@@ -143,7 +143,7 @@ namespace Garnet.server
                 void RecoverReplayTask(int taskId, AofAddress untilAddress)
                 {
                     var count = 0;
-                    using var scan = appendOnlyFile.Scan(taskId, ref appendOnlyFile.BeginAddress, ref untilAddress);
+                    using var scan = appendOnlyFile.Scan(taskId, ref appendOnlyFile.Log.BeginAddress, ref untilAddress);
 
                     // Replay each AOF record in the current database context
                     while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))

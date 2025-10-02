@@ -213,7 +213,7 @@ namespace Garnet.server
         public override async Task TaskCheckpointBasedOnAofSizeLimitAsync(long aofSizeLimit,
             CancellationToken token = default, ILogger logger = null)
         {
-            var aofSize = AppendOnlyFile.TailAddress.AggregateDiff(AppendOnlyFile.BeginAddress);
+            var aofSize = AppendOnlyFile.Log.TailAddress.AggregateDiff(AppendOnlyFile.Log.BeginAddress);
             if (aofSize <= aofSizeLimit) return;
 
             if (!TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).GetAwaiter().GetResult())
@@ -260,7 +260,7 @@ namespace Garnet.server
             {
                 logger?.LogError(ex,
                     "Exception raised while committing to AOF. AOF tail address = {tailAddress}; AOF committed until address = {commitAddress}; ",
-                    AppendOnlyFile.TailAddress, AppendOnlyFile.CommittedUntilAddress);
+                    AppendOnlyFile.Log.TailAddress, AppendOnlyFile.Log.CommittedUntilAddress);
                 throw;
             }
         }
@@ -422,7 +422,7 @@ namespace Garnet.server
 
         private void SafeTruncateAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {
-            StoreWrapper.clusterProvider.SafeTruncateAOF(AppendOnlyFile.TailAddress);
+            StoreWrapper.clusterProvider.SafeTruncateAOF(AppendOnlyFile.Log.TailAddress);
             if (StoreWrapper.clusterProvider.IsPrimary())
             {
                 AofHeader header = new()
