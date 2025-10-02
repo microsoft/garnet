@@ -490,22 +490,24 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe Status ContextRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TKey[] keys, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal unsafe void ContextRead<TKeyBatch, TStatusBatch, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKeyBatch keys, ref TStatusBatch statuses, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TKeyBatch : IArgBatch<TKey>
+            where TStatusBatch : IArgBatch<Status>
         {
-            Status status = default;
-            var hashes = stackalloc long[keys.Length];
+            Span<long> hashes = stackalloc long[keys.Count];
 
             // Prefetch the hash table entries for all keys
-            for (var i = 0; i < keys.Length; i++)
+            for (var i = 0; i < hashes.Length; i++)
             {
-                var key = keys[i];
+                keys.Get(i, out var key);
                 hashes[i] = storeFunctions.GetKeyHashCode64(ref key);
                 if (Sse.IsSupported)
                     Sse.Prefetch0(state[resizeInfo.version].tableAligned + (hashes[i] & state[resizeInfo.version].size_mask));
             }
 
-            for (var i = 0; i < keys.Length; i++)
+            // Prefetch records for all possible keys
+            for (var i = 0; i < hashes.Length; i++)
             {
                 var keyHash = hashes[i];
                 var hei = new HashEntryInfo(keyHash);
@@ -518,9 +520,10 @@ namespace Tsavorite.core
                 }
             }
 
-            for (var i = 0; i < keys.Length; i++)
+            // Perform the reads
+            for (var i = 0; i < hashes.Length; i++)
             {
-                var key = keys[i];
+                keys.Get(i, out var key);
 
                 var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
                 OperationStatus internalStatus;
@@ -529,11 +532,8 @@ namespace Tsavorite.core
                     internalStatus = InternalRead(ref key, hashes[i], ref input, ref output, context, ref pcontext, sessionFunctions);
                 while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-                status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+                statuses.Set(i, HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus));
             }
-
-            // TODO: return the status of each read instead of just the last one
-            return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

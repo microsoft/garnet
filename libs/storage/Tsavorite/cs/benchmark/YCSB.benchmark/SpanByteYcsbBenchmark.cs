@@ -153,12 +153,13 @@ namespace Tsavorite.benchmark
 
             const int kPrefetchCount = 8;
             Span<KeySpanByte> keyspanbytes = stackalloc KeySpanByte[kPrefetchCount];
-            var keys = new SpanByte[kPrefetchCount];
 
+            var keys = new ArrayArgBatch<SpanByte>(kPrefetchCount);
+            var statuses = new ArrayArgBatch<Status>(kPrefetchCount);
             for (int la = 0; la < kPrefetchCount; la++)
             {
                 keyspanbytes[la].length = kKeySize - 4;
-                keys[la] = SpanByte.Reinterpret(ref keyspanbytes[la]).Deserialize();
+                keys.Set(la, SpanByte.Reinterpret(ref keyspanbytes[la]).Deserialize());
             }
 
             try
@@ -190,7 +191,7 @@ namespace Tsavorite.benchmark
 
                         if (r < readPercent)
                         {
-                            uContext.Read(keys, ref _input, ref _output, Empty.Default);
+                            uContext.Read(ref keys, ref statuses, ref _input, ref _output, Empty.Default);
                             reads_done += kPrefetchCount;
                             continue;
                         }

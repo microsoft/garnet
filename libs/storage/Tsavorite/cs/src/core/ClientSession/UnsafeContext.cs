@@ -84,10 +84,12 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe Status Read(TKey[] keys, ref TInput input, ref TOutput output, TContext userContext = default)
+        public unsafe void Read<TKeyBatch, TStatusBatch>(ref TKeyBatch keys, ref TStatusBatch statuses, ref TInput input, ref TOutput output, TContext userContext = default)
+            where TKeyBatch : IArgBatch<TKey>
+            where TStatusBatch : IArgBatch<Status>
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
-            return clientSession.store.ContextRead(keys, ref input, ref output, userContext, sessionFunctions);
+            clientSession.store.ContextRead(ref keys, ref statuses, ref input, ref output, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>
