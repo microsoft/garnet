@@ -127,7 +127,7 @@ namespace Garnet.server
         {
             if (singleLog != null)
                 return singleLog.log;
-            
+
             var hash = HashSlotUtils.HashSlot(ref key);
             return shardedLog.sublog[hash % shardedLog.Length];
         }

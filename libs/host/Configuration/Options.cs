@@ -234,6 +234,10 @@ namespace Garnet
         [Option("aof-page-size", Required = false, HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
 
+        [IntRangeValidation(1, 8)]
+        [Option("aof-sublog-count", Required = false, HelpText = "Number of sublogs used for AOF.")]
+        public uint AofSublogCount { get; set; }
+
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("aof-commit-freq", Required = false, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
         public int CommitFrequencyMs { get; set; }
@@ -858,6 +862,7 @@ namespace Garnet
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
+                AofSublogCount = AofSublogCount,
                 AofReplicationRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
