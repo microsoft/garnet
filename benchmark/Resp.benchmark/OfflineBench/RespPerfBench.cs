@@ -305,7 +305,7 @@ namespace Resp.benchmark
                 rg = run_rg;
             else
             {
-                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, ttl: ttl);
+                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, ttl: ttl, shardedKeys: opts.ShardedKeys);
                 rg.Generate();
             }
 
@@ -351,7 +351,7 @@ namespace Resp.benchmark
         {
             if (rg == null)
             {
-                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, numericValue, verbose, flatBufferClient: (opts.Client == ClientType.SERedis || opts.Client == ClientType.GarnetClientSession), ttl: opts.Ttl);
+                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, numericValue, verbose, flatBufferClient: (opts.Client == ClientType.SERedis || opts.Client == ClientType.GarnetClientSession), ttl: opts.Ttl, shardedKeys: opts.ShardedKeys);
                 rg.Generate();
             }
 
@@ -531,7 +531,7 @@ namespace Resp.benchmark
             sw.Start();
             while (!done)
             {
-                var buf = rg.GetRequest(out var len);
+                var buf = rg.GetRequest(out var len, threadId);
                 fixed (byte* ptr = buf)
                     _ = sessions[threadId].TryConsumeMessages(ptr, len);
 

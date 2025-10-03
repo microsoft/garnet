@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Text;
+using Garnet.common;
 
 namespace Resp.benchmark
 {
@@ -19,7 +20,7 @@ namespace Resp.benchmark
             return true;
         }
 
-        private bool WriteOp(ref byte* curr, byte* vend, OpType opType)
+        private bool WriteOp(int bufferOffset, ref byte* curr, byte* vend, OpType opType)
         {
             int n;
 
@@ -46,7 +47,7 @@ namespace Resp.benchmark
                         return false;
                     break;
                 case OpType.PFCOUNT:
-                    if (!WriteKey(ref curr, vend, out keyData))
+                    if (!WriteKey(bufferOffset, ref curr, vend, out keyData))
                         return false;
 
                     if (invalidateHLL)
@@ -96,7 +97,7 @@ namespace Resp.benchmark
                 case OpType.SCRIPTRETKEY:
                 case OpType.PUBLISH:
                 case OpType.SPUBLISH:
-                    if (!WriteKey(ref curr, vend, out keyData))
+                    if (!WriteKey(bufferOffset, ref curr, vend, out keyData))
                         return false;
                     break;
                 case OpType.BITOP_AND:
@@ -351,21 +352,30 @@ namespace Resp.benchmark
             return WriteStringBytes(ref curr, vend, keyData);
         }
 
-        private bool WriteKey(ref byte* curr, byte* vend, out byte[] keyData)
+        private bool WriteKey(int bufferOffset, ref byte* curr, byte* vend, out byte[] keyData)
         {
-            int key;
-            if (randomGen)
+            if (shardedKeys > 0)
             {
-                if (zipf)
-                    key = Start + zipfg.Next();
-                else
-                    key = Start + keyRandomGen.Next(DbSize);
+                keyData = slotKeys[bufferOffset % slotKeys.Count];
+                var slot = HashSlotUtils.HashSlot(keyData);
+                return WriteStringBytes(ref curr, vend, keyData);
             }
             else
-                key = Start + keyIndex++;
+            {
+                int key;
+                if (randomGen)
+                {
+                    if (zipf)
+                        key = Start + zipfg.Next();
+                    else
+                        key = Start + keyRandomGen.Next(DbSize);
+                }
+                else
+                    key = Start + keyIndex++;
 
-            keyData = Encoding.ASCII.GetBytes(key.ToString().PadLeft(keyLen, numericValue ? '0' : 'X'));
-            return WriteStringBytes(ref curr, vend, keyData);
+                keyData = Encoding.ASCII.GetBytes(key.ToString().PadLeft(keyLen, numericValue ? '0' : 'X'));
+                return WriteStringBytes(ref curr, vend, keyData);
+            }
         }
 
         private bool WriteKey(ref byte* curr, byte* vend, int key)
