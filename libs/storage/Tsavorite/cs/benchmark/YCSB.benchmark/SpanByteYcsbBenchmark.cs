@@ -14,6 +14,28 @@ namespace Tsavorite.benchmark
 #pragma warning disable IDE0065 // Misplaced using directive
     using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
+    struct SpanByteReadArgBatch : IReadArgBatch<SpanByte, SpanByte, SpanByteAndMemory>
+    {
+        public int Count { get; }
+        readonly SpanByte[] keys;
+        readonly SpanByte input;
+        SpanByteAndMemory output;
+
+        public SpanByteReadArgBatch(int count, SpanByte[] keys, SpanByte input, SpanByteAndMemory output)
+        {
+            Count = count;
+            this.keys = keys;
+            this.input = input;
+            this.output = output;
+        }
+
+        public void GetKey(int i, out SpanByte key) => key = keys[i];
+        public void GetInput(int i, out SpanByte input) => input = this.input;
+        public void GetOutput(int i, out SpanByteAndMemory output) => output = this.output;
+        public void SetOutput(int i, SpanByteAndMemory output) => this.output = output;
+        public void SetStatus(int i, Status status) { }
+    }
+
     internal class SpanByteYcsbBenchmark
     {
         // Ensure sizes are aligned to chunk sizes
@@ -153,14 +175,15 @@ namespace Tsavorite.benchmark
 
             const int kPrefetchCount = 8;
             Span<KeySpanByte> keyspanbytes = stackalloc KeySpanByte[kPrefetchCount];
+            SpanByte[] keys = new SpanByte[kPrefetchCount];
 
-            var keys = new ArrayArgBatch<SpanByte>(kPrefetchCount);
-            var statuses = new ArrayArgBatch<Status>(kPrefetchCount);
             for (int la = 0; la < kPrefetchCount; la++)
             {
                 keyspanbytes[la].length = kKeySize - 4;
-                keys.Set(la, SpanByte.Reinterpret(ref keyspanbytes[la]).Deserialize());
+                keys[la] = SpanByte.Reinterpret(ref keyspanbytes[la]).Deserialize();
             }
+
+            var readArgs = new SpanByteReadArgBatch(kPrefetchCount, keys, _input, _output);
 
             try
             {
@@ -191,7 +214,7 @@ namespace Tsavorite.benchmark
 
                         if (r < readPercent)
                         {
-                            uContext.Read(ref keys, ref statuses, ref _input, ref _output, Empty.Default);
+                            uContext.Read(ref readArgs, Empty.Default);
                             reads_done += kPrefetchCount;
                             continue;
                         }

@@ -490,17 +490,16 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe void ContextRead<TKeyBatch, TStatusBatch, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKeyBatch keys, ref TStatusBatch statuses, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal unsafe void ContextRead<TReadArgBatch, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TReadArgBatch readArgs, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TKeyBatch : IArgBatch<TKey>
-            where TStatusBatch : IArgBatch<Status>
+            where TReadArgBatch : IReadArgBatch<TKey, TInput, TOutput>
         {
-            Span<long> hashes = stackalloc long[keys.Count];
+            Span<long> hashes = stackalloc long[readArgs.Count];
 
             // Prefetch the hash table entries for all keys
             for (var i = 0; i < hashes.Length; i++)
             {
-                keys.Get(i, out var key);
+                readArgs.GetKey(i, out var key);
                 hashes[i] = storeFunctions.GetKeyHashCode64(ref key);
                 if (Sse.IsSupported)
                     Sse.Prefetch0(state[resizeInfo.version].tableAligned + (hashes[i] & state[resizeInfo.version].size_mask));
@@ -523,7 +522,9 @@ namespace Tsavorite.core
             // Perform the reads
             for (var i = 0; i < hashes.Length; i++)
             {
-                keys.Get(i, out var key);
+                readArgs.GetKey(i, out var key);
+                readArgs.GetInput(i, out var input);
+                readArgs.GetOutput(i, out var output);
 
                 var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
                 OperationStatus internalStatus;
@@ -532,7 +533,8 @@ namespace Tsavorite.core
                     internalStatus = InternalRead(ref key, hashes[i], ref input, ref output, context, ref pcontext, sessionFunctions);
                 while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-                statuses.Set(i, HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus));
+                readArgs.SetStatus(i, HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus));
+                readArgs.SetOutput(i, output);
             }
         }
 
