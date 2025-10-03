@@ -88,11 +88,6 @@ jobs:
         if: ${{ matrix.test != 'Tsavorite.test' }}
         run: dotnet build --configuration ${{ matrix.configuration }}
 
-
-# DELETE      - name: Run tests ${{ matrix.test }}
-# DELETE        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-# DELETE        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-
       - name: Run tests ${{ matrix.test }}
         shell: pwsh
         run: |
@@ -108,7 +103,7 @@ jobs:
               --logger "trx" `
               --results-directory "$resultsDir"
           }
-        timeout-minutes: 45 
+        timeout-minutes: 55 
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -127,6 +122,7 @@ jobs:
           } else {
             Write-Host "Source path does NOT exist."
           }
+        if: ${{ always() }}
 
       - name: Copy mock allure-results to test output
         shell: pwsh
@@ -134,6 +130,7 @@ jobs:
           $source = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/Allure/TestData/${{ matrix.framework }}/allure-results"
           $dest   = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
           Copy-Item -Path $source -Destination $dest -Recurse -Force
+        if: ${{ always() }}
 
       - name: DEBUG Check if allure-results exists
         shell: pwsh
@@ -143,6 +140,7 @@ jobs:
           if (-Not (Test-Path $path)) {
             Write-Host "No $path found for this matrix combination."
           }
+        if: ${{ always() }}
 
       - name: DEBUG Verify allure-results were copied
         shell: pwsh
@@ -150,6 +148,7 @@ jobs:
           $dest = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
           Write-Host "Contents of ${dest}:"
           Get-ChildItem -Path $dest -Recurse | ForEach-Object { Write-Host $_.FullName }
+        if: ${{ always() }}
 
       - name: Stage allure-results into test/Allure/AllResults
         shell: pwsh
@@ -158,6 +157,7 @@ jobs:
           $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
           New-Item -ItemType Directory -Path $target -Force
           Get-ChildItem -Path $source -Recurse | Copy-Item -Destination $target -Force
+        if: ${{ always() }}
 
       - name: Upload Allure Results to artifacts
         uses: actions/upload-artifact@v4
@@ -166,62 +166,9 @@ jobs:
           path: test/Allure/AllResults
         if: ${{ always() }}
 
-  # Job to build and test Tsavorite code
-  # build-test-tsavorite:        
-  #   name: Tsavorite
-  #   runs-on: ${{ matrix.os }}
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
-  #       framework: [ 'net8.0', 'net9.0' ]
-  #       configuration: [ 'Debug', 'Release' ]
-  #   steps:
-  #     - name: Check out code
-  #       uses: actions/checkout@v4
-  #     - name: Set workaround for libaio on Ubuntu 24.04 (see https://askubuntu.com/questions/1512196/libaio1-on-noble/1512197#1512197)
-  #       run: |
-  #         sudo ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
-  #       if: ${{ matrix.os == 'ubuntu-24.04' }}        
-  #     - name: Set environment variable for Linux
-  #       run: echo "RunAzureTests=yes" >> $GITHUB_ENV
-  #       if: ${{ matrix.os == 'ubuntu-24.04' }}
-  #     - name: Set environment variable for Windows
-  #       run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
-  #       if: ${{ matrix.os == 'windows-latest' }}
-  #     - name: Setup .NET
-  #       uses: actions/setup-dotnet@v4
-  #     - name: Setup Node.js for Azurite
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: '20'
-  #     - name: Install and Run Azurite
-  #       shell: bash
-  #       run: |
-  #         npm install -g azurite
-  #         azurite &
-
-  #     - name: Install dependencies
-  #       run: dotnet restore
-
-# DEBUG      - name: Format
-# DEBUG        run: dotnet format --verify-no-changes --verbosity diagnostic
-      # - name: Build Tsavorite
-      #   run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
-# DEBUG      - name: Run Tsavorite tests
-# DEBUG        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-# DEBUG        timeout-minutes: 45 
-      # - name: Upload test results
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-      #     path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-      #   if: ${{ always() }}
-
   generate-allure-report:
     name: Generate Allure Report
     runs-on: windows-2022  # makes it easy on how calls made so don't have to worry about windows and linux
-# DEBUG    needs: [ build-test-garnet, build-test-tsavorite ]
     needs: [ build-test-all ]
     if: ${{ !(failure() || cancelled()) }}
     steps:
@@ -244,11 +191,13 @@ jobs:
               Write-Host "Unsupported OS: $env:RUNNER_OS"
               exit 1
             }
+        if: ${{ always() }}
 
       - name: Download all test result artifacts
         uses: actions/download-artifact@v4
         with:
           path: test/Allure/AllResults
+        if: ${{ always() }}
 
       - name: DEBUG Show working directory and contents
         shell: pwsh
@@ -256,6 +205,7 @@ jobs:
           $cwd = Get-Location
           Write-Host "Current directory: $cwd"
           Get-ChildItem -Force
+        if: ${{ always() }}
 
       - name: DEBUG Check if GenerateAllureReport.ps1 exists
         shell: pwsh
@@ -266,11 +216,14 @@ jobs:
           } else {
             Write-Host "Script NOT found at $scriptPath"
           }
+        if: ${{ always() }}
+
       - name: DEBUG List contents of test/allure/AllResults
         shell: pwsh
         run: |
           $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/AllResults"
           Get-ChildItem -Path $target -Recurse
+        if: ${{ always() }}
 
       - name: Copy all results into one folder (CombinedResults)
         shell: pwsh
@@ -281,24 +234,28 @@ jobs:
           Get-ChildItem -Path $source -Recurse -File | ForEach-Object {
             Copy-Item -Path $_.FullName -Destination $target -Force
           }          
+        if: ${{ always() }}
 
       - name: DEBUG List contents of test/allure/CombinedResults
         shell: pwsh
         run: |
           $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/CombinedResults"
           Get-ChildItem -Path $target -Recurse          
+        if: ${{ always() }}
 
       - name: Run GenerateAllureReport.ps1
         shell: pwsh
         run: |
           Set-Location "${{ github.workspace }}/test/Allure"
           .\GenerateAllureReport.ps1
+        if: ${{ always() }}
 
       - name: Upload Allure HTML report
         uses: actions/upload-artifact@v4
         with:
           name: allure-report
           path: test/Allure/allure-report
+        if: ${{ always() }}
 
       - name: Echo completion
         run: echo Done!
