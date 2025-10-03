@@ -11,15 +11,13 @@ namespace Tsavorite.core
     /// </summary>
     internal struct ObjectLogFilePositionInfo
     {
-        internal const ulong PositionNotSet = ulong.MaxValue;
-
         /// <summary>Object log segment size bits</summary>
         internal int SegmentSizeBits;
 
         /// <summary>The word containing the data.</summary>
-        internal ulong word = PositionNotSet;
+        internal ulong word;
 
-        internal readonly bool IsSet => word != PositionNotSet;
+        internal readonly bool IsSet => SegmentSizeBits != 0;
 
         internal ObjectLogFilePositionInfo(int segSizeBits)
         {

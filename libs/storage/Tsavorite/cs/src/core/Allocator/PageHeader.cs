@@ -52,7 +52,7 @@ namespace Tsavorite.core
         {
             this = default;
             version = CurrentVersion;
-            objectLogLowestPosition = ObjectLogFilePositionInfo.PositionNotSet;
+            objectLogLowestPosition = 0;
         }
 
         internal static unsafe void Initialize(long physicalAddressOfStartOfPage) => (*(PageHeader*)physicalAddressOfStartOfPage).Initialize();
@@ -63,7 +63,7 @@ namespace Tsavorite.core
         /// <param name="position">The position in the object log.</param>
         internal void SetLowestObjectLogPosition(in ObjectLogFilePositionInfo position)
         {
-            if (objectLogLowestPosition == ObjectLogFilePositionInfo.PositionNotSet)
+            if (objectLogLowestPosition == 0)
                 objectLogLowestPosition = position.word;
         }
 
