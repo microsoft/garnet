@@ -28,7 +28,7 @@ namespace Tsavorite.core
         SectorAlignedMemory recordBuffer;
 
         /// <summary>The action to perform when disposing the contained LogRecord; the objects may have been transferred.</summary>
-        Action<IHeapObject> objectDisposer;
+        internal Action<IHeapObject> objectDisposer;
 
         public override readonly string ToString()
             => $"logRec [{logRecord}], recordBuffer [{recordBuffer}], objDisp [{objectDisposer}]";
@@ -121,7 +121,7 @@ namespace Tsavorite.core
         internal static DiskLogRecord TransferFrom(ref DiskLogRecord src)
         {
             var diskLogRecord = new DiskLogRecord(in src.logRecord, src.objectDisposer) { recordBuffer = src.recordBuffer };
-            src.recordBuffer = default; // Transfer ownership to us
+            src = default; // Transfer ownership to us, and make sure we don't try to clear the logRecord
             return diskLogRecord;
         }
 
@@ -147,7 +147,7 @@ namespace Tsavorite.core
 
         public void Dispose()
         {
-            logRecord.ClearHeapFields(clearKey: true, objectDisposer);
+            logRecord.Dispose(objectDisposer);
             logRecord = default;
 
             recordBuffer?.Return();

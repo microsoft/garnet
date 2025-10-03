@@ -101,7 +101,10 @@ namespace Tsavorite.core
                     completedOutputs.TransferFrom(ref pendingContext, status, hlogBase.bufferPool);
                 }
                 if (!status.IsPending)
+                {
+                    DisposeRecord(ref pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);
                     pendingContext.Dispose();
+                }
             }
         }
 
@@ -134,7 +137,7 @@ namespace Tsavorite.core
             {
                 if (pendingContext.type == OperationType.READ)
                 {
-                    sessionFunctions.ReadCompletionCallback(ref request.diskLogRecord,
+                    sessionFunctions.ReadCompletionCallback(ref pendingContext.diskLogRecord,
                                                      ref pendingContext.input.Get(),
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
@@ -143,7 +146,7 @@ namespace Tsavorite.core
                 }
                 else if (pendingContext.type == OperationType.RMW)
                 {
-                    sessionFunctions.RMWCompletionCallback(ref request.diskLogRecord,
+                    sessionFunctions.RMWCompletionCallback(ref pendingContext.diskLogRecord,
                                                      ref pendingContext.input.Get(),
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
@@ -152,7 +155,6 @@ namespace Tsavorite.core
                 }
             }
 
-            DisposeRecord(ref request.diskLogRecord, DisposeReason.DeserializedFromDisk);
             request.DisposeRecord();
             return status;
         }

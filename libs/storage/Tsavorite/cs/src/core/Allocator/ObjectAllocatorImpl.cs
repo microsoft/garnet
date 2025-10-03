@@ -310,7 +310,7 @@ namespace Tsavorite.core
 
         internal void FreePage(long page)
         {
-            pages[page].objectIdMap.Clear();
+            pages[page % BufferSize].objectIdMap.Clear();
 
             ClearPage(page, 0);
 
@@ -440,7 +440,7 @@ namespace Tsavorite.core
                         if (logicalAddress < fuzzyStartLogicalAddress || !logRecord.Info.IsInNewVersion)
                         {
                             // Do not write objects for fully-inline records
-                            if (!logRecord.Info.RecordIsInline)
+                            if (logRecord.Info.RecordHasObjects)
                             {
                                 var recordStartPosition = logWriter.GetNextRecordStartPosition();
                                 if (isFirstRecordOnPage)
@@ -512,17 +512,16 @@ namespace Tsavorite.core
                                                               objectLogNextRecordStartPosition.SegmentSizeBits);
             var totalBytesToRead = (ulong)keyLength + valueLength;
 
-            using var readBuffers = diskLogRecord.Info.ValueIsObject ? CreateCircularReadBuffers(objectLogDevice, logger) : default;
+            using var readBuffers = diskLogRecord.Info.RecordHasObjects ? CreateCircularReadBuffers(objectLogDevice, logger) : default;
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
             logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
-            if (logReader.ReadRecordObjects(diskLogRecord.logRecord.physicalAddress, diskLogRecord.logRecord.GetInlineRecordSizes().actualSize,
-                    ctx.request_key, transientObjectIdMap, objectLogNextRecordStartPosition.SegmentSizeBits, out var logRecord))
+            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.request_key, transientObjectIdMap, startPosition.SegmentSizeBits))
             {
-                // Success; set the DiskLogRecord. We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
-                ctx.diskLogRecord = new(in logRecord, obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
+                // Success; set the DiskLogRecord objectDisposer. We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
+                ctx.diskLogRecord.objectDisposer = obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk);
 
-                // Default the output arguments.
+                // Default the output arguments for reading a previous record.
                 prevAddressToRead = 0;
                 return true;
             }

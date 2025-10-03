@@ -83,6 +83,18 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Get the object log entries for Overflow Keys and Values and Object Values for the input <paramref name="logRecord"/>. We do not create the log record here;
+        /// that was already done by the caller (probably from a single-record disk IO).
+        /// </summary>
+        /// <param name="logRecord">The input <see cref="LogRecord"/>, which already has its inline components set and will have its Key and Value ObjectIds filled in by this call.</param>
+        /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
+        /// <param name="transientObjectIdMap">The <see cref="ObjectIdMap"/> to place Overflow and Object Keys and Values in.</param>
+        /// <param name="segmentSizeBits">Number of bits in segment size</param>
+        /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
+        public bool ReadRecordObjects(ref LogRecord logRecord, ReadOnlySpan<byte> requestedKey, ObjectIdMap transientObjectIdMap, int segmentSizeBits)
+            => logRecord.Info.RecordIsInline || ReadRecordObjects(ref logRecord, requestedKey, segmentSizeBits);
+
+        /// <summary>
         /// Get the object log entries for Overflow Keys and Values and Object Values for the record in <paramref name="diskLogRecord"/>, which came
         /// from the initial IO operation.
         /// </summary>
@@ -108,7 +120,7 @@ namespace Tsavorite.core
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
         public bool ReadRecordObjects(ref LogRecord logRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
         {
-            Debug.Assert(!logRecord.Info.RecordIsInline, $"Inline records should have been checked by the caller");
+            Debug.Assert(logRecord.Info.RecordHasObjects, $"Inline records should have been checked by the caller");
 
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
             readBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits));

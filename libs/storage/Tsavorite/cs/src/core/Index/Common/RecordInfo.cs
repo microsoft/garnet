@@ -312,6 +312,8 @@ namespace Tsavorite.core
 
         public readonly bool RecordIsInline => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask)) == (kKeyIsInlineBitMask | kValueIsInlineBitMask);
 
+        public readonly bool RecordHasObjects => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask)) != (kKeyIsInlineBitMask | kValueIsInlineBitMask);
+
         internal bool IsReadCache
         {
             readonly get => (word & kIsReadCacheBitMask) != 0;

@@ -51,6 +51,7 @@ namespace Tsavorite.core
             countdownEvent = new CountdownEvent(0); // Start with 0; we'll increment at the time of read
             this.device = device;
             this.logger = logger;
+            Initialize();
         }
 
         internal void Initialize()
@@ -72,19 +73,22 @@ namespace Tsavorite.core
             IncrementOrResetCountdown(ref countdownEvent);
             startFilePosition = filePosition;
 
-            currentPosition = endPosition = startPosition;
+            currentPosition = startPosition;
+            endPosition = 0;
             device.ReadAsync(filePosition.SegmentId, filePosition.Offset, (IntPtr)memory.aligned_pointer, (uint)alignedReadLength, callback, context: this);
         }
 
         internal static void IncrementOrResetCountdown(ref CountdownEvent countdownEvent) => DiskWriteBuffer.IncrementOrResetCountdown(ref countdownEvent);
+
+        internal bool HasData => endPosition > 0;
 
         internal bool WaitForDataAvailable()
         {
             // Because we have issued reads ahead of the buffer wrap, if the currentPosition is NoPosition, we're done.
             if (currentPosition == NoPosition)
                 return false;
-
-            countdownEvent.Wait();
+            if (!HasData)
+                countdownEvent.Wait();
             return true;
         }
 

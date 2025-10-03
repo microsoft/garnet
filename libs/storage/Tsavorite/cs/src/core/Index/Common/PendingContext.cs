@@ -110,6 +110,8 @@ namespace Tsavorite.core
             {
                 diskLogRecord.Dispose();
                 diskLogRecord = default;
+                request_key?.Dispose();
+                request_key = default;
                 input?.Dispose();
                 input = default;
             }

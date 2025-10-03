@@ -92,7 +92,7 @@ namespace Tsavorite.core
 
         internal void FlushToDevice(ref ObjectLogFilePositionInfo filePosition, DeviceIOCompletionCallback callback, DiskWriteCallbackContext pageWriteCallbackContext)
         {
-            Debug.Assert(currentPosition < endPosition, $"currentPosition ({currentPosition}) cannot exceed endPosition ({endPosition})");
+            Debug.Assert(currentPosition <= endPosition, $"currentPosition ({currentPosition}) cannot exceed endPosition ({endPosition})");
 
             // We are flushing the buffer. currentPosition must already be sector-aligned; either it is at endPosition (which is always sector-aligned),
             // which is the normal "buffer is full so flush it" handling, or it is less than endPosition which means it is called from one of:

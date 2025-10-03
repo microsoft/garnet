@@ -98,14 +98,14 @@ namespace Tsavorite.core
         ///     <see cref="IHeapObject.SerializedSize"/>) until we've serialized it).</returns>
         public ulong WriteRecordObjects(in LogRecord logRecord)
         {
-            Debug.Assert(!logRecord.Info.RecordIsInline, "Cannot call ObjectLogWriter with an inline record");
+            Debug.Assert(logRecord.Info.RecordHasObjects, "Cannot call ObjectLogWriter with an inline record");
 
             // If the key is overflow, start with that. (Inline keys are written as part of the main-log record.)
             if (logRecord.Info.KeyIsOverflow)
                 WriteDirect(logRecord.KeyOverflow);
 
             if (logRecord.Info.ValueIsOverflow)
-                WriteDirect(logRecord.KeyOverflow);
+                WriteDirect(logRecord.ValueOverflow);
             else if (logRecord.Info.ValueIsObject)
             {
                 var obj = logRecord.ValueObject;

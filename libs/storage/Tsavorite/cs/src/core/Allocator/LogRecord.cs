@@ -187,14 +187,9 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>The span of the entire record, if <see cref="RecordInfo.RecordIsInline"/>, else an exception is thrown.</summary>
+        /// <summary>The span of the entire record, including the ObjectId space if the record has objects.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly ReadOnlySpan<byte> AsReadOnlySpan()
-        {
-            if (!Info.RecordIsInline)
-                throw new TsavoriteException("RecordSpan is not valid for non-inline records");
-            return new((byte*)physicalAddress, GetInlineRecordSizes().actualSize);
-        }
+        public readonly ReadOnlySpan<byte> AsReadOnlySpan() => new((byte*)physicalAddress, GetInlineRecordSizes().actualSize);
 
         /// <inheritdoc/>
         public readonly bool IsPinnedValue => Info.ValueIsInline;
@@ -231,7 +226,7 @@ namespace Tsavorite.core
             }
         }
 
-        public static int GetOptionalLength(RecordInfo info) => (info.HasETag ? ETagSize : 0) + (info.HasExpiration ? ExpirationSize : 0) + (info.ValueIsObject ? sizeof(long) : 0);
+        public static int GetOptionalLength(RecordInfo info) => (info.HasETag ? ETagSize : 0) + (info.HasExpiration ? ExpirationSize : 0) + (info.RecordHasObjects ? sizeof(long) : 0);
 
         /// <inheritdoc/>
         public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress() : NoETag;
@@ -277,7 +272,7 @@ namespace Tsavorite.core
 
             var keyAddress = sizeInfo.GetKeyAddress(physicalAddress);
             var keySize = sizeInfo.FieldInfo.KeySize;
-            var valueAddress = keyAddress + keySize;
+            var valueAddress = keyAddress + sizeInfo.InlineKeySize;
 
             // Serialize Key
             if (sizeInfo.KeyIsInline)
@@ -287,8 +282,6 @@ namespace Tsavorite.core
             }
             else
             {
-                Debug.Assert(sizeInfo.FieldInfo.KeySize == ObjectIdMap.ObjectIdSize, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for KeySize but was {sizeInfo.FieldInfo.KeySize}");
-
                 InfoRef.SetKeyIsOverflow();
                 var overflow = new OverflowByteArray(key.Length, startOffset: 0, endOffset: 0, zeroInit: false);
                 key.CopyTo(overflow.Span);
@@ -304,12 +297,13 @@ namespace Tsavorite.core
                 InfoRef.SetValueIsInline();
             else
             {
-                Debug.Assert(sizeInfo.FieldInfo.ValueSize == ObjectIdMap.ObjectIdSize, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for ValueSize but was {sizeInfo.FieldInfo.ValueSize}");
-
                 // Unlike for Keys, we do not set the objectId here; we wait for the UMD operation to do that.
                 *(int*)valueAddress = ObjectIdMap.InvalidObjectId;
                 if (sizeInfo.ValueIsObject)
+                {
+                    Debug.Assert(sizeInfo.FieldInfo.ValueSize == ObjectIdMap.ObjectIdSize, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for Object ValueSize but was {sizeInfo.FieldInfo.ValueSize}");
                     InfoRef.SetValueIsObject();
+                }
                 else
                     InfoRef.SetValueIsOverflow();
             }
@@ -597,7 +591,7 @@ namespace Tsavorite.core
 
         private readonly int ETagLen => Info.HasETag ? ETagSize : 0;
         private readonly int ExpirationLen => Info.HasExpiration ? ExpirationSize : 0;
-        private readonly int ObjectLogPositionLen => Info.ValueIsObject ? ObjectLogPositionSize : 0;
+        private readonly int ObjectLogPositionLen => Info.RecordHasObjects ? ObjectLogPositionSize : 0;
 
         /// <summary>A tuple of the total size of the main-log (inline) portion of the record, with and without filler length.</summary>
         public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes()
@@ -714,7 +708,7 @@ namespace Tsavorite.core
                 *(int*)address = 0;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization. We'll set it to 0 below.
-            if (Info.ValueIsObject)
+            if (Info.RecordHasObjects)
                 address -= ObjectLogPositionSize;
 
             //  - Preserve Expiration if present; set ETag; re-enter Expiration if present
@@ -736,7 +730,7 @@ namespace Tsavorite.core
             }
 
             // ObjectLogPosition is not preserved (it's only for serialization) but we set it to zero and adjust address for its space.
-            if (Info.ValueIsObject)
+            if (Info.RecordHasObjects)
             {
                 *(long*)address = 0;
                 address += ObjectLogPositionSize;
@@ -774,7 +768,7 @@ namespace Tsavorite.core
                 *(int*)address = 0;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization. Just set it to 0 here.
-            if (Info.ValueIsObject)
+            if (Info.RecordHasObjects)
             {
                 address -= ObjectLogPositionSize;
                 *(long*)address = 0;
@@ -798,7 +792,7 @@ namespace Tsavorite.core
             InfoRef.ClearHasETag();
 
             // ObjectLogPosition is not preserved (it's only for serialization) but we set it to zero and adjust address for its space.
-            if (Info.ValueIsObject)
+            if (Info.RecordHasObjects)
             {
                 *(long*)address = 0;
                 address += ObjectLogPositionSize;
@@ -846,7 +840,7 @@ namespace Tsavorite.core
                 *(int*)fillerLenAddress = 0;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization. We'll set it to 0 below.
-            if (Info.ValueIsObject)
+            if (Info.RecordHasObjects)
                 fillerLenAddress -= ObjectLogPositionSize;
 
             //  - Set Expiration where filler space used to be
@@ -855,7 +849,7 @@ namespace Tsavorite.core
             fillerLenAddress += ExpirationSize;
 
             // ObjectLogPosition is not preserved (it's only for serialization) but we set it to zero and adjust address for its space.
-            if (Info.ValueIsObject)
+            if (Info.RecordHasObjects)
             {
                 *(long*)fillerLenAddress = 0;
                 fillerLenAddress += ObjectLogPositionSize;
@@ -891,7 +885,7 @@ namespace Tsavorite.core
                 *(int*)fillerLenAddress = 0;
 
             // We don't preserve the ObjectLogPosition field; that's only for serialization. Just set it to 0 here and remove the space.
-            if (Info.ValueIsObject)
+            if (Info.RecordHasObjects)
             {
                 fillerLenAddress -= ObjectLogPositionSize;
                 *(long*)fillerLenAddress = 0;
@@ -903,7 +897,7 @@ namespace Tsavorite.core
             InfoRef.ClearHasExpiration();
 
             // ObjectLogPosition is not preserved (it's only for serialization) but we set it to zero and adjust address for its space.
-            if (Info.ValueIsObject)
+            if (Info.RecordHasObjects)
             {
                 *(long*)fillerLenAddress = 0;
                 fillerLenAddress += ObjectLogPositionSize;
@@ -1166,7 +1160,8 @@ namespace Tsavorite.core
 
         public void Dispose(Action<IHeapObject> objectDisposer)
         {
-            ClearHeapFields(clearKey: true, objectDisposer);
+            if (IsSet)
+                ClearHeapFields(clearKey: true, objectDisposer);
         }
 
         public override readonly string ToString()

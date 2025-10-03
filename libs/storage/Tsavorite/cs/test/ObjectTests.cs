@@ -210,8 +210,8 @@ namespace Tsavorite.test.Objects
                     ClassicAssert.AreEqual(value.value + 1, output.value.value);
                 else
                     ClassicAssert.AreEqual(value.value, output.value.value);
-                Assert.That(numPendingReads, Is.GreaterThanOrEqualTo(numPendingUpdates));
             }
+            Assert.That(numPendingReads, Is.GreaterThanOrEqualTo(numPendingUpdates));
         }
 
         /// <summary>Whether value object sizes are known at the time of serialization (Exact, as most Garnet objects) or not (Inexact, e.g. JsonObject).</summary>
@@ -358,7 +358,7 @@ namespace Tsavorite.test.Objects
 
                     var status = bContext.Read(key, ref input, ref output, Empty.Default);
                     Assert.That(status.IsPending, Is.EqualTo(onDisk));
-                    if (onDisk)
+                    if (status.IsPending)
                         (status, output) = bContext.GetSinglePendingResult();
                     Assert.That(status.Found, Is.True);
 

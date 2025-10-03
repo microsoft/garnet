@@ -138,13 +138,14 @@ namespace Tsavorite.core
             // Because each partial flush ends with a sector-aligning write, we may have a record start position greater than our ongoing buffer.currentPosition
             // incrementing. It should never be less. recordFilePosition is only guaranteed to be sector-aligned if it's the first record after a partial flush. 
             var bufferFilePosition = buffer.GetCurrentFilePosition();
+            if (!buffer.HasData)
+                _ = buffer.WaitForDataAvailable();
             Debug.Assert(recordFilePosition.word >= bufferFilePosition.word, $"Record file position ({recordFilePosition}) should be >= ongoing position {bufferFilePosition}");
             Debug.Assert(recordFilePosition.SegmentId == bufferFilePosition.SegmentId, $"Record file segment ({recordFilePosition.SegmentId}) should == ongoing position {bufferFilePosition.SegmentId}");
             var increment = recordFilePosition - bufferFilePosition;
 
             Debug.Assert(increment < objectLogDevice.SectorSize, $"Increment {increment} is more than SectorSize ({objectLogDevice.SectorSize})");
-            Debug.Assert(buffer.currentPosition + (int)increment < bufferSize, $"Increment {increment} overflows bufferSize ({bufferSize})");
-            Debug.Assert(buffer.currentPosition + (int)increment < buffer.endPosition, $"Increment {increment} overflows buffer.endPosition ({buffer.endPosition})");
+            Debug.Assert(buffer.currentPosition + (int)increment < buffer.endPosition, $"Increment {increment} overflows buffer (curPos {buffer.currentPosition}, endPos {buffer.endPosition})");
             buffer.currentPosition += (int)increment;
         }
 
@@ -188,6 +189,7 @@ namespace Tsavorite.core
             // Finish setting up the buffer, and extract optionals if this was the last buffer.
             var buffer = (DiskReadBuffer)context;
             buffer.endPosition += (int)numBytes;
+            Debug.Assert(buffer.endPosition > buffer.currentPosition, $"buffer.endPosition ({buffer.endPosition}) must be >= buffer.currentPosition ({buffer.currentPosition})");
 
             // Signal the buffer's event to indicate the data is available.
             _ = buffer.countdownEvent.Signal();
