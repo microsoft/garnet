@@ -170,7 +170,7 @@ jobs:
     name: Generate Allure Report
     runs-on: windows-2022  # makes it easy on how calls made so don't have to worry about windows and linux
     needs: [ build-test-all ]
-    if: ${{ !(failure() || cancelled()) }}
+    if: ${{ always() }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
