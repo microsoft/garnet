@@ -134,7 +134,7 @@ namespace Resp.benchmark
         [Option("aof-commit-freq", Required = false, Default = 0, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
         public int CommitFrequencyMs { get; set; }
 
-        [Option("aof-sublog-count", Required = false, HelpText = "Number of sublogs used for AOF.")]
-        public uint AofSublogCount { get; set; }
+        [Option("aof-sublog-count", Required = false, Default = 1, HelpText = "Number of sublogs used for AOF.")]
+        public int AofSublogCount { get; set; }
     }
 }
