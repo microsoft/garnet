@@ -1116,7 +1116,8 @@ namespace Tsavorite.core
                 return;
             }
 
-            // If we've replaced the varbyte valueLength with the upper byte of valueObjectLength, the usual optional accessors (e.g.GetExpirationAddress()) won't work.
+            // If we've replaced the varbyte valueLength with the upper byte of valueObjectLength, the usual optional accessors (e.g.GetExpirationAddress())
+            // won't work, so we add all the pieces together here.
             *(ulong*)(valueAddress + valueLength + ETagLen + ExpirationLen) = objectLogFilePosition.word;
         }
 
@@ -1154,7 +1155,8 @@ namespace Tsavorite.core
                 }
             }
 
-            // If we've replaced the varbyte valueLength with the upper byte of valueObjectLength, the usual optional accessors (e.g.GetExpirationAddress()) won't work.
+            // If we've replaced the varbyte valueLength with the upper byte of valueObjectLength, the usual optional accessors (e.g.GetExpirationAddress())
+            // won't work, so we add all the pieces together here.
             return *(ulong*)(valueAddress + valueLength + ETagLen + ExpirationLen);
         }
 

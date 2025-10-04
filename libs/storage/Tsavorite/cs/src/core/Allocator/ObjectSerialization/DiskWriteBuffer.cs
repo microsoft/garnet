@@ -36,10 +36,10 @@ namespace Tsavorite.core
         /// due to directly writing internal spans for <see cref="OverflowByteArray"/> Keys and Values that are less than a full buffer size.</summary>
         internal int endPosition;
 
-        internal int RemainingLength => endPosition - currentPosition;
+        internal int RemainingCapacity => endPosition - currentPosition;  // DiskPageHeader.Size is included in currentPosition
 
         /// <summary>The remaining space in the buffer, from <see cref="currentPosition"/> to <see cref="endPosition"/>.</summary>
-        internal Span<byte> RemainingSpan => new(memory.GetValidPointer(), RemainingLength);
+        internal Span<byte> RemainingSpan => new(memory.GetValidPointer(), RemainingCapacity);
 
         internal readonly IDevice device;
         internal readonly ILogger logger;
@@ -64,16 +64,6 @@ namespace Tsavorite.core
             memory.valid_offset = 0;
             currentPosition = 0;
             flushedUntilPosition = 0;
-        }
-
-        internal int RemainingCapacity => endPosition - currentPosition;  // DiskPageHeader.Size is included in currentPosition
-
-        internal ReadOnlySpan<byte> GetTailSpan(int start) => new(memory.GetValidPointer() + start, currentPosition - start);
-
-        internal void CopyFrom(ReadOnlySpan<byte> data)
-        {
-            data.CopyTo(memory.TotalValidSpan);
-            currentPosition = data.Length;
         }
 
         internal static CountdownEvent IncrementOrResetCountdown(ref CountdownEvent countdownEvent)

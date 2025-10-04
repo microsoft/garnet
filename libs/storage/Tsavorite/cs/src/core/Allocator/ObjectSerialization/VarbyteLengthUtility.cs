@@ -358,7 +358,5 @@ namespace Tsavorite.core
             WriteVarbyteLengthInWord(ref word, valueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);
             *(long*)indicatorAddress = word;
         }
-
-
     }
 }

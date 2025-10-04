@@ -210,7 +210,9 @@ namespace Tsavorite.core
         public override string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-            return $"refCntGcH {refCountedGCHandle}, gcH {bstr(gcHandle.IsAllocated)}, countdown {bufferCountdownEvent?.CurrentCount}, cb&c {countdownCallbackAndContext}";
+            var countdownString = bufferCountdownEvent is null ? "null" : bufferCountdownEvent.CurrentCount.ToString();
+            var cbcString = countdownCallbackAndContext is null ? "null" : countdownCallbackAndContext.ToString();
+            return $"refCntGcH [{refCountedGCHandle}], gcH {bstr(gcHandle.IsAllocated)}, countdown {countdownString}, cb&c {cbcString}";
         }
 
         public DiskWriteCallbackContext(CountdownCallbackAndContext callbackAndContext)
@@ -233,7 +235,7 @@ namespace Tsavorite.core
             refCountedGCHandle?.Release();
             if (gcHandle.IsAllocated)
                 gcHandle.Free();
-            bufferCountdownEvent?.Signal();
+            _ = bufferCountdownEvent?.Signal();
             return countdownCallbackAndContext?.Decrement() ?? 0;
         }
     }
@@ -268,7 +270,11 @@ namespace Tsavorite.core
         internal long count;
 
         public override string ToString()
-            => $"numBytes {numBytes}, count {count}, callback {callback ?? null}, context {context}";
+        {
+            var callbackString = callback is null ? "null" : callback.ToString();
+            var contextString = callback is null ? "null" : context.ToString();
+            return $"numBytes {numBytes}, count {count}, callback {callbackString}, context {context}";
+        }
 
         public void Set(DeviceIOCompletionCallback callback, object context, uint numBytes)
         {
@@ -295,7 +301,7 @@ namespace Tsavorite.core
     internal sealed class RefCountedPinnedGCHandle
     {
         /// <summary>The <see cref="GCHandle"/> being held.</summary>
-        private GCHandle gcHandle;
+        internal GCHandle gcHandle;
         /// <summary>Number of in-flight operations</summary>
         private long count;
 

@@ -401,6 +401,7 @@ namespace Tsavorite.core
                 // won't be disposed before we're done). TODO: Loop on successive subsets of the page's records to make this initial copy buffer smaller.
                 var objectIdMap = pages[flushPage % BufferSize].objectIdMap;
                 srcBuffer = bufferPool.Get(alignedBufferSize);
+                asyncResult.freeBuffer1 = srcBuffer;
 
                 // Read back the first sector if the start is not aligned (this means we already wrote a partially-filled sector with ObjectLog fields set).
                 if (startPadding > 0)
@@ -468,18 +469,17 @@ namespace Tsavorite.core
                 if (asyncResult.partial)
                 {
                     // We're writing only a subset of the page, so update our count of bytes to write.
-                    var aligned_end = (int)RoundUp(asyncResult.untilAddress - pageStart, (int)device.SectorSize);
+                    var aligned_end = (int)RoundUp(asyncResult.untilAddress - alignedStartOffset, (int)device.SectorSize);
                     numBytesToWrite = (uint)(aligned_end - alignedStartOffset);
                 }
 
                 // Finally write the main log page as part of OnPartialFlushComplete.
                 // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
-                var mainLogSpan = new ReadOnlySpan<byte>(srcBuffer.GetValidPointer(), alignedBufferSize);
-                logWriter.OnPartialFlushComplete(mainLogSpan, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, out objectLogNextRecordStartPosition);
+                logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset,
+                    callback, asyncResult, out objectLogNextRecordStartPosition);
             }
             finally
             {
-                srcBuffer.Return();
                 if (epochWasProtected)
                     epoch.Resume();
             }

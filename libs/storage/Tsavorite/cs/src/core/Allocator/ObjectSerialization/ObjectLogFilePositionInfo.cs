@@ -103,6 +103,6 @@ namespace Tsavorite.core
         public readonly ulong RemainingSize => SegmentSize - Offset;
 
         /// <inheritdoc/>
-        public override readonly string ToString() => $"Segment {SegmentId}, Offset {Offset}, Bits {SegmentSizeBits}, SegSize {SegmentSize:N0}";
+        public override readonly string ToString() => $"Segment {SegmentId}, Offset {Offset:N0}, Bits {SegmentSizeBits}, SegSize {SegmentSize:N0}";
     }
 }

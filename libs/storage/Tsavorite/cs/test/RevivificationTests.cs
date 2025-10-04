@@ -231,7 +231,7 @@ namespace Tsavorite.test.Revivification
         internal static int GetRevivifiableRecordCount<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, int numRecords)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
-            => (int)(numRecords * store.RevivificationManager.revivifiableFraction);
+            => (int)(numRecords * store.RevivificationManager.revivifiableFraction) - 2;  // Add extra for rounding issues
 
         internal static int GetMinRevivifiableKey<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, int numRecords)
             where TStoreFunctions : IStoreFunctions
@@ -256,11 +256,16 @@ namespace Tsavorite.test.Revivification
         private BasicContext<long, long, Empty, RevivificationFixedLenFunctions, LongStoreFunctions, LongAllocator> bContext;
         private IDevice log;
 
+        private int recordSize;
+
         [SetUp]
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
+
+            // Records all have a Span<byte> corresponding to a 'long' key and value, which means one length byte.
+            recordSize = RoundUp(RecordInfo.Size + NumIndicatorBytes + 2 + sizeof(long) * 2, Constants.kRecordAlignment);
 
             double? revivifiableFraction = default;
             RecordElision? recordElision = default;
@@ -388,7 +393,6 @@ namespace Tsavorite.test.Revivification
             // Now re-add the keys. For the elision case, we should see tailAddress grow sharply as only the records in the bin are available
             // for revivification. For In-Chain, we will revivify records that were unelided after the bin overflowed. But we have some records
             // ineligible for revivification due to revivifiableFraction.
-            var recordSize = RoundUp(RecordInfo.Size + (sizeof(int) + sizeof(long)) * 2, Constants.kRecordAlignment);
             var numIneligibleRecords = NumRecords - RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords);
             var noElisionExpectedTailAddress = tailAddress + numIneligibleRecords * recordSize;
 
@@ -1274,9 +1278,6 @@ namespace Tsavorite.test.Revivification
             long tailAddress = store.Log.TailAddress;
 
             Span<byte> key = stackalloc byte[KeyLength];
-
-            // "sizeof(int) +" because SpanByte has an int length prefix
-            var recordSize = RecordInfo.Size + RoundUp(sizeof(int) + key.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
 
             // Delete
             for (var ii = 0; ii < NumRecords; ++ii)

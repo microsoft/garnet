@@ -77,15 +77,16 @@ namespace Tsavorite.core
         /// <summary>
         /// Finish all the current partial flushes, then write the main log page (or page fragment).
         /// </summary>
-        /// <param name="mainLogPageSpan">The main log page span to write</param>
+        /// <param name="mainLogPageSpanPtr">Starting pointer of the main log page span to write</param>
+        /// <param name="mainLogPageSpanLength">Length of the main log page span to write</param>
         /// <param name="mainLogDevice">The main log device to write to</param>
         /// <param name="alignedMainLogFlushAddress">The offset in the main log to write at; aligned to sector</param>
         /// <param name="externalCallback">Callback sent to the initial Flush() command. Called when we are done with this partial flush operation.</param>
         /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
         /// <param name="endFilePosition">The ending file position after the partial flush is complete</param>
-        internal unsafe void OnPartialFlushComplete(ReadOnlySpan<byte> mainLogPageSpan, IDevice mainLogDevice, ulong alignedMainLogFlushAddress, 
+        internal unsafe void OnPartialFlushComplete(byte* mainLogPageSpanPtr, int mainLogPageSpanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress, 
                 DeviceIOCompletionCallback externalCallback, object externalContext, out ObjectLogFilePositionInfo endFilePosition)
-            => flushBuffers.OnPartialFlushComplete(mainLogPageSpan, mainLogDevice, alignedMainLogFlushAddress,
+            => flushBuffers.OnPartialFlushComplete(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress,
                 externalCallback, externalContext, out endFilePosition);
 
         /// <summary>
@@ -145,7 +146,7 @@ namespace Tsavorite.core
                 if (copyLength != 0)
                 {
                     Debug.Assert(refCountedGCHandle is null, $"If refCountedGCHandle is not null then buffer.currentPosition ({writeBuffer.currentPosition}) should already be sector-aligned");
-                    Write(fullDataSpan.Slice(0, copyLength));
+                    Write(fullDataSpan.Slice(dataStart, copyLength));
                     dataStart += copyLength;
                     flushBuffers.FlushCurrentBuffer();
                 }
@@ -155,18 +156,27 @@ namespace Tsavorite.core
                 var interiorLen = RoundDown(overflow.Array.Length - dataStart, (int)device.SectorSize);
                 var segmentRemainingLen = flushBuffers.filePosition.RemainingSize;
                 var gcHandle = (refCountedGCHandle is null) ? GCHandle.Alloc(overflow.Array, GCHandleType.Pinned) : default;
+                var localGcHandle = refCountedGCHandle?.gcHandle ?? gcHandle;
+                var overflowStartPtr = (byte*)localGcHandle.AddrOfPinnedObject() + overflow.StartOffset;
                 if ((uint)interiorLen <= segmentRemainingLen)
                 {
-                    // Write the full interior in one chunk. We will be here when the segmentRemainingLength is > int.MaxValue.
+                    // We have enough room in the segment to write the full interior span in one chunk.
                     var writeCallback = refCountedGCHandle is null
                         ? flushBuffers.CreateDiskWriteCallbackContext(gcHandle)
                         : flushBuffers.CreateDiskWriteCallbackContext(refCountedGCHandle);
-                    flushBuffers.FlushToDevice(fullDataSpan.Slice(dataStart, interiorLen), writeCallback);
+                    flushBuffers.FlushToDevice(overflowStartPtr + dataStart, interiorLen, writeCallback);
                     dataStart += interiorLen;
                 }
                 else
                 {
                     // Multi-segment write so we will need to refcount the GCHandle. SegmentRemainingLength is <= int.MaxValue so we can cast it to int.
+                    // TODO: This and other segment-limiting logic could be pushed down into StorageDeviceBase, which could iterate on the segments.
+                    // However this could have complications with e.g. callback and countdown counts (there would be more than one callback invocation
+                    // on that; this could be handled by defining some way for the StorageDeviceBase to know the calback uses a CountdownEvent and
+                    // incrementing that count, or by having a local callback, similarly to how CircularDiskWriteBuffer handles multiple possibly-concurrent
+                    // writes before calling the main callback, that handles doing the "final" callback). In this case we could defer the "segment id" logic
+                    // to StorageDeviceBase, and just have a ulong position, from which we could compute the segment id (e.g. for truncation), and
+                    // ObjectLogFilePositionInfo would be simplified.
                     Debug.Assert(segmentRemainingLen <= int.MaxValue, $"segmentRemainingLen ({segmentRemainingLen}) should be <= int.MaxValue");
 
                     // Create the refcounted pinned GCHandle with a refcount of 1, so that if a read completes while we're still setting up, we won't get an early unpin.
@@ -176,7 +186,7 @@ namespace Tsavorite.core
                     while (interiorLen > (int)segmentRemainingLen)
                     {
                         var writeCallback = flushBuffers.CreateDiskWriteCallbackContext(refCountedGCHandle);
-                        flushBuffers.FlushToDevice(fullDataSpan.Slice(dataStart, (int)segmentRemainingLen), writeCallback);
+                        flushBuffers.FlushToDevice(overflowStartPtr + dataStart, (int)segmentRemainingLen, writeCallback);
                         dataStart += (int)segmentRemainingLen;
 
                         Debug.Assert(flushBuffers.filePosition.RemainingSize == 0, $"Expected to be at end of segment but there were {flushBuffers.filePosition.RemainingSize} bytes remaining");
@@ -186,7 +196,7 @@ namespace Tsavorite.core
 
                     // Now we know we will fit in the last segment, so call recursively to optimize the "copy vs. direct" final fragment.
                     // First adjust the endPosition in case we don't have a full buffer of space remaining in the segment.
-                    if ((ulong)writeBuffer.RemainingLength > flushBuffers.filePosition.RemainingSize)
+                    if ((ulong)writeBuffer.RemainingCapacity > flushBuffers.filePosition.RemainingSize)
                         writeBuffer.endPosition = (int)flushBuffers.filePosition.RemainingSize - writeBuffer.currentPosition;
                     WriteDirect(overflow, fullDataSpan.Slice(dataStart), refCountedGCHandle);
                 }

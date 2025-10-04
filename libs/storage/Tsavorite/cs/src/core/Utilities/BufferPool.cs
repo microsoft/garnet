@@ -342,8 +342,8 @@ namespace Tsavorite.core
                 if (UnpinOnReturn)
                 {
                     page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
-                    page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
-                    page.aligned_offset = (int)((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());
+                    page.aligned_pointer = (byte*)RoundUp(page.handle.AddrOfPinnedObject(), sectorSize);
+                    page.aligned_offset = (int)((long)page.aligned_pointer - page.handle.AddrOfPinnedObject());
                 }
                 page.required_bytes = required_bytes;
                 return page;

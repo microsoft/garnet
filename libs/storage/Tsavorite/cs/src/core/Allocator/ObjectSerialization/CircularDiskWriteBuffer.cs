@@ -37,7 +37,7 @@ namespace Tsavorite.core
         internal readonly IDevice device;
         internal readonly ILogger logger;
 
-        readonly DiskWriteBuffer[] buffers;
+        DiskWriteBuffer[] buffers;
 
         /// <summary>Index of the current buffer</summary>
         int currentIndex;
@@ -51,11 +51,11 @@ namespace Tsavorite.core
         /// final sector-aligning partial-flush completion flush), it allows the final pending flush to complete to know it *is* the final one and the callback can be called.</remarks>
         internal CountdownCallbackAndContext countdownCallbackAndContext;
 
-        /// <summary>If true, <see cref="Dispose"/> has been called. Coordinates with <see cref="numInFlightRangeBatches"/> to indicate when we can call <see cref="DiskWriteBuffer.Dispose"/>.</summary>
+        /// <summary>If true, <see cref="Dispose"/> has been called. Coordinates with <see cref="numInFlightWrites"/> to indicate when we can call <see cref="ClearBuffers"/>.</summary>
         bool disposed;
 
-        /// <summary>Tracks the number of in-flight partial flush completion write batches. Coordinates with <see cref="numInFlightRangeBatches"/> to indicate when we can call <see cref="DiskWriteBuffer.Dispose"/>.</summary>
-        long numInFlightRangeBatches;
+        /// <summary>Tracks the number of in-flight partial flush completion writes. Coordinates with <see cref="disposed"/> to indicate when we can call <see cref="ClearBuffers"/>.</summary>
+        long numInFlightWrites;
 
         internal CircularDiskWriteBuffer(SectorAlignedBufferPool bufferPool, int bufferSize, int numBuffers, IDevice device, ILogger logger)
         {
@@ -126,20 +126,21 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This write to the device is sector-aligned, which means the next fragment will probably rewrite the sector, since the currentPosition is probably
         /// somewhere in the middle of the sector.</remarks>
-        /// <param name="mainLogPageSpan">The main log page span to write</param>
+        /// <param name="mainLogPageSpanPtr">Starting pointer of the main log page span to write</param>
+        /// <param name="mainLogPageSpanLength">Length of the main log page span to write</param>
         /// <param name="mainLogDevice">The main log device to write to</param>
         /// <param name="alignedMainLogFlushAddress">The offset in the main log to write at</param>
         /// <param name="externalCallback">Callback sent to the initial Flush() command. Called when we are done with this partial flush operation. 
         ///     It usually signals the <see cref="PageAsyncFlushResult{T}.done"/> event so the caller knows the flush is complete and it can continue.</param>
         /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
         /// <param name="endObjectLogFilePosition">The ending file position after the partial flush is complete</param>
-        internal unsafe void OnPartialFlushComplete(ReadOnlySpan<byte> mainLogPageSpan, IDevice mainLogDevice, ulong alignedMainLogFlushAddress,
+        internal unsafe void OnPartialFlushComplete(byte* mainLogPageSpanPtr, int mainLogPageSpanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress,
                 DeviceIOCompletionCallback externalCallback, object externalContext, out ObjectLogFilePositionInfo endObjectLogFilePosition)
         {
             // Lock this with a reference until we have set the callback and issue the write. This callback is for the main log page write, and
             // when the countdownCallbackAndContext.Decrement hits 0 again, we're done with this partial flush range and will call the external callback.
             countdownCallbackAndContext.Increment();
-            countdownCallbackAndContext.Set(externalCallback, externalContext, (uint)mainLogPageSpan.Length);
+            countdownCallbackAndContext.Set(externalCallback, externalContext, (uint)mainLogPageSpanLength);
 
             // Issue the last ObjectLog write for this partial flush.
             var buffer = GetCurrentBuffer();
@@ -160,6 +161,7 @@ namespace Tsavorite.core
                 }
 
                 // Now write the buffer to the device.
+                _ = Interlocked.Increment(ref numInFlightWrites);
                 buffer.FlushToDevice(ref filePosition, FlushToDeviceCallback, CreateDiskWriteCallbackContext());
             }
 
@@ -167,7 +169,7 @@ namespace Tsavorite.core
             endObjectLogFilePosition = filePosition;
 
             // Write the main log page to the mainLogDevice.
-            FlushToMainLogDevice(mainLogPageSpan, mainLogDevice, alignedMainLogFlushAddress, CreateDiskWriteCallbackContext());
+            FlushToMainLogDevice(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress, CreateDiskWriteCallbackContext());
 
             // We added a count to countdownCallbackAndContext at the start, and the callback state creation also added a count. Remove the one we added at the start.
             countdownCallbackAndContext.Decrement();
@@ -182,30 +184,29 @@ namespace Tsavorite.core
         {
             var buffer = GetCurrentBuffer();
             var writeCallbackContext = CreateDiskWriteCallbackContext();
+            _ = Interlocked.Increment(ref numInFlightWrites);
             buffer.FlushToDevice(ref filePosition, FlushToDeviceCallback, writeCallbackContext);
         }
 
         /// <summary>Flush to disk for a span that is not associated with a particular buffer, such as fully-interior spans of a large overflow key or value.</summary>
-        internal unsafe void FlushToDevice(ReadOnlySpan<byte> span, DiskWriteCallbackContext writeCallbackContext)
+        internal unsafe void FlushToDevice(byte* spanPtr, int spanLength, DiskWriteCallbackContext writeCallbackContext)
         {
-            Debug.Assert(IsAligned(span.Length, (int)device.SectorSize), "Span is not aligned to sector size");
+            Debug.Assert(IsAligned(spanLength, (int)device.SectorSize), "Span is not aligned to sector size");
 
-            // The span must already be pinned, as it must remain pinned after this call returns; here, we used fixed only to convert it to a byte*.
-            fixed (byte* spanPtr = span)
-                device.WriteAsync((IntPtr)spanPtr, filePosition.SegmentId, filePosition.Offset, (uint)span.Length, FlushToDeviceCallback, writeCallbackContext);
-            filePosition.Offset += (uint)span.Length;
+            _ = Interlocked.Increment(ref numInFlightWrites);
+            device.WriteAsync((IntPtr)spanPtr, filePosition.SegmentId, filePosition.Offset, (uint)spanLength, FlushToDeviceCallback, writeCallbackContext);
+            filePosition.Offset += (uint)spanLength;
         }
 
         /// <summary>Flush a main-log page span to the main log device. This lets us coordinate the callbacks to be called on the last write, regardless of whether
         /// that write is to main or object log.</summary>
-        internal unsafe void FlushToMainLogDevice(ReadOnlySpan<byte> span, IDevice mainLogDevice, ulong alignedMainLogFlushAddress, DiskWriteCallbackContext writeCallbackContext)
+        internal unsafe void FlushToMainLogDevice(byte* spanPtr, int spanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress, DiskWriteCallbackContext writeCallbackContext)
         {
-            Debug.Assert(IsAligned(span.Length, (int)device.SectorSize), "Span is not aligned to sector size");
+            Debug.Assert(IsAligned(spanLength, (int)device.SectorSize), "Span is not aligned to sector size");
             Debug.Assert(IsAligned(alignedMainLogFlushAddress, (int)device.SectorSize), "mainLogAlignedDeviceOffset is not aligned to sector size");
 
-            // The span must already be pinned, as it must remain pinned after this call returns; here, we used fixed only to convert it to a byte*.
-            fixed (byte* spanPtr = span)
-                mainLogDevice.WriteAsync((IntPtr)spanPtr, alignedMainLogFlushAddress, (uint)span.Length, FlushToDeviceCallback, writeCallbackContext);
+            _ = Interlocked.Increment(ref numInFlightWrites);
+            mainLogDevice.WriteAsync((IntPtr)spanPtr, alignedMainLogFlushAddress, (uint)spanLength, FlushToDeviceCallback, writeCallbackContext);
         }
 
         private void FlushToDeviceCallback(uint errorCode, uint numBytes, object context)
@@ -214,13 +215,14 @@ namespace Tsavorite.core
                 logger?.LogError($"{nameof(FlushToDeviceCallback)} error: {{errorCode}}", errorCode);
 
             // Try to signal the event; if we have finished the last write for this buffer, the count will hit zero and Set the event so any Waits we do on it will succeed.
-            // We don't currently wait on the result of intermediate buffer flushes. If context is non-null, then it is the circular buffer owner and it
-            // called this flush for OnFlushComplete, so we need to call it back to complete the original callback sequence.
+            // We don't wait on the result of individual device writes; we may wait due to a call (e.g. FlushAndEvict()) with a "wait" parameter set to true.
             var writeCallbackContext = (DiskWriteCallbackContext)context;
 
             // If this returns 0 we have finished all in-flight writes for the writeCallbackContext.countdownCallbackAndContext instance, but there may be more instances
-            // active, so adjust and check the global count, and if *that* is zero, check the disposed state (that ensures no further partial flush ranges will be sent).
-            if (writeCallbackContext.Release() == 0 && Interlocked.Decrement(ref numInFlightRangeBatches) == 0 && disposed)
+            // active even if we have been disposed, so adjust and check the global count, and if *that* is zero, check the disposed state (being disposed ensures that no
+            // further partial flush ranges will be sent).
+            _ = Interlocked.Decrement(ref numInFlightWrites);
+            if (writeCallbackContext.Release() == 0 && numInFlightWrites == 0 && disposed)
                 ClearBuffers();
         }
 
@@ -230,7 +232,7 @@ namespace Tsavorite.core
             // If we are here, then we have returned from the partial-flush loop and will not be incrementing numInFlightRangeBatches again, so if it is 0
             // we are done and can free the buffers.
             disposed = true;
-            if (numInFlightRangeBatches == 0)
+            if (numInFlightWrites == 0)
                 ClearBuffers();
         }
 
@@ -240,9 +242,15 @@ namespace Tsavorite.core
             // and we wait for that to finish before calling the caller's callback. However, we may have to wait for flushed data to complete; this may be from either the
             // just-completed partial-flush range, or even from the range before that if the most recent range did not use all buffers; at the time this is called there may
             // be one or more in-flight countdownCallbackAndContexts. So we just wait.
-            for (var ii = 0; ii < buffers.Length; ii++)
+
+            // Atomic swap to avoid clearing twice, because the 'disposed' testing isn't atomic.
+            var localBuffers = Interlocked.Exchange(ref buffers, null);
+            if (localBuffers == null)
+                return;
+
+            for (var ii = 0; ii < localBuffers.Length; ii++)
             {
-                ref var buffer = ref buffers[ii];
+                ref var buffer = ref localBuffers[ii];
                 if (buffer is not null)
                 {
                     buffer.Wait();
@@ -250,6 +258,7 @@ namespace Tsavorite.core
                     buffer = null;
                 }
             }
+            buffers = localBuffers;
         }
 
         /// <inheritdoc/>

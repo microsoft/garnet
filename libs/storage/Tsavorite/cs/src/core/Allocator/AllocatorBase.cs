@@ -1922,8 +1922,8 @@ namespace Tsavorite.core
                     var keyLengthPtr = ptr + RecordInfo.Size + NumIndicatorBytes;
                     var keyLength = GetKeyLength(keyLengthBytes, keyLengthPtr);
 
-                    // We have the full key, so check for a match if we had a requested key, and return if not.
-                    if (!ctx.request_key.IsEmpty && !storeFunctions.KeysEqual(ctx.request_key, new ReadOnlySpan<byte>(ptr + offsetToKeyStart, keyLength)))
+                    // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
+                    if (!ctx.request_key.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.request_key, new ReadOnlySpan<byte>(ptr + offsetToKeyStart, keyLength)))
                         return false;
 
                     // Values in SpanByteAllocator will always be string, thus limited to 512MB, so cast to int is OK.
