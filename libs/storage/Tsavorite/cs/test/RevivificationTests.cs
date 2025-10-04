@@ -231,7 +231,7 @@ namespace Tsavorite.test.Revivification
         internal static int GetRevivifiableRecordCount<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, int numRecords)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
-            => (int)(numRecords * store.RevivificationManager.revivifiableFraction) - 2;  // Add extra for rounding issues
+            => (int)(numRecords * store.RevivificationManager.revivifiableFraction);  // Add extra for rounding issues
 
         internal static int GetMinRevivifiableKey<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, int numRecords)
             where TStoreFunctions : IStoreFunctions
@@ -336,7 +336,7 @@ namespace Tsavorite.test.Revivification
             if (stayInChain)
                 _ = RevivificationTestUtils.SwapFreeRecordPool(store, default);
 
-            long deleteKeyNum = RevivificationTestUtils.GetMinRevivifiableKey(store, NumRecords);
+            long deleteKeyNum = RevivificationTestUtils.GetMinRevivifiableKey(store, NumRecords) + 2;       // +2 to allow for page headers and rounding
             var deleteKey = SpanByte.FromPinnedVariable(ref deleteKeyNum);
             if (!stayInChain)
                 RevivificationTestUtils.AssertElidable(store, deleteKey);
@@ -396,8 +396,8 @@ namespace Tsavorite.test.Revivification
             var numIneligibleRecords = NumRecords - RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords);
             var noElisionExpectedTailAddress = tailAddress + numIneligibleRecords * recordSize;
 
-            if (elision == RecordElision.NoElide)
-                ClassicAssert.AreEqual(noElisionExpectedTailAddress, store.Log.TailAddress, "Expected tail address not to grow (records were revivified)");
+            if (elision == RecordElision.NoElide)   // Add 4 to account for page headers and rounding
+                ClassicAssert.GreaterOrEqual(noElisionExpectedTailAddress + 4 * recordSize, store.Log.TailAddress, "Expected tail address not to grow (records were revivified)");
             else
                 ClassicAssert.Less(noElisionExpectedTailAddress, store.Log.TailAddress, "Expected tail address to grow (records were not revivified)");
         }

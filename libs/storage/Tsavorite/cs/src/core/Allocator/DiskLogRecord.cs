@@ -286,23 +286,23 @@ namespace Tsavorite.core
         {
             // TotalSize includes the length prefix, which is included in the output stream if we can write directly to the SpanByte,
             // which is a span in the network buffer.
-            var recordSize = logRecord.ActualRecordSize;
-            var totalSize = recordSize + sizeof(int) + heapSize;
+            var inlineRecordSize = logRecord.ActualRecordSize;
+            var totalSize = inlineRecordSize + sizeof(int) + heapSize;
             if (output.IsSpanByte && output.SpanByte.TotalSize >= totalSize)
             {
                 var outPtr = output.SpanByte.ToPointer();
-                *(int*)outPtr = recordSize;
-                Buffer.MemoryCopy((byte*)logRecord.physicalAddress, outPtr + sizeof(int), recordSize, recordSize);
+                *(int*)outPtr = inlineRecordSize;
+                Buffer.MemoryCopy((byte*)logRecord.physicalAddress, outPtr + sizeof(int), inlineRecordSize, inlineRecordSize);
             }
             else
             {
                 // Do not include the length prefix in the output stream; this is done by the caller before writing the stream, from the SpanByte.Length we set here.
                 totalSize -= sizeof(int);
-                output.EnsureHeapMemorySize(recordSize, memoryPool);
+                output.EnsureHeapMemorySize(totalSize, memoryPool);
                 fixed (byte* outPtr = output.MemorySpan)
-                    Buffer.MemoryCopy((byte*)logRecord.physicalAddress, outPtr, recordSize, recordSize);
+                    Buffer.MemoryCopy((byte*)logRecord.physicalAddress, outPtr, inlineRecordSize, inlineRecordSize);
             }
-            return totalSize;
+            return inlineRecordSize;
         }
 
         private static void SerializeHeapObjects(in LogRecord logRecord, int inlineRecordSize, int heapSize, IObjectSerializer<IHeapObject> valueObjectSerializer, ref SpanByteAndMemory output)
@@ -356,7 +356,7 @@ namespace Tsavorite.core
 
             static ulong DoSerialize(IHeapObject valueObject, IObjectSerializer<IHeapObject> valueObjectSerializer, byte* destPtr, int destLength)
             {
-                var stream = new UnmanagedMemoryStream(destPtr, destLength);
+                var stream = new UnmanagedMemoryStream(destPtr, destLength, destLength, FileAccess.ReadWrite);
                 valueObjectSerializer.BeginSerialize(stream);
                 valueObjectSerializer.Serialize(valueObject);
                 valueObjectSerializer.EndSerialize();
@@ -378,6 +378,8 @@ namespace Tsavorite.core
             // location to be serialized length. Create a transient logRecord to decode these and restore the objectId values.
             var ptr = recordSpan.ToPointer();
             var serializedLogRecord = new LogRecord((long)ptr, transientObjectIdMap);
+            if (serializedLogRecord.Info.RecordIsInline)
+                return new(serializedLogRecord, obj => { });
             var offset = serializedLogRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
 
             // Note: Similar logic to this is in ObjectLogReader.ReadObjects.

@@ -1134,7 +1134,7 @@ namespace Tsavorite.core
                 (keyLength, var keyAddress) = GetKeyFieldInfo(IndicatorAddress);
                 keyLength = *(int*)keyAddress;
             }
-            else // KeyIsInline is true
+            else // KeyIsInline is true; keyLength will be ignored
                 keyLength = 0;
 
             var (valueLength, valueAddress) = GetValueFieldInfo(IndicatorAddress);
@@ -1145,7 +1145,7 @@ namespace Tsavorite.core
                 valueObjectLength = *(uint*)valueAddress | (((ulong)valueLength & 0xFF) << 32);
                 valueLength = ObjectIdMap.ObjectIdSize; // locally only, restore this. We will restore it for real later, when we read the objects.
             }
-            else // ValueIsInline is true
+            else // ValueIsInline is true; valueLength will be ignored
             {
                 valueObjectLength = 0;
                 if (Info.RecordIsInline) // If the record is fully inline, we should not be called here
