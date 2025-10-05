@@ -105,6 +105,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <typeparam name="TTransactionalKey"></typeparam>
         /// <param name="key">key whose lock is to be promoted.</param>
+        /// <remarks>On success, the caller must update the ILockableKey.LockType so the unlock has the right type</remarks>
         bool TryPromoteLock<TTransactionalKey>(TTransactionalKey key)
             where TTransactionalKey : ITransactionalKey;
 

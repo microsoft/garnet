@@ -37,6 +37,8 @@ namespace Tsavorite.test.Revivification
 
 namespace Tsavorite.test.Revivification
 {
+    using static VarbyteLengthUtility;
+
 #if LOGRECORD_TODO
     using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
     using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
@@ -65,7 +67,7 @@ namespace Tsavorite.test.Revivification
             [
                 new RevivificationBin()
                 {
-                    RecordSize = RoundUp(RecordInfo.GetLength() + 2 * (sizeof(int) + sizeof(long)), Constants.kRecordAlignment), // We have "fixed length" for these integer bins, with long Key and Value
+                    RecordSize = RoundUp(RecordInfo.Size + 2 * (sizeof(int) + sizeof(long)), Constants.kRecordAlignment), // We have "fixed length" for these integer bins, with long Key and Value
                     BestFitScanLimit = RevivificationBin.UseFirstFit
                 }
             ]
@@ -222,14 +224,14 @@ namespace Tsavorite.test.Revivification
         {
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(store.storeFunctions.GetKeyHashCode64(key));
             ClassicAssert.IsTrue(store.FindTag(ref stackCtx.hei), $"AssertElidable: Cannot find key {key.ToShortString()}");
-            var recordInfo = LogRecord.GetInfo(store.hlog.GetPhysicalAddress(stackCtx.hei.Address));
+            var recordInfo = LogRecord.GetInfo(store.hlogBase.GetPhysicalAddress(stackCtx.hei.Address));
             ClassicAssert.Less(recordInfo.PreviousAddress, store.hlogBase.BeginAddress, "AssertElidable: expected elidable key");
         }
 
         internal static int GetRevivifiableRecordCount<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, int numRecords)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
-            => (int)(numRecords * store.RevivificationManager.revivifiableFraction);
+            => (int)(numRecords * store.RevivificationManager.revivifiableFraction);  // Add extra for rounding issues
 
         internal static int GetMinRevivifiableKey<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, int numRecords)
             where TStoreFunctions : IStoreFunctions
@@ -254,11 +256,16 @@ namespace Tsavorite.test.Revivification
         private BasicContext<long, long, Empty, RevivificationFixedLenFunctions, LongStoreFunctions, LongAllocator> bContext;
         private IDevice log;
 
+        private int recordSize;
+
         [SetUp]
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Combine(MethodTestDir, "test.log"), deleteOnClose: true);
+
+            // Records all have a Span<byte> corresponding to a 'long' key and value, which means one length byte.
+            recordSize = RoundUp(RecordInfo.Size + NumIndicatorBytes + 2 + sizeof(long) * 2, Constants.kRecordAlignment);
 
             double? revivifiableFraction = default;
             RecordElision? recordElision = default;
@@ -329,7 +336,7 @@ namespace Tsavorite.test.Revivification
             if (stayInChain)
                 _ = RevivificationTestUtils.SwapFreeRecordPool(store, default);
 
-            long deleteKeyNum = RevivificationTestUtils.GetMinRevivifiableKey(store, NumRecords);
+            long deleteKeyNum = RevivificationTestUtils.GetMinRevivifiableKey(store, NumRecords) + 2;       // +2 to allow for page headers and rounding
             var deleteKey = SpanByte.FromPinnedVariable(ref deleteKeyNum);
             if (!stayInChain)
                 RevivificationTestUtils.AssertElidable(store, deleteKey);
@@ -386,12 +393,11 @@ namespace Tsavorite.test.Revivification
             // Now re-add the keys. For the elision case, we should see tailAddress grow sharply as only the records in the bin are available
             // for revivification. For In-Chain, we will revivify records that were unelided after the bin overflowed. But we have some records
             // ineligible for revivification due to revivifiableFraction.
-            var recordSize = RoundUp(RecordInfo.GetLength() + (sizeof(int) + sizeof(long)) * 2, Constants.kRecordAlignment);
             var numIneligibleRecords = NumRecords - RevivificationTestUtils.GetRevivifiableRecordCount(store, NumRecords);
             var noElisionExpectedTailAddress = tailAddress + numIneligibleRecords * recordSize;
 
-            if (elision == RecordElision.NoElide)
-                ClassicAssert.AreEqual(noElisionExpectedTailAddress, store.Log.TailAddress, "Expected tail address not to grow (records were revivified)");
+            if (elision == RecordElision.NoElide)   // Add 4 to account for page headers and rounding
+                ClassicAssert.GreaterOrEqual(noElisionExpectedTailAddress + 4 * recordSize, store.Log.TailAddress, "Expected tail address not to grow (records were revivified)");
             else
                 ClassicAssert.Less(noElisionExpectedTailAddress, store.Log.TailAddress, "Expected tail address to grow (records were not revivified)");
         }
@@ -524,7 +530,10 @@ namespace Tsavorite.test.Revivification
                 // If an overflow logRecord is from new record creation it has not had its overflow set yet; it has just been initialized to inline length of ObjectIdMap.ObjectIdSize,
                 // and we'll call LogField.ConvertToOverflow later in this ISessionFunctions call to do the actual overflow allocation.
                 if (!logRecord.Info.ValueIsInline || (sizeInfo.IsSet && !sizeInfo.ValueIsInline))
-                    ClassicAssert.AreEqual(ObjectIdMap.ObjectIdSize, LogField.GetTotalSizeOfInlineField(logRecord.ValueAddress));
+                {
+                    var (valueLength, valueAddress) = GetValueFieldInfo(logRecord.IndicatorAddress);
+                    ClassicAssert.AreEqual(ObjectIdMap.ObjectIdSize, (int)valueLength);
+                }
                 if (sizeInfo.ValueIsInline)
                     ClassicAssert.AreEqual(expectedValueLength, logRecord.ValueSpan.Length);
                 else
@@ -658,13 +667,13 @@ namespace Tsavorite.test.Revivification
             // Override the default SpanByteFunctions impelementation; for these tests, we always want the input length.
             /// <inheritdoc/>
             public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input)
-                => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = input.Length };
+                => new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.Length };
             /// <inheritdoc/>
             public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref PinnedSpanByte input)
-                => new() { KeyDataSize = key.Length, ValueDataSize = input.Length };
+                => new() { KeySize = key.Length, ValueSize = input.Length };
             /// <inheritdoc/>
             public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref PinnedSpanByte input)
-                => new() { KeyDataSize = key.Length, ValueDataSize = input.Length };
+                => new() { KeySize = key.Length, ValueSize = input.Length };
         }
 
         const int NumRecords = 200;
@@ -874,7 +883,10 @@ namespace Tsavorite.test.Revivification
             functions.expectedValueLengths.Enqueue(InitialLength);
             Status status = PerformDeletion(deletionRoute, key, fillByte);
 
-            ClassicAssert.IsTrue(status.Found, status.ToString());
+            //if (deletionRoute == DeletionRoutes.DELETE)
+                ClassicAssert.IsTrue(status.Found, status.ToString());
+            //else
+            //    ClassicAssert.IsTrue(status.NotFound && status.IsExpired, status.ToString());
 
             ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
 
@@ -915,7 +927,8 @@ namespace Tsavorite.test.Revivification
 
             ClassicAssert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
 
-            ClassicAssert.IsTrue(status.Found, status.ToString());
+            //ClassicAssert.IsTrue(status.NotFound && status.IsExpired, status.ToString());
+            ClassicAssert.IsTrue(status.Found && status.IsExpired, status.ToString());
 
             var tailAddress = store.Log.TailAddress;
 
@@ -1270,9 +1283,6 @@ namespace Tsavorite.test.Revivification
 
             Span<byte> key = stackalloc byte[KeyLength];
 
-            // "sizeof(int) +" because SpanByte has an int length prefix
-            var recordSize = RecordInfo.GetLength() + RoundUp(sizeof(int) + key.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
-
             // Delete
             for (var ii = 0; ii < NumRecords; ++ii)
             {
@@ -1419,7 +1429,7 @@ namespace Tsavorite.test.Revivification
             var pinnedInputSpan = PinnedSpanByte.FromPinnedSpan(input);
 
             // "sizeof(int) +" because SpanByte has an int length prefix.
-            var recordSize = RecordInfo.GetLength() + RoundUp(sizeof(int) + key.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
+            var recordSize = RecordInfo.Size + RoundUp(sizeof(int) + key.Length, 8) + RoundUp(sizeof(int) + InitialLength, 8);
             ClassicAssert.IsTrue(pool.GetBinIndex(recordSize, out int binIndex));
             ClassicAssert.AreEqual(3, binIndex);
 

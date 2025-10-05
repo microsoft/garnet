@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -55,7 +56,7 @@ namespace Garnet.server
 
             if (logRecord.Info.ValueIsObject)
             {
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(logRecord.ValueObject.MemorySize);
+                functionsState.objectStoreSizeTracker?.AddTrackedSize(logRecord.ValueObject.HeapMemorySize);
             }
         }
 
@@ -80,7 +81,14 @@ namespace Garnet.server
                 return false;
             }
 
-            if (srcLogRecord.Info.ValueIsObject) return true;
+            if (srcLogRecord.Info.ValueIsObject) 
+            {
+                // Defer the actual copying of data to PostCopyUpdater, so we know the record has been successfully CASed into the hash chain before we potentially
+                // create large allocations (e.g. if srcLogRecord is from disk, we would have to allocate the overflow byte[]). Because we are doing an update we have
+                // and XLock, so nobody will see the unset data even after the CAS. Tsavorite will handle cloning the ValueObject and caching serialized data as needed,
+                // based on whether srcLogRecord is in-memory or a DiskLogRecord.
+                return true;
+            }
 
             var recordHadEtagPreMutation = srcLogRecord.Info.HasETag;
             var shouldUpdateEtag = recordHadEtagPreMutation;
@@ -127,9 +135,9 @@ namespace Garnet.server
             {
                 // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
                 // the record was CASed into the hash chain before it gets modified
-                var oldValueSize = srcLogRecord.ValueObject.MemorySize;
-                var value = ((IGarnetObject)srcLogRecord.ValueObject).CopyUpdate(srcLogRecord.Info.IsInNewVersion,
-                    ref rmwInfo);
+                var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
+                var oldValueSize = srcLogRecord.ValueObject.HeapMemorySize;
+                _ = dstLogRecord.TrySetValueObject(value);
 
                 // First copy the new Value and optionals to the new record. This will also ensure space for expiration if it's present.
                 // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
@@ -168,7 +176,7 @@ namespace Garnet.server
                 sizeInfo.AssertOptionals(dstLogRecord.Info);
 
                 // If oldValue has been set to null, subtract its size from the tracked heap size
-                var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.MemorySize - oldValueSize : value.MemorySize;
+                var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;
                 functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeAdjustment);
             }
 
@@ -204,11 +212,11 @@ namespace Garnet.server
             {
                 if (logRecord.Info.ValueIsObject)
                 {
-                    functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.MemorySize);
+                    functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
 
                     // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                     functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                    logRecord.ClearValueObject(_ => { });
+                    logRecord.ClearValueIfHeap(_ => { });
                 }
                 else
                 {

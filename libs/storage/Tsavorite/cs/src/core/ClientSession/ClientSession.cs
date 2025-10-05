@@ -433,7 +433,8 @@ namespace Tsavorite.core
         {
             if (untilAddress == -1)
                 untilAddress = store.Log.TailAddress;
-            return ScanCursor(ref cursor, count: long.MaxValue, scanFunctions, endAddress: untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
+            return ScanCursor(ref cursor, count: long.MaxValue, scanFunctions, endAddress: untilAddress, validateCursor: validateCursor, maxAddress: maxAddress,
+                resetCursor: resetCursor, includeTombstones: includeTombstones);
         }
 
         /// <summary>
@@ -459,7 +460,8 @@ namespace Tsavorite.core
         public bool ScanCursor<TScanFunctions>(ref long cursor, long count, TScanFunctions scanFunctions, long endAddress = long.MaxValue, bool validateCursor = false,
                 long maxAddress = long.MaxValue, bool resetCursor = true, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
-            => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor, maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
+            => store.hlogBase.ScanCursor(store, scanCursorState ??= new(), ref cursor, count, scanFunctions, endAddress, validateCursor, maxAddress,
+                resetCursor: resetCursor, includeTombstones: includeTombstones);
 
         /// <summary>
         /// Resume session on current thread. IMPORTANT: Call SuspendThread before any async op.

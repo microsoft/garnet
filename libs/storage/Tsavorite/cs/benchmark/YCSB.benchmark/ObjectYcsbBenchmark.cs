@@ -38,7 +38,7 @@ namespace Tsavorite.benchmark
         long total_ops_done = 0;
         volatile bool done = false;
 
-        internal const int kValueDataSize = SpanByteYcsbBenchmark.kValueDataSize;
+        internal const int kValueDataSize = SpanByteYcsbConstants.kValueDataSize;
 
         internal ObjectYcsbBenchmark(FixedLengthKey[] i_keys_, FixedLengthKey[] t_keys_, TestLoader testLoader)
         {
@@ -75,7 +75,7 @@ namespace Tsavorite.benchmark
                         [
                             new RevivificationBin()
                             {
-                                RecordSize = RecordInfo.GetLength() + KeySpanByte.TotalSize + kValueDataSize + 8,    // extra to ensure rounding up of value
+                                RecordSize = RecordInfo.Size + KeySpanByte.TotalSize + kValueDataSize + 8,    // extra to ensure rounding up of value
                                 NumberOfRecords = testLoader.Options.RevivBinRecordCount,
                                 BestFitScanLimit = RevivificationBin.UseFirstFit
                             }

@@ -16,8 +16,8 @@ namespace Garnet.server
         {
             var fieldInfo = new RecordFieldInfo
             {
-                KeyDataSize = srcLogRecord.Key.Length,
-                ValueDataSize = srcLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : 0,
+                KeySize = srcLogRecord.Key.Length,
+                ValueSize = srcLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : 0,
                 ValueIsObject = srcLogRecord.Info.ValueIsObject,
                 HasETag = !srcLogRecord.Info.ValueIsObject && (input.header.CheckWithETagFlag() || srcLogRecord.Info.HasETag),
                 HasExpiration = srcLogRecord.Info.HasExpiration
@@ -67,19 +67,19 @@ namespace Garnet.server
                         }
 
                         if (!srcLogRecord.Info.ValueIsObject)
-                            fieldInfo.ValueDataSize = srcLogRecord.ValueSpan.Length;
+                            fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
                         return fieldInfo;
                     case RespCommand.PERSIST:
                         fieldInfo.HasExpiration = false;
                         if (!srcLogRecord.Info.ValueIsObject)
-                            fieldInfo.ValueDataSize = srcLogRecord.ValueSpan.Length;
+                            fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
                         return fieldInfo;
                     default:
                         throw new NotImplementedException();
                 }
             }
 
-            fieldInfo.ValueDataSize = input.parseState.GetArgSliceByRef(0).Length;
+            fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
             fieldInfo.HasExpiration = input.arg1 != 0;
             return fieldInfo;
         }
@@ -88,8 +88,8 @@ namespace Garnet.server
         {
             return new RecordFieldInfo
             {
-                KeyDataSize = key.Length,
-                ValueDataSize = 0,
+                KeySize = key.Length,
+                ValueSize = 0,
                 HasETag = input.header.CheckWithETagFlag()
             };
         }
@@ -99,8 +99,8 @@ namespace Garnet.server
         {
             return new RecordFieldInfo
             {
-                KeyDataSize = key.Length,
-                ValueDataSize = value.Length,
+                KeySize = key.Length,
+                ValueSize = value.Length,
                 ValueIsObject = false,
                 HasETag = input.header.CheckWithETagFlag()
             };
@@ -110,8 +110,8 @@ namespace Garnet.server
         {
             return new RecordFieldInfo
             {
-                KeyDataSize = key.Length,
-                ValueDataSize = ObjectIdMap.ObjectIdSize,
+                KeySize = key.Length,
+                ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
                 HasETag = false
             };
@@ -123,8 +123,8 @@ namespace Garnet.server
         {
             return new RecordFieldInfo
             {
-                KeyDataSize = key.Length,
-                ValueDataSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
+                KeySize = key.Length,
+                ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = inputLogRecord.Info.ValueIsObject,
                 HasETag = !inputLogRecord.Info.ValueIsObject && input.header.CheckWithETagFlag()
             };

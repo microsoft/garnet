@@ -49,7 +49,7 @@ namespace Tsavorite.core
                     long startPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress);
                     long endPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.finalLogicalAddress);
                     if (store._hybridLogCheckpoint.info.finalLogicalAddress >
-                        store.hlog.GetStartLogicalAddress(endPage))
+                        store.hlogBase.GetLogicalAddressOfStartOfPage(endPage))
                     {
                         endPage++;
                     }
@@ -58,7 +58,7 @@ namespace Tsavorite.core
                     // handle corrupted or unexpected concurrent page changes during the flush, e.g., by
                     // resuming epoch protection if necessary. Correctness is not affected as we will
                     // only read safe pages during recovery.
-                    store.hlogBase.AsyncFlushPagesToDevice(
+                    store.hlogBase.AsyncFlushPagesForSnapshot(
                         startPage,
                         endPage,
                         store._hybridLogCheckpoint.info.finalLogicalAddress,

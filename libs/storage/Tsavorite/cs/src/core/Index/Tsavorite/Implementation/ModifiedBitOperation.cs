@@ -43,7 +43,7 @@ namespace Tsavorite.core
             modifiedInfo = default;
             if (logicalAddress >= hlogBase.HeadAddress)
             {
-                ref var recordInfo = ref LogRecord.GetInfoRef(hlog.GetPhysicalAddress(logicalAddress));
+                ref var recordInfo = ref LogRecord.GetInfoRef(hlogBase.GetPhysicalAddress(logicalAddress));
                 if (reset)
                 {
                     if (!recordInfo.TryResetModifiedAtomic())

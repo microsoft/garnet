@@ -143,19 +143,19 @@ namespace Garnet
         {
             var memorySize = Utility.RoundUp(key.Length, IntPtr.Size) + Utility.RoundUp(value.Length, IntPtr.Size)
                 + (2 * MemoryUtils.ByteArrayOverhead) + MemoryUtils.DictionaryEntryOverhead;
-            var kvSize = sizeof(int) * 2 + key.Length + value.Length;
+            var kvSize = (sizeof(int) * 2) + key.Length + value.Length;
 
             if (add)
             {
-                this.MemorySize += memorySize;
-                this.DiskSize += kvSize;
+                HeapMemorySize += memorySize;
+                SerializedSize += kvSize;
             }
             else
             {
-                this.MemorySize -= memorySize;
-                this.DiskSize -= kvSize;
-                Debug.Assert(this.MemorySize >= MemoryUtils.DictionaryOverhead);
-                Debug.Assert(this.DiskSize >= sizeof(int));
+                HeapMemorySize -= memorySize;
+                SerializedSize -= kvSize;
+                Debug.Assert(HeapMemorySize >= MemoryUtils.DictionaryOverhead);
+                Debug.Assert(SerializedSize >= sizeof(int));
             }
         }
 

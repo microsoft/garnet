@@ -138,13 +138,13 @@ namespace Tsavorite.core
 
                 // Issue asynchronous I/O request
                 request.id = pendingContext.id;
-                request.request_key = PinnedSpanByte.FromPinnedSpan(pendingContext.Key);
+                request.request_key = pendingContext.request_key.Get();
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.minAddress = pendingContext.minAddress;
                 request.record = default;
                 request.callbackQueue = sessionCtx.readyResponses;
 
-                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, DiskLogRecord.InitialIOSize, request);
+                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, IStreamBuffer.InitialIOSize, request);
                 return new(StatusCode.Pending);
             }
             else

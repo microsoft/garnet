@@ -65,7 +65,7 @@ namespace Garnet.server
         /// Constructor
         /// </summary>
         public ListObject()
-            : base(new(MemoryUtils.ListOverhead, sizeof(int)))
+            : base(new(MemoryUtils.ListOverhead, sizeof(int), serializedIsExact: true))
         {
             list = new LinkedList<byte[]>();
         }
@@ -74,7 +74,7 @@ namespace Garnet.server
         /// Construct from binary serialized form
         /// </summary>
         public ListObject(BinaryReader reader)
-            : base(reader, new(MemoryUtils.ListOverhead, sizeof(int)))
+            : base(reader, new(MemoryUtils.ListOverhead, sizeof(int), serializedIsExact: true))
         {
             list = new LinkedList<byte[]>();
 
@@ -141,7 +141,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var previousMemorySize = this.MemorySize;
+            var previousMemorySize = this.HeapMemorySize;
             switch (input.header.ListOp)
             {
                 case ListOperation.LPUSH:
@@ -187,7 +187,7 @@ namespace Garnet.server
                     throw new GarnetException($"Unsupported operation {input.header.ListOp} in ListObject.Operate");
             }
 
-            memorySizeChange = this.MemorySize - previousMemorySize;
+            memorySizeChange = this.HeapMemorySize - previousMemorySize;
 
             if (list.Count == 0)
                 output.OutputFlags |= OutputFlags.RemoveKey;
@@ -202,15 +202,15 @@ namespace Garnet.server
 
             if (add)
             {
-                this.MemorySize += memorySize;
-                this.DiskSize += diskSize;
+                this.HeapMemorySize += memorySize;
+                this.SerializedSize += diskSize;
             }
             else
             {
-                this.MemorySize -= memorySize;
-                this.DiskSize -= diskSize;
-                Debug.Assert(this.MemorySize >= MemoryUtils.ListOverhead);
-                Debug.Assert(this.DiskSize >= sizeof(int));
+                this.HeapMemorySize -= memorySize;
+                this.SerializedSize -= diskSize;
+                Debug.Assert(this.HeapMemorySize >= MemoryUtils.ListOverhead);
+                Debug.Assert(this.SerializedSize >= sizeof(int));
             }
         }
 

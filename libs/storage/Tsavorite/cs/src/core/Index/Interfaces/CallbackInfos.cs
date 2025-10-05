@@ -83,6 +83,11 @@ namespace Tsavorite.core
         ExpireAndStop,
 
         /// <summary>
+        /// Stop the operation immediately with a "wrong type" error
+        /// </summary>
+        WrongType,
+
+        /// <summary>
         /// Stop the operation immediately and return.
         /// </summary>
         CancelOperation
@@ -120,7 +125,7 @@ namespace Tsavorite.core
         public bool PreserveCopyUpdaterSourceRecord { get; set; }
 
         /// <summary>
-        /// If set true by CopyUpdater, the source ValueObject will be cleared immediately (to manage object size tracking most effectively).
+        /// If set true by RMW and there is a source ValueObject it will be cleared immediately (to manage object size tracking most effectively).
         /// </summary>
         public bool ClearSourceValueObject { get; set; }
 

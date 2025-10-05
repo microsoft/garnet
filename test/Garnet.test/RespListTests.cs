@@ -171,11 +171,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var nVals = 100;
-            RedisValue[] values = new RedisValue[nVals];
+            var values = new RedisValue[nVals];
             for (int i = 0; i < 100; i++)
-            {
-                values[i] = ($"val-{i + 1}");
-            }
+                values[i] = $"val-{i + 1}";
 
             for (int j = 0; j < 25; j++)
             {
@@ -183,7 +181,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(nVals, nAdded);
             }
 
-            long nLen = db.ListLength("List_Test-10");
+            var nLen = db.ListLength("List_Test-10");
             ClassicAssert.AreEqual(100, nLen);
         }
 

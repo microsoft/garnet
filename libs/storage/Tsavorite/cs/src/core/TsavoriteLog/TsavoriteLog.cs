@@ -164,12 +164,10 @@ namespace Tsavorite.core
         /// </summary>
         public long MaxMemorySizeBytes => allocator.MaxMemorySizeBytes;
 
-        internal long SetAddressType(long address) => allocator.SetAddressType(address);
-
         /// <summary>
         /// Actual memory used by log
         /// </summary>
-        public long MemorySizeBytes => allocator.GetStartLogicalAddressOfPage(allocator.AllocatedPageCount + allocator.OverflowPageCount);
+        public long MemorySizeBytes => allocator.GetLogicalAddressOfStartOfPage(allocator.AllocatedPageCount + allocator.OverflowPageCount);
 
         /// <summary>
         /// Create new log instance
@@ -2056,7 +2054,7 @@ namespace Tsavorite.core
             if (Utility.MonotonicUpdate(ref beginAddress, untilAddress, out _))
             {
                 if (snapToPageStart)
-                    untilAddress = allocator.GetAddressOfStartOfPage(untilAddress);
+                    untilAddress = allocator.GetAddressOfStartOfPageOfAddress(untilAddress);
 
                 bool epochProtected = epoch.ThisInstanceProtected();
                 try
@@ -2081,7 +2079,7 @@ namespace Tsavorite.core
         /// <param name="untilAddress">Until address</param>
         public void TruncateUntilPageStart(long untilAddress)
         {
-            Utility.MonotonicUpdate(ref beginAddress, allocator.GetAddressOfStartOfPage(untilAddress), out _);
+            Utility.MonotonicUpdate(ref beginAddress, allocator.GetAddressOfStartOfPageOfAddress(untilAddress), out _);
         }
 
         /// <summary>
@@ -2185,7 +2183,7 @@ namespace Tsavorite.core
             };
             unsafe
             {
-                allocator.AsyncReadRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
+                allocator.AsyncReadBlittableRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
             await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
@@ -2216,7 +2214,7 @@ namespace Tsavorite.core
             };
             unsafe
             {
-                allocator.AsyncReadRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
+                allocator.AsyncReadBlittableRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
             await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
@@ -2245,7 +2243,7 @@ namespace Tsavorite.core
             };
             unsafe
             {
-                allocator.AsyncReadRecordToMemory(address, headerSize, AsyncGetHeaderOnlyFromDiskCallback, ref ctx);
+                allocator.AsyncReadBlittableRecordToMemory(address, headerSize, AsyncGetHeaderOnlyFromDiskCallback, ref ctx);
             }
             epoch.Suspend();
             await ctx.completedRead.WaitAsync(token).ConfigureAwait(false);
@@ -2811,7 +2809,7 @@ namespace Tsavorite.core
                     else
                     {
                         ctx.record.Return();
-                        allocator.AsyncReadRecordToMemory(ctx.logicalAddress, requiredBytes, AsyncGetFromDiskCallback, ref ctx);
+                        allocator.AsyncReadBlittableRecordToMemory(ctx.logicalAddress, requiredBytes, AsyncGetFromDiskCallback, ref ctx);
                     }
                 }
             }

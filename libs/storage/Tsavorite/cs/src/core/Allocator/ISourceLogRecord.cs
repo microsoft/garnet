@@ -14,6 +14,15 @@ namespace Tsavorite.core
         /// <summary>Fast access returning a copy of the record header</summary>
         RecordInfo Info { get; }
 
+        /// <summary>Type of the record. Should be set on creation of the <see cref="LogRecord"/> and then immutable.</summary>
+        byte RecordType { get; }
+
+        /// <summary>Namespace of the record. Should be set on creation of the <see cref="LogRecord"/> and then immutable.</summary>
+        byte Namespace { get; }
+
+        /// <summary>The <see cref="ObjectIdMap"/> for this instance. May be the allocator's or transient (for <see cref="DiskLogRecord"/>).</summary>
+        ObjectIdMap ObjectIdMap { get; }
+
         /// <summary>Whether there is actually a record here</summary>
         bool IsSet { get; }
 
@@ -27,15 +36,15 @@ namespace Tsavorite.core
         /// <summary>The pointer to the pinned memory if <see cref="IsPinnedKey"/> is true, else null.</summary>
         byte* PinnedKeyPointer { get; }
 
+        /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Key is Overflow; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
+        OverflowByteArray KeyOverflow { get; set; }
+
         /// <summary>The value <see cref="Span{_byte_}"/>, if this is a String LogRecord; an assertion is raised if it is an Object LogRecord.</summary>
-        /// <remarks>Not a ref return as it cannot be changed directly; use <see cref="LogRecord.TrySetValueSpan(ReadOnlySpan{byte}, in RecordSizeInfo)"/> instead.</remarks>
+        /// <remarks>Not a ref return as it cannot be changed directly; use <see cref="LogRecord.TrySetValueSpan(ReadOnlySpan{byte}, in RecordSizeInfo, bool)"/> instead.</remarks>
         Span<byte> ValueSpan { get; }
 
         /// <summary>The value object, if the value in this record is an IHeapObject; an exception is thrown if it is a Span, either inline or overflow byte[].</summary>
         IHeapObject ValueObject { get; }
-
-        /// <summary>The span of the entire record, if <see cref="RecordInfo.RecordIsInline"/>, else an exception is thrown.</summary>
-        ReadOnlySpan<byte> RecordSpan { get; }
 
         /// <summary>Whether the record's value is pinned in memory, e.g. inline in the log vs an overflow byte[]. If this is true, <see cref="PinnedValuePointer"/> is non-null.</summary>
         bool IsPinnedValue { get; }
@@ -43,23 +52,32 @@ namespace Tsavorite.core
         /// <summary>The pointer to the pinned memory if <see cref="IsPinnedValue"/> is true, else null.</summary>
         byte* PinnedValuePointer { get; }
 
+        /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Value is not Overflow; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
+        OverflowByteArray ValueOverflow { get; set; }
+
         /// <summary>The ETag of the record, if any (see <see cref="RecordInfo.HasETag"/>; 0 by default.</summary>
         long ETag { get; }
 
         /// <summary>The Expiration of the record, if any (see <see cref="RecordInfo.HasExpiration"/>; 0 by default.</summary>
         long Expiration { get; }
 
-        /// <summary>If requested by CopyUpdater, the source ValueObject will be cleared immediately (to manage object size tracking most effectively).</summary>
+        /// <summary>If requested by CopyUpdater or InPlaceDeleter, the source ValueObject or ValueOverflow will be cleared immediately (to manage object size tracking most effectively).
+        ///     This is called after we have either ensured there is a newer record inserted at tail, or after we have tombstoned the record; either way, we won't be accessing its value.</summary>
         /// <remarks>The disposer is not inlined, but this is called after object cloning, so the perf hit won't matter</remarks>
-        void ClearValueObject(Action<IHeapObject> disposer);
+        /// <returns>True if we did clear a heap object or overflow, else false</returns>
+        void ClearValueIfHeap(Action<IHeapObject> disposer);
 
-        /// <summary>A shim to "convert" a TSourceLogRecord generic type that is an instance of <see cref="LogRecord"/> to a <see cref="LogRecord"/> type.</summary>
-        /// <returns>True if this is a <see cref="LogRecord"/>, with the output <paramref name="logRecord"/> set; else false.</returns>
-        bool AsLogRecord(out LogRecord logRecord);
+        /// <summary>Whether this is an instance of <see cref="LogRecord"/></summary>
+        bool IsMemoryLogRecord { get; }
 
-        /// <summary>A shim to "convert" a TSourceLogRecord generic type this is an instance of <see cref="DiskLogRecord"/> to a <see cref="DiskLogRecord"/> type.</summary>
-        /// <returns>True if this is a <see cref="DiskLogRecord"/>, with the output <paramref name="diskLogRecord"/> set; else false.</returns>
-        bool AsDiskLogRecord(out DiskLogRecord diskLogRecord);
+        /// <summary>Return this as a ref <see cref="LogRecord"/>, or throw if not <see cref="IsMemoryLogRecord"/></summary>
+        ref LogRecord AsMemoryLogRecordRef();
+
+        /// <summary>Whether this is an instance of <see cref="DiskLogRecord"/></summary>
+        bool IsDiskLogRecord { get; }
+
+        /// <summary>Return this as a ref <see cref="DiskLogRecord"/>, or throw if not <see cref="IsDiskLogRecord"/></summary>
+        ref DiskLogRecord AsDiskLogRecordRef();
 
         /// <summary>Get the record's field info, for use in calculating required record size</summary>
         RecordFieldInfo GetRecordFieldInfo();

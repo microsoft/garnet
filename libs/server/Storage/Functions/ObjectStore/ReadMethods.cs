@@ -29,7 +29,7 @@ namespace Garnet.server
                 switch (input.header.type)
                 {
                     case GarnetObjectType.Migrate:
-                        DiskLogRecord.Serialize(in srcLogRecord, functionsState.garnetObjectSerializer, ref output.SpanByteAndMemory, functionsState.memoryPool);
+                        DiskLogRecord.Serialize(in srcLogRecord, functionsState.garnetObjectSerializer, functionsState.memoryPool, ref output.SpanByteAndMemory);
                         return true;
                     case GarnetObjectType.Ttl:
                         var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);

@@ -170,6 +170,11 @@ namespace Tsavorite.core
                 logRecord.InfoRef.SetTombstone();
                 status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord | StatusCode.Expired);
             }
+            else if (rmwInfo.Action == RMWAction.WrongType)
+            {
+                logRecord.InfoRef.SetTombstone();
+                status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.WrongType);
+            }
             else
                 status = OperationStatus.SUCCESS;
             return false;

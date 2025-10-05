@@ -264,7 +264,7 @@ namespace Garnet.test
                     bool expectedVal = false;
                     if (state.ContainsKey(key) && state[key].ContainsKey(offset))
                         expectedVal = state[key][offset];
-                    ClassicAssert.AreEqual(expectedVal, returnedVal, $"{offset}");
+                    ClassicAssert.AreEqual(expectedVal, returnedVal, $"offset {offset}");
                 }
             }
         }
@@ -402,7 +402,7 @@ namespace Garnet.test
 
             long expectedCount = Count(bitmap, 0, -1);
             count = db.StringBitCount(key, 0, -1);
-            ClassicAssert.AreEqual(expectedCount, count, $"{0} {-1} {bitmap.Length}");
+            ClassicAssert.AreEqual(expectedCount, count, $"startOffset {0}, endOffset {-1}, bitmapLength {bitmap.Length}");
 
             //Test with startOffset
             for (int i = 0; i < iter; i++)
@@ -411,7 +411,7 @@ namespace Garnet.test
                 expectedCount = Count(bitmap, startOffset, -1);
                 count = db.StringBitCount(key, startOffset);
 
-                ClassicAssert.AreEqual(expectedCount, count, $"{startOffset} {-1} {maxSizeInBytes}");
+                ClassicAssert.AreEqual(expectedCount, count, $"startOffset {startOffset}, endOffset {-1}, maxSizeInBytes {maxSizeInBytes}");
             }
 
             //Test with startOffset and endOffset
@@ -422,7 +422,7 @@ namespace Garnet.test
                 expectedCount = Count(bitmap, startOffset, endOffset);
                 count = db.StringBitCount(key, startOffset, endOffset);
 
-                ClassicAssert.AreEqual(expectedCount, count, $"{startOffset} {endOffset} {maxSizeInBytes}");
+                ClassicAssert.AreEqual(expectedCount, count, $"startOffset {startOffset}, endOffset {endOffset}, maxSizeInBytes {maxSizeInBytes}");
             }
         }
 

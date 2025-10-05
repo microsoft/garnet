@@ -302,7 +302,7 @@ namespace Tsavorite.test
 
             // Read the log 
             int currentEntry = 9;   // since starting at specified address of 1000, need to set current entry as 9 so verification starts at proper spot
-            using (var iter = log.Scan(log.SetAddressType(1000), LogAddress.MaxValidAddress, recover: false))
+            using (var iter = log.Scan(1000, LogAddress.MaxValidAddress, recover: false))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {

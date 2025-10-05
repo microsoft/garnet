@@ -204,10 +204,10 @@ namespace Tsavorite.core
             };
 
             // We know the existing record cannot be elided; it must point to a valid record; otherwise InternalDelete would have returned NOTFOUND.
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, in sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out var status))
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
 
-            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
             newLogRecord.InfoRef.SetTombstone();
             stackCtx.SetNewRecord(newLogicalAddress);
 
@@ -219,17 +219,13 @@ namespace Tsavorite.core
                 KeyHash = stackCtx.hei.hash,
             };
 
-            hlog.InitializeValue(newPhysicalAddress, in sizeInfo);
-            newLogRecord.SetFillerLength(allocatedSize);
-
             if (!sessionFunctions.InitialDeleter(ref newLogRecord, ref deleteInfo))
             {
                 // This record was allocated with a minimal Value size (unless it was a revivified larger record) so there's no room for a Filler,
                 // but we may want it for a later Delete, or for insert with a smaller Key.
-                if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, ref newLogRecord, ref sessionFunctions.Ctx.RevivificationStats))
-                    stackCtx.ClearNewRecord();
-                else
-                    stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
+                stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
+                if (!RevivificationManager.UseFreeRecordPool || !TryTransferToFreeList<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, newLogicalAddress, ref newLogRecord))
+                    DisposeRecord(ref newLogRecord, DisposeReason.InsertAbandoned);
 
                 if (deleteInfo.Action == DeleteAction.CancelOperation)
                     return OperationStatus.CANCELED;

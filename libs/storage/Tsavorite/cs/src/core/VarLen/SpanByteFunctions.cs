@@ -31,16 +31,16 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input)
-            => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = input.Length };
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = input.Length };
         /// <inheritdoc/>
         public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref PinnedSpanByte input)
-            => new() { KeyDataSize = key.Length, ValueDataSize = input.Length };
+            => new() { KeySize = key.Length, ValueSize = input.Length };
         /// <inheritdoc/>
         public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref PinnedSpanByte input)
-            => new() { KeyDataSize = key.Length, ValueDataSize = value.Length };
+            => new() { KeySize = key.Length, ValueSize = value.Length };
         /// <inheritdoc/>
         public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref PinnedSpanByte input)
-            => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
 
         /// <inheritdoc />
         public override void ConvertOutputToHeap(ref PinnedSpanByte input, ref SpanByteAndMemory output)

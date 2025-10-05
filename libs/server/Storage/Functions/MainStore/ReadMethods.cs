@@ -7,9 +7,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-#pragma warning disable IDE0005 // Using directive is unnecessary.
-    using static LogRecordUtils;
-
     /// <summary>
     /// Callback functions for main store
     /// </summary>
