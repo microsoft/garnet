@@ -45,26 +45,27 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryAllocateRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                                       ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, in RecordSizeInfo sizeInfo, AllocateOptions options,
-                                                       out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize, out OperationStatus status)
+                                                       ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, ref RecordSizeInfo sizeInfo, AllocateOptions options,
+                                                       out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             status = OperationStatus.SUCCESS;
 
             // MinRevivAddress is also needed for pendingContext-based record reuse.
-            var minMutableAddress = GetMinRevivifiableAddress();
-            var minRevivAddress = minMutableAddress;
+            var minRevivAddress = GetMinRevivifiableAddress();
+
+            // If are eliding the first record in the tag chain, then there can be no others; we are removing the only record in the chain. Otherwise, the new record must be above hei.Address.
+            if ((minRevivAddress <= stackCtx.hei.Address) && (!options.elideSourceRecord || stackCtx.hei.Address != stackCtx.recSrc.LogicalAddress))
+                minRevivAddress = stackCtx.hei.Address;
 
             if (options.recycle && pendingContext.retryNewLogicalAddress != kInvalidAddress
-                    && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, in sizeInfo, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
+                    && GetAllocationForRetry(sessionFunctions, ref pendingContext, minRevivAddress, in sizeInfo, out newLogicalAddress, out newPhysicalAddress, out var allocatedSize))
             {
-                new LogRecord(newPhysicalAddress).PrepareForRevivification(in sizeInfo, allocatedSize);
+                new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo, allocatedSize);
                 return true;
             }
             if (RevivificationManager.UseFreeRecordPool)
             {
-                if (!options.elideSourceRecord && stackCtx.hei.Address >= minMutableAddress)
-                    minRevivAddress = stackCtx.hei.Address;
                 if (sessionFunctions.Ctx.IsInV1)
                 {
                     var fuzzyStartAddress = _hybridLogCheckpoint.info.startLogicalAddress;
@@ -73,7 +74,7 @@ namespace Tsavorite.core
                 }
                 if (TryTakeFreeRecord<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, in sizeInfo, minRevivAddress, out newLogicalAddress, out newPhysicalAddress, out allocatedSize))
                 {
-                    new LogRecord(newPhysicalAddress).PrepareForRevivification(in sizeInfo, allocatedSize);
+                    new LogRecord(newPhysicalAddress).PrepareForRevivification(ref sizeInfo, allocatedSize);
                     return true;
                 }
             }
@@ -84,12 +85,11 @@ namespace Tsavorite.core
                 if (!TryBlockAllocate(hlogBase, sizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
 
-                newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+                newPhysicalAddress = hlogBase.GetPhysicalAddress(newLogicalAddress);
 
                 // If allocation had to flush and did it inline, then the epoch was refreshed and we need to check for address safety.
                 if (VerifyInMemoryAddresses(ref stackCtx))
                 {
-                    allocatedSize = sizeInfo.AllocatedInlineRecordSize;
                     if (newLogicalAddress > stackCtx.recSrc.LatestLogicalAddress)
                         return true;
 
@@ -100,6 +100,8 @@ namespace Tsavorite.core
                         // so revivification can read the record size.
                         var logRecord = hlog.CreateLogRecord(newLogicalAddress, newPhysicalAddress);
                         logRecord.InitializeForReuse(in sizeInfo);
+
+                        // Call RevivificationManager.TryAdd() directly, as here we've done InitializeForReuse of a new record so don't want DisposeRecord.
                         if (RevivificationManager.TryAdd(newLogicalAddress, ref logRecord, ref sessionFunctions.Ctx.RevivificationStats))
                             continue;
                     }
@@ -122,28 +124,24 @@ namespace Tsavorite.core
             }
 
             newPhysicalAddress = 0;
-            allocatedSize = 0;
             return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool TryAllocateRecordReadCache<TInput, TOutput, TContext>(ref PendingContext<TInput, TOutput, TContext> pendingContext, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx,
-                                                       in RecordSizeInfo recordSizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out int allocatedSize, out OperationStatus status)
+                                                       in RecordSizeInfo recordSizeInfo, out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status)
         {
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
             while (true)
             {
                 if (!TryBlockAllocate(readCacheBase, recordSizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
-                newPhysicalAddress = readcache.GetPhysicalAddress(newLogicalAddress);
+                newPhysicalAddress = readCacheBase.GetPhysicalAddress(newLogicalAddress);
 
                 if (VerifyInMemoryAddresses(ref stackCtx))
                 {
                     if (!stackCtx.hei.IsReadCache || newLogicalAddress > stackCtx.hei.Address)
-                    {
-                        allocatedSize = recordSizeInfo.AllocatedInlineRecordSize;
                         return true;
-                    }
 
                     // This allocation is below the necessary address so abandon it and repeat the loop.
                     ReadCacheAbandonRecord(newPhysicalAddress);
@@ -158,7 +156,6 @@ namespace Tsavorite.core
             }
 
             newPhysicalAddress = 0;
-            allocatedSize = 0;
             return false;
         }
 
@@ -191,7 +188,7 @@ namespace Tsavorite.core
                 goto Fail;
             }
 
-            newPhysicalAddress = hlog.GetPhysicalAddress(newLogicalAddress);
+            newPhysicalAddress = hlogBase.GetPhysicalAddress(newLogicalAddress);
             var newLogRecord = new LogRecord(newPhysicalAddress);
 
             allocatedSize = newLogRecord.GetInlineRecordSizes().allocatedSize;

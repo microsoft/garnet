@@ -190,7 +190,7 @@ namespace Garnet.server
                     var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
-                    if (!logRecord.TrySetValueLength(BitmapManager.Length(bOffset), in sizeInfo))
+                    if (!logRecord.TrySetValueLength(BitmapManager.Length(bOffset), in sizeInfo, zeroInit: true))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "SETBIT");
                         return false;
@@ -211,7 +211,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
 
-                    if (!logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo))
+                    if (!logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo, zeroInit: true))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "BitField");
                         return false;
@@ -312,7 +312,7 @@ namespace Garnet.server
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
-                        if (!logRecord.TrySetValueLength(functions.GetInitialLength(ref input), in sizeInfo))
+                        if (!logRecord.TrySetValueLength(functions.GetInitialLength(ref input), in sizeInfo, zeroInit: true))   // ZeroInit to be safe
                         {
                             functionsState.logger?.LogError("Length overflow in 'default' > StartOffset: {methodName}.{caseName}", "InitialUpdater", "default");
                             return false;
@@ -327,7 +327,7 @@ namespace Garnet.server
                         try
                         {
                             functions.InitialUpdater(logRecord.Key, ref input, logRecord.ValueSpan, ref writer, ref rmwInfo);
-                            Debug.Assert(sizeInfo.FieldInfo.ValueDataSize == logRecord.ValueSpan.Length, $"Inconsistency in initial updater value length: expected {sizeInfo.FieldInfo.ValueDataSize}, actual {logRecord.ValueSpan.Length}");
+                            Debug.Assert(sizeInfo.FieldInfo.ValueSize == logRecord.ValueSpan.Length, $"Inconsistency in initial updater value length: expected {sizeInfo.FieldInfo.ValueSize}, actual {logRecord.ValueSpan.Length}");
                         }
                         finally
                         {
@@ -494,20 +494,31 @@ namespace Garnet.server
                     if (!logRecord.TrySetValueSpan(setValue, in sizeInfo))
                         return false;
 
-                    if (inputHeaderHasEtag != shouldUpdateEtag)
-                        shouldUpdateEtag = inputHeaderHasEtag;
+                    // If shouldUpdateEtag != inputHeaderHasEtag, then if inputHeaderHasEtag is true there is one that nextUpdate will remove (so we don't want to
+                    // update it), else there isn't one and nextUpdate will add it.
+                    shouldUpdateEtag = inputHeaderHasEtag;
+
+                    // Update expiration
+                    if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
+                        return false;
+
+                    // If withEtag is called we return the etag back in the response
                     if (inputHeaderHasEtag)
                     {
                         var newETag = functionsState.etagState.ETag + 1;
-                        logRecord.TrySetETag(newETag);
+                        if (!logRecord.TrySetETag(newETag))
+                            return false;
                         functionsState.CopyRespNumber(newETag, ref output);
+                        // reset etag state after done using
+                        ETagState.ResetState(ref functionsState.etagState);
                     }
                     else
-                        logRecord.RemoveETag();
-                    shouldUpdateEtag = false;   // since we already updated the ETag
+                    {
+                        if (!logRecord.RemoveETag())
+                            return false;
+                    }
 
-                    if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
-                        return false;
+                    shouldUpdateEtag = false;   // since we already updated the ETag
                     break;
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
@@ -590,7 +601,7 @@ namespace Garnet.server
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
                     if (!BitmapManager.IsLargeEnough(logRecord.ValueSpan.Length, bOffset)
-                            && !logRecord.TrySetValueLength(BitmapManager.Length(bOffset), in sizeInfo))
+                            && !logRecord.TrySetValueLength(BitmapManager.Length(bOffset), in sizeInfo, zeroInit: true))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
@@ -610,7 +621,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs, logRecord.ValueSpan.Length)
-                            && !logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo))
+                            && !logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo, zeroInit: true))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
@@ -1039,9 +1050,6 @@ namespace Garnet.server
                 case RespCommand.SETEXXX:
                     bool inputHeaderHasEtag = input.header.CheckWithETagFlag();
 
-                    if (inputHeaderHasEtag != shouldUpdateEtag)
-                        shouldUpdateEtag = inputHeaderHasEtag;
-
                     // Check if SetGet flag is set
                     if (input.header.CheckSetGetFlag())
                     {
@@ -1057,21 +1065,29 @@ namespace Garnet.server
                     if (!dstLogRecord.TrySetValueSpan(newInputValue, in sizeInfo) || !dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
                         return false;
 
-                    if (inputHeaderHasEtag != shouldUpdateEtag)
-                        shouldUpdateEtag = inputHeaderHasEtag;
-                    if (inputHeaderHasEtag)
-                    {
-                        var newETag = functionsState.etagState.ETag + 1;
-                        dstLogRecord.TrySetETag(newETag);
-                        functionsState.CopyRespNumber(newETag, ref output);
-                    }
-                    else
-                        dstLogRecord.RemoveETag();
-                    shouldUpdateEtag = false;   // since we already updated the ETag
-
                     // Update expiration if it was supplied.
                     if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                         return false;
+
+                    // If shouldUpdateEtag != inputHeaderHasEtag, then if inputHeaderHasEtag is true there is one that nextUpdate will remove (so we don't want to
+                    // update it), else there isn't one and nextUpdate will add it.
+                    shouldUpdateEtag = inputHeaderHasEtag;
+
+                    if (inputHeaderHasEtag)
+                    {
+                        var newETag = functionsState.etagState.ETag + 1;
+                        if (!dstLogRecord.TrySetETag(newETag))
+                            return false;
+                        functionsState.CopyRespNumber(newETag, ref output);
+                        ETagState.ResetState(ref functionsState.etagState);
+                    }
+                    else
+                    {
+                        if (!dstLogRecord.RemoveETag())
+                            return false;
+                    }
+                    shouldUpdateEtag = false;   // since we already updated the ETag
+
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
@@ -1459,7 +1475,9 @@ namespace Garnet.server
 
             if (shouldUpdateEtag)
             {
-                dstLogRecord.TrySetETag(functionsState.etagState.ETag + 1);
+                if (cmd is not RespCommand.SETIFGREATER)
+                    functionsState.etagState.ETag++;
+                dstLogRecord.TrySetETag(functionsState.etagState.ETag);
                 ETagState.ResetState(ref functionsState.etagState);
             }
             else if (recordHadEtagPreMutation)

@@ -22,7 +22,7 @@ namespace Tsavorite.core
             }
             mem = pool.Get(item.TotalSize());
             item.SerializeTo(mem.GetValidPointer());
-            this.pinnedSpanByte = PinnedSpanByte.FromLengthPrefixedPinnedPointer(mem.GetValidPointer());
+            pinnedSpanByte = PinnedSpanByte.FromLengthPrefixedPinnedPointer(mem.GetValidPointer());
         }
 
         public unsafe ref PinnedSpanByte Get() => ref pinnedSpanByte;

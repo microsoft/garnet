@@ -44,7 +44,7 @@ namespace Tsavorite.core
         CASAndRetryFailed,
 
         /// <summary>
-        /// A record was deserialized from the disk for a pending Read or RMW operation.
+        /// A record was deserialized from the disk (or network buffer) for a pending Read or RMW operation.
         /// </summary>
         DeserializedFromDisk,
 
@@ -52,6 +52,11 @@ namespace Tsavorite.core
         /// A record was retrieved from the revivification freelist, and thus the key space may have to be adjusted as well.
         /// </summary>
         RevivificationFreeList,
+
+        /// <summary>
+        /// A new record was created for Upsert or RMW but the InitialWriter or InitialUpdater operation returned false
+        /// </summary>
+        InsertAbandoned,
 
         /// <summary>
         /// Deleted but remains in hash chain so Key is unchanged

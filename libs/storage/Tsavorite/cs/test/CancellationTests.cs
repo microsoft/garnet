@@ -118,16 +118,16 @@ namespace Tsavorite.test.Cancellation
 
             /// <inheritdoc/>
             public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref int input)
-                => new() { KeyDataSize = srcLogRecord.Key.Length, ValueDataSize = sizeof(int) };
+                => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(int) };
             /// <inheritdoc/>
             public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref int input)
-                => new() { KeyDataSize = key.Length, ValueDataSize = sizeof(int) };
+                => new() { KeySize = key.Length, ValueSize = sizeof(int) };
             /// <inheritdoc/>
             public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref int input)
-                => new() { KeyDataSize = key.Length, ValueDataSize = value.Length };
+                => new() { KeySize = key.Length, ValueSize = value.Length };
             /// <inheritdoc/>
             public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref int input)
-                => new() { KeyDataSize = key.Length, ValueDataSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+                => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         }
 
         IDevice log;

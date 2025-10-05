@@ -100,7 +100,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.MIGRATE:
-                    DiskLogRecord.Serialize(in srcLogRecord, valueSerializer: null, ref output, functionsState.memoryPool);
+                    DiskLogRecord.Serialize(in srcLogRecord, valueObjectSerializer: null, memoryPool: functionsState.memoryPool, output: ref output);
                     break;
 
                 case RespCommand.GET:
@@ -449,6 +449,10 @@ namespace Garnet.server
             }
             return (0, 0);
         }
+
+        internal static bool CheckExpiry<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
+            where TSourceLogRecord : ISourceLogRecord
+            => srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
 
         static bool InPlaceUpdateNumber(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, long val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {

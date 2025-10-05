@@ -6,7 +6,9 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    // Allocator for ReadOnlySpan<byte> Keys and Span<byte> Values.
+    /// <summary>
+    /// Allocator for ReadOnlySpan{byte} Keys and Span{byte} Values.
+    /// </summary>
     public struct SpanByteAllocator<TStoreFunctions> : IAllocator<TStoreFunctions>
         where TStoreFunctions : IStoreFunctions
     {
@@ -31,26 +33,12 @@ namespace Tsavorite.core
             => (AllocatorBase<TStoreFunctions, TAllocator>)(object)_this;
 
         /// <inheritdoc/>
-        public readonly bool IsFixedLength => false;
-
-        /// <inheritdoc/>
         public readonly bool HasObjectLog => false;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetStartLogicalAddress(long page) => _this.GetStartLogicalAddressOfPage(page);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetFirstValidLogicalAddress(long page) => _this.GetFirstValidLogicalAddressOnPage(page);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long GetPhysicalAddress(long logicalAddress) => _this.GetPhysicalAddress(logicalAddress);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void InitializeValue(long physicalAddress, in RecordSizeInfo sizeInfo) => _this.InitializeValue(physicalAddress, in sizeInfo);
+        public readonly void InitializeRecord(ReadOnlySpan<byte> key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord newLogRecord)
+            => newLogRecord.InitializeRecord(key, in sizeInfo);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -96,14 +84,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool IsAllocated(int pageIndex) => _this.IsAllocated(pageIndex);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly unsafe void PopulatePage(byte* src, int required_bytes, long destinationPageIndex) => _this.PopulatePage(src, required_bytes, destinationPageIndex);
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly void MarkPage(long logicalAddress, long version) => _this.MarkPage(logicalAddress, version);
 
         /// <inheritdoc/>
@@ -119,16 +99,7 @@ namespace Tsavorite.core
         public readonly void FreePage(long pageIndex) => _this.FreePage(pageIndex);
 
         /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly long[] GetSegmentOffsets()
-            => SpanByteAllocatorImpl<TStoreFunctions>.GetSegmentOffsets();
-
-        /// <inheritdoc/>
         public readonly int OverflowPageCount => _this.OverflowPageCount;
-
-        /// <inheritdoc/>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly void SerializeKey(ReadOnlySpan<byte> key, long logicalAddress, ref LogRecord logRecord) => _this.SerializeKey(key, logicalAddress, ref logRecord);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -137,6 +108,12 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
+
+        /// <inheritdoc/>
+        public readonly LogRecord CreateRemappedLogRecordOverTransientMemory(long logicalAddress, long physicalAddress) => _this.CreateLogRecord(logicalAddress, physicalAddress);
+
+        /// <inheritdoc/>
+        public readonly ObjectIdMap TranssientObjectIdMap => default;
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

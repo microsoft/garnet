@@ -119,7 +119,14 @@ namespace Tsavorite.core
         /// </remarks>
         CopiedRecordToReadCache = 0x50,
 
-        // unused 0x60,
+        /// <summary>
+        /// Indicates that an existing record was found but was of the wrong type for the requested operation.
+        /// </summary>
+        /// <remarks>
+        /// See basic codes for details of usage.
+        /// </remarks>
+        WrongType = 0x60,
+
         // unused 0x70,
 
         /// <summary>

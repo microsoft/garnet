@@ -28,7 +28,7 @@ namespace Tsavorite.benchmark
         {
             initsPerRun.Add(result.ips);
             opsPerRun.Add(result.ops);
-            tailAddresses.Add(LogAddress.AbsoluteAddress(result.tailAddress));
+            tailAddresses.Add(result.tailAddress);
         }
 
         internal void ShowAllStats(AggregateType aggregateType, string discardMessage = "")

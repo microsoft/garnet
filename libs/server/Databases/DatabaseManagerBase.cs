@@ -690,7 +690,7 @@ namespace Garnet.server
                 {
                     var valueObject = iter1.ValueObject;
                     if (valueObject != null)
-                        ((GarnetObjectBase)iter1.ValueObject).serialized = null;
+                        ((GarnetObjectBase)iter1.ValueObject).ClearSerializedObjectData();
                 }
             }
 

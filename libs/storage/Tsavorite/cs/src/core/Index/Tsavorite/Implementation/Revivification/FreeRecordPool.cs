@@ -10,17 +10,20 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
     using static Utility;
 
     [StructLayout(LayoutKind.Explicit, Size = sizeof(long))]
     internal struct FreeRecord
     {
-        internal const int kSizeBits = 64 - kAddressBits;        // 14
+        internal const int kSizeBits = 64 - kAddressBits;        // 16 currently
+#pragma warning disable IDE1006 // Naming Styles
         const int kSizeShiftInWord = kAddressBits;
 
         const long kSizeMask = RevivificationBin.MaxInlineRecordSize - 1;
         const long kSizeMaskInWord = kSizeMask << kSizeShiftInWord;
+#pragma warning restore IDE1006 // Naming Styles
 
         // This is the empty word we replace the current word with on Reads.
         private const long emptyWord = 0;

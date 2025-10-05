@@ -12,6 +12,7 @@ namespace Tsavorite.core
 
         // RecordInfo has a long field, so it should be aligned to 8-bytes
         public const int kRecordAlignment = 8;
+        public const int kRecordAlignmentMask = kRecordAlignment - 1;
 
         /// Number of entries per bucket (assuming 8-byte entries to fill a cacheline)
         /// Number of bits per bucket (assuming 8-byte entries to fill a cacheline)

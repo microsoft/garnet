@@ -16,8 +16,8 @@ namespace Garnet.server
         {
             return new RecordFieldInfo()
             {
-                KeyDataSize = key.Length,
-                ValueDataSize = ObjectIdMap.ObjectIdSize,
+                KeySize = key.Length,
+                ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
                 HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
                 // No object commands take an Expiration for InitialUpdater.
@@ -30,8 +30,8 @@ namespace Garnet.server
         {
             var fieldInfo = new RecordFieldInfo()
             {
-                KeyDataSize = srcLogRecord.Key.Length,
-                ValueDataSize = ObjectIdMap.ObjectIdSize,
+                KeySize = srcLogRecord.Key.Length,
+                ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
                 HasETag = false, // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag(),
                 HasExpiration = srcLogRecord.Info.HasExpiration
@@ -57,8 +57,8 @@ namespace Garnet.server
         {
             return new RecordFieldInfo()
             {
-                KeyDataSize = key.Length,
-                ValueDataSize = value.Length,
+                KeySize = key.Length,
+                ValueSize = value.Length,
                 ValueIsObject = false,
                 HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
                 // No object commands take an Expiration for Upsert.
@@ -69,8 +69,8 @@ namespace Garnet.server
         {
             return new RecordFieldInfo()
             {
-                KeyDataSize = key.Length,
-                ValueDataSize = ObjectIdMap.ObjectIdSize,
+                KeySize = key.Length,
+                ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
                 HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
                 // No object commands take an Expiration for Upsert.
@@ -82,8 +82,8 @@ namespace Garnet.server
         {
             return new RecordFieldInfo()
             {
-                KeyDataSize = key.Length,
-                ValueDataSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
+                KeySize = key.Length,
+                ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = true,
                 HasETag = false     // TODO ETag not supported in Object store yet: input.header.CheckWithETagFlag()
                 // No object commands take an Expiration for Upsert.

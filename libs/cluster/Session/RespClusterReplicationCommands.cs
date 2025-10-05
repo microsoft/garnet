@@ -468,28 +468,52 @@ namespace Garnet.cluster
             if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("SSTORE"u8))
             {
                 TrackImportProgress(recordCount, isMainStore: true, recordCount == 0);
-                while (i < recordCount)
-                {
-                    if (!RespReadUtils.TryReadSerializedRecord(out var startAddress, out var length, ref payloadPtr, payloadEndPtr))
-                        return false;
+                var storeWrapper = clusterProvider.storeWrapper;
 
-                    var diskLogRecord = new DiskLogRecord(startAddress, length);
-                    _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Main);
-                    i++;
+                // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
+                DiskLogRecord diskLogRecord = default;
+                try
+                {
+                    while (i < recordCount)
+                    {
+                        if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
+                            return false;
+
+                        diskLogRecord = DiskLogRecord.Deserialize(recordSpan, valueObjectSerializer: default, transientObjectIdMap: default, storeWrapper.mainStoreFunctions);
+                        _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Main);
+                        diskLogRecord.Dispose();
+                        i++;
+                    }
+                }
+                finally
+                {
+                    diskLogRecord.Dispose();
                 }
             }
             else if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("OSTORE"u8))
             {
                 TrackImportProgress(recordCount, isMainStore: false, recordCount == 0);
-                while (i < recordCount)
-                {
-                    if (!RespReadUtils.TryReadSerializedRecord(out var startAddress, out var length, ref payloadPtr, payloadEndPtr))
-                        return false;
+                var storeWrapper = clusterProvider.storeWrapper;
+                var transientObjectIdMap = storeWrapper.objectStore.Log.TransientObjectIdMap;
 
-                    var diskLogRecord = new DiskLogRecord(startAddress, length);
-                    _ = diskLogRecord.DeserializeValueObject(clusterProvider.storeWrapper.GarnetObjectSerializer);
-                    _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Object);
-                    i++;
+                // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
+                DiskLogRecord diskLogRecord = default;
+                try
+                {
+                    while (i < recordCount)
+                    {
+                        if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
+                            return false;
+
+                        diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.objectStoreFunctions);
+                        _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Object);
+                        diskLogRecord.Dispose();
+                        i++;
+                    }
+                }
+                finally
+                {
+                    diskLogRecord.Dispose();
                 }
             }
 

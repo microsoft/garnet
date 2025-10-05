@@ -8,6 +8,7 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
 
     public abstract partial class AllocatorBase<TStoreFunctions, TAllocator> : IDisposable
@@ -62,7 +63,6 @@ namespace Tsavorite.core
         {
             if (!scanFunctions.OnStart(beginAddress, endAddress))
                 return false;
-            var headAddress = HeadAddress;
 
             long numRecords = 1;
             var stop = false;
@@ -154,7 +154,7 @@ namespace Tsavorite.core
         {
             completionEvent.Prepare(PinnedSpanByte.FromPinnedSpan(key), logicalAddress);
 
-            AsyncGetFromDisk(logicalAddress, DiskLogRecord.InitialIOSize, completionEvent.request);
+            AsyncGetFromDisk(logicalAddress, IStreamBuffer.InitialIOSize, completionEvent.request);
             completionEvent.Wait();
 
             stop = false;
@@ -166,7 +166,7 @@ namespace Tsavorite.core
             if (completionEvent.request.logicalAddress < BeginAddress)
                 return false;
 
-            var logRecord = new DiskLogRecord(ref completionEvent.request);
+            var logRecord = DiskLogRecord.TransferFrom(ref completionEvent.request.record, transientObjectIdMap);
             logRecord.InfoRef.ClearBitsForDiskImages();
             stop = !scanFunctions.Reader(in logRecord, new RecordMetadata(completionEvent.request.logicalAddress), numRecords, out _);
             logicalAddress = logRecord.Info.PreviousAddress;
@@ -246,7 +246,8 @@ namespace Tsavorite.core
                 _ = bContext.CompletePending(wait: true);
 
             IterationComplete:
-            if (resetCursor) cursor = 0;
+            if (resetCursor)
+                cursor = 0;
             scanFunctions.OnStop(false, scanCursorState.acceptedCount);
             return false;
         }
