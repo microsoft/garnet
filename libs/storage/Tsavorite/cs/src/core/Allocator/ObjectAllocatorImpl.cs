@@ -234,15 +234,18 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
         {
-            logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted, obj => storeFunctions.DisposeValueObject(obj, disposeReason));
-            logRecord.ClearOptionals();
+            if (logRecord.IsSet)
+            {
+                logRecord.ClearHeapFields(disposeReason != DisposeReason.Deleted, obj => storeFunctions.DisposeValueObject(obj, disposeReason));
+                logRecord.ClearOptionals();
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref DiskLogRecord logRecord, DisposeReason disposeReason)
         {
             // Clear the IHeapObject if we deserialized it
-            if (logRecord.Info.ValueIsObject && logRecord.ValueObject is not null)
+            if (logRecord.IsSet && logRecord.Info.ValueIsObject && logRecord.ValueObject is not null)
                 storeFunctions.DisposeValueObject(logRecord.ValueObject, disposeReason);
         }
 
@@ -512,7 +515,7 @@ namespace Tsavorite.core
                                                               objectLogNextRecordStartPosition.SegmentSizeBits);
             var totalBytesToRead = (ulong)keyLength + valueLength;
 
-            using var readBuffers = diskLogRecord.Info.RecordHasObjects ? CreateCircularReadBuffers(objectLogDevice, logger) : default;
+            using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
             logReader.OnBeginReadRecords(startPosition, totalBytesToRead);

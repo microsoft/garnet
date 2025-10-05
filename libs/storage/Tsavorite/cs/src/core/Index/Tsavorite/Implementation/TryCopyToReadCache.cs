@@ -32,12 +32,12 @@ namespace Tsavorite.core
                 return false;
             var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readCacheBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, inNewVersion: false, previousAddress: stackCtx.hei.Address);
 
-            stackCtx.SetNewRecord(newLogicalAddress);
+            stackCtx.SetNewRecord(newLogicalAddress | RecordInfo.kIsReadCacheBitMask);
             _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
             // Insert the new record by CAS'ing directly into the hash entry (readcache records are always CAS'd into the HashBucketEntry, never spliced).
             // It is possible that we will successfully CAS but subsequently fail due to a main log entry having been spliced in.
-            var success = stackCtx.hei.TryCAS(newLogicalAddress);
+            var success = stackCtx.hei.TryCAS(newLogicalAddress | RecordInfo.kIsReadCacheBitMask);
             var casSuccess = success;
 
             var failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh

@@ -198,7 +198,7 @@ namespace Tsavorite.core
                 {
                     // During the pending operation a record for the key may have been added to the log. If so, break and go through the full InternalRMW sequence;
                     // the record in 'request' is stale. We only lock for tag-chain stability during search.
-                    if (TryFindRecordForPendingOperation(pendingContext.Key, ref stackCtx, out status, ref pendingContext))
+                    if (TryFindRecordForPendingOperation(pendingContext.request_key.Get(), ref stackCtx, out status, ref pendingContext))
                     {
                         if (status != OperationStatus.SUCCESS)
                             goto CheckRetry;
@@ -216,7 +216,7 @@ namespace Tsavorite.core
 
                     // Here, the input data for 'doingCU' is the from the request, so populate the RecordSource copy from that, preserving LowestReadCache*.
                     stackCtx.recSrc.LogicalAddress = request.logicalAddress;
-                    status = CreateNewRecordRMW(pendingContext.Key, in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output,
+                    status = CreateNewRecordRMW(pendingContext.request_key.Get(), in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output,
                                                 ref pendingContext, sessionFunctions, ref stackCtx, doingCU: keyFound && !pendingContext.diskLogRecord.Info.Tombstone);
                 }
                 finally
@@ -279,7 +279,7 @@ namespace Tsavorite.core
             OperationStatus internalStatus;
             do
             {
-                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.Key, ref stackCtx,
+                if (TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, pendingContext.request_key.Get(), ref stackCtx,
                         currentAddress: request.logicalAddress, minAddress, pendingContext.maxAddress, out internalStatus, out var needIO))
                     return OperationStatus.SUCCESS;
                 if (!OperationStatusUtils.IsRetry(internalStatus))

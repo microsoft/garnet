@@ -247,8 +247,6 @@ namespace Tsavorite.core
 
         internal void ReadCacheEvict(long rcLogicalAddress, long rcToLogicalAddress)
         {
-            Debug.Assert(IsReadCache(rcLogicalAddress) && IsReadCache(rcToLogicalAddress), "rcLogicalAddress and rcToLogicalAddress must be readcache addresses");
-
             // Iterate readcache entries in the range rcFrom/ToLogicalAddress, and remove them from the hash chain.
             while (rcLogicalAddress < rcToLogicalAddress)
             {

@@ -94,7 +94,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public async Task CopyUpdate()
+        public async Task WriteCheckpointCopyUpdate()
         {
             IGarnetObject obj = new SortedSetObject();
 

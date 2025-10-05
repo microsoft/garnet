@@ -162,7 +162,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason)
         {
-            logRecord.ClearOptionals();
+            if (logRecord.IsSet)
+                logRecord.ClearOptionals();
             // Key and Value are always inline in the SpanByteAllocator so this is a no-op
         }
 

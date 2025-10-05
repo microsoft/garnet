@@ -1404,14 +1404,14 @@ namespace Garnet.test
 
                 //signed
                 expectedValue = GetValueFromBitmap(ref currBitmap, offset, bitCount, true);
-                returnedValue = (long)(db.Execute(testCmd.ToString(), (RedisKey)sKey, "get", $"i{bitCount}", $"offset {offset}"));
+                returnedValue = (long)(db.Execute(testCmd.ToString(), (RedisKey)sKey, "get", $"i{bitCount}", $"{offset}"));
                 ClassicAssert.AreEqual(expectedValue, returnedValue);
 
                 //unsigned
                 if (bitCount < 64)
                 {
                     expectedValue = GetValueFromBitmap(ref currBitmap, offset, bitCount, false);
-                    returnedValue = ((long)db.Execute(testCmd.ToString(), (RedisKey)sKey, "GET", $"u{bitCount}", $"offset {offset}"));
+                    returnedValue = ((long)db.Execute(testCmd.ToString(), (RedisKey)sKey, "GET", $"u{bitCount}", $"{offset}"));
                     ClassicAssert.AreEqual(expectedValue, returnedValue);
                 }
             }

@@ -16,7 +16,7 @@ namespace Tsavorite.core
         public const long kAddressBitMask = (1L << kAddressBits) - 1;
 
         // Get the absolute address by masking out the address type bits.
-        internal const long kAbsoluteAddressBitMask = (1L << kAddressBits) - 1;
+        internal const long kAbsoluteAddressBitMask = ((1L << kAddressBits) - 1) & ~RecordInfo.kIsReadCacheBitMask;
 
         /// <summary>Invalid record logical address; used for initialization. Zero means an IsNull RecordInfo is Invalid.</summary>
         public const long kInvalidAddress = 0L;
