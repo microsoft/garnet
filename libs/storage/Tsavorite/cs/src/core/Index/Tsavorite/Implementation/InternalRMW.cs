@@ -163,6 +163,12 @@ namespace Tsavorite.core
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         goto LatchRelease;
                     }
+                    else if (rmwInfo.Action == RMWAction.WrongType)
+                    {
+                        // status has been set by InPlaceUpdater, and no modification should have been made to the record.
+                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        goto LatchRelease;
+                    }
 
                     if (OperationStatusUtils.BasicOpCode(status) != OperationStatus.SUCCESS)
                         goto LatchRelease;
@@ -385,11 +391,13 @@ namespace Tsavorite.core
                             ref var inMemoryLogRecord = ref srcLogRecord.AsMemoryLogRecordRef();
                             HandleRecordElision<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, ref inMemoryLogRecord);
                             // no new record created and hash entry is empty now
-                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.Expired);
+                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Expired);
                         }
                         // otherwise we shall continue down the tombstoning path
                         addTombstone = true;
                     }
+                    else if (rmwInfo.Action == RMWAction.WrongType)
+                        return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.WrongType);
                     else
                         return OperationStatus.SUCCESS;
                 }
@@ -497,6 +505,11 @@ namespace Tsavorite.core
                     addTombstone = newLogRecord.Info.Tombstone;
                     goto DoCAS;
                 }
+                else if (rmwInfo.Action == RMWAction.WrongType)
+                {
+                    status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord | StatusCode.Expired);
+                    return OperationStatus.NOTFOUND;
+                }
                 else
                     return OperationStatus.SUCCESS | (forExpiration ? OperationStatus.EXPIRED : OperationStatus.SUCCESS);
             }
@@ -550,6 +563,11 @@ namespace Tsavorite.core
                             newLogRecord.InfoRef.SetTombstone();
                             status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
                         }
+                        else if (rmwInfo.Action == RMWAction.WrongType)
+                        {
+                            status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CopyUpdatedRecord | StatusCode.Expired);
+                            goto Done;
+                        }
                     }
 
                     // ElideSourceRecord means we have verified that the old source record is elidable and now that CAS has replaced it in the HashBucketEntry with
@@ -570,6 +588,7 @@ namespace Tsavorite.core
                         srcLogRecord.InfoRef.Seal();              // The record was not elided, so do not Invalidate
                 }
 
+            Done:
                 stackCtx.ClearNewRecord();
                 pendingContext.logicalAddress = newLogicalAddress;
                 return status;

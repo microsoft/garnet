@@ -311,6 +311,15 @@ namespace Tsavorite.core
         public RecordInfo Info => diskLogRecord.Info;
 
         /// <inheritdoc/>
+        public byte RecordType => diskLogRecord.RecordType;
+
+        /// <inheritdoc/>
+        public byte Namespace => diskLogRecord.Namespace;
+
+        /// <inheritdoc/>
+        public ObjectIdMap ObjectIdMap => diskLogRecord.ObjectIdMap;
+
+        /// <inheritdoc/>
         public bool IsSet => diskLogRecord.IsSet;
 
         /// <inheritdoc/>

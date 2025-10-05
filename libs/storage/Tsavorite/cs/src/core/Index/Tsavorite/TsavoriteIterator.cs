@@ -265,6 +265,15 @@ namespace Tsavorite.core
         public RecordInfo Info => CurrentIter.Info;
 
         /// <inheritdoc/>
+        public byte RecordType => CurrentIter.RecordType;
+
+        /// <inheritdoc/>
+        public byte Namespace => CurrentIter.Namespace;
+
+        /// <inheritdoc/>
+        public ObjectIdMap ObjectIdMap => CurrentIter.ObjectIdMap;
+
+        /// <inheritdoc/>
         public bool IsSet => !CurrentIter.IsSet;
 
         /// <inheritdoc/>

@@ -14,6 +14,15 @@ namespace Tsavorite.core
         /// <summary>Fast access returning a copy of the record header</summary>
         RecordInfo Info { get; }
 
+        /// <summary>Type of the record. Should be set on creation of the <see cref="LogRecord"/> and then immutable.</summary>
+        byte RecordType { get; }
+
+        /// <summary>Namespace of the record. Should be set on creation of the <see cref="LogRecord"/> and then immutable.</summary>
+        byte Namespace { get; }
+
+        /// <summary>The <see cref="ObjectIdMap"/> for this instance. May be the allocator's or transient (for <see cref="DiskLogRecord"/>).</summary>
+        ObjectIdMap ObjectIdMap { get; }
+
         /// <summary>Whether there is actually a record here</summary>
         bool IsSet { get; }
 

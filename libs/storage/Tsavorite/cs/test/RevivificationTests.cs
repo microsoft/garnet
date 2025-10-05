@@ -883,7 +883,10 @@ namespace Tsavorite.test.Revivification
             functions.expectedValueLengths.Enqueue(InitialLength);
             Status status = PerformDeletion(deletionRoute, key, fillByte);
 
-            ClassicAssert.IsTrue(status.Found, status.ToString());
+            //if (deletionRoute == DeletionRoutes.DELETE)
+                ClassicAssert.IsTrue(status.Found, status.ToString());
+            //else
+            //    ClassicAssert.IsTrue(status.NotFound && status.IsExpired, status.ToString());
 
             ClassicAssert.AreEqual(tailAddress, store.Log.TailAddress);
 
@@ -924,7 +927,8 @@ namespace Tsavorite.test.Revivification
 
             ClassicAssert.AreEqual(1, RevivificationTestUtils.GetFreeRecordCount(store));
 
-            ClassicAssert.IsTrue(status.Found, status.ToString());
+            //ClassicAssert.IsTrue(status.NotFound && status.IsExpired, status.ToString());
+            ClassicAssert.IsTrue(status.Found && status.IsExpired, status.ToString());
 
             var tailAddress = store.Log.TailAddress;
 

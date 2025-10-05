@@ -16,10 +16,11 @@ namespace Tsavorite.core
     /// <summary>The in-memory record on the log. The space is laid out as:
     /// <list type="bullet">
     ///     <item><see cref="RecordInfo"/> header</item>
-    ///     <item>Varbyte indicator byte and lengths; see <see cref="VarbyteLengthUtility"/> header comments for details</item>
+    ///     <item>Varbyte indicator bytes (including RecordType and Namespace) and lengths; see <see cref="VarbyteLengthUtility"/> header comments for details</item>
     ///     <item>Key data: either the inline data or an int ObjectId for a byte[] that is held in <see cref="ObjectIdMap"/></item>
     ///     <item>Value data: either the inline data or an int ObjectId for a byte[] that is held in <see cref="ObjectIdMap"/></item>
     ///     <item>Optional data (may or may not be present): ETag, Expiration</item>
+    ///     <item>Pseudo-optional ObjectLogPosition indicating the position in the object log file, if the record is not fully inline.</item>
     ///     <item>Optional filler length: Extra space in the record, due to record-alignment round-up or Value shrinkage</item>
     /// </list>
     /// This lets us get to the key without intermediate computations having to account for the optional fields.
@@ -50,6 +51,8 @@ namespace Tsavorite.core
         internal LogRecord(long physicalAddress) => this.physicalAddress = physicalAddress;
 
         internal readonly long IndicatorAddress => physicalAddress + RecordInfo.Size;
+        private readonly long RecordTypeAddress => physicalAddress + RecordInfo.Size + 1;
+        private readonly long NamespaceAddress => physicalAddress + RecordInfo.Size + 2;
 
         public readonly byte IndicatorByte => *(byte*)IndicatorAddress;
 
@@ -93,6 +96,23 @@ namespace Tsavorite.core
         }
 
         #region ISourceLogRecord
+        /// <inheritdoc/>
+        public byte RecordType
+        {
+            get => *(byte*)RecordTypeAddress;
+            set => *(byte*)RecordTypeAddress = value;
+        }
+
+        /// <inheritdoc/>
+        public byte Namespace
+        {
+            get => *(byte*)NamespaceAddress;
+            set => *(byte*)NamespaceAddress = value;
+        }
+
+        /// <inheritdoc/>
+        public readonly ObjectIdMap ObjectIdMap => objectIdMap;
+
         /// <inheritdoc/>
         public readonly bool IsSet => physicalAddress != 0;
 
@@ -144,7 +164,7 @@ namespace Tsavorite.core
 
                 var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
                 if (!Info.KeyIsOverflow || length != ObjectIdMap.ObjectIdSize)
-                    throw new TsavoriteException("set_KeyOverflow should only be called by DiskLogRecord with KeyIsInline==false and key.Length==ObjectIdSize");
+                    throw new TsavoriteException("set_KeyOverflow should only be called when transferring into a new record with KeyIsInline==false and key.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
             }
         }
@@ -221,7 +241,7 @@ namespace Tsavorite.core
             {
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 if (!Info.ValueIsOverflow || length != ObjectIdMap.ObjectIdSize)
-                    throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord with ValueIsInline==false and ValueIsObject==false and value.Length=+ObjectIdSize");
+                    throw new TsavoriteException("SetValueObject should only be called when trnasferring into a new record with ValueIsOverflow == true and value.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
             }
         }
@@ -913,17 +933,16 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Copy the entire record values: Value and optionals (ETag, Expiration)
+        /// Copy the entire record values: Value and optionals (ETag, Expiration).
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TryCopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            // TODOnow: Add key to this and copy it in. Reflect this in RecordFieldInfo
-            // TOODnow: Transfer Overflow and from the source logrecord
-            // This assumes the Key has been set and is not changed
-            if (!srcLogRecord.Info.ValueIsObject)
+            // TODOnow: For RENAME, add a key param to this and copy it in. Reflect this in RecordFieldInfo's KeyLength etc. (including whether it's overflow)
+            // For now, this assumes the Key has been set and is not changed
+            if (srcLogRecord.Info.ValueIsInline)
             {
                 if (!TrySetValueLength(in sizeInfo))
                     return false;
@@ -931,12 +950,19 @@ namespace Tsavorite.core
             }
             else
             {
-                // TODOnow: make sure Object isn't disposed by the source, to avoid use-after-Dispose. Maybe this (and DiskLogRecord remapping to TransientOIDMap) needs Clone()
-                Debug.Assert(srcLogRecord.ValueObject is not null, "Expected srcLogRecord.ValueObject to be set (or deserialized) already");
-                if (!TrySetValueObject(srcLogRecord.ValueObject, in sizeInfo))
-                    return false;
+                if (srcLogRecord.Info.ValueIsOverflow)
+                {
+                    Debug.Assert(Info.ValueIsOverflow, "Expected this.Info.ValueIsOverflow to be set already");
+                    ValueOverflow = srcLogRecord.ValueOverflow;
+                }
+                else
+                {
+                    // TODOnow: make sure Object isn't disposed by the source, to avoid use-after-Dispose. Maybe this (and DiskLogRecord remapping to TransientOIDMap) needs Clone()
+                    Debug.Assert(srcLogRecord.ValueObject is not null, "Expected srcLogRecord.ValueObject to be set (or deserialized) already");
+                    if (!TrySetValueObject(srcLogRecord.ValueObject, in sizeInfo))
+                        return false;
+                }
             }
-
             return TryCopyOptionals(in srcLogRecord, in sizeInfo);
         }
 

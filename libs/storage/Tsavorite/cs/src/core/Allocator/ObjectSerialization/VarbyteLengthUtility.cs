@@ -62,14 +62,14 @@ namespace Tsavorite.core
         /// <summary>The maximum number of length metadata bytes--NumIndicatorBytes, 4 bytes key length, 7 bytes value length</summary>
         internal const int MaxLengthMetadataBytes = 12;
         /// <summary>The number of indicator bytes; currently 1 for the length indicator.</summary>
-        internal const int NumIndicatorBytes = 1;
+        internal const int NumIndicatorBytes = 3;
 
         /// <summary>The maximum number of key length bytes in the in-memory single-long word representation. We use zero-based sizes and add 1, so
         /// 1 bit allows us to specify 1 or 2 bytes; we max at 2, or <see cref="LogSettings.kMaxInlineKeySize"/>. Anything over this becomes overflow.</summary>
-        internal const int MaxKeyLengthBytesInWord = 2;
+        internal const int MaxKeyLengthBytesInWord = 1;
         /// <summary>The maximum number of value length bytes in the in-memory single-long word representation. We use zero-based sizes and add 1, so
         /// 2 bits allows us to specify 1 to 4 bytes; we max at 3, or <see cref="LogSettings.kMaxInlineValueSize"/>. Anything over this becomes overflow.</summary>
-        internal const int MaxValueLengthBytesInWord = 3;
+        internal const int MaxValueLengthBytesInWord = 2;
 
         /// <summary>Read var-length bytes at the given location.</summary>
         /// <remark>This is compatible with little-endian 'long'; thus, the indicator byte is the low byte of the word, then keyLengthBytes, valueLengthBytes, keyLength, valueLength in ascending address order</remark>
@@ -91,7 +91,7 @@ namespace Tsavorite.core
         /// <remark>This assumes little-endian; thus, the indicator byte is the low byte of the word, then keyLengthBytes, valueLengthBytes, keyLength, valueLength in ascending address order</remark>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int ReadVarbyteLengthInWord(long word, int precedingNumBytes, int targetNumBytes)
-            => (int)((word >> ((1 + precedingNumBytes) * 8)) & ((1L << (targetNumBytes * 8)) - 1));
+            => (int)((word >> ((NumIndicatorBytes + precedingNumBytes) * 8)) & ((1L << (targetNumBytes * 8)) - 1));
 
         /// <summary>Write var-length bytes at the given location.</summary>
         /// <remark>This is compatible with little-endian 'long'; thus, the indicator byte is the low byte of the word, then keyLengthBytes, valueLengthBytes, keyLength, valueLength in ascending address order</remark>
@@ -138,9 +138,7 @@ namespace Tsavorite.core
         {
             keyByteCount = GetByteCount(keyLength);
             valueByteCount = GetByteCount(valueLength);
-            return (byte)(
-                  ((long)(keyByteCount - 1) << 3)       // Shift key into position; subtract 1 for 0-based
-                | (long)(valueByteCount - 1));          // Value does not need to be shifted; subtract 1 for 0-based
+            return ConstructIndicatorByte(keyByteCount, valueByteCount);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -205,7 +203,7 @@ namespace Tsavorite.core
             var keyLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: 0, keyLengthBytes);
 
             // Move past the key and value length bytes to the start of the key data
-            return (keyLength, indicatorAddress + 1 + keyLengthBytes + valueLengthBytes);
+            return (keyLength, indicatorAddress + NumIndicatorBytes + keyLengthBytes + valueLengthBytes);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -220,7 +218,7 @@ namespace Tsavorite.core
             var valueLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: keyLengthBytes, valueLengthBytes);
 
             // Move past the key and value length bytes and the key data to the start of the value data
-            return (valueLength, indicatorAddress + 1 + keyLengthBytes + valueLengthBytes + keyLength);
+            return (valueLength, indicatorAddress + NumIndicatorBytes + keyLengthBytes + valueLengthBytes + keyLength);
         }
 
         /// <summary>
@@ -264,7 +262,7 @@ namespace Tsavorite.core
 
             // Move past the key bytes; the next bytes are valueLength
             var valueLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: keyLengthBytes, valueLengthBytes);
-            return (keyLength, valueLength, RecordInfo.Size + 1 + keyLengthBytes + valueLengthBytes);
+            return (keyLength, valueLength, RecordInfo.Size + NumIndicatorBytes + keyLengthBytes + valueLengthBytes);
         }
 
         /// <summary>
@@ -299,6 +297,7 @@ namespace Tsavorite.core
             var word = (long)0;
             var ptr = (byte*)&word;
             *ptr++ = (byte)(ConstructIndicatorByte(keyLengthBytes, valueLengthBytes) | flagBits);
+            ptr += 2;   // Space for RecordType and Namespace
 
             WriteVarbyteLengthInWord(ref word, keyLength, precedingNumBytes: 0, keyLengthBytes);
             WriteVarbyteLengthInWord(ref word, valueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);

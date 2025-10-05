@@ -194,6 +194,15 @@ namespace Tsavorite.core
             public readonly RecordInfo Info => diskLogRecord.Info;
 
             /// <inheritdoc/>
+            public byte RecordType => diskLogRecord.RecordType;
+
+            /// <inheritdoc/>
+            public byte Namespace => diskLogRecord.Namespace;
+
+            /// <inheritdoc/>
+            public readonly ObjectIdMap ObjectIdMap => diskLogRecord.ObjectIdMap;
+
+            /// <inheritdoc/>
             public readonly bool IsSet => diskLogRecord.IsSet;
 
             /// <inheritdoc/>

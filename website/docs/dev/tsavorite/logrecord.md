@@ -6,9 +6,11 @@ title: LogRecord
 
 # `LogRecord`
 
-The `LogRecord` struct is a major revision in the Tsavorite `ISessionFunctions` design. It replaces individual `ref key` and `ref value` parameters in the `ISessionFunctions` methods (as well as endoding optional `ETag` and `Expirattion` into the Value) with a single `LogRecord`, which may be either `LogRecord` for in-memory log records, or `DiskLogRecord` for on-disk records. These `LogRecord` have properties for `Key` and `Value` as well as making `Etag` and `Expiration` first-class properties. There are a number of additional changes in this design as well, as shown in the following sections.
+The `LogRecord` struct is a major revision in the Tsavorite `ISessionFunctions` design. It replaces individual `ref key` and `ref value` parameters in the `ISessionFunctions` methods (as well as endoding optional `ETag` and `Expiration` into the Value) with a single `LogRecord`, which may be either `LogRecord` for in-memory log records, or `DiskLogRecord` for on-disk records. These `LogRecord` have properties for `Key` and `Value` as well as making `Etag` and `Expiration` first-class properties. There are a number of additional changes in this design as well, as shown in the following sections.
 
 Much of the record-related logic of the allocators (e.g. `SpanByteAllocator`) has been moved into the `LogRecord` structs.
+
+See LogRecord.cs for details of the layout, including `RecordType`, `Namespace`, and the ObjectLogPosition ulong if the record is not inline (has an Overflow Key and/or an Overflow or Object value).
 
 ## `SpanByte` and `ArgSlice` are now `PinnedSpanByte` or `ReadOnlySpan<byte>`
 
@@ -36,11 +38,11 @@ With the move to `SpanByte`-only keys we also created a new `ObjectAllocator` fo
 
 An object field's object must inherit from `IHeapObject`. The Garnet processing layer uses `IGarnetObject`, which inherits from `IHeapObject`). The Tsavorite Unit Tests use object types that implement `IHeapObject`.
 
-`IHeapObject` provides two basic properties:
+`IHeapObject` provides two basic properties for size tracking:
 - MemorySize: The size the object takes in memory. This includes .NET object overhead as well as the size of the actual data. It is used in object size tracking.
-- DiskSize: The size the object will take when serialized to disk format. This usually includes a length prefix followed by the actual data.
+- DiskSize: The size the object will take when serialized to disk. This usually includes a length prefix followed by the actual data. JsonObject cannot efficiently track this on a per-modification basis, so there is also a "SerializedSizeIsExact" field that lets us know we can serialize the object with a known length. For other objects, Garnet ensures that each operation on an object (such as a `SortedSet`) keeps these fields up to date.
 
-Garnet ensures that each operation on an object (such as a `SortedSet`) keeps these fields up to date.
+There are a number of other methods on IHeapObject, mostly to handle serialization.
 
 ### `ObjectIdMap`
 In `ObjectAllocator` we have an `ObjectIdMap` that provides a GC root for objects (and overflows, as discussed next). In the log record itself, there is a 4-byte `ObjectId` that is an index into the `ObjectIdMap`.
@@ -111,6 +113,8 @@ In the `ObjectAllocator`, `TrySetValueLength` also manages conversion between th
 
   Although `TrySetValueLength` allocates the `ObjectId` slot, it does not know the actual object, so the `ISessionFunctions` implementation must create the object and call `TrySetValueObject`.
 
+  Performance note: `TrySetValueLength` handles all conversions. It should be beneficial to provide some leaner versions, for example string-only when lengths are unlikely to change.
+
 #### RecordSizeInfo
 
 This structure is populated prior to record allocation (it is necessary to know what size to allocate from the log), and then is passed through to `ISessionFunctions` implementation and subsequently to the `LogRecord`. The flow is:
@@ -135,19 +139,13 @@ As a terminology note, `LogField` (and `RecordSizeInfo` and `LogRecord`) use the
 
 ### DiskLogRecord struct
 
-The DiskLogRecord is an `ISourceLogRecord` that is backed by a record in on-disk format. See `DiskLogRecord.cs` for more details, inluding the record layout and comments. It is a read-only record.
-
-In on-disk format the data has two forms:
-- Keys and Values are stored inline, as byte streams. This is a direct copy of the inline `LogRecord` layout, and is intended to support the `SpanByteAllocator` inline case being written directly to disk.
-- An optimized layout where the `RecordInfo` is followed immediately by an indicator byte that contains version of the layout design and the number of bits for key and value lengths. The lengths immediately follow (i.e. the Value length is directly after the key length, and before the key data). This ensures that if we do not get the full record on the first IO, we know the length needed to read the entire record on the next IO.
-
-In both of these layouts the optionals are stored after the Value, as in `LogRecord`. The `RecordInfo` knows whether they are present, and thus their length is known when calculating IO size.
+The DiskLogRecord is an `ISourceLogRecord` that is backed by a `LogRecord`. See `DiskLogRecord.cs` for more details. Its main purpose is to act as a container for a `LogRecord` and the `SectorAlignedMemory` buffer and value-object disposer associated with that `LogRecord`.
 
 ### PendingContext
 
 `PendingContext` implements `ISourceLogRecord` because it carries a information through the IO process and provides the source record for RMW copy updates.
 
-Previously `PendingContext` had separate `HeapContainers` for keys and values. However, for operations such as conditional insert for Copy-To-Tail or Compaction, we need to carry through the entire log record (including optionals). In the case of records read from disk (e.g. Compaction), it is easiest to pass the `DiskLogRecord` in its entirety, including its `SectorAlignedMemory` buffer. So now PendingContext will also serialize the Key passed to Upsert or RMW, and the value passed to Upsert, as a `DiskLogRecord`. `PendingContext` still carries the `HeapContainer` for Input, and `CompletedOutputs` must still retain the Key's `HeapContainer`. 
+Previously `PendingContext` had separate `HeapContainers` for keys and values. However, for operations such as conditional insert for Copy-To-Tail or Compaction, we need to carry through the entire log record (including optionals). In the case of records read from disk (e.g. Compaction), it is easiest to pass the `LogRecord` in its entirety, including its `SectorAlignedMemory` buffer, in the `DiskLogRecord`. So now PendingContext will also serialize the Key passed to Upsert or RMW, and the value passed to Upsert, as a `DiskLogRecord`. `PendingContext` still carries the `HeapContainer` for Input, and `CompletedOutputs` must still retain the Key's `HeapContainer`. 
 
 For Compaction or other operations that must carry an in-memory record's data through the pending process, `PendingContext` serializes that in-memory `LogRecord` to its `DiskLogRecord`.
 
@@ -161,4 +159,4 @@ For Compaction or other operations that must carry an in-memory record's data th
 
 ## Migration and Replication
 
-Key migration and diskless Replication have been converted to serialize the record to a `DiskLogRecord` on the sending side, and on the receiving side call one of the new `Upsert` overloads that take a `TSourceLogRecord` as the Value.
+Key migration and diskless Replication have been converted to serialize the record to a `DiskLogRecord` on the sending side, and on the receiving side call one of the new `Upsert` overloads that take a `TSourceLogRecord` as the Value. This serialization mimics the writing to disk, but instead of a separate file or memory allocation, it allocates one chunk large enough for the entire inline portion followed by the out-of-line portions appended after the inline portion. Note that this limits the capacity of out-of-line allocations to a single network buffer; there is a pending work item to provide "chunked" output to (and read from) the network buffer.

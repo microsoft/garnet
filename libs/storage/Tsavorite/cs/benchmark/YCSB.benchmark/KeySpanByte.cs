@@ -26,10 +26,10 @@ namespace Tsavorite.benchmark
         /// </summary>
         /// <remarks>
         /// Combined with the varbyte length total of <see cref="VarbyteLengthUtility.MinLengthMetadataBytes"/> bytes, we get:
-        /// [RecordInfo varbytelength keydata valuedata] = [8 + 3 + 12 + 100] = 127, so the final record size is exactly aligned to two cache lines.
-        /// To illustrate why this is important: during the conversion to <see cref="ReadOnlySpan{_byte_}"/>, the change in key alignment was not correctly
-        /// accounted for; the record was 8 bytes shorter, and the next record's RecordInfo was in the final bytes of the previous record's cache line.
-        /// This resulted in about a 10% slowdown.
+        /// [RecordInfo varbytelength keydata valuedata] = [8 + 5 (NumIndicatorBytes + 2 1-byte lengths) + 12 + 100 (kValueDataSize)] = 125, so the final record size is
+        /// exactly aligned to two cache lines. To illustrate why this is important: during the conversion to <see cref="ReadOnlySpan{_byte_}"/>, the change in key
+        /// alignment was not correctly accounted for; the record was 8 bytes shorter, and the next record's RecordInfo was in the final bytes of the previous record's
+        /// cache line. This resulted in about a 10% slowdown.
         /// </remarks>
         [FieldOffset(sizeof(long))]
         public int padding1;

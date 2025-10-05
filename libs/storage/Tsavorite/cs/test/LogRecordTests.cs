@@ -152,7 +152,7 @@ namespace Tsavorite.test.LogRecordTests
                 Assert.That(outputKeyLengthBytes, Is.EqualTo(keyLengthBytes));
                 Assert.That(outputKeyLength, Is.EqualTo(inputKeyLength));
                 Assert.That(outputValueLength, Is.EqualTo(inputValueLength));
-                Assert.That((long)keyPtr, Is.EqualTo((long)(ptr + 1 + outputKeyLengthBytes + outputValueLengthBytes)));
+                Assert.That((long)keyPtr, Is.EqualTo((long)(ptr + NumIndicatorBytes + outputKeyLengthBytes + outputValueLengthBytes)));
                 Assert.That((long)keyLengthPtr, Is.EqualTo((long)(ptr + 1)));
                 Assert.That((long)valuePtr, Is.EqualTo((long)(keyPtr + outputKeyLength)));
                 Assert.That((long)valueLengthPtr, Is.EqualTo((long)(keyLengthPtr + keyLengthBytes)));
