@@ -273,7 +273,7 @@ namespace Tsavorite.core
 
         protected override void RemoveSegment(int segment)
         {
-            //TODOnow("Get the object log segment information from this main-log segment");
+            //TODOnow("Get the object log segment information from this main-log segment's last PageHeader");
             base.RemoveSegment(segment);
         }
 

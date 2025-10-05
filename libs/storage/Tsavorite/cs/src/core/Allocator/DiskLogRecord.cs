@@ -347,10 +347,11 @@ namespace Tsavorite.core
             }
             else
             {
-                fixed (byte* ptr = output.MemorySpan.Slice(inlineRecordSize))
+                fixed (byte* ptr = output.MemorySpan.Slice(0, inlineRecordSize))
                 {
-                    var serializedLogRecord = new LogRecord((long)ptr);
+                    var serializedLogRecord = new LogRecord((long)ptr, logRecord.objectIdMap);
                     serializedLogRecord.SetObjectLogRecordStartPositionAndLength(fakeFilePos, valueObjectLength);
+                    serializedLogRecord = new LogRecord((long)ptr);     // Reset to clear objectIdMap because it may be the one in the main log and we pass in a transient one when deserializing
                 }
             }
 

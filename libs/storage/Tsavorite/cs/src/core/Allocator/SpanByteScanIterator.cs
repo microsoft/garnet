@@ -385,7 +385,6 @@ namespace Tsavorite.core
                 hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             recordBuffer?.Return();
             recordBuffer = null;
-            //TODOnow("Dispose objects in frame");
             frame?.Dispose();
         }
 
