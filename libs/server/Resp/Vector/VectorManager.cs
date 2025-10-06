@@ -57,6 +57,8 @@ namespace Garnet.server
                 this.context = context;
                 this.lengthPrefixedKeys = lengthPrefixedKeys;
 
+                Count = (int)keyCount;
+
                 nextKey = lengthPrefixedKeys.ToPointer();
 
                 lastLengthPtr = null;
