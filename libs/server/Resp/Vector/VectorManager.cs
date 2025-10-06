@@ -46,8 +46,8 @@ namespace Garnet.server
             private readonly ulong context;
             private readonly SpanByte lengthPrefixedKeys;
 
-            public unsafe delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void> callback;
-            public nint callbackContext;
+            public readonly unsafe delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void> callback;
+            public readonly nint callbackContext;
 
             private int currentIndex;
 
@@ -56,13 +56,13 @@ namespace Garnet.server
 
             private bool hasPending;
 
-            public VectorReadBatch(ref VectorInput input, ulong context, uint keyCount, SpanByte lengthPrefixedKeys)
+            public VectorReadBatch(delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void> callback, nint callbackContext, ulong context, uint keyCount, SpanByte lengthPrefixedKeys)
             {
                 this.context = context;
                 this.lengthPrefixedKeys = lengthPrefixedKeys;
 
-                callback = input.Callback;
-                callbackContext = input.CallbackContext;
+                this.callback = callback;
+                this.callbackContext = callbackContext;
 
                 currentIndex = 0;
                 Count = (int)keyCount;
@@ -295,15 +295,9 @@ namespace Garnet.server
             // Takes: index, dataCallbackContext, data pointer, data length, and returns nothing
             var dataCallbackDel = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)dataCallback;
 
-            VectorInput input = default;
-            ref var inputRef = ref input;
-
-            var enumerable = new VectorReadBatch(ref inputRef, context, numKeys, SpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength));
+            var enumerable = new VectorReadBatch(dataCallbackDel, dataCallbackContext, context, numKeys, SpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength));
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
-
-            input.Callback = dataCallbackDel;
-            input.CallbackContext = dataCallbackContext;
 
             ctx.ReadWithPrefetch(ref enumerable);
 

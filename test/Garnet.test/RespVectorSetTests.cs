@@ -445,7 +445,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(ref input, 64, 1, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 64, 1, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -481,7 +481,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(ref input, 32, 7, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 32, 7, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -521,7 +521,7 @@ namespace Garnet.test
                 fixed (int* dataPtr = data)
                 {
                     var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(ref input, 16, 7, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 16, 7, keyData);
 
                     var rand = new Random(2025_10_06_00);
 
@@ -565,7 +565,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(ref input, 8, 1, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, 1, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -670,7 +670,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(ref input, 4, 8, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -789,7 +789,7 @@ namespace Garnet.test
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(ref input, 4, 8, keyData);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
 
                     var rand = new Random(2025_10_06_01);
 
