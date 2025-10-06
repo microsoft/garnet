@@ -71,6 +71,7 @@ namespace Garnet.server
                 currentLen = *(int*)currentPtr;
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void AdvanceTo(int i)
             {
                 Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
@@ -83,9 +84,10 @@ namespace Garnet.server
                 // Undo namespace mutation
                 *(int*)currentPtr = currentLen;
 
+                // Most likely case, we're going one forward
                 if (i == (currentIndex + 1))
                 {
-                    currentPtr += currentLen;
+                    currentPtr += currentLen + sizeof(int); // Skip length prefix too
                     Debug.Assert(currentPtr < lengthPrefixedKeys.ToPointerWithMetadata() + lengthPrefixedKeys.Length, "About to access out of bounds data");
 
                     currentLen = *currentPtr;
@@ -95,16 +97,28 @@ namespace Garnet.server
                     return;
                 }
 
+                // Next most likely case, we're going back to the start
                 currentPtr = lengthPrefixedKeys.ToPointerWithMetadata();
                 currentLen = *(int*)currentPtr;
                 currentIndex = 0;
 
+                if (i == 0)
+                {
+                    return;
+                }
+
+                SlowPath(ref this, i);
+
                 // For the case where we're not just scanning or rolling back to 0, just iterate
                 //
                 // This should basically never happen
-                for (var subI = 1; subI <= i; subI++)
+                [MethodImpl(MethodImplOptions.NoInlining)]
+                static void SlowPath(ref VectorReadBatch self, int i)
                 {
-                    AdvanceTo(subI);
+                    for (var subI = 1; subI <= i; subI++)
+                    {
+                        self.AdvanceTo(subI);
+                    }
                 }
             }
 
@@ -128,6 +142,7 @@ namespace Garnet.server
                 input = default;
                 input.CallbackContext = callbackContext;
                 input.Callback = callback;
+                input.Index = i;
             }
 
             /// <inheritdoc/>
@@ -135,7 +150,8 @@ namespace Garnet.server
             {
                 Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
 
-                output = default;
+                // Don't care, won't be used
+                Unsafe.SkipInit(out output);
             }
 
             /// <inheritdoc/>
@@ -152,7 +168,7 @@ namespace Garnet.server
                 hasPending |= status.IsPending;
             }
 
-            public void CompletePending<TContext>(ref TContext objectContext)
+            internal readonly void CompletePending<TContext>(ref TContext objectContext)
                 where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             {
                 if (hasPending)
