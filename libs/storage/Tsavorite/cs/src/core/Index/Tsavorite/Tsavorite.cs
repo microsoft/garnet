@@ -490,32 +490,46 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [SkipLocalsInit] // Span<long> in here can be sizeable, so 0-init'ing isn't free
         internal unsafe void ContextReadWithPrefetch<TBatch, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TBatch batch, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TBatch : IReadArgBatch<TKey, TInput, TOutput>
         {
             Span<long> hashes = stackalloc long[batch.Count];
 
-            // Prefetch the hash table entries for all keys
-            for (var i = 0; i < hashes.Length; i++)
+            if (Sse.IsSupported)
             {
-                batch.GetKey(i, out var key);
-                hashes[i] = storeFunctions.GetKeyHashCode64(ref key);
-                if (Sse.IsSupported)
-                    Sse.Prefetch0(state[resizeInfo.version].tableAligned + (hashes[i] & state[resizeInfo.version].size_mask));
-            }
+                // Prefetch the hash table entries for all keys
+                var tableAligned = state[resizeInfo.version].tableAligned;
+                var sizeMask = state[resizeInfo.version].size_mask;
 
-            // Prefetch records for all possible keys
-            for (var i = 0; i < hashes.Length; i++)
-            {
-                var keyHash = hashes[i];
-                var hei = new HashEntryInfo(keyHash);
-
-                // If the hash entry exists in the table, points to main memory in the main log (not read cache), also prefetch the record header address
-                if (FindTag(ref hei) && !hei.IsReadCache && hei.Address >= hlogBase.HeadAddress)
+                for (var i = 0; i < hashes.Length; i++)
                 {
-                    if (Sse.IsSupported)
+                    batch.GetKey(i, out var key);
+                    hashes[i] = storeFunctions.GetKeyHashCode64(ref key);
+
+                    Sse.Prefetch0(tableAligned + (hashes[i] & sizeMask));
+                }
+
+                // Prefetch records for all possible keys
+                for (var i = 0; i < hashes.Length; i++)
+                {
+                    var keyHash = hashes[i];
+                    var hei = new HashEntryInfo(keyHash);
+
+                    // If the hash entry exists in the table, points to main memory in the main log (not read cache), also prefetch the record header address
+                    if (FindTag(ref hei) && !hei.IsReadCache && hei.Address >= hlogBase.HeadAddress)
+                    {
                         Sse.Prefetch0((void*)hlog.GetPhysicalAddress(hei.Address));
+                    }
+                }
+            }
+            else
+            {
+                for (var i = 0; i < hashes.Length; i++)
+                {
+                    batch.GetKey(i, out var key);
+                    hashes[i] = storeFunctions.GetKeyHashCode64(ref key);
                 }
             }
 

@@ -171,6 +171,9 @@ namespace Garnet.server
             internal readonly void CompletePending<TContext>(ref TContext objectContext)
                 where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             {
+                // Undo mutations
+                *(int*)currentPtr = currentLen;
+
                 if (hasPending)
                 {
                     _ = objectContext.CompletePending(wait: true);
