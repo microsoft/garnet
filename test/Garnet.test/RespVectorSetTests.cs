@@ -4,12 +4,12 @@
 using System;
 using System.Buffers;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -432,7 +432,74 @@ namespace Garnet.test
             }
         }
 
-        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "vectorManager")]
-        private static extern ref VectorManager GetVectorManager(GarnetServer server);
+        [Test]
+        public unsafe void VectorReadBatchVariants()
+        {
+            // Single key, 4 byte keys
+            {
+                var input = new VectorInput();
+                input.Callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)5678;
+                input.CallbackContext = 9012;
+
+                var data = new int[] { 4, 1234 };
+                fixed (int* dataPtr = data)
+                {
+                    var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
+                    var batch = new VectorManager.VectorReadBatch(ref input, 64, 1, keyData);
+
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, input.Index);
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(64, keyCopy.GetNamespaceInPayload());
+                        ClassicAssert.IsTrue(keyCopy.AsReadOnlySpan().SequenceEqual(MemoryMarshal.Cast<int, byte>(data.AsSpan().Slice(1, 1))));
+
+                        // Validate output
+                        batch.GetOutput(i, out var output);
+                        ClassicAssert.IsTrue(output.Invalid);
+                    }
+                }
+            }
+
+            // Multiple keys, 4 byte keys
+            {
+                var input = new VectorInput();
+                input.Callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)5678;
+                input.CallbackContext = 9012;
+
+                var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
+                fixed (int* dataPtr = data)
+                {
+                    var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
+                    var batch = new VectorManager.VectorReadBatch(ref input, 32, 7, keyData);
+
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, input.Index);
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(32, keyCopy.GetNamespaceInPayload());
+
+                        var offset = i * 2 + 1;
+                        ClassicAssert.IsTrue(keyCopy.AsReadOnlySpan().SequenceEqual(MemoryMarshal.Cast<int, byte>(data.AsSpan().Slice(offset, 1))));
+
+                        // Validate output
+                        batch.GetOutput(i, out var output);
+                        ClassicAssert.IsTrue(output.Invalid);
+                    }
+                }
+            }
+        }
     }
 }

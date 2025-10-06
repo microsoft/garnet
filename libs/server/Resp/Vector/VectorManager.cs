@@ -39,56 +39,126 @@ namespace Garnet.server
         internal const long VADDAppendLogArg = long.MinValue;
         internal const long DeleteAfterDropArg = VADDAppendLogArg + 1;
 
-        private unsafe struct KeyVectorEnumerable : IKeyEnumerable<SpanByte>
+        public unsafe struct VectorReadBatch : IReadArgBatch<SpanByte, VectorInput, SpanByte>
         {
             public int Count { get; }
 
             private readonly ulong context;
             private readonly SpanByte lengthPrefixedKeys;
 
-            private VectorInput* input;
-            private byte* nextKey;
-            private int* lastLengthPtr;
-            private int lastLength;
+            public unsafe delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void> callback;
+            public nint callbackContext;
 
-            internal KeyVectorEnumerable(ref VectorInput input, ulong context, uint keyCount, SpanByte lengthPrefixedKeys)
+            private int currentIndex;
+
+            private int currentLen;
+            private byte* currentPtr;
+
+            private bool hasPending;
+
+            public VectorReadBatch(ref VectorInput input, ulong context, uint keyCount, SpanByte lengthPrefixedKeys)
             {
-                this.input = (VectorInput*)Unsafe.AsPointer(ref input);
                 this.context = context;
                 this.lengthPrefixedKeys = lengthPrefixedKeys;
 
+                callback = input.Callback;
+                callbackContext = input.CallbackContext;
+
+                currentIndex = 0;
                 Count = (int)keyCount;
 
-                nextKey = lengthPrefixedKeys.ToPointer();
-
-                lastLengthPtr = null;
+                currentPtr = this.lengthPrefixedKeys.ToPointerWithMetadata();
+                currentLen = *(int*)currentPtr;
             }
 
-            public void GetAndMoveNext(ref SpanByte into)
+            private void AdvanceTo(int i)
             {
-                if (lastLengthPtr != null)
+                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
+
+                if (i == currentIndex)
                 {
-                    *lastLengthPtr = lastLength;
+                    return;
                 }
 
-                lastLengthPtr = (int*)nextKey;
-                lastLength = *lastLengthPtr;
+                // Undo namespace mutation
+                *(int*)currentPtr = currentLen;
 
-                into = MarkDiskANNKeyWithNamespace(context, (nint)(nextKey + 4), (nuint)lastLength);
+                if (i == (currentIndex + 1))
+                {
+                    currentPtr += currentLen;
+                    Debug.Assert(currentPtr < lengthPrefixedKeys.ToPointerWithMetadata() + lengthPrefixedKeys.Length, "About to access out of bounds data");
 
-                input->Index++;
-                nextKey += 4 + lastLength;
+                    currentLen = *currentPtr;
+
+                    currentIndex = i;
+
+                    return;
+                }
+
+                currentPtr = lengthPrefixedKeys.ToPointerWithMetadata();
+                currentLen = *(int*)currentPtr;
+                currentIndex = 0;
+
+                // For the case where we're not just scanning or rolling back to 0, just iterate
+                //
+                // This should basically never happen
+                for (var subI = 1; subI <= i; subI++)
+                {
+                    AdvanceTo(subI);
+                }
             }
 
-            public void Reset()
+            /// <inheritdoc/>
+            public void GetKey(int i, out SpanByte key)
             {
-                if (lastLengthPtr != null)
-                {
-                    *lastLengthPtr = lastLength;
-                }
+                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
 
-                input->Index = 0;
-                nextKey = lengthPrefixedKeys.ToPointer();
+                AdvanceTo(i);
+
+                key = SpanByte.FromPinnedPointer(currentPtr + 3, currentLen + 1);
+                key.MarkNamespace();
+                key.SetNamespaceInPayload((byte)context);
+            }
+
+            /// <inheritdoc/>
+            public readonly void GetInput(int i, out VectorInput input)
+            {
+                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
+
+                input = default;
+                input.CallbackContext = callbackContext;
+                input.Callback = callback;
+            }
+
+            /// <inheritdoc/>
+            public readonly void GetOutput(int i, out SpanByte output)
+            {
+                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
+
+                output = default;
+            }
+
+            /// <inheritdoc/>
+            public readonly void SetOutput(int i, SpanByte output)
+            {
+                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
+            }
+
+            /// <inheritdoc/>
+            public void SetStatus(int i, Status status)
+            {
+                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
+
+                hasPending |= status.IsPending;
+            }
+
+            public void CompletePending<TContext>(ref TContext objectContext)
+                where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            {
+                if (hasPending)
+                {
+                    _ = objectContext.CompletePending(wait: true);
+                }
             }
         }
 
@@ -212,20 +282,16 @@ namespace Garnet.server
             VectorInput input = default;
             ref var inputRef = ref input;
 
-            var enumerable = new KeyVectorEnumerable(ref inputRef, context, numKeys, SpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength));
+            var enumerable = new VectorReadBatch(ref inputRef, context, numKeys, SpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength));
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
 
             input.Callback = dataCallbackDel;
             input.CallbackContext = dataCallbackContext;
 
-            SpanByte outputSpan = default;
+            ctx.ReadWithPrefetch(ref enumerable);
 
-            var status = ctx.ReadWithPrefetch(ref enumerable, ref inputRef, ref outputSpan);
-            if (status.IsPending)
-            {
-                CompletePending(ref status, ref outputSpan, ref ctx);
-            }
+            enumerable.CompletePending(ref ctx);
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]

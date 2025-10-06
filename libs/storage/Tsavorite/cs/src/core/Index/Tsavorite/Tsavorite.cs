@@ -490,27 +490,41 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe Status ContextReadWithPrefetch<TEnumerable, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TEnumerable keys, ref TInput input, ref TOutput output, TContext context, TSessionFunctionsWrapper sessionFunctions)
+        internal unsafe void ContextReadWithPrefetch<TBatch, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TBatch batch, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
-            where TEnumerable : IKeyEnumerable<TKey>
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
         {
-            Status status = default;
-            Span<long> hashes = stackalloc long[keys.Count];
+            Span<long> hashes = stackalloc long[batch.Count];
 
-            TKey key = default;
+            // Prefetch the hash table entries for all keys
             for (var i = 0; i < hashes.Length; i++)
             {
-                keys.GetAndMoveNext(ref key);
+                batch.GetKey(i, out var key);
                 hashes[i] = storeFunctions.GetKeyHashCode64(ref key);
                 if (Sse.IsSupported)
                     Sse.Prefetch0(state[resizeInfo.version].tableAligned + (hashes[i] & state[resizeInfo.version].size_mask));
             }
 
-            keys.Reset();
-
+            // Prefetch records for all possible keys
             for (var i = 0; i < hashes.Length; i++)
             {
-                keys.GetAndMoveNext(ref key);
+                var keyHash = hashes[i];
+                var hei = new HashEntryInfo(keyHash);
+
+                // If the hash entry exists in the table, points to main memory in the main log (not read cache), also prefetch the record header address
+                if (FindTag(ref hei) && !hei.IsReadCache && hei.Address >= hlogBase.HeadAddress)
+                {
+                    if (Sse.IsSupported)
+                        Sse.Prefetch0((void*)hlog.GetPhysicalAddress(hei.Address));
+                }
+            }
+
+            // Perform the reads
+            for (var i = 0; i < hashes.Length; i++)
+            {
+                batch.GetKey(i, out var key);
+                batch.GetInput(i, out var input);
+                batch.GetOutput(i, out var output);
 
                 var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
                 OperationStatus internalStatus;
@@ -519,10 +533,9 @@ namespace Tsavorite.core
                     internalStatus = InternalRead(ref key, hashes[i], ref input, ref output, context, ref pcontext, sessionFunctions);
                 while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-                status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
+                batch.SetStatus(i, HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus));
+                batch.SetOutput(i, output);
             }
-
-            return status;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

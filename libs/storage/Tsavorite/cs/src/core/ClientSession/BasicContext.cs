@@ -84,13 +84,13 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public Status ReadWithPrefetch<TEnumerable>(ref TEnumerable key, ref TInput input, ref TOutput output, TContext userContext = default)
-            where TEnumerable : IKeyEnumerable<TKey>
+        public void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext = default)
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
         {
             UnsafeResumeThread();
             try
             {
-                return clientSession.store.ContextReadWithPrefetch(ref key, ref input, ref output, userContext, sessionFunctions);
+                clientSession.store.ContextReadWithPrefetch<TBatch, TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(ref batch, userContext, sessionFunctions);
             }
             finally
             {
