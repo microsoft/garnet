@@ -876,6 +876,7 @@ namespace Garnet.server
                 RespCommand.BITOP_OR => NetworkStringBitOperation(BitmapOperation.OR, ref storageApi),
                 RespCommand.BITOP_XOR => NetworkStringBitOperation(BitmapOperation.XOR, ref storageApi),
                 RespCommand.BITOP_NOT => NetworkStringBitOperation(BitmapOperation.NOT, ref storageApi),
+                RespCommand.BITOP_DIFF => NetworkStringBitOperation(BitmapOperation.DIFF, ref storageApi),
                 RespCommand.BITFIELD => StringBitField(ref storageApi),
                 RespCommand.BITFIELD_RO => StringBitFieldReadOnly(ref storageApi),
                 // List Commands
