@@ -2857,6 +2857,7 @@ namespace Garnet.server
                         case RespCommand.BITOP_OR: state.PushConstantString(constStrs.OR); break;
                         case RespCommand.BITOP_XOR: state.PushConstantString(constStrs.XOR); break;
                         case RespCommand.BITOP_NOT: state.PushConstantString(constStrs.NOT); break;
+                        case RespCommand.BITOP_DIFF: state.PushConstantString(constStrs.DIFF); break;
 
                         default: throw new InvalidOperationException($"Unexpected BITOP sub command: {subCommand}");
                     }
