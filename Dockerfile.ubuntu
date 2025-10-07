@@ -55,7 +55,6 @@ RUN apt-get update \
     && if [ -n "$DN_DIR" ]; then ln -sf "/usr/lib/${ARCH}/liblua5.4.so.0" "$DN_DIR/liblua54.so"; fi \
     && rm -rf /var/lib/apt/lists/*
 
-
 RUN mkdir /data /app \
     && chown -R $APP_UID:$APP_UID /data /app
 
