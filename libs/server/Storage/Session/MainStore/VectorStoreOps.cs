@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -89,7 +90,8 @@ namespace Garnet.server
         /// <summary>
         /// Implement Vector Set Add - this may also create a Vector Set if one does not already exist.
         /// </summary>
-        public GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        [SkipLocalsInit]
+        public unsafe GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             int dims;
             if (valueType == VectorValueType.FP32)
@@ -119,8 +121,8 @@ namespace Garnet.server
 
             var input = new RawStringInput(RespCommand.VADD, ref parseState);
 
-            Span<byte> resSpan = stackalloc byte[128];
-            var indexConfig = SpanByteAndMemory.FromPinnedSpan(resSpan);
+            var resSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            SpanByteAndMemory indexConfig = new(resSpan, VectorManager.IndexSizeBytes);
 
             TxnKeyEntry vectorLockEntry = new();
             vectorLockEntry.isObject = false;
@@ -198,7 +200,8 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search on an existing Vector Set given a vector as a bunch of floats.
         /// </summary>
-        public GarnetStatus VectorSetValueSimilarity(SpanByte key, VectorValueType valueType, ArgSlice values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
+        [SkipLocalsInit]
+        public unsafe GarnetStatus VectorSetValueSimilarity(SpanByte key, VectorValueType valueType, ArgSlice values, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
         {
             // Need to lock to prevent the index from being dropped while we read against it
             //
@@ -223,8 +226,8 @@ namespace Garnet.server
                     // Get the index
                     var input = new RawStringInput(RespCommand.VSIM, ref parseState);
 
-                    Span<byte> resSpan = stackalloc byte[128];
-                    var indexConfig = SpanByteAndMemory.FromPinnedSpan(resSpan);
+                    var resSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+                    SpanByteAndMemory indexConfig = new(resSpan, VectorManager.IndexSizeBytes);
 
                     var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                     if (readRes != GarnetStatus.OK)
@@ -257,7 +260,8 @@ namespace Garnet.server
         /// <summary>
         /// Perform a similarity search on an existing Vector Set given an element that is already in the Vector Set.
         /// </summary>
-        public GarnetStatus VectorSetElementSimilarity(SpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
+        [SkipLocalsInit]
+        public unsafe GarnetStatus VectorSetElementSimilarity(SpanByte key, ReadOnlySpan<byte> element, int count, float delta, int searchExplorationFactor, ReadOnlySpan<byte> filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
         {
             // Need to lock to prevent the index from being dropped while we read against it
             //
@@ -281,8 +285,8 @@ namespace Garnet.server
 
                     var input = new RawStringInput(RespCommand.VSIM, ref parseState);
 
-                    Span<byte> resSpan = stackalloc byte[128];
-                    var indexConfig = SpanByteAndMemory.FromPinnedSpan(resSpan);
+                    var resSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+                    SpanByteAndMemory indexConfig = new(resSpan, VectorManager.IndexSizeBytes);
 
                     var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                     if (readRes != GarnetStatus.OK)
@@ -315,7 +319,8 @@ namespace Garnet.server
         /// <summary>
         /// Get the approximate vector associated with an element, after (approximately) reversing any transformation.
         /// </summary>
-        public GarnetStatus VectorSetEmbedding(SpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        [SkipLocalsInit]
+        public unsafe GarnetStatus VectorSetEmbedding(SpanByte key, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
         {
             // Need to lock to prevent the index from being dropped while we read against it
             //
@@ -339,8 +344,8 @@ namespace Garnet.server
 
                     var input = new RawStringInput(RespCommand.VEMB, ref parseState);
 
-                    Span<byte> resSpan = stackalloc byte[128];
-                    var indexConfig = SpanByteAndMemory.FromPinnedSpan(resSpan);
+                    var resSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+                    SpanByteAndMemory indexConfig = new(resSpan, VectorManager.IndexSizeBytes);
 
                     var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                     if (readRes != GarnetStatus.OK)
@@ -371,7 +376,8 @@ namespace Garnet.server
             }
         }
 
-        internal GarnetStatus VectorSetDimensions(SpanByte key, out int dimensions)
+        [SkipLocalsInit]
+        internal unsafe GarnetStatus VectorSetDimensions(SpanByte key, out int dimensions)
         {
             // Need to lock to prevent the index from being dropped while we read against it
             //
@@ -395,8 +401,8 @@ namespace Garnet.server
 
                     var input = new RawStringInput(RespCommand.VDIM, ref parseState);
 
-                    Span<byte> resSpan = stackalloc byte[128];
-                    var indexConfig = SpanByteAndMemory.FromPinnedSpan(resSpan);
+                    var resSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+                    SpanByteAndMemory indexConfig = new(resSpan, VectorManager.IndexSizeBytes);
 
                     var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                     if (readRes != GarnetStatus.OK)
@@ -429,7 +435,8 @@ namespace Garnet.server
         /// 
         /// This is called by DEL and UNLINK after a naive delete fails for us to _try_ and delete a Vector Set.
         /// </summary>
-        private Status TryDeleteVectorSet(ref SpanByte key)
+        [SkipLocalsInit]
+        private unsafe Status TryDeleteVectorSet(ref SpanByte key)
         {
             var lockCtx = objectStoreLockableContext;
 
@@ -447,8 +454,8 @@ namespace Garnet.server
 
                 try
                 {
-                    Span<byte> resSpan = stackalloc byte[128];
-                    var indexConfig = SpanByteAndMemory.FromPinnedSpan(resSpan);
+                    var resSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+                    SpanByteAndMemory indexConfig = new(resSpan, VectorManager.IndexSizeBytes);
 
                     parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
 

@@ -184,7 +184,7 @@ namespace Garnet.server
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         private struct Index
         {
-            internal const int Size = 33;
+            internal const int Size = 36;
 
             [FieldOffset(0)]
             public ulong Context;
@@ -881,7 +881,6 @@ namespace Garnet.server
             {
                 Span<byte> idWithNamespace = stackalloc byte[128];
 
-
                 // TODO: we could scatter/gather this like MGET - doesn't matter when everything is in memory,
                 //       but if anything is on disk it'd help perf
                 for (var i = 0; i < numIds; i++)
@@ -1202,8 +1201,8 @@ namespace Garnet.server
                         var element = SpanByte.FromPinnedPointer(elementPtr, elementBytes.Length);
                         var attributes = SpanByte.FromPinnedPointer(attributesPtr, attributesBytes.Length);
 
-                        Span<byte> indexBytes = stackalloc byte[128];
-                        var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexBytes);
+                        var indexBytes = stackalloc byte[IndexSizeBytes];
+                        SpanByteAndMemory indexConfig = new(indexBytes, IndexSizeBytes);
 
                         var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
                         var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
