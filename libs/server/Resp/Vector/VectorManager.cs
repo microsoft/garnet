@@ -206,6 +206,28 @@ namespace Garnet.server
         {
         }
 
+        public sealed class SessionContext : IDisposable
+        {
+            internal SessionContext()
+            {
+            }
+
+            internal static void Enter(StorageSession session)
+            {
+                Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
+
+                ActiveThreadSession = session;
+            }
+
+            /// <inheritdoc/>
+            public void Dispose()
+            {
+                Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
+
+                ActiveThreadSession = null;
+            }
+        }
+
         /// <summary>
         /// Minimum size of an id is assumed to be at least 4 bytes + a length prefix.
         /// </summary>
@@ -216,6 +238,8 @@ namespace Garnet.server
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
 
         private DiskANNService Service { get; } = new DiskANNService();
+
+        private readonly SessionContext reusableContextTracker = new();
 
         private ulong nextContextValue;
 
@@ -437,6 +461,17 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Utility to wrap setting the current context for a call within a using.
+        /// 
+        /// Easier than threading it down everywhere, just as safe.
+        /// </summary>
+        internal SessionContext Enter(StorageSession current)
+        {
+            SessionContext.Enter(current);
+            return reusableContextTracker;
+        }
+
+        /// <summary>
         /// Construct a new index, and stash enough data to recover it with <see cref="ReadIndex"/>.
         /// </summary>
         internal void CreateIndex(
@@ -447,6 +482,8 @@ namespace Garnet.server
             uint numLinks,
             ref SpanByte indexValue)
         {
+            AssertHaveStorageSession();
+
             var context = NextContext();
 
             nint indexPtr;
@@ -476,19 +513,13 @@ namespace Garnet.server
         /// <summary>
         /// Drop an index previously constructed with <see cref="CreateIndex"/>.
         /// </summary>
-        internal void DropIndex(StorageSession currentStorageSession, ReadOnlySpan<byte> indexValue)
+        internal void DropIndex(ReadOnlySpan<byte> indexValue)
         {
+            AssertHaveStorageSession();
+
             ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out var indexPtr);
 
-            ActiveThreadSession = currentStorageSession;
-            try
-            {
-                Service.DropIndex(context, indexPtr);
-            }
-            finally
-            {
-                ActiveThreadSession = null;
-            }
+            Service.DropIndex(context, indexPtr);
         }
 
         internal static void ReadIndex(
@@ -530,7 +561,6 @@ namespace Garnet.server
         /// </summary>
         /// <returns>Result of the operation.</returns>
         internal VectorManagerResult TryAdd(
-            StorageSession currentStorageSession,
             ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,
             VectorValueType valueType,
@@ -543,90 +573,83 @@ namespace Garnet.server
             out ReadOnlySpan<byte> errorMsg
         )
         {
+            AssertHaveStorageSession();
+
             errorMsg = default;
 
-            ActiveThreadSession = currentStorageSession;
-            try
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
+
+            var valueDims = CalculateValueDimensions(valueType, values);
+
+            if (dimensions != valueDims)
             {
-                ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
+                // Matching Redis behavior
+                errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {valueDims} but set has {dimensions}");
+                return VectorManagerResult.BadParams;
+            }
 
-                var valueDims = CalculateValueDimensions(valueType, values);
+            if (providedReduceDims == 0 && reduceDims != 0)
+            {
+                // Matching Redis behavior, which is definitely a bit weird here
+                errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {valueDims} but set has {reduceDims}");
+                return VectorManagerResult.BadParams;
+            }
+            else if (providedReduceDims != 0 && providedReduceDims != reduceDims)
+            {
+                return VectorManagerResult.BadParams;
+            }
 
-                if (dimensions != valueDims)
+            if (providedQuantType != VectorQuantType.Invalid && providedQuantType != quantType)
+            {
+                return VectorManagerResult.BadParams;
+            }
+
+            if (providedNumLinks != numLinks)
+            {
+                // Matching Redis behavior
+                errorMsg = "ERR asked M value mismatch with existing vector set"u8;
+                return VectorManagerResult.BadParams;
+            }
+
+            if (quantType == VectorQuantType.XPreQ8 && element.Length != sizeof(uint))
+            {
+                errorMsg = "ERR XPREQ8 requires 4-byte element ids"u8;
+                return VectorManagerResult.BadParams;
+            }
+
+            var insert =
+                Service.Insert(
+                    context,
+                    indexPtr,
+                    element,
+                    valueType,
+                    values,
+                    attributes
+                );
+
+            if (insert)
+            {
+                // HACK HACK HACK
+                // Once DiskANN is doing this, remove
+                if (!attributes.IsEmpty)
                 {
-                    // Matching Redis behavior
-                    errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {valueDims} but set has {dimensions}");
-                    return VectorManagerResult.BadParams;
-                }
-
-                if (providedReduceDims == 0 && reduceDims != 0)
-                {
-                    // Matching Redis behavior, which is definitely a bit weird here
-                    errorMsg = Encoding.ASCII.GetBytes($"ERR Vector dimension mismatch - got {valueDims} but set has {reduceDims}");
-                    return VectorManagerResult.BadParams;
-                }
-                else if (providedReduceDims != 0 && providedReduceDims != reduceDims)
-                {
-                    return VectorManagerResult.BadParams;
-                }
-
-                if (providedQuantType != VectorQuantType.Invalid && providedQuantType != quantType)
-                {
-                    return VectorManagerResult.BadParams;
-                }
-
-                if (providedNumLinks != numLinks)
-                {
-                    // Matching Redis behavior
-                    errorMsg = "ERR asked M value mismatch with existing vector set"u8;
-                    return VectorManagerResult.BadParams;
-                }
-
-                if (quantType == VectorQuantType.XPreQ8 && element.Length != sizeof(uint))
-                {
-                    errorMsg = "ERR XPREQ8 requires 4-byte element ids"u8;
-                    return VectorManagerResult.BadParams;
-                }
-
-                var insert =
-                    Service.Insert(
-                        context,
-                        indexPtr,
-                        element,
-                        valueType,
-                        values,
-                        attributes
-                    );
-
-                if (insert)
-                {
-                    // HACK HACK HACK
-                    // Once DiskANN is doing this, remove
-                    if (!attributes.IsEmpty)
+                    var res = WriteCallbackManaged(context | DiskANNService.Attributes, element, attributes);
+                    if (!res)
                     {
-                        var res = WriteCallbackManaged(context | DiskANNService.Attributes, element, attributes);
-                        if (!res)
-                        {
-                            throw new GarnetException($"Failed to insert attribute");
-                        }
+                        throw new GarnetException($"Failed to insert attribute");
                     }
-
-                    return VectorManagerResult.OK;
                 }
 
-                return VectorManagerResult.Duplicate;
+                return VectorManagerResult.OK;
             }
-            finally
-            {
-                ActiveThreadSession = null;
-            }
+
+            return VectorManagerResult.Duplicate;
         }
 
         /// <summary>
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
         internal VectorManagerResult ValueSimilarity(
-            StorageSession currentStorageSession,
             ReadOnlySpan<byte> indexValue,
             VectorValueType valueType,
             ReadOnlySpan<byte> values,
@@ -642,109 +665,102 @@ namespace Garnet.server
             ref SpanByteAndMemory outputAttributes
         )
         {
-            ActiveThreadSession = currentStorageSession;
-            try
+            AssertHaveStorageSession();
+
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
+
+            var valueDims = CalculateValueDimensions(valueType, values);
+            if (dimensions != valueDims)
             {
-                ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
+                outputIdFormat = VectorIdFormat.Invalid;
+                return VectorManagerResult.BadParams;
+            }
 
-                var valueDims = CalculateValueDimensions(valueType, values);
-                if (dimensions != valueDims)
+            // No point in asking for more data than the effort we'll put in
+            if (count > searchExplorationFactor)
+            {
+                count = searchExplorationFactor;
+            }
+
+            // Make sure enough space in distances for requested count
+            if (count > outputDistances.Length)
+            {
+                if (!outputDistances.IsSpanByte)
                 {
-                    outputIdFormat = VectorIdFormat.Invalid;
-                    return VectorManagerResult.BadParams;
+                    outputDistances.Memory.Dispose();
                 }
 
-                // No point in asking for more data than the effort we'll put in
-                if (count > searchExplorationFactor)
+                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)));
+            }
+
+            // Indicate requested # of matches
+            outputDistances.Length = count * sizeof(float);
+
+            // If we're fairly sure the ids won't fit, go ahead and grab more memory now
+            //
+            // If we're still wrong, we'll end up using continuation callbacks which have more overhead
+            if (count * MinimumSpacePerId > outputIds.Length)
+            {
+                if (!outputIds.IsSpanByte)
                 {
-                    count = searchExplorationFactor;
+                    outputIds.Memory.Dispose();
                 }
 
-                // Make sure enough space in distances for requested count
-                if (count > outputDistances.Length)
-                {
-                    if (!outputDistances.IsSpanByte)
-                    {
-                        outputDistances.Memory.Dispose();
-                    }
+                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId));
+            }
 
-                    outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)));
-                }
+            var found =
+                Service.SearchVector(
+                    context,
+                    indexPtr,
+                    valueType,
+                    values,
+                    delta,
+                    searchExplorationFactor,
+                    filter,
+                    maxFilteringEffort,
+                    outputIds.AsSpan(),
+                    MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan()),
+                    out var continuation
+                );
 
-                // Indicate requested # of matches
-                outputDistances.Length = count * sizeof(float);
+            if (found < 0)
+            {
+                logger?.LogWarning("Error indicating response from vector service {0}", found);
+                outputIdFormat = VectorIdFormat.Invalid;
+                return VectorManagerResult.BadParams;
+            }
 
-                // If we're fairly sure the ids won't fit, go ahead and grab more memory now
-                //
-                // If we're still wrong, we'll end up using continuation callbacks which have more overhead
-                if (count * MinimumSpacePerId > outputIds.Length)
-                {
-                    if (!outputIds.IsSpanByte)
-                    {
-                        outputIds.Memory.Dispose();
-                    }
+            if (includeAttributes)
+            {
+                FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
+            }
 
-                    outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId));
-                }
+            if (continuation != 0)
+            {
+                // TODO: paged results!
+                throw new NotImplementedException();
+            }
 
-                var found =
-                    Service.SearchVector(
-                        context,
-                        indexPtr,
-                        valueType,
-                        values,
-                        delta,
-                        searchExplorationFactor,
-                        filter,
-                        maxFilteringEffort,
-                        outputIds.AsSpan(),
-                        MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan()),
-                        out var continuation
-                    );
+            outputDistances.Length = sizeof(float) * found;
 
-                if (found < 0)
-                {
-                    logger?.LogWarning("Error indicating response from vector service {0}", found);
-                    outputIdFormat = VectorIdFormat.Invalid;
-                    return VectorManagerResult.BadParams;
-                }
+            // Default assumption is length prefixed
+            outputIdFormat = VectorIdFormat.I32LengthPrefixed;
 
-                if (includeAttributes)
-                {
-                    FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
-                }
-
-                if (continuation != 0)
-                {
-                    // TODO: paged results!
-                    throw new NotImplementedException();
-                }
-
-                outputDistances.Length = sizeof(float) * found;
-
-                // Default assumption is length prefixed
+            if (quantType == VectorQuantType.XPreQ8)
+            {
+                // But in this special case, we force them to be 4-byte ids
+                //outputIdFormat = VectorIdFormat.FixedI32;
                 outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-
-                if (quantType == VectorQuantType.XPreQ8)
-                {
-                    // But in this special case, we force them to be 4-byte ids
-                    //outputIdFormat = VectorIdFormat.FixedI32;
-                    outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-                }
-
-                return VectorManagerResult.OK;
             }
-            finally
-            {
-                ActiveThreadSession = null;
-            }
+
+            return VectorManagerResult.OK;
         }
 
         /// <summary>
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
         internal VectorManagerResult ElementSimilarity(
-            StorageSession currentStorageSession,
             ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,
             int count,
@@ -759,94 +775,88 @@ namespace Garnet.server
             ref SpanByteAndMemory outputAttributes
         )
         {
-            ActiveThreadSession = currentStorageSession;
-            try
+            AssertHaveStorageSession();
+
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
+
+            // No point in asking for more data than the effort we'll put in
+            if (count > searchExplorationFactor)
             {
-                ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
+                count = searchExplorationFactor;
+            }
 
-                // No point in asking for more data than the effort we'll put in
-                if (count > searchExplorationFactor)
+            // Make sure enough space in distances for requested count
+            if (count * sizeof(float) > outputDistances.Length)
+            {
+                if (!outputDistances.IsSpanByte)
                 {
-                    count = searchExplorationFactor;
+                    outputDistances.Memory.Dispose();
                 }
 
-                // Make sure enough space in distances for requested count
-                if (count * sizeof(float) > outputDistances.Length)
-                {
-                    if (!outputDistances.IsSpanByte)
-                    {
-                        outputDistances.Memory.Dispose();
-                    }
+                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)));
+            }
 
-                    outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)));
+            // Indicate requested # of matches
+            outputDistances.Length = count * sizeof(float);
+
+            // If we're fairly sure the ids won't fit, go ahead and grab more memory now
+            //
+            // If we're still wrong, we'll end up using continuation callbacks which have more overhead
+            if (count * MinimumSpacePerId > outputIds.Length)
+            {
+                if (!outputIds.IsSpanByte)
+                {
+                    outputIds.Memory.Dispose();
                 }
 
-                // Indicate requested # of matches
-                outputDistances.Length = count * sizeof(float);
+                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId));
+            }
 
-                // If we're fairly sure the ids won't fit, go ahead and grab more memory now
-                //
-                // If we're still wrong, we'll end up using continuation callbacks which have more overhead
-                if (count * MinimumSpacePerId > outputIds.Length)
-                {
-                    if (!outputIds.IsSpanByte)
-                    {
-                        outputIds.Memory.Dispose();
-                    }
+            var found =
+                Service.SearchElement(
+                    context,
+                    indexPtr,
+                    element,
+                    delta,
+                    searchExplorationFactor,
+                    filter,
+                    maxFilteringEffort,
+                    outputIds.AsSpan(),
+                    MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan()),
+                    out var continuation
+                );
 
-                    outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId));
-                }
+            if (found < 0)
+            {
+                logger?.LogWarning("Error indicating response from vector service {0}", found);
+                outputIdFormat = VectorIdFormat.Invalid;
+                return VectorManagerResult.BadParams;
+            }
 
-                var found =
-                    Service.SearchElement(
-                        context,
-                        indexPtr,
-                        element,
-                        delta,
-                        searchExplorationFactor,
-                        filter,
-                        maxFilteringEffort,
-                        outputIds.AsSpan(),
-                        MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan()),
-                        out var continuation
-                    );
+            if (includeAttributes)
+            {
+                FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
+            }
 
-                if (found < 0)
-                {
-                    logger?.LogWarning("Error indicating response from vector service {0}", found);
-                    outputIdFormat = VectorIdFormat.Invalid;
-                    return VectorManagerResult.BadParams;
-                }
+            if (continuation != 0)
+            {
+                // TODO: paged results!
+                throw new NotImplementedException();
+            }
 
-                if (includeAttributes)
-                {
-                    FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
-                }
+            outputDistances.Length = sizeof(float) * found;
 
-                if (continuation != 0)
-                {
-                    // TODO: paged results!
-                    throw new NotImplementedException();
-                }
+            // Default assumption is length prefixed
+            outputIdFormat = VectorIdFormat.I32LengthPrefixed;
 
-                outputDistances.Length = sizeof(float) * found;
-
-                // Default assumption is length prefixed
+            if (quantType == VectorQuantType.XPreQ8)
+            {
+                // But in this special case, we force them to be 4-byte ids
+                //outputIdFormat = VectorIdFormat.FixedI32;
                 outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-
-                if (quantType == VectorQuantType.XPreQ8)
-                {
-                    // But in this special case, we force them to be 4-byte ids
-                    //outputIdFormat = VectorIdFormat.FixedI32;
-                    outputIdFormat = VectorIdFormat.I32LengthPrefixed;
-                }
-
-                return VectorManagerResult.OK;
             }
-            finally
-            {
-                ActiveThreadSession = null;
-            }
+
+            return VectorManagerResult.OK;
         }
 
 
@@ -946,40 +956,34 @@ namespace Garnet.server
             }
         }
 
-        internal bool TryGetEmbedding(StorageSession currentStorageSession, ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        internal bool TryGetEmbedding(ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
         {
-            ActiveThreadSession = currentStorageSession;
-            try
+            AssertHaveStorageSession();
+
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
+
+            // Make sure enough space in distances for requested count
+            if (dimensions * sizeof(float) > outputDistances.Length)
             {
-                ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
-
-                // Make sure enough space in distances for requested count
-                if (dimensions * sizeof(float) > outputDistances.Length)
+                if (!outputDistances.IsSpanByte)
                 {
-                    if (!outputDistances.IsSpanByte)
-                    {
-                        outputDistances.Memory.Dispose();
-                    }
-
-                    outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent((int)dimensions * sizeof(float)), (int)dimensions * sizeof(float));
-                }
-                else
-                {
-                    outputDistances.Length = (int)dimensions * sizeof(float);
+                    outputDistances.Memory.Dispose();
                 }
 
-                return
-                    Service.TryGetEmbedding(
-                        context,
-                        indexPtr,
-                        element,
-                        MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan())
-                    );
+                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent((int)dimensions * sizeof(float)), (int)dimensions * sizeof(float));
             }
-            finally
+            else
             {
-                ActiveThreadSession = null;
+                outputDistances.Length = (int)dimensions * sizeof(float);
             }
+
+            return
+                Service.TryGetEmbedding(
+                    context,
+                    indexPtr,
+                    element,
+                    MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan())
+                );
         }
 
         /// <summary>
@@ -1229,79 +1233,83 @@ namespace Garnet.server
                         lockCtx.BeginLockable();
                         try
                         {
-                            TxnKeyEntry vectorLockEntry = new();
-                            vectorLockEntry.isObject = false;
-                            vectorLockEntry.keyHash = storageSession.lockableContext.GetKeyHash(key);
-
-                            // Ensure creation of the index, leaving indexBytes populated
-                            // and a Shared lock acquired by the time we exit
-                            while (true)
+                            using (self.Enter(storageSession))
                             {
-                                vectorLockEntry.lockType = LockType.Shared;
-                                lockCtx.Lock([vectorLockEntry]);
+                                TxnKeyEntry vectorLockEntry = new();
+                                vectorLockEntry.isObject = false;
+                                vectorLockEntry.keyHash = storageSession.lockableContext.GetKeyHash(key);
 
-                                var readStatus = context.Read(ref key, ref input, ref indexConfig);
-                                if (readStatus.IsPending)
+                                // Ensure creation of the index, leaving indexBytes populated
+                                // and a Shared lock acquired by the time we exit
+                                while (true)
                                 {
-                                    CompletePending(ref readStatus, ref indexConfig, ref context);
-                                }
+                                    vectorLockEntry.lockType = LockType.Shared;
+                                    lockCtx.Lock([vectorLockEntry]);
 
-                                if (!readStatus.Found)
-                                {
-                                    if (!lockCtx.TryPromoteLock(vectorLockEntry))
+                                    var readStatus = context.Read(ref key, ref input, ref indexConfig);
+                                    if (readStatus.IsPending)
                                     {
-                                        // Try again
-                                        lockCtx.Unlock([vectorLockEntry]);
-                                        continue;
+                                        CompletePending(ref readStatus, ref indexConfig, ref context);
                                     }
 
-                                    vectorLockEntry.lockType = LockType.Exclusive;
-
-                                    // Create the vector set index
-                                    var writeStatus = context.RMW(ref key, ref input);
-                                    if (writeStatus.IsPending)
+                                    if (!readStatus.Found)
                                     {
-                                        CompletePending(ref writeStatus, ref indexConfig, ref context);
+                                        if (!lockCtx.TryPromoteLock(vectorLockEntry))
+                                        {
+                                            // Try again
+                                            lockCtx.Unlock([vectorLockEntry]);
+                                            continue;
+                                        }
+
+                                        vectorLockEntry.lockType = LockType.Exclusive;
+
+                                        // Create the vector set index
+                                        var writeStatus = context.RMW(ref key, ref input);
+                                        if (writeStatus.IsPending)
+                                        {
+                                            CompletePending(ref writeStatus, ref indexConfig, ref context);
+                                        }
+
+                                        if (!writeStatus.IsCompletedSuccessfully)
+                                        {
+                                            lockCtx.Unlock([vectorLockEntry]);
+                                            throw new GarnetException("Fail to create a vector set index during AOF sync, this should never happen but will break all ops against this vector set if it does");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        break;
                                     }
 
-                                    if (!writeStatus.IsCompletedSuccessfully)
+                                    lockCtx.Unlock([vectorLockEntry]);
+
+                                    var timeAttempting = Stopwatch.GetElapsedTime(start);
+                                    if (!loggedWarning && timeAttempting > TimeSpan.FromSeconds(5))
                                     {
-                                        lockCtx.Unlock([vectorLockEntry]);
-                                        throw new GarnetException("Fail to create a vector set index during AOF sync, this should never happen but will break all ops against this vector set if it does");
+                                        self.logger?.LogWarning("Long duration {0} attempting to apply VADD", timeAttempting);
+                                        loggedWarning = true;
+                                    }
+                                    else if (!loggedCritical && timeAttempting > TimeSpan.FromSeconds(30))
+                                    {
+                                        self.logger?.LogCritical("VERY long duration {0} attempting to apply VADD", timeAttempting);
+                                        loggedCritical = true;
                                     }
                                 }
-                                else
+
+                                if (vectorLockEntry.lockType != LockType.Shared)
                                 {
-                                    break;
+                                    self.logger?.LogCritical("Held exclusive lock when adding to vector set during replication, should never happen");
+                                    throw new GarnetException("Held exclusive lock when adding to vector set during replication, should never happen");
                                 }
+
+                                var addRes = self.TryAdd(indexConfig.AsReadOnlySpan(), element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, out _);
 
                                 lockCtx.Unlock([vectorLockEntry]);
 
-                                var timeAttempting = Stopwatch.GetElapsedTime(start);
-                                if (!loggedWarning && timeAttempting > TimeSpan.FromSeconds(5))
+                                if (addRes != VectorManagerResult.OK)
                                 {
-                                    self.logger?.LogWarning("Long duration {0} attempting to apply VADD", timeAttempting);
-                                    loggedWarning = true;
+                                    throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
                                 }
-                                else if (!loggedCritical && timeAttempting > TimeSpan.FromSeconds(30))
-                                {
-                                    self.logger?.LogCritical("VERY long duration {0} attempting to apply VADD", timeAttempting);
-                                    loggedCritical = true;
-                                }
-                            }
-
-                            if (vectorLockEntry.lockType != LockType.Shared)
-                            {
-                                self.logger?.LogCritical("Held exclusive lock when adding to vector set during replication, should never happen");
-                                throw new GarnetException("Held exclusive lock when adding to vector set during replication, should never happen");
-                            }
-
-                            var addRes = self.TryAdd(storageSession, indexConfig.AsReadOnlySpan(), element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, out _);
-                            lockCtx.Unlock([vectorLockEntry]);
-
-                            if (addRes != VectorManagerResult.OK)
-                            {
-                                throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
                             }
                         }
                         finally
@@ -1382,6 +1390,12 @@ namespace Garnet.server
             {
                 throw new NotImplementedException($"{valueType}");
             }
+        }
+
+        [Conditional("DEBUG")]
+        private static void AssertHaveStorageSession()
+        {
+            Debug.Assert(ActiveThreadSession != null, "Should have StorageSession by now");
         }
     }
 }

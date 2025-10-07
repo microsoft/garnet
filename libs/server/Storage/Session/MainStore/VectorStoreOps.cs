@@ -139,47 +139,50 @@ namespace Garnet.server
 
                 try
                 {
-                    var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
-                    if (readRes == GarnetStatus.NOTFOUND)
+                    using (vectorManager.Enter(this))
                     {
-                        if (!lockCtx.TryPromoteLock(vectorLockEntry))
+                        var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
+                        if (readRes == GarnetStatus.NOTFOUND)
                         {
-                            goto tryAgain;
+                            if (!lockCtx.TryPromoteLock(vectorLockEntry))
+                            {
+                                goto tryAgain;
+                            }
+
+                            vectorLockEntry.lockType = LockType.Exclusive;
+
+                            var writeRes = RMW_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
+                            if (writeRes == GarnetStatus.OK)
+                            {
+                                // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
+                                goto tryAgain;
+                            }
+                        }
+                        else if (readRes != GarnetStatus.OK)
+                        {
+                            result = VectorManagerResult.Invalid;
+                            errorMsg = default;
+                            return readRes;
                         }
 
-                        vectorLockEntry.lockType = LockType.Exclusive;
-
-                        var writeRes = RMW_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
-                        if (writeRes == GarnetStatus.OK)
+                        if (vectorLockEntry.lockType != LockType.Shared)
                         {
-                            // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
-                            goto tryAgain;
+                            logger?.LogCritical("Held exclusive lock when adding to vector set, should never happen");
+                            throw new GarnetException("Held exclusive lock when adding to vector set, should never happen");
                         }
-                    }
-                    else if (readRes != GarnetStatus.OK)
-                    {
-                        result = VectorManagerResult.Invalid;
-                        errorMsg = default;
-                        return readRes;
-                    }
 
-                    if (vectorLockEntry.lockType != LockType.Shared)
-                    {
-                        logger?.LogCritical("Held exclusive lock when adding to vector set, should never happen");
-                        throw new GarnetException("Held exclusive lock when adding to vector set, should never happen");
+                        // After a successful read we add the vector while holding a shared lock
+                        // That lock prevents deletion, but everything else can proceed in parallel
+                        result = vectorManager.TryAdd(indexConfig.AsReadOnlySpan(), element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, out errorMsg);
+
+                        if (result == VectorManagerResult.OK)
+                        {
+                            // On successful addition, we need to manually replicate the write
+                            vectorManager.ReplicateVectorSetAdd(key, ref input, ref basicContext);
+                        }
+
+                        return GarnetStatus.OK;
                     }
-
-                    // After a successful read we add the vector while holding a shared lock
-                    // That lock prevents deletion, but everything else can proceed in parallel
-                    result = vectorManager.TryAdd(this, indexConfig.AsReadOnlySpan(), element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, out errorMsg);
-
-                    if (result == VectorManagerResult.OK)
-                    {
-                        // On successful addition, we need to manually replicate the write
-                        vectorManager.ReplicateVectorSetAdd(key, ref input, ref basicContext);
-                    }
-
-                    return GarnetStatus.OK;
                 }
                 finally
                 {
@@ -233,7 +236,10 @@ namespace Garnet.server
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    result = vectorManager.ValueSimilarity(this, indexConfig.AsReadOnlySpan(), valueType, values.ReadOnlySpan, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes);
+                    using (vectorManager.Enter(this))
+                    {
+                        result = vectorManager.ValueSimilarity(indexConfig.AsReadOnlySpan(), valueType, values.ReadOnlySpan, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes);
+                    }
 
                     return GarnetStatus.OK;
                 }
@@ -288,7 +294,10 @@ namespace Garnet.server
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    result = vectorManager.ElementSimilarity(this, indexConfig.AsReadOnlySpan(), element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes);
+                    using (vectorManager.Enter(this))
+                    {
+                        result = vectorManager.ElementSimilarity(indexConfig.AsReadOnlySpan(), element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes);
+                    }
 
                     return GarnetStatus.OK;
                 }
@@ -341,9 +350,12 @@ namespace Garnet.server
 
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    if (!vectorManager.TryGetEmbedding(this, indexConfig.AsReadOnlySpan(), element, ref outputDistances))
+                    using (vectorManager.Enter(this))
                     {
-                        return GarnetStatus.NOTFOUND;
+                        if (!vectorManager.TryGetEmbedding(indexConfig.AsReadOnlySpan(), element, ref outputDistances))
+                        {
+                            return GarnetStatus.NOTFOUND;
+                        }
                     }
 
                     return GarnetStatus.OK;
@@ -451,7 +463,10 @@ namespace Garnet.server
                     }
 
                     // We shouldn't read a non-Vector Set value if we read anything, so this is unconditional
-                    vectorManager.DropIndex(this, indexConfig.AsSpan());
+                    using (vectorManager.Enter(this))
+                    {
+                        vectorManager.DropIndex(indexConfig.AsSpan());
+                    }
 
                     // Update the index to be delete-able
                     var updateToDropableVectorSet = new RawStringInput();
