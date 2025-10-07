@@ -63,7 +63,6 @@ FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy-chiseled AS runtime
 WORKDIR /app
 
 COPY --from=build --chown=$APP_UID:$APP_UID /data /data
-
 # Copy the pre-symlinked .NET shared directory from prep-runtime
 COPY --from=prep-runtime /usr/share/dotnet/shared /usr/share/dotnet/shared
 COPY --from=build /app .
