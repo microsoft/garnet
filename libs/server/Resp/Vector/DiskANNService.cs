@@ -81,7 +81,7 @@ namespace Garnet.server
         private const byte QuantizedVector = 2;
         internal const byte Attributes = 3;
 
-        public nint CreateIndexUnmanaged(
+        public nint CreateIndex(
             ulong context,
             uint dimensions,
             uint reduceDims,
@@ -98,6 +98,19 @@ namespace Garnet.server
                 return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback);
             }
         }
+
+        public nint RecreateIndex(
+            ulong context,
+            uint dimensions,
+            uint reduceDims,
+            VectorQuantType quantType,
+            uint buildExplorationFactor,
+            uint numLinks,
+            delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback
+        )
+        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, readCallback, writeCallback, deleteCallback);
 
         public void DropIndex(ulong context, nint index)
         {

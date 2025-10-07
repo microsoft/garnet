@@ -136,6 +136,7 @@ namespace Garnet.server
             {
             tryAgain:
                 vectorLockEntry.lockType = LockType.Shared;
+                input.arg1 = 0;
 
                 lockCtx.Lock([vectorLockEntry]);
 
@@ -144,7 +145,9 @@ namespace Garnet.server
                     using (vectorManager.Enter(this))
                     {
                         var readRes = Read_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
-                        if (readRes == GarnetStatus.NOTFOUND)
+                        var needsRecreate = readRes == GarnetStatus.OK && vectorManager.NeedsRecreate(indexConfig.AsReadOnlySpan());
+
+                        if (readRes == GarnetStatus.NOTFOUND || needsRecreate)
                         {
                             if (!lockCtx.TryPromoteLock(vectorLockEntry))
                             {
@@ -152,6 +155,11 @@ namespace Garnet.server
                             }
 
                             vectorLockEntry.lockType = LockType.Exclusive;
+
+                            if (needsRecreate)
+                            {
+                                input.arg1 = VectorManager.RecreateIndexArg;
+                            }
 
                             var writeRes = RMW_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
                             if (writeRes == GarnetStatus.OK)
@@ -215,6 +223,8 @@ namespace Garnet.server
                 TxnKeyEntry vectorLockEntry = new();
                 vectorLockEntry.isObject = false;
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
+
+            tryAgain:
                 vectorLockEntry.lockType = LockType.Shared;
 
                 lockCtx.Lock([vectorLockEntry]);
@@ -235,6 +245,24 @@ namespace Garnet.server
                         result = VectorManagerResult.Invalid;
                         outputIdFormat = VectorIdFormat.Invalid;
                         return readRes;
+                    }
+
+                    // Index exists, but DiskANN side hasn't been recreated since a process restart
+                    if (vectorManager.NeedsRecreate(indexConfig.AsReadOnlySpan()))
+                    {
+                        if (!lockCtx.TryPromoteLock(vectorLockEntry))
+                        {
+                            goto tryAgain;
+                        }
+
+                        vectorLockEntry.lockType = LockType.Exclusive;
+
+                        var writeRes = RMW_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
+                        if (writeRes == GarnetStatus.OK)
+                        {
+                            // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
+                            goto tryAgain;
+                        }
                     }
 
                     // After a successful read we add the vector while holding a shared lock
@@ -275,6 +303,8 @@ namespace Garnet.server
                 TxnKeyEntry vectorLockEntry = new();
                 vectorLockEntry.isObject = false;
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
+
+            tryAgain:
                 vectorLockEntry.lockType = LockType.Shared;
 
                 lockCtx.Lock([vectorLockEntry]);
@@ -294,6 +324,24 @@ namespace Garnet.server
                         result = VectorManagerResult.Invalid;
                         outputIdFormat = VectorIdFormat.Invalid;
                         return readRes;
+                    }
+
+                    // Index exists, but DiskANN side hasn't been recreated since a process restart
+                    if (vectorManager.NeedsRecreate(indexConfig.AsReadOnlySpan()))
+                    {
+                        if (!lockCtx.TryPromoteLock(vectorLockEntry))
+                        {
+                            goto tryAgain;
+                        }
+
+                        vectorLockEntry.lockType = LockType.Exclusive;
+
+                        var writeRes = RMW_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
+                        if (writeRes == GarnetStatus.OK)
+                        {
+                            // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
+                            goto tryAgain;
+                        }
                     }
 
                     // After a successful read we add the vector while holding a shared lock
@@ -334,6 +382,8 @@ namespace Garnet.server
                 TxnKeyEntry vectorLockEntry = new();
                 vectorLockEntry.isObject = false;
                 vectorLockEntry.keyHash = lockableContext.GetKeyHash(key);
+
+            tryAgain:
                 vectorLockEntry.lockType = LockType.Shared;
 
                 lockCtx.Lock([vectorLockEntry]);
@@ -351,6 +401,24 @@ namespace Garnet.server
                     if (readRes != GarnetStatus.OK)
                     {
                         return readRes;
+                    }
+
+                    // Index exists, but DiskANN side hasn't been recreated since a process restart
+                    if (vectorManager.NeedsRecreate(indexConfig.AsReadOnlySpan()))
+                    {
+                        if (!lockCtx.TryPromoteLock(vectorLockEntry))
+                        {
+                            goto tryAgain;
+                        }
+
+                        vectorLockEntry.lockType = LockType.Exclusive;
+
+                        var writeRes = RMW_MainStore(ref key, ref input, ref indexConfig, ref basicContext);
+                        if (writeRes == GarnetStatus.OK)
+                        {
+                            // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
+                            goto tryAgain;
+                        }
                     }
 
                     // After a successful read we add the vector while holding a shared lock
@@ -411,9 +479,11 @@ namespace Garnet.server
                         return readRes;
                     }
 
+                    // No need to recreate, all of this data is available to Garnet alone
+
                     // After a successful read we add the vector while holding a shared lock
                     // That lock prevents deletion, but everything else can proceed in parallel
-                    VectorManager.ReadIndex(indexConfig.AsReadOnlySpan(), out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _);
+                    VectorManager.ReadIndex(indexConfig.AsReadOnlySpan(), out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _);
 
                     dimensions = (int)(reducedDimensionsUS == 0 ? dimensionsUS : reducedDimensionsUS);
 

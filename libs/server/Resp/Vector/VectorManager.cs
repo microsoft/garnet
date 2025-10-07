@@ -38,6 +38,7 @@ namespace Garnet.server
         internal const int IndexSizeBytes = Index.Size;
         internal const long VADDAppendLogArg = long.MinValue;
         internal const long DeleteAfterDropArg = VADDAppendLogArg + 1;
+        internal const long RecreateIndexArg = DeleteAfterDropArg + 1;
 
         public unsafe struct VectorReadBatch : IReadArgBatch<SpanByte, VectorInput, SpanByte>
         {
@@ -184,7 +185,7 @@ namespace Garnet.server
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         private struct Index
         {
-            internal const int Size = 36;
+            internal const int Size = 52;
 
             [FieldOffset(0)]
             public ulong Context;
@@ -200,6 +201,8 @@ namespace Garnet.server
             public uint BuildExplorationFactor;
             [FieldOffset(32)]
             public VectorQuantType QuantType;
+            [FieldOffset(36)]
+            public Guid ProcessInstanceId;
         }
 
         private readonly record struct VADDReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks)
@@ -240,6 +243,7 @@ namespace Garnet.server
         private DiskANNService Service { get; } = new DiskANNService();
 
         private readonly SessionContext reusableContextTracker = new();
+        private readonly Guid processInstanceId = Guid.NewGuid();
 
         private ulong nextContextValue;
 
@@ -289,6 +293,8 @@ namespace Garnet.server
         /// <returns></returns>
         private ulong NextContext()
         {
+            // TODO: how do we avoid creating a context that is already present in the log?
+
             while (true)
             {
                 var ret = Interlocked.Add(ref nextContextValue, 4);
@@ -478,7 +484,7 @@ namespace Garnet.server
             uint dimensions,
             uint reduceDims,
             VectorQuantType quantType,
-            uint buildExplorationFactory,
+            uint buildExplorationFactor,
             uint numLinks,
             ref SpanByte indexValue)
         {
@@ -489,7 +495,7 @@ namespace Garnet.server
             nint indexPtr;
             unsafe
             {
-                indexPtr = Service.CreateIndexUnmanaged(context, dimensions, reduceDims, quantType, buildExplorationFactory, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                indexPtr = Service.CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
             }
 
             var indexSpan = indexValue.AsSpan();
@@ -505,9 +511,41 @@ namespace Garnet.server
             asIndex.Dimensions = dimensions;
             asIndex.ReduceDims = reduceDims;
             asIndex.QuantType = quantType;
-            asIndex.BuildExplorationFactor = buildExplorationFactory;
+            asIndex.BuildExplorationFactor = buildExplorationFactor;
             asIndex.NumLinks = numLinks;
             asIndex.IndexPtr = (ulong)indexPtr;
+            asIndex.ProcessInstanceId = processInstanceId;
+        }
+
+        /// <summary>
+        /// Recreate an index that was created by a prior instance of Garnet.
+        /// 
+        /// This implies the index still has element data, but the pointer is garbage.
+        /// </summary>
+        internal void ReceateIndex(ref SpanByte indexValue)
+        {
+            AssertHaveStorageSession();
+
+            var indexSpan = indexValue.AsSpan();
+
+            if (indexSpan.Length != Index.Size)
+            {
+                logger?.LogCritical("Acquired space for vector set index does not match expections, {0} != {1}", indexSpan.Length, Index.Size);
+                throw new GarnetException($"Acquired space for vector set index does not match expections, {indexSpan.Length} != {Index.Size}");
+            }
+
+            ReadIndex(indexSpan, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out _, out var indexProcessInstanceId);
+            Debug.Assert(processInstanceId != indexProcessInstanceId, "Should be recreating an index that matched our instance id");
+
+            nint indexPtr;
+            unsafe
+            {
+                indexPtr = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+            }
+
+            ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
+            asIndex.IndexPtr = (ulong)indexPtr;
+            asIndex.ProcessInstanceId = processInstanceId;
         }
 
         /// <summary>
@@ -517,7 +555,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out var indexPtr, out _);
 
             Service.DropIndex(context, indexPtr);
         }
@@ -530,7 +568,8 @@ namespace Garnet.server
             out VectorQuantType quantType,
             out uint buildExplorationFactor,
             out uint numLinks,
-            out nint indexPtr
+            out nint indexPtr,
+            out Guid processInstanceId
         )
         {
             if (indexValue.Length != Index.Size)
@@ -547,6 +586,7 @@ namespace Garnet.server
             buildExplorationFactor = asIndex.BuildExplorationFactor;
             numLinks = asIndex.NumLinks;
             indexPtr = (nint)asIndex.IndexPtr;
+            processInstanceId = asIndex.ProcessInstanceId;
 
             if ((context % 4) != 0)
             {
@@ -577,7 +617,7 @@ namespace Garnet.server
 
             errorMsg = default;
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr, out _);
 
             var valueDims = CalculateValueDimensions(valueType, values);
 
@@ -667,7 +707,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr, out _);
 
             var valueDims = CalculateValueDimensions(valueType, values);
             if (dimensions != valueDims)
@@ -777,7 +817,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
+            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out var indexPtr, out _);
 
             // No point in asking for more data than the effort we'll put in
             if (count > searchExplorationFactor)
@@ -959,7 +999,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out _, out _, out _, out var indexPtr, out _);
 
             // Make sure enough space in distances for requested count
             if (dimensions * sizeof(float) > outputDistances.Length)
@@ -1353,6 +1393,18 @@ namespace Garnet.server
                 Debug.Assert(!more);
                 completedOutputs.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Returns true for indexes that were created via a previous instance of <see cref="VectorManager"/>.
+        /// 
+        /// Such indexes still have element data, but the index pointer to the DiskANN bits are invalid.
+        /// </summary>
+        internal bool NeedsRecreate(ReadOnlySpan<byte> indexConfig)
+        {
+            ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out var indexProcessInstanceId);
+
+            return indexProcessInstanceId != processInstanceId;
         }
 
         /// <summary>

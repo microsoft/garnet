@@ -22,7 +22,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
 
             server.Start();
         }
@@ -843,5 +843,50 @@ namespace Garnet.test
                 }
             }
         }
+
+        [Test]
+        public void RecreateIndexesOnRestore()
+        {
+            // VADD
+            {
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var s = redis.GetServers()[0];
+                    var db = redis.GetDatabase(0);
+
+                    _ = db.KeyDelete("foo");
+                    s.FlushAllDatabases();
+
+                    var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    ClassicAssert.AreEqual(1, (int)res1);
+
+#pragma warning disable CS0618 // Intentionally doing bad things
+                    s.Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+
+                    var commit = server.Store.WaitForCommit();
+                    ClassicAssert.IsTrue(commit);
+                    server.Dispose(deleteDir: false);
+
+                    server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+                    server.Start();
+                }
+
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var db = redis.GetDatabase(0);
+
+                    var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "5.0", "6.0", "7.0", "8.0", new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "fizz buzz"]);
+                    ClassicAssert.AreEqual(1, (int)res2);
+                }
+            }
+
+            // TODO: VSIM with vector
+            // TODO: VSIM with element
+            // TODO: VDIM
+            // TODO: VEMB
+        }
+
+        // TODO: FLUSHDB needs to cleanup too...
     }
 }

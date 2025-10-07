@@ -809,11 +809,19 @@ namespace Garnet.server
                     //
                     // However, we do synthesize some (pointless) writes to implement replication
                     // and a "make me delete=able"-update during drop.
+                    //
+                    // Another "not quite write" is the recreate an index write operation
+                    // that occurs if we're adding to an index that was restored from disk 
+                    // or a primary node.
 
                     // Handle "make me delete-able"
                     if (input.arg1 == VectorManager.DeleteAfterDropArg)
                     {
                         value.AsSpan().Clear();
+                    }
+                    else if (input.arg1 == VectorManager.RecreateIndexArg)
+                    {
+                        functionsState.vectorManager.ReceateIndex(ref value);
                     }
 
                     // Ignore everything else
