@@ -4,9 +4,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
-    public class ShardedLog(uint sublogCount, TsavoriteLogSettings[] logSettings, ILogger logger = null)
+    public class ShardedLog(int sublogCount, TsavoriteLogSettings[] logSettings, ILogger logger = null)
     {
-        public uint Length { get; private set; } = sublogCount;
+        public int Length { get; private set; } = sublogCount;
         readonly TsavoriteLogSettings[] logSettings = logSettings;
         public readonly TsavoriteLog[] sublog = [.. logSettings.Select(settings => new TsavoriteLog(settings, logger))];
 

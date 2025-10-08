@@ -19,7 +19,7 @@ namespace Garnet.server
         public AofAddress objectCheckpointCoveredAofAddress;
         public string objectStorePrimaryReplId;
 
-        public CheckpointMetadata(uint sublogCount)
+        public CheckpointMetadata(int sublogCount)
         {
             storeVersion = -1;
             storeHlogToken = default;

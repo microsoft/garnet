@@ -22,7 +22,7 @@ namespace Garnet.server
         /// <summary>
         /// AofAddress length
         /// </summary>
-        public readonly uint Length => length;
+        public readonly int Length => length;
 
         /// <summary>
         /// Indexer
@@ -45,7 +45,7 @@ namespace Garnet.server
         /// AofAddress constructor
         /// </summary>
         /// <param name="length"></param>
-        internal AofAddress(uint length)
+        internal AofAddress(int length)
         {
             Debug.Assert(length <= MaxSublogCount);
             this.length = (byte)length;
@@ -96,7 +96,7 @@ namespace Garnet.server
         public static AofAddress FromString(string input)
         {
             var _addresses = input.Split(',').Select(long.Parse).ToArray();
-            var aofAddress = new AofAddress((uint)_addresses.Length);
+            var aofAddress = new AofAddress(_addresses.Length);
             for (var i = 0; i < aofAddress.Length; i++)
                 aofAddress[i] = _addresses[i];
             return aofAddress;
@@ -181,7 +181,7 @@ namespace Garnet.server
         /// <param name="length"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        public static AofAddress SetValue(uint length, long value)
+        public static AofAddress SetValue(int length, long value)
         {
             var aofAddress = new AofAddress(length);
             for (var i = 0; i < length; i++)

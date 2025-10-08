@@ -111,7 +111,7 @@ namespace Garnet.server
         /// <summary>
         /// Number of AOF sublogs (=1 default single log, >1: multi-log)
         /// </summary>
-        public uint AofSublogCount = 1;
+        public int AofSublogCount = 1;
 
         /// <summary>
         /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.

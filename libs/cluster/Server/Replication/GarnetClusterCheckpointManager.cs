@@ -25,7 +25,7 @@ namespace Garnet.cluster
         readonly ILogger logger;
 
         public GarnetClusterCheckpointManager(
-            uint aofSublogCount,
+            int aofSublogCount,
             INamedDeviceFactoryCreator deviceFactoryCreator,
             ICheckpointNamingScheme checkpointNamingScheme,
             bool isMainStore,

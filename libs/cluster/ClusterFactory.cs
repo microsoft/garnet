@@ -13,7 +13,7 @@ namespace Garnet.cluster
     public class ClusterFactory : IClusterFactory
     {
         /// <inheritdoc />
-        public DeviceLogCommitCheckpointManager CreateCheckpointManager(uint aofSublogCount, INamedDeviceFactoryCreator deviceFactoryCreator, ICheckpointNamingScheme checkpointNamingScheme, bool isMainStore, ILogger logger = default)
+        public DeviceLogCommitCheckpointManager CreateCheckpointManager(int aofSublogCount, INamedDeviceFactoryCreator deviceFactoryCreator, ICheckpointNamingScheme checkpointNamingScheme, bool isMainStore, ILogger logger = default)
             => new GarnetClusterCheckpointManager(aofSublogCount, deviceFactoryCreator, checkpointNamingScheme, isMainStore, logger: logger);
 
         /// <inheritdoc />

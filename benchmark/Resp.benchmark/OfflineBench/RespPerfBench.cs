@@ -55,7 +55,7 @@ namespace Resp.benchmark
                     ClusterConfigFlushFrequencyMs = -1,
                     UseAofNullDevice = opts.UseAofNullDevice,
                     CommitFrequencyMs = opts.CommitFrequencyMs,
-                    AofSublogCount = (uint)opts.AofSublogCount,
+                    AofSublogCount = opts.AofSublogCount,
                 };
                 server = new EmbeddedRespServer(serverOptions, null, new GarnetServerEmbedded());
                 sessions = server.GetRespSessions(opts.NumThreads.Max());
