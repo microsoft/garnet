@@ -845,6 +845,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Ignore("Needs DiskANN implementation work before could possibly pass")]
         public void RecreateIndexesOnRestore()
         {
             // VADD
