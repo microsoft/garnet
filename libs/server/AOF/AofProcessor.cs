@@ -134,27 +134,27 @@ namespace Garnet.server
                 var tasks = new Task[untilAddress.Length];
                 for (var i = 0; i < untilAddress.Length; i++)
                 {
-                    var taskId = i;
-                    tasks[i] = Task.Run(() => RecoverReplayTask(taskId, untilAddress));
+                    var sublogIdx = i;
+                    tasks[i] = Task.Run(() => RecoverReplayTask(sublogIdx, untilAddress));
                 }
 
                 Task.WaitAll(tasks);
 
-                void RecoverReplayTask(int taskId, AofAddress untilAddress)
+                void RecoverReplayTask(int sublogIdx, AofAddress untilAddress)
                 {
                     var count = 0;
-                    using var scan = appendOnlyFile.Scan(taskId, ref appendOnlyFile.Log.BeginAddress, ref untilAddress);
+                    using var scan = appendOnlyFile.Scan(sublogIdx, ref appendOnlyFile.Log.BeginAddress, ref untilAddress);
 
                     // Replay each AOF record in the current database context
                     while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))
                     {
                         count++;
-                        ProcessAofRecord(entry, length);
+                        ProcessAofRecord(sublogIdx, entry, length);
                         if (count % 100_000 == 0)
                             logger?.LogInformation("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", count, nextAofAddress, db.Id);
                     }
 
-                    logger?.LogInformation("Completed full AOF sublog {taskId} replay of {count} records (DB ID: {id})", taskId, count, db.Id);
+                    logger?.LogInformation("Completed full AOF sublog {taskId} replay of {count} records (DB ID: {id})", sublogIdx, count, db.Id);
                 }
 
                 return untilAddress;
@@ -175,11 +175,11 @@ namespace Garnet.server
             return AofAddress.SetValue(storeWrapper.serverOptions.AofSublogCount, -1);
         }
 
-        internal unsafe void ProcessAofRecord(IMemoryOwner<byte> entry, int length)
+        internal unsafe void ProcessAofRecord(int sublogIdx, IMemoryOwner<byte> entry, int length)
         {
             fixed (byte* ptr = entry.Memory.Span)
             {
-                ProcessAofRecordInternal(ptr, length, false, out _);
+                ProcessAofRecordInternal(sublogIdx, ptr, length, asReplica: false, out _);
             }
             entry.Dispose();
         }
@@ -198,7 +198,7 @@ namespace Garnet.server
         /// <summary>
         /// Process AOF record
         /// </summary>
-        public unsafe void ProcessAofRecordInternal(byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
+        public unsafe void ProcessAofRecordInternal(int sublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
         {
             AofHeader header = *(AofHeader*)ptr;
             isCheckpointStart = false;
@@ -218,7 +218,7 @@ namespace Garnet.server
                         }
                         else
                         {
-                            ProcessTxn(inflightTxns[header.sessionID], asReplica);
+                            ProcessTxn(sublogIdx, inflightTxns[header.sessionID], asReplica);
                             inflightTxns[header.sessionID].Clear();
                             inflightTxns.Remove(header.sessionID);
                         }
@@ -288,7 +288,7 @@ namespace Garnet.server
                             foreach (var entry in fuzzyRegionBuffer)
                             {
                                 fixed (byte* entryPtr = entry)
-                                    ReplayOp(entryPtr, entry.Length, asReplica);
+                                    ReplayOp(sublogIdx, entryPtr, entry.Length, asReplica);
                             }
                             fuzzyRegionBuffer.Clear();
                         }
@@ -320,7 +320,7 @@ namespace Garnet.server
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     break;
                 default:
-                    ReplayOp(ptr, length, asReplica);
+                    _ = ReplayOp(sublogIdx, ptr, length, asReplica);
                     break;
             }
         }
@@ -329,43 +329,45 @@ namespace Garnet.server
         /// Method to process a batch of entries as a single txn.
         /// Assumes that operations arg does not contain transaction markers (i.e. TxnStart,TxnCommit,TxnAbort)
         /// </summary>
+        /// <param name="sublogIdx"></param>
         /// <param name="operations"></param>
         /// <param name="asReplica"></param>
-        private unsafe void ProcessTxn(List<byte[]> operations, bool asReplica)
+        private unsafe void ProcessTxn(int sublogIdx, List<byte[]> operations, bool asReplica)
         {
-            foreach (byte[] entry in operations)
+            foreach (var entry in operations)
             {
                 fixed (byte* ptr = entry)
-                    ReplayOp(ptr, entry.Length, asReplica);
+                    _ = ReplayOp(sublogIdx, ptr, entry.Length, asReplica);
             }
         }
 
-        private unsafe bool ReplayOp(byte* entryPtr, int length, bool replayAsReplica)
+        private unsafe bool ReplayOp(int sublogIdx, byte* entryPtr, int length, bool replayAsReplica)
         {
-            AofHeader header = *(AofHeader*)entryPtr;
+            var header = *(AofHeader*)entryPtr;
 
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
             if (SkipRecord(entryPtr, length, replayAsReplica)) return false;
 
+            ref var key = ref Unsafe.NullRef<SpanByte>();
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    StoreUpsert(basicContext, storeInput, entryPtr);
+                    key = ref StoreUpsert(basicContext, storeInput, entryPtr);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(basicContext, storeInput, entryPtr);
+                    key = ref StoreRMW(basicContext, storeInput, entryPtr);
                     break;
                 case AofEntryType.StoreDelete:
-                    StoreDelete(basicContext, entryPtr);
+                    key = ref StoreDelete(basicContext, entryPtr);
                     break;
                 case AofEntryType.ObjectStoreRMW:
-                    ObjectStoreRMW(objectStoreBasicContext, objectStoreInput, entryPtr, bufferPtr, buffer.Length);
+                    key = ref ObjectStoreRMW(objectStoreBasicContext, objectStoreInput, entryPtr, bufferPtr, buffer.Length);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
-                    ObjectStoreUpsert(objectStoreBasicContext, storeWrapper.GarnetObjectSerializer, entryPtr, bufferPtr, buffer.Length);
+                    key = ref ObjectStoreUpsert(objectStoreBasicContext, storeWrapper.GarnetObjectSerializer, entryPtr, bufferPtr, buffer.Length);
                     break;
                 case AofEntryType.ObjectStoreDelete:
-                    ObjectStoreDelete(objectStoreBasicContext, entryPtr);
+                    key = ref ObjectStoreDelete(objectStoreBasicContext, entryPtr);
                     break;
                 case AofEntryType.StoredProcedure:
                     RunStoredProc(header.procedureId, customProcInput, entryPtr);
@@ -373,6 +375,11 @@ namespace Garnet.server
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
+
+            // Track timestamp for replica read protocol when using sharded log
+            var trackTimestamps = replayAsReplica && (storeWrapper.serverOptions.AofSublogCount > 1) && !Unsafe.IsNullRef(ref key);
+            if (trackTimestamps)
+                storeWrapper.appendOnlyFile.replayTimestampTracker.SetKeyTimestamp(sublogIdx, ref key, header.timestamp);
             return true;
 
             void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)
@@ -410,7 +417,7 @@ namespace Garnet.server
             }
         }
 
-        static void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+        static ref SpanByte StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
             RawStringInput storeInput, byte* ptr)
         {
             var curr = ptr + sizeof(AofHeader);
@@ -429,9 +436,10 @@ namespace Garnet.server
             basicContext.Upsert(ref key, ref storeInput, ref value, ref output);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
+            return ref key;
         }
 
-        static void StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, byte* ptr)
+        static ref SpanByte StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, byte* ptr)
         {
             var curr = ptr + sizeof(AofHeader);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
@@ -449,15 +457,17 @@ namespace Garnet.server
                 basicContext.CompletePending(true);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
+            return ref key;
         }
 
-        static void StoreDelete(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
+        static ref SpanByte StoreDelete(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             basicContext.Delete(ref key);
+            return ref key;
         }
 
-        static void ObjectStoreUpsert(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
+        static ref SpanByte ObjectStoreUpsert(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
                 GarnetObjectSerializer garnetObjectSerializer, byte* ptr, byte* outputPtr, int outputLength)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
@@ -470,9 +480,10 @@ namespace Garnet.server
             basicContext.Upsert(ref keyB, ref valB);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Memory.Dispose();
+            return ref key;
         }
 
-        static void ObjectStoreRMW(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
+        static ref SpanByte ObjectStoreRMW(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
             ObjectInput objectStoreInput, byte* ptr, byte* outputPtr, int outputLength)
         {
             var curr = ptr + sizeof(AofHeader);
@@ -492,13 +503,15 @@ namespace Garnet.server
 
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Memory.Dispose();
+            return ref key;
         }
 
-        static void ObjectStoreDelete(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext, byte* ptr)
+        static ref SpanByte ObjectStoreDelete(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext, byte* ptr)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
             var keyB = key.ToByteArray();
             basicContext.Delete(ref keyB);
+            return ref key;
         }
 
         /// <summary>
@@ -576,6 +589,6 @@ namespace Garnet.server
                 maxSendTimestamp = Math.Max(maxSendTimestamp, timestamp);
                 ptr += entryLength;
             }
-        }        
+        }
     }
 }

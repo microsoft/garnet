@@ -150,7 +150,7 @@ namespace Garnet.cluster
 
         async Task WitnessTask()
         {
-            var oldPreviousAddress = AofAddress.SetValue((uint)aofSyncTasks.Length, 0L);
+            var oldPreviousAddress = AofAddress.SetValue(aofSyncTasks.Length, 0L);
 
             while (true)
             {
@@ -164,18 +164,15 @@ namespace Garnet.cluster
                 // At least one sublog has stalled if both of the following conditions hold
                 //  1. the maximum timestamp of the sublog is smaller than MST
                 //  2. The sublog does not have any more data to send.
-                // If (1) is false then it is safe to read from that sublog because it will be ahead in time from other sublogs
-                // If (2) is false the we still have more data to process hence the timestamp will change in the future.
+                // If (1) is false then it is safe to read from that sublog because it will have the highest timestamp
+                // If (2) is false the we still have more data to process hence the timestamp will possible change in the future.
                 for (var i = 0; i < masSublogTimestamps.Length; i++)
                 {
                     if (masSublogTimestamps[i] < mst && previousAddress[i] == tailAddress[i])
                     {
-                        //
+                        //clusterProvider.storeWrapper.appendOnlyFile.Enqueue()
                     }
                 }
-
-                // Here we need to send a ping
-
             }
         }
 

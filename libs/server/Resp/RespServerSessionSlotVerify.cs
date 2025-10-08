@@ -12,6 +12,16 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
+        /// Replica read context used with sharded log
+        /// </summary>
+        ReplicaReadContext replicaReadContext = new () {lastSublogIdx = -1, maximumTimestamp = 0};
+
+        /// <summary>
+        /// Read session waiter used with sharded log to avoid spin-wait
+        /// </summary>
+        ReadSessionWaiter readSessionWaiter = new () {eventSlim = new(), waitForTimestamp = -1};
+
+        /// <summary>
         /// This method is used to verify slot ownership for provided array of key argslices.
         /// </summary>
         /// <param name="keys">Array of key ArgSlice</param>
@@ -43,7 +53,11 @@ namespace Garnet.server
             storeWrapper.clusterProvider.ExtractKeySpecs(commandInfo, cmd, ref parseState, ref csvi);
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
-            return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
+            var canServeRead = !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
+            if(storeWrapper.serverOptions.EnableAOF && (storeWrapper.serverOptions.AofSublogCount > 1) && storeWrapper.clusterProvider.IsReplica())
+                storeWrapper.appendOnlyFile.replayTimestampTracker.WaitForConsistentRead(ref replicaReadContext, ref parseState, ref csvi, readSessionWaiter);
+
+            return !canServeRead;
         }
     }
 }

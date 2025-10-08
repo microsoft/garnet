@@ -72,7 +72,7 @@ namespace Garnet.cluster
                     var payloadLength = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetLength(ptr);
                     if (payloadLength > 0)
                     {
-                        clusterProvider.replicationManager.AofProcessor.ProcessAofRecordInternal(ptr + entryLength, payloadLength, true, out var isCheckpointStart);
+                        clusterProvider.replicationManager.AofProcessor.ProcessAofRecordInternal(sublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
                         // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                         // point when we take a checkpoint at the checkpoint end marker
                         // FIXME: Do we need to coordinate between sublogs when updating this?
