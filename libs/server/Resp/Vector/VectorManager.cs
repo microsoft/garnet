@@ -522,7 +522,7 @@ namespace Garnet.server
         /// 
         /// This implies the index still has element data, but the pointer is garbage.
         /// </summary>
-        internal void ReceateIndex(ref SpanByte indexValue)
+        internal void RecreateIndex(ref SpanByte indexValue)
         {
             AssertHaveStorageSession();
 
@@ -1373,7 +1373,7 @@ namespace Garnet.server
         /// <summary>
         /// Wait until all ops passed to <see cref="HandleVectorSetAddReplication"/> have completed.
         /// </summary>
-        internal void WaitForVectorOperationsToComplete()
+        public void WaitForVectorOperationsToComplete()
         {
             try
             {

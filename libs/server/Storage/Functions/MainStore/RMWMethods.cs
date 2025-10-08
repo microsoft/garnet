@@ -821,7 +821,7 @@ namespace Garnet.server
                     }
                     else if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
-                        functionsState.vectorManager.ReceateIndex(ref value);
+                        functionsState.vectorManager.RecreateIndex(ref value);
                     }
 
                     // Ignore everything else
