@@ -205,7 +205,7 @@ namespace Garnet.server
             public Guid ProcessInstanceId;
         }
 
-        private readonly record struct VADDReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks)
+        private readonly record struct VADDReplicationState(SpanByte Key, uint Dims, uint ReduceDims, VectorValueType ValueType, SpanByte Values, SpanByte Element, VectorQuantType Quantizer, uint BuildExplorationFactor, SpanByte Attributes, uint NumLinks)
         {
         }
 
@@ -1048,7 +1048,7 @@ namespace Garnet.server
             Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
             var keyWithNamespace = SpanByte.FromPinnedSpan(keyWithNamespaceBytes);
             keyWithNamespace.MarkNamespace();
-            keyWithNamespace.SetNamespaceInPayload(0);
+            keyWithNamespace.SetNamespaceInPayload(0); // 0 namespace is special, only used for replication
             key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
 
             Span<byte> dummyBytes = stackalloc byte[4];
@@ -1130,33 +1130,22 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetAddReplication(Func<RespServerSession> obtainServerSession, ref SpanByte keyWithNamespace, ref RawStringInput input)
         {
-            // Undo mangling that got replication going
-            var inputCopy = input;
-            inputCopy.arg1 = default;
-            var keyBytesArr = ArrayPool<byte>.Shared.Rent(keyWithNamespace.Length - 1);
-            var keyBytes = keyBytesArr.AsMemory()[..(keyWithNamespace.Length - 1)];
-
-            keyWithNamespace.AsReadOnlySpan().CopyTo(keyBytes.Span);
+            // Undo mangling that got replication going, but without copying
+            SpanByte key;
+            unsafe
+            {
+                key = SpanByte.FromPinnedPointer(keyWithNamespace.ToPointer(), keyWithNamespace.LengthWithoutMetadata);
+            }
 
             var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
             var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
             var valueType = MemoryMarshal.Read<VectorValueType>(input.parseState.GetArgSliceByRef(2).Span);
-            var values = input.parseState.GetArgSliceByRef(3).Span;
-            var element = input.parseState.GetArgSliceByRef(4).Span;
+            var values = input.parseState.GetArgSliceByRef(3).SpanByte;
+            var element = input.parseState.GetArgSliceByRef(4).SpanByte;
             var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
             var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
-            var attributes = input.parseState.GetArgSliceByRef(7).Span;
+            var attributes = input.parseState.GetArgSliceByRef(7).SpanByte;
             var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
-
-            // We have to make copies (and they need to be on the heap) to pass to background tasks
-            var valuesBytes = ArrayPool<byte>.Shared.Rent(values.Length).AsMemory()[..values.Length];
-            values.CopyTo(valuesBytes.Span);
-
-            var elementBytes = ArrayPool<byte>.Shared.Rent(element.Length).AsMemory()[..element.Length];
-            element.CopyTo(elementBytes.Span);
-
-            var attributesBytes = ArrayPool<byte>.Shared.Rent(attributes.Length).AsMemory()[..attributes.Length];
-            attributes.CopyTo(attributesBytes.Span);
 
             // Spin up replication replay tasks on first use
             if (replicationReplayStarted == 0)
@@ -1168,13 +1157,19 @@ namespace Garnet.server
             }
 
             // We need a running count of pending VADDs so WaitForVectorOperationsToComplete can work
-            _ = Interlocked.Increment(ref replicationReplayPendingVAdds);
+            var cur = Interlocked.Increment(ref replicationReplayPendingVAdds);
+            Debug.Assert(cur > 0, "Pending VADD ops is incoherent");
+
             replicationBlockEvent.Reset();
-            var queued = replicationReplayChannel.Writer.TryWrite(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks));
+            var queued = replicationReplayChannel.Writer.TryWrite(new(key, dims, reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks));
             if (!queued)
             {
+                logger?.LogInformation("Replay of VADD against {0} dropped during shutdown", Encoding.UTF8.GetString(key.AsReadOnlySpan()));
+
                 // Can occur if we're being Disposed
                 var pending = Interlocked.Decrement(ref replicationReplayPendingVAdds);
+                Debug.Assert(pending >= 0, "Pending VADD ops has fallen below 0 during shutdown");
+
                 if (pending == 0)
                 {
                     replicationBlockEvent.Set();
@@ -1196,15 +1191,20 @@ namespace Garnet.server
 
                                 using var session = obtainServerSession();
 
+                                SessionParseState reusableParseState = default;
+                                reusableParseState.Initialize(9);
+
                                 await foreach (var entry in reader.ReadAllAsync())
                                 {
                                     try
                                     {
-                                        ApplyVectorSetAdd(self, session.storageSession, entry);
+                                        ApplyVectorSetAdd(self, session.storageSession, entry, ref reusableParseState);
                                     }
                                     finally
                                     {
                                         var pending = Interlocked.Decrement(ref self.replicationReplayPendingVAdds);
+                                        Debug.Assert(pending >= 0, "Pending VADD ops has fallen below 0 fater processesing op");
+
                                         if (pending == 0)
                                         {
                                             self.replicationBlockEvent.Set();
@@ -1223,176 +1223,139 @@ namespace Garnet.server
             }
 
             // Actually apply a replicated VADD
-            static unsafe void ApplyVectorSetAdd(VectorManager self, StorageSession storageSession, VADDReplicationState state)
+            static unsafe void ApplyVectorSetAdd(VectorManager self, StorageSession storageSession, VADDReplicationState state, ref SessionParseState reusableParseState)
             {
                 ref var context = ref storageSession.basicContext;
 
-                var (keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks) = state;
+                var (key, dims, reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks) = state;
 
+                var indexBytes = stackalloc byte[IndexSizeBytes];
+                SpanByteAndMemory indexConfig = new(indexBytes, IndexSizeBytes);
+
+                var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
+                var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
+                var valueTypeArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
+                var valuesArg = ArgSlice.FromPinnedSpan(values.AsReadOnlySpan());
+                var elementArg = ArgSlice.FromPinnedSpan(element.AsReadOnlySpan());
+                var quantizerArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
+                var buildExplorationFactorArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
+                var attributesArg = ArgSlice.FromPinnedSpan(attributes.AsReadOnlySpan());
+                var numLinksArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
+
+                reusableParseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg]);
+
+                var input = new RawStringInput(RespCommand.VADD, ref reusableParseState);
+
+                // Equivalent to VectorStoreOps.VectorSetAdd
+                //
+                // We still need locking here because the replays may proceed in parallel
+
+                var lockCtx = storageSession.objectStoreLockableContext;
+
+                var loggedWarning = false;
+                var loggedCritical = false;
+                var start = Stopwatch.GetTimestamp();
+
+                lockCtx.BeginLockable();
                 try
                 {
-                    fixed (byte* keyPtr = keyBytes.Span)
-                    fixed (byte* valuesPtr = valuesBytes.Span)
-                    fixed (byte* elementPtr = elementBytes.Span)
-                    fixed (byte* attributesPtr = attributesBytes.Span)
+                    using (self.Enter(storageSession))
                     {
-                        var key = SpanByte.FromPinnedPointer(keyPtr, keyBytes.Length);
-                        var values = SpanByte.FromPinnedPointer(valuesPtr, valuesBytes.Length);
-                        var element = SpanByte.FromPinnedPointer(elementPtr, elementBytes.Length);
-                        var attributes = SpanByte.FromPinnedPointer(attributesPtr, attributesBytes.Length);
+                        TxnKeyEntry vectorLockEntry = new();
+                        vectorLockEntry.isObject = false;
+                        vectorLockEntry.keyHash = storageSession.lockableContext.GetKeyHash(key);
 
-                        var indexBytes = stackalloc byte[IndexSizeBytes];
-                        SpanByteAndMemory indexConfig = new(indexBytes, IndexSizeBytes);
-
-                        var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
-                        var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
-                        var valueTypeArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
-                        var valuesArg = ArgSlice.FromPinnedSpan(values.AsReadOnlySpan());
-                        var elementArg = ArgSlice.FromPinnedSpan(element.AsReadOnlySpan());
-                        var quantizerArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
-                        var buildExplorationFactorArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
-                        var attributesArg = ArgSlice.FromPinnedSpan(attributes.AsReadOnlySpan());
-                        var numLinksArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
-
-                        var parseState = default(SessionParseState);
-                        parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg]);
-
-                        var input = new RawStringInput(RespCommand.VADD, ref parseState);
-
-                        // Equivalent to VectorStoreOps.VectorSetAdd
-                        //
-                        // We still need locking here because the replays may proceed in parallel
-
-                        var lockCtx = storageSession.objectStoreLockableContext;
-
-                        var loggedWarning = false;
-                        var loggedCritical = false;
-                        var start = Stopwatch.GetTimestamp();
-
-                        lockCtx.BeginLockable();
-                        try
+                        // Ensure creation of the index, leaving indexBytes populated
+                        // and a Shared lock acquired by the time we exit
+                        while (true)
                         {
-                            using (self.Enter(storageSession))
+                            vectorLockEntry.lockType = LockType.Shared;
+                            lockCtx.Lock([vectorLockEntry]);
+
+                            var readStatus = context.Read(ref key, ref input, ref indexConfig);
+                            if (readStatus.IsPending)
                             {
-                                TxnKeyEntry vectorLockEntry = new();
-                                vectorLockEntry.isObject = false;
-                                vectorLockEntry.keyHash = storageSession.lockableContext.GetKeyHash(key);
+                                CompletePending(ref readStatus, ref indexConfig, ref context);
+                            }
 
-                                // Ensure creation of the index, leaving indexBytes populated
-                                // and a Shared lock acquired by the time we exit
-                                while (true)
+                            if (!readStatus.Found)
+                            {
+                                if (!lockCtx.TryPromoteLock(vectorLockEntry))
                                 {
-                                    vectorLockEntry.lockType = LockType.Shared;
-                                    lockCtx.Lock([vectorLockEntry]);
-
-                                    var readStatus = context.Read(ref key, ref input, ref indexConfig);
-                                    if (readStatus.IsPending)
-                                    {
-                                        CompletePending(ref readStatus, ref indexConfig, ref context);
-                                    }
-
-                                    if (!readStatus.Found)
-                                    {
-                                        if (!lockCtx.TryPromoteLock(vectorLockEntry))
-                                        {
-                                            // Try again
-                                            lockCtx.Unlock([vectorLockEntry]);
-                                            continue;
-                                        }
-
-                                        vectorLockEntry.lockType = LockType.Exclusive;
-
-                                        // Create the vector set index
-                                        var writeStatus = context.RMW(ref key, ref input);
-                                        if (writeStatus.IsPending)
-                                        {
-                                            CompletePending(ref writeStatus, ref indexConfig, ref context);
-                                        }
-
-                                        if (!writeStatus.IsCompletedSuccessfully)
-                                        {
-                                            lockCtx.Unlock([vectorLockEntry]);
-                                            throw new GarnetException("Fail to create a vector set index during AOF sync, this should never happen but will break all ops against this vector set if it does");
-                                        }
-                                    }
-                                    else
-                                    {
-                                        break;
-                                    }
-
+                                    // Try again
                                     lockCtx.Unlock([vectorLockEntry]);
-
-                                    var timeAttempting = Stopwatch.GetElapsedTime(start);
-                                    if (!loggedWarning && timeAttempting > TimeSpan.FromSeconds(5))
-                                    {
-                                        self.logger?.LogWarning("Long duration {0} attempting to apply VADD", timeAttempting);
-                                        loggedWarning = true;
-                                    }
-                                    else if (!loggedCritical && timeAttempting > TimeSpan.FromSeconds(30))
-                                    {
-                                        self.logger?.LogCritical("VERY long duration {0} attempting to apply VADD", timeAttempting);
-                                        loggedCritical = true;
-                                    }
+                                    continue;
                                 }
 
-                                if (vectorLockEntry.lockType != LockType.Shared)
+                                vectorLockEntry.lockType = LockType.Exclusive;
+
+                                // Create the vector set index
+                                var writeStatus = context.RMW(ref key, ref input);
+                                if (writeStatus.IsPending)
                                 {
-                                    self.logger?.LogCritical("Held exclusive lock when adding to vector set during replication, should never happen");
-                                    throw new GarnetException("Held exclusive lock when adding to vector set during replication, should never happen");
+                                    CompletePending(ref writeStatus, ref indexConfig, ref context);
                                 }
 
-                                var addRes = self.TryAdd(indexConfig.AsReadOnlySpan(), element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, out _);
-
-                                lockCtx.Unlock([vectorLockEntry]);
-
-                                if (addRes != VectorManagerResult.OK)
+                                if (!writeStatus.IsCompletedSuccessfully)
                                 {
-                                    throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
+                                    lockCtx.Unlock([vectorLockEntry]);
+                                    throw new GarnetException("Fail to create a vector set index during AOF sync, this should never happen but will break all ops against this vector set if it does");
                                 }
                             }
+                            else
+                            {
+                                break;
+                            }
+
+                            lockCtx.Unlock([vectorLockEntry]);
+
+                            var timeAttempting = Stopwatch.GetElapsedTime(start);
+                            if (!loggedWarning && timeAttempting > TimeSpan.FromSeconds(5))
+                            {
+                                self.logger?.LogWarning("Long duration {0} attempting to apply VADD", timeAttempting);
+                                loggedWarning = true;
+                            }
+                            else if (!loggedCritical && timeAttempting > TimeSpan.FromSeconds(30))
+                            {
+                                self.logger?.LogCritical("VERY long duration {0} attempting to apply VADD", timeAttempting);
+                                loggedCritical = true;
+                            }
                         }
-                        finally
+
+                        if (vectorLockEntry.lockType != LockType.Shared)
                         {
-                            lockCtx.EndLockable();
+                            self.logger?.LogCritical("Held exclusive lock when adding to vector set during replication, should never happen");
+                            throw new GarnetException("Held exclusive lock when adding to vector set during replication, should never happen");
+                        }
+
+                        var addRes = self.TryAdd(indexConfig.AsReadOnlySpan(), element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, out _);
+
+                        lockCtx.Unlock([vectorLockEntry]);
+
+                        if (addRes != VectorManagerResult.OK)
+                        {
+                            throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
                         }
                     }
                 }
                 finally
                 {
-                    if (MemoryMarshal.TryGetArray<byte>(keyBytes, out var toFree))
-                    {
-                        ArrayPool<byte>.Shared.Return(toFree.Array);
-                    }
-
-                    if (MemoryMarshal.TryGetArray(valuesBytes, out toFree))
-                    {
-                        ArrayPool<byte>.Shared.Return(toFree.Array);
-                    }
-
-                    if (MemoryMarshal.TryGetArray(elementBytes, out toFree))
-                    {
-                        ArrayPool<byte>.Shared.Return(toFree.Array);
-                    }
-
-                    if (MemoryMarshal.TryGetArray(attributesBytes, out toFree))
-                    {
-                        ArrayPool<byte>.Shared.Return(toFree.Array);
-                    }
+                    lockCtx.EndLockable();
                 }
             }
+        }
 
-            // Helper to complete read/writes during vector set op replay that go async
-            static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> context)
-            {
-                _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                var more = completedOutputs.Next();
-                Debug.Assert(more);
-                status = completedOutputs.Current.Status;
-                output = completedOutputs.Current.Output;
-                more = completedOutputs.Next();
-                Debug.Assert(!more);
-                completedOutputs.Dispose();
-            }
+        // Helper to complete read/writes during vector set op replay that go async
+        static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> context)
+        {
+            _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            var more = completedOutputs.Next();
+            Debug.Assert(more);
+            status = completedOutputs.Current.Status;
+            output = completedOutputs.Current.Output;
+            more = completedOutputs.Next();
+            Debug.Assert(!more);
+            completedOutputs.Dispose();
         }
 
         /// <summary>

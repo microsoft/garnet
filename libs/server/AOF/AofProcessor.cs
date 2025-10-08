@@ -41,6 +41,14 @@ namespace Garnet.server
         public void SetReadWriteSession() => respServerSession.clusterSession.SetReadWriteSession();
 
         /// <summary>
+        /// If any <see cref="ReplayOp(byte*, int, bool)"/> calls triggered work that is still in progress that captured
+        /// any pointers, waits for those to complete.
+        /// 
+        /// This is necessary to avoid the replication log bytes from getting free'd while still being used.
+        /// </summary>
+        public void WaitForPendingReplayOps() => storeWrapper.vectorManager.WaitForVectorOperationsToComplete();
+
+        /// <summary>
         /// Session for main store
         /// </summary>
         BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext;
