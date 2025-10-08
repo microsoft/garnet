@@ -43,6 +43,12 @@ namespace Garnet.server
             // FIXME: Add marker for every sublog involved in the TXN
             => Log.GetSubLog(0).Enqueue(userHeader, out logicalAddress);
 
+        public void EnqueueRefreshSublogTail(int sublogIdx, long timestamp)
+        {
+            var refreshSublogTailHeader = new AofHeader { opType = AofEntryType.RefreshSublogTail, timestamp = timestamp };
+            Log.GetSubLog(sublogIdx).Enqueue(refreshSublogTailHeader, out _);
+        }
+
         public void EnqueueCustomProc<THeader, TInput>(THeader userHeader, ref TInput input, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
             // FIXME: Handle custom proce enqueu in sharded environment

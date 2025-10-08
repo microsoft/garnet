@@ -108,7 +108,7 @@ namespace Garnet.cluster
                 {
                     // If background task has not been initialized
                     // initialize it here and start background replay task
-                    replicaAofSync ??= Task.Run(() => replicaAofSyncTask.ReplicaReplayTask());
+                    replicaAofSync ??= Task.Run(() => replicaAofSyncTask.ReplicaReplayTask(sublogIdx, previousAddress));
 
                     // Throttle to give the opportunity to the background replay task to catch up
                     replicaAofSyncTask?.ThrottlePrimary();

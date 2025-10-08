@@ -87,8 +87,9 @@ namespace Garnet.cluster
             this.remoteNodeId = remoteNodeId;
             this.startAddress = startAddress;
             this.previousAddress = startAddress;
+            this.maxSublogTimestamps = AofAddress.SetValue(startAddress.Length, 0);
+            this.cts = new CancellationTokenSource();
             this.logger = logger;
-            cts = new CancellationTokenSource();
 
             aofSyncTasks = new AofSyncTask[clusterProvider.serverOptions.AofSublogCount];
             for (var i = 0; i < aofSyncTasks.Length; i++)
@@ -126,7 +127,10 @@ namespace Garnet.cluster
                 var tasks = new List<Task>();
                 foreach (var aofSyncTask in aofSyncTasks)
                     tasks.Add(aofSyncTask.RunAofSyncTask());
-                tasks.Add(WitnessTask());
+
+                // Only add RefreshSublogTail task when using ShardedLog
+                if (aofSyncTasks.Length > 1)
+                    tasks.Add(RefreshSublogTail());
 
                 await Task.WhenAll([.. tasks]);
             }
@@ -148,30 +152,27 @@ namespace Garnet.cluster
             }
         }
 
-        async Task WitnessTask()
+        async Task RefreshSublogTail()
         {
-            var oldPreviousAddress = AofAddress.SetValue(aofSyncTasks.Length, 0L);
-
             while (true)
             {
-                await Task.Delay(100, cts.Token);
+                await Task.Delay(clusterProvider.serverOptions.AofRefreshSublogTailFrequencyMs, cts.Token);
+
                 var tailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
                 var previousAddress = PreviousAddress;
-                var masSublogTimestamps = MaxSublogTimestamps;
+                var maxSublogTimestamps = MaxSublogTimestamps;
                 // Maximum Send Timestamp (MST)
-                var mst = masSublogTimestamps.Max();
+                var mst = maxSublogTimestamps.Max();
 
                 // At least one sublog has stalled if both of the following conditions hold
                 //  1. the maximum timestamp of the sublog is smaller than MST
                 //  2. The sublog does not have any more data to send.
                 // If (1) is false then it is safe to read from that sublog because it will have the highest timestamp
                 // If (2) is false the we still have more data to process hence the timestamp will possible change in the future.
-                for (var i = 0; i < masSublogTimestamps.Length; i++)
+                for (var i = 0; i < maxSublogTimestamps.Length; i++)
                 {
-                    if (masSublogTimestamps[i] < mst && previousAddress[i] == tailAddress[i])
-                    {
-                        //clusterProvider.storeWrapper.appendOnlyFile.Enqueue()
-                    }
+                    if (maxSublogTimestamps[i] < mst && previousAddress[i] == tailAddress[i])
+                        clusterProvider.storeWrapper.appendOnlyFile.EnqueueRefreshSublogTail(i, mst);
                 }
             }
         }

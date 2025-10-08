@@ -57,7 +57,7 @@ namespace Garnet.server
             if(storeWrapper.serverOptions.EnableAOF && (storeWrapper.serverOptions.AofSublogCount > 1) && storeWrapper.clusterProvider.IsReplica())
                 storeWrapper.appendOnlyFile.replayTimestampTracker.WaitForConsistentRead(ref replicaReadContext, ref parseState, ref csvi, readSessionWaiter);
 
-            return !canServeRead;
+            return canServeRead;
         }
     }
 }

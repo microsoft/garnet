@@ -78,6 +78,10 @@ namespace Garnet.server
         /// Flush db
         /// </summary>
         FlushDb = 0x61,
+        /// <summary>
+        /// Refresh sublog tail (used only with ShardedLog)
+        /// </summary>
+        RefreshSublogTail = 0x70,
 
         #region Deprecated markers
         /// <summary>

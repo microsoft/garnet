@@ -115,11 +115,12 @@ namespace Garnet.cluster
                 }
             }
 
-            public async void ReplicaReplayTask()
+            public async void ReplicaReplayTask(int sublogIdx, long startAddress)
             {
                 try
                 {
                     activeReplay.ReadLock();
+                    replayIterator = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(sublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
                     while (true)
                     {
                         replicaReplayTaskCts.Token.ThrowIfCancellationRequested();

@@ -291,7 +291,7 @@ namespace Garnet.server
         {
             var max = 0L;
             for (var i = 0; i < Length; i++)
-                addresses[i] = Math.Max(max, addresses[i]);
+                max = Math.Max(max, addresses[i]);
             return max;
         }
     }

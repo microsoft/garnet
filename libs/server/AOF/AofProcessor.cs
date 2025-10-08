@@ -319,6 +319,9 @@ namespace Garnet.server
                 case AofEntryType.ObjectStoreStreamingCheckpointEndCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     break;
+                case AofEntryType.RefreshSublogTail:
+                    storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateSublogTimestamp(sublogIdx, header.timestamp);
+                    break;
                 default:
                     _ = ReplayOp(sublogIdx, ptr, length, asReplica);
                     break;
@@ -379,7 +382,7 @@ namespace Garnet.server
             // Track timestamp for replica read protocol when using sharded log
             var trackTimestamps = replayAsReplica && (storeWrapper.serverOptions.AofSublogCount > 1) && !Unsafe.IsNullRef(ref key);
             if (trackTimestamps)
-                storeWrapper.appendOnlyFile.replayTimestampTracker.SetKeyTimestamp(sublogIdx, ref key, header.timestamp);
+                storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateKeyTimestamp(sublogIdx, ref key, header.timestamp);
             return true;
 
             void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)

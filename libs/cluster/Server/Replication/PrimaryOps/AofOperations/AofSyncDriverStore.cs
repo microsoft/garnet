@@ -47,7 +47,6 @@ namespace Garnet.cluster
         int numTasks;
         SingleWriterMultiReaderLock _lock;
         bool _disposed;
-        public int Count => numTasks;
         internal AofAddress TruncatedUntil;
 
         public AofSyncDriverStore(ClusterProvider clusterProvider, int initialSize = 1, ILogger logger = null)
@@ -186,7 +185,8 @@ namespace Garnet.cluster
                         port = port,
                         replication_state = cr.IsConnected ? "online" : "offline",
                         replication_offset = cr.PreviousAddress,
-                        replication_lag = cr.PreviousAddress.AggregateDiff(PrimaryReplicationOffset)
+                        replication_lag = cr.PreviousAddress.AggregateDiff(PrimaryReplicationOffset),
+                        maxSendTimestamp = cr.MaxSublogTimestamps
                     });
                 }
             }

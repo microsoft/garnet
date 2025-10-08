@@ -22,7 +22,9 @@ namespace Garnet.server
         {
             if ((Size & (Size - 1)) != 0)
                 throw new InvalidOperationException($"Size ({Size}) must be a power of 2");
-        }        
+        }
+
+        SingleWriterMultiReaderLock updateTimestampLock;
 
         ConcurrentQueue<ReadSessionWaiter>[] waitQs = InitializeWaitQs(aofSublogCount);
 
@@ -31,7 +33,7 @@ namespace Garnet.server
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         static void Hash(ref SpanByte key, long aofSublogCount, out long hash, out long sublogIdx, out long keyOffset) {
-            hash = (long)HashUtils.MurmurHash2x64A(key.AsSpan());
+            hash = (long)GarnetLog.Hash(ref key);
             Hash(aofSublogCount, hash, out sublogIdx, out keyOffset);
         }
 
@@ -51,90 +53,132 @@ namespace Garnet.server
                 return array;
             })];
 
-        public void SetSublogTimestamp(int sublogIdx, long timestamp)
+        /// <summary>
+        /// Update timestamp for all keys corresponding to sublog.
+        /// NOTE: This is triggered by the RefreshSublogTail task when a sublog has stalled
+        /// (i.e. failed to keep moving its timestamp forward) due to lack of new data being added.
+        /// In that case we need to move the timestamp forward to avoid a deadlock in the consistent read protocol
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="timestamp"></param>
+        /// <seealso cref="T:Garnet.cluster.AofSyncDriver.RefreshSublogTail"/>
+        public void UpdateSublogTimestamp(int sublogIdx, long timestamp)
         {
             var array = timestamps[sublogIdx];
             const int length = Size;
 
-            if (Avx2.IsSupported)
+            try
             {
-                var timestampVector = Vector256.Create(timestamp);
-                for (var i = 0; i < length; i += 16)
+                // Bulk update of sublog timestamps should happen rarely
+                // Hence, we acquire a write-lock which has implicitly lower priority (compared to a read-lock)
+                updateTimestampLock.WriteLock();
+                if (Avx2.IsSupported)
                 {
-                    unsafe
+                    var timestampVector = Vector256.Create(timestamp);
+                    for (var i = 0; i < length; i += 16)
                     {
-                        fixed (long* ptr = &array[i])
+                        unsafe
                         {
-                            // Load 4 vectors (16 longs total)
-                            var currentVector1 = Avx.LoadVector256(ptr);
-                            var currentVector2 = Avx.LoadVector256(ptr + 4);
-                            var currentVector3 = Avx.LoadVector256(ptr + 8);
-                            var currentVector4 = Avx.LoadVector256(ptr + 12);
+                            fixed (long* ptr = &array[i])
+                            {
+                                // Load 4 vectors (16 longs total)
+                                var currentVector1 = Avx.LoadVector256(ptr);
+                                var currentVector2 = Avx.LoadVector256(ptr + 4);
+                                var currentVector3 = Avx.LoadVector256(ptr + 8);
+                                var currentVector4 = Avx.LoadVector256(ptr + 12);
 
-                            // Vectorized max operations on 4 vectors in parallel
-                            var maxVector1 = Vector256.Max(timestampVector, currentVector1);
-                            var maxVector2 = Vector256.Max(timestampVector, currentVector2);
-                            var maxVector3 = Vector256.Max(timestampVector, currentVector3);
-                            var maxVector4 = Vector256.Max(timestampVector, currentVector4);
+                                // Vectorized max operations on 4 vectors in parallel
+                                var maxVector1 = Vector256.Max(timestampVector, currentVector1);
+                                var maxVector2 = Vector256.Max(timestampVector, currentVector2);
+                                var maxVector3 = Vector256.Max(timestampVector, currentVector3);
+                                var maxVector4 = Vector256.Max(timestampVector, currentVector4);
 
-                            // Store 4 vectors (16 longs total)
-                            Avx.Store(ptr, maxVector1);
-                            Avx.Store(ptr + 4, maxVector2);
-                            Avx.Store(ptr + 8, maxVector3);
-                            Avx.Store(ptr + 12, maxVector4);
+                                // Store 4 vectors (16 longs total)
+                                Avx.Store(ptr, maxVector1);
+                                Avx.Store(ptr + 4, maxVector2);
+                                Avx.Store(ptr + 8, maxVector3);
+                                Avx.Store(ptr + 12, maxVector4);
+                            }
                         }
                     }
                 }
-            }
-            else if (Sse2.IsSupported)
-            {
-                var timestampVector = Vector128.Create(timestamp);
-                for (var i = 0; i < length; i += 8)
+                else if (Sse2.IsSupported)
                 {
-                    unsafe
+                    var timestampVector = Vector128.Create(timestamp);
+                    for (var i = 0; i < length; i += 8)
                     {
-                        fixed (long* ptr = &array[i])
+                        unsafe
                         {
-                            // Load 4 vectors (8 longs total)
-                            var currentVector1 = Sse2.LoadVector128(ptr);
-                            var currentVector2 = Sse2.LoadVector128(ptr + 2);
-                            var currentVector3 = Sse2.LoadVector128(ptr + 4);
-                            var currentVector4 = Sse2.LoadVector128(ptr + 6);
+                            fixed (long* ptr = &array[i])
+                            {
+                                // Load 4 vectors (8 longs total)
+                                var currentVector1 = Sse2.LoadVector128(ptr);
+                                var currentVector2 = Sse2.LoadVector128(ptr + 2);
+                                var currentVector3 = Sse2.LoadVector128(ptr + 4);
+                                var currentVector4 = Sse2.LoadVector128(ptr + 6);
 
-                            // Vectorized max operations on 4 vectors in parallel
-                            var maxVector1 = Vector128.Max(timestampVector, currentVector1);
-                            var maxVector2 = Vector128.Max(timestampVector, currentVector2);
-                            var maxVector3 = Vector128.Max(timestampVector, currentVector3);
-                            var maxVector4 = Vector128.Max(timestampVector, currentVector4);
+                                // Vectorized max operations on 4 vectors in parallel
+                                var maxVector1 = Vector128.Max(timestampVector, currentVector1);
+                                var maxVector2 = Vector128.Max(timestampVector, currentVector2);
+                                var maxVector3 = Vector128.Max(timestampVector, currentVector3);
+                                var maxVector4 = Vector128.Max(timestampVector, currentVector4);
 
-                            // Store 4 vectors (8 longs total)
-                            Sse2.Store(ptr, maxVector1);
-                            Sse2.Store(ptr + 2, maxVector2);
-                            Sse2.Store(ptr + 4, maxVector3);
-                            Sse2.Store(ptr + 6, maxVector4);
+                                // Store 4 vectors (8 longs total)
+                                Sse2.Store(ptr, maxVector1);
+                                Sse2.Store(ptr + 2, maxVector2);
+                                Sse2.Store(ptr + 4, maxVector3);
+                                Sse2.Store(ptr + 6, maxVector4);
+                            }
                         }
                     }
                 }
-            }
-            else
-            {
-                for (var i = 0; i < length; i += 4)
+                else
                 {
-                    array[i] = Math.Max(timestamp, array[i]);
-                    array[i + 1] = Math.Max(timestamp, array[i + 1]);
-                    array[i + 2] = Math.Max(timestamp, array[i + 2]);
-                    array[i + 3] = Math.Max(timestamp, array[i + 3]);
+                    for (var i = 0; i < length; i += 8)
+                    {
+                        array[i] = Math.Max(timestamp, array[i]);
+                        array[i + 1] = Math.Max(timestamp, array[i + 1]);
+                        array[i + 2] = Math.Max(timestamp, array[i + 2]);
+                        array[i + 3] = Math.Max(timestamp, array[i + 3]);
+                        array[i + 4] = Math.Max(timestamp, array[i + 4]);
+                        array[i + 5] = Math.Max(timestamp, array[i + 5]);
+                        array[i + 6] = Math.Max(timestamp, array[i + 6]);
+                        array[i + 7] = Math.Max(timestamp, array[i + 7]);
+                    }
                 }
+            }
+            finally
+            {
+                updateTimestampLock.WriteUnlock();
             }
 
             SignalWaiters(sublogIdx);
         }
 
-        public void SetKeyTimestamp(int sublogIdx, ref SpanByte key, long timestamp)
+        /// <summary>
+        /// Update key timestamp when replaying the AOF at replica and release any waiters.
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="key"></param>
+        /// <param name="timestamp"></param>
+        public void UpdateKeyTimestamp(int sublogIdx, ref SpanByte key, long timestamp)
         {
-            Hash(ref key, aofSublogCount, out _, out var _sublogIdx, out var keyOffset);
-            Debug.Assert(sublogIdx == _sublogIdx);
-            timestamps[sublogIdx][keyOffset] = Math.Max(timestamp, timestamps[sublogIdx][keyOffset]);
+            try
+            {
+                // It is expected that updates to individual key timestamp is a frequent operation
+                // Hence the acquisition of a read-lock that contents only with the bulk update of timestamps (see UpdateSublogTimestamp)
+                updateTimestampLock.ReadLock();
+                Hash(ref key, aofSublogCount, out _, out var _sublogIdx, out var keyOffset);
+                Debug.Assert(sublogIdx == _sublogIdx);
+                timestamps[sublogIdx][keyOffset] = Math.Max(timestamp, timestamps[sublogIdx][keyOffset]);
+                // TODO: monotonic update is needed only if each sublog is replayed in parallel.
+                // Utility.MonotonicUpdate(ref timestamps[sublogIdx][keyOffset], timestamp, out _);
+            }
+            finally
+            {
+                updateTimestampLock.ReadUnlock();
+            }
+
             SignalWaiters(sublogIdx);
         }
 
