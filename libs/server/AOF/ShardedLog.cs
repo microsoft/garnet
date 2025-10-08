@@ -2,7 +2,6 @@ using Tsavorite.core;
 using System.Linq;
 using Microsoft.Extensions.Logging;
 
-
 namespace Garnet.server
 {
     public class ShardedLog(uint sublogCount, TsavoriteLogSettings[] logSettings, ILogger logger = null)
@@ -115,6 +114,6 @@ namespace Garnet.server
         {
             for (var i = 0; i < sublog.Length; i++)
                 sublog[i].Initialize(beginAddress[i], committedUntilAddress[i], lastCommitNum);
-        }        
+        }
     }
 }

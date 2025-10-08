@@ -17,7 +17,7 @@ namespace Garnet.server
         /// <summary>
         /// Maximum number of sublogs supported
         /// </summary>
-        public const int MaxSublogCount = 8;
+        public const int MaxSublogCount = 64;
 
         /// <summary>
         /// AofAddress length
@@ -267,7 +267,7 @@ namespace Garnet.server
             for (var i = 0; i < Length; i++)
                 diff += addresses[i] - value;
             return diff;
-        }        
+        }
 
         public bool EqualsAll(AofAddress input)
         {
@@ -285,6 +285,14 @@ namespace Garnet.server
                     return true;
             }
             return false;
+        }
+
+        public long Max()
+        {
+            var max = 0L;
+            for (var i = 0; i < Length; i++)
+                addresses[i] = Math.Max(max, addresses[i]);
+            return max;
         }
     }
 }
