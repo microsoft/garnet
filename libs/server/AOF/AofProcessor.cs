@@ -565,5 +565,17 @@ namespace Garnet.server
                 _ => throw new GarnetException($"Conversion to AofStoreType not possible for {type}"),
             };
         }
+
+        public static void UpdateMaxTimestamp(ref long maxSendTimestamp, byte* record, int recordLength, long entryLength)
+        {
+            var ptr = record;
+            while (ptr < record + recordLength)
+            {
+                var header = *(AofHeader*)ptr;
+                var timestamp = header.timestamp;
+                maxSendTimestamp = Math.Max(maxSendTimestamp, timestamp);
+                ptr += entryLength;
+            }
+        }        
     }
 }

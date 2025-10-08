@@ -50,16 +50,27 @@ namespace Garnet.cluster
         /// <summary>
         /// Return previous address for underlying AofSyncTask
         /// </summary>
-        public AofAddress PreviousAddress => GetPreviousAofAddress();
-
+        public ref AofAddress PreviousAddress
+        {
+            get
+            {
+                for (var i = 0; i < aofSyncTasks.Length; i++)
+                    previousAddress[i] = aofSyncTasks[i].PreviousAddress;
+                return ref previousAddress;
+            }
+        }
         AofAddress previousAddress;
 
-        AofAddress GetPreviousAofAddress()
+        public ref AofAddress MaxSublogTimestamps
         {
-            for (var i = 0; i < aofSyncTasks.Length; i++)
-                previousAddress[i] = aofSyncTasks[i].PreviousAddress;
-            return previousAddress;
+            get
+            {
+                for (var i = 0; i < aofSyncTasks.Length; i++)
+                    maxSublogTimestamps[i] = aofSyncTasks[i].MaxSendTimestamp;
+                return ref maxSublogTimestamps;
+            }
         }
+        AofAddress maxSublogTimestamps;
 
         public AofSyncDriver(
             ClusterProvider clusterProvider,
@@ -115,8 +126,9 @@ namespace Garnet.cluster
                 var tasks = new List<Task>();
                 foreach (var aofSyncTask in aofSyncTasks)
                     tasks.Add(aofSyncTask.RunAofSyncTask());
+                tasks.Add(WitnessTask());
 
-                await Task.WhenAll(tasks.ToArray());
+                await Task.WhenAll([.. tasks]);
             }
             catch (Exception ex)
             {
@@ -133,6 +145,37 @@ namespace Garnet.cluster
                 {
                     logger?.LogInformation("Did not remove {remoteNodeId} from aofTaskStore at end of ReplicaSyncTask", remoteNodeId);
                 }
+            }
+        }
+
+        async Task WitnessTask()
+        {
+            var oldPreviousAddress = AofAddress.SetValue((uint)aofSyncTasks.Length, 0L);
+
+            while (true)
+            {
+                await Task.Delay(100, cts.Token);
+                var tailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
+                var previousAddress = PreviousAddress;
+                var masSublogTimestamps = MaxSublogTimestamps;
+                // Maximum Send Timestamp (MST)
+                var mst = masSublogTimestamps.Max();
+
+                // At least one sublog has stalled if both of the following conditions hold
+                //  1. the maximum timestamp of the sublog is smaller than MST
+                //  2. The sublog does not have any more data to send.
+                // If (1) is false then it is safe to read from that sublog because it will be ahead in time from other sublogs
+                // If (2) is false the we still have more data to process hence the timestamp will change in the future.
+                for (var i = 0; i < masSublogTimestamps.Length; i++)
+                {
+                    if (masSublogTimestamps[i] < mst && previousAddress[i] == tailAddress[i])
+                    {
+                        //
+                    }
+                }
+
+                // Here we need to send a ping
+
             }
         }
 

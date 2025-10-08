@@ -11,6 +11,7 @@ namespace Garnet.server
     {
         const long kFirstValidAofAddress = 64;
 
+        public readonly ReplayTimestampTracker replayTimestampTracker = new((int)serverOptions.AofSublogCount);
         public GarnetLog Log { get; private set; } = new(serverOptions, logSettings, logger);
         readonly GarnetServerOptions serverOptions = serverOptions;
 
@@ -39,12 +40,12 @@ namespace Garnet.server
 
         public void Enqueue<THeader>(THeader userHeader, out long logicalAddress)
             where THeader : unmanaged
-            // FIXME:
+            // FIXME: Add marker for every sublog involved in the TXN
             => Log.GetSubLog(0).Enqueue(userHeader, out logicalAddress);
 
         public void EnqueueCustomProc<THeader, TInput>(THeader userHeader, ref TInput input, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
-            // FIXME:
+            // FIXME: Handle custom proce enqueu in sharded environment
             => Log.GetSubLog(0).Enqueue(userHeader, ref input, out logicalAddress);
 
         public void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)

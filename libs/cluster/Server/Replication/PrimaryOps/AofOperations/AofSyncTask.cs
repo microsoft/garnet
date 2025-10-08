@@ -9,6 +9,7 @@ using Garnet.client;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using Garnet.server;
 
 namespace Garnet.cluster
 {
@@ -38,6 +39,11 @@ namespace Garnet.cluster
             /// Check if client connection is healthy
             /// </summary>
             public bool IsConnected => garnetClient != null && garnetClient.IsConnected;
+
+            /// <summary>
+            /// Maximum timestamp send over to replica from this aof sync task
+            /// </summary>
+            public long MaxSendTimestamp;
 
             /// <summary>
             /// AofSyncTask constructor
@@ -104,6 +110,9 @@ namespace Garnet.cluster
                         nextAddress,
                         (long)payloadPtr,
                         payloadLength);
+
+                    // Update timestamp first and then nextAddress
+                    AofProcessor.UpdateMaxTimestamp(ref MaxSendTimestamp, payloadPtr, payloadLength, aofSyncDriver.clusterProvider.storeWrapper.appendOnlyFile.HeaderSize);
 
                     // Set task address to nextAddress, as the iterator is currently at nextAddress
                     // (records at currentAddress are already sent above)
