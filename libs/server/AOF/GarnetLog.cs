@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 using Tsavorite.core;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
@@ -15,6 +18,9 @@ namespace Garnet.server
         readonly ShardedLog shardedLog = serverOptions.AofSublogCount > 1 ? new ShardedLog(serverOptions.AofSublogCount, logSettings, logger) : null;
 
         public long HeaderSize => singleLog != null ? singleLog.HeaderSize : shardedLog.HeaderSize;
+
+        public static long Hash(ref SpanByte key)
+            => (long)HashSlotUtils.Hash(key.AsSpan());
 
         public ref AofAddress BeginAddress
         {
@@ -128,7 +134,7 @@ namespace Garnet.server
             if (singleLog != null)
                 return singleLog.log;
 
-            var hash = HashSlotUtils.HashSlot(ref key);
+            var hash = Hash(ref key);
             return shardedLog.sublog[hash % shardedLog.Length];
         }
 

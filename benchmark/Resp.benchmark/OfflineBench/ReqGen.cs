@@ -105,7 +105,8 @@ namespace Resp.benchmark
 
             this.ttl = ttl;
 
-            GenerateSlotKeys(shardedKeys);
+            if(shardedKeys > 0)
+                GenerateSlotKeys(shardedKeys);
         }
 
         public void GenerateSlotKeys(int shards)
@@ -115,11 +116,11 @@ namespace Resp.benchmark
             for (var i = 0; i < shards; i++)
             {
                 byte[] keyData;
-                int slot;
+                long slot;
                 do
                 {
                     keyData = Encoding.ASCII.GetBytes(Generator.CreateHexId(size: Math.Max(keyLen, 8)));
-                    slot = HashSlotUtils.HashSlot(keyData);
+                    slot = HashSlotUtils.Hash(keyData.AsSpan());
                 } while ((slot % shardedKeys) != i);
                 slotKeys.Add(keyData);
             }

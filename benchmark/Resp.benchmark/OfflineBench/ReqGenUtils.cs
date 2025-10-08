@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Text;
-using Garnet.common;
 
 namespace Resp.benchmark
 {
@@ -357,7 +356,6 @@ namespace Resp.benchmark
             if (shardedKeys > 0)
             {
                 keyData = slotKeys[bufferOffset % slotKeys.Count];
-                var slot = HashSlotUtils.HashSlot(keyData);
                 return WriteStringBytes(ref curr, vend, keyData);
             }
             else
