@@ -81,7 +81,7 @@ namespace Garnet.server
                 return false;
             }
 
-            if (srcLogRecord.Info.ValueIsObject) 
+            if (srcLogRecord.Info.ValueIsObject)
             {
                 // Defer the actual copying of data to PostCopyUpdater, so we know the record has been successfully CASed into the hash chain before we potentially
                 // create large allocations (e.g. if srcLogRecord is from disk, we would have to allocate the overflow byte[]). Because we are doing an update we have

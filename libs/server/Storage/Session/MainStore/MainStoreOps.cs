@@ -575,7 +575,7 @@ namespace Garnet.server
                         // Find expiration time of the old key
                         var expireSpan = new SpanByteAndMemory();
                         var ttlStatus = TTL(oldKey, storeType, ref expireSpan, ref context, ref objectContext, true);
-                         
+
                         if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                         {
                             var newValSlice = PinnedSpanByte.FromPinnedPointer(ptrVal, headerLength);

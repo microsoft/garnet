@@ -215,7 +215,7 @@ namespace Garnet.server
 
                         var value = srcLogRecord.ValueSpan;
                         fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
-                                                     // TODO set error as in PrivateMethods.IsValidNumber and test in caller, to avoid the log record allocation. This would require 'output'
+                                                 // TODO set error as in PrivateMethods.IsValidNumber and test in caller, to avoid the log record allocation. This would require 'output'
                         if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidNumber(value, out _))
                         {
                             // TODO Consider adding a way to cache curr for the IPU call

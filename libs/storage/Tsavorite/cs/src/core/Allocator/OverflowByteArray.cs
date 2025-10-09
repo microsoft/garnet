@@ -45,8 +45,8 @@ namespace Tsavorite.core
         internal OverflowByteArray(int length, int startOffset, int endOffset, bool zeroInit)
         {
             // Allocate with enough extra space for the metadata (offset from start and end)
-            Array = !zeroInit 
-                ? GC.AllocateUninitializedArray<byte>(length + OverflowHeader.Size) 
+            Array = !zeroInit
+                ? GC.AllocateUninitializedArray<byte>(length + OverflowHeader.Size)
                 : (new byte[length + OverflowHeader.Size]);
             ref var header = ref Unsafe.As<byte, OverflowHeader>(ref Array[0]);
             header.startOffset = startOffset;

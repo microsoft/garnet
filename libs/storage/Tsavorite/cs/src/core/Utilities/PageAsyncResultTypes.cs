@@ -355,7 +355,7 @@ namespace Tsavorite.core
     {
         /// <summary>If we had separate Reads directly into multiple spans of a single byte[], such as across segments, this is a refcounted wrapper for the <see cref="GCHandle"/>;
         /// it is released after the write and if it is the final release, all spans have been written and the GCHandle is freed (and the object unpinned).</summary>
-        public RefCountedPinnedGCHandle refCountedGCHandle {  get; private set; }
+        public RefCountedPinnedGCHandle refCountedGCHandle { get; private set; }
 
         /// <summary>Separate public Set() call so we ensure it is AddRef'd</summary>
         /// <param name="refGcHandle"></param>
