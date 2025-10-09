@@ -209,28 +209,6 @@ namespace Garnet.server
         {
         }
 
-        public sealed class SessionContext : IDisposable
-        {
-            internal SessionContext()
-            {
-            }
-
-            internal static void Enter(StorageSession session)
-            {
-                Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
-
-                ActiveThreadSession = session;
-            }
-
-            /// <inheritdoc/>
-            public void Dispose()
-            {
-                Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
-
-                ActiveThreadSession = null;
-            }
-        }
-
         /// <summary>
         /// Minimum size of an id is assumed to be at least 4 bytes + a length prefix.
         /// </summary>
@@ -242,7 +220,6 @@ namespace Garnet.server
 
         private DiskANNService Service { get; } = new DiskANNService();
 
-        private readonly SessionContext reusableContextTracker = new();
         private readonly Guid processInstanceId = Guid.NewGuid();
 
         private ulong nextContextValue;
@@ -467,14 +444,29 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Utility to wrap setting the current context for a call within a using.
+        /// Mark the given <see cref="StorageSession"/> as active for vector ops.
         /// 
-        /// Easier than threading it down everywhere, just as safe.
+        /// This is thread local.
+        /// 
+        /// Should be paired (shortly) with a call to <see cref="ExitStorageSessionContext"/>.
+        /// 
+        /// Failure to do so may cause a leak.
         /// </summary>
-        internal SessionContext Enter(StorageSession current)
+        internal static void EnterStorageSessionContext(StorageSession session)
         {
-            SessionContext.Enter(current);
-            return reusableContextTracker;
+            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
+
+            ActiveThreadSession = session;
+        }
+
+        /// <summary>
+        /// Exit a previous <see cref="EnterStorageSessionContext(StorageSession)"/>.
+        /// </summary>
+        internal static void ExitStorageSessionContext()
+        {
+            Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
+
+            ActiveThreadSession = null;
         }
 
         /// <summary>
@@ -530,8 +522,8 @@ namespace Garnet.server
 
             if (indexSpan.Length != Index.Size)
             {
-                logger?.LogCritical("Acquired space for vector set index does not match expections, {0} != {1}", indexSpan.Length, Index.Size);
-                throw new GarnetException($"Acquired space for vector set index does not match expections, {indexSpan.Length} != {Index.Size}");
+                logger?.LogCritical("Acquired space for vector set index does not match expectations, {0} != {1}", indexSpan.Length, Index.Size);
+                throw new GarnetException($"Acquired space for vector set index does not match expectations, {indexSpan.Length} != {Index.Size}");
             }
 
             ReadIndex(indexSpan, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out _, out var indexProcessInstanceId);
@@ -555,7 +547,13 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out var indexPtr, out var indexProcessInstanceId);
+
+            if (indexProcessInstanceId != processInstanceId)
+            {
+                // We never actually spun this index up, so nothing to drop
+                return;
+            }
 
             Service.DropIndex(context, indexPtr);
         }
@@ -601,7 +599,7 @@ namespace Garnet.server
         /// </summary>
         /// <returns>Result of the operation.</returns>
         internal VectorManagerResult TryAdd(
-            ReadOnlySpan<byte> indexValue,
+            scoped ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,
             VectorValueType valueType,
             ReadOnlySpan<byte> values,
@@ -1259,7 +1257,8 @@ namespace Garnet.server
                 lockCtx.BeginLockable();
                 try
                 {
-                    using (self.Enter(storageSession))
+                    EnterStorageSessionContext(storageSession);
+                    try
                     {
                         TxnKeyEntry vectorLockEntry = new();
                         vectorLockEntry.isObject = false;
@@ -1336,6 +1335,10 @@ namespace Garnet.server
                         {
                             throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
                         }
+                    }
+                    finally
+                    {
+                        ExitStorageSessionContext();
                     }
                 }
                 finally
