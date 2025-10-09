@@ -44,15 +44,15 @@ namespace Garnet.server
             long memoryUsage;
             if (srcLogRecord.Info.ValueIsObject)
             {
-                memoryUsage = RecordInfo.GetLength() + (2 * IntPtr.Size) + // Log record length
+                memoryUsage = RecordInfo.Size + (2 * IntPtr.Size) + // Log record length
                               Utility.RoundUp(srcLogRecord.Key.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + // Key allocation in heap with overhead
-                              srcLogRecord.ValueObject.MemorySize; // Value allocation in heap
+                              srcLogRecord.ValueObject.SerializedSize; // Value allocation in heap
             }
             else
             {
-                memoryUsage = RecordInfo.GetLength() +
-                              Utility.RoundUp(srcLogRecord.Key.TotalSize(), RecordInfo.GetLength()) +
-                              Utility.RoundUp(srcLogRecord.ValueSpan.TotalSize(), RecordInfo.GetLength());
+                memoryUsage = RecordInfo.Size +
+                              Utility.RoundUp(srcLogRecord.Key.TotalSize(), RecordInfo.Size) +
+                              Utility.RoundUp(srcLogRecord.ValueSpan.TotalSize(), RecordInfo.Size);
             }
 
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);

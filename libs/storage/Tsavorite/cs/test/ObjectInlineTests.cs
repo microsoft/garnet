@@ -7,7 +7,7 @@ using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
 
-namespace Tsavorite.test
+namespace Tsavorite.test.Objects
 {
     using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
     using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
@@ -330,23 +330,30 @@ namespace Tsavorite.test
                     srcValue = ((TestObjectValue)srcLogRecord.ValueObject).value;
 
                 output.value = srcLogRecord.Info.ValueIsObject ? (TestObjectValue)srcLogRecord.ValueObject : new TestObjectValue { value = (int)srcValue };
-                output.value.value += input.value;
 
+                var result = false;
                 switch (output.destValueStyle)
                 {
                     case TestValueStyle.Inline:
                         ValueStruct valueStruct = new() { vfield1 = srcValue + input.value, vfield2 = (srcValue + input.value) * 100 };
-                        return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref valueStruct), in sizeInfo);
+                        result = logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref valueStruct), in sizeInfo);
+                        break;
                     case TestValueStyle.Overflow:
                         Span<byte> overflowValue = GetOverflowValueSpanByte();
                         overflowValue.AsRef<long>() = srcValue + input.value;
-                        return logRecord.TrySetValueSpan(overflowValue, in sizeInfo);
+                        result = logRecord.TrySetValueSpan(overflowValue, in sizeInfo);
+                        break;
                     case TestValueStyle.Object:
-                        return logRecord.TrySetValueObject(output.value, in sizeInfo);
+                        result = logRecord.TrySetValueObject(output.value, in sizeInfo);
+                        break;
                     default:
                         Assert.Fail("Unknown value style");
                         return false;
                 }
+
+                if (result)
+                    output.value.value += input.value;
+                return result;
             }
 
             public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
@@ -422,8 +429,8 @@ namespace Tsavorite.test
             static RecordFieldInfo GetFieldInfo(ReadOnlySpan<byte> key, ref TestObjectInput input)
                 => new()
                 {
-                    KeyDataSize = key.Length,
-                    ValueDataSize = input.wantValueStyle switch
+                    KeySize = key.Length,
+                    ValueSize = input.wantValueStyle switch
                     {
                         TestValueStyle.Inline => ValueStruct.AsSpanByteDataSize,
                         TestValueStyle.Overflow => OverflowValueSize,

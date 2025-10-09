@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common.Parsing;
+using Tsavorite.core;
 
 namespace Garnet.common
 {
@@ -1225,23 +1226,21 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Read serialized data for migration
+        /// Read serialized data for migration and replication. For details of the layout see <see cref="DiskLogRecord.Serialize"/>.
         /// </summary>  
-        public static bool TryReadSerializedRecord(out long recordStartAddress, out int recordLength, ref byte* ptr, byte* end)
+        public static bool GetSerializedRecordSpan(out PinnedSpanByte recordSpan, ref byte* ptr, byte* end)
         {
-            recordStartAddress = 0;
-            recordLength = 0;
-
-            //1. safe read recordSize
+            // 1. Safe read recordSize.
             if (ptr + sizeof(int) > end)
+            {
+                recordSpan = default;
                 return false;
-            recordLength = *(int*)ptr;
+            }
+            var recordLength = *(int*)ptr;
             ptr += sizeof(int);
 
-            //2. safe read keyPtr
-            if (ptr + recordLength > end)
-                return false;
-            recordStartAddress = (long)ptr;
+            // 2. The record starts immediately after the length prefix.
+            recordSpan = PinnedSpanByte.FromPinnedPointer(ptr, recordLength);
             ptr += recordLength;
             return true;
         }

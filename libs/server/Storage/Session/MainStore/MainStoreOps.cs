@@ -319,7 +319,7 @@ namespace Garnet.server
             }
 
             // Deletions in RMW are done by expiring the record, hence we use expiration as the indicator of success.
-            if (status.Expired)
+            if (status.IsExpired)
             {
                 incr_session_found();
                 return GarnetStatus.OK;
@@ -575,7 +575,7 @@ namespace Garnet.server
                         // Find expiration time of the old key
                         var expireSpan = new SpanByteAndMemory();
                         var ttlStatus = TTL(oldKey, storeType, ref expireSpan, ref context, ref objectContext, true);
-                         
+
                         if (ttlStatus == GarnetStatus.OK && !expireSpan.IsSpanByte)
                         {
                             var newValSlice = PinnedSpanByte.FromPinnedPointer(ptrVal, headerLength);

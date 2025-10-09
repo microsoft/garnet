@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Collections.Generic;
-using System.IO;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -27,16 +26,6 @@ namespace Garnet.server
         /// <param name="sizeChange"></param>
         /// <returns></returns>
         bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion, long etag, out long sizeChange);
-
-        /// <summary>
-        /// Serializer
-        /// </summary>
-        void Serialize(BinaryWriter writer);
-
-        /// <summary>
-        /// Create a cloned CopyUpdate of this object
-        /// </summary>
-        IGarnetObject CopyUpdate(bool isInNewVersion, ref RMWInfo rmwInfo);
 
         /// <summary>
         /// Scan the items of the collection

@@ -7,9 +7,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-#pragma warning disable IDE0005 // Using directive is unnecessary.
-    using static LogRecordUtils;
-
     /// <summary>
     /// Callback functions for main store
     /// </summary>
@@ -19,6 +16,12 @@ namespace Garnet.server
         public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
+            if (srcLogRecord.Info.ValueIsObject)
+            {
+                readInfo.Action = ReadAction.WrongType;
+                return false;
+            }
+
             if (CheckExpiry(in srcLogRecord))
                 return false;
 

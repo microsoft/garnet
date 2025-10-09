@@ -51,7 +51,7 @@ namespace Garnet.server
         ///  Constructor
         /// </summary>
         public SetObject()
-            : base(new(MemoryUtils.HashSetOverhead, sizeof(int)))
+            : base(new(MemoryUtils.HashSetOverhead, sizeof(int), serializedIsExact: true))
         {
             Set = new HashSet<byte[]>(ByteArrayComparer.Instance);
 
@@ -64,7 +64,7 @@ namespace Garnet.server
         /// Construct from binary serialized form
         /// </summary>
         public SetObject(BinaryReader reader)
-            : base(reader, new(MemoryUtils.HashSetOverhead, sizeof(int)))
+            : base(reader, new(MemoryUtils.HashSetOverhead, sizeof(int), serializedIsExact: true))
         {
             int count = reader.ReadInt32();
 
@@ -135,7 +135,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var prevMemorySize = this.MemorySize;
+            var prevMemorySize = this.HeapMemorySize;
             switch (input.header.SetOp)
             {
                 case SetOperation.SADD:
@@ -169,7 +169,7 @@ namespace Garnet.server
                     throw new GarnetException($"Unsupported operation {input.header.SetOp} in SetObject.Operate");
             }
 
-            memorySizeChange = this.MemorySize - prevMemorySize;
+            memorySizeChange = this.HeapMemorySize - prevMemorySize;
 
             if (Set.Count == 0)
                 output.OutputFlags |= OutputFlags.RemoveKey;
@@ -184,15 +184,15 @@ namespace Garnet.server
 
             if (add)
             {
-                this.MemorySize += memorySize;
-                this.DiskSize += kvSize;
+                this.HeapMemorySize += memorySize;
+                this.SerializedSize += kvSize;
             }
             else
             {
-                this.MemorySize -= memorySize;
-                this.DiskSize -= kvSize;
-                Debug.Assert(this.MemorySize >= MemoryUtils.HashSetOverhead);
-                Debug.Assert(this.DiskSize >= sizeof(int));
+                this.HeapMemorySize -= memorySize;
+                this.SerializedSize -= kvSize;
+                Debug.Assert(this.HeapMemorySize >= MemoryUtils.HashSetOverhead);
+                Debug.Assert(this.SerializedSize >= sizeof(int));
             }
         }
 

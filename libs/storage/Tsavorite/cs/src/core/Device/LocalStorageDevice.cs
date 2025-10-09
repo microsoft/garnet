@@ -48,6 +48,13 @@ namespace Tsavorite.core
 
         private IntPtr ioCompletionPort;
 
+        /// <inheritdoc/>
+        public override string ToString()
+        {
+            static string bstr(bool value) => value ? "T" : "F";
+            return $"secSize {sectorSize}, numPend {numPending}, RO {bstr(readOnly)}, preAll {bstr(preallocateFile)}, delClose {bstr(deleteOnClose)}, noFiBuf {bstr(disableFileBuffering)}";
+        }
+
         /// <summary>
         /// Constructor
         /// </summary>

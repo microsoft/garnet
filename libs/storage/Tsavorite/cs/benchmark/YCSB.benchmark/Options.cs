@@ -50,6 +50,10 @@ namespace Tsavorite.benchmark
             HelpText = "#,#,#,#: Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] (summing to 100) operations in this run")]
         public IEnumerable<int> RumdPercents { get; set; }
 
+        [Option("sba", Required = false, Default = false,
+            HelpText = "Use SpanByteAllocator (default is to use ObjectAllocator)")]
+        public bool UseSBA { get; set; }
+
         [Option("reviv", Required = false, Default = RevivificationLevel.None,
             HelpText = "Revivification of tombstoned records:" +
                         $"\n    {nameof(RevivificationLevel.None)} = No revivification" +
@@ -124,9 +128,10 @@ namespace Tsavorite.benchmark
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
-            return $"b: {Benchmark}; d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount};"
+            var allocator = UseSBA ? "sba" : "oa";
+            return $"b: {Benchmark}; a: {allocator}; d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount};"
                         + $" revivfrac {RevivifiableFraction}; t: {ThreadCount}; i: {IterationCount}; ov: {boolStr(UseOverflowValues)}; obj: {boolStr(UseObjectValues)}; hp: {HashPacking};"
-                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(UseSyntheticData)}; safectx: {boolStr(UseSafeContext)};"
+                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; synth: {boolStr(UseSyntheticData)}; safectx: {boolStr(UseSafeContext)};"
                         + $" chkptms: {PeriodicCheckpointMilliseconds}; chkpttype: {(PeriodicCheckpointMilliseconds > 0 ? PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(PeriodicCheckpointTryIncremental)}";
         }

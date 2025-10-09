@@ -124,8 +124,11 @@ namespace Tsavorite.core
             pendingContext.initialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
+            // Transfer the log record to the pending context. We do not want to dispose memory log records; those objects are still alive in the log.
             if (!pendingContext.IsSet)
-                pendingContext.Serialize(in srcLogRecord, hlogBase.bufferPool, valueSerializer: null);
+                pendingContext.TransferFrom(in srcLogRecord, hlogBase.bufferPool, hlogBase.transientObjectIdMap,
+                    srcLogRecord.IsMemoryLogRecord ? obj => { }
+                : obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
             return OperationStatus.RECORD_ON_DISK;
         }
     }

@@ -307,8 +307,8 @@ namespace Garnet.server
                         }
                     }
 
-                    if (info.matchType != null && 
-                        ((logRecord.Info.ValueIsObject && (info.matchType == typeof(string) || info.matchType != logRecord.ValueObject.GetType())) || 
+                    if (info.matchType != null &&
+                        ((logRecord.Info.ValueIsObject && (info.matchType == typeof(string) || info.matchType != logRecord.ValueObject.GetType())) ||
                          (!logRecord.Info.ValueIsObject && info.matchType != typeof(string))))
                     {
                         cursorRecordResult = CursorRecordResult.Skip;

@@ -101,7 +101,10 @@ namespace Tsavorite.core
                     completedOutputs.TransferFrom(ref pendingContext, status, hlogBase.bufferPool);
                 }
                 if (!status.IsPending)
+                {
+                    DisposeRecord(ref pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);
                     pendingContext.Dispose();
+                }
             }
         }
 
@@ -115,12 +118,10 @@ namespace Tsavorite.core
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquision");
             newRequest = default;
 
-            // If NoKey, we do not have the key in the initial call and must use the key from the satisfied request.
-            // Otherwise the key is already in the pendingContext *and* the key in diskLogRecord has been verified to match.
-            DiskLogRecord diskLogRecord = new(ref request);
-            var key = diskLogRecord.Key;
+            if (request.diskLogRecord.IsSet)
+                pendingContext.TransferFrom(ref request.diskLogRecord);
 
-            OperationStatus internalStatus = pendingContext.type switch
+            var internalStatus = pendingContext.type switch
             {
                 OperationType.READ => ContinuePendingRead(request, ref pendingContext, sessionFunctions),
                 OperationType.RMW => ContinuePendingRMW(request, ref pendingContext, sessionFunctions),
@@ -136,7 +137,7 @@ namespace Tsavorite.core
             {
                 if (pendingContext.type == OperationType.READ)
                 {
-                    sessionFunctions.ReadCompletionCallback(ref diskLogRecord,
+                    sessionFunctions.ReadCompletionCallback(ref pendingContext.diskLogRecord,
                                                      ref pendingContext.input.Get(),
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
@@ -145,7 +146,7 @@ namespace Tsavorite.core
                 }
                 else if (pendingContext.type == OperationType.RMW)
                 {
-                    sessionFunctions.RMWCompletionCallback(ref diskLogRecord,
+                    sessionFunctions.RMWCompletionCallback(ref pendingContext.diskLogRecord,
                                                      ref pendingContext.input.Get(),
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
@@ -154,8 +155,7 @@ namespace Tsavorite.core
                 }
             }
 
-            DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
-            request.Dispose();
+            request.DisposeRecord();
             return status;
         }
         #endregion

@@ -224,7 +224,8 @@ namespace GarnetJSON
         /// <param name="errorMessage">The error message if the operation fails.</param>
         /// <returns>The result of the set operation.</returns>
         /// <exception cref="JsonException">Thrown when there is an error in JSON processing.</exception>
-        /// <remarks>TODO: This currently does not update <see cref="GarnetObjectBase.MemorySize"/> or <see cref="GarnetObjectBase.DiskSize"/></remarks>
+        /// <remarks>TODO: This currently does not update <see cref="IHeapObject.HeapMemorySize"/> or <see cref="IHeapObject.SerializedSize"/>
+        ///     and does not support <see cref="IHeapObject.SerializedSizeIsExact"/>.</remarks>
         public SetResult Set(ReadOnlySpan<byte> path, ReadOnlySpan<byte> value, ExistOptions existOptions, out ReadOnlySpan<byte> errorMessage)
         {
             try

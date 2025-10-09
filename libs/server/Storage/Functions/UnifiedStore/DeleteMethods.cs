@@ -36,7 +36,7 @@ namespace Garnet.server
             {
                 // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                 functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                logRecord.ClearValueObject(obj => { });
+                logRecord.ClearValueIfHeap(obj => { });
             }
 
             return true;

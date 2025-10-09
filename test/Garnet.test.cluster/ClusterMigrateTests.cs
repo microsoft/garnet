@@ -1096,7 +1096,7 @@ namespace Garnet.test.cluster
             {
                 var resp = DoZCOUNT(targetNodeIndex, key, out var count, out _Address, out _Port, out _Slot, logger: context.logger);
                 ClassicAssert.AreEqual(resp, "OK");
-                ClassicAssert.AreEqual(data[_key].Count, count);
+                ClassicAssert.AreEqual(data[_key].Count, count, $"key: {Encoding.UTF8.GetString(_key)}");
 
                 List<string> members;
                 (resp, members) = DoZRANGE(targetNodeIndex, _key, out _Address, out _Port, out _Slot, context.logger);

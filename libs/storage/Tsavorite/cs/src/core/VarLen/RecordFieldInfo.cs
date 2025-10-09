@@ -9,20 +9,22 @@ namespace Tsavorite.core
     public struct RecordFieldInfo
     {
         /// <summary>
-        /// The data length of the key for the new record (not including the length prefix) and may become overflow; see <see cref="RecordSizeInfo.InlineTotalKeySize"/>
-        /// </summary>
-        public int KeyDataSize;
-
-        /// <summary>
-        /// The data length of the value for the new record. Its behavior varies between the String and Object stores:
+        /// The data length of the key for the record. Its behavior varies between the String and Object stores:
         /// <list type="bullet">
-        ///     <item>String store: It is the data length of the Span without any length prefix and may become overflow; see <see cref="RecordSizeInfo.InlineTotalValueSize"/></item>
-        ///     <item>Object store: If <see cref="ValueIsObject"/> is specified it should be set to <see cref="ObjectIdMap.ObjectIdSize"/>. 
-        ///         Otherwise it is handled the same as <see cref="KeyDataSize"/>: the data length of the span (not including the length prefix) and may become overflow;
-        ///         see <see cref="RecordSizeInfo.InlineTotalValueSize"/></item>
+        ///     <item>String store: It is the data length of the Span</item>
+        ///     <item>Object store: It is the data length of the Span (which may or may not Overflow)</item>
         /// </list>
         /// </summary>
-        public int ValueDataSize;
+        public int KeySize;
+
+        /// <summary>
+        /// The data length of the value for the record. Its behavior varies between the String and Object stores:
+        /// <list type="bullet">
+        ///     <item>String store: It is the data length of the Span</item>
+        ///     <item>Object store: It is either the data length of the Span (which may or may not Overflow) or <see cref="ObjectIdMap.ObjectIdSize"/> if the Value is an Object</item>
+        /// </list>
+        /// </summary>
+        public int ValueSize;
 
         /// <summary>Whether the value was specified to be an object.</summary>
         public bool ValueIsObject;
@@ -35,6 +37,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override string ToString()
-            => $"KeySize {KeyDataSize}, ValSize {ValueDataSize}, ValIsObj {ValueIsObject}, HasETag {HasETag}, HasExpir {HasExpiration}";
+            => $"KeySize {KeySize}, ValSize {ValueSize}, ValIsObj {ValueIsObject}, HasETag {HasETag}, HasExpir {HasExpiration}";
     }
 }

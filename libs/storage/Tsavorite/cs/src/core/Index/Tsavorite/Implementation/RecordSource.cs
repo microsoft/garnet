@@ -127,7 +127,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetHasMainLogSrc()
         {
-            Debug.Assert(IsInLogMemory(LogicalAddress), "LogicalAddress must be a non-readcache in-mmeory address to set HasMainLogSrc");
+            Debug.Assert(!IsReadCache(LogicalAddress), "LogicalAddress must be a main log address to set HasMainLogSrc");
             internalState |= InternalStates.MainLogSrc;
         }
 
@@ -149,7 +149,7 @@ namespace Tsavorite.core
         internal void ClearHasReadCacheSrc() => internalState &= ~InternalStates.ReadCacheSrc;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long SetPhysicalAddress() => PhysicalAddress = Allocator.GetPhysicalAddress(LogicalAddress);
+        internal long SetPhysicalAddress() => PhysicalAddress = AllocatorBase.GetPhysicalAddress(LogicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly ref RecordInfo GetInfoRef() => ref LogRecord.GetInfoRef(PhysicalAddress);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

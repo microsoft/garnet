@@ -111,7 +111,7 @@ namespace Garnet.server
             {
                 var oldSize = logRecord.Info.ValueIsInline
                     ? 0
-                    : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.MemorySize);
+                    : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
                 _ = logRecord.TrySetValueSpan(newValue, in sizeInfo);
                 if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
@@ -165,7 +165,7 @@ namespace Garnet.server
 
             var oldSize = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.MemorySize);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
             _ = logRecord.TrySetValueObject(newValue, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
@@ -177,7 +177,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 WriteLogUpsert(logRecord.Key, ref input, garnetObject, upsertInfo.Version, upsertInfo.SessionID);
 
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(newValue.MemorySize - oldSize);
+            functionsState.objectStoreSizeTracker?.AddTrackedSize(newValue.HeapMemorySize - oldSize);
             return true;
         }
 
@@ -187,7 +187,7 @@ namespace Garnet.server
         {
             var oldSize = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.MemorySize);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
@@ -206,7 +206,7 @@ namespace Garnet.server
 
             var newSize = logRecord.Info.ValueIsInline
                 ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.MemorySize);
+                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
             functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
             return true;
         }

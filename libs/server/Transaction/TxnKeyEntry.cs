@@ -110,7 +110,7 @@ namespace Garnet.server
             // Issue unified store locks
             if (keyCount > 0)
             {
-                comparison.unifiedStoreTransactionalContext.Lock<TxnKeyEntry>(keys.AsSpan().Slice(0,keyCount));
+                comparison.unifiedStoreTransactionalContext.Lock<TxnKeyEntry>(keys.AsSpan().Slice(0, keyCount));
                 unifiedStoreKeyLocked = true;
             }
 

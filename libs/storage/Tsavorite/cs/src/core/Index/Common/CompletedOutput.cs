@@ -111,7 +111,8 @@ namespace Tsavorite.core
             where TAllocator : IAllocator<TStoreFunctions>
         {
             // Transfers the containers from the pendingContext, then null them; this is called before pendingContext.Dispose().
-            keyContainer = new SpanByteHeapContainer(pendingContext.Key, bufferPool);
+            keyContainer = pendingContext.request_key;
+            pendingContext.request_key = null;
             inputContainer = pendingContext.input;
             pendingContext.input = default;
 

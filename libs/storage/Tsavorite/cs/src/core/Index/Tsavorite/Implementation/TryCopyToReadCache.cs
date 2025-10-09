@@ -3,7 +3,7 @@
 
 namespace Tsavorite.core
 {
-    using System;
+#pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
 
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
@@ -28,19 +28,16 @@ namespace Tsavorite.core
             var sizeInfo = new RecordSizeInfo() { FieldInfo = inputLogRecord.GetRecordFieldInfo() };
             hlog.PopulateRecordSizeInfo(ref sizeInfo);
 
-            if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, in sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out var allocatedSize, out _))
+            if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, in sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out _ /*status*/))
                 return false;
-            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readCacheBase, newLogicalAddress, newPhysicalAddress, inNewVersion: false, previousAddress: stackCtx.hei.Address);
-            stackCtx.SetNewRecord(newLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readCacheBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, inNewVersion: false, previousAddress: stackCtx.hei.Address);
 
-            // Even though readcache records are immutable, we have to initialize the lengths
-            readcache.InitializeValue(newPhysicalAddress, in sizeInfo);
-            newLogRecord.SetFillerLength(allocatedSize);
-            newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+            stackCtx.SetNewRecord(newLogicalAddress | RecordInfo.kIsReadCacheBitMask);
+            _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
             // Insert the new record by CAS'ing directly into the hash entry (readcache records are always CAS'd into the HashBucketEntry, never spliced).
             // It is possible that we will successfully CAS but subsequently fail due to a main log entry having been spliced in.
-            var success = stackCtx.hei.TryCAS(newLogicalAddress);
+            var success = stackCtx.hei.TryCAS(newLogicalAddress | RecordInfo.kIsReadCacheBitMask);
             var casSuccess = success;
 
             var failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
@@ -60,19 +57,6 @@ namespace Tsavorite.core
 
             if (success)
             {
-                TInput input = default;
-                TOutput output = default;
-                ReadOnlySpan<byte> srcValue = default;
-                UpsertInfo upsertInfo = new()
-                {
-                    Version = sessionFunctions.Ctx.version,
-                    SessionID = sessionFunctions.Ctx.sessionID,
-                    Address = kInvalidAddress, // stackCtx.recSrc.LogicalAddress,
-                    KeyHash = stackCtx.hei.hash
-                };
-
-                // TODO: This is called by readcache directly, but is the only ISessionFunctions call for that; the rest is internal. Clean this up, maybe as a new PostReadCacheInsert method.
-                sessionFunctions.PostInitialWriter(ref newLogRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
                 newLogRecord.InfoRef.UnsealAndValidate();
                 pendingContext.logicalAddress = kInvalidAddress;  // We aren't doing anything with this; and we never expose readcache addresses
                 stackCtx.ClearNewRecord();
