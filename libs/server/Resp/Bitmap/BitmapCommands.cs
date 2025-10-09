@@ -40,7 +40,12 @@ namespace Garnet.server
         /// <summary>
         /// NOT
         /// </summary>
-        NOT
+        NOT,
+
+        /// <summary>
+        /// DIFF
+        /// </summary>
+        DIFF
     }
 
     internal enum BitFieldOverflow : byte
@@ -315,6 +320,11 @@ namespace Garnet.server
             if (parseState.Count < 2)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS);
+            }
+
+            if (bitOp == BitmapOperation.DIFF && parseState.Count < 3)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_BITOP_DIFF_TWO_SOURCE_KEYS_REQUIRED);
             }
 
             if (parseState.Count > 64)
