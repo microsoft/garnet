@@ -1210,7 +1210,7 @@ namespace Garnet.server
                                     finally
                                     {
                                         var pending = Interlocked.Decrement(ref self.replicationReplayPendingVAdds);
-                                        Debug.Assert(pending >= 0, "Pending VADD ops has fallen below 0 fater processesing op");
+                                        Debug.Assert(pending >= 0, "Pending VADD ops has fallen below 0 after processing op");
 
                                         if (pending == 0)
                                         {
