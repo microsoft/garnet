@@ -20,6 +20,9 @@ namespace Garnet.server
     using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     public enum VectorManagerResult
     {
         Invalid = 0,
@@ -207,6 +210,38 @@ namespace Garnet.server
 
         private readonly record struct VADDReplicationState(SpanByte Key, uint Dims, uint ReduceDims, VectorValueType ValueType, SpanByte Values, SpanByte Element, VectorQuantType Quantizer, uint BuildExplorationFactor, SpanByte Attributes, uint NumLinks)
         {
+        }
+
+        /// <summary>
+        /// Used to scope some number of locks and contexts related to a Vector Set operation.
+        /// 
+        /// Disposing this ends the lockable context, releases all locks, and exits the storage session context on the current thread.
+        /// </summary>
+        internal readonly ref struct ReadVectorLock : IDisposable
+        {
+            private readonly ref LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> lockableCtx;
+            private readonly TxnKeyEntry entry;
+
+            internal ReadVectorLock(ref LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> lockableCtx, TxnKeyEntry entry)
+            {
+                this.entry = entry;
+                this.lockableCtx = ref lockableCtx;
+            }
+
+            /// <inheritdoc/>
+            public void Dispose()
+            {
+                Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
+                ActiveThreadSession = null;
+
+                if (Unsafe.IsNullRef(ref lockableCtx))
+                {
+                    return;
+                }
+
+                lockableCtx.Unlock([entry]);
+                lockableCtx.EndLockable();
+            }
         }
 
         /// <summary>
@@ -441,32 +476,6 @@ namespace Garnet.server
             output = completedOutputs.Current.Output;
             Debug.Assert(!completedOutputs.Next());
             completedOutputs.Dispose();
-        }
-
-        /// <summary>
-        /// Mark the given <see cref="StorageSession"/> as active for vector ops.
-        /// 
-        /// This is thread local.
-        /// 
-        /// Should be paired (shortly) with a call to <see cref="ExitStorageSessionContext"/>.
-        /// 
-        /// Failure to do so may cause a leak.
-        /// </summary>
-        internal static void EnterStorageSessionContext(StorageSession session)
-        {
-            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
-
-            ActiveThreadSession = session;
-        }
-
-        /// <summary>
-        /// Exit a previous <see cref="EnterStorageSessionContext(StorageSession)"/>.
-        /// </summary>
-        internal static void ExitStorageSessionContext()
-        {
-            Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
-
-            ActiveThreadSession = null;
         }
 
         /// <summary>
@@ -1227,8 +1236,7 @@ namespace Garnet.server
 
                 var (key, dims, reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks) = state;
 
-                var indexBytes = stackalloc byte[IndexSizeBytes];
-                SpanByteAndMemory indexConfig = new(indexBytes, IndexSizeBytes);
+                Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
 
                 var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
                 var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
@@ -1248,117 +1256,16 @@ namespace Garnet.server
                 //
                 // We still need locking here because the replays may proceed in parallel
 
-                var lockCtx = storageSession.objectStoreLockableContext;
-
-                var loggedWarning = false;
-                var loggedCritical = false;
-                var start = Stopwatch.GetTimestamp();
-
-                lockCtx.BeginLockable();
-                try
+                using (self.ReadOrCreateVectorIndex(storageSession, ref key, ref input, indexSpan, out var status))
                 {
-                    EnterStorageSessionContext(storageSession);
-                    try
+                    var addRes = self.TryAdd(indexSpan, element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, out _);
+
+                    if (addRes != VectorManagerResult.OK)
                     {
-                        TxnKeyEntry vectorLockEntry = new();
-                        vectorLockEntry.isObject = false;
-                        vectorLockEntry.keyHash = storageSession.lockableContext.GetKeyHash(key);
-
-                        // Ensure creation of the index, leaving indexBytes populated
-                        // and a Shared lock acquired by the time we exit
-                        while (true)
-                        {
-                            vectorLockEntry.lockType = LockType.Shared;
-                            lockCtx.Lock([vectorLockEntry]);
-
-                            var readStatus = context.Read(ref key, ref input, ref indexConfig);
-                            if (readStatus.IsPending)
-                            {
-                                CompletePending(ref readStatus, ref indexConfig, ref context);
-                            }
-
-                            if (!readStatus.Found)
-                            {
-                                if (!lockCtx.TryPromoteLock(vectorLockEntry))
-                                {
-                                    // Try again
-                                    lockCtx.Unlock([vectorLockEntry]);
-                                    continue;
-                                }
-
-                                vectorLockEntry.lockType = LockType.Exclusive;
-
-                                // Create the vector set index
-                                var writeStatus = context.RMW(ref key, ref input);
-                                if (writeStatus.IsPending)
-                                {
-                                    CompletePending(ref writeStatus, ref indexConfig, ref context);
-                                }
-
-                                if (!writeStatus.IsCompletedSuccessfully)
-                                {
-                                    lockCtx.Unlock([vectorLockEntry]);
-                                    throw new GarnetException("Fail to create a vector set index during AOF sync, this should never happen but will break all ops against this vector set if it does");
-                                }
-                            }
-                            else
-                            {
-                                break;
-                            }
-
-                            lockCtx.Unlock([vectorLockEntry]);
-
-                            var timeAttempting = Stopwatch.GetElapsedTime(start);
-                            if (!loggedWarning && timeAttempting > TimeSpan.FromSeconds(5))
-                            {
-                                self.logger?.LogWarning("Long duration {0} attempting to apply VADD", timeAttempting);
-                                loggedWarning = true;
-                            }
-                            else if (!loggedCritical && timeAttempting > TimeSpan.FromSeconds(30))
-                            {
-                                self.logger?.LogCritical("VERY long duration {0} attempting to apply VADD", timeAttempting);
-                                loggedCritical = true;
-                            }
-                        }
-
-                        if (vectorLockEntry.lockType != LockType.Shared)
-                        {
-                            self.logger?.LogCritical("Held exclusive lock when adding to vector set during replication, should never happen");
-                            throw new GarnetException("Held exclusive lock when adding to vector set during replication, should never happen");
-                        }
-
-                        var addRes = self.TryAdd(indexConfig.AsReadOnlySpan(), element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, out _);
-
-                        lockCtx.Unlock([vectorLockEntry]);
-
-                        if (addRes != VectorManagerResult.OK)
-                        {
-                            throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
-                        }
+                        throw new GarnetException("Failed to add to vector set index during AOF sync, this should never happen but will cause data loss if it does");
                     }
-                    finally
-                    {
-                        ExitStorageSessionContext();
-                    }
-                }
-                finally
-                {
-                    lockCtx.EndLockable();
                 }
             }
-        }
-
-        // Helper to complete read/writes during vector set op replay that go async
-        static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> context)
-        {
-            _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-            var more = completedOutputs.Next();
-            Debug.Assert(more);
-            status = completedOutputs.Current.Status;
-            output = completedOutputs.Current.Output;
-            more = completedOutputs.Next();
-            Debug.Assert(!more);
-            completedOutputs.Dispose();
         }
 
         /// <summary>
@@ -1371,6 +1278,271 @@ namespace Garnet.server
             ReadIndex(indexConfig, out _, out _, out _, out _, out _, out _, out _, out var indexProcessInstanceId);
 
             return indexProcessInstanceId != processInstanceId;
+        }
+
+        /// <summary>
+        /// Utility method that will read an vector set index out but not create one.
+        /// 
+        /// It will however RECREATE one if needed.
+        /// 
+        /// Returns a disposable that prevents the index from being deleted while undisposed.
+        /// </summary>
+        internal ReadVectorLock ReadVectorIndex(StorageSession storageSession, ref SpanByte key, ref RawStringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        {
+            Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
+
+            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
+            ActiveThreadSession = storageSession;
+
+            TxnKeyEntry vectorLockEntry = default;
+            vectorLockEntry.isObject = false;
+            vectorLockEntry.keyHash = storageSession.lockableContext.GetKeyHash(key);
+
+            var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
+
+            ref var lockCtx = ref storageSession.objectStoreLockableContext;
+            lockCtx.BeginLockable();
+
+            while (true)
+            {
+                vectorLockEntry.lockType = LockType.Shared;
+                input.arg1 = 0;
+
+                lockCtx.Lock([vectorLockEntry]);
+
+                GarnetStatus readRes;
+                try
+                {
+                    readRes = storageSession.Read_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+                    Debug.Assert(indexConfig.IsSpanByte, "Should never need to move index onto the heap");
+                }
+                catch
+                {
+                    lockCtx.Unlock([vectorLockEntry]);
+                    lockCtx.EndLockable();
+
+                    throw;
+                }
+
+                var needsRecreate = readRes == GarnetStatus.OK && NeedsRecreate(indexConfig.AsReadOnlySpan());
+
+                if (needsRecreate)
+                {
+                    if (!lockCtx.TryPromoteLock(vectorLockEntry))
+                    {
+                        lockCtx.Unlock([vectorLockEntry]);
+                        continue;
+                    }
+
+                    input.arg1 = VectorManager.RecreateIndexArg;
+                    vectorLockEntry.lockType = LockType.Exclusive;
+
+                    GarnetStatus writeRes;
+
+                    try
+                    {
+                        writeRes = storageSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+                    }
+                    catch
+                    {
+                        lockCtx.Unlock([vectorLockEntry]);
+                        lockCtx.EndLockable();
+
+                        throw;
+                    }
+
+                    if (writeRes == GarnetStatus.OK)
+                    {
+                        // Try again so we don't hold an exclusive lock while performing a search
+                        lockCtx.Unlock([vectorLockEntry]);
+                        continue;
+                    }
+                    else
+                    {
+                        status = writeRes;
+                        lockCtx.Unlock([vectorLockEntry]);
+                        lockCtx.EndLockable();
+
+                        return default;
+                    }
+                }
+                else if (readRes != GarnetStatus.OK)
+                {
+                    status = readRes;
+                    lockCtx.Unlock([vectorLockEntry]);
+                    lockCtx.EndLockable();
+
+                    return default;
+                }
+
+                if (vectorLockEntry.lockType != LockType.Shared)
+                {
+                    lockCtx.Unlock([vectorLockEntry]);
+                    lockCtx.EndLockable();
+
+                    throw new GarnetException("Held exclusive lock after reading vector set, should never happen");
+                }
+
+                status = GarnetStatus.OK;
+                return new(ref lockCtx, vectorLockEntry);
+            }
+        }
+
+        /// <summary>
+        /// Utility method that will read vector set index out, create one if it doesn't exist, or RECREATE one if needed.
+        /// 
+        /// Returns a disposable that prevents the index from being deleted while undisposed.
+        /// </summary>
+        internal ReadVectorLock ReadOrCreateVectorIndex(StorageSession storageSession, ref SpanByte key, ref RawStringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        {
+            Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
+
+            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
+            ActiveThreadSession = storageSession;
+
+            TxnKeyEntry vectorLockEntry = default;
+            vectorLockEntry.isObject = false;
+            vectorLockEntry.keyHash = storageSession.lockableContext.GetKeyHash(key);
+
+            var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
+
+            ref var lockCtx = ref storageSession.objectStoreLockableContext;
+            lockCtx.BeginLockable();
+
+            while (true)
+            {
+                vectorLockEntry.lockType = LockType.Shared;
+                input.arg1 = 0;
+
+                lockCtx.Lock([vectorLockEntry]);
+
+                GarnetStatus readRes;
+                try
+                {
+                    readRes = storageSession.Read_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+                    Debug.Assert(indexConfig.IsSpanByte, "Should never need to move index onto the heap");
+                }
+                catch
+                {
+                    lockCtx.Unlock([vectorLockEntry]);
+                    lockCtx.EndLockable();
+
+                    throw;
+                }
+
+                var needsRecreate = readRes == GarnetStatus.OK && storageSession.vectorManager.NeedsRecreate(indexSpan);
+                if (readRes == GarnetStatus.NOTFOUND || needsRecreate)
+                {
+                    if (!lockCtx.TryPromoteLock(vectorLockEntry))
+                    {
+                        lockCtx.Unlock([vectorLockEntry]);
+                        continue;
+                    }
+
+                    vectorLockEntry.lockType = LockType.Exclusive;
+
+                    if (needsRecreate)
+                    {
+                        input.arg1 = VectorManager.RecreateIndexArg;
+                    }
+
+                    GarnetStatus writeRes;
+
+                    try
+                    {
+                        writeRes = storageSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+                    }
+                    catch
+                    {
+                        lockCtx.Unlock([vectorLockEntry]);
+                        lockCtx.EndLockable();
+
+                        throw;
+                    }
+
+                    if (writeRes == GarnetStatus.OK)
+                    {
+                        // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
+                        lockCtx.Unlock([vectorLockEntry]);
+                        continue;
+                    }
+                    else
+                    {
+                        status = writeRes;
+
+                        lockCtx.Unlock([vectorLockEntry]);
+                        lockCtx.EndLockable();
+
+                        return default;
+                    }
+                }
+                else if (readRes != GarnetStatus.OK)
+                {
+                    lockCtx.Unlock([vectorLockEntry]);
+                    lockCtx.EndLockable();
+
+                    status = readRes;
+                    return default;
+                }
+
+                if (vectorLockEntry.lockType != LockType.Shared)
+                {
+                    lockCtx.Unlock([vectorLockEntry]);
+                    lockCtx.EndLockable();
+
+                    throw new GarnetException("Held exclusive lock when adding to vector set, should never happen");
+                }
+
+                status = GarnetStatus.OK;
+                return new(ref lockCtx, vectorLockEntry);
+            }
+        }
+
+        /// <summary>
+        /// Utility method that will read vector set index out, and acquire exclusive locks to allow it to be deleted.
+        /// </summary>
+        internal ReadVectorLock ReadForDeleteVectorIndex(StorageSession storageSession, ref SpanByte key, ref RawStringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        {
+            Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
+
+            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
+            ActiveThreadSession = storageSession;
+
+            TxnKeyEntry vectorLockEntry = default;
+            vectorLockEntry.isObject = false;
+            vectorLockEntry.keyHash = storageSession.lockableContext.GetKeyHash(key);
+            vectorLockEntry.lockType = LockType.Exclusive;
+
+            var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
+
+            ref var lockCtx = ref storageSession.objectStoreLockableContext;
+            lockCtx.BeginLockable();
+
+            lockCtx.Lock([vectorLockEntry]);
+
+            // Get the index
+            try
+            {
+                status = storageSession.Read_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+            }
+            catch
+            {
+                lockCtx.Unlock([vectorLockEntry]);
+                lockCtx.EndLockable();
+
+                throw;
+            }
+
+            if (status != GarnetStatus.OK)
+            {
+                // This can happen is something else successfully deleted before we acquired the lock
+
+                lockCtx.Unlock([vectorLockEntry]);
+                lockCtx.EndLockable();
+                return default;
+            }
+
+            return new(ref lockCtx, vectorLockEntry);
         }
 
         /// <summary>
@@ -1388,6 +1560,21 @@ namespace Garnet.server
                 //
                 // Dispose already takes pains to drain everything before disposing, so this is safe to ignore
             }
+        }
+
+        /// <summary>
+        /// Helper to complete read/writes during vector set op replay that go async.
+        /// </summary>
+        private static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> context)
+        {
+            _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            var more = completedOutputs.Next();
+            Debug.Assert(more);
+            status = completedOutputs.Current.Status;
+            output = completedOutputs.Current.Output;
+            more = completedOutputs.Next();
+            Debug.Assert(!more);
+            completedOutputs.Dispose();
         }
 
         /// <summary>
