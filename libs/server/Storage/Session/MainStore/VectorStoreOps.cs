@@ -270,7 +270,9 @@ namespace Garnet.server
 
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
 
-            using (vectorManager.ReadForDeleteVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            Span<TxnKeyEntry> exclusiveLocks = stackalloc TxnKeyEntry[vectorManager.readLockShardCount];
+
+            using (vectorManager.ReadForDeleteVectorIndex(this, ref key, ref input, indexSpan, exclusiveLocks, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {
