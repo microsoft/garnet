@@ -101,11 +101,9 @@ namespace Garnet.test
 
                 // Merge reviv stats across sessions
                 server.Provider.StoreWrapper.store.DumpRevivificationStats();
-                server.Provider.StoreWrapper.objectStore.DumpRevivificationStats();
 
                 // Check that revivification happened for expired record 
                 ClassicAssert.IsTrue(server.Provider.StoreWrapper.store.RevivificationManager.stats.successfulAdds > 0, "Active expiration did not revivify for main store as expected");
-                ClassicAssert.IsTrue(server.Provider.StoreWrapper.objectStore.RevivificationManager.stats.successfulAdds > 0, "Active expiration did not revivify for obj store as expected");
 
                 // Post expired key deletion scan, expired records don't exist for sure. This can be fooled by passive expiration too, so check reviv metrics too
                 CheckExistenceConditionOnAllKeys(db, tombstonedRecords, false, "All to be expired should no longer exist post gc");

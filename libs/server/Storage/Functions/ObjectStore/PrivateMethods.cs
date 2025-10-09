@@ -82,7 +82,7 @@ namespace Garnet.server
         static bool EvaluateObjectExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref GarnetObjectStoreOutput output)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            var o = (ObjectOutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
+            var o = (OutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
             o->result1 = 0;
             if (logRecord.Info.HasExpiration)
             {

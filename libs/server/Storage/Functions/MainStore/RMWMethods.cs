@@ -371,6 +371,12 @@ namespace Garnet.server
         /// <inheritdoc />
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
+            if (logRecord.Info.ValueIsObject)
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
             if (InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
             {
                 if (!logRecord.Info.Modified)
@@ -756,8 +762,8 @@ namespace Garnet.server
                     // If both EX and PERSIST were specified, EX wins
                     if (input.arg1 > 0)
                     {
-                        var pbOutput = stackalloc byte[ObjectOutputHeader.Size];
-                        var _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
+                        var pbOutput = stackalloc byte[OutputHeader.Size];
+                        var _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, OutputHeader.Size));
 
                         var newExpiry = input.arg1;
                         if (!EvaluateExpireInPlace(ref logRecord, ExpireOption.None, newExpiry, ref _output))
@@ -1412,8 +1418,8 @@ namespace Garnet.server
                     Debug.Assert(newValue.Length == oldValue.Length);
                     if (input.arg1 > 0)
                     {
-                        var pbOutput = stackalloc byte[ObjectOutputHeader.Size];
-                        var _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
+                        var pbOutput = stackalloc byte[OutputHeader.Size];
+                        var _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, OutputHeader.Size));
                         var newExpiry = input.arg1;
                         if (!EvaluateExpireCopyUpdate(ref dstLogRecord, in sizeInfo, ExpireOption.None, newExpiry, newValue, ref _output))
                             return false;

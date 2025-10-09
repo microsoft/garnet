@@ -830,6 +830,45 @@ namespace Garnet.test
             }
         }
 
+        // Tests that the transaction's finalize step is currently written once into AOF, and replayed twice during replay
+        [Test]
+        public void AofTransactionFinalizeStepTest()
+        {
+            const string txnName = "AOFFINDOUBLEREP";
+            const string key = "key1";
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            server.Register.NewTransactionProc(txnName, () => new AofFinalizeDoubleReplayTxn(), new RespCommandsInfo { Arity = 2 });
+            server.Start();
+
+            int resultPostTxn = 0;
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                db.Execute(txnName, key);
+
+                var res = db.StringGet(key);
+                resultPostTxn = (int)res;
+            }
+
+            // so now commit AOF, kill server and force a replay
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Register.NewTransactionProc(txnName, () => new AofFinalizeDoubleReplayTxn(), new RespCommandsInfo { Arity = 2 });
+            server.Start();
+
+            // post replay we should end up at the exact state. This test should break right away because currently we do double replay
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                var res = db.StringGet(key);
+                int resultAfterRecovery = (int)res;
+                ClassicAssert.AreEqual(resultPostTxn, resultAfterRecovery);
+            }
+        }
+
         private static void ExpectedEtagTest(IDatabase db, string key, string expectedValue, long expected)
         {
             RedisResult res = db.Execute("GETWITHETAG", key);

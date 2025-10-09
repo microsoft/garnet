@@ -33,17 +33,6 @@ namespace Garnet.cluster
             var success = await CreateAndRunMigrateTasks(StoreType.Main, storeBeginAddress, storeTailAddress, mainStorePageSize);
             if (!success) return false;
 
-            // Send object store
-            if (!clusterProvider.serverOptions.DisableObjects)
-            {
-                var objectStoreBeginAddress = clusterProvider.storeWrapper.objectStore.Log.BeginAddress;
-                var objectStoreTailAddress = clusterProvider.storeWrapper.objectStore.Log.TailAddress;
-                var objectStorePageSize = 1 << clusterProvider.serverOptions.ObjectStorePageSizeBits();
-                logger?.LogWarning("Object Store migrate scan range [{objectStoreBeginAddress}, {objectStoreTailAddress}]", objectStoreBeginAddress, objectStoreTailAddress);
-                success = await CreateAndRunMigrateTasks(StoreType.Object, objectStoreBeginAddress, objectStoreTailAddress, objectStorePageSize);
-                if (!success) return false;
-            }
-
             return true;
 
             async Task<bool> CreateAndRunMigrateTasks(StoreType storeType, long beginAddress, long tailAddress, int pageSize)

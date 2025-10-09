@@ -197,6 +197,11 @@ namespace Tsavorite.core
         Expire,
 
         /// <summary>
+        /// Stop the operation immediately with a "wrong type" error
+        /// </summary>
+        WrongType,
+
+        /// <summary>
         /// Stop the operation immediately and return.
         /// </summary>
         CancelOperation

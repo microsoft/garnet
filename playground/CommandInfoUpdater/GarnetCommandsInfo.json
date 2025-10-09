@@ -52,6 +52,14 @@
         "SubCommands": null
       },
       {
+        "Command": "CLUSTER_ATTACH_SYNC",
+        "Name": "CLUSTER|ATTACH_SYNC",
+        "IsInternal": true,
+        "Arity": 3,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Slow, Garnet"
+      },
+      {
         "Command": "CLUSTER_BANLIST",
         "Name": "CLUSTER|BANLIST",
         "IsInternal": true,
@@ -321,6 +329,14 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet",
         "KeySpecifications": null,
         "SubCommands": null
+      },
+      {
+        "Command": "CLUSTER_SYNC",
+        "Name": "CLUSTER|SYNC",
+        "IsInternal": true,
+        "Arity": 4,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Slow, Garnet"
       }
     ]
   },
@@ -442,31 +458,6 @@
     "Tips": null,
     "KeySpecifications": null,
     "SubCommands": null
-  },
-  {
-    "Command": "HCOLLECT",
-    "Name": "HCOLLECT",
-    "Arity": 2,
-    "Flags": "Admin, Write",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Admin, Hash, Write, Garnet",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RW, Access, Update"
-      }
-    ]
   },
   {
     "Command": "LATENCY",
@@ -674,6 +665,256 @@
     "LastKey": 1,
     "Step": 1,
     "AclCategories": "Fast, String, Read",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "HCOLLECT",
+    "Name": "HCOLLECT",
+    "Arity": 2,
+    "Flags": "Admin, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Admin, Hash, Write, Garnet",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Access, Update"
+      }
+    ]
+  },
+  {
+    "Command": "HEXPIRE",
+    "Name": "HEXPIRE",
+    "Arity": -6,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "HEXPIREAT",
+    "Name": "HEXPIREAT",
+    "Arity": -6,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "HPERSIST",
+    "Name": "HPERSIST",
+    "Arity": -5,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "HEXPIRETIME",
+    "Name": "HEXPIRETIME",
+    "Arity": -5,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Read",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIRE",
+    "Name": "HPEXPIRE",
+    "Arity": -6,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIREAT",
+    "Name": "HPEXPIREAT",
+    "Arity": -6,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Update"
+      }
+    ]
+  },
+  {
+    "Command": "HPEXPIRETIME",
+    "Name": "HPEXPIRETIME",
+    "Arity": -5,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Read",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "HPTTL",
+    "Name": "HPTTL",
+    "Arity": -5,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Read",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "HTTL",
+    "Name": "HTTL",
+    "Arity": -5,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Hash, Fast, Read",
     "KeySpecifications": [
       {
         "BeginSearch": {

@@ -7,8 +7,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     sealed partial class StorageSession : IDisposable
     {
@@ -16,7 +16,7 @@ namespace Garnet.server
         /// Adds all the element arguments to the HyperLogLog data structure stored at the variable name specified as key.
         /// </summary>
         public unsafe GarnetStatus HyperLogLogAdd<TContext>(PinnedSpanByte key, string[] elements, out bool updated, ref TContext context)
-             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             updated = false;
 
@@ -60,11 +60,11 @@ namespace Garnet.server
         /// <param name="context"></param>
         /// <returns></returns>
         public GarnetStatus HyperLogLogAdd<TContext>(PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-          where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+          where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             => RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
         public unsafe GarnetStatus HyperLogLogLength<TContext>(Span<PinnedSpanByte> keys, out long count, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             parseState.Initialize(keys.Length);
             for (var i = 0; i < keys.Length; i++)
@@ -87,7 +87,7 @@ namespace Garnet.server
         /// <param name="context"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HyperLogLogLength<TContext>(ref RawStringInput input, out long count, out bool error, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             error = false;
             count = default;
@@ -102,11 +102,12 @@ namespace Garnet.server
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
                 var dstKey = input.parseState.GetArgSliceByRef(0);
-                txnManager.SaveKeyEntryToLock(dstKey, false, LockType.Exclusive);
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main);
+                txnManager.SaveKeyEntryToLock(dstKey, LockType.Exclusive);
                 for (var i = 1; i < input.parseState.Count; i++)
                 {
                     var currSrcKey = input.parseState.GetArgSliceByRef(i);
-                    txnManager.SaveKeyEntryToLock(currSrcKey, false, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(currSrcKey, LockType.Shared);
                 }
                 _ = txnManager.Run(true);
             }
@@ -194,12 +195,13 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main);
                 var dstKey = input.parseState.GetArgSliceByRef(0);
-                txnManager.SaveKeyEntryToLock(dstKey, false, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(dstKey, LockType.Exclusive);
                 for (var i = 1; i < input.parseState.Count; i++)
                 {
                     var currSrcKey = input.parseState.GetArgSliceByRef(i);
-                    txnManager.SaveKeyEntryToLock(currSrcKey, false, LockType.Shared);
+                    txnManager.SaveKeyEntryToLock(currSrcKey, LockType.Shared);
                 }
                 _ = txnManager.Run(true);
             }

@@ -84,7 +84,7 @@ namespace Tsavorite.core
         /// <param name="externalCallback">Callback sent to the initial Flush() command. Called when we are done with this partial flush operation.</param>
         /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
         /// <param name="endFilePosition">The ending file position after the partial flush is complete</param>
-        internal unsafe void OnPartialFlushComplete(byte* mainLogPageSpanPtr, int mainLogPageSpanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress, 
+        internal unsafe void OnPartialFlushComplete(byte* mainLogPageSpanPtr, int mainLogPageSpanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress,
                 DeviceIOCompletionCallback externalCallback, object externalContext, out ObjectLogFilePositionInfo endFilePosition)
             => flushBuffers.OnPartialFlushComplete(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress,
                 externalCallback, externalContext, out endFilePosition);
@@ -220,7 +220,7 @@ namespace Tsavorite.core
             var dataStart = 0;
             while (data.Length - dataStart > 0)
             {
-                Debug.Assert(writeBuffer.RemainingCapacity > 0, 
+                Debug.Assert(writeBuffer.RemainingCapacity > 0,
                         $"RemainingCapacity {writeBuffer.RemainingCapacity} should not be 0 (data.Length {data.Length}, dataStart {dataStart}); this should have already triggered an OnChunkComplete call, which would have reset the buffer");
                 cancellationToken.ThrowIfCancellationRequested();   // IDevice does not support cancellation, so just check this here
 

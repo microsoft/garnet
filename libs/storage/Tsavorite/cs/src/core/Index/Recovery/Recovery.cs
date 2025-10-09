@@ -1285,7 +1285,7 @@ namespace Tsavorite.core
 
                     var numPages = 0;
                     for (var page = headPage; page <= tailPage; page++)
-                     {
+                    {
                         var pageIndex = GetPageIndexForPage(page);
                         recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
                         numPages++;

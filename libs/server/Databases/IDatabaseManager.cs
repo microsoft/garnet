@@ -10,11 +10,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
-
-    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Interface for logical database management
@@ -29,12 +26,7 @@ namespace Garnet.server
         /// <summary>
         /// Store (of DB 0)
         /// </summary>
-        public TsavoriteKV<MainStoreFunctions, MainStoreAllocator> MainStore { get; }
-
-        /// <summary>
-        /// Object store (of DB 0)
-        /// </summary>
-        public TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> ObjectStore { get; }
+        public TsavoriteKV<StoreFunctions, StoreAllocator> Store { get; }
 
         /// <summary>
         /// AOF (of DB 0)
@@ -49,7 +41,7 @@ namespace Garnet.server
         /// <summary>
         /// Object store size tracker (of DB 0)
         /// </summary>
-        public CacheSizeTracker ObjectStoreSizeTracker { get; }
+        public CacheSizeTracker SizeTracker { get; }
 
         /// <summary>
         /// Version map (of DB 0)
@@ -93,9 +85,8 @@ namespace Garnet.server
         /// </summary>
         /// <param name="replicaRecover"></param>
         /// <param name="recoverMainStoreFromToken"></param>
-        /// <param name="recoverObjectStoreFromToken"></param>
         /// <param name="metadata"></param>
-        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null);
+        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, CheckpointMetadata metadata = null);
 
         /// <summary>
         /// Take checkpoint of all active databases if checkpointing is not in progress
@@ -191,9 +182,9 @@ namespace Garnet.server
         public void ExpiredKeyDeletionScan();
 
         /// <summary>
-        /// Start object size trackers for all active databases
+        /// Start size trackers for all active databases
         /// </summary>
-        public void StartObjectSizeTrackers(CancellationToken token = default);
+        public void StartSizeTrackers(CancellationToken token = default);
 
         /// <summary>
         /// Reset

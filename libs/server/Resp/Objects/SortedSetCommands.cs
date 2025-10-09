@@ -1539,9 +1539,6 @@ namespace Garnet.server
         /// </summary>
         private unsafe bool SortedSetBlockingPop(RespCommand command)
         {
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
-
             if (parseState.Count < 2)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -1599,9 +1596,6 @@ namespace Garnet.server
         /// </summary>
         private unsafe bool SortedSetBlockingMPop()
         {
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
-
             if (parseState.Count < 4)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.BZMPOP));
@@ -1725,9 +1719,6 @@ namespace Garnet.server
         private unsafe bool SortedSetExpire<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
-
             if (parseState.Count <= 4)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -1824,9 +1815,6 @@ namespace Garnet.server
         private unsafe bool SortedSetTimeToLive<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
-
             if (parseState.Count <= 3)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -1913,9 +1901,6 @@ namespace Garnet.server
         private unsafe bool SortedSetPersist<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
-
             if (parseState.Count <= 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZPERSIST));

@@ -186,6 +186,8 @@ namespace Tsavorite.core
                 return OperationStatus.CANCELED;
             if (readInfo.Action == ReadAction.Expire)
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
+            if (readInfo.Action == ReadAction.WrongType)
+                return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.WrongType);
             return OperationStatus.NOTFOUND;
         }
 

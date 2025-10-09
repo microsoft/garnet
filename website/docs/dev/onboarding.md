@@ -104,6 +104,8 @@ RESP representation:
     **Tsavorite** and **Garnet** rely heavily on these two types for allocating data in memory and then transfer it on the network layer. Understanding and familiarity with both of them will be very helpful for a better understanding of the code in general.
 
     * [Documentation about Span](https://learn.microsoft.com/en-us/dotnet/api/system.span-1?view=net-7.0)
+ 
+    * [Unsafe code best practices](https://learn.microsoft.com/en-us/dotnet/standard/unsafe-code/best-practices)
 
     * [Use of pointers and unsafe code](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/unsafe-code)
 
@@ -186,5 +188,6 @@ As a sanity check, you can run the Garnet test suite. The command to run tests i
 Note that Tsavorite has its own solution file and test suite in the folder `<root>`/Garnet/libs/storage/Tsavorite.
 
 **Tip:** By default, Garnet listens to TCP port 6379, you can use this information to adjust your firewall settings if you need to access Garnet from remote machines.
+
 
 

@@ -39,7 +39,7 @@ namespace BenchmarkDotNetTests
             {
                 IndexSize = 1L << 26,
                 LogDevice = logDevice
-            }, StoreFunctions.Create()
+            }, StoreFunctions.Create(new SpanByteComparer(), new SpanByteRecordDisposer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }

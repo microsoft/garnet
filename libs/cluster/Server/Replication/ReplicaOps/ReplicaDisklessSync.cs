@@ -4,9 +4,11 @@
 using System;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.cluster.Server.Replication;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -56,8 +58,8 @@ namespace Garnet.cluster
             async Task<string> TryBeginReplicaSync(bool downgradeLock)
             {
                 var disklessSync = clusterProvider.serverOptions.ReplicaDisklessSync;
-                var disableObjects = clusterProvider.serverOptions.DisableObjects;
                 GarnetClientSession gcs = null;
+                resetHandler ??= new CancellationTokenSource();
                 try
                 {
                     if (!clusterProvider.serverOptions.EnableFastCommit)
@@ -113,13 +115,17 @@ namespace Garnet.cluster
                         originNodeId: current.LocalNodeId,
                         currentPrimaryReplId: PrimaryReplId,
                         currentStoreVersion: storeWrapper.store.CurrentVersion,
-                        currentObjectStoreVersion: disableObjects ? -1 : storeWrapper.objectStore.CurrentVersion,
                         currentAofBeginAddress: storeWrapper.appendOnlyFile.BeginAddress,
                         currentAofTailAddress: storeWrapper.appendOnlyFile.TailAddress,
                         currentReplicationOffset: ReplicationOffset,
                         checkpointEntry: checkpointEntry);
 
-                    var resp = await gcs.ExecuteAttachSync(syncMetadata.ToByteArray()).ConfigureAwait(false);
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
+
+                    // Exception injection point for testing cluster reset during diskless replication
+                    await ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Replication_InProgress_During_Diskless_Replica_Attach_Sync).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
+
+                    var resp = await gcs.ExecuteAttachSync(syncMetadata.ToByteArray()).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -144,6 +150,11 @@ namespace Garnet.cluster
                     }
                     gcs?.Dispose();
                     recvCheckpointHandler?.Dispose();
+                    if (!resetHandler.TryReset())
+                    {
+                        resetHandler.Dispose();
+                        resetHandler = new CancellationTokenSource();
+                    }
                 }
                 return null;
             }
@@ -171,8 +182,6 @@ namespace Garnet.cluster
 
                 // Set DB version
                 storeWrapper.store.SetVersion(primarySyncMetadata.currentStoreVersion);
-                if (!clusterProvider.serverOptions.DisableObjects)
-                    storeWrapper.objectStore.SetVersion(primarySyncMetadata.currentObjectStoreVersion);
 
                 // Update replicationId to mark any subsequent checkpoints as part of this history
                 logger?.LogInformation("Updating ReplicationId");

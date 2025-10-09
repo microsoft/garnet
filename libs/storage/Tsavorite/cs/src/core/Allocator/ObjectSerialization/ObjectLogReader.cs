@@ -132,7 +132,7 @@ namespace Tsavorite.core
             if (logRecord.Info.KeyIsOverflow)
             {
                 // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
-                logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset:0, endOffset:0, zeroInit:false);
+                logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                 _ = Read(logRecord.KeyOverflow.Span);
                 if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord.KeyOverflow.Span))
                     return false;

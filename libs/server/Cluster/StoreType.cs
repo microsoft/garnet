@@ -11,6 +11,11 @@ namespace Garnet.server
     public enum StoreType : byte
     {
         /// <summary>
+        /// No store specified
+        /// </summary>
+        None = 0,
+
+        /// <summary>
         /// Main (raw string) store
         /// </summary>
         Main = 1,

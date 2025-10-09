@@ -19,11 +19,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
-
-    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Wrapper for store and store-specific information
@@ -43,12 +40,7 @@ namespace Garnet.server
         /// <summary>
         /// Store (of DB 0)
         /// </summary>
-        public TsavoriteKV<MainStoreFunctions, MainStoreAllocator> store => databaseManager.MainStore;
-
-        /// <summary>
-        /// Object store (of DB 0)
-        /// </summary>
-        public TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> objectStore => databaseManager.ObjectStore;
+        public TsavoriteKV<StoreFunctions, StoreAllocator> store => databaseManager.Store;
 
         /// <summary>
         /// AOF (of DB 0)
@@ -61,12 +53,11 @@ namespace Garnet.server
         public DateTimeOffset lastSaveTime => databaseManager.LastSaveTime;
 
         /// <summary>
-        /// Object store size tracker (of DB 0)
+        /// Store size tracker (of DB 0)
         /// </summary>
-        public CacheSizeTracker objectStoreSizeTracker => databaseManager.ObjectStoreSizeTracker;
+        public CacheSizeTracker sizeTracker => databaseManager.SizeTracker;
 
-        public IStoreFunctions mainStoreFunctions => store.StoreFunctions;
-        public IStoreFunctions objectStoreFunctions => objectStore?.StoreFunctions;
+        public IStoreFunctions storeFunctions => store.StoreFunctions;
 
         /// <summary>
         /// Server options
@@ -158,14 +149,9 @@ namespace Garnet.server
         bool disposed;
 
         /// <summary>
-        /// Garnet checkpoint manager for main store
+        /// Garnet checkpoint manager
         /// </summary>
         public GarnetCheckpointManager StoreCheckpointManager => (GarnetCheckpointManager)store?.CheckpointManager;
-
-        /// <summary>
-        /// Garnet checkpoint manager for object store
-        /// </summary>
-        public GarnetCheckpointManager ObjectStoreCheckpointManager => (GarnetCheckpointManager)objectStore?.CheckpointManager;
 
         /// <summary>
         /// Constructor
@@ -207,8 +193,7 @@ namespace Garnet.server
             if (serverOptions.SlowLogThreshold > 0)
                 this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
 
-            if (!serverOptions.DisableObjects)
-                this.itemBroker = new CollectionItemBroker();
+            this.itemBroker = new CollectionItemBroker();
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
@@ -267,11 +252,6 @@ namespace Garnet.server
                 if (StoreCheckpointManager != null)
                 {
                     StoreCheckpointManager.CurrentHistoryId = runId;
-                }
-
-                if (!serverOptions.DisableObjects && ObjectStoreCheckpointManager != null)
-                {
-                    ObjectStoreCheckpointManager.CurrentHistoryId = runId;
                 }
             }
         }
@@ -411,9 +391,8 @@ namespace Garnet.server
         /// <summary>
         /// Recover checkpoint
         /// </summary>
-        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false,
-            bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
-            => databaseManager.RecoverCheckpoint(replicaRecover, recoverMainStoreFromToken, recoverObjectStoreFromToken, metadata);
+        public void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, CheckpointMetadata metadata = null)
+            => databaseManager.RecoverCheckpoint(replicaRecover, recoverMainStoreFromToken, metadata);
 
         /// <summary>
         /// Mark the beginning of a checkpoint by taking and a lock to avoid concurrent checkpointing
@@ -714,12 +693,6 @@ namespace Garnet.server
             Debug.Assert(objectCollectFrequencySecs > 0);
             try
             {
-                if (serverOptions.DisableObjects)
-                {
-                    logger?.LogWarning("ExpiredObjectCollectionFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
-                    return;
-                }
-
                 while (true)
                 {
                     if (token.IsCancellationRequested) return;
@@ -833,7 +806,7 @@ namespace Garnet.server
                 Task.Run(() => IndexAutoGrowTask(ctsCommit.Token));
             }
 
-            databaseManager.StartObjectSizeTrackers(ctsCommit.Token);
+            databaseManager.StartSizeTrackers(ctsCommit.Token);
         }
 
         public bool HasKeysInSlots(List<int> slots)
@@ -852,11 +825,11 @@ namespace Garnet.server
                     }
                 }
 
-                if (!hasKeyInSlots && !serverOptions.DisableObjects)
+                if (!hasKeyInSlots)
                 {
                     var functionsState = databaseManager.CreateFunctionsState();
-                    var objstorefunctions = new ObjectSessionFunctions(functionsState);
-                    var objectStoreSession = objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
+                    var objStorefunctions = new ObjectSessionFunctions(functionsState);
+                    var objectStoreSession = store?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objStorefunctions);
                     var iter = objectStoreSession.Iterate();
                     while (!hasKeyInSlots && iter.GetNext())
                     {

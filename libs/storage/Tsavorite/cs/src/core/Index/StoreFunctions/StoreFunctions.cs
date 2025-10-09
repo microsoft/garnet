@@ -125,7 +125,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Store functions for <see cref="Span{_byte_}"/> Key and Value
         /// </summary>
-        public static StoreFunctions<SpanByteComparer, SpanByteRecordDisposer> Create()
-            => new(SpanByteComparer.Instance, valueSerializerCreator: null, SpanByteRecordDisposer.Instance);
+        public static StoreFunctions<SpanByteComparer, DefaultRecordDisposer> Create()
+            => new(SpanByteComparer.Instance, valueSerializerCreator: null, DefaultRecordDisposer.Instance);
     }
 }

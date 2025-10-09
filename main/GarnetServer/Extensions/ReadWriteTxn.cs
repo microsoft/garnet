@@ -24,8 +24,8 @@ namespace Garnet
             api.GET(GetNextArg(ref procInput, ref offset), out PinnedSpanByte key1);
             if (key1.ReadOnlySpan.SequenceEqual("wrong_string"u8))
                 return false;
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, false);
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, false);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Main);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Main);
             return true;
         }
 

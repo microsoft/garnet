@@ -4,16 +4,22 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     using BasicGarnetApi = GarnetApi<BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>>,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
         BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
     using TransactionalGarnetApi = GarnetApi<TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>>,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
         TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
     /// <summary>

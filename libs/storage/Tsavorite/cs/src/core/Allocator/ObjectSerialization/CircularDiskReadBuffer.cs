@@ -30,7 +30,7 @@ namespace Tsavorite.core
         /// <summary>Track the remaining length to be read for one or more records for Object values, and we can also read some or all of Overflow values into the buffer.</summary>
         ulong unreadLengthRemaining;
 
-        internal CircularDiskReadBuffer(SectorAlignedBufferPool bufferPool, int bufferSize, int numBuffers, IDevice objectLogDevice, ILogger logger) 
+        internal CircularDiskReadBuffer(SectorAlignedBufferPool bufferPool, int bufferSize, int numBuffers, IDevice objectLogDevice, ILogger logger)
         {
             this.bufferPool = bufferPool;
             this.bufferSize = bufferSize;

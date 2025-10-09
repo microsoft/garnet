@@ -88,7 +88,7 @@ namespace Tsavorite.core
             Offset = 0;
         }
 
-        public static ulong operator-(ObjectLogFilePositionInfo left, ObjectLogFilePositionInfo right)
+        public static ulong operator -(ObjectLogFilePositionInfo left, ObjectLogFilePositionInfo right)
         {
             Debug.Assert(left.SegmentSizeBits == right.SegmentSizeBits, "Segment size bits must match to compute distance");
             Debug.Assert(left.word >= right.word, "comparison position must be greater");

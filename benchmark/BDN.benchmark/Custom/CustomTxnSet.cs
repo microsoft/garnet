@@ -52,10 +52,10 @@ namespace BDN.benchmark.CustomProcs
             valueC = GetNextArg(ref procInput, ref offset);
             valueD = GetNextArg(ref procInput, ref offset);
 
-            AddKey(setA, LockType.Exclusive, isObject: false);
-            AddKey(setB, LockType.Exclusive, isObject: false);
-            AddKey(setC, LockType.Exclusive, isObject: false);
-            AddKey(setD, LockType.Exclusive, isObject: false);
+            AddKey(setA, LockType.Exclusive, StoreType.Main);
+            AddKey(setB, LockType.Exclusive, StoreType.Main);
+            AddKey(setC, LockType.Exclusive, StoreType.Main);
+            AddKey(setD, LockType.Exclusive, StoreType.Main);
 
             return true;
         }
