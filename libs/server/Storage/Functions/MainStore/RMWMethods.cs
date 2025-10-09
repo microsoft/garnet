@@ -371,6 +371,12 @@ namespace Garnet.server
         /// <inheritdoc />
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
+            if (logRecord.Info.ValueIsObject)
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
             if (InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
             {
                 if (!logRecord.Info.Modified)

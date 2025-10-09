@@ -16,6 +16,12 @@ namespace Garnet.server
         public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
+            if (srcLogRecord.Info.ValueIsObject)
+            {
+                readInfo.Action = ReadAction.WrongType;
+                return false;
+            }
+
             if (CheckExpiry(in srcLogRecord))
                 return false;
 

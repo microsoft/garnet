@@ -95,6 +95,7 @@ namespace Garnet.server
         {
             if (!logRecord.Info.ValueIsObject)
             {
+                rmwInfo.Action = RMWAction.WrongType;
                 output.OutputFlags |= OutputFlags.WrongType;
                 return true;
             }
