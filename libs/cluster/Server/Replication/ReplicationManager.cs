@@ -57,8 +57,12 @@ namespace Garnet.cluster
                 // Primary tracks replicationOffset indirectly through AOF tailAddress
                 // Replica will adjust replication offset as it receives data from primary (TODO: since AOFs are synced this might obsolete)
                 var role = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
-                if (role == NodeRole.PRIMARY && clusterProvider.serverOptions.EnableAOF)
-                    replicationOffset.MaxExchange(storeWrapper.appendOnlyFile.Log.TailAddress);
+                if (role == NodeRole.PRIMARY)
+                {
+                    var tailAddress = storeWrapper.appendOnlyFile.Log.TailAddress;
+                    for (var i = 0; i < replicationOffset.Length; i++)
+                        replicationOffset[i] = tailAddress[i];
+                }
                 return ref replicationOffset;
             }
         }

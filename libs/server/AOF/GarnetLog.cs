@@ -107,12 +107,13 @@ namespace Garnet.server
             else
                 shardedLog.Reset();
         }
+
         public void Dispose()
         {
             if (singleLog != null)
-                singleLog.Reset();
+                singleLog.Dispose();
             else
-                shardedLog.Reset();
+                shardedLog.Dispose();
         }
 
         public TsavoriteLog GetSubLog(int sublogIdx)

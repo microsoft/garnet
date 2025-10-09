@@ -4,6 +4,7 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -22,11 +23,21 @@ namespace Garnet.cluster
             CancellationTokenSource replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.replicationManager.ctsRepManager.Token);
             SingleWriterMultiReaderLock activeReplay;
 
+            public void InitializeIterator(long startAddress)
+            {
+                if (replayIterator == null)
+                {
+                    replayIterator = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(sublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
+                    _ = Task.Run(ReplicaReplayTask);
+                }
+            }
+
             public void Dispose()
             {
                 replicaReplayTaskCts.Cancel();
                 activeReplay.WriteLock();
                 replicaReplayTaskCts.Dispose();
+                replayIterator?.Dispose();
             }
 
             /// <summary>
@@ -115,12 +126,11 @@ namespace Garnet.cluster
                 }
             }
 
-            public async void ReplicaReplayTask(int sublogIdx, long startAddress)
+            public async Task ReplicaReplayTask()
             {
                 try
                 {
                     activeReplay.ReadLock();
-                    replayIterator = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(sublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
                     while (true)
                     {
                         replicaReplayTaskCts.Token.ThrowIfCancellationRequested();

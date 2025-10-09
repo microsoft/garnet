@@ -166,6 +166,16 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Set to value from aofAddress
+        /// </summary>
+        /// <param name="aofAddress"></param>
+        public void SetValue(ref AofAddress aofAddress)
+        {
+            for (var i = 0; i < Length; i++)
+                addresses[i] = aofAddress[i];
+        }
+
+        /// <summary>
         /// Set to value
         /// </summary>
         /// <param name="value"></param>
@@ -218,12 +228,6 @@ namespace Garnet.server
         {
             for (var i = 0; i < Length; i++)
                 addresses[i] = Math.Min(addresses[i], address[i]);
-        }
-
-        public void MaxExchange(AofAddress address)
-        {
-            for (var i = 0; i < Length; i++)
-                addresses[i] = Math.Max(addresses[i], address[i]);
         }
 
         public void MaxExchange(long address)

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 
@@ -11,16 +10,12 @@ namespace Garnet.cluster
     internal sealed partial class ReplicationManager : IDisposable
     {
         ReplicaAofSyncReplayTask replicaAofSyncTask = null;
-        Task replicaAofSync = null;
 
         /// <summary>
         /// Reset background replay iterator
         /// </summary>
         public void ResetReplayIterator()
-        {
-            replicaAofSyncTask?.ResetReplayIterator();
-            replicaAofSync = null;
-        }
+            => replicaAofSyncTask?.ResetReplayIterator();
 
         /// <summary>
         /// Apply primary AOF records.
@@ -106,9 +101,8 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    // If background task has not been initialized
-                    // initialize it here and start background replay task
-                    replicaAofSync ??= Task.Run(() => replicaAofSyncTask.ReplicaReplayTask(sublogIdx, previousAddress));
+                    // Initialize iterator and run background task once
+                    replicaAofSyncTask.InitializeIterator(previousAddress);
 
                     // Throttle to give the opportunity to the background replay task to catch up
                     replicaAofSyncTask?.ThrottlePrimary();
