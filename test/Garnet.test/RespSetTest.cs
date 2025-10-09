@@ -89,8 +89,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, members.Length);
 
             var response = db.Execute("MEMORY", "USAGE", "user1:set");
-            var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 272;
+            var actualValue = ResultType.Integer == response.Resp2Type ? int.Parse(response.ToString()) : -1;
+            var expectedResponse = 87;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -182,32 +182,32 @@ namespace Garnet.test
             ClassicAssert.IsTrue(existingMemberExists, "Existing member 'ItemOne' does not exist in the set.");
 
             var memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
-            var actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            var expectedResponse = 424;
+            var actualValue = ResultType.Integer == memresponse.Resp2Type ? int.Parse(memresponse.ToString()) : -1;
+            var expectedResponse = 116;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var response = db.SetRemove(key, new RedisValue("ItemOne"));
             ClassicAssert.AreEqual(true, response);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
-            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 352;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? int.Parse(memresponse.ToString()) : -1;
+            expectedResponse = 105;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             response = db.SetRemove(key, new RedisValue("ItemFive"));
             ClassicAssert.AreEqual(false, response);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
-            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 352;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? int.Parse(memresponse.ToString()) : -1;
+            expectedResponse = 105;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var longResponse = db.SetRemove(key, ["ItemTwo", "ItemThree"]);
             ClassicAssert.AreEqual(2, longResponse);
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
-            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 200;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? int.Parse(memresponse.ToString()) : -1;
+            expectedResponse = 81;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var members = db.SetMembers(key);

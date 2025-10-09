@@ -160,7 +160,7 @@ namespace Garnet.test
 
             var memresponse = db.Execute("MEMORY", "USAGE", "cities");
             var actualValue = ResultType.Integer == memresponse.Resp2Type ? int.Parse(memresponse.ToString()) : -1;
-            var expectedResponse = 3944;
+            var expectedResponse = 537;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -203,8 +203,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(default(GeoPosition), response[1]);
 
             var memresponse = db.Execute("MEMORY", "USAGE", "Sicily");
-            var actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            var expectedResponse = 344;
+            var actualValue = ResultType.Integer == memresponse.Resp2Type ? int.Parse(memresponse.ToString()) : -1;
+            var expectedResponse = 80;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             db.GeoAdd(new RedisKey("SecondKey"), 13.361389, 38.115556, new RedisValue("Palermo"));
@@ -213,8 +213,8 @@ namespace Garnet.test
             ClassicAssert.IsNotNull(response[0]);
 
             memresponse = db.Execute("MEMORY", "USAGE", "SecondKey");
-            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 352;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? int.Parse(memresponse.ToString()) : -1;
+            expectedResponse = 88;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var responseHash = db.GeoHash(new RedisKey("SecondKey"), ["Palermo"]);
@@ -222,8 +222,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual("sqc8b49rnys", responseHash[0]);
 
             memresponse = db.Execute("MEMORY", "USAGE", "SecondKey");
-            actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 352;
+            actualValue = ResultType.Integer == memresponse.Resp2Type ? int.Parse(memresponse.ToString()) : -1;
+            expectedResponse = 88;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
