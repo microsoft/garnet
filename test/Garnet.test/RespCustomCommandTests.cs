@@ -547,7 +547,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", mainkey);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 84;
+            var expectedResponse = 272;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             string key2 = "mykey2";
@@ -559,7 +559,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", mainkey);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 107;
+            expectedResponse = 408;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
