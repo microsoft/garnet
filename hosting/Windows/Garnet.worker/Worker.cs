@@ -53,22 +53,34 @@ namespace Garnet
                 var timeout = TimeSpan.FromSeconds(30);
                 await WaitForActiveConnectionsToComplete(timeout, cancellationToken);
 
-                // Take checkpoint if tiered storage is enabled, otherwise flush AOF buffer
                 if (server != null)
                 {
                     try
                     {
-                        // Access storeWrapper field using reflection
                         var storeWrapperField = server.GetType().GetField("storeWrapper",
                             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
                         if (storeWrapperField?.GetValue(server) is StoreWrapper storeWrapper)
                         {
                             var enableStorageTier = storeWrapper.serverOptions.EnableStorageTier;
+                            var enableAOF = storeWrapper.serverOptions.EnableAOF;
+
+                            // ensure all AOF operations are committed before checkpointing or shutdown
+                            if (enableAOF)
+                            {
+                                Console.WriteLine("Committing AOF before checkpoint/shutdown...");
+                                var commitSuccess = await server.Store.CommitAOFAsync(cancellationToken);
+
+                                if (commitSuccess)
+                                {
+                                    _ = await server.Store.WaitForCommitAsync(cancellationToken);
+                                    Console.WriteLine("AOF committed successfully.");
+                                }
+                            }
 
                             if (enableStorageTier)
                             {
-                                // Checkpoint takes priority when both tiered storage and AOF are enabled
+                                // take checkpoint with all AOF operations committed
                                 Console.WriteLine("Taking checkpoint for tiered storage...");
                                 var checkpointSuccess = storeWrapper.TakeCheckpoint(background: false, logger: null, token: cancellationToken);
 
@@ -79,23 +91,6 @@ namespace Garnet
                                 else
                                 {
                                     Console.WriteLine("Checkpoint skipped (another checkpoint in progress).");
-                                }
-                            }
-                            else if (server.Store != null)
-                            {
-                                // Flush AOF buffer if AOF is enabled
-                                // CommitAOFAsync returns false if AOF is disabled
-                                var commitSuccess = await server.Store.CommitAOFAsync(cancellationToken);
-
-                                if (commitSuccess)
-                                {
-                                    // Wait only if commit was successful
-                                    _ = await server.Store.WaitForCommitAsync(cancellationToken);
-                                    Console.WriteLine("AOF operations completed successfully.");
-                                }
-                                else
-                                {
-                                    Console.WriteLine("AOF commit skipped (likely disabled or unavailable).");
                                 }
                             }
                         }
@@ -116,7 +111,6 @@ namespace Garnet
             }
             finally
             {
-                // Resource cleanup
                 await base.StopAsync(cancellationToken);
                 Dispose();
             }
