@@ -13,7 +13,7 @@ namespace Garnet.cluster
     internal sealed class ReplicationSyncManager
     {
         SingleWriterMultiReaderLock syncInProgress;
-        readonly CancellationTokenSource cts;
+        CancellationTokenSource cts;
         readonly TimeSpan replicaSyncTimeout;
         readonly ILogger logger;
 
@@ -24,6 +24,8 @@ namespace Garnet.cluster
         public ReplicaSyncSession[] Sessions { get; private set; }
 
         public ClusterProvider ClusterProvider { get; }
+
+        int disposed = 0;
 
         public ReplicationSyncManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
@@ -38,8 +40,12 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            cts.Cancel();
-            cts.Dispose();
+            // Return if original value is true, hence already disposed
+            if (Interlocked.CompareExchange(ref disposed, 1, 0) == 1)
+                return;
+            cts?.Cancel();
+            cts?.Dispose();
+            cts = null;
             syncInProgress.WriteLock();
         }
 
@@ -313,6 +319,9 @@ namespace Garnet.cluster
                             // Wait for stream sync to make some progress
                             await Task.Delay(delay);
 
+                            // Trigger exception to test reset cts mechanism
+                            ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
+
                             // Check if checkpoint has completed
                             if (checkpointTask.IsCompleted)
                                 return await checkpointTask;
@@ -322,10 +331,7 @@ namespace Garnet.cluster
 
                             // Throw timeout equals to zero
                             if (timeout.TotalSeconds <= 0)
-                            {
-                                cts.Cancel();
                                 throw new TimeoutException("Streaming snapshot checkpoint timed out");
-                            }
                         }
                     }
                     catch (Exception ex)
@@ -333,6 +339,23 @@ namespace Garnet.cluster
                         logger?.LogError(ex, "{method} faulted", nameof(WaitOrDie));
                         cts.Cancel();
                     }
+
+                    // At this point we failed through a timeout or any other exception
+                    // so try to reset token.
+                    // No race here because the only other cancellation will happen at dispose only
+                    try
+                    {
+                        _ = await checkpointTask;
+                    }
+                    finally
+                    {
+                        if (disposed == 0 && !cts.TryReset())
+                        {
+                            cts.Dispose();
+                            cts = new();
+                        }
+                    }
+
                     return (false, default);
                 }
             }
