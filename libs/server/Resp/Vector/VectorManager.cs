@@ -208,8 +208,17 @@ namespace Garnet.server
             public Guid ProcessInstanceId;
         }
 
-        private readonly record struct VADDReplicationState(SpanByte Key, uint Dims, uint ReduceDims, VectorValueType ValueType, SpanByte Values, SpanByte Element, VectorQuantType Quantizer, uint BuildExplorationFactor, SpanByte Attributes, uint NumLinks)
+        private readonly unsafe struct VADDReplicationState
         {
+            internal readonly SpanByte* KeyWithNamespace;
+
+            internal readonly RawStringInput Input;
+
+            internal VADDReplicationState(SpanByte* keyWithNamespace, RawStringInput input)
+            {
+                KeyWithNamespace = keyWithNamespace;
+                Input = input;
+            }
         }
 
         /// <summary>
@@ -1137,23 +1146,6 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetAddReplication(Func<RespServerSession> obtainServerSession, ref SpanByte keyWithNamespace, ref RawStringInput input)
         {
-            // Undo mangling that got replication going, but without copying
-            SpanByte key;
-            unsafe
-            {
-                key = SpanByte.FromPinnedPointer(keyWithNamespace.ToPointer(), keyWithNamespace.LengthWithoutMetadata);
-            }
-
-            var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
-            var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
-            var valueType = MemoryMarshal.Read<VectorValueType>(input.parseState.GetArgSliceByRef(2).Span);
-            var values = input.parseState.GetArgSliceByRef(3).SpanByte;
-            var element = input.parseState.GetArgSliceByRef(4).SpanByte;
-            var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
-            var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
-            var attributes = input.parseState.GetArgSliceByRef(7).SpanByte;
-            var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
-
             // Spin up replication replay tasks on first use
             if (replicationReplayStarted == 0)
             {
@@ -1168,10 +1160,16 @@ namespace Garnet.server
             Debug.Assert(cur > 0, "Pending VADD ops is incoherent");
 
             replicationBlockEvent.Reset();
-            var queued = replicationReplayChannel.Writer.TryWrite(new(key, dims, reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks));
+            VADDReplicationState state;
+            unsafe
+            {
+                state = new((SpanByte*)Unsafe.AsPointer(ref keyWithNamespace), input);
+            }
+
+            var queued = replicationReplayChannel.Writer.TryWrite(state);
             if (!queued)
             {
-                logger?.LogInformation("Replay of VADD against {0} dropped during shutdown", Encoding.UTF8.GetString(key.AsReadOnlySpan()));
+                logger?.LogInformation("Replay of VADD against {0} dropped during shutdown", Encoding.UTF8.GetString(keyWithNamespace.AsReadOnlySpan()));
 
                 // Can occur if we're being Disposed
                 var pending = Interlocked.Decrement(ref replicationReplayPendingVAdds);
@@ -1234,23 +1232,28 @@ namespace Garnet.server
             {
                 ref var context = ref storageSession.basicContext;
 
-                var (key, dims, reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks) = state;
+                var keyPtr = state.KeyWithNamespace;
+                var input = state.Input;
+                ref var keyWithNamespace = ref Unsafe.AsRef<SpanByte>(keyPtr);
+
+                // Undo mangling that got replication going, but without copying
+                SpanByte key;
+                unsafe
+                {
+                    key = SpanByte.FromPinnedPointer(keyWithNamespace.ToPointer(), keyWithNamespace.LengthWithoutMetadata);
+                }
+
+                // Dims is here, not needed for TryAdd
+                var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
+                var valueType = MemoryMarshal.Read<VectorValueType>(input.parseState.GetArgSliceByRef(2).Span);
+                var values = input.parseState.GetArgSliceByRef(3).SpanByte;
+                var element = input.parseState.GetArgSliceByRef(4).SpanByte;
+                var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
+                var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
+                var attributes = input.parseState.GetArgSliceByRef(7).SpanByte;
+                var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
 
                 Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
-
-                var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
-                var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
-                var valueTypeArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
-                var valuesArg = ArgSlice.FromPinnedSpan(values.AsReadOnlySpan());
-                var elementArg = ArgSlice.FromPinnedSpan(element.AsReadOnlySpan());
-                var quantizerArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
-                var buildExplorationFactorArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
-                var attributesArg = ArgSlice.FromPinnedSpan(attributes.AsReadOnlySpan());
-                var numLinksArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
-
-                reusableParseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg]);
-
-                var input = new RawStringInput(RespCommand.VADD, ref reusableParseState);
 
                 // Equivalent to VectorStoreOps.VectorSetAdd
                 //
