@@ -3,7 +3,9 @@
 
 using System;
 using System.Collections.Generic;
+#if DEBUG
 using Garnet.common;
+#endif
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
