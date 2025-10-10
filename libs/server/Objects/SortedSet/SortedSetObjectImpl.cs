@@ -145,7 +145,7 @@ namespace Garnet.server
                 {
                     writer.WriteDoubleNumeric(incrResult);
                 }
-                else if ((options & SortedSetAddOption.WITHETAG) == SortedSetAddOption.WITHETAG)
+                else if ((options & (SortedSetAddOption.WITHETAG | SortedSetAddOption.IFETAGGREATER | SortedSetAddOption.IFETAGMATCH)) != 0)
                 {
                     writer.WriteArrayLength(2);
                     writer.WriteInt64(addedOrChanged > 0 ? etag + 1 : etag);
