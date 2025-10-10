@@ -5,8 +5,8 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Hosting;
 using Garnet.server;
+using Microsoft.Extensions.Hosting;
 
 namespace Garnet
 {
@@ -59,20 +59,19 @@ namespace Garnet
                     try
                     {
                         // Access storeWrapper field using reflection
-                        var storeWrapperField = server.GetType().GetField("storeWrapper", 
+                        var storeWrapperField = server.GetType().GetField("storeWrapper",
                             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                        var storeWrapper = storeWrapperField?.GetValue(server) as StoreWrapper;
 
-                        if (storeWrapper != null)
+                        if (storeWrapperField?.GetValue(server) is StoreWrapper storeWrapper)
                         {
-                            bool enableStorageTier = storeWrapper.serverOptions.EnableStorageTier;
+                            var enableStorageTier = storeWrapper.serverOptions.EnableStorageTier;
 
                             if (enableStorageTier)
                             {
                                 // Checkpoint takes priority when both tiered storage and AOF are enabled
                                 Console.WriteLine("Taking checkpoint for tiered storage...");
-                                bool checkpointSuccess = storeWrapper.TakeCheckpoint(background: false, logger: null, token: cancellationToken);
-                                
+                                var checkpointSuccess = storeWrapper.TakeCheckpoint(background: false, logger: null, token: cancellationToken);
+
                                 if (checkpointSuccess)
                                 {
                                     Console.WriteLine("Checkpoint completed successfully.");
@@ -91,7 +90,7 @@ namespace Garnet
                                 if (commitSuccess)
                                 {
                                     // Wait only if commit was successful
-                                    await server.Store.WaitForCommitAsync(cancellationToken);
+                                    _ = await server.Store.WaitForCommitAsync(cancellationToken);
                                     Console.WriteLine("AOF operations completed successfully.");
                                 }
                                 else
