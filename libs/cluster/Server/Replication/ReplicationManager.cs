@@ -50,7 +50,7 @@ namespace Garnet.cluster
 
         private AofAddress replicationOffset;
 
-        public ref AofAddress ReplicationOffset
+        public AofAddress ReplicationOffset
         {
             get
             {
@@ -58,14 +58,14 @@ namespace Garnet.cluster
                 // Replica will adjust replication offset as it receives data from primary (TODO: since AOFs are synced this might obsolete)
                 var role = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;
                 if (role == NodeRole.PRIMARY)
-                {
-                    var tailAddress = storeWrapper.appendOnlyFile.Log.TailAddress;
-                    for (var i = 0; i < replicationOffset.Length; i++)
-                        replicationOffset[i] = tailAddress[i];
-                }
-                return ref replicationOffset;
+                    return storeWrapper.appendOnlyFile.Log.TailAddress;
+                return replicationOffset;
             }
         }
+
+        public void SetSublogReplicationOffset(int sublogIdx, long offset) => replicationOffset[sublogIdx] = offset;
+        public void IncrementSublogReplicationOffset(int sublogIdx, long offset) => replicationOffset[sublogIdx] += offset;
+        public long GetSublogReplicationOffset(int sublogIdx) => replicationOffset[sublogIdx];
 
         /// <summary>
         /// Replication offset corresponding to the checkpoint start marker. We will truncate only to this point after taking a checkpoint (the checkpoint
@@ -530,7 +530,8 @@ namespace Garnet.cluster
                 var recoveredSafeAofAddress = GetRecoveredSafeAofAddress();
                 storeWrapper.appendOnlyFile.Log.InitializeIf(ref recoveredSafeAofAddress);
                 logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.Log.BeginAddress, storeWrapper.appendOnlyFile.Log.TailAddress);
-                ReplicationOffset = storeWrapper.ReplayAOF(AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, -1));
+                var replayedUntil = storeWrapper.ReplayAOF(AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, -1));
+                replicationOffset.SetValue(ref replayedUntil);
             }
 
             // First recover and then load latest checkpoint info in-memory

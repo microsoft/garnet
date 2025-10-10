@@ -86,6 +86,9 @@ namespace Garnet.cluster
                     throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.Log.TailAddress}", LogLevel.Warning, clientResponse: false);
                 }
 
+                // Check that sublogIdx received is one expected
+                replicaAofSyncTask?.ValidateSublogIndex(sublogIdx);
+
                 // Enqueue to AOF
                 _ = clusterProvider.storeWrapper.appendOnlyFile?.UnsafeEnqueueRaw(
                     sublogIdx,

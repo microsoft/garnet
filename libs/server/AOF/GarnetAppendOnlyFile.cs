@@ -23,7 +23,7 @@ namespace Garnet.server
 
         public void Dispose() => Log.Dispose();
 
-        public void SetLogShiftTailCallback(int sublogIdx,Action<long, long> SafeTailShiftCallback)
+        public void SetLogShiftTailCallback(int sublogIdx, Action<long, long> SafeTailShiftCallback)
             => Log.GetSubLog(sublogIdx).SafeTailShiftCallback = SafeTailShiftCallback;
 
         public TsavoriteLogScanIterator Scan(int sublogIdx, ref AofAddress beginAddress, ref AofAddress endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)

@@ -1,5 +1,8 @@
-using Tsavorite.core;
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 
 namespace Garnet.server

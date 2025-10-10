@@ -23,6 +23,12 @@ namespace Garnet.cluster
             CancellationTokenSource replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.replicationManager.ctsRepManager.Token);
             SingleWriterMultiReaderLock activeReplay;
 
+            public void ValidateSublogIndex(int sublogIdx)
+            {
+                if (sublogIdx != this.sublogIdx)
+                    throw new GarnetException($"SublogIdx mismatch; expected:{this.sublogIdx} - received:{sublogIdx}");
+            }
+
             public void InitializeIterator(long startAddress)
             {
                 if (replayIterator == null)
@@ -74,7 +80,7 @@ namespace Garnet.cluster
 
             public unsafe void Consume(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
             {
-                clusterProvider.replicationManager.ReplicationOffset[sublogIdx] = currentAddress;
+                clusterProvider.replicationManager.SetSublogReplicationOffset(sublogIdx, currentAddress);
                 var ptr = record;
                 while (ptr < record + recordLength)
                 {
@@ -103,10 +109,10 @@ namespace Garnet.cluster
                         entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                     }
                     ptr += entryLength;
-                    clusterProvider.replicationManager.ReplicationOffset[sublogIdx] += entryLength;
+                    clusterProvider.replicationManager.IncrementSublogReplicationOffset(sublogIdx, entryLength);
                 }
 
-                if (clusterProvider.replicationManager.ReplicationOffset[sublogIdx] != nextAddress)
+                if (clusterProvider.replicationManager.GetSublogReplicationOffset(sublogIdx) != nextAddress)
                 {
                     logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", recordLength, currentAddress, nextAddress, clusterProvider.replicationManager.ReplicationOffset[sublogIdx]);
                     throw new GarnetException($"ReplicaReplayTask.Consume NextAddress Mismatch recordeLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{clusterProvider.replicationManager.ReplicationOffset[sublogIdx]}", LogLevel.Warning, clientResponse: false);

@@ -285,12 +285,12 @@ namespace Garnet.cluster
         /// <inheritdoc />
         public (long replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo()
         {
-            // TODO: populate replicationOffset information correctly instead of default zero-index
             if (!serverOptions.EnableCluster)
             {
+                // TODO: populate replicationOffset information correctly instead of default zero-index
                 return (replicationManager.ReplicationOffset[0], default);
             }
-
+            // TODO: populate replicationOffset information correctly instead of default zero-index
             return (replicationManager.ReplicationOffset[0], replicationManager.GetReplicaInfo());
         }
 
@@ -312,7 +312,6 @@ namespace Garnet.cluster
             {
                 address = address,
                 port = port,
-                // TODO: populate field correctly instead of using default zero-index
                 replication_offset = replicationManager.ReplicationOffset,
                 replication_state = replicationManager.IsRecovering ? "sync" :
                         connection.connected ? "connected" : "connect"

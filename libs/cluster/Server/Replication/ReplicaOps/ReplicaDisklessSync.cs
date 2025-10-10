@@ -186,7 +186,7 @@ namespace Garnet.cluster
                 logger?.LogInformation("Updating ReplicationId");
                 TryUpdateMyPrimaryReplId(primarySyncMetadata.currentPrimaryReplId);
 
-                ReplicationOffset = replicationOffset;
+                this.replicationOffset = replicationOffset;
 
                 // Mark this txn run as a read-write session if we are replaying as a replica
                 // This is necessary to ensure that the stored procedure can perform write operations if needed

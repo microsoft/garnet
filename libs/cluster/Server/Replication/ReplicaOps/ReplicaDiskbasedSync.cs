@@ -96,14 +96,6 @@ namespace Garnet.cluster
                         authPassword: clusterProvider.ClusterPassword);
                     gcs.Connect();
 
-                    // Resetting here to decide later when to sync from
-                    clusterProvider.replicationManager.ReplicationOffset.SetValue(0);
-
-                    // The caller should have stopped accepting AOF records from old primary at this point
-                    // (TryREPLICAOF -> TryAddReplica -> UnsafeWaitForConfigTransition)
-
-                    // TODO: ensure we have quiesced reads (no writes on replica)
-
                     // Wait for Commit of AOF (data received from old primary) if FastCommit is not enabled
                     // If FastCommit is enabled, we commit during AOF stream processing
                     if (!clusterProvider.serverOptions.EnableFastCommit)
@@ -116,7 +108,7 @@ namespace Garnet.cluster
                     ResetReplayIterator();
 
                     // Reset replication offset
-                    ReplicationOffset.SetValue(0);
+                    replicationOffset.SetValue(0);
 
                     // Reset the database in preparation for connecting to primary
                     storeWrapper.Reset();
@@ -332,8 +324,8 @@ namespace Garnet.cluster
                 storeWrapper.appendOnlyFile.Initialize(beginAddress, recoveredReplicationOffset);
 
                 // Finally, advertise that we are caught up to the replication offset
-                ReplicationOffset = recoveredReplicationOffset;
-                logger?.LogInformation("ReplicaRecover: ReplicaReplicationOffset = {ReplicaReplicationOffset}", ReplicationOffset);
+                this.replicationOffset = recoveredReplicationOffset;
+                logger?.LogInformation("ReplicaRecover: ReplicaReplicationOffset = {ReplicaReplicationOffset}", replicationOffset);
 
                 // If checkpoint for main store was send add its token here in preparation for purge later on
                 if (recoverMainStoreFromToken)
@@ -363,7 +355,7 @@ namespace Garnet.cluster
                 // This is necessary to ensure that the stored procedure can perform write operations if needed
                 clusterProvider.replicationManager.aofProcessor.SetReadWriteSession();
 
-                return ReplicationOffset;
+                return replicationOffset;
             }
             catch (Exception ex)
             {
