@@ -36,6 +36,7 @@ namespace Garnet.server
         GEOSEARCH,
         GET,
         GETBIT,
+        GETETAG,
         GETIFNOTMATCH,
         GETRANGE,
         GETWITHETAG,
@@ -2564,6 +2565,10 @@ namespace Garnet.server
             else if (command.SequenceEqual(CmdStrings.SETIFGREATER))
             {
                 return RespCommand.SETIFGREATER;
+            }
+            else if (command.SequenceEqual(CmdStrings.GETETAG))
+            {
+                return RespCommand.GETETAG;
             }
             else if (command.SequenceEqual(CmdStrings.GETWITHETAG))
             {

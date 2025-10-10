@@ -51,6 +51,14 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus GETETAG(PinnedSpanByte key, ref UnifiedStoreInput input,
+            ref GarnetUnifiedStoreOutput output)
+        {
+            garnetApi.WATCH(key, StoreType.All);
+            return garnetApi.GETETAG(key, ref input, ref output);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
         {
             garnetApi.WATCH(key1, StoreType.Object);

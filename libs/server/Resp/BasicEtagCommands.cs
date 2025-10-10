@@ -14,6 +14,37 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         /// <summary>
+        /// GETETAG key 
+        /// Given a key get the ETag
+        /// </summary>
+        private bool NetworkGETETAG<TGarnetApi>(ref TGarnetApi storageApi)
+            where TGarnetApi : IGarnetApi
+        {
+            Debug.Assert(parseState.Count == 1);
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            // Prepare input
+            var input = new UnifiedStoreInput(RespCommand.GETETAG);
+
+            // Prepare GarnetUnifiedStoreOutput output
+            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.GETETAG(key, ref input, ref output);
+
+            if (status == GarnetStatus.OK)
+            {
+                ProcessOutput(output.SpanByteAndMemory);
+            }
+            else
+            {
+                WriteNull();
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// GETWITHETAG key 
         /// Given a key get the value and it's ETag
         /// </summary>

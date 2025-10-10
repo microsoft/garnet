@@ -17,6 +17,14 @@ namespace Garnet.server
         where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
     {
+        #region GET
+
+        /// <inheritdoc />
+        public GarnetStatus GETETAG(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+            => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
+
+        #endregion
+
         #region MEMORY
 
         /// <inheritdoc />

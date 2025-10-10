@@ -1224,6 +1224,15 @@ namespace Garnet.server
         GarnetStatus GET(PinnedSpanByte key, out GarnetObjectStoreOutput value);
 
         /// <summary>
+        ///  Gets the Etag of a specified key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <returns>GarnetStatus</returns>
+        GarnetStatus GETETAG(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
+
+        /// <summary>
         /// Finds the longest common subsequence (LCS) between two keys.
         /// </summary>
         /// <param name="key1">The first key to compare.</param>

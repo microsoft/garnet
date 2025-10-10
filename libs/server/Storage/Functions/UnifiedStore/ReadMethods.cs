@@ -28,18 +28,30 @@ namespace Garnet.server
             return cmd switch
             {
                 RespCommand.EXISTS => true,
-                RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref input, ref output, ref readInfo),
-                RespCommand.TYPE => HandleType(in srcLogRecord, ref input, ref output, ref readInfo),
+                RespCommand.GETETAG => HandleGetEtag(in srcLogRecord, ref output),
+                RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref input, ref output),
+                RespCommand.TYPE => HandleType(in srcLogRecord, ref input, ref output),
                 RespCommand.TTL or
-                RespCommand.PTTL => HandleTtl(in srcLogRecord, ref input, ref output, ref readInfo, cmd == RespCommand.PTTL),
+                RespCommand.PTTL => HandleTtl(in srcLogRecord, ref output, cmd == RespCommand.PTTL),
                 RespCommand.EXPIRETIME or
-                RespCommand.PEXPIRETIME => HandleExpireTime(in srcLogRecord, ref input, ref output, ref readInfo, cmd == RespCommand.PEXPIRETIME),
+                RespCommand.PEXPIRETIME => HandleExpireTime(in srcLogRecord, ref output, cmd == RespCommand.PEXPIRETIME),
                 _ => throw new NotImplementedException(),
             };
         }
 
+        private bool HandleGetEtag<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
+            ref GarnetUnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
+        {
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
+            var etag = srcLogRecord.ETag;
+            writer.WriteInt64(etag);
+
+            return true;
+        }
+
         private bool HandleMemoryUsage<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref ReadInfo readInfo) where TSourceLogRecord : ISourceLogRecord
+            ref GarnetUnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
         {
             long memoryUsage;
             if (srcLogRecord.Info.ValueIsObject)
@@ -62,7 +74,7 @@ namespace Garnet.server
         }
 
         private bool HandleType<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref ReadInfo readInfo) where TSourceLogRecord : ISourceLogRecord
+            ref GarnetUnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -92,8 +104,8 @@ namespace Garnet.server
             return true;
         }
 
-        private bool HandleTtl<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref ReadInfo readInfo, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
+        private bool HandleTtl<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
+            ref GarnetUnifiedStoreOutput output, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -106,8 +118,8 @@ namespace Garnet.server
             return true;
         }
 
-        private bool HandleExpireTime<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref ReadInfo readInfo, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
+        private bool HandleExpireTime<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
+            ref GarnetUnifiedStoreOutput output, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 

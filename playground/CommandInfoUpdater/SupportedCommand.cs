@@ -157,6 +157,7 @@ namespace CommandInfoUpdater
             new("GETDEL", RespCommand.GETDEL, StoreType.Main),
             new("GETIFNOTMATCH", RespCommand.GETIFNOTMATCH, StoreType.Main),
             new("GETRANGE", RespCommand.GETRANGE, StoreType.Main),
+            new("GETETAG", RespCommand.GETETAG, StoreType.All),
             new("GETWITHETAG", RespCommand.GETWITHETAG, StoreType.Main),
             new("GETSET", RespCommand.GETSET, StoreType.Main),
             new("HCOLLECT", RespCommand.HCOLLECT, StoreType.Object),
