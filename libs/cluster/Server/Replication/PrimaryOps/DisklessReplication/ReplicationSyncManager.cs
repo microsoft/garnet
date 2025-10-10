@@ -25,7 +25,7 @@ namespace Garnet.cluster
 
         public ClusterProvider ClusterProvider { get; }
 
-        int disposed = 0;
+        SingleWriterMultiReaderLock disposed;
 
         public ReplicationSyncManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
@@ -41,8 +41,7 @@ namespace Garnet.cluster
         public void Dispose()
         {
             // Return if original value is true, hence already disposed
-            if (Interlocked.CompareExchange(ref disposed, 1, 0) == 1)
-                return;
+            disposed.WriteLock();
             cts?.Cancel();
             cts?.Dispose();
             cts = null;
@@ -349,11 +348,15 @@ namespace Garnet.cluster
                     }
                     finally
                     {
-                        if (disposed == 0 && !cts.TryReset())
+                        var readLock = disposed.TryReadLock();
+                        if (readLock && !cts.TryReset())
                         {
                             cts.Dispose();
                             cts = new();
                         }
+
+                        if (readLock)
+                            disposed.ReadUnlock();
                     }
 
                     return (false, default);
