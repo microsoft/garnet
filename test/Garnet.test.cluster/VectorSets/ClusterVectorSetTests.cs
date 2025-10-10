@@ -257,6 +257,31 @@ namespace Garnet.test.cluster
             {
                 ClassicAssert.IsTrue(searchesWithAttrs > 0);
             }
+
+            // Validate all nodes have same vector embeddings
+            {
+                var idBytes = new byte[4];
+                for (var id = 0; id < vectors.Length; id++)
+                {
+                    BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
+                    var expected = vectors[id];
+
+                    var fromPrimary = (string[])context.clusterTestUtils.Execute(primary, "VEMB", [Key, idBytes]);
+                    var fromSecondary = (string[])context.clusterTestUtils.Execute(secondary, "VEMB", [Key, idBytes]);
+
+                    ClassicAssert.AreEqual(expected.Length, fromPrimary.Length);
+                    ClassicAssert.AreEqual(expected.Length, fromSecondary.Length);
+
+                    for (var i = 0; i < expected.Length; i++)
+                    {
+                        var p = (byte)float.Parse(fromPrimary[i]);
+                        var s = (byte)float.Parse(fromSecondary[i]);
+
+                        ClassicAssert.AreEqual(expected[i], p);
+                        ClassicAssert.AreEqual(expected[i], s);
+                    }
+                }
+            }
         }
 
         [Test]
@@ -431,6 +456,41 @@ namespace Garnet.test.cluster
             var searchesWithNonZeroResults = await Task.WhenAll(readTasks);
 
             ClassicAssert.IsTrue(searchesWithNonZeroResults.All(static x => x > 0));
+
+
+            // Validate all nodes have same vector embeddings
+            {
+                var idBytes = new byte[4];
+                for (var id = 0; id < vectors.Length; id++)
+                {
+                    BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
+                    var expected = vectors[id];
+
+                    var fromPrimary = (string[])context.clusterTestUtils.Execute(primary, "VEMB", [Key, idBytes]);
+
+                    ClassicAssert.AreEqual(expected.Length, fromPrimary.Length);
+
+                    for (var i = 0; i < expected.Length; i++)
+                    {
+                        var p = (byte)float.Parse(fromPrimary[i]);
+                        ClassicAssert.AreEqual(expected[i], p);
+                    }
+
+                    for (var secondaryIx = 0; secondaryIx < secondaries.Length; secondaryIx++)
+                    {
+                        var secondary = secondaries[secondaryIx];
+                        var fromSecondary = (string[])context.clusterTestUtils.Execute(secondary, "VEMB", [Key, idBytes]);
+
+                        ClassicAssert.AreEqual(expected.Length, fromSecondary.Length);
+
+                        for (var i = 0; i < expected.Length; i++)
+                        {
+                            var s = (byte)float.Parse(fromSecondary[i]);
+                            ClassicAssert.AreEqual(expected[i], s);
+                        }
+                    }
+                }
+            }
         }
     }
 }

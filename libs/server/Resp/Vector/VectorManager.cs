@@ -1032,13 +1032,39 @@ namespace Garnet.server
                 outputDistances.Length = (int)dimensions * sizeof(float);
             }
 
-            return
-                Service.TryGetEmbedding(
-                    context,
-                    indexPtr,
-                    element,
-                    MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan())
-                );
+            Span<byte> asBytesSpan = stackalloc byte[(int)dimensions];
+            var asBytes = SpanByteAndMemory.FromPinnedSpan(asBytesSpan);
+            try
+            {
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, element, ref asBytes))
+                {
+                    return false;
+                }
+
+                var from = asBytes.AsReadOnlySpan();
+                var into = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
+
+                for (var i = 0; i < asBytes.Length; i++)
+                {
+                    into[i] = from[i];
+                }
+
+                return true;
+            }
+            finally
+            {
+                asBytes.Memory?.Dispose();
+            }
+
+            // TODO: DiskANN will need to do this long term, since different quantizers may behave differently
+
+            //return
+            //    Service.TryGetEmbedding(
+            //        context,
+            //        indexPtr,
+            //        element,
+            //        MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan())
+            //    );
         }
 
         /// <summary>

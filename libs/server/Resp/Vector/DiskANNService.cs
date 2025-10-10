@@ -76,7 +76,7 @@ namespace Garnet.server
         private static readonly bool UseMultiInsertCallback = false;
 
         // Term types.
-        private const byte FullVector = 0;
+        internal const byte FullVector = 0;
         private const byte NeighborList = 1;
         private const byte QuantizedVector = 2;
         internal const byte Attributes = 3;

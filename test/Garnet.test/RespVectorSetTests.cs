@@ -187,7 +187,6 @@ namespace Garnet.test
         }
 
         [Test]
-        [Ignore("Not yet implemented on the DiskANN side")]
         public void VEMB()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
