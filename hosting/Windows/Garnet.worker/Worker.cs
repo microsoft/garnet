@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
+using Garnet.server;
 
 namespace Garnet
 {
@@ -52,28 +53,57 @@ namespace Garnet
                 var timeout = TimeSpan.FromSeconds(30);
                 await WaitForActiveConnectionsToComplete(timeout, cancellationToken);
 
-                // Flush AOF buffer and create checkpoint using Store API
-                if (server?.Store != null)
+                // Take checkpoint if tiered storage is enabled, otherwise flush AOF buffer
+                if (server != null)
                 {
                     try
                     {
-                        // CommitAOFAsync returns false if AOF is disabled
-                        var commitSuccess = await server.Store.CommitAOFAsync(cancellationToken);
+                        // Access storeWrapper field using reflection
+                        var storeWrapperField = server.GetType().GetField("storeWrapper", 
+                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        var storeWrapper = storeWrapperField?.GetValue(server) as StoreWrapper;
 
-                        if (commitSuccess)
+                        if (storeWrapper != null)
                         {
-                            // Wait only if commit was successful
-                            await server.Store.WaitForCommitAsync(cancellationToken);
-                            Console.WriteLine("AOF operations completed successfully.");
-                        }
-                        else
-                        {
-                            Console.WriteLine("AOF commit skipped (likely disabled or unavailable).");
+                            bool enableStorageTier = storeWrapper.serverOptions.EnableStorageTier;
+
+                            if (enableStorageTier)
+                            {
+                                // Checkpoint takes priority when both tiered storage and AOF are enabled
+                                Console.WriteLine("Taking checkpoint for tiered storage...");
+                                bool checkpointSuccess = storeWrapper.TakeCheckpoint(background: false, logger: null, token: cancellationToken);
+                                
+                                if (checkpointSuccess)
+                                {
+                                    Console.WriteLine("Checkpoint completed successfully.");
+                                }
+                                else
+                                {
+                                    Console.WriteLine("Checkpoint skipped (another checkpoint in progress).");
+                                }
+                            }
+                            else if (server.Store != null)
+                            {
+                                // Flush AOF buffer if AOF is enabled
+                                // CommitAOFAsync returns false if AOF is disabled
+                                var commitSuccess = await server.Store.CommitAOFAsync(cancellationToken);
+
+                                if (commitSuccess)
+                                {
+                                    // Wait only if commit was successful
+                                    await server.Store.WaitForCommitAsync(cancellationToken);
+                                    Console.WriteLine("AOF operations completed successfully.");
+                                }
+                                else
+                                {
+                                    Console.WriteLine("AOF commit skipped (likely disabled or unavailable).");
+                                }
+                            }
                         }
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Error during graceful AOF operations: {ex.Message}");
+                        Console.WriteLine($"Error during graceful shutdown operations: {ex.Message}");
                     }
                 }
             }
