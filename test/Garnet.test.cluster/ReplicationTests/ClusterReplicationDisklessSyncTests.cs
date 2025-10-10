@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -398,9 +397,9 @@ namespace Garnet.test.cluster
                 Validate(nOffsets[primary], nOffsets[replica], disableObjects);
         }
 
+#if DEBUG
         [Test, Order(6)]
         [Category("REPLICATION")]
-        [Conditional("DEBUG")]
         public void ClusterDisklessSyncResetSyncManagerCts()
         {
             var nodes_count = 2;
@@ -430,5 +429,6 @@ namespace Garnet.test.cluster
             var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOneIndex, primaryNodeIndex: primaryIndex, logger: context.logger);
             ClassicAssert.AreEqual("OK", resp);
         }
+#endif
     }
 }
