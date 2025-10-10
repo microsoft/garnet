@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -56,6 +57,15 @@ namespace Garnet.server
                 value = GarnetObject.Create(type);
                 _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, logRecord.ETag, out _);
                 _ = logRecord.TrySetValueObject(value, in sizeInfo);
+
+                // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
+                if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(LogRecord.NoETag + 1))
+                {
+                    functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
+                    return false;
+                }
+                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
+
                 return true;
             }
 
@@ -80,6 +90,9 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
+            // reset etag state set at need initial update
+            ETagState.ResetState(ref functionsState.etagState);
+
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
@@ -123,10 +136,16 @@ namespace Garnet.server
 
                 // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                 functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Expired);
-                logRecord.ClearValueIfHeap(obj => { });
+                logRecord.ClearValueIfHeap(_ => { });
                 rmwInfo.Action = input.header.type == GarnetObjectType.DelIfExpIm ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
+                logRecord.RemoveETag();
                 return false;
             }
+
+            var hadETagPreMutation = logRecord.Info.HasETag;
+            var shouldUpdateEtag = hadETagPreMutation;
+            if (shouldUpdateEtag)
+                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
 
             switch (input.header.type)
             {
@@ -146,8 +165,15 @@ namespace Garnet.server
                             functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
                             logRecord.ClearValueIfHeap(obj => { });
                             rmwInfo.Action = RMWAction.ExpireAndStop;
+                            logRecord.RemoveETag();
                             return false;
                         }
+
+                        if (output.HasValueUpdated)
+                            logRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
+
+                        if (output.HasValueUpdated || hadETagPreMutation)
+                            ETagState.ResetState(ref functionsState.etagState);
 
                         sizeInfo.AssertOptionals(logRecord.Info);
                         return operateSuccessful;
@@ -176,6 +202,7 @@ namespace Garnet.server
                         }
                     }
             }
+
             sizeInfo.AssertOptionals(logRecord.Info);
             return true;
         }
@@ -199,7 +226,10 @@ namespace Garnet.server
             // Expired data
             if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
             {
+                _ = dstLogRecord.RemoveETag();
                 rmwInfo.Action = RMWAction.ExpireAndResume;
+                // reset etag state that may have been initialized earlier
+                ETagState.ResetState(ref functionsState.etagState);
                 return false;
             }
             // Defer the actual copying of data to PostCopyUpdater, so we know the record has been successfully CASed into the hash chain before we potentially
@@ -224,6 +254,14 @@ namespace Garnet.server
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
+            var recordHadEtagPreMutation = srcLogRecord.Info.HasETag;
+            var shouldUpdateEtag = recordHadEtagPreMutation;
+            if (shouldUpdateEtag)
+            {
+                // during checkpointing we might skip the inplace calls and go directly to copy update so we need to initialize here if needed
+                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
+            }
+
             switch (input.header.type)
             {
                 case GarnetObjectType.DelIfExpIm:
@@ -239,6 +277,12 @@ namespace Garnet.server
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
                         }
+                        if (output.HasValueUpdated)
+                            dstLogRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
+
+                        if (output.HasValueUpdated || recordHadEtagPreMutation)
+                            ETagState.ResetState(ref functionsState.etagState);
+
                         break;
                     }
                     else

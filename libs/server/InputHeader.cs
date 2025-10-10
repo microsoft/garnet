@@ -19,23 +19,28 @@ namespace Garnet.server
     public enum RespInputFlags : byte
     {
         /// <summary>
+        /// No flags set
+        /// </summary>
+        None = 0,
+
+        /// <summary>
         /// Flag indicating an operation intending to add an etag for a RAWSTRING command.
         /// </summary>
-        WithEtag = 16,
+        WithEtag = 1,
 
         /// <summary>
         /// Flag indicating a SET operation that returns the previous value (for strings).
         /// </summary>
-        SetGet = 32,
+        SetGet = 1 << 1,
 
         /// <summary>
         /// Deterministic
         /// </summary>
-        Deterministic = 64,
+        Deterministic = 1 << 2,
         /// <summary>
         /// Expired
         /// </summary>
-        Expired = 128,
+        Expired = 1 << 3,
     }
 
     /// <summary>
@@ -47,11 +52,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of header
         /// </summary>
-        public const int Size = 3;
-
-        // Since we know WithEtag is not used with any Object types, we keep the flag mask to work with the last 3 bits as flags,
-        // and the other 5 bits for storing object associated flags. However, in the case of Rawstring we use the last 4 bits for flags, and let the others remain unused.
-        internal const byte FlagMask = (byte)RespInputFlags.SetGet - 1;
+        public const int Size = 4;
 
         [FieldOffset(0)]
         internal RespCommand cmd;
@@ -61,6 +62,21 @@ namespace Garnet.server
 
         [FieldOffset(2)]
         internal RespInputFlags flags;
+
+        [FieldOffset(3)]
+        internal byte SubId;
+
+        [FieldOffset(3)]
+        internal SortedSetOperation SortedSetOp;
+
+        [FieldOffset(3)]
+        internal HashOperation HashOp;
+
+        [FieldOffset(3)]
+        internal SetOperation SetOp;
+
+        [FieldOffset(3)]
+        internal ListOperation ListOp;
 
         /// <summary>
         /// Create a new instance of RespInputHeader
@@ -95,45 +111,15 @@ namespace Garnet.server
             this.flags = (RespInputFlags)flags;
         }
 
-        internal byte SubId
-        {
-            get => (byte)((byte)flags & FlagMask);
-            set => flags = (RespInputFlags)(((byte)flags & ~FlagMask) | (byte)value);
-        }
-
-        internal SortedSetOperation SortedSetOp
-        {
-            get => (SortedSetOperation)((byte)flags & FlagMask);
-            set => flags = (RespInputFlags)(((byte)flags & ~FlagMask) | (byte)value);
-        }
-
-        internal HashOperation HashOp
-        {
-            get => (HashOperation)((byte)flags & FlagMask);
-            set => flags = (RespInputFlags)(((byte)flags & ~FlagMask) | (byte)value);
-        }
-
-        internal SetOperation SetOp
-        {
-            get => (SetOperation)((byte)flags & FlagMask);
-            set => flags = (RespInputFlags)(((byte)flags & ~FlagMask) | (byte)value);
-        }
-
-        internal ListOperation ListOp
-        {
-            get => (ListOperation)((byte)flags & FlagMask);
-            set => flags = (RespInputFlags)(((byte)flags & ~FlagMask) | (byte)value);
-        }
-
         /// <summary>
         /// Set expiration flag, used for log replay
         /// </summary>
-        internal unsafe void SetExpiredFlag() => flags |= RespInputFlags.Expired;
+        internal void SetExpiredFlag() => flags |= RespInputFlags.Expired;
 
         /// <summary>
         /// Set "SetGet" flag, used to get the old value of a key after conditionally setting it
         /// </summary>
-        internal unsafe void SetSetGetFlag() => flags |= RespInputFlags.SetGet;
+        internal void SetSetGetFlag() => flags |= RespInputFlags.SetGet;
 
         /// <summary>
         /// Set "WithEtag" flag for the input header
@@ -152,7 +138,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="expireTime">Expiration time</param>
         /// <returns></returns>
-        internal readonly unsafe bool CheckExpiry(long expireTime)
+        internal readonly bool CheckExpiry(long expireTime)
             => (flags & RespInputFlags.Deterministic) != 0
                 ? (flags & RespInputFlags.Expired) != 0
                 : expireTime < DateTimeOffset.Now.UtcTicks;
@@ -160,7 +146,7 @@ namespace Garnet.server
         /// <summary>
         /// Check the SetGet flag
         /// </summary>
-        internal unsafe bool CheckSetGetFlag()
+        internal bool CheckSetGetFlag()
             => (flags & RespInputFlags.SetGet) != 0;
 
         /// <summary>

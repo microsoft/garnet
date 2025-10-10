@@ -36,70 +36,6 @@ namespace Garnet.server
             InfiniteMax = 2
         }
 
-        bool GetOptions(ref ObjectInput input, ref int currTokenIdx, out SortedSetAddOption options, out long etag, ref RespMemoryWriter writer)
-        {
-            options = SortedSetAddOption.None;
-            etag = -1;
-
-            while (currTokenIdx < input.parseState.Count)
-            {
-                if (!input.parseState.TryGetSortedSetAddOption(currTokenIdx, out var currOption, out var nextIdxStep, ref etag))
-                    break;
-
-                options |= currOption;
-                currTokenIdx += nextIdxStep + 1;
-            }
-
-            // Validate ZADD options combination
-            ReadOnlySpan<byte> optionsError = default;
-
-            // XX & NX are mutually exclusive
-            if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX &&
-                (options & SortedSetAddOption.NX) == SortedSetAddOption.NX)
-                optionsError = CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE;
-
-            // NX, GT & LT are mutually exclusive
-            if (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT &&
-                 (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) ||
-               (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT ||
-                 (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) &&
-                (options & SortedSetAddOption.NX) == SortedSetAddOption.NX))
-                optionsError = CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE;
-
-            // IFETAGGREATER & IFETAGMATCH are mutually exclusive
-            if ((options & SortedSetAddOption.IFETAGGREATER) == SortedSetAddOption.IFETAGGREATER &&
-                (options & SortedSetAddOption.IFETAGMATCH) == SortedSetAddOption.IFETAGMATCH)
-                optionsError = CmdStrings.RESP_ERR_IFETAGGREATER_IFETAGMATCH_NOT_COMPATIBLE;
-
-            if (((options & SortedSetAddOption.IFETAGGREATER) == SortedSetAddOption.IFETAGGREATER ||
-                (options & SortedSetAddOption.IFETAGMATCH) == SortedSetAddOption.IFETAGMATCH) && etag == -1)
-            {
-                writer.WriteError(CmdStrings.RESP_ERR_INVALID_OR_MISSING_ETAG);
-                return false;
-            }
-
-            // INCR supports only one score-element pair
-            if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR &&
-                (input.parseState.Count - currTokenIdx > 2))
-                optionsError = CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR;
-
-            if (!optionsError.IsEmpty)
-            {
-                writer.WriteError(optionsError);
-                return false;
-            }
-
-            // From here on we expect only score-element pairs
-            // Remaining token count should be positive and even
-            if (currTokenIdx == input.parseState.Count || (input.parseState.Count - currTokenIdx) % 2 != 0)
-            {
-                writer.WriteError(CmdStrings.RESP_SYNTAX_ERROR);
-                return false;
-            }
-
-            return true;
-        }
-
         private void SortedSetAdd(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion, long etag)
         {
             DeleteExpiredItems();
@@ -109,7 +45,6 @@ namespace Garnet.server
 
             var options = SortedSetAddOption.None;
             var currTokenIdx = 0;
-            var parsedOptions = false;
             long inputEtag = -1;
 
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
@@ -122,19 +57,8 @@ namespace Garnet.server
                     if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
                     {
                         // Try to get and validate options before the Score field, if any
-                        if (!parsedOptions)
-                        {
-                            parsedOptions = true;
-                            if (!GetOptions(ref input, ref currTokenIdx, out options, out inputEtag, ref writer))
-                                return;
-                            continue; // retry after parsing options
-                        }
-                        else
-                        {
-                            // Invalid Score encountered
-                            writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
-                            return;
-                        }
+                        options = input.parseState.GetSortedSetAddOptions(currTokenIdx, out var nextIdxStep, out inputEtag);
+                        currTokenIdx += nextIdxStep;
                     }
 
                     if ((options & SortedSetAddOption.IFETAGGREATER) == SortedSetAddOption.IFETAGGREATER)
@@ -148,7 +72,6 @@ namespace Garnet.server
                             break;
                     }
 
-                    parsedOptions = true;
                     currTokenIdx++;
 
                     // Member
@@ -225,13 +148,16 @@ namespace Garnet.server
                 else if ((options & SortedSetAddOption.WITHETAG) == SortedSetAddOption.WITHETAG)
                 {
                     writer.WriteArrayLength(2);
-                    writer.WriteInt64(etag);
+                    writer.WriteInt64(addedOrChanged > 0 ? etag + 1 : etag);
                     writer.WriteInt32(addedOrChanged);
                 }
                 else
                 {
                     writer.WriteInt32(addedOrChanged);
                 }
+
+                if (addedOrChanged > 0)
+                    output.OutputFlags |= OutputFlags.ValueUpdated;
             }
             finally
             {

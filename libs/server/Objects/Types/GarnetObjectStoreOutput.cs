@@ -44,6 +44,12 @@ namespace Garnet.server
         public readonly bool HasRemoveKey =>
             (OutputFlags & OutputFlags.RemoveKey) == OutputFlags.RemoveKey;
 
+        /// <summary>
+        /// True if output flag ValueUpdated is set
+        /// </summary>
+        public readonly bool HasValueUpdated =>
+            (OutputFlags & OutputFlags.ValueUpdated) == OutputFlags.ValueUpdated;
+
         public GarnetObjectStoreOutput() => SpanByteAndMemory = new(null);
 
         public GarnetObjectStoreOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;

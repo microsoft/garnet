@@ -83,7 +83,7 @@ namespace Garnet.server
     }
 
     [Flags]
-    public enum SortedSetAddOption
+    public enum SortedSetAddOption : ushort
     {
         None = 0,
         /// <summary>
@@ -128,7 +128,7 @@ namespace Garnet.server
     /// <summary>
     /// Order variations for sorted set commands
     /// </summary>
-    public enum SortedSetOrderOperation
+    public enum SortedSetOrderOperation : byte
     {
         /// <summary>
         /// Rank(by index of the elements)

@@ -26,9 +26,74 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("ZADD");
 
             // Get the key for SortedSet
-            var key = parseState.GetArgSliceByRef(0);
+            var currIdx = 0;
+            var key = parseState.GetArgSliceByRef(currIdx++);
+            var options = SortedSetAddOption.None;
+            ReadOnlySpan<byte> error = default;
+            long etag;
+
+            // If the first argument is not a score field - parse and validate options
+            if (!parseState.TryGetDouble(currIdx, out _))
+            {
+                options = parseState.GetSortedSetAddOptions(currIdx, out var nextIdxStep, out etag);
+
+                // No options were parsed - invalid Score encountered
+                if (nextIdxStep == 0)
+                {
+                    // Invalid Score encountered
+                    error = CmdStrings.RESP_ERR_NOT_VALID_FLOAT;
+                }
+                else
+                {
+                    currIdx += nextIdxStep;
+
+                    // Validate ZADD options combination
+
+                    // XX & NX are mutually exclusive
+                    if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX &&
+                        (options & SortedSetAddOption.NX) == SortedSetAddOption.NX)
+                        error = CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE;
+
+                    // NX, GT & LT are mutually exclusive
+                    if (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT &&
+                         (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) ||
+                        (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT ||
+                          (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) &&
+                         (options & SortedSetAddOption.NX) == SortedSetAddOption.NX))
+                        error = CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE;
+
+                    // IFETAGGREATER & IFETAGMATCH are mutually exclusive
+                    if ((options & SortedSetAddOption.IFETAGGREATER) == SortedSetAddOption.IFETAGGREATER &&
+                        (options & SortedSetAddOption.IFETAGMATCH) == SortedSetAddOption.IFETAGMATCH)
+                        error = CmdStrings.RESP_ERR_IFETAGGREATER_IFETAGMATCH_NOT_COMPATIBLE;
+
+                    // IFETAGGREATER or IFETAGMATCH has an invalid or missing etag value
+                    if (((options & SortedSetAddOption.IFETAGGREATER) == SortedSetAddOption.IFETAGGREATER ||
+                         (options & SortedSetAddOption.IFETAGMATCH) == SortedSetAddOption.IFETAGMATCH) && etag == -1)
+                        error = CmdStrings.RESP_ERR_INVALID_OR_MISSING_ETAG;
+
+                    // INCR supports only one score-element pair
+                    if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR &&
+                        (parseState.Count - currIdx > 2))
+                        error = CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR;
+                }
+            }
+
+            // From here on we expect only score-element pairs
+            // Remaining token count should be positive and even
+            if (error.IsEmpty && (currIdx == parseState.Count || (parseState.Count - currIdx) % 2 != 0))
+                error = CmdStrings.RESP_SYNTAX_ERROR;
+
+            if (!error.IsEmpty)
+            {
+                while (!RespWriteUtils.TryWriteError(error, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
+            if ((options & (SortedSetAddOption.WITHETAG | SortedSetAddOption.IFETAGGREATER | SortedSetAddOption.IFETAGMATCH)) != 0)
+                header.SetWithETagFlag();
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));

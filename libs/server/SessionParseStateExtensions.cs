@@ -634,8 +634,9 @@ namespace Garnet.server
         /// <param name="nextIdxStep">Number of indexes to skip before reading the next element</param>
         /// <param name="etag">Etag input, -1 unless IFETAGGREATER or IFETAGMATCH options are specified</param>
         /// <returns>True if value parsed successfully</returns>
-        internal static bool TryGetSortedSetAddOption(this SessionParseState parseState, int idx, out SortedSetAddOption value, out int nextIdxStep, ref long etag)
+        internal static bool TryGetSortedSetAddOption(this SessionParseState parseState, int idx, out SortedSetAddOption value, out int nextIdxStep, out long etag)
         {
+            etag = -1;
             nextIdxStep = 0;
             value = SortedSetAddOption.None;
             var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
@@ -673,6 +674,35 @@ namespace Garnet.server
             else return false;
 
             return true;
+        }
+
+        /// <summary>
+        /// Parse sorted set add options from parse state starting at specified index
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="startIdx">The first argument index</param>
+        /// <param name="nextIdxStep">Number of indexes to skip before reading the next element</param>
+        /// <param name="etag">Etag input, -1 unless IFETAGGREATER or IFETAGMATCH options are specified</param>
+        /// <returns>Parsed options</returns>
+        internal static SortedSetAddOption GetSortedSetAddOptions(this SessionParseState parseState, int startIdx, out int nextIdxStep, out long etag)
+        {
+            var options = SortedSetAddOption.None;
+            etag = -1;
+
+            var currTokenIdx = startIdx;
+            while (currTokenIdx < parseState.Count)
+            {
+                if (!parseState.TryGetSortedSetAddOption(currTokenIdx, out var currOption, out nextIdxStep, out var parsedEtag))
+                    break;
+
+                options |= currOption;
+                currTokenIdx += nextIdxStep + 1;
+                if (parsedEtag != -1)
+                    etag = parsedEtag;
+            }
+
+            nextIdxStep = currTokenIdx - startIdx;
+            return options;
         }
 
         /// <summary>
