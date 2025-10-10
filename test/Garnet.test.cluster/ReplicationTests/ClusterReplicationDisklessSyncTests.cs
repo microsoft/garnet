@@ -3,11 +3,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
-using System.Diagnostics;
 
 namespace Garnet.test.cluster
 {
@@ -419,7 +419,7 @@ namespace Garnet.test.cluster
             try
             {
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
-                var _resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOneIndex, primaryNodeIndex: primaryIndex, failEx:false, logger: context.logger);
+                var _resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOneIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
                 ClassicAssert.AreEqual("Wait for sync task faulted", _resp);
             }
             finally
