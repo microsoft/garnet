@@ -61,5 +61,9 @@ namespace Garnet.common
         /// Replication InProgress during diskless replica attach sync operation
         /// </summary>
         Replication_InProgress_During_Diskless_Replica_Attach_Sync,
+        /// <summary>
+        /// Replication diskless sync reset cts
+        /// </summary>
+        Replication_Diskless_Sync_Reset_Cts
     }
 }
