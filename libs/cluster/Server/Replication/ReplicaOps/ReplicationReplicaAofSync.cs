@@ -9,13 +9,16 @@ namespace Garnet.cluster
 {
     internal sealed partial class ReplicationManager : IDisposable
     {
-        ReplicaAofSyncReplayTask replicaAofSyncTask = null;
+        readonly ReplicaReplayTask[] replicaReplayTasks;
 
-        /// <summary>
-        /// Reset background replay iterator
-        /// </summary>
-        public void ResetReplayIterator()
-            => replicaAofSyncTask?.ResetReplayIterator();
+        public void DisposeReplayTasks()
+        {
+            for (var i = 0; i < replicaReplayTasks.Length; i++)
+            {
+                replicaReplayTasks[i]?.Dispose();
+                replicaReplayTasks[i] = null;
+            }
+        }
 
         /// <summary>
         /// Apply primary AOF records.
@@ -87,7 +90,7 @@ namespace Garnet.cluster
                 }
 
                 // Check that sublogIdx received is one expected
-                replicaAofSyncTask?.ValidateSublogIndex(sublogIdx);
+                replicaReplayTasks[sublogIdx]?.ValidateSublogIndex(sublogIdx);
 
                 // Enqueue to AOF
                 _ = clusterProvider.storeWrapper.appendOnlyFile?.UnsafeEnqueueRaw(
@@ -95,26 +98,26 @@ namespace Garnet.cluster
                     new Span<byte>(record, recordLength),
                     noCommit: clusterProvider.serverOptions.EnableFastCommit);
 
-                replicaAofSyncTask ??= new ReplicaAofSyncReplayTask(sublogIdx, clusterProvider, logger);
+                replicaReplayTasks[sublogIdx] ??= new ReplicaReplayTask(sublogIdx, clusterProvider, logger);
 
                 if (storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0)
                 {
                     // Synchronous replay
-                    replicaAofSyncTask.Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
+                    replicaReplayTasks[sublogIdx].Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
                 }
                 else
                 {
                     // Initialize iterator and run background task once
-                    replicaAofSyncTask.InitializeIterator(previousAddress);
+                    replicaReplayTasks[sublogIdx].InitialiazeBackgroundReplayTask(previousAddress);
 
                     // Throttle to give the opportunity to the background replay task to catch up
-                    replicaAofSyncTask?.ThrottlePrimary();
+                    replicaReplayTasks[sublogIdx].ThrottlePrimary();
                 }
             }
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ProcessPrimaryStream");
-                ResetReplayIterator();
+                DisposeReplayTasks();
                 throw new GarnetException(ex.Message, ex, LogLevel.Warning, clientResponse: false);
             }
         }

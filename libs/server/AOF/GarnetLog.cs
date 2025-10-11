@@ -1,12 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using Tsavorite.core;
-using Microsoft.Extensions.Logging;
 using System.Diagnostics;
-using System.Threading.Tasks;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -139,8 +139,8 @@ namespace Garnet.server
             return shardedLog.sublog[hash % shardedLog.Length];
         }
 
-        public unsafe int UnsafeGetLength(byte* headerPtr)
-            => GetSubLog(0).UnsafeGetLength(headerPtr);
+        public unsafe int UnsafeGetLength(int sublogIdx, byte* headerPtr)
+            => GetSubLog(sublogIdx).UnsafeGetLength(headerPtr);
 
         public int UnsafeGetLogPageSizeBits()
             => GetSubLog(0).UnsafeGetLogPageSizeBits();

@@ -116,7 +116,7 @@ namespace Garnet.server
         /// <summary>
         /// Delay for background task used to refresh tail timestamp for stalled sublogs when SharedLog is used.
         /// </summary>
-        public int AofRefreshSublogTailFrequencyMs = 10;        
+        public int AofRefreshSublogTailFrequencyMs = 10;
 
         /// <summary>
         /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.

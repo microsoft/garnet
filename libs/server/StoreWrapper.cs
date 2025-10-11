@@ -197,7 +197,7 @@ namespace Garnet.server
             this.sessionLogger = loggerFactory?.CreateLogger("Session");
             this.accessControlList = accessControlList;
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
-            this.loggingFrequency = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);                        
+            this.loggingFrequency = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
             logger?.LogTrace("StoreWrapper logging frequency: {loggingFrequency} seconds.", this.loggingFrequency);
 

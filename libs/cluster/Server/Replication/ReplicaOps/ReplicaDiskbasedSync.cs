@@ -105,7 +105,7 @@ namespace Garnet.cluster
                     }
 
                     // Reset background replay iterator
-                    ResetReplayIterator();
+                    DisposeReplayTasks();
 
                     // Reset replication offset
                     replicationOffset.SetValue(0);

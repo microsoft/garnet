@@ -138,6 +138,6 @@ namespace Resp.benchmark
         public int AofSublogCount { get; set; }
 
         [Option("sharded-keys", Required = false, Default = -1, HelpText = "Number of shards to consider when building key space (used for perferct sharding for sublog ideal benchmarking).")]
-        public int ShardedKeys { get; set; }        
+        public int ShardedKeys { get; set; }
     }
 }

@@ -287,7 +287,7 @@ namespace Garnet.cluster
             Guid objectStoreIndexToken = default;
             string objectStorePrimaryReplId = null;
             var objectCheckpointCoveredAofAddress = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, long.MaxValue);
-            storeWrapper.objectStore?.GetLatestCheckpointTokens(out objectStoreHLogToken, out objectStoreIndexToken, out objectStoreVersion);            
+            storeWrapper.objectStore?.GetLatestCheckpointTokens(out objectStoreHLogToken, out objectStoreIndexToken, out objectStoreVersion);
             if (objectStoreHLogToken != default)
                 GetCheckpointCookieMetadata(StoreType.Object, objectStoreHLogToken, ref objectCheckpointCoveredAofAddress, out objectStorePrimaryReplId);
 
@@ -310,10 +310,10 @@ namespace Garnet.cluster
             };
             return entry;
 
-            void GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken, ref AofAddress recoveredSafeAofAddress, out string RecoveredReplicationId) 
+            void GetCheckpointCookieMetadata(StoreType storeType, Guid fileToken, ref AofAddress recoveredSafeAofAddress, out string RecoveredReplicationId)
             {
                 RecoveredReplicationId = null;
-                if (fileToken == default) return ;
+                if (fileToken == default) return;
                 var ckptManager = clusterProvider.GetReplicationLogCheckpointManager(storeType);
                 var pageSizeBits = storeType == StoreType.Main ? clusterProvider.serverOptions.PageSizeBits() : clusterProvider.serverOptions.ObjectStorePageSizeBits();
                 using (var deltaFileDevice = ckptManager.GetDeltaLogDevice(fileToken))

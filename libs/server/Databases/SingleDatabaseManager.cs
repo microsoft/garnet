@@ -2,13 +2,13 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
-using System.Diagnostics;
 
 namespace Garnet.server
 {

@@ -240,7 +240,7 @@ namespace Garnet
 
         [IntRangeValidation(1, int.MaxValue)]
         [Option("aof-sublog-refresh-tail-freq", Required = false, HelpText = "Refresh sublog tail background task execution frequency.")]
-        public int AofRefreshSublogTailFrequencyMs { get; set; }        
+        public int AofRefreshSublogTailFrequencyMs { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("aof-commit-freq", Required = false, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]

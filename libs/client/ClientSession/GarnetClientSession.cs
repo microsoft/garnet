@@ -346,6 +346,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 1
             while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
             {
                 Flush();
@@ -353,6 +354,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 2
             while (!RespWriteUtils.TryWriteBulkString(appendLog, ref curr, end))
             {
                 Flush();
@@ -360,6 +362,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 3
             while (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
             {
                 Flush();
@@ -367,6 +370,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 4
             while (!RespWriteUtils.TryWriteArrayItem(sublogIdx, ref curr, end))
             {
                 Flush();
@@ -374,6 +378,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 5
             while (!RespWriteUtils.TryWriteArrayItem(previousAddress, ref curr, end))
             {
                 Flush();
@@ -381,6 +386,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 6
             while (!RespWriteUtils.TryWriteArrayItem(currentAddress, ref curr, end))
             {
                 Flush();
@@ -388,6 +394,7 @@ namespace Garnet.client
             }
             offset = curr;
 
+            // 7
             while (!RespWriteUtils.TryWriteArrayItem(nextAddress, ref curr, end))
             {
                 Flush();
@@ -398,6 +405,7 @@ namespace Garnet.client
             if (payloadLength > networkBufferSettings.sendBufferSize)
                 throw new Exception($"Payload length {payloadLength} is larger than bufferSize {networkBufferSettings.sendBufferSize} bytes");
 
+            // 8
             while (!RespWriteUtils.TryWriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
             {
                 Flush();

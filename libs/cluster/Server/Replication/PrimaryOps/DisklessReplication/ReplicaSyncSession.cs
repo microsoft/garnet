@@ -210,7 +210,7 @@ namespace Garnet.cluster
 
             var aofBeginAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.BeginAddress;
             var aofTailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
-            var outOfRangeAof = replicaSyncMetadata.currentAofTailAddress.IsOutOfRange(aofBeginAddress,aofTailAddress);
+            var outOfRangeAof = replicaSyncMetadata.currentAofTailAddress.IsOutOfRange(aofBeginAddress, aofTailAddress);
 
             var aofTooLarge = aofTailAddress.AggregateDiff(replicaSyncMetadata.currentAofTailAddress) > clusterProvider.serverOptions.ReplicaDisklessSyncFullSyncAofThresholdValue();
 

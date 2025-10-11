@@ -18,7 +18,7 @@ namespace Garnet.cluster
         StoreWrapper storeWrapper,
         ClusterProvider clusterProvider,
         AofAddress replicaAofBeginAddress,
-        AofAddress replicaAofTailAddress,        
+        AofAddress replicaAofTailAddress,
         SyncMetadata replicaSyncMetadata = null,
         CancellationToken token = default,
         string replicaNodeId = null,

@@ -1,8 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using Garnet.common;
 using System.Text;
+using Garnet.common;
 
 namespace Resp.benchmark
 {
@@ -105,7 +105,7 @@ namespace Resp.benchmark
 
             this.ttl = ttl;
 
-            if(shardedKeys > 0)
+            if (shardedKeys > 0)
                 GenerateSlotKeys(shardedKeys);
         }
 

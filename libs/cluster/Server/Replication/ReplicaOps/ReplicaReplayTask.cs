@@ -13,80 +13,33 @@ namespace Garnet.cluster
 {
     internal sealed partial class ReplicationManager : IDisposable
     {
-        internal sealed class ReplicaAofSyncReplayTask(int sublogIdx, ClusterProvider clusterProvider, ILogger logger = null) : IBulkLogEntryConsumer, IDisposable
+        internal sealed class ReplicaReplayTask(int sublogIdx, ClusterProvider clusterProvider, ILogger logger = null) : IBulkLogEntryConsumer, IDisposable
         {
             readonly int sublogIdx = sublogIdx;
             readonly ClusterProvider clusterProvider = clusterProvider;
+            readonly CancellationTokenSource cts = new();
             readonly ILogger logger = logger;
-
             TsavoriteLogScanSingleIterator replayIterator = null;
-            CancellationTokenSource replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.replicationManager.ctsRepManager.Token);
             SingleWriterMultiReaderLock activeReplay;
-
-            public void ValidateSublogIndex(int sublogIdx)
-            {
-                if (sublogIdx != this.sublogIdx)
-                    throw new GarnetException($"SublogIdx mismatch; expected:{this.sublogIdx} - received:{sublogIdx}");
-            }
-
-            public void InitializeIterator(long startAddress)
-            {
-                if (replayIterator == null)
-                {
-                    replayIterator = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(sublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
-                    _ = Task.Run(ReplicaReplayTask);
-                }
-            }
 
             public void Dispose()
             {
-                replicaReplayTaskCts.Cancel();
+                cts.Cancel();
                 activeReplay.WriteLock();
-                replicaReplayTaskCts.Dispose();
+                cts.Dispose();
                 replayIterator?.Dispose();
             }
 
-            /// <summary>
-            /// Reset background replay iterator
-            /// </summary>
-            public void ResetReplayIterator()
-            {
-                ResetReplayCts();
-                replayIterator?.Dispose();
-                replayIterator = null;
-
-                void ResetReplayCts()
-                {
-                    if (replicaReplayTaskCts == null)
-                    {
-                        replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.replicationManager.ctsRepManager.Token);
-                    }
-                    else
-                    {
-                        replicaReplayTaskCts.Cancel();
-                        try
-                        {
-                            activeReplay.WriteLock();
-                            replicaReplayTaskCts.Dispose();
-                            replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(clusterProvider.replicationManager.ctsRepManager.Token);
-                        }
-                        finally
-                        {
-                            activeReplay.WriteUnlock();
-                        }
-                    }
-                }
-            }
-
+            #region IBulkLogEntryConsumer
             public unsafe void Consume(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
             {
                 clusterProvider.replicationManager.SetSublogReplicationOffset(sublogIdx, currentAddress);
                 var ptr = record;
                 while (ptr < record + recordLength)
                 {
-                    replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
+                    cts.Token.ThrowIfCancellationRequested();
                     var entryLength = clusterProvider.storeWrapper.appendOnlyFile.HeaderSize;
-                    var payloadLength = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetLength(ptr);
+                    var payloadLength = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetLength(sublogIdx, ptr);
                     if (payloadLength > 0)
                     {
                         clusterProvider.replicationManager.AofProcessor.ProcessAofRecordInternal(sublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
@@ -114,12 +67,56 @@ namespace Garnet.cluster
 
                 if (clusterProvider.replicationManager.GetSublogReplicationOffset(sublogIdx) != nextAddress)
                 {
-                    logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", recordLength, currentAddress, nextAddress, clusterProvider.replicationManager.ReplicationOffset[sublogIdx]);
-                    throw new GarnetException($"ReplicaReplayTask.Consume NextAddress Mismatch recordeLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{clusterProvider.replicationManager.ReplicationOffset[sublogIdx]}", LogLevel.Warning, clientResponse: false);
+                    logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", sublogIdx, recordLength, currentAddress, nextAddress, clusterProvider.replicationManager.ReplicationOffset[sublogIdx]);
+                    throw new GarnetException("Failed validating integrity of replay", LogLevel.Warning, clientResponse: false);
                 }
             }
 
             public void Throttle() { }
+            #endregion
+
+            public void ValidateSublogIndex(int sublogIdx)
+            {
+                if (sublogIdx != this.sublogIdx)
+                    throw new GarnetException($"SublogIdx mismatch; expected:{this.sublogIdx} - received:{sublogIdx}");
+            }
+
+            public void InitialiazeBackgroundReplayTask(long startAddress)
+            {
+                if (replayIterator == null)
+                {
+                    replayIterator = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(sublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
+                    _ = Task.Run(BackgroundReplayTask);
+                }
+
+                async Task BackgroundReplayTask()
+                {
+                    var readLock = activeReplay.TryReadLock();
+                    try
+                    {
+                        if (!readLock)
+                            throw new GarnetException("Failed to acquire replayLock");
+                        while (true)
+                        {
+                            cts.Token.ThrowIfCancellationRequested();
+                            await replayIterator.BulkConsumeAllAsync(
+                                this,
+                                clusterProvider.serverOptions.ReplicaSyncDelayMs,
+                                maxChunkSize: 1 << 20,
+                                cts.Token);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ReplicaReplayTask - terminating");
+                    }
+                    finally
+                    {
+                        if (readLock)
+                            activeReplay.ReadUnlock();
+                    }
+                }
+            }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void ThrottlePrimary()
@@ -127,33 +124,8 @@ namespace Garnet.cluster
                 while (clusterProvider.serverOptions.ReplicationOffsetMaxLag != -1 && replayIterator != null &&
                     clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress.AggregateDiff(clusterProvider.replicationManager.ReplicationOffset) > clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag)
                 {
-                    replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
+                    cts.Token.ThrowIfCancellationRequested();
                     Thread.Yield();
-                }
-            }
-
-            public async Task ReplicaReplayTask()
-            {
-                try
-                {
-                    activeReplay.ReadLock();
-                    while (true)
-                    {
-                        replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
-                        await replayIterator.BulkConsumeAllAsync(
-                            this,
-                            clusterProvider.serverOptions.ReplicaSyncDelayMs,
-                            maxChunkSize: 1 << 20,
-                            replicaReplayTaskCts.Token);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ReplicaReplayTask - terminating");
-                }
-                finally
-                {
-                    activeReplay.ReadUnlock();
                 }
             }
         }

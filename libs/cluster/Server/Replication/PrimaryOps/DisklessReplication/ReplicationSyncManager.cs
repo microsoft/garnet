@@ -95,7 +95,7 @@ namespace Garnet.cluster
             replicaSyncSession = new ReplicaSyncSession(
                 ClusterProvider.storeWrapper,
                 ClusterProvider,
-                replicaAofBeginAddress:default,
+                replicaAofBeginAddress: default,
                 replicaAofTailAddress: default,
                 replicaSyncMetadata,
                 cts.Token,

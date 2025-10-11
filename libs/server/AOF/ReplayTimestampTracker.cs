@@ -9,8 +9,8 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
-using Tsavorite.core;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -32,21 +32,23 @@ namespace Garnet.server
             => [.. Enumerable.Range(0, aofSublogCount).Select(_ => new ConcurrentQueue<ReadSessionWaiter>())];
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void Hash(ref SpanByte key, long aofSublogCount, out long hash, out long sublogIdx, out long keyOffset) {
+        static void Hash(ref SpanByte key, long aofSublogCount, out long hash, out long sublogIdx, out long keyOffset)
+        {
             hash = (long)GarnetLog.Hash(ref key);
             Hash(aofSublogCount, hash, out sublogIdx, out keyOffset);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static void Hash(long aofSublogCount, long hash, out long sublogIdx, out long keyOffset) {
+        static void Hash(long aofSublogCount, long hash, out long sublogIdx, out long keyOffset)
+        {
             sublogIdx = hash % aofSublogCount;
             keyOffset = hash & (Size - 1);
-        }        
+        }
 
         readonly long[][] timestamps = InitializeTimestamps(aofSublogCount, Size);
 
         private static long[][] InitializeTimestamps(int aofSublogCount, int size)
-            => [.. Enumerable.Range(0, aofSublogCount).Select(_ => 
+            => [.. Enumerable.Range(0, aofSublogCount).Select(_ =>
             {
                 var array = GC.AllocateArray<long>(size, pinned: true);
                 Array.Clear(array);

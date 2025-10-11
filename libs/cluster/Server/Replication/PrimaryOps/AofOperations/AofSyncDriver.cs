@@ -125,8 +125,8 @@ namespace Garnet.cluster
             try
             {
                 var tasks = new List<Task>();
-                foreach (var aofSyncTask in aofSyncTasks)
-                    tasks.Add(aofSyncTask.RunAofSyncTask());
+                for (var i = 0; i < aofSyncTasks.Length; i++)
+                    tasks.Add(aofSyncTasks[i].RunAofSyncTask());
 
                 // Only add RefreshSublogTail task when using ShardedLog
                 if (aofSyncTasks.Length > 1)
