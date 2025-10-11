@@ -137,9 +137,9 @@ namespace Resp.benchmark
         /// <param name="slot"></param>
         /// <param name="len"></param>
         /// <returns></returns>
-        public byte[] GetRequest(out int len, int slot = 0)
+        public byte[] GetRequest(out int len, int slot = -1)
         {
-            if (shardedKeys > 0)
+            if (shardedKeys > 0 && slot != -1)
             {
                 len = lens[slot % shardedKeys];
                 return buffers[slot % shardedKeys];

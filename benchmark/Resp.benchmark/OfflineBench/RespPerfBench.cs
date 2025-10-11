@@ -372,7 +372,7 @@ namespace Resp.benchmark
                 workers[idx] = opts.Client switch
                 {
 
-                    ClientType.LightClient => new Thread(() => LightOperateThreadRunner(OpsPerThread, opType, rg)),
+                    ClientType.LightClient => new Thread(() => LightOperateThreadRunner(x, OpsPerThread, opType, rg)),
                     ClientType.GarnetClientSession => new Thread(() => GarnetClientSessionOperateThreadRunner(OpsPerThread, opType, rg)),
                     ClientType.SERedis => new Thread(() => SERedisOperateThreadRunner(OpsPerThread, opType, rg)),
                     ClientType.InProc => new Thread(() => InProcOperateThreadRunner(x, OpsPerThread, opType, rg)),
@@ -422,7 +422,7 @@ namespace Resp.benchmark
             return rg;
         }
 
-        private unsafe void LightOperateThreadRunner(int NumOps, OpType opType, ReqGen rg)
+        private unsafe void LightOperateThreadRunner(int threadId, int NumOps, OpType opType, ReqGen rg)
         {
             var lighClientOnResponseDelegate = new LightClient.OnResponseDelegateUnsafe(ReqGen.OnResponse);
             using ClientBase client = new LightClient(new IPEndPoint(IPAddress.Parse(opts.Address), opts.Port), (int)opType, lighClientOnResponseDelegate, rg.GetBufferSize(), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
@@ -439,7 +439,7 @@ namespace Resp.benchmark
             sw.Start();
             while (!done)
             {
-                byte[] buf = rg.GetRequest(out int len);
+                byte[] buf = rg.GetRequest(out var len, threadId);
                 client.Send(buf, len, (opType == OpType.MSET || opType == OpType.MPFADD) ? 1 : rg.BatchCount);
                 client.CompletePendingRequests();
                 numReqs++;
