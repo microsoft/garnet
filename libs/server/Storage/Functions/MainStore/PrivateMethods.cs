@@ -118,6 +118,10 @@ namespace Garnet.server
                     value.CopyTo(dst.Memory.Memory.Span);
                     break;
 
+                case RespCommand.VADD:
+                case RespCommand.VSIM:
+                case RespCommand.VEMB:
+                case RespCommand.VDIM:
                 case RespCommand.GET:
                     // Get value without RESP header; exclude expiration
                     if (value.LengthWithoutMetadata <= dst.Length)
@@ -242,12 +246,12 @@ namespace Garnet.server
                     throw new GarnetException($"Not enough space in {input.header.cmd} buffer");
 
                 case RespCommand.TTL:
-                    var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(value.MetadataSize == 8 ? value.ExtraMetadata : -1);
                     CopyRespNumber(ttlValue, ref dst);
                     return;
 
                 case RespCommand.PTTL:
-                    var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(value.MetadataSize == 8 ? value.ExtraMetadata : -1);
                     CopyRespNumber(pttlValue, ref dst);
                     return;
 
@@ -260,12 +264,12 @@ namespace Garnet.server
                     CopyRespTo(ref value, ref dst, start + functionsState.etagState.etagSkippedStart, end + functionsState.etagState.etagSkippedStart);
                     return;
                 case RespCommand.EXPIRETIME:
-                    var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(value.MetadataSize == 8 ? value.ExtraMetadata : -1);
                     CopyRespNumber(expireTime, ref dst);
                     return;
 
                 case RespCommand.PEXPIRETIME:
-                    var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(value.MetadataSize == 8 ? value.ExtraMetadata : -1);
                     CopyRespNumber(pexpireTime, ref dst);
                     return;
 
@@ -637,6 +641,27 @@ namespace Garnet.server
             resp.CopyTo(dst.Memory.Memory.Span);
         }
 
+        void CopyRespError(ReadOnlySpan<byte> errMsg, ref SpanByteAndMemory dst)
+        {
+            if (errMsg.Length + 3 < dst.SpanByte.Length)
+            {
+                var into = dst.SpanByte.AsSpan();
+
+                into[0] = (byte)'-';
+                errMsg.CopyTo(into[1..]);
+                "\r\n"u8.CopyTo(into[(1 + errMsg.Length)..]);
+                dst.SpanByte.Length = errMsg.Length + 3;
+                return;
+            }
+
+            dst.ConvertToHeap();
+            dst.Length = errMsg.Length + 1;
+            dst.Memory = functionsState.memoryPool.Rent(errMsg.Length + 1);
+            dst.Memory.Memory.Span[0] = (byte)'-';
+            errMsg.CopyTo(dst.Memory.Memory.Span[1..]);
+            "\r\n"u8.CopyTo(dst.Memory.Memory.Span[(3 + errMsg.Length)..]);
+        }
+
         void CopyRespNumber(long number, ref SpanByteAndMemory dst)
         {
             byte* curr = dst.SpanByte.ToPointer();
@@ -728,6 +753,11 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
 
+            if (input.header.cmd == RespCommand.VADD && input.arg1 != VectorManager.VADDAppendLogArg)
+            {
+                return;
+            }
+
             // We need this check because when we ingest records from the primary
             // if the input is zero then input overlaps with value so any update to RespInputHeader->flags
             // will incorrectly modify the total length of value.
@@ -748,6 +778,12 @@ namespace Garnet.server
         void WriteLogRMW(ref SpanByte key, ref RawStringInput input, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
+
+            if (input.header.cmd == RespCommand.VADD && input.arg1 != VectorManager.VADDAppendLogArg)
+            {
+                return;
+            }
+
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(

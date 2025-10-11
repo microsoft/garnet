@@ -22,6 +22,10 @@ namespace Garnet
                 // Start the server
                 server.Start();
 
+                // HACK HACK HACK
+                VectorManager.StartLogging();
+                // END HACK HACK HACK
+
                 Thread.Sleep(Timeout.Infinite);
             }
             catch (Exception ex)
