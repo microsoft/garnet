@@ -387,43 +387,21 @@ namespace Garnet.server
             nint dataCallbackContext
         )
         {
-            var start = Stopwatch.GetTimestamp();
-
             // Takes: index, dataCallbackContext, data pointer, data length, and returns nothing
             var dataCallbackDel = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)dataCallback;
 
-            ref var ctx = ref ActiveThreadSession.vectorContext;
-
             var enumerable = new VectorReadBatch(dataCallbackDel, dataCallbackContext, context, numKeys, SpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength));
 
-            var tsavoriteStart = Stopwatch.GetTimestamp();
+            ref var ctx = ref ActiveThreadSession.vectorContext;
 
             ctx.ReadWithPrefetch(ref enumerable);
+
             enumerable.CompletePending(ref ctx);
-
-            var tsavoriteStop = Stopwatch.GetTimestamp();
-
-            var stop = Stopwatch.GetTimestamp();
-
-            long* counters;
-            if ((counters = Counters) != null)
-            {
-                var id = Thread.GetCurrentProcessorId() & CounterMask;
-
-                var startIx = id * 128 / sizeof(long);
-
-                _ = Interlocked.Increment(ref counters[startIx + 0]);
-                _ = Interlocked.Add(ref counters[startIx + 1], numKeys);
-                _ = Interlocked.Add(ref counters[startIx + 2], stop - start);
-                _ = Interlocked.Add(ref counters[startIx + 3], tsavoriteStop - tsavoriteStart);
-            }
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
         {
-            var start = Stopwatch.GetTimestamp();
-
             var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength);
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
@@ -431,33 +409,13 @@ namespace Garnet.server
             var valueSpan = SpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
             SpanByte outputSpan = default;
 
-            var tsavoriteStart = Stopwatch.GetTimestamp();
-
             var status = ctx.Upsert(ref keyWithNamespace, ref input, ref valueSpan, ref outputSpan);
             if (status.IsPending)
             {
                 CompletePending(ref status, ref outputSpan, ref ctx);
             }
 
-            var tsavoriteStop = Stopwatch.GetTimestamp();
-
-            var ret = status.IsCompletedSuccessfully ? (byte)1 : default;
-
-            var stop = Stopwatch.GetTimestamp();
-
-            long* counters;
-            if ((counters = Counters) != null)
-            {
-                var id = Thread.GetCurrentProcessorId() & CounterMask;
-
-                var startIx = id * 128 / sizeof(long);
-
-                _ = Interlocked.Increment(ref counters[startIx + 4]);
-                _ = Interlocked.Add(ref counters[startIx + 5], stop - start);
-                _ = Interlocked.Add(ref counters[startIx + 6], tsavoriteStop - tsavoriteStart);
-            }
-
-            return ret;
+            return status.IsCompletedSuccessfully ? (byte)1 : default;
         }
 
         private static unsafe bool WriteCallbackManaged(ulong context, ReadOnlySpan<byte> key, ReadOnlySpan<byte> data)
@@ -1776,84 +1734,6 @@ namespace Garnet.server
                 throw new NotImplementedException($"{valueType}");
             }
         }
-
-        // Hack hack hack logging
-
-        private static long[] CountersArr;
-        private static unsafe long* Counters;
-        private static int CounterMask;
-        private static Task LogTask;
-
-        public static void StartLogging()
-        {
-            Debug.Assert(LogTask == null);
-
-            var counterCount = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount);
-            CounterMask = counterCount - 1;
-            CountersArr = GC.AllocateArray<long>(128 / sizeof(long) * counterCount, pinned: true);
-            unsafe
-            {
-                Counters = (long*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(CountersArr));
-            }
-
-            LogTask = Task.Run(
-                async () =>
-                {
-                    while (true)
-                    {
-                        var totalReadCallbacks = 0L;
-                        var totalReadKeys = 0L;
-                        var totalTicksInReads = 0L;
-                        var totalTicksInTsavoriteReads = 0L;
-                        var totalWriteCallbacks = 0L;
-                        var totalTicksInWrites = 0L;
-                        var totalTicksInTsavoriteWrites = 0L;
-
-                        for (var i = 0; i < Environment.ProcessorCount; i++)
-                        {
-                            var start = i * 128 / sizeof(long);
-
-                            unsafe
-                            {
-                                totalReadCallbacks += Volatile.Read(ref Counters[start + 0]);
-                                totalReadKeys += Volatile.Read(ref Counters[start + 1]);
-                                totalTicksInReads += Volatile.Read(ref Counters[start + 2]);
-                                totalTicksInTsavoriteReads += Volatile.Read(ref Counters[start + 3]);
-                                totalWriteCallbacks += Volatile.Read(ref Counters[start + 4]);
-                                totalTicksInWrites += Volatile.Read(ref Counters[start + 5]);
-                                totalTicksInTsavoriteWrites += Volatile.Read(ref Counters[start + 6]);
-                            }
-                        }
-
-                        var timeInReads = TimeSpan.FromSeconds(totalTicksInReads / (double)Stopwatch.Frequency);
-                        var timeInTsavoriteReads = TimeSpan.FromSeconds(totalTicksInTsavoriteReads / (double)Stopwatch.Frequency);
-                        var readDifference = timeInReads - timeInTsavoriteReads;
-                        var timeInWrites = TimeSpan.FromSeconds(totalTicksInWrites / (double)Stopwatch.Frequency);
-                        var timeInTsavoriteWrites = TimeSpan.FromSeconds(totalTicksInTsavoriteWrites / (double)Stopwatch.Frequency);
-                        var writeDifference = timeInWrites - timeInTsavoriteWrites;
-
-                        var now = DateTime.UtcNow;
-
-                        Console.WriteLine($"[{now:u}] Reads Callbacks: {totalReadCallbacks:N0}");
-                        Console.WriteLine($"[{now:u}] Read Keys: {totalReadKeys:N0}");
-                        Console.WriteLine($"[{now:u}] Read Callbacks Duration: {timeInReads.TotalNanoseconds:N0}ns");
-                        Console.WriteLine($"[{now:u}] Tsavorite ReadWithPrefetch duration: {timeInTsavoriteReads.TotalNanoseconds:N0}ns");
-                        Console.WriteLine($"[{now:u}] Read callback - Tsavorite difference: {readDifference.TotalNanoseconds:N0}ns");
-
-                        Console.WriteLine($"[{now:u}] Write Callbacks: {totalWriteCallbacks:N0}");
-                        Console.WriteLine($"[{now:u}] Write Callbacks Duration: {timeInWrites.TotalNanoseconds:N0}ns");
-                        Console.WriteLine($"[{now:u}] Tsavorite Upsert duration: {timeInTsavoriteWrites.TotalNanoseconds:N0}ns");
-                        Console.WriteLine($"[{now:u}] Write callback - Tsavorite difference {writeDifference.TotalNanoseconds:N0}ns");
-
-                        Console.WriteLine("-----");
-
-                        await Task.Delay(10_000);
-                    }
-                }
-            );
-        }
-
-        // End hack hack hack logging
 
         [Conditional("DEBUG")]
         private static void AssertHaveStorageSession()
