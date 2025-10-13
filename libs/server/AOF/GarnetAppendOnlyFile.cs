@@ -11,6 +11,8 @@ namespace Garnet.server
     {
         const long kFirstValidAofAddress = 64;
 
+        public long TotalSize() => Log.TailAddress.AggregateDiff(Log.BeginAddress);
+
         public readonly ReplayTimestampTracker replayTimestampTracker = new((int)serverOptions.AofSublogCount);
         public GarnetLog Log { get; private set; } = new(serverOptions, logSettings, logger);
         readonly GarnetServerOptions serverOptions = serverOptions;

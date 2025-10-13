@@ -412,6 +412,13 @@ namespace Resp.benchmark
                     var count = sessions[0].DbSize();
                     Console.WriteLine($"Bandwidth: {bytesPerSecond:N2} GiB/sec");
                     Console.WriteLine($"[DB Size: {count}]");
+                    if (sessions[0].StoreWrapper.appendOnlyFile != null)
+                    {
+                        var aofSize = sessions[0].StoreWrapper.appendOnlyFile.TotalSize();
+                        var tpt = (aofSize / seconds) / (double)1_000_000_000;
+                        Console.WriteLine($"[AOF Total Size]:{aofSize:N2} bytes");
+                        Console.WriteLine($"[AOF Append Tpt]:{tpt:N2} GiB/sec");
+                    }
                 }
             }
 

@@ -126,6 +126,8 @@ namespace Garnet.server
         /// </summary>
         public byte SessionAsking { get; set; }
 
+        public StoreWrapper StoreWrapper => this.storeWrapper;
+
         /// <summary>
         /// If set, commands can use this to enumerate details about the server or other sessions.
         ///
