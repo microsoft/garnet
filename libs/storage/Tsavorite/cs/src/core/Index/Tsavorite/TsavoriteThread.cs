@@ -115,7 +115,7 @@ namespace Tsavorite.core
                                                                     ref PendingContext<TInput, TOutput, TContext> pendingContext, out AsyncIOContext newRequest)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
-            Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquision");
+            Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquisition");
             newRequest = default;
 
             if (request.diskLogRecord.IsSet)

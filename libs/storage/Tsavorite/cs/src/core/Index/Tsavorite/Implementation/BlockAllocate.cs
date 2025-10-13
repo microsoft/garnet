@@ -140,7 +140,7 @@ namespace Tsavorite.core
 
                 if (VerifyInMemoryAddresses(ref stackCtx))
                 {
-                    if (!stackCtx.hei.IsReadCache || newLogicalAddress > stackCtx.hei.Address)
+                    if (!stackCtx.hei.IsReadCache || newLogicalAddress > AbsoluteAddress(stackCtx.hei.Address))
                         return true;
 
                     // This allocation is below the necessary address so abandon it and repeat the loop.

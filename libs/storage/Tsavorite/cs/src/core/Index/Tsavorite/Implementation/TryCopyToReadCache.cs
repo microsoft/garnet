@@ -3,6 +3,7 @@
 
 namespace Tsavorite.core
 {
+    using System.Diagnostics;
 #pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
 
@@ -34,6 +35,10 @@ namespace Tsavorite.core
 
             stackCtx.SetNewRecord(newLogicalAddress | RecordInfo.kIsReadCacheBitMask);
             _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+
+            // Assert this here as pre-check for the one in EnsureNoNewMainLogRecordWasSpliced.
+            Debug.Assert(!stackCtx.hei.IsReadCache || AbsoluteAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress) >= readCacheBase.ClosedUntilAddress, "lowest-rcri.PreviousAddress should be above ClosedUntilAddress");
+            Debug.Assert(!stackCtx.hei.IsReadCache || !IsReadCache(LogRecord.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress).PreviousAddress), "lowest-rcri.PreviousAddress should be a main-log address");
 
             // Insert the new record by CAS'ing directly into the hash entry (readcache records are always CAS'd into the HashBucketEntry, never spliced).
             // It is possible that we will successfully CAS but subsequently fail due to a main log entry having been spliced in.

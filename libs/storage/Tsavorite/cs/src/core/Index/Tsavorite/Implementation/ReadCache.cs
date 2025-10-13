@@ -137,7 +137,7 @@ namespace Tsavorite.core
                 }
 
                 // Increment the trailing "lowest read cache" address (for the splice point). We'll look ahead from this to examine the next record.
-                stackCtx.recSrc.LowestReadCacheLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
+                stackCtx.recSrc.LowestReadCacheLogicalAddress = AbsoluteAddress(stackCtx.recSrc.LatestLogicalAddress);
                 stackCtx.recSrc.LowestReadCachePhysicalAddress = readCacheBase.GetPhysicalAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress);
 
                 var recordInfo = LogRecord.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress);
@@ -269,7 +269,7 @@ namespace Tsavorite.core
                 //  2. Call FindTag on that key in the main store to get the start of the hash chain.
                 //  3. Walk the hash chain's readcache entries, removing records in the "to be removed" range.
                 //     Do not remove Invalid records outside this range; that leads to race conditions.
-                Debug.Assert(!IsReadCache(rcRecordInfo.PreviousAddress) || rcRecordInfo.PreviousAddress < rcLogicalAddress, "Invalid record ordering in readcache");
+                Debug.Assert(!IsReadCache(rcRecordInfo.PreviousAddress) || AbsoluteAddress(rcRecordInfo.PreviousAddress) < rcLogicalAddress, "Invalid record ordering in readcache");
 
                 // Find the hash index entry for the key in the store's hash table.
                 HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(logRecord.Key));
@@ -281,7 +281,7 @@ namespace Tsavorite.core
             NextRecord:
                 if (readCacheBase.GetOffsetOnPage(rcLogicalAddress) + rcAllocatedSize > readCacheBase.PageSize)
                 {
-                    rcLogicalAddress = readCacheBase.GetLogicalAddressOfStartOfPage(1 + readCacheBase.GetPage(rcLogicalAddress));
+                    rcLogicalAddress = readCacheBase.GetFirstValidLogicalAddressOnPage(1 + readCacheBase.GetPage(rcLogicalAddress));
                     continue;
                 }
                 rcLogicalAddress += rcAllocatedSize;
@@ -309,8 +309,10 @@ namespace Tsavorite.core
 #endif
 
                 // If the record's address is above the eviction range, leave it there and track nextPhysicalAddress.
-                if (entry.Address >= rcToLogicalAddress)
+                if (AbsoluteAddress(entry.Address) >= rcToLogicalAddress)
                 {
+                    Debug.Assert(!IsReadCache(recordInfo.PreviousAddress) || entry.Address > recordInfo.PreviousAddress, "Invalid ordering in readcache chain");
+
                     nextPhysicalAddress = logRecord.physicalAddress;
                     entry.word = recordInfo.PreviousAddress;
                     continue;
@@ -322,8 +324,12 @@ namespace Tsavorite.core
                 {
                     ref var nextri = ref LogRecord.GetInfoRef(nextPhysicalAddress);
                     if (nextri.TryUpdateAddress(entry.Address, recordInfo.PreviousAddress))
+                    {
                         recordInfo.PreviousAddress = kTempInvalidAddress;     // The record is no longer in the chain
-                    entry.word = nextri.PreviousAddress;
+                        entry.word = nextri.PreviousAddress;
+                    }
+                    else
+                        Debug.Assert(entry.word == nextri.PreviousAddress, "We should be about to retry nextri.PreviousAddress");
                     continue;
                 }
 
