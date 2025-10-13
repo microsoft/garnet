@@ -325,7 +325,12 @@ namespace Tsavorite.core
 
         /// <summary>Create the flush buffer (for <see cref="ObjectAllocator{Tsavorite}"/> only)</summary>
         internal override CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger)
-            => new(bufferPool, IStreamBuffer.BufferSize, numberOfFlushBuffers, objectLogDevice ?? this.objectLogDevice, logger);
+        {
+            var localObjectLogDevice = objectLogDevice ?? this.objectLogDevice;
+            return localObjectLogDevice is not null
+                ? new(bufferPool, IStreamBuffer.BufferSize, numberOfFlushBuffers, localObjectLogDevice, logger)
+                : null;
+        }
 
         /// <summary>Create the flush buffer (for <see cref="ObjectAllocator{Tsavorite}"/> only)</summary>
         internal override CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger)
@@ -341,9 +346,17 @@ namespace Tsavorite.core
             // We flush within the DiskStreamWriteBuffer, so we do not use the asyncResult here for IO (until the final callback), but it has necessary fields.
 
             // Short circuit if we are using a null device
-            if ((device as NullDevice) != null)
+            if (device is NullDevice)
             {
                 device.WriteAsync(IntPtr.Zero, 0, 0, numBytesToWrite, callback, asyncResult);
+                return;
+            }
+
+            // Short circuit if we are not using flushBuffers (e.g. using ObjectAllocator for string-only purposes).
+            if (flushBuffers is null)
+            {
+                WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage),
+                                (uint)AlignedPageSizeBytes, callback, asyncResult, device);
                 return;
             }
 
@@ -423,8 +436,12 @@ namespace Tsavorite.core
                 srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
 
                 // Overflow Keys and Values are written to, and Object values are serialized to, this Stream.
-                var logWriter = new ObjectLogWriter<TStoreFunctions>(device, flushBuffers, storeFunctions);
-                _ = logWriter.OnBeginPartialFlush(objectLogNextRecordStartPosition);
+                ObjectLogWriter<TStoreFunctions> logWriter = null;
+                if (flushBuffers is not null)
+                {
+                    logWriter = new(device, flushBuffers, storeFunctions);
+                    _ = logWriter.OnBeginPartialFlush(objectLogNextRecordStartPosition);
+                }
 
                 // Include page header when calculating end address.
                 var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + startPadding + numBytesToWrite;
@@ -443,7 +460,8 @@ namespace Tsavorite.core
                         // Do not write v+1 records (e.g. during a checkpoint)
                         if (logicalAddress < fuzzyStartLogicalAddress || !logRecord.Info.IsInNewVersion)
                         {
-                            // Do not write objects for fully-inline records
+                            // Do not write objects for fully-inline records. This should always be false if we don't have a logWriter (i.e. no flushBuffers),
+                            // which would be the case where we were created to be used for inline string records only.
                             if (logRecord.Info.RecordHasObjects)
                             {
                                 var recordStartPosition = logWriter.GetNextRecordStartPosition();
@@ -476,10 +494,13 @@ namespace Tsavorite.core
                     numBytesToWrite = (uint)(aligned_end - alignedStartOffset);
                 }
 
-                // Finally write the main log page as part of OnPartialFlushComplete.
+                // Finally write the main log page as part of OnPartialFlushComplete, or directly if we had no flushBuffers.
                 // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
-                logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset,
-                    callback, asyncResult, out objectLogNextRecordStartPosition);
+                if (logWriter is not null)
+                    logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset,
+                        callback, asyncResult, out objectLogNextRecordStartPosition);
+                else
+                    device.WriteAsync((IntPtr)srcBuffer.GetValidPointer(), alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
             }
             finally
             {
