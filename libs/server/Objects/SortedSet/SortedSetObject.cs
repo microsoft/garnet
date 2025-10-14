@@ -385,7 +385,7 @@ namespace Garnet.server
                     SortedSetPersist(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZCOLLECT:
-                    SortedSetCollect(ref input, ref output);
+                    SortedSetCollect(ref output);
                     break;
                 case SortedSetOperation.GEOADD:
                     GeoAdd(ref input, ref output, respProtocolVersion);

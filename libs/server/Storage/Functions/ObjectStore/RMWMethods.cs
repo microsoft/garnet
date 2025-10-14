@@ -163,16 +163,17 @@ namespace Garnet.server
 
                             // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                             functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                            logRecord.ClearValueIfHeap(obj => { });
+                            logRecord.ClearValueIfHeap(_ => { });
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             logRecord.RemoveETag();
                             return false;
                         }
 
-                        if (output.HasValueUpdated)
+                        // Advance etag if the object was not explicitly marked as unchanged
+                        if (!output.IsObjectUnchanged)
                             logRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
 
-                        if (output.HasValueUpdated || hadETagPreMutation)
+                        if (!output.IsObjectUnchanged || hadETagPreMutation)
                             ETagState.ResetState(ref functionsState.etagState);
 
                         sizeInfo.AssertOptionals(logRecord.Info);
@@ -277,10 +278,12 @@ namespace Garnet.server
                             rmwInfo.Action = RMWAction.ExpireAndStop;
                             return false;
                         }
-                        if (output.HasValueUpdated)
+
+                        // Advance etag if the object was not explicitly marked as unchanged
+                        if (!output.IsObjectUnchanged)
                             dstLogRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
 
-                        if (output.HasValueUpdated || recordHadEtagPreMutation)
+                        if (!output.IsObjectUnchanged || recordHadEtagPreMutation)
                             ETagState.ResetState(ref functionsState.etagState);
 
                         break;

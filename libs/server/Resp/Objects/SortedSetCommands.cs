@@ -217,6 +217,11 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
+            // Validate min & max
+            if (!parseState.TryGetSortedSetMinMaxParameter(1, out _, out _) ||
+                !parseState.TryGetSortedSetMinMaxParameter(2, out _, out _))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT);
+
             var rangeOpts = SortedSetRangeOpts.None;
 
             switch (command)
@@ -600,6 +605,11 @@ namespace Garnet.server
             // Get the key for the Sorted Set
             var key = parseState.GetArgSliceByRef(0);
 
+            // Validate min & max
+            if (!parseState.TryGetSortedSetMinMaxParameter(1, out _, out _) ||
+                !parseState.TryGetSortedSetMinMaxParameter(2, out _, out _))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT);
+
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOUNT };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
@@ -657,6 +667,11 @@ namespace Garnet.server
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
 
+            // Validate min & max
+            if (!parseState.TryGetSortedSetLexMinMaxParameter(1, out _, out _, out _) ||
+                !parseState.TryGetSortedSetLexMinMaxParameter(2, out _, out _, out _))
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING);
+
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
@@ -712,6 +727,12 @@ namespace Garnet.server
 
             // Get the key for the Sorted Set
             var key = parseState.GetArgSliceByRef(0);
+
+            // Validate increment
+            if (!parseState.TryGetDouble(1, out _))
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+            }
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZINCRBY };
@@ -831,6 +852,21 @@ namespace Garnet.server
                     RespCommand.ZREMRANGEBYSCORE => SortedSetOperation.ZREMRANGEBYSCORE,
                     _ => throw new Exception($"Unexpected {nameof(SortedSetOperation)}: {command}")
                 };
+
+            // Validate input
+            if (op == SortedSetOperation.ZREMRANGEBYRANK)
+            {
+                if (!parseState.TryGetInt(1, out _) || 
+                    !parseState.TryGetInt(2, out _))
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+            }
+            else
+            {
+                if (!parseState.TryGetSortedSetMinMaxParameter(1, out _, out _) ||
+                    !parseState.TryGetSortedSetMinMaxParameter(2, out _, out _))
+                    return AbortWithErrorMessage(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT);
+            }
+
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };

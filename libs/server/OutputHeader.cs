@@ -28,9 +28,9 @@ namespace Garnet.server
         WrongType = 1 << 1,
 
         /// <summary>
-        /// Value updated
+        /// Value unchanged
         /// </summary>
-        ValueUpdated = 1 << 2,
+        ObjectUnchanged = 1 << 2,
     }
 
     /// <summary>

@@ -45,10 +45,10 @@ namespace Garnet.server
             (OutputFlags & OutputFlags.RemoveKey) == OutputFlags.RemoveKey;
 
         /// <summary>
-        /// True if output flag ValueUpdated is set
+        /// True if output flag ObjectUnchanged is set
         /// </summary>
-        public readonly bool HasValueUpdated =>
-            (OutputFlags & OutputFlags.ValueUpdated) == OutputFlags.ValueUpdated;
+        public readonly bool IsObjectUnchanged =>
+            (OutputFlags & OutputFlags.ObjectUnchanged) == OutputFlags.ObjectUnchanged;
 
         public GarnetObjectStoreOutput() => SpanByteAndMemory = new(null);
 

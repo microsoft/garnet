@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using Garnet.common;
 using Tsavorite.core;
+using static Garnet.server.SortedSetObject;
 
 namespace Garnet.server
 {
@@ -703,6 +704,88 @@ namespace Garnet.server
 
             nextIdxStep = currTokenIdx - startIdx;
             return options;
+        }
+
+        /// <summary>
+        /// Parse sorted set min or max parameter from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="idx">Argument index</param>
+        /// <param name="value">Parsed min / max value</param>
+        /// <param name="exclusive">True if min / max is exclusive</param>
+        /// <returns>True if parsed successfully</returns>
+        internal static bool TryGetSortedSetMinMaxParameter(this SessionParseState parseState, int idx, out double value, out bool exclusive)
+        {
+            exclusive = false;
+            var paramSpan = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            // adjust for exclusion
+            if (paramSpan[0] == '(')
+            {
+                paramSpan = paramSpan.Slice(1);
+                exclusive = true;
+            }
+
+            if (NumUtils.TryParseWithInfinity(paramSpan, out value))
+            {
+                if (exclusive && double.IsInfinity(value))
+                    exclusive = false;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Parse sorted set lexicographical min / max parameter from parse state at specified index
+        /// </summary>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="idx">Argument index</param>
+        /// <param name="limitChars">Parsed min / max limit characters</param>
+        /// <param name="limitExclusive">True if min / max is exclusive</param>
+        /// <param name="specialRanges">Special ranges enum to indicate infinity values</param>
+        /// <returns>True if parsed successfully</returns>
+        internal static bool TryGetSortedSetLexMinMaxParameter(this SessionParseState parseState, int idx, out ReadOnlySpan<byte> limitChars,
+            out bool limitExclusive, out SpecialRanges specialRanges)
+        {
+            limitChars = default;
+            limitExclusive = false;
+            specialRanges = SpecialRanges.None;
+
+            var paramSpan = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            switch (paramSpan[0])
+            {
+                case (byte)'-':
+                    specialRanges = SpecialRanges.InfiniteMin;
+                    return true;
+                case (byte)'+':
+                    specialRanges = SpecialRanges.InfiniteMax;
+                    return true;
+                case (byte)'[':
+                    limitChars = paramSpan.Slice(1);
+                    limitExclusive = false;
+                    break;
+                case (byte)'(':
+                    limitChars = paramSpan.Slice(1);
+                    limitExclusive = true;
+                    break;
+                default:
+                    return false;
+            }
+
+            if (limitChars.Length == 1)
+            {
+                if ((limitChars[0] == '-') || (limitChars[0] == '+'))
+                {
+                    // Redis accepts [+ yet in practice seems to treat it as a minimum.
+                    specialRanges = SpecialRanges.InfiniteMin;
+                    limitChars = default;
+                }
+            }
+
+            return true;
+
         }
 
         /// <summary>
