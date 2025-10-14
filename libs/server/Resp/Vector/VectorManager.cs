@@ -48,6 +48,8 @@ namespace Garnet.server
         {
             public int Count { get; }
 
+            private ILogger logger;
+
             private readonly ulong context;
             private readonly SpanByte lengthPrefixedKeys;
 
@@ -61,7 +63,7 @@ namespace Garnet.server
 
             private bool hasPending;
 
-            public VectorReadBatch(delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void> callback, nint callbackContext, ulong context, uint keyCount, SpanByte lengthPrefixedKeys)
+            public VectorReadBatch(delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void> callback, nint callbackContext, ulong context, uint keyCount, SpanByte lengthPrefixedKeys, ILogger logger = null)
             {
                 this.context = context;
                 this.lengthPrefixedKeys = lengthPrefixedKeys;
@@ -69,8 +71,16 @@ namespace Garnet.server
                 this.callback = callback;
                 this.callbackContext = callbackContext;
 
+                this.logger = logger;
+
                 currentIndex = 0;
                 Count = (int)keyCount;
+
+                if (Count <= 0)
+                {
+                    logger?.LogCritical("Illegal batch size {Count}", Count);
+                    throw new GarnetException($"Illegal batch size {Count}");
+                }
 
                 currentPtr = this.lengthPrefixedKeys.ToPointerWithMetadata();
                 currentLen = *(int*)currentPtr;
@@ -79,7 +89,13 @@ namespace Garnet.server
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void AdvanceTo(int i)
             {
-                Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
+                if (i < 0 || i >= Count)
+                {
+                    logger?.LogCritical("Tried to advance to {i}, while Count is {Count}", i, Count);
+                    throw new GarnetException("Trying to advance out of bounds");
+                }
+
+                //Debug.Assert(i >= 0 && i < Count, "Trying to advance out of bounds");
 
                 if (i == currentIndex)
                 {
@@ -93,7 +109,18 @@ namespace Garnet.server
                 if (i == (currentIndex + 1))
                 {
                     currentPtr += currentLen + sizeof(int); // Skip length prefix too
-                    Debug.Assert(currentPtr < lengthPrefixedKeys.ToPointerWithMetadata() + lengthPrefixedKeys.Length, "About to access out of bounds data");
+
+                    {
+                        var bounds = lengthPrefixedKeys.AsSpanWithMetadata();
+                        var start = (byte*)Unsafe.AsPointer(ref bounds[0]);
+                        var end = start + bounds.Length;
+                        if (currentPtr < start || currentPtr + sizeof(int) > end)
+                        {
+                            logger?.LogCritical("About to read out of bounds, start = {start}, end = {end}, currentPtr={currentPtr}", (nint)start, (nint)end, (nint)currentPtr);
+                            throw new GarnetException("About to access out of bounds data");
+                        }
+                    }
+                    //Debug.Assert(currentPtr < lengthPrefixedKeys.ToPointerWithMetadata() + lengthPrefixedKeys.Length, "About to access out of bounds data");
 
                     currentLen = *currentPtr;
 
@@ -311,6 +338,7 @@ namespace Garnet.server
         private static StorageSession ActiveThreadSession;
 
         private readonly ILogger logger;
+        private static ILogger StaticLogger;
 
         internal readonly int readLockShardCount;
         private readonly long readLockShardMask;
@@ -328,6 +356,7 @@ namespace Garnet.server
             }
 
             this.logger = logger;
+            StaticLogger ??= logger;
 
             // TODO: Probably configurable?
             // For now, nearest power of 2 >= process count;
@@ -390,7 +419,7 @@ namespace Garnet.server
             // Takes: index, dataCallbackContext, data pointer, data length, and returns nothing
             var dataCallbackDel = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)dataCallback;
 
-            var enumerable = new VectorReadBatch(dataCallbackDel, dataCallbackContext, context, numKeys, SpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength));
+            var enumerable = new VectorReadBatch(dataCallbackDel, dataCallbackContext, context, numKeys, SpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength), StaticLogger);
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
 
@@ -1123,6 +1152,17 @@ namespace Garnet.server
             if (input.header.cmd != RespCommand.VADD)
             {
                 throw new GarnetException($"Shouldn't be called with anything but VADD inputs, found {input.header.cmd}");
+            }
+
+            // Temp 
+            if (input.SerializedLength > 1_024)
+            {
+                logger?.LogCritical("RawStringInput is suspiciously large, {length} - {input}", input.SerializedLength, input);
+            }
+
+            if (key.Length > 1_024)
+            {
+                logger?.LogCritical("Key is suspiciously large, {length} - {key}", key.Length, key);
             }
 
             var inputCopy = input;
