@@ -435,7 +435,7 @@ namespace Garnet.server
                     databaseId = (byte)defaultDatabase.Id,
                     timestamp = Stopwatch.GetTimestamp()
                 };
-                AppendOnlyFile?.Enqueue(header, out _);
+                AppendOnlyFile?.Enqueue(ulong.MaxValue, header);
             }
         }
 

@@ -39,6 +39,7 @@ namespace Garnet.cluster
             #region IBulkLogEntryConsumer
             public unsafe void Consume(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
             {
+                ValidateSublogIndex(sublogIdx);
                 clusterProvider.replicationManager.SetSublogReplicationOffset(sublogIdx, currentAddress);
                 var ptr = record;
                 while (ptr < record + recordLength)
@@ -215,11 +216,11 @@ namespace Garnet.cluster
                 }
 
                 // Address check only if synchronous replication is enabled
-                if (storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0 && ReplicationOffset[sublogIdx] != storeWrapper.appendOnlyFile.Log.TailAddress[sublogIdx])
+                if (storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0 && replicationOffset[sublogIdx] != storeWrapper.appendOnlyFile.Log.TailAddress[sublogIdx])
                 {
                     logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.Log.TailAddress);
-                    logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", ReplicationOffset, storeWrapper.appendOnlyFile.Log.TailAddress);
-                    throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.Log.TailAddress}", LogLevel.Warning, clientResponse: false);
+                    logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", replicationOffset, storeWrapper.appendOnlyFile.Log.TailAddress);
+                    throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {replicationOffset}, aof.TailAddress {storeWrapper.appendOnlyFile.Log.TailAddress}", LogLevel.Warning, clientResponse: false);
                 }
 
                 // Check that sublogIdx received is one expected

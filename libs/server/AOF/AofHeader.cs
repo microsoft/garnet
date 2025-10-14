@@ -45,6 +45,11 @@ namespace Garnet.server
         [FieldOffset(12)]
         public int sessionID;
         /// <summary>
+        /// Transaction ID
+        /// </summary>
+        [FieldOffset(12)]
+        public int txnID;        
+        /// <summary>
         /// Unsafe truncate log (used with FLUSH command)
         /// </summary>
         [FieldOffset(1)]
@@ -59,6 +64,11 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(16)]
         public long timestamp;
+        /// <summary>
+        /// Used for multi-log replay
+        /// </summary>
+        [FieldOffset(16)]
+        public long logAccessMap;        
 
         public AofHeader()
         {

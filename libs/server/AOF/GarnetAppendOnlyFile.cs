@@ -4,6 +4,7 @@
 using System;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using Garnet.common;
 
 namespace Garnet.server
 {
@@ -40,10 +41,31 @@ namespace Garnet.server
         public void Initialize(in AofAddress beginAddress, in AofAddress committedUntilAddress, long lastCommitNum = 0)
             => Log.Initialize(beginAddress, committedUntilAddress, lastCommitNum);
 
-        public void Enqueue<THeader>(THeader userHeader, out long logicalAddress)
+        public void Enqueue<THeader>(ulong logAccessBitmap, THeader userHeader)
             where THeader : unmanaged
-            // FIXME: Add marker for every sublog involved in the TXN
-            => Log.GetSubLog(0).Enqueue(userHeader, out logicalAddress);
+        {
+            if (serverOptions.AofSublogCount == 1)
+            {
+                Log.GetSubLog(0).Enqueue(userHeader, out _);
+            }
+            else
+            {
+                try
+                {
+                    Log.LockSublogs(logAccessBitmap);
+                    var _logAccessBitmap = logAccessBitmap;
+                    while (_logAccessBitmap > 0)
+                    {
+                        var offset = _logAccessBitmap.GetNextOffset();
+                        Log.GetSubLog(offset).Enqueue(userHeader, out _);
+                    }
+                }
+                finally
+                {
+                    Log.UnlockSublogs(logAccessBitmap);
+                }
+            }
+        }
 
         public void EnqueueRefreshSublogTail(int sublogIdx, long timestamp)
         {
@@ -53,7 +75,7 @@ namespace Garnet.server
 
         public void EnqueueCustomProc<THeader, TInput>(THeader userHeader, ref TInput input, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
-            // FIXME: Handle custom proce enqueu in sharded environment
+            // FIXME: Handle custom proce enqueue in sharded environment
             => Log.GetSubLog(0).Enqueue(userHeader, ref input, out logicalAddress);
 
         public void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)

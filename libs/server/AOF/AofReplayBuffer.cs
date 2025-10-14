@@ -1,0 +1,304 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using System;
+using System.Collections.Generic;
+using Garnet.common;
+using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
+using System.Numerics;
+using System.Threading;
+using System.Diagnostics;
+
+namespace Garnet.server
+{    
+    public sealed unsafe partial class AofProcessor
+    {
+        /// <summary>
+        /// Transaction group replay coordinator is used to coordinate replay of transactions between sublogs
+        /// </summary>
+        /// <param name="participantCount"></param>
+        internal class TransactionGroupReplayCoordinator(int participantCount)
+        {
+            int count = participantCount;
+            /// <summary>
+            /// Allocating enough space to store the transaction groups from all participating sublogs
+            /// </summary>
+            readonly TransactionGroup[] participatingTxnGroups = new TransactionGroup[participantCount];
+            public TransactionGroup[] TxnGroups => participatingTxnGroups;
+            ManualResetEventSlim eventSlim = new(false);
+
+            /// <summary>
+            /// Add transaction group to be replayed
+            /// </summary>
+            /// <param name="sublogIdx"></param>
+            /// <param name="txnGroup"></param>
+            public void AddTransactionGroup(int sublogIdx, TransactionGroup txnGroup)
+            {
+                Debug.Assert(txnGroup.logAccessMap.IsSet(sublogIdx));
+                // Find position to add this transaction group
+                // E.g. sublogIdx:4 logAccessMap:0101 0100 offset: 1
+                // There shouldn't be a conflict here since each participating sublog in the transaction should have a unique spot in the participatingTxnGroup array
+                // logAccessMap is computed and provided at Enqueue of TxnStart in the primary <seealso cref="T:Garnet.server.TransactionManager.ComputeShardedLogAccess"/>
+                var offset = txnGroup.logAccessMap.GetOffset(sublogIdx);
+                Debug.Assert(offset <= participatingTxnGroups.Length);
+                participatingTxnGroups[offset] = txnGroup;
+            }
+
+            /// <summary>
+            /// Decrements participant count but does not set signal
+            /// </summary>
+            /// <returns>True if participant count reaches zero otherwise false</returns>
+            /// <exception cref="Exception"></exception>
+            public bool Signal()
+            {
+                var newValue = Interlocked.Decrement(ref count);
+                if (newValue > 0)
+                    return false;
+                else if (newValue == 0)
+                    return true;
+                else
+                    throw new Exception("Invalid count value < 0");
+            }
+
+            /// <summary>
+            /// Set underlying event
+            /// </summary>
+            public void Set() => eventSlim.Set();
+
+            /// <summary>
+            /// Wait for signal to be set
+            /// </summary>
+            public void Wait() => eventSlim.Wait();            
+            
+        }
+
+        /// <summary>
+        /// Transaction group contains logAccessMap and list of operations associated with this Txn
+        /// </summary>
+        /// <param name="logAccessBitmap"></param>
+        internal class TransactionGroup(ulong logAccessBitmap)
+        {
+            public ulong logAccessMap = logAccessBitmap;
+
+            public List<byte[]> operations = [];
+
+            public void Clear() => operations.Clear();
+        }
+
+        /// <summary>
+        /// Sublog replay buffer (one for each sublog)
+        /// </summary>
+        internal struct SublogReplayBuffer()
+        {
+            public readonly List<byte[]> fuzzyRegionOps = [];
+            public readonly Queue<TransactionGroup> txnGroupBuffer = [];
+            public readonly Dictionary<int, TransactionGroup> activeTxns = [];
+
+            public void AddTransactionGroup(int sessionID, ulong logAccessBitmap)
+                => activeTxns[sessionID] = new(logAccessBitmap);
+
+            public void AddToFuzzyRegionBuffer(TransactionGroup group, ReadOnlySpan<byte> commitMarker)
+            {
+                // Add commit marker operation and enqueue transaction group
+                fuzzyRegionOps.Add(commitMarker.ToArray());
+                txnGroupBuffer.Enqueue(group);
+            }
+        }
+
+        readonly AofReplayBuffer aofReplayBuffer;
+
+        public class AofReplayBuffer(AofProcessor aofProcessor, ILogger logger = null)
+        {
+            readonly AofProcessor aofProcessor = aofProcessor;
+            readonly SublogReplayBuffer[] sublogReplayBuffers = InitializeSublogBuffers(aofProcessor.storeWrapper.serverOptions.AofSublogCount);
+            readonly ConcurrentDictionary<int, TransactionGroupReplayCoordinator> txnReplayCoordinators = [];
+            readonly ILogger logger = logger;
+
+            internal static SublogReplayBuffer[] InitializeSublogBuffers(int AofSublogCount)
+            {
+                var sublogReplayBuffers = new SublogReplayBuffer[AofSublogCount];
+                for (var i = 0; i < sublogReplayBuffers.Length; i++)
+                    sublogReplayBuffers[i] = new();
+                return sublogReplayBuffers;
+            }
+
+            internal int FuzzyRegionBufferCount(int sublogIdx) => sublogReplayBuffers[sublogIdx].fuzzyRegionOps.Count;
+
+            internal void ClearFuzzyRegionBuffer(int sublogIdx) => sublogReplayBuffers[sublogIdx].fuzzyRegionOps.Clear();
+
+            /// <summary>
+            /// Add single operation to fuzzy region buffer
+            /// </summary>
+            /// <param name="sublogIdx"></param>
+            /// <param name="entry"></param>
+            internal unsafe void AddFuzzyRegionOperation(int sublogIdx, ReadOnlySpan<byte> entry) => sublogReplayBuffers[sublogIdx].fuzzyRegionOps.Add(entry.ToArray());
+
+            /// <summary>
+            /// This method will perform one of the followin
+            ///     1. TxnStart: Create a new transaction group
+            ///     2. TxnCommit: Replay or buffer transaction group depending if we are in fuzzyRegion. 
+            ///     3. TxnAbort: Clear corresponding sublog replay buffer.
+            ///     4. Default: Add an operation to an existing transaction group
+            /// </summary>
+            /// <param name="sublogIdx"></param>
+            /// <param name="header"></param>
+            /// <param name="ptr"></param>
+            /// <param name="length"></param>
+            /// <param name="asReplica"></param>
+            /// <returns>Returns true if a txn operation was processed and added otherwise false</returns>
+            /// <exception cref="GarnetException"></exception>
+            internal unsafe bool AddOrReplayTransactionOperation(int sublogIdx, AofHeader header, byte* ptr, int length, bool asReplica)
+            {
+                // First try to process this as an existing transaction
+                if (sublogReplayBuffers[sublogIdx].activeTxns.TryGetValue(header.sessionID, out var group))
+                {
+                    switch (header.opType)
+                    {
+                        case AofEntryType.TxnStart:
+                            throw new GarnetException("No nested transactions expected");
+                        case AofEntryType.TxnAbort:
+                            ClearSessionTxn();
+                            break;
+                        case AofEntryType.TxnCommit:
+                            if (aofProcessor.inFuzzyRegion)
+                            {
+                                // If in fuzzy region we want to record the commit marker and
+                                // buffer the transaction group for later replay
+                                var commitMarker = new ReadOnlySpan<byte>(ptr, length);
+                                sublogReplayBuffers[sublogIdx].AddToFuzzyRegionBuffer(group, commitMarker);
+                            }
+                            else
+                            {
+                                // Otherwise process transaction group immediately
+                                ProcessTransactionGroup(sublogIdx, header.sessionID, asReplica, group);
+                            }
+
+                            // We want to clear and remove in both cases to make space for next txn from session
+                            ClearSessionTxn();
+                            break;
+                        case AofEntryType.StoredProcedure:
+                            throw new GarnetException($"Unexpected AOF header operation type {header.opType} within transaction");
+                        default:
+                            group.operations.Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
+                            break;
+                    }
+
+                    void ClearSessionTxn()
+                    {
+                        sublogReplayBuffers[sublogIdx].activeTxns[header.sessionID].Clear();
+                        sublogReplayBuffers[sublogIdx].activeTxns.Remove(header.sessionID);
+                    }
+
+                    return true;
+                }
+
+                // See if you have detected a txn
+                switch (header.opType)
+                {
+                    case AofEntryType.TxnStart:
+                        sublogReplayBuffers[sublogIdx].AddTransactionGroup(header.sessionID, (ulong)header.logAccessMap);
+                        break;
+                    case AofEntryType.TxnAbort:
+                    case AofEntryType.TxnCommit:
+                        // We encountered a transaction end without start - this could happen because we truncated the AOF
+                        // after a checkpoint, and the transaction belonged to the previous version. It can safely
+                        // be ignored.
+                        break;
+                    default:
+                        // Continue processing
+                        return false;
+                }
+
+                // Processed this record succesfully
+                return true;
+            }
+
+            /// <summary>
+            /// Process fuzzy region operations if any
+            /// </summary>
+            /// <param name="sublogIdx"></param>
+            /// <param name="storeVersion"></param>
+            /// <param name="asReplica"></param>
+            internal void ProcessFuzzyRegionOperations(int sublogIdx, long storeVersion, bool asReplica)
+            {
+                var fuzzyRegionOps = sublogReplayBuffers[sublogIdx].fuzzyRegionOps;
+                if (fuzzyRegionOps.Count > 0)
+                    logger?.LogInformation("Replaying sublogIdx: {sublogIdx} - {fuzzyRegionBufferCount} records from fuzzy region for checkpoint {newVersion}", sublogIdx, fuzzyRegionOps.Count, storeVersion);
+                foreach (var entry in fuzzyRegionOps)
+                {
+                    fixed (byte* entryPtr = entry)
+                        _ = aofProcessor.ReplayOp(sublogIdx, entryPtr, entry.Length, asReplica);
+                }
+            }
+
+            /// <summary>
+            /// Process fuzzy region transaction groups
+            /// </summary>
+            /// <param name="sublogIdx"></param>
+            /// <param name="sessionID"></param>
+            /// <param name="asReplica"></param>
+            internal void ProcessFuzzyRegionTransactionGroup(int sublogIdx, int sessionID, bool asReplica)
+            {
+                // Process transaction groups in FIFO order
+                var txnGroup = sublogReplayBuffers[sublogIdx].txnGroupBuffer.Dequeue();
+                ProcessTransactionGroup(sublogIdx, sessionID, asReplica, txnGroup);
+            }
+
+            /// <summary>
+            /// Process provided transaction group
+            /// </summary>
+            /// <param name="sublogIdx"></param>
+            /// <param name="sessionID"></param>
+            /// <param name="asReplica"></param>
+            /// <param name="txnGroup"></param>
+            internal void ProcessTransactionGroup(int sublogIdx, int sessionID, bool asReplica, TransactionGroup txnGroup)
+            {
+                // No need to coordinate replay of transaction if operating with single sublog
+                if(aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1)
+                {
+                    ProcessTransactionGroupOperations(txnGroup);
+                    return;
+                }
+
+                // Add coordinator group if does not exist and add to that the txnGroup that needs to be replayed
+                var participantCount = BitOperations.PopCount(txnGroup.logAccessMap);
+                var txnReplayCoordinator = txnReplayCoordinators.GetOrAdd(sessionID, _ => new TransactionGroupReplayCoordinator(participantCount));
+                txnReplayCoordinator.AddTransactionGroup(sublogIdx, txnGroup);
+                var IsLeader = txnReplayCoordinator.Signal();
+
+                try
+                {
+                    if (!IsLeader)
+                    {
+                        // Wait for leader to complete replay
+                        txnReplayCoordinator.Wait();
+                        return;
+                    }
+
+                    // Iterate over transaction groups and apply their operations
+                    foreach (var nextTxnGroup in txnReplayCoordinator.TxnGroups)
+                        ProcessTransactionGroupOperations(nextTxnGroup);
+                }
+                finally
+                {
+                    if (IsLeader)
+                    {
+                        _ = txnReplayCoordinators.Remove(sessionID, out _);
+                        txnReplayCoordinator.Set();
+                    }
+                }
+                
+                // Process transaction 
+                void ProcessTransactionGroupOperations(TransactionGroup txnGroup)
+                {
+                    foreach (var entry in txnGroup.operations)
+                    {
+                        fixed (byte* entryPtr = entry)
+                            _ = aofProcessor.ReplayOp(sublogIdx, entryPtr, entry.Length, asReplica);
+                    }
+                }
+            }
+        }
+    }
+}

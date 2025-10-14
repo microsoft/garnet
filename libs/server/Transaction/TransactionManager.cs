@@ -271,7 +271,17 @@ namespace Garnet.server
         {
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnCommit, storeVersion = txnVersion, sessionID = basicContext.Session.ID, timestamp = Stopwatch.GetTimestamp() }, out _);
+                ComputeShardedLogAccess(out var logAccessMap);
+
+                appendOnlyFile.Enqueue(
+                    logAccessMap,
+                    new AofHeader
+                    {
+                        opType = AofEntryType.TxnCommit,
+                        storeVersion = txnVersion,
+                        txnID = basicContext.Session.ID,
+                        timestamp = Stopwatch.GetTimestamp()
+                    });
             }
             if (!internal_txn)
                 watchContainer.Reset();
@@ -390,11 +400,36 @@ namespace Garnet.server
 
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnStart, storeVersion = txnVersion, sessionID = basicContext.Session.ID, timestamp = Stopwatch.GetTimestamp() }, out _);
+                ComputeShardedLogAccess(out var logAccessMap);
+                appendOnlyFile.Enqueue(
+                    logAccessMap,
+                    new AofHeader
+                    {
+                        opType = AofEntryType.TxnStart,
+                        storeVersion = txnVersion,
+                        txnID = basicContext.Session.ID,
+                        logAccessMap = (long)logAccessMap
+                    });
             }
 
             state = TxnState.Running;
             return true;
+        }
+
+        void ComputeShardedLogAccess(out ulong logAccessMap)
+        {
+            logAccessMap = 0UL;
+
+            // If singleLog no computation is necessary
+            if (appendOnlyFile.Log.Size == 1)
+                return;
+
+            // If sharded log is enabled calculate sublog access bitmap
+            foreach (var key in keys)
+            {
+                appendOnlyFile.Log.Hash(key.SpanByte, out _, out var sublogIdx);
+                logAccessMap |= 1UL << sublogIdx;
+            }
         }
     }
 }

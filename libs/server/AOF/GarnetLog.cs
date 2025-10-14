@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -19,8 +20,17 @@ namespace Garnet.server
 
         public long HeaderSize => singleLog != null ? singleLog.HeaderSize : shardedLog.HeaderSize;
 
+        public int Size => singleLog != null ? 1 : shardedLog.Length;
+
         public static long Hash(ref SpanByte key)
             => (long)HashSlotUtils.Hash(key.AsSpan());
+
+        public void Hash(SpanByte key, out long hash, out int sublogIdx)
+        {
+            Debug.Assert(shardedLog != null);
+            hash = HashSlotUtils.Hash(key.AsSpan());
+            sublogIdx = (int)(hash % shardedLog.Length);
+        }
 
         public AofAddress BeginAddress
         {
@@ -116,6 +126,29 @@ namespace Garnet.server
                 singleLog.Dispose();
             else
                 shardedLog.Dispose();
+        }
+
+        /// <summary>
+        /// Lock sublogs for enqueue operation (bits indicate sublogIdx)
+        /// NOTE: Slow; should be used sparingly 
+        /// </summary>
+        /// <param name="logAccessBitmap"></param>
+        public void LockSublogs(ulong logAccessBitmap)
+        {
+            Debug.Assert(shardedLog != null);
+            Debug.Assert(BitOperations.PopCount(logAccessBitmap) <= shardedLog.Length);
+            shardedLog.LockSublogs(logAccessBitmap);
+        }
+
+        /// <summary>
+        /// Unlock sublogs using the provided logAccessBitmap (bits indicate sublogIdx)
+        /// </summary>
+        /// <param name="logAccessBitmap"></param>
+        public void UnlockSublogs(ulong logAccessBitmap)
+        {
+            Debug.Assert(shardedLog != null);
+            Debug.Assert(BitOperations.PopCount(logAccessBitmap) <= shardedLog.Length);
+            shardedLog.UnlockSublogs(logAccessBitmap);
         }
 
         public TsavoriteLog GetSubLog(int sublogIdx)

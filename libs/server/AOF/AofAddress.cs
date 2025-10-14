@@ -3,12 +3,47 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Text;
 
 namespace Garnet.server
 {
+    public struct LogVector<T> where T : unmanaged
+    {
+        public const int MaxSublogCount = 64;
+        T[] payload;
+
+        internal LogVector(int length)
+        {
+            payload = GC.AllocateArray<T>(MaxSublogCount, pinned: true);
+        }
+
+        /// <summary>
+        /// Indexer
+        /// </summary>
+        /// <param name="i"></param>
+        /// <returns></returns>
+        public T this[int i]
+        {
+            get
+            {
+                return payload[i];
+            }
+            set
+            {
+                payload[i] = value;
+            }
+        }
+
+        public void Reset(T value)
+        {
+            for (var i = 0; i < payload.Length; i++)
+                payload[i] = value;
+        }
+    }
+
     public unsafe struct AofAddress
     {
         readonly byte length;
@@ -41,6 +76,14 @@ namespace Garnet.server
             }
         }
 
+        public bool Equals([NotNullWhen(true)] AofAddress other)
+        {
+            Debug.Assert(other.Length == Length);
+            for (var i = 0; i < Length; i++)
+                if (addresses[i] != other.addresses[i]) return false;
+            return true;
+        }
+        
         /// <summary>
         /// AofAddress constructor
         /// </summary>
@@ -81,11 +124,14 @@ namespace Garnet.server
         /// <returns></returns>
         public override string ToString()
         {
-            fixed (long* ptr = addresses)
+            var sb = new StringBuilder();
+            _ = sb.Append(addresses[0]);
+            for (var i = 1; i < Length; i++)
             {
-                var span = new Span<long>(ptr, (int)Length);
-                return string.Join(',', span.ToArray());
+                _ = sb.Append(',');
+                _ = sb.Append(addresses[i]);
             }
+            return sb.ToString();
         }
 
         /// <summary>

@@ -1,7 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Linq;
+using System.Threading;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -12,6 +15,36 @@ namespace Garnet.server
         public int Length { get; private set; } = sublogCount;
         readonly TsavoriteLogSettings[] logSettings = logSettings;
         public readonly TsavoriteLog[] sublog = [.. logSettings.Select(settings => new TsavoriteLog(settings, logger))];
+
+        public readonly SingleWriterMultiReaderLock[] logLocks = [.. Enumerable.Range(0, sublogCount).Select(_ => new SingleWriterMultiReaderLock())];
+
+        ulong lockMap = 0;
+
+        public void LockSublogs(ulong logAccessBitmap)
+        {
+            while (true)
+            {
+                Thread.Yield();
+                var currentLockMap = lockMap;
+                var newLockMap = currentLockMap | logAccessBitmap;
+                if (Interlocked.CompareExchange(ref lockMap, newLockMap, currentLockMap) == currentLockMap)
+                    break;
+            }
+        }
+        
+        public void UnlockSublogs(ulong logAccessBitmap)
+        {
+            logAccessBitmap = ~logAccessBitmap;
+            Debug.Assert((lockMap & logAccessBitmap) > 0);
+            while (true)
+            {
+                Thread.Yield();
+                var currentLockMap = lockMap;
+                var newLockMap = currentLockMap & logAccessBitmap;
+                if (Interlocked.CompareExchange(ref lockMap, newLockMap, currentLockMap) == currentLockMap)
+                    break;
+            }
+        }
 
         public AofAddress BeginAddress
         {

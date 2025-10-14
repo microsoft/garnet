@@ -344,7 +344,7 @@ namespace Garnet.server
                 timestamp = Stopwatch.GetTimestamp()
             };
 
-            db.AppendOnlyFile.Enqueue(header, out _);
+            db.AppendOnlyFile.Enqueue(ulong.MaxValue, header);
         }
 
         /// <summary>

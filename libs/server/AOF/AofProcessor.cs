@@ -51,7 +51,6 @@ namespace Garnet.server
         /// </summary>
         BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
 
-        readonly Dictionary<int, List<byte[]>> inflightTxns;
         readonly byte[] buffer;
         readonly GCHandle handle;
         readonly byte* bufferPtr;
@@ -84,10 +83,11 @@ namespace Garnet.server
             objectStoreInput.parseState = parseState;
             customProcInput.parseState = parseState;
 
-            inflightTxns = new Dictionary<int, List<byte[]>>();
             buffer = new byte[BufferSizeUtils.ServerBufferSize(new MaxSizeSettings())];
             handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
             bufferPtr = (byte*)handle.AddrOfPinnedObject();
+
+            aofReplayBuffer = new AofReplayBuffer(this, logger);
             this.logger = logger;
         }
 
@@ -193,56 +193,21 @@ namespace Garnet.server
         /// 4) Finally, replay the buffered (v+1) entries.
         /// </summary>
         bool inFuzzyRegion = false;
-        List<byte[]> fuzzyRegionBuffer = new();
 
         /// <summary>
         /// Process AOF record
         /// </summary>
         public unsafe void ProcessAofRecordInternal(int sublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
         {
-            AofHeader header = *(AofHeader*)ptr;
+            var header = *(AofHeader*)ptr;
             isCheckpointStart = false;
 
-            if (inflightTxns.ContainsKey(header.sessionID))
-            {
-                switch (header.opType)
-                {
-                    case AofEntryType.TxnAbort:
-                        inflightTxns[header.sessionID].Clear();
-                        inflightTxns.Remove(header.sessionID);
-                        break;
-                    case AofEntryType.TxnCommit:
-                        if (inFuzzyRegion)
-                        {
-                            fuzzyRegionBuffer.Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
-                        }
-                        else
-                        {
-                            ProcessTxn(sublogIdx, inflightTxns[header.sessionID], asReplica);
-                            inflightTxns[header.sessionID].Clear();
-                            inflightTxns.Remove(header.sessionID);
-                        }
-                        break;
-                    case AofEntryType.StoredProcedure:
-                        throw new GarnetException($"Unexpected AOF header operation type {header.opType} within transaction");
-                    default:
-                        inflightTxns[header.sessionID].Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
-                        break;
-                }
+            // Handle transactions
+            if (aofReplayBuffer.AddOrReplayTransactionOperation(sublogIdx, header, ptr, length, asReplica))
                 return;
-            }
 
             switch (header.opType)
             {
-                case AofEntryType.TxnStart:
-                    inflightTxns[header.sessionID] = [];
-                    break;
-                case AofEntryType.TxnAbort:
-                case AofEntryType.TxnCommit:
-                    // We encountered a transaction end without start - this could happen because we truncated the AOF
-                    // after a checkpoint, and the transaction belonged to the previous version. It can safely
-                    // be ignored.
-                    break;
                 case AofEntryType.CheckpointStartCommit:
                     // Inform caller that we processed a checkpoint start marker so that it can record ReplicationCheckpointStartOffset if this is a replica replay
                     isCheckpointStart = true;
@@ -250,8 +215,8 @@ namespace Garnet.server
                     {
                         if (inFuzzyRegion)
                         {
-                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", fuzzyRegionBuffer.Count);
-                            fuzzyRegionBuffer.Clear();
+                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", aofReplayBuffer.FuzzyRegionBufferCount(sublogIdx));
+                            aofReplayBuffer.ClearFuzzyRegionBuffer(sublogIdx);
                         }
                         inFuzzyRegion = true;
                     }
@@ -280,17 +245,10 @@ namespace Garnet.server
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                                 _ = storeWrapper.TakeCheckpoint(false, logger);
+
                             // Process buffered records
-                            if (fuzzyRegionBuffer.Count > 0)
-                            {
-                                logger?.LogInformation("Replaying {fuzzyRegionBufferCount} records from fuzzy region for checkpoint {newVersion}", fuzzyRegionBuffer.Count, storeWrapper.store.CurrentVersion);
-                            }
-                            foreach (var entry in fuzzyRegionBuffer)
-                            {
-                                fixed (byte* entryPtr = entry)
-                                    ReplayOp(sublogIdx, entryPtr, entry.Length, asReplica);
-                            }
-                            fuzzyRegionBuffer.Clear();
+                            aofReplayBuffer.ProcessFuzzyRegionOperations(sublogIdx, storeWrapper.store.CurrentVersion, asReplica);
+                            aofReplayBuffer.ClearFuzzyRegionBuffer(sublogIdx);
                         }
                     }
                     break;
@@ -344,12 +302,12 @@ namespace Garnet.server
             }
         }
 
-        private unsafe bool ReplayOp(int sublogIdx, byte* entryPtr, int length, bool replayAsReplica)
+        private unsafe bool ReplayOp(int sublogIdx, byte* entryPtr, int length, bool asReplica)
         {
             var header = *(AofHeader*)entryPtr;
 
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
-            if (SkipRecord(entryPtr, length, replayAsReplica)) return false;
+            if (SkipRecord(sublogIdx, entryPtr, length, asReplica)) return false;
 
             ref var key = ref Unsafe.NullRef<SpanByte>();
             switch (header.opType)
@@ -375,14 +333,12 @@ namespace Garnet.server
                 case AofEntryType.StoredProcedure:
                     RunStoredProc(header.procedureId, customProcInput, entryPtr);
                     break;
+                case AofEntryType.TxnCommit:
+                    aofReplayBuffer.ProcessFuzzyRegionTransactionGroup(sublogIdx, header.sessionID, asReplica);
+                    break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
-
-            // Track timestamp for replica read protocol when using sharded log
-            var trackTimestamps = replayAsReplica && (storeWrapper.serverOptions.AofSublogCount > 1) && !Unsafe.IsNullRef(ref key);
-            if (trackTimestamps)
-                storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateKeyTimestamp(sublogIdx, ref key, header.timestamp);
             return true;
 
             void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)
@@ -520,52 +476,53 @@ namespace Garnet.server
         /// <summary>
         /// On recovery apply records with header.version greater than CurrentVersion.
         /// </summary>
+        /// <param name="sublogIdx"></param>
         /// <param name="entryPtr"></param>
         /// <param name="length"></param>
         /// <param name="asReplica"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        bool SkipRecord(byte* entryPtr, int length, bool asReplica)
+        bool SkipRecord(int sublogIdx, byte* entryPtr, int length, bool asReplica)
         {
             var header = *(AofHeader*)entryPtr;
             return (asReplica && inFuzzyRegion) ? // Buffer logic only for AOF version > 1
-                BufferNewVersionRecord(header, entryPtr, length) :
+                BufferNewVersionRecord(sublogIdx, header, entryPtr, length) :
                 IsOldVersionRecord(header);
-        }
 
-        bool BufferNewVersionRecord(AofHeader header, byte* entryPtr, int length)
-        {
-            if (IsNewVersionRecord(header))
+            bool BufferNewVersionRecord(int sublogIdx, AofHeader header, byte* entryPtr, int length)
             {
-                fuzzyRegionBuffer.Add(new ReadOnlySpan<byte>(entryPtr, length).ToArray());
-                return true;
+                if (IsNewVersionRecord(header))
+                {
+                    aofReplayBuffer.AddFuzzyRegionOperation(sublogIdx, new ReadOnlySpan<byte>(entryPtr, length));
+                    return true;
+                }
+                return false;
             }
-            return false;
-        }
 
-        bool IsOldVersionRecord(AofHeader header)
-        {
-            var storeType = ToAofStoreType(header.opType);
-
-            return storeType switch
+            bool IsOldVersionRecord(AofHeader header)
             {
-                AofStoreType.MainStoreType => header.storeVersion < storeWrapper.store.CurrentVersion,
-                AofStoreType.ObjectStoreType => header.storeVersion < storeWrapper.objectStore.CurrentVersion,
-                AofStoreType.TxnType => header.storeVersion < storeWrapper.objectStore.CurrentVersion,
-                _ => throw new GarnetException($"Unexpected AOF header store type {storeType}"),
-            };
-        }
+                var storeType = ToAofStoreType(header.opType);
 
-        bool IsNewVersionRecord(AofHeader header)
-        {
-            var storeType = ToAofStoreType(header.opType);
-            return storeType switch
+                return storeType switch
+                {
+                    AofStoreType.MainStoreType => header.storeVersion < storeWrapper.store.CurrentVersion,
+                    AofStoreType.ObjectStoreType => header.storeVersion < storeWrapper.objectStore.CurrentVersion,
+                    AofStoreType.TxnType => header.storeVersion < storeWrapper.objectStore.CurrentVersion,
+                    _ => throw new GarnetException($"Unexpected AOF header store type {storeType}"),
+                };
+            }
+
+            bool IsNewVersionRecord(AofHeader header)
             {
-                AofStoreType.MainStoreType => header.storeVersion > storeWrapper.store.CurrentVersion,
-                AofStoreType.ObjectStoreType => header.storeVersion > storeWrapper.objectStore.CurrentVersion,
-                AofStoreType.TxnType => header.storeVersion > storeWrapper.objectStore.CurrentVersion,
-                _ => throw new GarnetException($"Unknown AOF header store type {storeType}"),
-            };
+                var storeType = ToAofStoreType(header.opType);
+                return storeType switch
+                {
+                    AofStoreType.MainStoreType => header.storeVersion > storeWrapper.store.CurrentVersion,
+                    AofStoreType.ObjectStoreType => header.storeVersion > storeWrapper.objectStore.CurrentVersion,
+                    AofStoreType.TxnType => header.storeVersion > storeWrapper.objectStore.CurrentVersion,
+                    _ => throw new GarnetException($"Unknown AOF header store type {storeType}"),
+                };
+            }
         }
 
         static AofStoreType ToAofStoreType(AofEntryType type)
