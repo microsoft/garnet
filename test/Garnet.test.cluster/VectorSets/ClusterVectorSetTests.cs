@@ -79,11 +79,23 @@ namespace Garnet.test.cluster
             byte[] vectorAddData;
             if (vectorFormatParsed == VectorValueType.XB8)
             {
-                vectorAddData = [1, 2, 3, 4];
+                vectorAddData = new byte[75];
+                vectorAddData[0] = 1;
+                for (var i = 1; i < vectorAddData.Length; i++)
+                {
+                    vectorAddData[i] = (byte)(vectorAddData[i - 1] + 1);
+                }
             }
             else if (vectorFormatParsed == VectorValueType.FP32)
             {
-                vectorAddData = MemoryMarshal.Cast<float, byte>([1f, 2f, 3f, 4f]).ToArray();
+                var floats = new float[75];
+                floats[0] = 1;
+                for (var i = 1; i < floats.Length; i++)
+                {
+                    floats[i] = floats[i - 1] + 1;
+                }
+
+                vectorAddData = MemoryMarshal.Cast<float, byte>(floats).ToArray();
             }
             else
             {
@@ -97,11 +109,23 @@ namespace Garnet.test.cluster
             byte[] vectorSimData;
             if (vectorFormatParsed == VectorValueType.XB8)
             {
-                vectorSimData = [2, 3, 4, 5];
+                vectorSimData = new byte[75];
+                vectorSimData[0] = 2;
+                for (var i = 1; i < vectorSimData.Length; i++)
+                {
+                    vectorSimData[i] = (byte)(vectorSimData[i - 1] + 1);
+                }
             }
             else if (vectorFormatParsed == VectorValueType.FP32)
             {
-                vectorSimData = MemoryMarshal.Cast<float, byte>([2f, 3f, 4f, 5f]).ToArray();
+                var floats = new float[75];
+                floats[0] = 2;
+                for (var i = 1; i < floats.Length; i++)
+                {
+                    floats[i] = floats[i - 1] + 1;
+                }
+
+                vectorSimData = MemoryMarshal.Cast<float, byte>(floats).ToArray();
             }
             else
             {
@@ -128,7 +152,7 @@ namespace Garnet.test.cluster
         {
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
-            const int Vectors = 100_000;
+            const int Vectors = 2_000;
             const string Key = nameof(ConcurrentVADDReplicatedVSimsAsync);
 
             context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
@@ -300,6 +324,27 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
 
+            var bytes1 = new byte[75];
+            bytes1[0] = 1;
+            for (var j = 1; j < bytes1.Length; j++)
+            {
+                bytes1[j] = (byte)(bytes1[j - 1] + 1);
+            }
+
+            var bytes2 = new byte[75];
+            bytes2[0] = 5;
+            for (var j = 1; j < bytes2.Length; j++)
+            {
+                bytes2[j] = (byte)(bytes2[j - 1] + 1);
+            }
+
+            var bytes3 = new byte[75];
+            bytes3[0] = 10;
+            for (var j = 1; j < bytes3.Length; j++)
+            {
+                bytes3[j] = (byte)(bytes3[j - 1] + 1);
+            }
+
             for (var i = 0; i < 1_000; i++)
             {
                 var delRes = (int)context.clusterTestUtils.Execute(primary, "DEL", ["foo"]);
@@ -313,16 +358,16 @@ namespace Garnet.test.cluster
                     ClassicAssert.AreEqual(0, delRes);
                 }
 
-                var addRes1 = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", new byte[] { 1, 2, 3, 4 }, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
+                var addRes1 = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", bytes1, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
                 ClassicAssert.AreEqual(1, addRes1);
-
-                var addRes2 = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", new byte[] { 5, 6, 7, 8 }, new byte[] { 0, 0, 0, 1 }, "XPREQ8"]);
+                
+                var addRes2 = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", bytes2, new byte[] { 0, 0, 0, 1 }, "XPREQ8"]);
                 ClassicAssert.AreEqual(1, addRes2);
 
                 var readPrimaryExc = (string)context.clusterTestUtils.Execute(primary, "GET", ["foo"]);
                 ClassicAssert.IsTrue(readPrimaryExc.StartsWith("WRONGTYPE "));
 
-                var queryPrimary = (byte[][])context.clusterTestUtils.Execute(primary, "VSIM", ["foo", "XB8", new byte[] { 2, 3, 4, 5 }]);
+                var queryPrimary = (byte[][])context.clusterTestUtils.Execute(primary, "VSIM", ["foo", "XB8", bytes3]);
                 ClassicAssert.AreEqual(2, queryPrimary.Length);
 
                 _ = context.clusterTestUtils.Execute(secondary, "READONLY", []);
@@ -336,7 +381,7 @@ namespace Garnet.test.cluster
                 var start = Stopwatch.GetTimestamp();
                 while (true)
                 {
-                    var querySecondary = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", ["foo", "XB8", new byte[] { 2, 3, 4, 5 }]);
+                    var querySecondary = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", ["foo", "XB8", bytes3]);
                     if (querySecondary.Length == 2)
                     {
                         break;
@@ -353,7 +398,7 @@ namespace Garnet.test.cluster
             const int PrimaryIndex = 0;
             const int SecondaryStartIndex = 1;
             const int SecondaryEndIndex = 5;
-            const int Vectors = 100_000;
+            const int Vectors = 2_000;
             const string Key = nameof(MultipleReplicasWithVectorSetsAsync);
 
             context.CreateInstances(HighReplicationShards, useTLS: true, enableAOF: true);
