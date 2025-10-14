@@ -128,7 +128,7 @@ namespace Garnet.test.cluster
         {
             const int PrimaryIndex = 0;
             const int SecondaryIndex = 1;
-            const int Vectors = 2_000;
+            const int Vectors = 100_000;
             const string Key = nameof(ConcurrentVADDReplicatedVSimsAsync);
 
             context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
@@ -148,7 +148,7 @@ namespace Garnet.test.cluster
 
                 for (var i = 0; i < vectors.Length; i++)
                 {
-                    vectors[i] = new byte[64];
+                    vectors[i] = new byte[75];
                     r.NextBytes(vectors[i]);
                 }
             }
@@ -353,7 +353,7 @@ namespace Garnet.test.cluster
             const int PrimaryIndex = 0;
             const int SecondaryStartIndex = 1;
             const int SecondaryEndIndex = 5;
-            const int Vectors = 2_000;
+            const int Vectors = 100_000;
             const string Key = nameof(MultipleReplicasWithVectorSetsAsync);
 
             context.CreateInstances(HighReplicationShards, useTLS: true, enableAOF: true);
@@ -381,7 +381,7 @@ namespace Garnet.test.cluster
 
                 for (var i = 0; i < vectors.Length; i++)
                 {
-                    vectors[i] = new byte[64];
+                    vectors[i] = new byte[75];
                     r.NextBytes(vectors[i]);
                 }
             }
