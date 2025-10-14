@@ -36,7 +36,8 @@ namespace Garnet.server
             InfiniteMax = 2
         }
 
-        private void SortedSetAdd(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion, long etag)
+        private void SortedSetAdd(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion,
+            long etag)
         {
             DeleteExpiredItems();
 
@@ -51,93 +52,116 @@ namespace Garnet.server
 
             try
             {
-                while (currTokenIdx < input.parseState.Count)
+                // Try to parse a Score field
+                var isFirstScoreParsed = false;
+                var continueProcessingInput = true;
+                if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
                 {
-                    // Try to parse a Score field
-                    if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
-                    {
-                        // Try to get and validate options before the Score field, if any
-                        options = input.parseState.GetSortedSetAddOptions(currTokenIdx, out var nextIdxStep, out inputEtag);
-                        currTokenIdx += nextIdxStep;
-                    }
+                    // Try to get and validate options before the Score field, if any
+                    options = input.parseState.GetSortedSetAddOptions(currTokenIdx, out var nextIdxStep, out inputEtag);
+                    currTokenIdx += nextIdxStep;
 
                     if ((options & SortedSetAddOption.IFETAGGREATER) == SortedSetAddOption.IFETAGGREATER)
                     {
                         if (etag >= inputEtag)
-                            break;
+                            continueProcessingInput = false;
                     }
                     else if ((options & SortedSetAddOption.IFETAGMATCH) == SortedSetAddOption.IFETAGMATCH)
                     {
                         if (etag != inputEtag)
-                            break;
+                            continueProcessingInput = false;
                     }
-
+                }
+                else
+                {
+                    isFirstScoreParsed = true;
                     currTokenIdx++;
+                }
 
-                    // Member
-                    var memberSpan = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                    var member = memberSpan.ToArray();
-
-                    // Add new member
-                    if (!sortedSetDict.TryGetValue(member, out var scoreStored))
+                if (continueProcessingInput)
+                {
+                    while (currTokenIdx < input.parseState.Count)
                     {
-                        // Don't add new member if XX flag is set
-                        if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
-
-                        incrResult = score;
-                        sortedSetDict.Add(member, score);
-                        if (sortedSet.Add((score, member)))
-                            addedOrChanged++;
-
-                        UpdateSize(memberSpan);
-                    }
-                    // Update existing member
-                    else
-                    {
-                        // Update new score if INCR flag is set
-                        if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
+                        if (!isFirstScoreParsed)
                         {
-                            score += scoreStored;
-                            incrResult = score;
-
-                            if (double.IsNaN(score))
+                            if (!input.parseState.TryGetDouble(currTokenIdx++, out score))
                             {
-                                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
+                                // Invalid Score encountered
+                                writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
                                 return;
                             }
                         }
-
-                        // No need for update
-                        if (score == scoreStored)
+                        else
                         {
-                            _ = TryRemoveExpiration(member);
-                            continue;
+                            isFirstScoreParsed = false;
                         }
 
-                        // Don't update existing member if NX flag is set
-                        // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
-                        if ((options & SortedSetAddOption.NX) == SortedSetAddOption.NX ||
-                            ((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && scoreStored > score) ||
-                            ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score))
+                        // Member
+                        var memberSpan = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                        var member = memberSpan.ToArray();
+
+                        // Add new member
+                        if (!sortedSetDict.TryGetValue(member, out var scoreStored))
                         {
+                            // Don't add new member if XX flag is set
+                            if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
+
+                            incrResult = score;
+                            sortedSetDict.Add(member, score);
+                            if (sortedSet.Add((score, member)))
+                                addedOrChanged++;
+
+                            UpdateSize(memberSpan);
+                        }
+                        // Update existing member
+                        else
+                        {
+                            // Update new score if INCR flag is set
                             if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
                             {
-                                writer.WriteNull();
-                                return;
+                                score += scoreStored;
+                                incrResult = score;
+
+                                if (double.IsNaN(score))
+                                {
+                                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
+                                    return;
+                                }
                             }
-                            continue;
+
+                            // No need for update
+                            if (score == scoreStored)
+                            {
+                                _ = TryRemoveExpiration(member);
+                                continue;
+                            }
+
+                            // Don't update existing member if NX flag is set
+                            // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
+                            if ((options & SortedSetAddOption.NX) == SortedSetAddOption.NX ||
+                                ((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && scoreStored > score) ||
+                                ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score))
+                            {
+                                if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
+                                {
+                                    writer.WriteNull();
+                                    return;
+                                }
+
+                                continue;
+                            }
+
+                            sortedSetDict[member] = score;
+                            var success = sortedSet.Remove((scoreStored, member));
+                            Debug.Assert(success);
+                            success = sortedSet.Add((score, member));
+                            _ = TryRemoveExpiration(member);
+                            Debug.Assert(success);
+
+                            // If CH flag is set, add changed member to final count
+                            if ((options & SortedSetAddOption.CH) == SortedSetAddOption.CH)
+                                addedOrChanged++;
                         }
-
-                        sortedSetDict[member] = score;
-                        var success = sortedSet.Remove((scoreStored, member));
-                        Debug.Assert(success);
-                        success = sortedSet.Add((score, member));
-                        _ = TryRemoveExpiration(member);
-                        Debug.Assert(success);
-
-                        // If CH flag is set, add changed member to final count
-                        if ((options & SortedSetAddOption.CH) == SortedSetAddOption.CH)
-                            addedOrChanged++;
                     }
                 }
 
@@ -145,7 +169,8 @@ namespace Garnet.server
                 {
                     writer.WriteDoubleNumeric(incrResult);
                 }
-                else if ((options & (SortedSetAddOption.WITHETAG | SortedSetAddOption.IFETAGGREATER | SortedSetAddOption.IFETAGMATCH)) != 0)
+                else if ((options & (SortedSetAddOption.WITHETAG | SortedSetAddOption.IFETAGGREATER |
+                                     SortedSetAddOption.IFETAGMATCH)) != 0)
                 {
                     writer.WriteArrayLength(2);
                     writer.WriteInt64(addedOrChanged > 0 ? etag + 1 : etag);
@@ -317,69 +342,39 @@ namespace Garnet.server
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             //ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
             //ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
-            var rangeOpts = (SortedSetRangeOpts)input.arg2;
+            var rangeOpts = (SortedSetRangeOption)input.arg2;
             var count = input.parseState.Count;
             var currIdx = 0;
 
             // read the rest of the arguments
             ZRangeOptions options = new()
             {
-                ByScore = (rangeOpts & SortedSetRangeOpts.ByScore) != 0,
-                ByLex = (rangeOpts & SortedSetRangeOpts.ByLex) != 0,
-                Reverse = (rangeOpts & SortedSetRangeOpts.Reverse) != 0,
-                WithScores = (rangeOpts & SortedSetRangeOpts.WithScores) != 0 || (rangeOpts & SortedSetRangeOpts.Store) != 0
+                ByScore = (rangeOpts & SortedSetRangeOption.ByScore) != 0,
+                ByLex = (rangeOpts & SortedSetRangeOption.ByLex) != 0,
+                Reverse = (rangeOpts & SortedSetRangeOption.Reverse) != 0,
+                WithScores = (rangeOpts & SortedSetRangeOption.WithScores) != 0 || (rangeOpts & SortedSetRangeOption.Store) != 0
             };
 
             // The ZRANGESTORE code will read our output and store it, it's used to RESP2 output.
             // Since in that case isn't displayed to the user, we can override the version to let it work.
-            if ((respProtocolVersion >= 3) && (rangeOpts & SortedSetRangeOpts.Store) != 0)
+            if ((respProtocolVersion >= 3) && (rangeOpts & SortedSetRangeOption.Store) != 0)
                 respProtocolVersion = 2;
 
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             try
             {
-                if (count > 2)
+                if ((rangeOpts & SortedSetRangeOption.Limit) != 0)
                 {
                     while (currIdx < count)
                     {
                         var tokenSpan = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
 
-                        if (tokenSpan.EqualsUpperCaseSpanIgnoringCase("BYSCORE"u8))
+                        if (tokenSpan.EqualsUpperCaseSpanIgnoringCase("LIMIT"u8))
                         {
-                            options.ByScore = true;
-                        }
-                        else if (tokenSpan.EqualsUpperCaseSpanIgnoringCase("BYLEX"u8))
-                        {
-                            options.ByLex = true;
-                        }
-                        else if (tokenSpan.EqualsUpperCaseSpanIgnoringCase("REV"u8))
-                        {
-                            options.Reverse = true;
-                        }
-                        else if (tokenSpan.EqualsUpperCaseSpanIgnoringCase("LIMIT"u8))
-                        {
-                            // Verify that there are at least 2 more tokens to read
-                            if (input.parseState.Count - currIdx < 2)
-                            {
-                                writer.WriteError(CmdStrings.RESP_SYNTAX_ERROR);
-                                return;
-                            }
-
                             // Read the next two tokens
-                            if (!input.parseState.TryGetInt(currIdx++, out var offset) ||
-                                !input.parseState.TryGetInt(currIdx++, out var countLimit))
-                            {
-                                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                                return;
-                            }
-
-                            options.Limit = (offset, countLimit);
+                            options.Limit = (input.parseState.GetInt(currIdx++), input.parseState.GetInt(currIdx++));
                             options.ValidLimit = true;
-                        }
-                        else if (tokenSpan.EqualsUpperCaseSpanIgnoringCase("WITHSCORES"u8))
-                        {
-                            options.WithScores = true;
                         }
                     }
                 }

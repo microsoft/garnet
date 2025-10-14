@@ -212,41 +212,15 @@ namespace Garnet.server
             // ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             if (parseState.Count < 3)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.ZRANGE));
+                return AbortWithWrongNumberOfArguments(nameof(command));
             }
 
             var key = parseState.GetArgSliceByRef(0);
 
-            // Validate min & max
-            if (!parseState.TryGetSortedSetMinMaxParameter(1, out _, out _) ||
-                !parseState.TryGetSortedSetMinMaxParameter(2, out _, out _))
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT);
-
-            var rangeOpts = SortedSetRangeOpts.None;
-
-            switch (command)
-            {
-                case RespCommand.ZRANGE:
-                    break;
-                case RespCommand.ZREVRANGE:
-                    rangeOpts = SortedSetRangeOpts.Reverse;
-                    break;
-                case RespCommand.ZRANGEBYLEX:
-                    rangeOpts = SortedSetRangeOpts.ByLex;
-                    break;
-                case RespCommand.ZRANGEBYSCORE:
-                    rangeOpts = SortedSetRangeOpts.ByScore;
-                    break;
-                case RespCommand.ZREVRANGEBYLEX:
-                    rangeOpts = SortedSetRangeOpts.ByLex | SortedSetRangeOpts.Reverse;
-                    break;
-                case RespCommand.ZREVRANGEBYSCORE:
-                    rangeOpts = SortedSetRangeOpts.ByScore | SortedSetRangeOpts.Reverse;
-                    break;
-                case RespCommand.ZRANGESTORE:
-                    rangeOpts = SortedSetRangeOpts.Store;
-                    break;
-            }
+            // Try to parse command options and validate input
+            if (!parseState.TryGetSortedSetRangeOptions(3, command, out var rangeOpts, out _, out _, out var error) ||
+                !ValidateSortedSetRangeInput(1, rangeOpts, out error))
+                return AbortWithErrorMessage(error);
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
             var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion, arg2: (int)rangeOpts);
@@ -285,8 +259,13 @@ namespace Garnet.server
             var dstKey = parseState.GetArgSliceByRef(0);
             var srcKey = parseState.GetArgSliceByRef(1);
 
+            // Try to parse command options and validate input
+            if (!parseState.TryGetSortedSetRangeOptions(4, RespCommand.ZRANGESTORE, out var options, out _, out _, out var error) ||
+                !ValidateSortedSetRangeInput(2, options, out error))
+                return AbortWithErrorMessage(error);
+
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
-            var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: respProtocolVersion, arg2: (int)SortedSetRangeOpts.Store);
+            var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: respProtocolVersion, arg2: (int)options);
 
             var status = storageApi.SortedSetRangeStore(dstKey, srcKey, ref input, out int result);
 
@@ -2052,6 +2031,40 @@ namespace Garnet.server
                 default:
                     ProcessOutput(output.SpanByteAndMemory);
                     break;
+            }
+
+            return true;
+        }
+
+        private bool ValidateSortedSetRangeInput(int startIdx, SortedSetRangeOption options, out ReadOnlySpan<byte> error)
+        {
+            error = default;
+            if ((options & SortedSetRangeOption.ByScore) == SortedSetRangeOption.ByScore)
+            {
+                if (!parseState.TryGetSortedSetMinMaxParameter(startIdx, out _, out _) ||
+                    !parseState.TryGetSortedSetMinMaxParameter(startIdx + 1, out _, out _))
+                {
+                    error = CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT;
+                    return false;
+                }
+            }
+            else if ((options & SortedSetRangeOption.ByLex) == SortedSetRangeOption.ByLex)
+            {
+                if (!parseState.TryGetSortedSetLexMinMaxParameter(startIdx, out _, out _, out _) ||
+                    !parseState.TryGetSortedSetLexMinMaxParameter(startIdx + 1, out _, out _, out _))
+                {
+                    error = CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING;
+                    return false;
+                }
+            }
+            else
+            {
+                if (!parseState.TryGetInt(startIdx, out _) ||
+                    !parseState.TryGetInt(startIdx + 1, out _))
+                {
+                    error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                    return false;
+                }
             }
 
             return true;

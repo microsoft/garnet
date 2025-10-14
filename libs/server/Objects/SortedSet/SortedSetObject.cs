@@ -54,7 +54,7 @@ namespace Garnet.server
     /// Options for specifying the range in sorted set operations.
     /// </summary>
     [Flags]
-    public enum SortedSetRangeOpts : byte
+    public enum SortedSetRangeOption : byte
     {
         /// <summary>
         /// No options specified.
@@ -79,7 +79,11 @@ namespace Garnet.server
         /// <summary>
         /// Include scores in the result.
         /// </summary>
-        WithScores = 1 << 4
+        WithScores = 1 << 4,
+        /// <summary>
+        /// Obtain a sub-range from the matching elements
+        /// </summary>
+        Limit = 1 << 5,
     }
 
     [Flags]
