@@ -634,7 +634,8 @@ namespace Garnet.server
                 else
                 {
                     checkpointCoveredAofAddress = db.AppendOnlyFile.Log.TailAddress;
-                    StoreWrapper.StoreCheckpointManager.CurrentSafeAofAddress = checkpointCoveredAofAddress;
+                    StoreWrapper.StoreCheckpointManager.SetCurrentSafeAofAddress(ref checkpointCoveredAofAddress);
+                    StoreWrapper.ObjectStoreCheckpointManager?.SetCurrentSafeAofAddress(ref checkpointCoveredAofAddress);
                 }
 
                 if (checkpointCoveredAofAddress.AnyGreater(0))

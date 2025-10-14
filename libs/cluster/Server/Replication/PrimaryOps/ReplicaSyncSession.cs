@@ -228,7 +228,7 @@ namespace Garnet.cluster
                 var sameHistory2 = string.IsNullOrEmpty(clusterProvider.replicationManager.PrimaryReplId2) && clusterProvider.replicationManager.PrimaryReplId2.Equals(replicaAssignedPrimaryId);
 
                 // Calculate replay AOF range
-                var replayAOF = clusterProvider.storeWrapper.appendOnlyFile.ReplicaBeginAofSyncAddress(
+                var replayAOF = clusterProvider.storeWrapper.appendOnlyFile.ComputeAofSyncReplayAddress(
                     recoverFromRemote,
                     sameMainStoreCheckpointHistory,
                     sameObjectStoreCheckpointHistory,

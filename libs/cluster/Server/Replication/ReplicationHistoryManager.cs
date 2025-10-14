@@ -14,9 +14,11 @@ namespace Garnet.cluster
 {
     internal sealed class ReplicationHistory
     {
-        public string primary_replid;
+        public string PrimaryReplId => primary_replid;
+        string primary_replid;
+        public string PrimaryReplId2 => primary_replid2;
         public string primary_replid2;
-        public AofAddress replicationOffset;
+        AofAddress replicationOffset;
         public AofAddress replicationOffset2;
 
         public ReplicationHistory(int aofSublogCount)

@@ -79,13 +79,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Replication offset until which AOF address is valid for old primary if failover has occurred
         /// </summary>
-        public ref AofAddress ReplicationOffset2
-        {
-            get { return ref currentReplicationConfig.replicationOffset2; }
-        }
+        public AofAddress ReplicationOffset2 => currentReplicationConfig.replicationOffset2;
 
-        public string PrimaryReplId => currentReplicationConfig.primary_replid;
-        public string PrimaryReplId2 => currentReplicationConfig.primary_replid2;
+        public string PrimaryReplId => currentReplicationConfig.PrimaryReplId;
+        public string PrimaryReplId2 => currentReplicationConfig.PrimaryReplId2;
 
         /// <summary>
         /// Recovery status

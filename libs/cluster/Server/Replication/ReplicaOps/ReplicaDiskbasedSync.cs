@@ -284,7 +284,7 @@ namespace Garnet.cluster
         /// <param name="beginAddress"></param>
         /// <param name="recoveredReplicationOffset"></param>
         /// <returns></returns>
-        public AofAddress BeginReplicaRecover(
+        public AofAddress TryReplicaDiskbasedRecovery(
             bool recoverMainStoreFromToken,
             bool recoverObjectStoreFromToken,
             bool replayAOF,
@@ -345,7 +345,7 @@ namespace Garnet.cluster
                 // Initialize in-memory checkpoint store and delete outdated checkpoint entries
                 logger?.LogInformation("Initializing CheckpointStore");
                 if (!InitializeCheckpointStore())
-                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(BeginReplicaRecover));
+                    logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TryReplicaDiskbasedRecovery));
 
                 // Update replicationId to mark any subsequent checkpoints as part of this history
                 logger?.LogInformation("Updating ReplicationId");
@@ -355,11 +355,11 @@ namespace Garnet.cluster
                 // This is necessary to ensure that the stored procedure can perform write operations if needed
                 clusterProvider.replicationManager.aofProcessor.SetReadWriteSession();
 
-                return replicationOffset;
+                return this.replicationOffset;
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, $"{nameof(BeginReplicaRecover)}");
+                logger?.LogError(ex, $"{nameof(TryReplicaDiskbasedRecovery)}");
                 errorMessage = Encoding.ASCII.GetBytes(ex.Message);
                 return AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, -1);
             }

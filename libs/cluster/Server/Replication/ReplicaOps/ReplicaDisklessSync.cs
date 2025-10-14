@@ -166,13 +166,13 @@ namespace Garnet.cluster
 
                 var aofBeginAddress = primarySyncMetadata.currentAofBeginAddress;
                 var aofTailAddress = aofBeginAddress;
-                var replicationOffset = aofBeginAddress;
+                var _replicationOffset = aofBeginAddress;
 
                 if (!primarySyncMetadata.fullSync)
                 {
                     // For diskless replication if we are performing a partial sync need to start streaming from replicationOffset
                     // hence our tail needs to be reset to that point
-                    aofTailAddress = replicationOffset = ReplicationOffset;
+                    aofTailAddress = _replicationOffset = this.replicationOffset;
                 }
 
                 storeWrapper.appendOnlyFile.Initialize(aofBeginAddress, aofTailAddress);
@@ -186,13 +186,13 @@ namespace Garnet.cluster
                 logger?.LogInformation("Updating ReplicationId");
                 TryUpdateMyPrimaryReplId(primarySyncMetadata.currentPrimaryReplId);
 
-                this.replicationOffset = replicationOffset;
+                this.replicationOffset = _replicationOffset;
 
                 // Mark this txn run as a read-write session if we are replaying as a replica
                 // This is necessary to ensure that the stored procedure can perform write operations if needed
                 clusterProvider.replicationManager.aofProcessor.SetReadWriteSession();
 
-                return ReplicationOffset;
+                return this.replicationOffset;
             }
             catch (Exception ex)
             {

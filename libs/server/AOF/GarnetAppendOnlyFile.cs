@@ -19,9 +19,9 @@ namespace Garnet.server
 
         public long HeaderSize => Log.HeaderSize;
 
-        public AofAddress InvalidAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: -1);
+        public readonly AofAddress InvalidAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: -1);
 
-        public AofAddress MaxAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: long.MaxValue);
+        public readonly AofAddress MaxAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: long.MaxValue);
 
         public void Dispose() => Log.Dispose();
 
@@ -80,7 +80,7 @@ namespace Garnet.server
         public void TruncateUntil(int sublogIdx, long untilAddress)
             => Log.GetSubLog(sublogIdx).TruncateUntil(untilAddress);
 
-        public bool ReplicaBeginAofSyncAddress(
+        public bool ComputeAofSyncReplayAddress(
             bool recoverFromRemote,
             bool sameMainStoreCheckpointHistory,
             bool sameObjectStoreCheckpointHistory,
@@ -91,6 +91,7 @@ namespace Garnet.server
             ref AofAddress beginAddress,
             ref AofAddress checkpointAofBeginAddress)
         {
+            // FIXME: Replay address for sharded log
             var replayAOF = false;
             if (!recoverFromRemote)
             {

@@ -15,10 +15,8 @@ namespace Garnet.server
     {
         public string CurrentHistoryId { get; set; }
         public string RecoveredHistoryId { get; set; }
-        public ref AofAddress CurrentSafeAofAddress { get { return ref currentSafeAofAddress; } }
-        AofAddress currentSafeAofAddress;
-        public ref AofAddress RecoveredSafeAofAddress { get { return ref recoveredSafeAofAddress; } }
-        AofAddress recoveredSafeAofAddress;
+        public AofAddress CurrentSafeAofAddress { get; private set; }
+        public AofAddress RecoveredSafeAofAddress { get; private set; }
 
         /// <summary>
         /// Create new instance of Garnet checkpoint manager
@@ -34,9 +32,21 @@ namespace Garnet.server
         {
             CurrentHistoryId = null;
             RecoveredHistoryId = null;
-            currentSafeAofAddress = AofAddress.Create(AofSublogCount, 0);
-            recoveredSafeAofAddress = AofAddress.Create(AofSublogCount, 0);
+            CurrentSafeAofAddress = AofAddress.Create(AofSublogCount, 0);
+            RecoveredSafeAofAddress = AofAddress.Create(AofSublogCount, 0);
         }
+
+        /// <summary>
+        /// Set current AOF address
+        /// </summary>
+        /// <param name="safeAofTailAddress"></param>
+        public void SetCurrentSafeAofAddress(ref AofAddress safeAofTailAddress) => CurrentSafeAofAddress = safeAofTailAddress;
+
+        /// <summary>
+        /// Set recovered AOF address
+        /// </summary>
+        /// <param name="recoveredSafeAofAddress"></param>
+        public void SetRecoveredSafeAofAddress(ref AofAddress recoveredSafeAofAddress) => RecoveredSafeAofAddress = recoveredSafeAofAddress;
 
         /// <inheritdoc />
         public override unsafe byte[] GetCookie()

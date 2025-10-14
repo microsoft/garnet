@@ -324,7 +324,7 @@ namespace Garnet.cluster
             var tailAddress = AofAddress.FromByteArray(parseState.GetArgSliceByRef(6).SpanByte.ToByteArray());
 
             var entry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
-            var replicationOffset = clusterProvider.replicationManager.BeginReplicaRecover(
+            var replicationOffset = clusterProvider.replicationManager.TryReplicaDiskbasedRecovery(
                 recoverMainStoreFromToken,
                 recoverObjectStoreFromToken,
                 replayAOF,

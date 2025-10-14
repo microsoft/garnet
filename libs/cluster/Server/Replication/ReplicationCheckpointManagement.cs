@@ -90,23 +90,26 @@ namespace Garnet.cluster
             => checkpointStore.GetLatestCheckpointFromDiskInfo();
         #endregion
 
-        public ref AofAddress StoreCurrentSafeAofAddress => ref clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress;
-        public ref AofAddress ObjectStoreCurrentSafeAofAddress => ref objectStoreCurrentSafeAofAddress();
-
-        ref AofAddress objectStoreCurrentSafeAofAddress()
+        public AofAddress StoreCurrentSafeAofAddress => clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress;
+        public AofAddress ObjectStoreCurrentSafeAofAddress
         {
-            if (clusterProvider.serverOptions.DisableObjects)
-                return ref storeWrapper.appendOnlyFile.InvalidAofAddress;
-            return ref clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentSafeAofAddress;
+            get
+            {
+                if (clusterProvider.serverOptions.DisableObjects)
+                    return storeWrapper.appendOnlyFile.InvalidAofAddress;
+                return clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentSafeAofAddress;
+            }
         }
 
-        public ref AofAddress StoreRecoveredSafeAofTailAddress => ref clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredSafeAofAddress;
-        public ref AofAddress ObjectStoreRecoveredSafeAofTailAddress => ref objectStoreRecoveredSafeAofTailAddress();
-        ref AofAddress objectStoreRecoveredSafeAofTailAddress()
+        public AofAddress StoreRecoveredSafeAofTailAddress => clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredSafeAofAddress;
+        public AofAddress ObjectStoreRecoveredSafeAofTailAddress
         {
-            if (clusterProvider.serverOptions.DisableObjects)
-                return ref storeWrapper.appendOnlyFile.InvalidAofAddress;
-            return ref clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredSafeAofAddress;
+            get
+            {
+                if (clusterProvider.serverOptions.DisableObjects)
+                    return storeWrapper.appendOnlyFile.InvalidAofAddress;
+                return clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredSafeAofAddress;
+            }
         }
 
         /// <summary>
@@ -116,9 +119,9 @@ namespace Garnet.cluster
         /// <param name="safeAofTailAddress"></param>
         public void UpdateCommitSafeAofAddress(ref AofAddress safeAofTailAddress)
         {
-            clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress = safeAofTailAddress;
+            clusterProvider.storeWrapper.StoreCheckpointManager.SetCurrentSafeAofAddress(ref safeAofTailAddress);
             if (!clusterProvider.serverOptions.DisableObjects)
-                clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentSafeAofAddress = safeAofTailAddress;
+                clusterProvider.storeWrapper.ObjectStoreCheckpointManager.SetCurrentSafeAofAddress(ref safeAofTailAddress);
         }
 
         /// <summary>
