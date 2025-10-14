@@ -58,6 +58,7 @@ namespace Tsavorite.core
             maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
 
             freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, static p => { });
+            pageHeaderSize = PageHeader.Size;
 
             if (settings.LogSettings.NumberOfFlushBuffers < LogSettings.kMinFlushBuffers || settings.LogSettings.NumberOfFlushBuffers > LogSettings.kMaxFlushBuffers || !IsPowerOfTwo(settings.LogSettings.NumberOfFlushBuffers))
                 throw new TsavoriteException($"{nameof(settings.LogSettings.NumberOfFlushBuffers)} must be between {LogSettings.kMinFlushBuffers} and {LogSettings.kMaxFlushBuffers - 1} and a power of 2");

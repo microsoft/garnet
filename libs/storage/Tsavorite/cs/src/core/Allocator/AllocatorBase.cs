@@ -41,6 +41,10 @@ namespace Tsavorite.core
         /// <summary>Sometimes it's useful to know this explicitly rather than rely on method overrides etc.</summary>
         internal bool IsObjectAllocator => transientObjectIdMap is not null;
 
+        /// <summary>If true, then this allocator has <see cref="PageHeader"/> as the first bytes on a page, so allocating a logical address
+        ///     in <see cref="HandlePageOverflow"/> must skip these bytes.</summary>
+        internal int pageHeaderSize;
+
         #region Protected size definitions
         /// <summary>Buffer size</summary>
         internal readonly int BufferSize;
@@ -1057,12 +1061,12 @@ namespace Tsavorite.core
 
             // Set up the TailPageOffset to account for the page header and then this allocation.
             localTailPageOffset.Page++;
-            localTailPageOffset.Offset = PageHeader.Size + numSlots;
+            localTailPageOffset.Offset = numSlots + pageHeaderSize;
             TailPageOffset = localTailPageOffset;
 
             // At this point the slot is allocated and we are not allowed to refresh epochs any longer.
             // Return the first logical address after the page header.
-            return GetFirstValidLogicalAddressOnPage(localTailPageOffset.Page);
+            return GetLogicalAddressOfStartOfPage(localTailPageOffset.Page) + pageHeaderSize;   // Same as GetFirstValidLogicalAddressOnPage(localTailPageOffset.Page) but faster
         }
 
         /// <summary>Try allocate, no thread spinning allowed</summary>

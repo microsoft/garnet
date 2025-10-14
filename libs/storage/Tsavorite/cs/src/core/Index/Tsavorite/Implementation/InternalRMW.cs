@@ -242,7 +242,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             pendingContext.type = OperationType.RMW;
-            pendingContext.SerializeForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
+            pendingContext.CopyInputsForReadOrRMW(key, ref input, ref output, userContext, sessionFunctions, hlogBase.bufferPool);
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
         }
 

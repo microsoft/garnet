@@ -134,9 +134,9 @@ namespace Tsavorite.core
             // Spin to make sure the start of the tag chain is not readcache, or that newLogicalAddress is > the first address in the tag chain.
             while (true)
             {
-                if (!TryBlockAllocate(readCacheBase, recordSizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
+                if (!TryBlockAllocate(readcacheBase, recordSizeInfo.AllocatedInlineRecordSize, out newLogicalAddress, ref pendingContext, out status))
                     break;
-                newPhysicalAddress = readCacheBase.GetPhysicalAddress(newLogicalAddress);
+                newPhysicalAddress = readcacheBase.GetPhysicalAddress(newLogicalAddress);
 
                 if (VerifyInMemoryAddresses(ref stackCtx))
                 {

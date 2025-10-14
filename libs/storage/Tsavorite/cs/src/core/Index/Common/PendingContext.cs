@@ -127,12 +127,10 @@ namespace Tsavorite.core
             /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
             /// <param name="bufferPool">Allocator for backing storage</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SerializeForReadOrRMW<TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext,
+            internal void CopyInputsForReadOrRMW<TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext,
                     TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool)
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
-                if (diskLogRecord.IsSet)
-                    return;
                 request_key?.Dispose();
                 request_key = new(key, bufferPool);
 

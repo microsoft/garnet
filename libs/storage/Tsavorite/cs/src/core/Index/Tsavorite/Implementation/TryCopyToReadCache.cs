@@ -3,7 +3,6 @@
 
 namespace Tsavorite.core
 {
-    using System.Diagnostics;
 #pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
 
@@ -31,14 +30,10 @@ namespace Tsavorite.core
 
             if (!TryAllocateRecordReadCache(ref pendingContext, ref stackCtx, in sizeInfo, out var newLogicalAddress, out var newPhysicalAddress, out _ /*status*/))
                 return false;
-            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readCacheBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, inNewVersion: false, previousAddress: stackCtx.hei.Address);
+            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, readcacheBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, inNewVersion: false, previousAddress: stackCtx.hei.Address);
 
             stackCtx.SetNewRecord(newLogicalAddress | RecordInfo.kIsReadCacheBitMask);
             _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
-
-            // Assert this here as pre-check for the one in EnsureNoNewMainLogRecordWasSpliced.
-            Debug.Assert(!stackCtx.hei.IsReadCache || AbsoluteAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress) >= readCacheBase.ClosedUntilAddress, "lowest-rcri.PreviousAddress should be above ClosedUntilAddress");
-            Debug.Assert(!stackCtx.hei.IsReadCache || !IsReadCache(LogRecord.GetInfo(stackCtx.recSrc.LowestReadCachePhysicalAddress).PreviousAddress), "lowest-rcri.PreviousAddress should be a main-log address");
 
             // Insert the new record by CAS'ing directly into the hash entry (readcache records are always CAS'd into the HashBucketEntry, never spliced).
             // It is possible that we will successfully CAS but subsequently fail due to a main log entry having been spliced in.
@@ -46,18 +41,32 @@ namespace Tsavorite.core
             var casSuccess = success;
 
             var failStatus = OperationStatus.RETRY_NOW;     // Default to CAS-failed status, which does not require an epoch refresh
+
+            // If lowestReadCacheLogicalAddress was previously set, see if there was a conflicting splice into the readcache/mainlog gap.
+            // (If lowestReadCacheLogicalAddress wasn't set, i.e. !hei.IsReadCache, then our CAS would have failed if there had been a conflicting insert at tail.)
             if (success && stackCtx.recSrc.LowestReadCacheLogicalAddress != kInvalidAddress)
             {
-                // If someone added a main-log entry for this key from a CTT while we were inserting the new readcache record, then the new
-                // readcache record is obsolete and must be Invalidated. (If LowestReadCacheLogicalAddress == kInvalidAddress, then the CAS would have
-                // failed in this case.) If this was the first readcache record in the chain, then once we CAS'd it in someone could have spliced into
-                // it, but then that splice will call ReadCacheCheckTailAfterSplice and invalidate it if it's the same key.
-                // Consistency Notes:
-                //  - This is only a concern for CTT; an update would take an XLock which means the ReadCache insert could not be done until that XLock was released.
-                //    a. Therefore there is no "momentary inconsistency", because the value inserted at the splice would not be changed.
-                //    b. It is not possible for another thread to update the "at tail" value to introduce inconsistency until we have released the current SLock.
-                //  - If there are two ReadCache inserts for the same key, one will fail the CAS because it will see the other's update which changed hei.entry.
-                success = EnsureNoNewMainLogRecordWasSpliced(inputLogRecord.Key, ref stackCtx, pendingContext.initialLatestLogicalAddress, ref failStatus);
+                // We may have forced ReadCacheEvict by the TryAllocate above; in that case, stackCtx.recSrc.LowestReadCacheLogicalAddress, or even the entire
+                // readcache chain, may have been evicted. Therefore, SkipReadCache here; reinitialize the recSrc to hei and the hlog (not readcache).
+                if (AbsoluteAddress(stackCtx.recSrc.LowestReadCacheLogicalAddress) < readcacheBase.ClosedUntilAddress)
+                {
+                    stackCtx.SetRecordSourceToHashEntry(hlogBase);
+                    SkipReadCache(ref stackCtx, out _); // No need to track didRefresh; we already know it was refreshed once.
+                }
+
+                if (stackCtx.hei.IsReadCache)
+                {
+                    // If someone added a main-log entry for this key from a CTT while we were inserting the new readcache record, then the new
+                    // readcache record is obsolete and must be Invalidated. (If LowestReadCacheLogicalAddress == kInvalidAddress, then the CAS would have
+                    // failed in this case.) If this was the first readcache record in the chain, then once we CAS'd it in someone could have spliced into
+                    // it, but then that splice will call ReadCacheCheckTailAfterSplice and invalidate it if it's the same key.
+                    // Consistency Notes:
+                    //  - This is only a concern for CTT; an update would take an XLock which means the ReadCache insert could not be done until that XLock was released.
+                    //    a. Therefore there is no "momentary inconsistency", because the value inserted at the splice would not be changed.
+                    //    b. It is not possible for another thread to update the "at tail" value to introduce inconsistency until we have released the current SLock.
+                    //  - If there are two ReadCache inserts for the same key, one will fail the CAS because it will see the other's update which changed hei.entry.
+                    success = EnsureNoNewMainLogRecordWasSpliced(inputLogRecord.Key, ref stackCtx, pendingContext.initialLatestLogicalAddress, ref failStatus);
+                }
             }
 
             if (success)

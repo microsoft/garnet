@@ -176,7 +176,7 @@ namespace Tsavorite.core
         internal void SetRecordInvalid(long logicalAddress)
         {
             // This is called on exception recovery for a newly-inserted record.
-            var localLog = IsReadCache(logicalAddress) ? readCacheBase : hlogBase;
+            var localLog = IsReadCache(logicalAddress) ? readcacheBase : hlogBase;
             LogRecord.GetInfoRef(localLog.GetPhysicalAddress(logicalAddress)).SetInvalid();
         }
 
@@ -229,7 +229,7 @@ namespace Tsavorite.core
                 return false;
 
             // If we're not using readcache or we don't have a splice point or it is still above readcache.HeadAddress, we're good.
-            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readCacheBase.HeadAddress)
+            if (!UseReadCache || stackCtx.recSrc.LowestReadCacheLogicalAddress == kInvalidAddress || stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcacheBase.HeadAddress)
                 return true;
 
             // If the splice point went below readcache.HeadAddress, we would have to wait for the chain to be fixed up by eviction,

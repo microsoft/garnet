@@ -92,7 +92,7 @@ namespace Tsavorite.core
         public byte[] RecoveredCookie;
 
         /// <summary>
-        /// Header size used by TsavoriteLog
+        /// Header size used by TsavoriteLog, for entryLength and possibly checkSum
         /// </summary>
         public int HeaderSize => headerSize;
 
@@ -199,7 +199,7 @@ namespace Tsavorite.core
             if (logSettings.LogCommitManager == null)
                 disposeLogCommitManager = true;
 
-            // Reserve 8 byte checksum in header if requested
+            // Reserve 8 byte checksum in header if requested, in addition to the entry length
             logChecksum = logSettings.LogChecksum;
             headerSize = logChecksum == LogChecksumType.PerEntry ? 12 : 4;
             getMemory = logSettings.GetMemory;
@@ -742,7 +742,8 @@ namespace Tsavorite.core
 
             epoch.Resume();
 
-            if (commitNum == long.MaxValue) throw new TsavoriteException("Attempting to enqueue into a completed log");
+            if (commitNum == long.MaxValue)
+                throw new TsavoriteException("Attempting to enqueue into a completed log");
 
             if (!allocator.TryAllocateRetryNow(allocatedLength, out logicalAddress))
             {

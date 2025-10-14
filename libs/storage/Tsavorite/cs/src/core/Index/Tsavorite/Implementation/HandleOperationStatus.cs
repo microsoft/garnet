@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -136,9 +137,14 @@ namespace Tsavorite.core
                 pendingContext.id = sessionCtx.totalPending++;
                 sessionCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
 
+                // We may have come from an already-pending operation, in which case we don't want to copy the diskLogRecord into the queue.
+                // But we do want to keep the diskLogRecord in the incoming "ref pendingContext" for disposal, so clear it in the dictionary.
+                // (We know this will not be a nullref because we just added it).
+                CollectionsMarshal.GetValueRefOrNullRef(sessionCtx.ioPendingRequests, pendingContext.id).diskLogRecord = default;
+
                 // Issue asynchronous I/O request
                 request.id = pendingContext.id;
-                request.request_key = pendingContext.request_key.Get();
+                request.request_key = pendingContext.request_key is null ? default : pendingContext.request_key.Get();
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.minAddress = pendingContext.minAddress;
                 request.record = default;
