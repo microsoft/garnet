@@ -626,7 +626,7 @@ namespace Garnet.server
         {
             logger?.LogInformation("Initiating checkpoint; full = {full}, type = {checkpointType}, tryIncremental = {tryIncremental}, dbId = {dbId}", full, checkpointType, tryIncremental, db.Id);
 
-            var checkpointCoveredAofAddress = AofAddress.SetValue(StoreWrapper.serverOptions.AofSublogCount, 0);
+            var checkpointCoveredAofAddress = AofAddress.Create(StoreWrapper.serverOptions.AofSublogCount, 0);
             if (db.AppendOnlyFile != null)
             {
                 if (StoreWrapper.serverOptions.EnableCluster)

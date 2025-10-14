@@ -450,7 +450,7 @@ namespace Garnet.server
             // So initialize local AofProcessor with recordToAof: false.
             var aofProcessor = new AofProcessor(StoreWrapper, recordToAof: false, logger: Logger);
 
-            var replicationOffset = AofAddress.SetValue(StoreWrapper.serverOptions.AofSublogCount, 0);
+            var replicationOffset = AofAddress.Create(StoreWrapper.serverOptions.AofSublogCount, 0);
             try
             {
                 var databasesMapSnapshot = databases.Map;

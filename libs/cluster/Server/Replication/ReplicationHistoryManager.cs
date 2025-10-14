@@ -23,8 +23,8 @@ namespace Garnet.cluster
         {
             primary_replid = Generator.CreateHexId();
             primary_replid2 = String.Empty;
-            replicationOffset = AofAddress.SetValue(aofSublogCount, 0);
-            replicationOffset2 = AofAddress.SetValue(aofSublogCount, long.MaxValue);
+            replicationOffset = AofAddress.Create(aofSublogCount, 0);
+            replicationOffset2 = AofAddress.Create(aofSublogCount, long.MaxValue);
         }
 
         public ReplicationHistory Copy()

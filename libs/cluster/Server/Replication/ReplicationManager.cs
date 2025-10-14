@@ -133,8 +133,8 @@ namespace Garnet.cluster
             replicaSyncSessionTaskStore = new ReplicaSyncSessionTaskStore(storeWrapper, clusterProvider, logger);
             replicationSyncManager = new ReplicationSyncManager(clusterProvider, logger);
 
-            replicationOffset = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, kFirstValidAofAddress);
-            ReplicationCheckpointStartOffset = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, kFirstValidAofAddress);
+            replicationOffset = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, kFirstValidAofAddress);
+            ReplicationCheckpointStartOffset = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, kFirstValidAofAddress);
 
             // Set the appendOnlyFile field for all stores
             clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShiftStart = CheckpointVersionShiftStart;
@@ -534,7 +534,7 @@ namespace Garnet.cluster
                 var recoveredSafeAofAddress = GetRecoveredSafeAofAddress();
                 storeWrapper.appendOnlyFile.Log.InitializeIf(ref recoveredSafeAofAddress);
                 logger?.LogInformation("Recovered AOF: begin address = {beginAddress}, tail address = {tailAddress}", storeWrapper.appendOnlyFile.Log.BeginAddress, storeWrapper.appendOnlyFile.Log.TailAddress);
-                var replayedUntil = storeWrapper.ReplayAOF(AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, -1));
+                var replayedUntil = storeWrapper.ReplayAOF(AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, -1));
                 replicationOffset.SetValue(ref replayedUntil);
             }
 
@@ -552,7 +552,7 @@ namespace Garnet.cluster
         {
             while (ReplicationOffset.AnyLesser(primaryReplicationOffset))
             {
-                if (ctsRepManager.IsCancellationRequested) return AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, -1);
+                if (ctsRepManager.IsCancellationRequested) return AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, -1);
                 await Task.Yield();
             }
             return ReplicationOffset;
@@ -592,11 +592,11 @@ namespace Garnet.cluster
                 var replicaIds = current.GetLocalNodeReplicaIds();
                 foreach (var replicaId in replicaIds)
                 {
-                    var aofAddress = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, 0);
+                    var aofAddress = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, 0);
                     // TODO: Initiate AOF sync task correctly when restarting primary
                     if (clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationTask(replicaId, ref aofAddress, out var aofSyncTaskInfo))
                     {
-                        var syncFromAofAddress = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, 0);
+                        var syncFromAofAddress = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, 0);
                         if (!TryConnectToReplica(replicaId, ref syncFromAofAddress, aofSyncTaskInfo, out var errorMessage))
                             logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
                     }

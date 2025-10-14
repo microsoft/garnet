@@ -278,7 +278,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         public CheckpointEntry GetLatestCheckpointEntryFromDisk()
         {
-            var storeCheckpointCoveredAofAddress = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, 0);
+            var storeCheckpointCoveredAofAddress = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, 0);
             storeWrapper.store.GetLatestCheckpointTokens(out var storeHLogToken, out var storeIndexToken, out var storeVersion);
             GetCheckpointCookieMetadata(StoreType.Main, storeHLogToken, ref storeCheckpointCoveredAofAddress, out var storePrimaryReplId);
 
@@ -286,7 +286,7 @@ namespace Garnet.cluster
             Guid objectStoreHLogToken = default;
             Guid objectStoreIndexToken = default;
             string objectStorePrimaryReplId = null;
-            var objectCheckpointCoveredAofAddress = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, long.MaxValue);
+            var objectCheckpointCoveredAofAddress = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, long.MaxValue);
             storeWrapper.objectStore?.GetLatestCheckpointTokens(out objectStoreHLogToken, out objectStoreIndexToken, out objectStoreVersion);
             if (objectStoreHLogToken != default)
                 GetCheckpointCookieMetadata(StoreType.Object, objectStoreHLogToken, ref objectCheckpointCoveredAofAddress, out objectStorePrimaryReplId);

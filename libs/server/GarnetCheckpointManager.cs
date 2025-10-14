@@ -34,8 +34,8 @@ namespace Garnet.server
         {
             CurrentHistoryId = null;
             RecoveredHistoryId = null;
-            currentSafeAofAddress = AofAddress.SetValue(AofSublogCount, 0);
-            recoveredSafeAofAddress = AofAddress.SetValue(AofSublogCount, 0);
+            currentSafeAofAddress = AofAddress.Create(AofSublogCount, 0);
+            recoveredSafeAofAddress = AofAddress.Create(AofSublogCount, 0);
         }
 
         /// <inheritdoc />

@@ -201,7 +201,7 @@ namespace Garnet.cluster
                 // Injection for a "something went wrong with THIS Replica's AOF file"
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Divergent_AOF_Stream);
 
-                ref var tail = ref storeWrapper.appendOnlyFile.Log.TailAddress;
+                var tail = storeWrapper.appendOnlyFile.Log.TailAddress;
                 var nextPageBeginAddress = ((tail[sublogIdx] >> pageSizeBits) + 1) << pageSizeBits;
                 // Check to ensure:
                 // 1. if record fits in current page tailAddress of this local node (replica) should be equal to the incoming currentAddress (address of chunk send from primary node)

@@ -22,73 +22,75 @@ namespace Garnet.server
         public static long Hash(ref SpanByte key)
             => (long)HashSlotUtils.Hash(key.AsSpan());
 
-        public ref AofAddress BeginAddress
+        public AofAddress BeginAddress
         {
             get
             {
                 if (singleLog != null)
-                    return ref singleLog.BeginAddress;
-                return ref shardedLog.BeginAddress;
+                    return singleLog.BeginAddress;
+                return shardedLog.BeginAddress;
             }
         }
 
-        public ref AofAddress TailAddress
+        public long GetBeginAddress(int sublogIdx) => singleLog != null ? singleLog.log.BeginAddress : shardedLog.sublog[sublogIdx].BeginAddress;
+
+        public AofAddress TailAddress
         {
             get
             {
                 if (singleLog != null)
-                    return ref singleLog.TailAddress;
-                return ref shardedLog.TailAddress;
+                    return singleLog.TailAddress;
+                return shardedLog.TailAddress;
             }
         }
 
-        public ref AofAddress CommittedUntilAddress
+        public AofAddress CommittedUntilAddress
         {
             get
             {
                 if (singleLog != null)
-                    return ref singleLog.CommittedUntilAddress;
-                return ref shardedLog.CommittedUntilAddress;
+                    return singleLog.CommittedUntilAddress;
+                return shardedLog.CommittedUntilAddress;
             }
         }
 
-        public ref AofAddress CommittedBeginAddress
+        public AofAddress CommittedBeginAddress
         {
             get
             {
                 if (singleLog != null)
-                    return ref singleLog.CommittedBeginAddress;
-                return ref shardedLog.CommittedBeginAddress;
+                    return singleLog.CommittedBeginAddress;
+                return shardedLog.CommittedBeginAddress;
             }
         }
 
-        public ref AofAddress FlushedUntilAddress
+        public AofAddress FlushedUntilAddress
         {
             get
             {
                 if (singleLog != null)
-                    return ref singleLog.FlushedUntilAddress;
-                return ref shardedLog.FlushedUntilAddress;
+                    return singleLog.FlushedUntilAddress;
+                return shardedLog.FlushedUntilAddress;
             }
         }
 
-        public ref AofAddress MaxMemorySizeBytes
+        public AofAddress MaxMemorySizeBytes
         {
             get
             {
                 if (singleLog != null)
-                    return ref singleLog.MaxMemorySizeBytes;
-                return ref shardedLog.MaxMemorySizeBytes;
+                    return singleLog.MaxMemorySizeBytes;
+                return shardedLog.MaxMemorySizeBytes;
             }
         }
 
-        public ref AofAddress MemorySizeBytes
+        public AofAddress MemorySizeBytes
         {
             get
             {
                 if (singleLog != null)
-                    return ref singleLog.MemorySizeBytes;
-                return ref shardedLog.MemorySizeBytes;
+                    return singleLog.MemorySizeBytes;
+                return shardedLog.MemorySizeBytes;
             }
         }
 

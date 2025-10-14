@@ -19,17 +19,17 @@ namespace Garnet.server
 
         public long HeaderSize => Log.HeaderSize;
 
-        public AofAddress InvalidAofAddress = AofAddress.SetValue(length: serverOptions.AofSublogCount, value: -1);
+        public AofAddress InvalidAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: -1);
 
-        public AofAddress MaxAofAddress = AofAddress.SetValue(length: serverOptions.AofSublogCount, value: long.MaxValue);
+        public AofAddress MaxAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: long.MaxValue);
 
         public void Dispose() => Log.Dispose();
 
         public void SetLogShiftTailCallback(int sublogIdx, Action<long, long> SafeTailShiftCallback)
             => Log.GetSubLog(sublogIdx).SafeTailShiftCallback = SafeTailShiftCallback;
 
-        public TsavoriteLogScanIterator Scan(int sublogIdx, ref AofAddress beginAddress, ref AofAddress endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
-            => Log.GetSubLog(sublogIdx).Scan(beginAddress[sublogIdx], endAddress[sublogIdx], recover, scanBufferingMode, scanUncommitted, logger);
+        public TsavoriteLogScanIterator Scan(int sublogIdx, long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+            => Log.GetSubLog(sublogIdx).Scan(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
 
         public TsavoriteLogScanSingleIterator ScanSingle(int sublogIdx, long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
             => Log.GetSubLog(sublogIdx).ScanSingle(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);

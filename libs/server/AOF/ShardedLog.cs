@@ -13,84 +13,84 @@ namespace Garnet.server
         readonly TsavoriteLogSettings[] logSettings = logSettings;
         public readonly TsavoriteLog[] sublog = [.. logSettings.Select(settings => new TsavoriteLog(settings, logger))];
 
-        public ref AofAddress BeginAddress
+        public AofAddress BeginAddress
         {
             get
             {
+                var result = AofAddress.Create(Length, 0);
                 for (var i = 0; i < sublog.Length; i++)
-                    beginAddress[i] = sublog[i].BeginAddress;
-                return ref beginAddress;
+                    result[i] = sublog[i].BeginAddress;
+                return result;
             }
         }
-        AofAddress beginAddress = AofAddress.SetValue(length: sublogCount, value: 0);
 
-        public ref AofAddress TailAddress
+        public AofAddress TailAddress
         {
             get
             {
+                var result = AofAddress.Create(Length, 0);
                 for (var i = 0; i < sublog.Length; i++)
-                    tailAddress[i] = sublog[i].TailAddress;
-                return ref tailAddress;
+                    result[i] = sublog[i].TailAddress;
+                return result;
             }
         }
-        AofAddress tailAddress = AofAddress.SetValue(length: sublogCount, value: 0);
 
-        public ref AofAddress CommittedUntilAddress
+        public AofAddress CommittedUntilAddress
         {
             get
             {
+                var result = AofAddress.Create(Length, 0);
                 for (var i = 0; i < sublog.Length; i++)
-                    committedUntilAddress[i] = sublog[i].CommittedUntilAddress;
-                return ref committedUntilAddress;
+                    result[i] = sublog[i].CommittedUntilAddress;
+                return result;
             }
         }
-        AofAddress committedUntilAddress = AofAddress.SetValue(length: sublogCount, value: 0);
 
-        public ref AofAddress CommittedBeginAddress
+        public AofAddress CommittedBeginAddress
         {
             get
             {
+                var result = AofAddress.Create(Length, 0);
                 for (var i = 0; i < sublog.Length; i++)
-                    commitedBeginnAddress[i] = sublog[i].CommittedBeginAddress;
-                return ref commitedBeginnAddress;
+                    result[i] = sublog[i].CommittedBeginAddress;
+                return result;
             }
         }
-        AofAddress commitedBeginnAddress = AofAddress.SetValue(length: sublogCount, value: 0);
 
-        public ref AofAddress FlushedUntilAddress
+        public AofAddress FlushedUntilAddress
         {
             get
             {
+                var result = AofAddress.Create(Length, 0);
                 for (var i = 0; i < sublog.Length; i++)
-                    flushedUntilAddress[i] = sublog[i].FlushedUntilAddress;
-                return ref flushedUntilAddress;
+                    result[i] = sublog[i].FlushedUntilAddress;
+                return result;
             }
         }
-        AofAddress flushedUntilAddress = AofAddress.SetValue(length: sublogCount, value: 0);
 
         public long HeaderSize => sublog[0].HeaderSize;
 
-        public ref AofAddress MaxMemorySizeBytes
+        public AofAddress MaxMemorySizeBytes
         {
             get
             {
+                var result = AofAddress.Create(Length, 0);
                 for (var i = 0; i < sublog.Length; i++)
-                    maxMemorySizeBytes[i] = sublog[i].MaxMemorySizeBytes;
-                return ref maxMemorySizeBytes;
+                    result[i] = sublog[i].MaxMemorySizeBytes;
+                return result;
             }
         }
-        AofAddress maxMemorySizeBytes = AofAddress.SetValue(length: sublogCount, value: 0);
 
-        public ref AofAddress MemorySizeBytes
+        public AofAddress MemorySizeBytes
         {
             get
             {
+                var result = AofAddress.Create(Length, 0);
                 for (var i = 0; i < sublog.Length; i++)
-                    memorySizeBytes[i] = sublog[i].MemorySizeBytes;
-                return ref memorySizeBytes;
+                    result[i] = sublog[i].MemorySizeBytes;
+                return result;
             }
         }
-        AofAddress memorySizeBytes = AofAddress.SetValue(length: sublogCount, value: 0);
 
         public void Recover()
         {

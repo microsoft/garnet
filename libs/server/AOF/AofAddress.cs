@@ -191,7 +191,7 @@ namespace Garnet.server
         /// <param name="length"></param>
         /// <param name="value"></param>
         /// <returns></returns>
-        public static AofAddress SetValue(int length, long value)
+        public static AofAddress Create(int length, long value)
         {
             var aofAddress = new AofAddress(length);
             for (var i = 0; i < length; i++)

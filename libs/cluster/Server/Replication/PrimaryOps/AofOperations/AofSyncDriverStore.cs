@@ -70,7 +70,7 @@ namespace Garnet.cluster
                     }
                 }
             }
-            TruncatedUntil = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, 0);
+            TruncatedUntil = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, 0);
         }
 
         /// <summary>
@@ -186,7 +186,7 @@ namespace Garnet.cluster
                         replication_state = cr.IsConnected ? "online" : "offline",
                         replication_offset = cr.PreviousAddress,
                         replication_lag = cr.PreviousAddress.AggregateDiff(PrimaryReplicationOffset),
-                        maxSendTimestamp = cr.MaxSublogTimestamps
+                        maxSendTimestamp = cr.MaxSendSublogTimestamp
                     });
                 }
             }

@@ -369,7 +369,7 @@ namespace Garnet.cluster
             var syncMetadata = SyncMetadata.FromByteArray(checkpointEntryBytes);
 
             ReadOnlySpan<byte> errorMessage;
-            var replicationOffset = AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, -1);
+            var replicationOffset = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, -1);
             if (syncMetadata.originNodeRole == NodeRole.REPLICA)
                 _ = clusterProvider.replicationManager.TryBeginDisklessSync(syncMetadata, out errorMessage);
             else

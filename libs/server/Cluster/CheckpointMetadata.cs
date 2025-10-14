@@ -24,13 +24,13 @@ namespace Garnet.server
             storeVersion = -1;
             storeHlogToken = default;
             storeIndexToken = default;
-            storeCheckpointCoveredAofAddress = AofAddress.SetValue(sublogCount, 0);
+            storeCheckpointCoveredAofAddress = AofAddress.Create(sublogCount, 0);
             storePrimaryReplId = null;
 
             objectStoreVersion = -1;
             objectStoreHlogToken = default;
             objectStoreIndexToken = default;
-            objectCheckpointCoveredAofAddress = AofAddress.SetValue(sublogCount, long.MaxValue);
+            objectCheckpointCoveredAofAddress = AofAddress.Create(sublogCount, long.MaxValue);
             objectStorePrimaryReplId = null;
         }
 

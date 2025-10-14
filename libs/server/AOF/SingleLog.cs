@@ -12,84 +12,21 @@ namespace Garnet.server
         readonly TsavoriteLogSettings logSettings = logSettings;
         public readonly TsavoriteLog log = new(logSettings, logger);
 
-        public ref AofAddress BeginAddress
-        {
-            get
-            {
-                // Optimized for single log - no loop needed
-                beginAddress[0] = log.BeginAddress;
-                return ref beginAddress;
-            }
-        }
-        AofAddress beginAddress = AofAddress.SetValue(length: 1, value: 0);
+        public long HeaderSize => log.HeaderSize;        
 
-        public ref AofAddress TailAddress
-        {
-            get
-            {
-                // Optimized for single log - no loop needed
-                tailAddress[0] = log.TailAddress;
-                return ref tailAddress;
-            }
-        }
-        AofAddress tailAddress = AofAddress.SetValue(length: 1, value: 0);
+        public AofAddress BeginAddress => AofAddress.Create(1, value: log.BeginAddress);
 
-        public ref AofAddress CommittedUntilAddress
-        {
-            get
-            {
-                // Optimized for single log - no loop needed
-                committedUntilAddress[0] = log.CommittedUntilAddress;
-                return ref committedUntilAddress;
-            }
-        }
-        AofAddress committedUntilAddress = AofAddress.SetValue(length: 1, value: 0);
+        public AofAddress TailAddress => AofAddress.Create(1, value: log.TailAddress);
 
-        public ref AofAddress CommittedBeginAddress
-        {
-            get
-            {
-                // Optimized for single log - no loop needed
-                commitedBeginnAddress[0] = log.CommittedBeginAddress;
-                return ref commitedBeginnAddress;
-            }
-        }
-        AofAddress commitedBeginnAddress = AofAddress.SetValue(length: 1, value: 0);
+        public AofAddress CommittedUntilAddress => AofAddress.Create(1, value: log.CommittedUntilAddress);
 
-        public ref AofAddress FlushedUntilAddress
-        {
-            get
-            {
-                // Optimized for single log - no loop needed
-                flushedUntilAddress[0] = log.FlushedUntilAddress;
-                return ref flushedUntilAddress;
-            }
-        }
-        AofAddress flushedUntilAddress = AofAddress.SetValue(length: 1, value: 0);
+        public AofAddress CommittedBeginAddress => AofAddress.Create(1, value: log.CommittedBeginAddress);
 
-        public long HeaderSize => log.HeaderSize;
+        public AofAddress FlushedUntilAddress => AofAddress.Create(1, value: log.FlushedUntilAddress);
 
-        public ref AofAddress MaxMemorySizeBytes
-        {
-            get
-            {
-                // Optimized for single log - no loop needed
-                maxMemorySizeBytes[0] = log.MaxMemorySizeBytes;
-                return ref maxMemorySizeBytes;
-            }
-        }
-        AofAddress maxMemorySizeBytes = AofAddress.SetValue(length: 1, value: 0);
+        public AofAddress MaxMemorySizeBytes => AofAddress.Create(1, value: log.MaxMemorySizeBytes);
 
-        public ref AofAddress MemorySizeBytes
-        {
-            get
-            {
-                // Optimized for single log - no loop needed
-                memorySizeBytes[0] = log.MemorySizeBytes;
-                return ref memorySizeBytes;
-            }
-        }
-        AofAddress memorySizeBytes = AofAddress.SetValue(length: 1, value: 0);
+        public AofAddress MemorySizeBytes => AofAddress.Create(1, value: log.MemorySizeBytes);
 
         public void Recover() => log.Recover();
         public void Reset() => log.Reset();

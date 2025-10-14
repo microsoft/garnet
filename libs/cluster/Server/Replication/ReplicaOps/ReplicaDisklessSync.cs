@@ -198,7 +198,7 @@ namespace Garnet.cluster
             {
                 logger?.LogError(ex, $"{nameof(TryReplicaDisklessRecovery)}");
                 errorMessage = Encoding.ASCII.GetBytes(ex.Message);
-                return AofAddress.SetValue(clusterProvider.serverOptions.AofSublogCount, -1);
+                return AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, -1);
             }
             finally
             {

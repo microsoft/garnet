@@ -36,41 +36,44 @@ namespace Garnet.cluster
         /// <summary>
         /// Return start address for underlying AofSyncTask
         /// </summary>
-        public AofAddress StartAddress => GetAofStartAddress();
-
-        AofAddress startAddress;
-
-        AofAddress GetAofStartAddress()
+        public AofAddress StartAddress
         {
-            for (var i = 0; i < aofSyncTasks.Length; i++)
-                startAddress[i] = aofSyncTasks[i].StartAddress;
-            return startAddress;
+            get
+            {
+                var startAddress = AofAddress.Create(aofSyncTasks.Length, 0);
+                for (var i = 0; i < aofSyncTasks.Length; i++)
+                    startAddress[i] = aofSyncTasks[i].StartAddress;
+                return startAddress;
+            }
         }
 
         /// <summary>
         /// Return previous address for underlying AofSyncTask
         /// </summary>
-        public ref AofAddress PreviousAddress
+        public AofAddress PreviousAddress
         {
             get
             {
+                var previousAddress = AofAddress.Create(aofSyncTasks.Length, 0);
                 for (var i = 0; i < aofSyncTasks.Length; i++)
                     previousAddress[i] = aofSyncTasks[i].PreviousAddress;
-                return ref previousAddress;
+                return previousAddress;
             }
         }
-        AofAddress previousAddress;
 
-        public ref AofAddress MaxSublogTimestamps
+        /// <summary>
+        /// Max send sublog timestamp
+        /// </summary>
+        public AofAddress MaxSendSublogTimestamp
         {
             get
             {
+                var maxSendSublogTimestamp = AofAddress.Create(aofSyncTasks.Length, 0);
                 for (var i = 0; i < aofSyncTasks.Length; i++)
-                    maxSublogTimestamps[i] = aofSyncTasks[i].MaxSendTimestamp;
-                return ref maxSublogTimestamps;
+                    maxSendSublogTimestamp[i] = aofSyncTasks[i].MaxSendSublogTimestamp;
+                return maxSendSublogTimestamp;
             }
         }
-        AofAddress maxSublogTimestamps;
 
         public AofSyncDriver(
             ClusterProvider clusterProvider,
@@ -85,9 +88,6 @@ namespace Garnet.cluster
             this.aofTaskStore = aofSyncDriver;
             this.localNodeId = localNodeId;
             this.remoteNodeId = remoteNodeId;
-            this.startAddress = startAddress;
-            this.previousAddress = startAddress;
-            this.maxSublogTimestamps = AofAddress.SetValue(startAddress.Length, 0);
             this.cts = new CancellationTokenSource();
             this.logger = logger;
 
@@ -160,7 +160,7 @@ namespace Garnet.cluster
 
                 var tailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
                 var previousAddress = PreviousAddress;
-                var maxSublogTimestamps = MaxSublogTimestamps;
+                var maxSublogTimestamps = MaxSendSublogTimestamp;
                 // Maximum Send Timestamp (MST)
                 var mst = maxSublogTimestamps.Max();
 

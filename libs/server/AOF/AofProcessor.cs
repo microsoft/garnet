@@ -143,7 +143,7 @@ namespace Garnet.server
                 void RecoverReplayTask(int sublogIdx, AofAddress untilAddress)
                 {
                     var count = 0;
-                    using var scan = appendOnlyFile.Scan(sublogIdx, ref appendOnlyFile.Log.BeginAddress, ref untilAddress);
+                    using var scan = appendOnlyFile.Scan(sublogIdx, appendOnlyFile.Log.GetBeginAddress(sublogIdx), untilAddress[sublogIdx]);
 
                     // Replay each AOF record in the current database context
                     while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))
@@ -172,7 +172,7 @@ namespace Garnet.server
                 respServerSession.Dispose();
             }
 
-            return AofAddress.SetValue(storeWrapper.serverOptions.AofSublogCount, -1);
+            return AofAddress.Create(storeWrapper.serverOptions.AofSublogCount, -1);
         }
 
         internal unsafe void ProcessAofRecord(int sublogIdx, IMemoryOwner<byte> entry, int length)
