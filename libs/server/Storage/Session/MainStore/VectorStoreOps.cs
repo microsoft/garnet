@@ -137,7 +137,7 @@ namespace Garnet.server
                 if (result == VectorManagerResult.OK)
                 {
                     // On successful addition, we need to manually replicate the write
-                    vectorManager.ReplicateVectorSetAdd(key, ref input, ref basicContext);
+                    vectorManager.ReplicateVectorSetAdd(ref key, ref input, ref basicContext);
                 }
 
                 return GarnetStatus.OK;

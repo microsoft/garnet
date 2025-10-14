@@ -1117,7 +1117,7 @@ namespace Garnet.server
         /// 
         /// This the Primary part, on a Replica <see cref="HandleVectorSetAddReplication"/> runs.
         /// </summary>
-        internal void ReplicateVectorSetAdd<TContext>(SpanByte key, ref RawStringInput input, ref TContext context)
+        internal void ReplicateVectorSetAdd<TContext>(ref SpanByte key, ref RawStringInput input, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             if (input.header.cmd != RespCommand.VADD)
