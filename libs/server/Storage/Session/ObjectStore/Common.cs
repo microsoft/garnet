@@ -784,6 +784,41 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Gets the value of the key store in the Object Store
+        /// </summary>
+        unsafe GarnetStatus ReadObjectStoreOperationWithObject<TObjectContext>(byte[] key, ref ObjectInput input, out ObjectOutputHeader output, out IGarnetObject garnetObject, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        {
+            if (objectStoreContext.Session is null)
+                ThrowObjectStoreUninitializedException();
+
+            var _output = new GarnetObjectStoreOutput();
+
+            // Perform Read on object store
+            var status = objectStoreContext.Read(ref key, ref input, ref _output);
+
+            if (status.IsPending)
+                CompletePendingForObjectStoreSession(ref status, ref _output, ref objectStoreContext);
+
+            output = _output.Header;
+
+            if (_output.HasWrongType)
+            {
+                garnetObject = null;
+                return GarnetStatus.WRONGTYPE;
+            }
+
+            if (status.Found && (!status.Record.Created && !status.Record.CopyUpdated && !status.Record.InPlaceUpdated))
+            {
+                garnetObject = _output.GarnetObject;
+                return GarnetStatus.OK;
+            }
+
+            garnetObject = null;
+            return GarnetStatus.NOTFOUND;
+        }
+
+        /// <summary>
         /// Iterates members of a collection object using a cursor,
         /// a match pattern and count parameters
         /// </summary>

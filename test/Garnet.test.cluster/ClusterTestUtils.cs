@@ -8,12 +8,14 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Security;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Garnet.server.TLS;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
@@ -2902,13 +2904,19 @@ namespace Garnet.test.cluster
                 BackOff(cancellationToken: context.cts.Token, msg: $"[{endpoints[primaryIndex]}]: {primaryMainStoreVersion},{primaryReplicationOffset} != [{endpoints[secondaryIndex]}]: {replicaMainStoreVersion},{secondaryReplicationOffset1}");
             }
             logger?.LogInformation("[{primaryEndpoint}]{primaryReplicationOffset} ?? [{endpoints[secondaryEndpoint}]{secondaryReplicationOffset1}", endpoints[primaryIndex], primaryReplicationOffset, endpoints[secondaryIndex], secondaryReplicationOffset1);
+
+            // VADD replication are async, modulo some other operation happening
+            // So we need to force replication to be quiescent there to truly "wait"
+            var replicaServer = this.context.nodes[secondaryIndex];
+            var store = GetStoreWrapper(replicaServer);
+            var vectorManager = GetVectorManager(store);
+            vectorManager.WaitForVectorOperationsToComplete();
         }
 
         public void WaitForConnectedReplicaCount(int primaryIndex, long minCount, ILogger logger = null)
         {
             while (true)
             {
-
                 var items = GetReplicationInfo(primaryIndex, [ReplicationInfoItem.ROLE, ReplicationInfoItem.CONNECTED_REPLICAS], logger);
                 var role = items[0].Item2;
                 ClassicAssert.AreEqual(role, "master");
@@ -3162,5 +3170,11 @@ namespace Garnet.test.cluster
                 return -1;
             }
         }
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
+        private static extern ref StoreWrapper GetStoreWrapper(GarnetServer server);
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "vectorManager")]
+        private static extern ref VectorManager GetVectorManager(StoreWrapper store);
     }
 }

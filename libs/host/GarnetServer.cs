@@ -57,6 +57,8 @@ namespace Garnet
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
 
+        private VectorManager vectorManager;
+
         /// <summary>
         /// Store and associated information used by this Garnet server
         /// </summary>
@@ -254,9 +256,12 @@ namespace Garnet
                 }
             }
 
+            vectorManager = new(loggerFactory?.CreateLogger<VectorManager>());
+
             storeWrapper = new StoreWrapper(version, RedisProtocolVersion, servers, customCommandManager, opts, subscribeBroker,
                 createDatabaseDelegate: createDatabaseDelegate,
                 clusterFactory: clusterFactory,
+                vectorManager: vectorManager,
                 loggerFactory: loggerFactory);
 
             if (logger != null)
@@ -463,6 +468,8 @@ namespace Garnet
             opts.AuthSettings?.Dispose();
             if (disposeLoggerFactory)
                 loggerFactory?.Dispose();
+
+            vectorManager.Dispose();
         }
 
         private static void DeleteDirectory(string path)

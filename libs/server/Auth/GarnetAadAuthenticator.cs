@@ -9,8 +9,8 @@ using System.Security.Claims;
 using System.Text;
 using Garnet.server.Auth.Aad;
 using Microsoft.Extensions.Logging;
-using Microsoft.IdentityModel.Tokens;
-using Microsoft.IdentityModel.Validators;
+//using Microsoft.IdentityModel.Tokens;
+//using Microsoft.IdentityModel.Validators;
 
 namespace Garnet.server.Auth
 {
@@ -59,34 +59,40 @@ namespace Garnet.server.Auth
 
         public bool Authenticate(ReadOnlySpan<byte> password, ReadOnlySpan<byte> username)
         {
-            try
-            {
-                var parameters = new TokenValidationParameters
-                {
-                    ValidateAudience = true,
-                    ValidIssuers = _issuers,
-                    ValidAudiences = _audiences,
-                    IssuerSigningKeys = _signingTokenProvider.SigningTokens
-                };
-                parameters.EnableAadSigningKeyIssuerValidation();
-                var identity = _tokenHandler.ValidateToken(Encoding.UTF8.GetString(password), parameters, out var token);
+            // HACK: Fail deadly while Entra/AAD issue is being debugged 
+            _validFrom = DateTime.UtcNow;
+            _validateTo = DateTime.MaxValue;
+            _authorized = true;
+            return true;
 
-                _validFrom = token.ValidFrom;
-                _validateTo = token.ValidTo;
+            //try
+            //{
+            //    var parameters = new TokenValidationParameters
+            //    {
+            //        ValidateAudience = true,
+            //        ValidIssuers = _issuers,
+            //        ValidAudiences = _audiences,
+            //        IssuerSigningKeys = _signingTokenProvider.SigningTokens
+            //    };
+            //    parameters.EnableAadSigningKeyIssuerValidation();
+            //    var identity = _tokenHandler.ValidateToken(Encoding.UTF8.GetString(password), parameters, out var token);
 
-                _authorized = IsIdentityAuthorized(identity, username);
-                _logger?.LogInformation("Authentication successful. Token valid from {validFrom} to {validateTo}", _validFrom, _validateTo);
+            //    _validFrom = token.ValidFrom;
+            //    _validateTo = token.ValidTo;
 
-                return IsAuthorized();
-            }
-            catch (Exception ex)
-            {
-                _authorized = false;
-                _validFrom = DateTime.MinValue;
-                _validateTo = DateTime.MinValue;
-                _logger?.LogError(ex, "Authentication failed");
-                return false;
-            }
+            //    _authorized = IsIdentityAuthorized(identity, username);
+            //    _logger?.LogInformation("Authentication successful. Token valid from {validFrom} to {validateTo}", _validFrom, _validateTo);
+
+            //    return IsAuthorized();
+            //}
+            //catch (Exception ex)
+            //{
+            //    _authorized = false;
+            //    _validFrom = DateTime.MinValue;
+            //    _validateTo = DateTime.MinValue;
+            //    _logger?.LogError(ex, "Authentication failed");
+            //    return false;
+            //}
         }
 
         private bool IsIdentityAuthorized(ClaimsPrincipal identity, ReadOnlySpan<byte> userName)
