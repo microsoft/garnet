@@ -1776,7 +1776,7 @@ namespace Garnet.server
         /// <summary>
         /// Determine the dimensions of a vector given its <see cref="VectorValueType"/> and its raw data.
         /// </summary>
-        private static uint CalculateValueDimensions(VectorValueType valueType, ReadOnlySpan<byte> values)
+        internal static uint CalculateValueDimensions(VectorValueType valueType, ReadOnlySpan<byte> values)
         {
             if (valueType == VectorValueType.FP32)
             {

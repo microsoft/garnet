@@ -91,20 +91,8 @@ namespace Garnet.server
         [SkipLocalsInit]
         public unsafe GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
-            int dims;
-            if (valueType == VectorValueType.FP32)
-            {
-                dims = values.ReadOnlySpan.Length / sizeof(float);
-            }
-            else if (valueType == VectorValueType.XB8)
-            {
-                dims = values.ReadOnlySpan.Length;
-            }
-            else
-            {
-                throw new NotImplementedException($"{valueType}");
-            }
-
+            var dims = VectorManager.CalculateValueDimensions(valueType, values.ReadOnlySpan);
+            
             var dimsArg = new ArgSlice((byte*)&dims, sizeof(uint));
             var reduceDimsArg = new ArgSlice((byte*)&reduceDims, sizeof(uint));
             var valueTypeArg = new ArgSlice((byte*)&valueType, sizeof(VectorValueType));
