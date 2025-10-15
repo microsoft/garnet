@@ -100,6 +100,75 @@ namespace Garnet.test
         }
 
         [Test]
+        public void SortedSetBlockingPopWithEtagTest()
+        {
+            using var lightClientRequest = TestUtils.CreateRequest();
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+
+            // Add new sorted set with Etag
+            var results = (string[])db.Execute("ZADD", key, "WITHETAG", "1", "a", "2", "b", "3", "c");
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(2, results!.Length);
+            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
+            ClassicAssert.AreEqual(3, long.Parse(results[1]!)); // 3 elements added
+
+            // Perform a blocking pop
+            var response = lightClientRequest.SendCommand($"BZMPOP 1 1 {key} MIN", 2);
+            var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n*1\r\n*2\r\n$1\r\na\r\n$1\r\n1\r\n";
+            TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+            // Verify new sorted set cardinality
+            var card = db.SortedSetLength(key);
+            ClassicAssert.AreEqual(2, card);
+
+            // Verify Etag advanced
+            var result = (string)db.Execute("GETETAG", key);
+            ClassicAssert.AreEqual(2, long.Parse(result!)); // Etag 2
+        }
+
+        [Test]
+        public void SortedSetRMWOpsWithEtagTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "key1";
+
+            // Add new sorted set with Etag
+            var results = (string[])db.Execute("ZADD", key, "WITHETAG", "1", "a", "2", "b", "3", "c", "4", "d");
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(2, results!.Length);
+            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
+            ClassicAssert.AreEqual(4, long.Parse(results[1]!)); // 3 elements added
+
+            // ZINCRBY
+            var score = db.SortedSetIncrement(key, "a", 1);
+            ClassicAssert.AreEqual(2, score); // New score 2
+
+            // Verify Etag advanced
+            var result = (string)db.Execute("GETETAG", key);
+            ClassicAssert.AreEqual(2, long.Parse(result!)); // Etag 2
+
+            // ZMPOP
+            var members = db.SortedSetPop(key, 1, Order.Descending);
+            ClassicAssert.AreEqual(1, members.Length);
+
+            // Verify Etag advanced
+            result = (string)db.Execute("GETETAG", key);
+            ClassicAssert.AreEqual(3, long.Parse(result!)); // Etag 3
+
+            // ZREM
+            var removed = db.SortedSetRemove(key, "b");
+            ClassicAssert.IsTrue(removed);
+
+            // Verify Etag advanced
+            result = (string)db.Execute("GETETAG", key);
+            ClassicAssert.AreEqual(4, long.Parse(result!)); // Etag 4
+        }
+
+        [Test]
         public void SortedSetAddConditionalEtagTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

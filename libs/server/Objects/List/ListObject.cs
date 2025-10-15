@@ -199,7 +199,7 @@ namespace Garnet.server
         {
             var memorySize = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.ListEntryOverhead;
             var diskSize = sizeof(int) + item.Length;
-
+            
             if (add)
             {
                 this.HeapMemorySize += memorySize;

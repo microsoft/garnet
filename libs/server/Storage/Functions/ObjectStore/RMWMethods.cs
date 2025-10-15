@@ -55,7 +55,7 @@ namespace Garnet.server
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, logRecord.ETag, out _);
+                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, LogRecord.NoETag, out _);
                 _ = logRecord.TrySetValueObject(value, in sizeInfo);
 
                 // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
@@ -64,6 +64,7 @@ namespace Garnet.server
                     functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
                     return false;
                 }
+
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
 
                 return true;
@@ -90,8 +91,12 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
-            // reset etag state set at need initial update
-            ETagState.ResetState(ref functionsState.etagState);
+            var type = input.header.type;
+            if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
+            {
+                // reset etag state set at need initial update
+                ETagState.ResetState(ref functionsState.etagState);
+            }
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
@@ -161,7 +166,11 @@ namespace Garnet.server
                     {
                         var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, logRecord.ETag, out sizeChange);
                         if (output.HasWrongType)
+                        {
+                            if (shouldUpdateEtag)
+                                ETagState.ResetState(ref functionsState.etagState);
                             return true;
+                        }
                         if (output.HasRemoveKey)
                         {
                             functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
@@ -175,13 +184,10 @@ namespace Garnet.server
                         }
 
                         // Advance etag if the object was not explicitly marked as unchanged or if called with withetag and no previous etag was present.
-                        if (!output.IsObjectUnchanged)
-                        {
-                            if (!logRecord.TrySetETag(this.functionsState.etagState.ETag + 1))
-                                return false;
-                        }
+                        if (!output.IsObjectUnchanged && !logRecord.TrySetETag(this.functionsState.etagState.ETag + 1))
+                            return false;
 
-                        if (!output.IsObjectUnchanged || hadETagPreMutation)
+                        if (shouldUpdateEtag)
                             ETagState.ResetState(ref functionsState.etagState);
 
                         sizeInfo.AssertOptionals(logRecord.Info);
@@ -189,6 +195,14 @@ namespace Garnet.server
                     }
                     else
                     {
+                        if (shouldUpdateEtag)
+                        {
+                            functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
+                            // reset etag state that may have been initialized earlier but don't update ETag
+                            ETagState.ResetState(ref functionsState.etagState);
+                            return true;
+                        }
+
                         var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
                         if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
                         {
