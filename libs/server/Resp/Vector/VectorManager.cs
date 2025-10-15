@@ -479,7 +479,7 @@ namespace Garnet.server
             var status = ctx.Delete(ref keyWithNamespace);
             Debug.Assert(!status.IsPending, "Deletes should never go async");
 
-            return status.IsCompletedSuccessfully ? (byte)1 : default;
+            return status.IsCompletedSuccessfully && status.Found ? (byte)1 : default;
         }
 
         private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
