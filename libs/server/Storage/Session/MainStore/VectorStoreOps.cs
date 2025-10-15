@@ -145,6 +145,36 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Implement Vector Set Remove - returns not found if the element is not present, or the vector set does not exist.
+        /// </summary>
+        [SkipLocalsInit]
+        public unsafe GarnetStatus VectorSetRemove(SpanByte key, SpanByte element)
+        {
+            var input = new RawStringInput(RespCommand.VREM, ref parseState);
+
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+
+            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                // After a successful read we add the vector while holding a shared lock
+                // That lock prevents deletion, but everything else can proceed in parallel
+                var res = vectorManager.TryRemove(indexSpan, element.AsReadOnlySpan());
+
+                if (res == VectorManagerResult.OK)
+                {
+                    return GarnetStatus.OK;
+                }
+
+                return GarnetStatus.NOTFOUND;
+            }
+        }
+
+        /// <summary>
         /// Perform a similarity search on an existing Vector Set given a vector as a bunch of floats.
         /// </summary>
         [SkipLocalsInit]

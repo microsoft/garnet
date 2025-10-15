@@ -144,6 +144,16 @@ namespace Garnet.server
             return NativeDiskANNMethods.insert(context, index, (nint)id_data, (nuint)id_len, vectorType, (nint)vector_data, (nuint)vector_len, (nint)attributes_data, (nuint)attributes_len) == 1;
         }
 
+        public bool Remove(ulong context, nint index, ReadOnlySpan<byte> id)
+        {
+            var id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(id));
+            var id_len = id.Length;
+
+            // TODO: DiskANN, implement!
+            //return NativeDiskANNMethods.remove(context, index, (nint)id_data, (nuint)id_len) == 1;
+            throw new NotImplementedException();
+        }
+
         public void MultiInsert(ulong context, nint index, ReadOnlySpan<PointerLengthPair> ids, VectorValueType vectorType, ReadOnlySpan<PointerLengthPair> vectors, ReadOnlySpan<PointerLengthPair> attributes, Span<bool> insertSuccess)
         {
             if (UseMultiInsertCallback)
@@ -380,6 +390,14 @@ namespace Garnet.server
             nuint vector_len,
             nint attribute_data,
             nuint attribute_len
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte remove(
+            ulong context,
+            nint index,
+            nint id_data,
+            nuint id_len
         );
 
         [LibraryImport(DISKANN_GARNET)]

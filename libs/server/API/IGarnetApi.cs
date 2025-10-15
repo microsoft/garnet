@@ -1207,6 +1207,11 @@ namespace Garnet.server
         /// Adds to (and may create) a vector set with the given parameters.
         /// </summary>
         GarnetStatus VectorSetAdd(ArgSlice key, int reduceDims, VectorValueType valueType, ArgSlice value, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// Remove a member from a vector set, if it is present and the key exists.
+        /// </summary>
+        GarnetStatus VectorSetRemove(ArgSlice key, ArgSlice element);
         #endregion
     }
 

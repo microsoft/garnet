@@ -991,9 +991,17 @@ namespace Garnet.server
         private bool NetworkVREM<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // TODO: implement!
+            if(parseState.Count != 2)
+                return AbortWithWrongNumberOfArguments("VREM");
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+            var key = parseState.GetArgSliceByRef(0);
+            var elem = parseState.GetArgSliceByRef(1);
+
+            var res = storageApi.VectorSetRemove(key, elem);
+
+            var resp = res == GarnetStatus.OK ? 1 : 0;
+
+            while (!RespWriteUtils.TryWriteInt32(resp, ref dcurr, dend))
                 SendAndReset();
 
             return true;

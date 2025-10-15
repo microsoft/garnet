@@ -772,6 +772,23 @@ namespace Garnet.server
             return VectorManagerResult.Duplicate;
         }
 
+        internal VectorManagerResult TryRemove(ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element)
+        {
+            AssertHaveStorageSession();
+
+            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out var indexPtr, out _);
+
+            if (quantType == VectorQuantType.XPreQ8 && element.Length != sizeof(int))
+            {
+                // We know this element isn't present because of other validation constraints, bail
+                return VectorManagerResult.MissingElement;
+            }
+
+            var del = Service.Remove(context, indexPtr, element);
+
+            return del ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
+        }
+
         /// <summary>
         /// Perform a similarity search given a vector to compare against.
         /// </summary>

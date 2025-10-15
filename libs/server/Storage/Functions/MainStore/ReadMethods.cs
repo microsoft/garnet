@@ -33,6 +33,12 @@ namespace Garnet.server
                 CopyRespError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dst);
                 return true;
             }
+            else if (!readInfo.RecordInfo.VectorSet && cmd.IsLegalOnVectorSet())
+            {
+                // Attempted a vector set op on a non-VectorSet
+                readInfo.Action = ReadAction.CancelOperation;
+                return false;
+            }
 
             if (cmd == RespCommand.GETIFNOTMATCH)
             {
@@ -111,6 +117,12 @@ namespace Garnet.server
                 // Attempted an illegal op on a VectorSet
                 CopyRespError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dst);
                 return true;
+            }
+            else if (!recordInfo.VectorSet && cmd.IsLegalOnVectorSet())
+            {
+                // Attempted a vector set op on a non-VectorSet
+                readInfo.Action = ReadAction.CancelOperation;
+                return false;
             }
 
             if (cmd == RespCommand.GETIFNOTMATCH)
