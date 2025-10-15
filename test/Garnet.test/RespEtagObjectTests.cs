@@ -84,6 +84,13 @@ namespace Garnet.test
             result = (string)db.Execute("GETETAG", "key2");
             ClassicAssert.AreEqual(0, long.Parse(result!)); // Etag 0
 
+            // Add existing field to sorted set with Etag flag
+            results = (string[])db.Execute("ZADD", "key2", "WITHETAG", "1", "a");
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(2, results!.Length);
+            ClassicAssert.AreEqual(0, long.Parse(results[0]!)); // Etag 0 unchanged
+            ClassicAssert.AreEqual(0, long.Parse(results[1]!)); // 0 elements added
+
             // Add non-existing field to sorted set with Etag flag
             results = (string[])db.Execute("ZADD", "key2", "WITHETAG", "3", "c");
             ClassicAssert.IsNotNull(results);

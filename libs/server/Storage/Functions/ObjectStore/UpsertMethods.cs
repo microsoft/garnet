@@ -96,6 +96,11 @@ namespace Garnet.server
             _ = logRecord.TrySetValueSpan(srcValue, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
+
+            if ((input.header.CheckWithETagFlag() || logRecord.Info.HasETag) &&
+                !logRecord.TrySetETag(functionsState.etagState.ETag + 1))
+                return false;
+
             sizeInfo.AssertOptionals(logRecord.Info);
 
             if (!logRecord.Info.Modified)
@@ -121,6 +126,11 @@ namespace Garnet.server
             _ = logRecord.TrySetValueObject(srcValue, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
+
+            if ((input.header.CheckWithETagFlag() || logRecord.Info.HasETag) &&
+                !logRecord.TrySetETag(functionsState.etagState.ETag + 1))
+                return false;
+
             sizeInfo.AssertOptionals(logRecord.Info);
 
             if (!logRecord.Info.Modified)
@@ -143,6 +153,11 @@ namespace Garnet.server
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
+
+            if ((input.header.CheckWithETagFlag() || logRecord.Info.HasETag) &&
+                !logRecord.TrySetETag(functionsState.etagState.ETag + 1))
+                return false;
+
             sizeInfo.AssertOptionals(logRecord.Info);
 
             if (!logRecord.Info.Modified)
