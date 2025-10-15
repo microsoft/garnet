@@ -50,7 +50,6 @@ namespace Garnet.server
         /// </summary>
         BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
 
-        readonly Dictionary<int, List<byte[]>> inflightTxns;
         readonly byte[] buffer;
         readonly GCHandle handle;
         readonly byte* bufferPtr;
@@ -83,10 +82,11 @@ namespace Garnet.server
             objectStoreInput.parseState = parseState;
             customProcInput.parseState = parseState;
 
-            inflightTxns = new Dictionary<int, List<byte[]>>();
             buffer = new byte[BufferSizeUtils.ServerBufferSize(new MaxSizeSettings())];
             handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
             bufferPtr = (byte*)handle.AddrOfPinnedObject();
+
+            aofReplayBuffer = new AofReplayBuffer(this, logger);
             this.logger = logger;
         }
 
@@ -181,56 +181,21 @@ namespace Garnet.server
         /// 4) Finally, replay the buffered (v+1) entries.
         /// </summary>
         bool inFuzzyRegion = false;
-        List<byte[]> fuzzyRegionBuffer = new();
 
         /// <summary>
         /// Process AOF record
         /// </summary>
         public unsafe void ProcessAofRecordInternal(byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
         {
-            AofHeader header = *(AofHeader*)ptr;
+            var header = *(AofHeader*)ptr;
             isCheckpointStart = false;
 
-            if (inflightTxns.ContainsKey(header.sessionID))
-            {
-                switch (header.opType)
-                {
-                    case AofEntryType.TxnAbort:
-                        inflightTxns[header.sessionID].Clear();
-                        inflightTxns.Remove(header.sessionID);
-                        break;
-                    case AofEntryType.TxnCommit:
-                        if (inFuzzyRegion)
-                        {
-                            fuzzyRegionBuffer.Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
-                        }
-                        else
-                        {
-                            ProcessTxn(inflightTxns[header.sessionID], asReplica);
-                            inflightTxns[header.sessionID].Clear();
-                            inflightTxns.Remove(header.sessionID);
-                        }
-                        break;
-                    case AofEntryType.StoredProcedure:
-                        throw new GarnetException($"Unexpected AOF header operation type {header.opType} within transaction");
-                    default:
-                        inflightTxns[header.sessionID].Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
-                        break;
-                }
+            // Handle transactions
+            if (aofReplayBuffer.TryAddTransactionOperation(header, ptr, length, asReplica))
                 return;
-            }
 
             switch (header.opType)
             {
-                case AofEntryType.TxnStart:
-                    inflightTxns[header.sessionID] = [];
-                    break;
-                case AofEntryType.TxnAbort:
-                case AofEntryType.TxnCommit:
-                    // We encountered a transaction end without start - this could happen because we truncated the AOF
-                    // after a checkpoint, and the transaction belonged to the previous version. It can safely
-                    // be ignored.
-                    break;
                 case AofEntryType.CheckpointStartCommit:
                     // Inform caller that we processed a checkpoint start marker so that it can record ReplicationCheckpointStartOffset if this is a replica replay
                     isCheckpointStart = true;
@@ -238,8 +203,8 @@ namespace Garnet.server
                     {
                         if (inFuzzyRegion)
                         {
-                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", fuzzyRegionBuffer.Count);
-                            fuzzyRegionBuffer.Clear();
+                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", aofReplayBuffer.FuzzyRegionBufferCount);
+                            aofReplayBuffer.ClearFuzzyRegionBuffer();
                         }
                         inFuzzyRegion = true;
                     }
@@ -268,17 +233,10 @@ namespace Garnet.server
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                                 _ = storeWrapper.TakeCheckpoint(false, logger);
+
                             // Process buffered records
-                            if (fuzzyRegionBuffer.Count > 0)
-                            {
-                                logger?.LogInformation("Replaying {fuzzyRegionBufferCount} records from fuzzy region for checkpoint {newVersion}", fuzzyRegionBuffer.Count, storeWrapper.store.CurrentVersion);
-                            }
-                            foreach (var entry in fuzzyRegionBuffer)
-                            {
-                                fixed (byte* entryPtr = entry)
-                                    ReplayOp(entryPtr, entry.Length, asReplica);
-                            }
-                            fuzzyRegionBuffer.Clear();
+                            aofReplayBuffer.ProcessBufferedRecords(storeWrapper.store.CurrentVersion, asReplica);
+                            aofReplayBuffer.ClearFuzzyRegionBuffer();
                         }
                     }
                     break;
@@ -330,7 +288,7 @@ namespace Garnet.server
 
         private unsafe bool ReplayOp(byte* entryPtr, int length, bool replayAsReplica)
         {
-            AofHeader header = *(AofHeader*)entryPtr;
+            var header = *(AofHeader*)entryPtr;
 
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
             if (SkipRecord(entryPtr, length, replayAsReplica)) return false;
@@ -357,6 +315,9 @@ namespace Garnet.server
                     break;
                 case AofEntryType.StoredProcedure:
                     RunStoredProc(header.procedureId, customProcInput, entryPtr);
+                    break;
+                case AofEntryType.TxnCommit:
+                    aofReplayBuffer.ProcessNextTransactionBatch(replayAsReplica);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
@@ -509,7 +470,7 @@ namespace Garnet.server
         {
             if (IsNewVersionRecord(header))
             {
-                fuzzyRegionBuffer.Add(new ReadOnlySpan<byte>(entryPtr, length).ToArray());
+                aofReplayBuffer.TryAddOperation(entryPtr, length);
                 return true;
             }
             return false;
