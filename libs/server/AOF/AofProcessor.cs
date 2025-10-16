@@ -235,7 +235,7 @@ namespace Garnet.server
                                 _ = storeWrapper.TakeCheckpoint(false, logger);
 
                             // Process buffered records
-                            aofReplayBuffer.ProcessBufferedRecords(storeWrapper.store.CurrentVersion, asReplica);
+                            aofReplayBuffer.ProcessFuzzyRegionOperations(storeWrapper.store.CurrentVersion, asReplica);
                             aofReplayBuffer.ClearFuzzyRegionBuffer();
                         }
                     }
@@ -317,7 +317,7 @@ namespace Garnet.server
                     RunStoredProc(header.procedureId, customProcInput, entryPtr);
                     break;
                 case AofEntryType.TxnCommit:
-                    aofReplayBuffer.ProcessNextTransactionBatch(replayAsReplica);
+                    aofReplayBuffer.ProcessFuzzyRegionTransactions(replayAsReplica);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");

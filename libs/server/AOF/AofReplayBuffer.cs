@@ -15,16 +15,16 @@ namespace Garnet.server
         public class AofReplayBuffer(AofProcessor aofProcessor, ILogger logger = null)
         {
             readonly AofProcessor aofProcessor = aofProcessor;
-            readonly List<byte[]> fuzzyRegionBuffer = [];
+            readonly List<byte[]> fuzzyRegionOps = [];
             readonly Queue<List<byte[]>> txnBatchBuffer = [];
             readonly Dictionary<int, List<byte[]>> activeTxns = [];
             readonly ILogger logger = logger;
 
-            internal int FuzzyRegionBufferCount => fuzzyRegionBuffer.Count;
+            internal int FuzzyRegionBufferCount => fuzzyRegionOps.Count;
 
-            internal void ClearFuzzyRegionBuffer() => fuzzyRegionBuffer.Clear();
+            internal void ClearFuzzyRegionBuffer() => fuzzyRegionOps.Clear();
 
-            internal unsafe void TryAddOperation(byte* ptr, int length) => fuzzyRegionBuffer.Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
+            internal unsafe void TryAddOperation(byte* ptr, int length) => fuzzyRegionOps.Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
 
             internal unsafe bool TryAddTransactionOperation(AofHeader header, byte* ptr, int length, bool asReplica)
             {
@@ -39,13 +39,15 @@ namespace Garnet.server
                         case AofEntryType.TxnCommit:
                             if (aofProcessor.inFuzzyRegion)
                             {
-                                fuzzyRegionBuffer.Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
+                                // Buffer commit marker and operations batch when in fuzzy region
+                                fuzzyRegionOps.Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
                                 txnBatchBuffer.Enqueue(batch);
                             }
                             else
                                 aofProcessor.ProcessTxn(batch, asReplica);
 
-                            // We want to clear and remove in both cases to make space for next txn from session
+                            // We want to clear and remove in both cases to make space for next txn from session if any
+                            // Example (assume generated from same session): TxnStart1 CheckpointStart TxnCommit1 TxnStart2 CheckpointEnd TxnCommit2
                             ClearSessionTxn();
                             break;
                         case AofEntryType.StoredProcedure:
@@ -85,18 +87,27 @@ namespace Garnet.server
                 return true;
             }
 
-            internal void ProcessBufferedRecords(long storeVersion, bool asReplica)
+            /// <summary>
+            /// Process fuzzy region operations if any
+            /// </summary>
+            /// <param name="storeVersion"></param>
+            /// <param name="asReplica"></param>
+            internal void ProcessFuzzyRegionOperations(long storeVersion, bool asReplica)
             {
-                if (fuzzyRegionBuffer.Count > 0)
-                    logger?.LogInformation("Replaying {fuzzyRegionBufferCount} records from fuzzy region for checkpoint {newVersion}", fuzzyRegionBuffer.Count, storeVersion);
-                foreach (var entry in fuzzyRegionBuffer)
+                if (fuzzyRegionOps.Count > 0)
+                    logger?.LogInformation("Replaying {fuzzyRegionBufferCount} records from fuzzy region for checkpoint {newVersion}", fuzzyRegionOps.Count, storeVersion);
+                foreach (var entry in fuzzyRegionOps)
                 {
                     fixed (byte* entryPtr = entry)
                         aofProcessor.ReplayOp(entryPtr, entry.Length, asReplica);
                 }
             }
 
-            internal void ProcessNextTransactionBatch(bool asReplica)
+            /// <summary>
+            /// Process fuzzy region transactions in FIFO order
+            /// </summary>
+            /// <param name="asReplica"></param>
+            internal void ProcessFuzzyRegionTransactions(bool asReplica)
             {
                 var batch = txnBatchBuffer.Dequeue();
                 aofProcessor.ProcessTxn(batch, asReplica);
