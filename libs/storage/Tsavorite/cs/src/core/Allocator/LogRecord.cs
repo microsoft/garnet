@@ -161,7 +161,6 @@ namespace Tsavorite.core
             }
             set
             {
-
                 var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
                 if (!Info.KeyIsOverflow || length != ObjectIdMap.ObjectIdSize)
                     throw new TsavoriteException("set_KeyOverflow should only be called when transferring into a new record with KeyIsInline==false and key.Length==ObjectIdSize");
@@ -175,7 +174,8 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                Debug.Assert(!Info.ValueIsObject, "ValueSpan is not valid for Object values");
+                if (Info.ValueIsObject)
+                    throw new TsavoriteException("ValueSpan is not valid for Object values");
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 return Info.ValueIsInline ? new((byte*)dataAddress, (int)length) : objectIdMap.GetOverflowByteArray(*(int*)dataAddress).Span;
             }
@@ -187,9 +187,8 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                Debug.Assert(Info.ValueIsObject, "ValueObject is not valid for Span values");
                 if (!Info.ValueIsObject)
-                    return default;
+                    throw new TsavoriteException("ValueObject is not valid for Span values");
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 return objectIdMap.GetHeapObject(*(int*)dataAddress);
             }
@@ -622,6 +621,21 @@ namespace Tsavorite.core
                 return (RecordInfo.Size, RecordInfo.Size);
             var actualSize = ActualRecordSize;
             return (actualSize, actualSize + GetFillerLength());
+        }
+
+        /// <summary>A tuple of the total size of the main-log (inline) portion of the record when it still has the object-length encoding
+        ///     which leaves the metadata's valueLength incorrect. The tuple is with and without filler length.</summary>
+        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects()
+        {
+            if (Info.IsNull)
+                return (RecordInfo.Size, RecordInfo.Size);
+
+            // Calculate this directly due to the unread objects.
+            var (length, dataAddress) = GetValueFieldInfoWithUnreadObjects(IndicatorAddress);
+            var actualSize = (int)(dataAddress - physicalAddress + length + OptionalLength);
+
+            // Pass the calculated size here due ot unread objects.
+            return (actualSize, actualSize + GetFillerLength(physicalAddress + actualSize));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -34,7 +34,7 @@ namespace Tsavorite.core
         /// <summary>Constructor</summary>
         internal unsafe TsavoriteLogIterator(TsavoriteLog tsavoriteLog, TsavoriteLogAllocatorImpl hlog, long beginAddress, long endAddress,
                 GetMemory getMemory, DiskScanBufferingMode diskScanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
-            : base(readBuffers: default, beginAddress == 0 ? hlog.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress,
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress,
                 diskScanBufferingMode, InMemoryScanBufferingMode.NoBuffering, includeClosedRecords: false, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.tsavoriteLog = tsavoriteLog;

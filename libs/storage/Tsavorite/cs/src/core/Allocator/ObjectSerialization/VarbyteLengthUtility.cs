@@ -207,6 +207,9 @@ namespace Tsavorite.core
             return (keyLength, indicatorAddress + NumIndicatorBytes + keyLengthBytes + valueLengthBytes);
         }
 
+        /// <summary>
+        /// Gets the value field information for an in-memory or on-disk with object size changes to value length restored (objects have been read).
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static (long length, long dataAddress) GetValueFieldInfo(long indicatorAddress)
         {
@@ -220,6 +223,22 @@ namespace Tsavorite.core
 
             // Move past the key and value length bytes and the key data to the start of the value data
             return (valueLength, indicatorAddress + NumIndicatorBytes + keyLengthBytes + valueLengthBytes + keyLength);
+        }
+
+        /// <summary>
+        /// Gets the value field information for an in-memory or on-disk with object size changes to value length not yet restored (objects have not yet been read).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static (long length, long dataAddress) GetValueFieldInfoWithUnreadObjects(long indicatorAddress)
+        {
+            var (keyLengthBytes, valueLengthBytes, _ /*hasFiller*/) = DeconstructIndicatorByte(*(byte*)indicatorAddress);
+
+            // Move past the indicator byte; the next bytes are key length
+            var keyLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: 0, keyLengthBytes);
+
+            // We know the valueLength is the size of the object Id.
+            // Move past the key and value length bytes and the key data to the start of the value data
+            return (ObjectIdMap.ObjectIdSize, indicatorAddress + NumIndicatorBytes + keyLengthBytes + valueLengthBytes + keyLength);
         }
 
         /// <summary>

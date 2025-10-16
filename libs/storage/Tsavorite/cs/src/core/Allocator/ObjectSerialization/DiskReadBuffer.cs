@@ -106,7 +106,7 @@ namespace Tsavorite.core
         {
             memory?.Return();
             memory = null;
-            countdownEvent.Dispose();
+            countdownEvent?.Dispose();
             countdownEvent = null;
         }
 
