@@ -1213,8 +1213,19 @@ namespace Tsavorite.core
             if (physicalAddress == 0)
                 return "<empty>";
             static string bstr(bool value) => value ? "T" : "F";
-            var valueString = Info.ValueIsObject ? $"obj:{ValueObject}" : ValueSpan.ToShortString(20);
-            return $"ri {Info} | key {Key.ToShortString(20)} | val {valueString} | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpiration {bstr(Info.HasExpiration)}:{Expiration}";
+
+            string keyString, valueString;
+            try { keyString = SpanByte.ToShortString(Key); }
+            catch (Exception ex) { keyString = $"<exception: {ex.Message}>"; }
+            try { valueString = Info.ValueIsObject ? $"obj:{ValueObject}" : ValueSpan.ToShortString(20); }
+            catch (Exception ex) { valueString = $"<exception: {ex.Message}>"; }
+
+            var (keyLengthBytes, valueLengthBytes, hasFillerBit) = DeconstructIndicatorByte(*(byte*)IndicatorAddress);
+            var (keyLength, keyAddress) = GetKeyFieldInfo(IndicatorAddress);
+            var (valueLength, valueAddress) = GetValueFieldInfo(IndicatorAddress);
+            return $"ri {Info} | key ({keyLengthBytes}/{keyLength}/{keyAddress - physicalAddress}) {keyString}"
+                          + $" | val ({valueLengthBytes}/{valueLength}/{valueAddress - physicalAddress}) {valueString}"
+                          + $" | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpir {bstr(Info.HasExpiration)}:{Expiration}";
         }
     }
 }

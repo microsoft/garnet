@@ -255,7 +255,7 @@ namespace Tsavorite.core
                     {
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
                         // We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
-                        var logRecord = new LogRecord(physicalAddress, hlogBase._wrapper.TranssientObjectIdMap);
+                        var logRecord = new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap);
                         diskLogRecord = new(logRecord,
                                             store is not null
                                             ? obj => store.storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk)

@@ -576,13 +576,18 @@ namespace Tsavorite.core
 
             var result = (PageAsyncReadResult<TContext>)context;
             var pageStartAddress = (long)result.destinationPtr;
-            result.maxPtr = numBytes;
+            if (numBytes < result.maxPtr)
+                result.maxPtr = numBytes;
 
             // Iterate all records in range to determine how many bytes we need to read from objlog.
-            ObjectLogFilePositionInfo startPosition = new();
+            ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
+            int endKeyLength = 0;
+            ulong endValueLength = 0;
             ulong totalBytesToRead = 0;
             var recordAddress = pageStartAddress + PageHeader.Size;
-            while (true)
+            var endAddress = pageStartAddress + result.maxPtr;
+
+            while (recordAddress < endAddress)
             {
                 var logRecord = new LogRecord(recordAddress);
 
@@ -594,29 +599,20 @@ namespace Tsavorite.core
                 }
 
                 recordAddress += logRecord.GetInlineRecordSizesWithUnreadObjects().allocatedSize;
-                if (logRecord.Info.Invalid)
-                    continue;
-
-                if (!startPosition.IsSet)
+                if (logRecord.Info.Valid)
                 {
-                    startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogNextRecordStartPosition.SegmentSizeBits);
-                    continue;
-                }
-
-                // We have already incremented record address to get to the next record; if it is at or beyond the maxPtr, we have processed all records.
-                if (recordAddress >= pageStartAddress + result.maxPtr)
-                {
-                    ObjectLogFilePositionInfo endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength),
-                                                                objectLogNextRecordStartPosition.SegmentSizeBits);
-                    endPosition.Advance((ulong)keyLength + valueLength);
-                    totalBytesToRead = endPosition - startPosition;
-                    break;
+                    if (!startPosition.IsSet)
+                        startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogNextRecordStartPosition.SegmentSizeBits);
+                    endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogNextRecordStartPosition.SegmentSizeBits);
                 }
             }
 
             // The page may not have contained any records with objects
             if (startPosition.IsSet)
             {
+                endPosition.Advance((ulong)endKeyLength + endValueLength);
+                totalBytesToRead = endPosition - startPosition;
+
                 // Iterate all records again to actually do the deserialization.
                 result.readBuffers.nextReadFilePosition = startPosition;
                 recordAddress = pageStartAddress + PageHeader.Size;
@@ -624,7 +620,7 @@ namespace Tsavorite.core
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
                 logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
 
-                do
+                while (recordAddress < endAddress)
                 {
                     var logRecord = new LogRecord(recordAddress, transientObjectIdMap);
 
@@ -636,15 +632,13 @@ namespace Tsavorite.core
                     }
 
                     recordAddress += logRecord.GetInlineRecordSizesWithUnreadObjects().allocatedSize;
-                    if (logRecord.Info.Invalid)
-                        continue;
-
-                    // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
-                    // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
-                    _ = logReader.ReadRecordObjects(ref logRecord, noKey, transientObjectIdMap, startPosition.SegmentSizeBits);
-
-                    // If the incremented record address is at or beyond the maxPtr, we have processed all records.
-                } while (recordAddress < pageStartAddress + result.maxPtr);
+                    if (logRecord.Info.Valid)
+                    {
+                        // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
+                        // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
+                        _ = logReader.ReadRecordObjects(ref logRecord, noKey, transientObjectIdMap, startPosition.SegmentSizeBits);
+                    }
+                }
             }
 
             // Call the "real" page read callback
