@@ -1,6 +1,6 @@
 <Project>
 	<!-- VersionPrefix property for builds and packages -->
 	<PropertyGroup>
-		<VersionPrefix>1.0.84-previewVecSet15</VersionPrefix>
+		<VersionPrefix>1.0.84-previewVecSet16</VersionPrefix>
 	</PropertyGroup>
 </Project>
