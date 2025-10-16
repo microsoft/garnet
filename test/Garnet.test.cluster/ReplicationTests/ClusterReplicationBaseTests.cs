@@ -110,9 +110,11 @@ namespace Garnet.test.cluster
         [Category("REPLICATION")]
         public void ClusterSRTest([Values] bool disableObjects)
         {
-            var replica_count = 1;// Per primary
+            var replica_count = 1;
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = 2;
+            var primaryIndex = 0;
+            var replicaIndex = 1;
             ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
             context.CreateConnection(useTLS: useTLS);
@@ -136,11 +138,11 @@ namespace Garnet.test.cluster
             //Populate Primary
             context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
 
-            for (var i = 1; i < replica_count; i++)
-                context.clusterTestUtils.WaitForReplicaAofSync(0, i);
+            // Wait for replica to sync
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex);
 
-            for (var i = 1; i < replica_count; i++)
-                context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, i);
+            // Validate database
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
         }
 
         [Test, Order(2)]
