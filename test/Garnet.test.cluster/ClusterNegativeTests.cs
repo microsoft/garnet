@@ -338,7 +338,7 @@ namespace Garnet.test.cluster
 
                 context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryIndex, null);
                 var primaryOffset2 = context.clusterTestUtils.GetReplicationOffset(primaryIndex, logger: context.logger);
-                ClassicAssert.Less(primaryOffset1, primaryOffset2);
+                ClassicAssert.Less(primaryOffset1[0], primaryOffset2[0]);
 
                 // Take another checkpoin to truncate
                 primaryLastSaveTime = context.clusterTestUtils.LastSave(primaryIndex, logger: context.logger);

@@ -1,72 +1,152 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using Garnet.server;
 using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
 
-    public class ClusterReplicationShardedLog
+    public class ClusterReplicationShardedLog : ClusterReplicationBaseTests
     {
-        ClusterTestContext context;
+        public HashSet<string> run = new()
+        {
+            {"ClusterSRTest"},
+            //TODO: Enable AOF recovery tests
+            //TODO: Enable diskless recovery tests
+            //
+        };
 
-        public TextWriter LogTextWriter { get; set; }
-
-        protected bool useTLS = false;
-        protected bool asyncReplay = false;
-        readonly int keyCount = 256;
-
-        public Dictionary<string, LogLevel> monitorTests = [];
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
+        {
+            var methods = typeof(ClusterReplicationShardedLog).GetMethods().Where(static mtd => mtd.GetCustomAttribute<TestAttribute>() != null);
+            foreach (var method in methods)
+                run.Add(method.Name);
+        }
 
         [SetUp]
-        public virtual void Setup()
+        public override void Setup()
         {
-            context = new ClusterTestContext();
-            if (LogTextWriter != null) context.logTextWriter = LogTextWriter;
-            context.Setup(monitorTests);
+            var testName = TestContext.CurrentContext.Test.MethodName;
+            if(!run.Contains(testName))
+            {
+                Assert.Ignore($"Skipping {testName} for {nameof(ClusterReplicationShardedLog)}");
+            }
+            asyncReplay = false;
+            sublogCount = 4;
+            base.Setup();
         }
 
         [TearDown]
-        public virtual void TearDown()
+        public override void TearDown()
         {
-            context?.TearDown();
+            base.TearDown();
         }
 
         [Test, Order(1)]
         [Category("REPLICATION")]
-        public void ClusterSimpleReplicationShardedLogTest([Values] bool disableObjects)
+        public void ClusterReplicationShardedLogTxnTest([Values] bool storedProcedure)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
-            ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, sublog: 2);
+            var nodes_count = primary_count + (primary_count * replica_count);
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
-            var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
-            var cconfig = context.clusterTestUtils.ClusterNodes(0, context.logger);
-            var myself = cconfig.Nodes.First();
-            var slotRangesStr = string.Join(",", myself.Slots.Select(x => $"({x.From}-{x.To})").ToList());
-            ClassicAssert.AreEqual(1, myself.Slots.Count, $"Setup failed slot ranges count greater than 1 {slotRangesStr}");
+            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
 
-            shards = context.clusterTestUtils.ClusterShards(0, context.logger);
-            ClassicAssert.AreEqual(1, shards.Count);
-            ClassicAssert.AreEqual(1, shards[0].slotRanges.Count);
-            ClassicAssert.AreEqual(0, shards[0].slotRanges[0].Item1);
-            ClassicAssert.AreEqual(16383, shards[0].slotRanges[0].Item2);
+            // Register custom procedure
+            if (storedProcedure)
+            {
+                context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), new RespCommandsInfo { Arity = -4 });
+                context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), new RespCommandsInfo { Arity = -4 });
+            }
 
-            var keyLength = 16;
-            var kvpairCount = keyCount;
-            context.kvPairs = [];
+            // Setup cluster
+            context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, primaryNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaNodeIndex, replicaNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
 
-            //Populate Primary
-            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
+            // Attach replica
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            string[] keys = ["{_}a", "{_}b", "{_}c"];
+            string[] values = ["10", "15", "20"];
+            if (storedProcedure)
+            {
+                ExecuteStoredProcBulkIncrement(primaryServer, keys, values);
+            }
+            else
+            {
+                ExecuteTxnBulkIncrement(keys, values);
+            }
+
+            // Check keys at primary
+            for (var i = 0; i < keys.Length; i++)
+            {
+                resp = context.clusterTestUtils.GetKey(primaryNodeIndex, Encoding.ASCII.GetBytes(keys[i]), out _, out _, out _);
+                ClassicAssert.AreEqual(values[i], resp);
+            }
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+
+            // Check keys at replica
+            for (var i = 0; i < keys.Length; i++)
+            {
+                resp = context.clusterTestUtils.GetKey(replicaNodeIndex, Encoding.ASCII.GetBytes(keys[i]), out _, out _, out _);
+                ClassicAssert.AreEqual(values[i], resp);
+            }
+
+            void ExecuteStoredProcBulkIncrement(IServer server, string[] keys, string[] values)
+            {
+                try
+                {
+                    var args = new object[1 + (keys.Length * 2)];
+                    args[0] = keys.Length;
+                    for (var i = 0; i < keys.Length; i++)
+                    {
+                        args[1 + (i * 2)] = keys[i];
+                        args[1 + (i * 2) + 1] = values[i];
+                    }
+                    var resp = server.Execute("BULKINCRBY", args);
+                    ClassicAssert.AreEqual("OK", (string)resp);
+                }
+                catch (Exception ex)
+                {
+                    Assert.Fail(ex.Message);
+                }
+            }
+
+            void ExecuteTxnBulkIncrement(string[] keys, string[] values)
+            {
+                try
+                {
+                    var db = context.clusterTestUtils.GetDatabase();
+                    var txn = db.CreateTransaction();
+                    for (var i = 0; i < keys.Length; i++)
+                        txn.StringIncrementAsync(keys[i], long.Parse(values[i]));
+                    txn.Execute();
+                }
+                catch (Exception ex)
+                {
+                    Assert.Fail(ex.Message);
+                }
+            }
         }
     }
 }

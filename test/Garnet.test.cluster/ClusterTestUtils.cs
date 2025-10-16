@@ -14,6 +14,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Garnet.server.TLS;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
@@ -2678,21 +2679,21 @@ namespace Garnet.test.cluster
             }
         }
 
-        public long GetReplicationOffset(int nodeIndex, ILogger logger = null)
+        public AofAddress GetReplicationOffset(int nodeIndex, ILogger logger = null)
             => GetReplicationOffset((IPEndPoint)endpoints[nodeIndex], logger);
 
-        public long GetReplicationOffset(IPEndPoint endPoint, ILogger logger = null)
+        public AofAddress GetReplicationOffset(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
                 var offset = GetReplicationInfo(endPoint, [ReplicationInfoItem.REPLICATION_OFFSET], logger)[0].Item2;
-                return long.Parse(offset);
+                return AofAddress.FromString(offset);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occurred; GetReplicationOffset");
                 Assert.Fail(ex.Message);
-                return 0;
+                return AofAddress.Create(1, -1);
             }
         }
 
@@ -2886,15 +2887,15 @@ namespace Garnet.test.cluster
 
         public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null, CancellationToken cancellation = default)
         {
-            long primaryReplicationOffset;
-            long secondaryReplicationOffset1;
+            AofAddress primaryReplicationOffset;
+            AofAddress secondaryReplicationOffset1;
             while (true)
             {
                 cancellation.ThrowIfCancellationRequested();
 
                 primaryReplicationOffset = GetReplicationOffset(primaryIndex, logger);
                 secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
-                if (primaryReplicationOffset == secondaryReplicationOffset1)
+                if (primaryReplicationOffset.Equals(secondaryReplicationOffset1))
                     break;
 
                 var primaryMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger);

@@ -180,7 +180,7 @@ namespace Garnet.test.cluster
         /// <param name="useHostname"></param>
         /// <param name="luaTransactionMode"></param>
         /// <param name="useNativeDeviceLinux"></param>
-        /// <param name="sublog"></param>
+        /// <param name="sublogCount"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -227,7 +227,7 @@ namespace Garnet.test.cluster
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
-            int sublog = 1)
+            int sublogCount = 1)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -282,7 +282,7 @@ namespace Garnet.test.cluster
                 checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                 clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                 replicaSyncTimeout: replicaSyncTimeout,
-                sublog: sublog);
+                sublogCount: sublogCount);
 
             foreach (var node in nodes)
                 node.Start();

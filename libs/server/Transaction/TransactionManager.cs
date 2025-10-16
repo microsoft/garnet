@@ -425,9 +425,9 @@ namespace Garnet.server
                 return;
 
             // If sharded log is enabled calculate sublog access bitmap
-            foreach (var key in keys)
+            for(var i = 0; i < keyCount; i++)
             {
-                appendOnlyFile.Log.Hash(key.SpanByte, out _, out var sublogIdx);
+                appendOnlyFile.Log.Hash(keys[i].SpanByte, out _, out var sublogIdx);
                 logAccessMap |= 1UL << sublogIdx;
             }
         }

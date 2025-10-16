@@ -34,8 +34,8 @@ namespace Garnet.server
         
         public void UnlockSublogs(ulong logAccessBitmap)
         {
-            logAccessBitmap = ~logAccessBitmap;
             Debug.Assert((lockMap & logAccessBitmap) > 0);
+            logAccessBitmap = ~logAccessBitmap;            
             while (true)
             {
                 Thread.Yield();

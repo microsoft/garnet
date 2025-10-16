@@ -77,14 +77,15 @@ namespace Garnet.test.cluster
             return testList.ToArray();
         }
 
-        ClusterTestContext context;
+        protected ClusterTestContext context;
 
         public TextWriter LogTextWriter { get; set; }
 
         protected bool useTLS = false;
         protected bool asyncReplay = false;
         readonly int timeout = 60;
-        readonly int keyCount = 256;
+        protected readonly int keyCount = 256;
+        protected int sublogCount = 1;
 
         public Dictionary<string, LogLevel> monitorTests = new()
         {
@@ -110,11 +111,13 @@ namespace Garnet.test.cluster
         [Category("REPLICATION")]
         public void ClusterSRTest([Values] bool disableObjects)
         {
-            var replica_count = 1;// Per primary
+            var replica_count = 1;
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = 2;
+            var primaryIndex = 0;
+            var replicaIndex = 1;
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -136,11 +139,11 @@ namespace Garnet.test.cluster
             //Populate Primary
             context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
 
-            // Wait for replica sync
-            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: 0, secondaryIndex: 1);
+            // Wait for replica to sync
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex);
 
-            // Validate data
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
+            // Validate database
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
         }
 
         [Test, Order(2)]
@@ -1888,7 +1891,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(27)]
+        [Test, Order(29)]
         [Category("CLUSTER")]
         [Category("REPLICATION")]
         public void ClusterReplicationDivergentHistoryWithoutCheckpoint()
