@@ -56,7 +56,22 @@ namespace Tsavorite.core
         {
             IntPtr libHandle = IntPtr.Zero;
             if (libraryName == NativeLibraryName && NativeLibraryPath != null)
-                libHandle = NativeLibrary.Load(NativeLibraryPath);
+            {
+                var candidate = new FileInfo(NativeLibraryPath);
+                if (candidate.Exists)
+                {
+                    // Base of ambient context
+                    libHandle = NativeLibrary.Load(candidate.FullName);
+                }
+                else
+                {
+                    // Base off install location
+                    candidate = new FileInfo(Path.Combine(Path.GetDirectoryName(Assembly.GetCallingAssembly().Location), NativeLibraryPath));
+                    
+                    // Fail deadly if not found
+                    libHandle = NativeLibrary.Load(candidate.FullName);
+                }
+            }
             return libHandle;
         }
 
