@@ -57,6 +57,8 @@ namespace Tsavorite.core
 
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
+            pendingContext.logicalAddress = kInvalidAddress;
+            pendingContext.eTag = LogRecord.NoETag;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -141,6 +143,7 @@ namespace Tsavorite.core
 
                         // status has been set by InPlaceUpdater
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        pendingContext.eTag = srcLogRecord.ETag;
                         goto LatchRelease;
                     }
 
@@ -149,6 +152,9 @@ namespace Tsavorite.core
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         // Tombstone has been set by SessionFunctionsWrapper.InPlaceUpdater
                         srcLogRecord.InfoRef.SetDirtyAndModified();
+
+                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        pendingContext.eTag = srcLogRecord.ETag;
 
                         // ExpireAndStop means to override default Delete handling (which is to go to InitialUpdater) by leaving the tombstoned record as current.
                         // Our SessionFunctionsWrapper.InPlaceUpdater implementation has already reinitialized-in-place or set Tombstone as appropriate and marked the record.
@@ -160,13 +166,13 @@ namespace Tsavorite.core
                         else
                             DisposeRecord(ref srcLogRecord, DisposeReason.Deleted);
 
-                        pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         goto LatchRelease;
                     }
                     else if (rmwInfo.Action == RMWAction.WrongType)
                     {
                         // status has been set by InPlaceUpdater, and no modification should have been made to the record.
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        pendingContext.eTag = srcLogRecord.ETag;
                         goto LatchRelease;
                     }
 
@@ -269,6 +275,8 @@ namespace Tsavorite.core
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        pendingContext.eTag = logRecord.ETag;
+
                         // We "IPU'd" because we reused a tombstone, but since the record we have reused did not logically exist, we must also bubble up that the original key was not found (logically).
                         // OperationStatus.NOTFOUND bubbles up success but also indicates that the record was not found in the database.
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord);
@@ -591,6 +599,7 @@ namespace Tsavorite.core
             Done:
                 stackCtx.ClearNewRecord();
                 pendingContext.logicalAddress = newLogicalAddress;
+                pendingContext.eTag = newLogRecord.ETag;
                 return status;
             }
 

@@ -209,7 +209,7 @@ namespace Tsavorite.core
         public readonly IHeapObject ValueObject => logRecord.ValueObject;
 
         /// <inheritdoc/>
-        public readonly long ETag => logRecord.ETag;
+        public readonly long ETag => logRecord.IsSet ? logRecord.ETag : LogRecord.NoETag;
 
         /// <inheritdoc/>
         public readonly long Expiration => logRecord.Expiration;
