@@ -83,7 +83,7 @@ namespace Garnet.server
                 if (addresses[i] != other.addresses[i]) return false;
             return true;
         }
-        
+
         /// <summary>
         /// AofAddress constructor
         /// </summary>

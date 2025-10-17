@@ -271,7 +271,7 @@ namespace Garnet.client
         public Task<string> ExecuteClusterBeginReplicaRecover(
             bool sendStoreCheckpoint,
             bool sendObjectStoreCheckpoint,
-            bool replayAOF,
+            ulong replayAOF,
             string primary_replid,
             byte[] checkpointEntryData,
             byte[] beginAddress,
@@ -322,7 +322,7 @@ namespace Garnet.client
             offset = curr;
 
             //5
-            while (!RespWriteUtils.TryWriteBulkString(replayAOF ? "1"u8 : "0"u8, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem((long)replayAOF, ref curr, end))
             {
                 Flush();
                 curr = offset;

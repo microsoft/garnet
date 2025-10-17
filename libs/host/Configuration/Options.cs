@@ -238,7 +238,7 @@ namespace Garnet
         [Option("aof-sublog-count", Required = false, HelpText = "Number of AOF sublogs (=1 default single log, >1: multi-log).")]
         public int AofSublogCount { get; set; }
 
-        [IntRangeValidation(1, int.MaxValue)]
+        [IntRangeValidation(0, int.MaxValue)]
         [Option("aof-sublog-refresh-tail-freq", Required = false, HelpText = "Refresh sublog tail background task execution frequency.")]
         public int AofRefreshSublogTailFrequencyMs { get; set; }
 

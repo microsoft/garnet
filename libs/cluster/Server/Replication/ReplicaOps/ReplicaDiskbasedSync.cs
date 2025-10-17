@@ -278,16 +278,17 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="recoverMainStoreFromToken"></param>
         /// <param name="recoverObjectStoreFromToken"></param>
-        /// <param name="replayAOF"></param>
+        /// <param name="replayAOFMap"></param>
         /// <param name="primaryReplicationId"></param>
         /// <param name="remoteCheckpoint"></param>
         /// <param name="beginAddress"></param>
         /// <param name="recoveredReplicationOffset"></param>
+        /// <param name="errorMessage"></param>
         /// <returns></returns>
         public AofAddress TryReplicaDiskbasedRecovery(
             bool recoverMainStoreFromToken,
             bool recoverObjectStoreFromToken,
-            bool replayAOF,
+            ulong replayAOFMap,
             string primaryReplicationId,
             CheckpointEntry remoteCheckpoint,
             in AofAddress beginAddress,
@@ -314,10 +315,13 @@ namespace Garnet.cluster
                     recoverObjectStoreFromToken,
                     remoteCheckpoint.metadata);
 
-                if (replayAOF)
+                if (replayAOFMap > 0)
                 {
                     logger?.LogInformation("ReplicaRecover: replay local AOF from {beginAddress} until {recoveredReplicationOffset}", beginAddress, recoveredReplicationOffset);
-                    recoveredReplicationOffset = storeWrapper.ReplayAOF(recoveredReplicationOffset);
+                    var replayUntil = recoveredReplicationOffset;
+                    for (var sublogIdx = 0; sublogIdx < recoveredReplicationOffset.Length; sublogIdx++)
+                        replayUntil[sublogIdx] = (((1UL) << sublogIdx) > 0) ? recoveredReplicationOffset[sublogIdx] : beginAddress[sublogIdx];
+                    recoveredReplicationOffset = storeWrapper.ReplayAOF(replayUntil);
                 }
 
                 logger?.LogInformation("Initializing AOF");

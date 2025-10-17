@@ -228,7 +228,7 @@ namespace Garnet.cluster
                 var sameHistory2 = string.IsNullOrEmpty(clusterProvider.replicationManager.PrimaryReplId2) && clusterProvider.replicationManager.PrimaryReplId2.Equals(replicaAssignedPrimaryId);
 
                 // Calculate replay AOF range
-                var replayAOF = clusterProvider.storeWrapper.appendOnlyFile.ComputeAofSyncReplayAddress(
+                var replayAOFMap = clusterProvider.storeWrapper.appendOnlyFile.ComputeAofSyncReplayAddress(
                     recoverFromRemote,
                     sameMainStoreCheckpointHistory,
                     sameObjectStoreCheckpointHistory,
@@ -236,7 +236,7 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.ReplicationOffset2,
                     replicaAofBeginAddress,
                     replicaAofTailAddress,
-                    ref beginAddress,
+                    beginAddress,
                     ref checkpointAofBeginAddress);
 
                 // Signal replica to recover from local/remote checkpoint
@@ -244,7 +244,7 @@ namespace Garnet.cluster
                 var resp = await gcs.ExecuteClusterBeginReplicaRecover(
                     !skipLocalMainStoreCheckpoint,
                     !skipLocalObjectStoreCheckpoint,
-                    replayAOF,
+                    replayAOFMap,
                     clusterProvider.replicationManager.PrimaryReplId,
                     localEntry.ToByteArray(),
                     beginAddress.ToByteArray(),
@@ -255,8 +255,7 @@ namespace Garnet.cluster
                 // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
                 var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
                     (clusterProvider.serverOptions.FastAofTruncate && !clusterProvider.serverOptions.OnDemandCheckpoint);
-                if (clusterProvider.storeWrapper.appendOnlyFile.DataLossCheck(possibleAofDataLoss, syncFromAofAddress, logger))
-                    logger?.LogCheckpointEntry(LogLevel.Warning, "Unsafe replay due to truncated AOF address", localEntry);
+                clusterProvider.storeWrapper.appendOnlyFile.DataLossCheck(possibleAofDataLoss, syncFromAofAddress, logger);
 
                 // Check what happens if we fail after recovery and start AOF stream
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Replication_Fail_Before_Background_AOF_Stream_Task_Start);

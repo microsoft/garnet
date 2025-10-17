@@ -16,7 +16,7 @@ namespace Garnet.test.cluster
 
     public class ClusterReplicationShardedLog : ClusterReplicationBaseTests
     {
-        public HashSet<string> run = new()
+        public HashSet<string> enabledTests = new()
         {
             {"ClusterSRTest"},
             //TODO: Enable AOF recovery tests
@@ -29,14 +29,14 @@ namespace Garnet.test.cluster
         {
             var methods = typeof(ClusterReplicationShardedLog).GetMethods().Where(static mtd => mtd.GetCustomAttribute<TestAttribute>() != null);
             foreach (var method in methods)
-                run.Add(method.Name);
+                enabledTests.Add(method.Name);
         }
 
         [SetUp]
         public override void Setup()
         {
             var testName = TestContext.CurrentContext.Test.MethodName;
-            if(!run.Contains(testName))
+            if (!enabledTests.Contains(testName))
             {
                 Assert.Ignore($"Skipping {testName} for {nameof(ClusterReplicationShardedLog)}");
             }

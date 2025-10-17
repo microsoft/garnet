@@ -128,7 +128,7 @@ namespace Garnet.server
                 var appendOnlyFile = db.AppendOnlyFile;
                 SwitchActiveDatabaseContext(db);
 
-                // Set the tail address for replay recovery to the tail address of the AOF if none specified)
+                // Set the tail address for replay recovery to the tail address of the AOF if none specified
                 untilAddress.SetValueIf(appendOnlyFile.Log.TailAddress, -1);
 
                 var tasks = new Task[untilAddress.Length];
