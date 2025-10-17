@@ -80,20 +80,6 @@ jobs:
       - name: Check style format
         run: dotnet format --verify-no-changes --verbosity diagnostic
 
-#  Adding Allure need change build process:
-# In Directory.Build.Props:
-  	#<PropertyGroup>
-		#<UseSharedCompilation>false</UseSharedCompilation>
-	  #</PropertyGroup>
-# dotnet build /p:UseSharedCompilation=false
-
-# Maybe don't do in parallel - dotnet build -maxcpucount:1
-
-# Also need to turn off Test Auto Discovery in Visual Studio - Test -> Options -> General -> Uncheck "Enable Test Explorer to discover tests in the background"
-# Or call dotnet build --no-incremental
-
-# So to combine those three: dotnet build --no-incremental /p:UseSharedCompilation=false -maxcpucount:1
-
       - name: Build Tsavorite.test
         if: ${{ matrix.test == 'Tsavorite.test' }}
         run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
