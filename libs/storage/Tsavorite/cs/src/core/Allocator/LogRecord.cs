@@ -194,15 +194,16 @@ namespace Tsavorite.core
             }
             internal set
             {
-                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                var (_ /*valueLength*/, valueAddress) = GetValueFieldInfo(IndicatorAddress);
 
                 // We cannot verify that value.Length==ObjectIdSize because we have reused the varbyte length as the high byte of the 5-byte length.
                 if (!Info.ValueIsObject)
                     throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord or Deserialization with ValueIsObject==true");
-                *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
+                *(int*)valueAddress = objectIdMap.AllocateAndSet(value);
 
-                // We reused the varbyte length as the high byte of the 5-byte length, so reset it now to ObjectIdSize.
+                // We reused the varbyte length as the high byte of the 5-byte length, so restore it now to ObjectIdSize and reset the object log file position.
                 UpdateVarbyteValueLengthByteInWord(IndicatorAddress, ObjectIdMap.ObjectIdSize);
+                *(ulong*)(valueAddress + ObjectIdMap.ObjectIdSize + ETagLen + ExpirationLen) = ObjectLogFilePositionInfo.NotSet;
             }
         }
 
@@ -546,7 +547,7 @@ namespace Tsavorite.core
             }
             else if (zeroInit)
             {
-                // Zeroinit any space we grew by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
+                // Zeroinit any extra space we grew the value by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
                 new Span<byte>((byte*)(valueAddress + oldInlineValueSize), (int)(newInlineValueSize - oldInlineValueSize)).Clear();
             }
 
@@ -623,14 +624,17 @@ namespace Tsavorite.core
             return (actualSize, actualSize + GetFillerLength());
         }
 
-        /// <summary>A tuple of the total size of the main-log (inline) portion of the record when it still has the object-length encoding
-        ///     which leaves the metadata's valueLength incorrect. The tuple is with and without filler length.</summary>
+        /// <summary>A tuple of the total size of the main-log (inline) portion of the record when it has a value object and thus may
+        ///     still have the object-length encoding which leaves the metadata's valueLength incorrect (this method works whether or
+        ///     not the value object has been read). The tuple is with and without filler length.</summary>
         public readonly (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects()
         {
             if (Info.IsNull)
                 return (RecordInfo.Size, RecordInfo.Size);
+            if (!Info.ValueIsObject)
+                return GetInlineRecordSizes();
 
-            // Calculate this directly due to the unread objects.
+            // Calculate this directly due to the possibly unread objects.
             var (length, dataAddress) = GetValueFieldInfoWithUnreadObjects(IndicatorAddress);
             var actualSize = (int)(dataAddress - physicalAddress + length + OptionalLength);
 

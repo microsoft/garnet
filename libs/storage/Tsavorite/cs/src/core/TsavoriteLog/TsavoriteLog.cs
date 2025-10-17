@@ -190,10 +190,8 @@ namespace Tsavorite.core
             AutoCommit = logSettings.AutoCommit;
             logCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
-                (new LocalStorageNamedDeviceFactoryCreator(),
-                    new DefaultCheckpointNamingScheme(
-                        logSettings.LogCommitDir ??
-                        new FileInfo(logSettings.LogDevice.FileName).Directory.FullName),
+                    (new LocalStorageNamedDeviceFactoryCreator(),
+                    new DefaultCheckpointNamingScheme( logSettings.LogCommitDir ?? new FileInfo(logSettings.LogDevice.FileName).Directory.FullName),
                     !logSettings.ReadOnlyMode && logSettings.RemoveOutdatedCommits);
 
             if (logSettings.LogCommitManager == null)
@@ -430,7 +428,8 @@ namespace Tsavorite.core
                 commitNum = lastCommitNum;
                 this.beginAddress = beginAddress;
 
-                if (lastCommitNum > 0) logCommitManager.OnRecovery(lastCommitNum);
+                if (lastCommitNum > 0)
+                    logCommitManager.OnRecovery(lastCommitNum);
             }
             finally
             {
@@ -2575,7 +2574,8 @@ namespace Tsavorite.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
+            if (scanStart > 0)
+                logCommitManager.OnRecovery(scanStart);
         }
 
         private void RestoreSpecificCommit(long requestedCommitNum, out byte[] cookie)
@@ -2648,7 +2648,8 @@ namespace Tsavorite.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
+            if (scanStart > 0)
+                logCommitManager.OnRecovery(scanStart);
         }
 
         /// <summary>
@@ -2719,7 +2720,8 @@ namespace Tsavorite.core
             if (readOnlyMode)
                 allocator.HeadAddress = long.MaxValue;
 
-            if (scanStart > 0) logCommitManager.OnRecovery(scanStart);
+            if (scanStart > 0)
+                logCommitManager.OnRecovery(scanStart);
 
             return cookie;
         }

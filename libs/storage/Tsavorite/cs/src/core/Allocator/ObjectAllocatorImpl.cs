@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-//#define READ_WRITE
-
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -70,7 +68,7 @@ namespace Tsavorite.core
 
             if (settings.LogSettings.ObjectLogSegmentSizeBits is < LogSettings.kMinObjectLogSegmentSizeBits or > LogSettings.kMaxSegmentSizeBits)
                 throw new TsavoriteException($"{nameof(settings.LogSettings.ObjectLogSegmentSizeBits)} must be between {LogSettings.kMinObjectLogSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
-            objectLogNextRecordStartPosition.SegmentSizeBits = settings.LogSettings.ObjectLogSegmentSizeBits;
+            objectLogNextRecordStartPosition = new(0, settings.LogSettings.ObjectLogSegmentSizeBits);
 
             pages = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ii++)
@@ -688,54 +686,12 @@ namespace Tsavorite.core
             return IterateHashChain(store, key, beginAddress, ref scanFunctions, iter);
         }
 
-        private void ComputeScanBoundaries(long beginAddress, long endAddress, out long pageStartAddress, out int start, out int end)
-        {
-#if READ_WRITE
-            pageStartAddress = beginAddress & ~PageSizeMask;
-            start = (int)(beginAddress & PageSizeMask) / RecordSize;
-            var count = (int)(endAddress - beginAddress) / RecordSize;
-            end = start + count;
-#else
-            pageStartAddress = 0;
-            start = end = 0;
-#endif // READ_WRITE
-        }
-
-        /// <inheritdoc />
-        internal override void EvictPage(long page)
-        {
-#if READ_WRITE
-            if (OnEvictionObserver is not null)
-            {
-                var beginAddress = page << LogPageSizeBits;
-                var endAddress = (page + 1) << LogPageSizeBits;
-                ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
-                using var iter = new MemoryPageScanIterator(values[(int)(page % BufferSize)], start, end, pageStartAddress, RecordSize);
-                OnEvictionObserver?.OnNext(iter);
-            }
-
-            FreePage(page);
-#endif // READ_WRITE
-        }
-
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator> observer)
         {
-#if READ_WRITE
-            var page = (beginAddress >> LogPageSizeBits) % BufferSize;
-            ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
-            using var iter = new MemoryPageScanIterator(values[page], start, end, pageStartAddress, RecordSize);
-            Debug.Assert(epoch.ThisInstanceProtected());
-            try
-            {
-                epoch.Suspend();
-                observer?.OnNext(iter);
-            }
-            finally
-            {
-                epoch.Resume();
-            }
-#endif // READ_WRITE
+            using var iter = new ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>(store: null, this, beginAddress, endAddress, epoch, DiskScanBufferingMode.NoBuffering, InMemoryScanBufferingMode.NoBuffering,
+                    includeClosedRecords: false, assumeInMemory: true, logger: logger);
+            observer?.OnNext(iter);
         }
 
         internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)

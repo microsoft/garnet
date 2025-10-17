@@ -11,6 +11,9 @@ namespace Tsavorite.core
     /// </summary>
     internal struct ObjectLogFilePositionInfo
     {
+        /// <summary>Indicates the word has not been set.</summary>
+        internal const ulong NotSet = ulong.MaxValue;
+
         /// <summary>Object log segment size bits</summary>
         internal int SegmentSizeBits;
 
@@ -19,9 +22,16 @@ namespace Tsavorite.core
 
         internal readonly bool IsSet => SegmentSizeBits != 0;
 
+        public ObjectLogFilePositionInfo()
+        {
+            SegmentSizeBits = 0;
+            word = NotSet;
+        }
+
         internal ObjectLogFilePositionInfo(int segSizeBits)
         {
             SegmentSizeBits = segSizeBits;
+            word = NotSet;
         }
 
         internal ObjectLogFilePositionInfo(ulong word, int segSizeBits)
