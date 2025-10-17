@@ -65,24 +65,6 @@ namespace Tsavorite.core
         public void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Write is not supported for DiskStreamReadBuffer");
 
         /// <summary>
-        /// Get the object log entries for Overflow Keys and Values and Object Values for the record at <paramref name="physicalAddress"/>. We create the log record here,
-        /// because we are calling this over a pages from iterator frames or Restore.
-        /// </summary>
-        /// <param name="physicalAddress">Pointer to the initial record read from disk, either from iterator or Restore.</param>
-        /// <param name="recordSize">Number of bytes available at <paramref name="physicalAddress"/></param>
-        /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
-        /// <param name="transientObjectIdMap">The <see cref="ObjectIdMap"/> to place Overflow and Object Keys and Values in.</param>
-        /// <param name="segmentSizeBits">Number of bits in segment size</param>
-        /// <param name="logRecord">The output <see cref="LogRecord"/>, which has its Key and Value ObjectIds filled in in the log record.</param>
-        /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
-        public bool ReadRecordObjects(long physicalAddress, int recordSize, ReadOnlySpan<byte> requestedKey, ObjectIdMap transientObjectIdMap, int segmentSizeBits, out LogRecord logRecord)
-        {
-            logRecord = new LogRecord(physicalAddress, transientObjectIdMap);
-            Debug.Assert(logRecord.GetInlineRecordSizes().actualSize <= recordSize, $"RecordSize ({recordSize}) is less than required LogRecord size ({logRecord.GetInlineRecordSizes().actualSize})");
-            return logRecord.Info.RecordIsInline || ReadRecordObjects(ref logRecord, requestedKey, segmentSizeBits);
-        }
-
-        /// <summary>
         /// Get the object log entries for Overflow Keys and Values and Object Values for the input <paramref name="logRecord"/>. We do not create the log record here;
         /// that was already done by the caller (probably from a single-record disk IO).
         /// </summary>

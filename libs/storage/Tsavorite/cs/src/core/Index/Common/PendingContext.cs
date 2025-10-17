@@ -52,6 +52,9 @@ namespace Tsavorite.core
             /// <summary>The logical address of the found record, if any; used to create <see cref="RecordMetadata"/>.</summary>
             internal long logicalAddress;
 
+            /// <summary>The record's ETag, if any; used to create <see cref="RecordMetadata"/>.</summary>
+            internal long eTag;
+
             /// <summary>The initial highest logical address of the search; used to limit search ranges when the pending operation completes (e.g. to see if a duplicate was inserted).</summary>
             internal long initialLatestLogicalAddress;
 
@@ -239,7 +242,7 @@ namespace Tsavorite.core
             }
 
             /// <inheritdoc/>
-            public readonly long ETag => diskLogRecord.ETag;
+            public readonly long ETag => diskLogRecord.IsSet ? diskLogRecord.ETag : this.eTag;
 
             /// <inheritdoc/>
             public readonly long Expiration => diskLogRecord.Expiration;

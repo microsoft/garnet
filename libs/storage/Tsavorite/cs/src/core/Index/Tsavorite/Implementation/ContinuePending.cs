@@ -52,6 +52,7 @@ namespace Tsavorite.core
                 }
 
                 stackCtx.SetRecordSourceToHashEntry(hlogBase);
+                pendingContext.eTag = pendingContext.diskLogRecord.ETag;
 
                 try
                 {

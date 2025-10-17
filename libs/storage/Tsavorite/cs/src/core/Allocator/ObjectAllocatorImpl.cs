@@ -337,7 +337,7 @@ namespace Tsavorite.core
         internal override CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger)
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice ?? this.objectLogDevice, logger);
 
-        private CircularDiskReadBuffer CreateCircularReadBuffers()
+        internal override CircularDiskReadBuffer CreateCircularReadBuffers()
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice, logger);
 
         private void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
@@ -576,43 +576,43 @@ namespace Tsavorite.core
 
             var result = (PageAsyncReadResult<TContext>)context;
             var pageStartAddress = (long)result.destinationPtr;
-            result.maxPtr = numBytes;
+            if (numBytes < result.maxPtr)
+                result.maxPtr = numBytes;
 
             // Iterate all records in range to determine how many bytes we need to read from objlog.
-            ObjectLogFilePositionInfo startPosition = new();
+            ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
+            int endKeyLength = 0;
+            ulong endValueLength = 0;
             ulong totalBytesToRead = 0;
             var recordAddress = pageStartAddress + PageHeader.Size;
-            while (true)
+            var endAddress = pageStartAddress + result.maxPtr;
+
+            while (recordAddress < endAddress)
             {
                 var logRecord = new LogRecord(recordAddress);
 
                 // Use allocatedSize here because that is what LogicalAddress is based on.
-                var logRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
-                recordAddress += logRecordSize;
-
-                if (logRecord.Info.Invalid || logRecord.Info.RecordIsInline)
-                    continue;
-
-                if (!startPosition.IsSet)
+                if (logRecord.Info.RecordIsInline)
                 {
-                    startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogNextRecordStartPosition.SegmentSizeBits);
+                    recordAddress += logRecord.GetInlineRecordSizes().allocatedSize;
                     continue;
                 }
 
-                // We have already incremented record address to get to the next record; if it is at or beyond the maxPtr, we have processed all records.
-                if (recordAddress >= pageStartAddress + result.maxPtr)
+                recordAddress += logRecord.GetInlineRecordSizesWithUnreadObjects().allocatedSize;
+                if (logRecord.Info.Valid)
                 {
-                    ObjectLogFilePositionInfo endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength),
-                                                                objectLogNextRecordStartPosition.SegmentSizeBits);
-                    endPosition.Advance((ulong)keyLength + valueLength);
-                    totalBytesToRead = endPosition - startPosition;
-                    break;
+                    if (!startPosition.IsSet)
+                        startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogNextRecordStartPosition.SegmentSizeBits);
+                    endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogNextRecordStartPosition.SegmentSizeBits);
                 }
             }
 
             // The page may not have contained any records with objects
             if (startPosition.IsSet)
             {
+                endPosition.Advance((ulong)endKeyLength + endValueLength);
+                totalBytesToRead = endPosition - startPosition;
+
                 // Iterate all records again to actually do the deserialization.
                 result.readBuffers.nextReadFilePosition = startPosition;
                 recordAddress = pageStartAddress + PageHeader.Size;
@@ -620,23 +620,25 @@ namespace Tsavorite.core
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
                 logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
 
-                do
+                while (recordAddress < endAddress)
                 {
-                    var logRecord = new LogRecord(recordAddress);
+                    var logRecord = new LogRecord(recordAddress, transientObjectIdMap);
 
                     // Use allocatedSize here because that is what LogicalAddress is based on.
-                    var logRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
-                    recordAddress += logRecordSize;
-
-                    if (logRecord.Info.Invalid || logRecord.Info.RecordIsInline)
+                    if (logRecord.Info.RecordIsInline)
+                    {
+                        recordAddress += logRecord.GetInlineRecordSizes().allocatedSize;
                         continue;
+                    }
 
-                    // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
-                    // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
-                    _ = logReader.ReadRecordObjects(pageStartAddress, logRecordSize, noKey, transientObjectIdMap, startPosition.SegmentSizeBits, out _ /*diskLogRecord*/);
-
-                    // If the incremented record address is at or beyond the maxPtr, we have processed all records.
-                } while (recordAddress < pageStartAddress + result.maxPtr);
+                    recordAddress += logRecord.GetInlineRecordSizesWithUnreadObjects().allocatedSize;
+                    if (logRecord.Info.Valid)
+                    {
+                        // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
+                        // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
+                        _ = logReader.ReadRecordObjects(ref logRecord, noKey, transientObjectIdMap, startPosition.SegmentSizeBits);
+                    }
+                }
             }
 
             // Call the "real" page read callback
@@ -651,7 +653,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         public override ITsavoriteScanIterator Scan(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, bool includeClosedRecords)
-            => new ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>(CreateCircularReadBuffers(), store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeClosedRecords: includeClosedRecords);
+            => new ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeClosedRecords: includeClosedRecords);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
@@ -659,7 +661,7 @@ namespace Tsavorite.core
         internal override bool Scan<TScanFunctions>(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, ref TScanFunctions scanFunctions, DiskScanBufferingMode scanBufferingMode)
         {
-            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(CreateCircularReadBuffers(), store, this, beginAddress, endAddress, epoch, scanBufferingMode, includeClosedRecords: false, logger: logger);
+            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, scanBufferingMode, includeClosedRecords: false, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
@@ -670,7 +672,7 @@ namespace Tsavorite.core
                 ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress,
                 bool resetCursor = true, bool includeTombstones = false)
         {
-            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(CreateCircularReadBuffers(), store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering,
+            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering,
                 includeClosedRecords: maxAddress < long.MaxValue, logger: logger);
             return ScanLookup<long, long, TScanFunctions, ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor,
                 maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
@@ -682,7 +684,7 @@ namespace Tsavorite.core
         internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 ReadOnlySpan<byte> key, long beginAddress, ref TScanFunctions scanFunctions)
         {
-            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(CreateCircularReadBuffers(), store, this, beginAddress, epoch, logger: logger);
+            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, epoch, logger: logger);
             return IterateHashChain(store, key, beginAddress, ref scanFunctions, iter);
         }
 

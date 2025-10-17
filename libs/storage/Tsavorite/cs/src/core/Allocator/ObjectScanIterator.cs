@@ -38,25 +38,27 @@ namespace Tsavorite.core
         /// <param name="epoch">Epoch to use for protection; may be null if <paramref name="assumeInMemory"/> is true.</param>
         /// <param name="assumeInMemory">Provided address range is known by caller to be in memory, even if less than HeadAddress</param>
         /// <param name="logger"></param>
-        internal ObjectScanIterator(CircularDiskReadBuffer readBuffers, TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
+        internal ObjectScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, long endAddress, LightEpoch epoch, DiskScanBufferingMode diskScanBufferingMode,
                 InMemoryScanBufferingMode memScanBufferingMode = InMemoryScanBufferingMode.NoBuffering,
                 bool includeClosedRecords = false, bool assumeInMemory = false, ILogger logger = null)
-            : base(readBuffers, beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, diskScanBufferingMode, memScanBufferingMode, includeClosedRecords, epoch, hlogBase.LogPageSizeBits, logger: logger)
+            : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, diskScanBufferingMode, memScanBufferingMode,
+                  includeClosedRecords, epoch, hlogBase.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlogBase = hlogBase;
             this.assumeInMemory = assumeInMemory;
             if (frameSize > 0)
                 frame = new BlittableFrame(frameSize, hlogBase.PageSize, hlogBase.GetDeviceSectorSize());
+            InitializeReadBuffers(hlogBase);
         }
 
         /// <summary>
         /// Constructor for use with tail-to-head push iteration of the passed key's record versions
         /// </summary>
-        internal ObjectScanIterator(CircularDiskReadBuffer readBuffers, TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
+        internal ObjectScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
-            : base(readBuffers, beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, hlogBase.GetTailAddress(),
+            : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, hlogBase.GetTailAddress(),
                 DiskScanBufferingMode.SinglePageBuffering, InMemoryScanBufferingMode.NoBuffering, false, epoch, hlogBase.LogPageSizeBits, logger: logger)
         {
             this.store = store;
@@ -253,8 +255,11 @@ namespace Tsavorite.core
                     {
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
                         // We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
-                        diskLogRecord = new(new LogRecord(physicalAddress, hlogBase._wrapper.TranssientObjectIdMap),
-                                            obj => store.storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
+                        var logRecord = new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap);
+                        diskLogRecord = new(logRecord,
+                                            store is not null
+                                            ? obj => store.storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk)
+                                            : obj => { });  // TODOnow this needs to dispose the object even if store is null; review whether we should have separate arg for behavior instead of a null store
                     }
                 }
                 finally

@@ -18,9 +18,23 @@ namespace Tsavorite.core
     using static VarbyteLengthUtility;
 
     /// <summary>
+    /// Type-free base class for hybrid log memory allocator. Contains utility methods that do not need type args and are not performance-critical
+    /// so can be virtual.
+    /// </summary>
+    public abstract class AllocatorBase
+    {
+        /// <summary>Create the circular buffers for <see cref="LogRecord"/> flushing to device. Only implemented by ObjectAllocator.</summary>
+        internal virtual CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger) => default;
+        /// <summary>Create the circular flush buffers for object dexerialization from device. Only implemented by ObjectAllocator.</summary>
+        internal virtual CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger) => default;
+        /// <summary>Create the circular flush buffers for object dexerialization from device. Only implemented by ObjectAllocator.</summary>
+        internal virtual CircularDiskReadBuffer CreateCircularReadBuffers() => default;
+    }
+
+    /// <summary>
     /// Base class for hybrid log memory allocator. Contains utility methods, some of which are not performance-critical so can be virtual.
     /// </summary>
-    public abstract unsafe partial class AllocatorBase<TStoreFunctions, TAllocator> : IDisposable
+    public abstract unsafe partial class AllocatorBase<TStoreFunctions, TAllocator> : AllocatorBase, IDisposable
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -1598,11 +1612,6 @@ namespace Tsavorite.core
                 ReadAsync(readBuffers, offsetInFile, (IntPtr)pagePointers[pageIndex], readLength, callback, asyncResult, usedDevice);
             }
         }
-
-        /// <summary>Create the circular buffers for <see cref="LogRecord"/> flushing to device. Only implemented by ObjectAllocator.</summary>
-        internal virtual CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger) => default;
-        /// <summary>Create the circular flush buffers for object dexerialization from device. Only implemented by ObjectAllocator.</summary>
-        internal virtual CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger) => default;
 
         /// <summary>
         /// Flush page range to disk
