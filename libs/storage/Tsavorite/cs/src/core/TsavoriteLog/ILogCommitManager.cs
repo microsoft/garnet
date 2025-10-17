@@ -7,7 +7,7 @@ using System.Collections.Generic;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Log commit manager
+    /// TsavoriteLog commit manager
     /// </summary>
     public interface ILogCommitManager : IDisposable
     {
@@ -41,7 +41,7 @@ namespace Tsavorite.core
         public void RemoveCommit(long commitNum);
 
         /// <summary>
-        /// Remove all log commits from this manager
+        /// Remove all TsavoriteLog commits from this manager
         /// </summary>
         public void RemoveAllCommits();
 

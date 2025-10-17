@@ -44,12 +44,17 @@ namespace Garnet.server
         /// <summary>.Net object avg. overhead for holding a priority queue entry</summary>
         public const int PriorityQueueEntryOverhead = 48;
 
-        internal static long CalculateKeyValueSize(byte[] key, IGarnetObject value)
+        internal static long CalculateHeapMemorySize(in LogRecord logRecord)
         {
-            // Round up key size to account for alignment during allocation 
-            // and add up overhead for allocating a byte array
-            return Utility.RoundUp(key.Length, IntPtr.Size) + ByteArrayOverhead +
-                value.Size;
+            // For overflow byte[], round up key size to account for alignment during allocation and add overhead for allocating a byte array
+            var result = 0L;
+            if (logRecord.Info.KeyIsOverflow)
+                result += Utility.RoundUp(logRecord.Key.Length, IntPtr.Size) + ByteArrayOverhead;
+            if (logRecord.Info.ValueIsOverflow)
+                result += Utility.RoundUp(logRecord.ValueSpan.Length, IntPtr.Size) + ByteArrayOverhead;
+            else if (logRecord.Info.ValueIsObject)
+                result += logRecord.ValueObject.HeapMemorySize;
+            return result;
         }
     }
 }

@@ -12,12 +12,12 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-        /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-        SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-    BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-        /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-        GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
+    using BasicGarnetApi = GarnetApi<BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
+        /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>,
+        SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>>,
+    BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+        /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+        ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
@@ -60,8 +60,8 @@ namespace Garnet.cluster
 
             var replace = parseState.GetArgSliceByRef(1).ReadOnlySpan;
             var storeType = parseState.GetArgSliceByRef(2).ReadOnlySpan;
-            var payloadStartPtr = parseState.GetArgSliceByRef(3).SpanByte.ToPointer();
-            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1).SpanByte;
+            var payloadStartPtr = parseState.GetArgSliceByRef(3).ToPointer();
+            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1);
             var payloadEndPtr = lastParam.ToPointer() + lastParam.Length;
             var replaceOption = replace.EqualsUpperCaseSpanIgnoringCase("T"u8);
 
@@ -69,7 +69,7 @@ namespace Garnet.cluster
             var buffer = new Span<byte>(payloadStartPtr, (int)(payloadEndPtr - payloadStartPtr)).ToArray();
 
             if (clusterProvider.serverOptions.FastMigrate)
-                Task.Run(() => Process(basicGarnetApi, buffer, storeTypeStr, replaceOption));
+                _ = Task.Run(() => Process(basicGarnetApi, buffer, storeTypeStr, replaceOption));
             else
                 Process(basicGarnetApi, buffer, storeTypeStr, replaceOption);
 
@@ -89,33 +89,44 @@ namespace Garnet.cluster
                         var i = 0;
 
                         TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
-                        while (i < keyCount)
+                        var storeWrapper = clusterProvider.storeWrapper;
+
+                        // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
+                        DiskLogRecord diskLogRecord = default;
+                        try
                         {
-                            ref var key = ref SpanByte.Reinterpret(payloadPtr);
-                            payloadPtr += key.TotalSize;
-                            ref var value = ref SpanByte.Reinterpret(payloadPtr);
-                            payloadPtr += value.TotalSize;
-
-                            // An error has occurred
-                            if (migrateState > 0)
+                            while (i < keyCount)
                             {
-                                i++;
-                                continue;
-                            }
+                                if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
+                                    return;
 
-                            var slot = HashSlotUtils.HashSlot(ref key);
-                            if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
-                            {
-                                migrateState = 1;
-                                i++;
-                                continue;
-                            }
+                                // An error has occurred
+                                if (migrateState > 0)
+                                {
+                                    i++;
+                                    continue;
+                                }
 
-                            // Set if key replace flag is set or key does not exist
-                            var keySlice = new ArgSlice(key.ToPointer(), key.Length);
-                            if (replaceOption || !Exists(ref keySlice))
-                                _ = basicGarnetApi.SET(ref key, ref value);
-                            i++;
+                                diskLogRecord = DiskLogRecord.Deserialize(recordSpan, valueObjectSerializer: default, transientObjectIdMap: default, storeWrapper.mainStoreFunctions);
+                                var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);
+                                if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                                {
+                                    migrateState = 1;
+                                    i++;
+                                    continue;
+                                }
+
+                                // Set if key replace flag is set or key does not exist
+                                var keySlice = PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key);
+                                if (replaceOption || !Exists(keySlice))
+                                    _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Main);
+                                diskLogRecord.Dispose();
+                                i++;
+                            }
+                        }
+                        finally
+                        {
+                            diskLogRecord.Dispose();
                         }
                     }
                     else if (storeTypeSpan.Equals("OSTORE", StringComparison.OrdinalIgnoreCase))
@@ -124,30 +135,41 @@ namespace Garnet.cluster
                         payloadPtr += 4;
                         var i = 0;
                         TrackImportProgress(keyCount, isMainStore: false, keyCount == 0);
-                        while (i < keyCount)
+                        var storeWrapper = clusterProvider.storeWrapper;
+                        var transientObjectIdMap = storeWrapper.objectStore.Log.TransientObjectIdMap;
+
+                        // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
+                        DiskLogRecord diskLogRecord = default;
+                        try
                         {
-                            if (!RespReadUtils.TryReadSerializedData(out var key, out var data, out var expiration, ref payloadPtr, payloadEndPtr))
-                                return;
-
-                            // An error has occurred
-                            if (migrateState > 0)
-                                continue;
-
-                            var slot = HashSlotUtils.HashSlot(key);
-                            if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                            while (i < keyCount)
                             {
-                                migrateState = 1;
-                                continue;
+                                if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
+                                    return;
+
+                                // An error has occurred
+                                if (migrateState > 0)
+                                    continue;
+
+                                diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.objectStoreFunctions);
+                                var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);
+                                if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                                {
+                                    migrateState = 1;
+                                    continue;
+                                }
+
+                                // Set if key replace flag is set or key does not exist
+                                var keySlice = PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key);
+                                if (replaceOption || !Exists(keySlice))
+                                    _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Object);
+                                diskLogRecord.Dispose();
+                                i++;
                             }
-
-                            var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
-                            value.Expiration = expiration;
-
-                            // Set if key replace flag is set or key does not exist
-                            if (replaceOption || !CheckIfKeyExists(key))
-                                _ = basicGarnetApi.SET(key, value);
-
-                            i++;
+                        }
+                        finally
+                        {
+                            diskLogRecord.Dispose();
                         }
                     }
                     else

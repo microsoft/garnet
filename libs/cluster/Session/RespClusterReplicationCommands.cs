@@ -141,7 +141,7 @@ namespace Garnet.cluster
 
             if (clusterProvider.serverOptions.EnableAOF)
             {
-                clusterProvider.replicationManager.TryAddReplicationTask(nodeId, nextAddress, out var aofSyncTaskInfo);
+                _ = clusterProvider.replicationManager.TryAddReplicationTask(nodeId, nextAddress, out var aofSyncTaskInfo);
                 if (!clusterProvider.replicationManager.TryConnectToReplica(nodeId, nextAddress, aofSyncTaskInfo, out var errorMessage))
                 {
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref dcurr, dend))
@@ -188,7 +188,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var sbRecord = parseState.GetArgSliceByRef(4).SpanByte;
+            var sbRecord = parseState.GetArgSliceByRef(4);
 
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
             var localRole = currentConfig.LocalNodeRole;
@@ -230,7 +230,7 @@ namespace Garnet.cluster
 
             var replicaNodeId = parseState.GetString(0);
             var replicaAssignedPrimaryId = parseState.GetString(1);
-            var checkpointEntryBytes = parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(2).ToArray();
 
             if (!parseState.TryGetLong(3, out var replicaAofBeginAddress) ||
                 !parseState.TryGetLong(4, out var replicaAofTailAddress))
@@ -287,7 +287,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var checkpointMetadata = parseState.GetArgSliceByRef(2).SpanByte.ToByteArray();
+            var checkpointMetadata = parseState.GetArgSliceByRef(2).ToArray();
 
             var fileToken = new Guid(fileTokenBytes);
             var fileType = (CheckpointFileType)fileTypeInt;
@@ -364,7 +364,7 @@ namespace Garnet.cluster
             }
 
             var primaryReplicaId = parseState.GetString(3);
-            var checkpointEntryBytes = parseState.GetArgSliceByRef(4).SpanByte.ToByteArray();
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(4).ToArray();
 
             if (!parseState.TryGetLong(5, out var beginAddress) ||
                 !parseState.TryGetLong(6, out var tailAddress))
@@ -415,7 +415,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var checkpointEntryBytes = parseState.GetArgSliceByRef(0).SpanByte.ToByteArray();
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(0).ToArray();
             var syncMetadata = SyncMetadata.FromByteArray(checkpointEntryBytes);
 
             ReadOnlySpan<byte> errorMessage = default;
@@ -457,40 +457,63 @@ namespace Garnet.cluster
 
             var primaryNodeId = parseState.GetString(0);
             var storeTypeSpan = parseState.GetArgSliceByRef(1).ReadOnlySpan;
-            var payload = parseState.GetArgSliceByRef(2).SpanByte;
+            var payload = parseState.GetArgSliceByRef(2);
             var payloadPtr = payload.ToPointer();
-            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1).SpanByte;
+            var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1);
             var payloadEndPtr = lastParam.ToPointer() + lastParam.Length;
 
-            var keyValuePairCount = *(int*)payloadPtr;
+            var recordCount = *(int*)payloadPtr;
             var i = 0;
             payloadPtr += 4;
             if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("SSTORE"u8))
             {
-                TrackImportProgress(keyValuePairCount, isMainStore: true, keyValuePairCount == 0);
-                while (i < keyValuePairCount)
-                {
-                    ref var key = ref SpanByte.Reinterpret(payloadPtr);
-                    payloadPtr += key.TotalSize;
-                    ref var value = ref SpanByte.Reinterpret(payloadPtr);
-                    payloadPtr += value.TotalSize;
+                TrackImportProgress(recordCount, isMainStore: true, recordCount == 0);
+                var storeWrapper = clusterProvider.storeWrapper;
 
-                    _ = basicGarnetApi.SET(ref key, ref value);
-                    i++;
+                // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
+                DiskLogRecord diskLogRecord = default;
+                try
+                {
+                    while (i < recordCount)
+                    {
+                        if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
+                            return false;
+
+                        diskLogRecord = DiskLogRecord.Deserialize(recordSpan, valueObjectSerializer: default, transientObjectIdMap: default, storeWrapper.mainStoreFunctions);
+                        _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Main);
+                        diskLogRecord.Dispose();
+                        i++;
+                    }
+                }
+                finally
+                {
+                    diskLogRecord.Dispose();
                 }
             }
             else if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("OSTORE"u8))
             {
-                TrackImportProgress(keyValuePairCount, isMainStore: false, keyValuePairCount == 0);
-                while (i < keyValuePairCount)
-                {
-                    if (!RespReadUtils.TryReadSerializedData(out var key, out var data, out var expiration, ref payloadPtr, payloadEndPtr))
-                        return false;
+                TrackImportProgress(recordCount, isMainStore: false, recordCount == 0);
+                var storeWrapper = clusterProvider.storeWrapper;
+                var transientObjectIdMap = storeWrapper.objectStore.Log.TransientObjectIdMap;
 
-                    var value = clusterProvider.storeWrapper.GarnetObjectSerializer.Deserialize(data);
-                    value.Expiration = expiration;
-                    _ = basicGarnetApi.SET(key, value);
-                    i++;
+                // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
+                DiskLogRecord diskLogRecord = default;
+                try
+                {
+                    while (i < recordCount)
+                    {
+                        if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
+                            return false;
+
+                        diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.objectStoreFunctions);
+                        _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Object);
+                        diskLogRecord.Dispose();
+                        i++;
+                    }
+                }
+                finally
+                {
+                    diskLogRecord.Dispose();
                 }
             }
 

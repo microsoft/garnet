@@ -16,6 +16,9 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
+    using static Utility;
+
     /// <summary>
     /// Sector aligned memory allocator
     /// </summary>
@@ -35,27 +38,33 @@ namespace Tsavorite.core
         internal GCHandle handle;
 
         /// <summary>
-        /// Offset
+        /// Offset for initial allocation alignment of the block; this is the offset from the first element of <see cref="buffer"/> to form <see cref="aligned_pointer"/>.
+        /// This alignment is internal to <see cref="SectorAlignedMemory"/>, and ensures that callers see an aligned starting address.
         /// </summary>
-        public int offset;
+        public int aligned_offset;
 
         /// <summary>
-        /// Aligned pointer
+        /// Aligned pointer; initial allocation (the first element of <see cref="buffer"/>) plus <see cref="aligned_offset"/>
+        /// This alignment is internal to <see cref="SectorAlignedMemory"/>, and ensures that callers see an aligned starting address.
         /// </summary>
         public byte* aligned_pointer;
 
         /// <summary>
-        /// Valid offset
+        /// Valid offset for operations above <see cref="aligned_pointer"/>, to get their own desired alignment relative to our aligned starting address.
+        /// This is set by the caller for operations such as file reading, which rounds down to the nearest sector size; this is the amount of that rounding down.
+        /// Used by <see cref="GetValidPointer()"/>, which is <see cref="aligned_pointer"/> + <see cref="valid_offset"/>.
         /// </summary>
         public int valid_offset;
 
         /// <summary>
-        /// Required bytes
+        /// Required (requested) bytes for the current operation: the unaligned number of bytes to read. There will always be at least this much usable space in the allocation.
+        /// Use this when the original request size is needed.
         /// </summary>
         public int required_bytes;
 
         /// <summary>
-        /// Available bytes
+        /// Available bytes after the operation is complete: the number of bytes actually read, e.g. aligned number of bytes requested. See <see cref="GetValidPointer()"/>.
+        /// Use this to see if there are additional bytes over the original request (see <see cref="required_bytes"/>.
         /// </summary>
         public int available_bytes;
 
@@ -106,14 +115,21 @@ namespace Tsavorite.core
         /// <param name="sectorSize"></param>
         public SectorAlignedMemory(int numRecords, int sectorSize)
         {
-            int recordSize = 1;
-            int requiredSize = sectorSize + (((numRecords) * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
+            const int recordSize = 1;
+            required_bytes = numRecords * recordSize;
+            int requiredSize = sectorSize + RoundUp(required_bytes, sectorSize);    // An additional sector size for the aligned_offset
 
             buffer = GC.AllocateArray<byte>(requiredSize, true);
             long bufferAddr = (long)Unsafe.AsPointer(ref buffer[0]);
             aligned_pointer = (byte*)((bufferAddr + (sectorSize - 1)) & ~((long)sectorSize - 1));
-            offset = (int)((long)aligned_pointer - bufferAddr);
+            aligned_offset = (int)((long)aligned_pointer - bufferAddr);
             // Assume ctor is called for allocation and leave Free unset
+        }
+
+        public unsafe (byte[] array, long offset) GetArrayAndUnalignedOffset(long alignedOffset)
+        {
+            long ptr = (long)Unsafe.AsPointer(ref buffer[0]);
+            return (buffer, alignedOffset + ptr - (long)aligned_pointer);
         }
 
         /// <summary>
@@ -139,17 +155,44 @@ namespace Tsavorite.core
         /// <summary>
         /// Get the total aligned memory capacity of the buffer
         /// </summary>
-        public int AlignedTotalCapacity => buffer.Length - offset;
+        public int AlignedTotalCapacity => buffer.Length - aligned_offset;
 
         /// <summary>
-        /// Get valid pointer
+        /// Get the total valid memory capacity of the buffer
+        /// </summary>
+        public int ValidTotalCapacity => AlignedTotalCapacity - valid_offset;
+
+        /// <summary>
+        /// Get the total valid required (requested) capacity of the buffer
+        /// </summary>
+        public int RequiredCapacity => required_bytes - valid_offset;
+
+        /// <summary>
+        /// Get valid pointer (accounts for aligned padding plus any offset specified for the valid start of data)
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public byte* GetValidPointer()
-        {
-            return aligned_pointer + valid_offset;
-        }
+        public byte* GetValidPointer() => aligned_pointer + valid_offset;
+
+        /// <summary>
+        /// Get Span of entire allocated space after the valid pointer
+        /// </summary>
+        public Span<byte> TotalValidSpan => new(GetValidPointer(), ValidTotalCapacity);
+
+        /// <summary>
+        /// Get Span of entire allocated space after the aligned pointer (see <see cref="available_bytes"/>).
+        /// </summary>
+        public Span<byte> AvailableSpan => new(aligned_pointer, available_bytes);
+
+        /// <summary>
+        /// Get Span of entire allocated space after the valid pointer (see <see cref="valid_offset"/>).
+        /// </summary>
+        public Span<byte> AvailableValidSpan => new(GetValidPointer(), available_bytes - valid_offset);
+
+        /// <summary>
+        /// Returns the Span of requested space (see <see cref="required_bytes"/>).
+        /// </summary>
+        public Span<byte> RequiredValidSpan => new(GetValidPointer(), RequiredCapacity);
 
         /// <summary>
         /// ToString
@@ -157,9 +200,11 @@ namespace Tsavorite.core
         /// <returns></returns>
         public override string ToString()
         {
-            return string.Format($"{(long)aligned_pointer} {offset} {valid_offset} {required_bytes} {available_bytes}"
+            return string.Format($"aligned: [offset {aligned_offset}, ptr {(long)aligned_pointer} = 0x{(long)aligned_pointer:X}];" +
+                $" valid: [offset {valid_offset} ptr {(long)GetValidPointer()} = 0x{(long)GetValidPointer():X}];" +
+                $" reqBytes {required_bytes}; availBytes {available_bytes}; cap {AlignedTotalCapacity}"
 #if CHECK_FREE
-                + $" {this.Free}"
+                + $"; free {Free}"
 #endif
                 );
         }
@@ -204,6 +249,24 @@ namespace Tsavorite.core
             queue = new ConcurrentQueue<SectorAlignedMemory>[levels];
             this.recordSize = recordSize;
             this.sectorSize = sectorSize;
+        }
+
+        public void EnsureSize(ref SectorAlignedMemory page, int size)
+        {
+            if (page is null)
+            {
+                page = Get(size);
+                return;
+            }
+            if (page.AlignedTotalCapacity < size)
+            {
+                page.Return();
+                page = Get(size);
+                return;
+            }
+
+            // Reusing the page, so ensure this is set correctly.
+            page.required_bytes = size;
         }
 
         /// <summary>
@@ -262,7 +325,8 @@ namespace Tsavorite.core
             Interlocked.Increment(ref totalGets);
 #endif
 
-            int requiredSize = sectorSize + (((numRecords) * recordSize + (sectorSize - 1)) & ~(sectorSize - 1));
+            int required_bytes = numRecords * recordSize;
+            int requiredSize = RoundUp(required_bytes, sectorSize);
             int index = Position(requiredSize / sectorSize);
             if (queue[index] == null)
             {
@@ -278,21 +342,24 @@ namespace Tsavorite.core
                 if (UnpinOnReturn)
                 {
                     page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
-                    page.aligned_pointer = (byte*)(((long)page.handle.AddrOfPinnedObject() + (sectorSize - 1)) & ~((long)sectorSize - 1));
-                    page.offset = (int)((long)page.aligned_pointer - (long)page.handle.AddrOfPinnedObject());
+                    page.aligned_pointer = (byte*)RoundUp(page.handle.AddrOfPinnedObject(), sectorSize);
+                    page.aligned_offset = (int)((long)page.aligned_pointer - page.handle.AddrOfPinnedObject());
                 }
+                page.required_bytes = required_bytes;
                 return page;
             }
 
             page = new SectorAlignedMemory(level: index)
             {
-                buffer = GC.AllocateArray<byte>(sectorSize * (1 << index), !UnpinOnReturn)
+                // Add an additional sector for the leading RoundUp of pageAddr to sectorSize.
+                buffer = GC.AllocateArray<byte>(sectorSize * ((1 << index) + 1), !UnpinOnReturn)
             };
             if (UnpinOnReturn)
                 page.handle = GCHandle.Alloc(page.buffer, GCHandleType.Pinned);
             long pageAddr = (long)Unsafe.AsPointer(ref page.buffer[0]);
-            page.aligned_pointer = (byte*)((pageAddr + (sectorSize - 1)) & ~((long)sectorSize - 1));
-            page.offset = (int)((long)page.aligned_pointer - pageAddr);
+            page.aligned_pointer = (byte*)RoundUp(pageAddr, sectorSize);
+            page.aligned_offset = (int)((long)page.aligned_pointer - pageAddr);
+            page.required_bytes = required_bytes;
             page.pool = this;
             return page;
         }

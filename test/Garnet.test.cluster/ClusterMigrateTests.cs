@@ -975,13 +975,13 @@ namespace Garnet.test.cluster
                 {
                     resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out slot, out endpoint, out responseState, logger: context.logger);
                 }
-                ClassicAssert.AreEqual(resp, "MOVED");
-                ClassicAssert.AreEqual(_workingSlot, slot);
-                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(targetNodeIndex), endpoint);
+                Assert.That(resp, Is.EqualTo("MOVED"));
+                Assert.That(slot, Is.EqualTo(_workingSlot));
+                Assert.That(endpoint, Is.EqualTo(context.clusterTestUtils.GetEndPoint(targetNodeIndex)));
 
                 resp = context.clusterTestUtils.GetKey(targetNodeIndex, _key, out _, out _, out responseState, logger: context.logger);
-                ClassicAssert.AreEqual(responseState, ResponseState.OK);
-                ClassicAssert.AreEqual(resp, _key);
+                Assert.That(responseState, Is.EqualTo(ResponseState.OK));
+                Assert.That(resp, Is.EqualTo(_key));
             }
             context.logger.LogDebug("14. Checking migrate keys done");
 
@@ -1096,7 +1096,7 @@ namespace Garnet.test.cluster
             {
                 var resp = DoZCOUNT(targetNodeIndex, key, out var count, out _Address, out _Port, out _Slot, logger: context.logger);
                 ClassicAssert.AreEqual(resp, "OK");
-                ClassicAssert.AreEqual(data[_key].Count, count);
+                ClassicAssert.AreEqual(data[_key].Count, count, $"key: {Encoding.UTF8.GetString(_key)}");
 
                 List<string> members;
                 (resp, members) = DoZRANGE(targetNodeIndex, _key, out _Address, out _Port, out _Slot, context.logger);
