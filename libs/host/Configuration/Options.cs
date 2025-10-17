@@ -130,6 +130,10 @@ namespace Garnet
         public string PubSubPageSize { get; set; }
 
         [OptionValidation]
+        [Option("no-obj", Required = false, HelpText = "Disable support for data structure objects.")]
+        public bool? DisableObjects { get; set; }
+
+        [OptionValidation]
         [Option("cluster", Required = false, HelpText = "Enable cluster.")]
         public bool? EnableCluster { get; set; }
 
@@ -778,6 +782,7 @@ namespace Garnet
                 EnableIncrementalSnapshots = EnableIncrementalSnapshots.GetValueOrDefault(),
                 DisablePubSub = DisablePubSub.GetValueOrDefault(),
                 PubSubPageSize = PubSubPageSize,
+                DisableObjects = DisableObjects.GetValueOrDefault(),
                 EnableCluster = EnableCluster.GetValueOrDefault(),
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
                 ParallelMigrateTaskCount = ParallelMigrateTaskCount,

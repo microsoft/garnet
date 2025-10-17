@@ -372,7 +372,7 @@ namespace Garnet.test
         [Test]
         public async Task CanUseMGetTests([Values] bool disableObjectStore)
         {
-            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObjectStore);
             server.Start();
 
             using var db = TestUtils.GetGarnetClient();

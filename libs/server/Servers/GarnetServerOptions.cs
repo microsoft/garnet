@@ -17,6 +17,11 @@ namespace Garnet.server
     public class GarnetServerOptions : ServerOptions
     {
         /// <summary>
+        /// Support data structure objects.
+        /// </summary>
+        public bool DisableObjects = false;
+
+        /// <summary>
         /// Heap memory size limit of object store.
         /// </summary>
         public string HeapMemorySize = "";

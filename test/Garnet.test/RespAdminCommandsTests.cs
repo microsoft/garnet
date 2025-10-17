@@ -146,12 +146,12 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SeSaveRecoverTest([Values] bool useAzure)
+        public void SeSaveRecoverTest([Values] bool disableObj, [Values] bool useAzure)
         {
             if (useAzure)
                 TestUtils.IgnoreIfNotRunningAzureTests();
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, useAzureStorage: useAzure);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObj, useAzureStorage: useAzure);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -383,8 +383,10 @@ namespace Garnet.test
         [TestCase("5k", "64k")]
         public void SeSaveRecoverMultipleKeysTest(string memorySize, string recoveryMemorySize)
         {
+            bool disableObj = true;
+
             server.Dispose();
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, memorySize: memorySize, pageSize: "512", enableAOF: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObj, lowMemory: true, memorySize: memorySize, pageSize: "512", enableAOF: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -423,7 +425,7 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, memorySize: recoveryMemorySize, pageSize: "512", enableAOF: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disableObjects: disableObj, tryRecover: true, lowMemory: true, memorySize: recoveryMemorySize, pageSize: "512", enableAOF: true);
             server.Start();
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
