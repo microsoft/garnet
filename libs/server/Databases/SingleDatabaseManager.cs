@@ -26,10 +26,14 @@ namespace Garnet.server
 
         readonly GarnetDatabase defaultDatabase;
 
+        readonly StoreWrapper storeWrapper;
+
+
         public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper, bool createDefaultDatabase = true) :
             base(createDatabaseDelegate, storeWrapper)
         {
             Logger = storeWrapper.loggerFactory?.CreateLogger(nameof(SingleDatabaseManager));
+            this.storeWrapper = storeWrapper;
 
             // Create default database of index 0 (unless specified otherwise)
             if (createDefaultDatabase)
@@ -215,11 +219,18 @@ namespace Garnet.server
             if (!TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).GetAwaiter().GetResult())
                 return;
 
-            logger?.LogInformation("Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}",
-                aofSize, aofSizeLimit);
-
             try
             {
+                // Checkpoint will be triggered from AOF replay
+                if (storeWrapper.clusterProvider.IsReplica())
+                {
+                    logger?.LogInformation("Replica skipping {method}", nameof(TaskCheckpointBasedOnAofSizeLimitAsync));
+                    return;
+                }
+
+                logger?.LogInformation("Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}",
+                    aofSize, aofSizeLimit);
+
                 var result = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token);
 
                 var storeTailAddress = result.Item1;
