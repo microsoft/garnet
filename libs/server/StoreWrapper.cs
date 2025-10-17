@@ -193,7 +193,8 @@ namespace Garnet.server
             if (serverOptions.SlowLogThreshold > 0)
                 this.slowLogContainer = new SlowLogContainer(serverOptions.SlowLogMaxEntries);
 
-            this.itemBroker = new CollectionItemBroker();
+            if (!serverOptions.DisableObjects)
+                this.itemBroker = new CollectionItemBroker();
 
             // Initialize store scripting cache
             if (serverOptions.EnableLua)
@@ -693,6 +694,12 @@ namespace Garnet.server
             Debug.Assert(objectCollectFrequencySecs > 0);
             try
             {
+                if (serverOptions.DisableObjects)
+                {
+                    logger?.LogWarning("ExpiredObjectCollectionFrequencySecs option is configured but Object store is disabled. Stopping the background hash collect task.");
+                    return;
+                }
+
                 while (true)
                 {
                     if (token.IsCancellationRequested) return;
@@ -825,7 +832,7 @@ namespace Garnet.server
                     }
                 }
 
-                if (!hasKeyInSlots)
+                if (!hasKeyInSlots && !serverOptions.DisableObjects)
                 {
                     var functionsState = databaseManager.CreateFunctionsState();
                     var objStorefunctions = new ObjectSessionFunctions(functionsState);

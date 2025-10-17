@@ -104,8 +104,11 @@ namespace Garnet.cluster
                     return false;
 
                 // Migrate object store keys
-                if (!MigrateKeysFromObjectStore())
-                    return false;
+                if (!clusterProvider.serverOptions.DisableObjects)
+                {
+                    if (!MigrateKeysFromObjectStore())
+                        return false;
+                }
             }
             catch (Exception ex)
             {

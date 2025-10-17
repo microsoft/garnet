@@ -363,6 +363,7 @@ namespace Garnet.fuzz.Targets
                 CheckpointDir = CheckpointDir.FullName,
                 EndPoints = [new IPEndPoint(IPAddress.Loopback, 1234)],
                 DisablePubSub = false,
+                DisableObjects = false,
                 EnableDebugCommand = ConnectionProtectionOption.Yes,
                 Recover = false,
                 IndexSize = "1m",

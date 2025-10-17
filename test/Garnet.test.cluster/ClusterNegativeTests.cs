@@ -163,7 +163,7 @@ namespace Garnet.test.cluster
             var primaryIndex = 0;
             var replicaIndex = 1;
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, enableAOF: true, enableDisklessSync: enableDisklessSync, timeout: timeout);
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, enableDisklessSync: enableDisklessSync, timeout: timeout);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -193,7 +193,7 @@ namespace Garnet.test.cluster
             var primaryIndex = 0;
             var replicaIndex = 1;
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, enableAOF: true, enableDisklessSync: true, timeout: timeout, replicaDisklessSyncDelay: 10);
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, enableDisklessSync: true, timeout: timeout, replicaDisklessSyncDelay: 10);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -260,7 +260,7 @@ namespace Garnet.test.cluster
                 var primaryIndex = 0;
                 var replicaIndex = 1;
                 var nodes_count = 2;
-                context.CreateInstances(nodes_count, enableAOF: true, timeout: timeout, FastAofTruncate: fastAofTruncate, OnDemandCheckpoint: onDemandCheckpoint, CommitFrequencyMs: fastAofTruncate ? -1 : 0);
+                context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout, FastAofTruncate: fastAofTruncate, OnDemandCheckpoint: onDemandCheckpoint, CommitFrequencyMs: fastAofTruncate ? -1 : 0);
                 context.CreateConnection();
 
                 _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -297,6 +297,7 @@ namespace Garnet.test.cluster
             var nodes_count = 2;
             context.CreateInstances(
                 nodes_count,
+                disableObjects: false,
                 enableAOF: true,
                 timeout: timeout,
                 OnDemandCheckpoint: true,
@@ -372,7 +373,7 @@ namespace Garnet.test.cluster
             var primaryIndex = 0;
             var replicaIndex = 1;
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, enableAOF: true, timeout: timeout);
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -422,7 +423,7 @@ namespace Garnet.test.cluster
             var primaryIndex = 0;
             var replicaIndex = 1;
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, enableAOF: true, timeout: timeout, replicaSyncTimeout: 1);
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, timeout: timeout, replicaSyncTimeout: 1);
             context.CreateConnection();
 
             _ = context.clusterTestUtils.AddDelSlotsRange(primaryIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -471,6 +472,7 @@ namespace Garnet.test.cluster
             var nodes_count = 4;
             context.CreateInstances(
                 nodes_count,
+                disableObjects: false,
                 enableAOF: true,
                 timeout: timeout,
                 OnDemandCheckpoint: true,

@@ -130,6 +130,10 @@ namespace Garnet
         public string PubSubPageSize { get; set; }
 
         [OptionValidation]
+        [Option("no-obj", Required = false, HelpText = "Disable support for data structure objects.")]
+        public bool? DisableObjects { get; set; }
+
+        [OptionValidation]
         [Option("cluster", Required = false, HelpText = "Enable cluster.")]
         public bool? EnableCluster { get; set; }
 

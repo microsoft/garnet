@@ -151,6 +151,7 @@ namespace Garnet.test.cluster
         /// <param name="enableCluster"></param>
         /// <param name="cleanClusterConfig"></param>
         /// <param name="tryRecover"></param>
+        /// <param name="disableObjects"></param>
         /// <param name="lowMemory"></param>
         /// <param name="memorySize"></param>
         /// <param name="pageSize"></param>
@@ -184,6 +185,7 @@ namespace Garnet.test.cluster
             bool enableCluster = true,
             bool cleanClusterConfig = true,
             bool tryRecover = false,
+            bool disableObjects = false,
             bool lowMemory = false,
             string memorySize = default,
             string pageSize = default,
@@ -232,6 +234,7 @@ namespace Garnet.test.cluster
             (nodes, nodeOptions) = TestUtils.CreateGarnetCluster(
                 TestFolder,
                 disablePubSub: disablePubSub,
+                disableObjects: disableObjects,
                 enableCluster: enableCluster,
                 endpoints: endpoints,
                 enableAOF: enableAOF,
@@ -291,6 +294,7 @@ namespace Garnet.test.cluster
         /// <param name="enableCluster"></param>
         /// <param name="cleanClusterConfig"></param>
         /// <param name="tryRecover"></param>
+        /// <param name="disableObjects"></param>
         /// <param name="lowMemory"></param>
         /// <param name="MemorySize"></param>
         /// <param name="PageSize"></param>
@@ -317,6 +321,7 @@ namespace Garnet.test.cluster
             bool cleanClusterConfig = true,
             bool disableEpochCollision = false,
             bool tryRecover = false,
+            bool disableObjects = false,
             bool lowMemory = false,
             string MemorySize = default,
             string PageSize = default,
@@ -345,6 +350,7 @@ namespace Garnet.test.cluster
                 endpoint,
                 enableCluster: enableCluster,
                 disablePubSub: true,
+                disableObjects: disableObjects,
                 enableAOF: enableAOF,
                 timeout: timeout,
                 gossipDelay: gossipDelay,

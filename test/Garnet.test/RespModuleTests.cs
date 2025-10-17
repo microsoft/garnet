@@ -384,6 +384,7 @@ namespace Garnet.test
         public void TestNoAllowedPathsForModuleLoading()
         {
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                disableObjects: true,
                 disablePubSub: true,
                 enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes,
                 extensionBinPaths: null,
@@ -412,6 +413,7 @@ namespace Garnet.test
         public void TestModuleCommandNotEnabled()
         {
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir,
+                disableObjects: true,
                 disablePubSub: true,
                 enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.No,
                 extensionBinPaths: [testModuleDir, binPath],
