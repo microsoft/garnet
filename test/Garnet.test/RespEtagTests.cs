@@ -1330,7 +1330,7 @@ namespace Garnet.test
             var actualResultRawStr = db.StringGet(key);
 
             var actualResult = double.Parse(actualResultStr, CultureInfo.InvariantCulture);
-            var actualResultRaw = double.Parse(actualResultRawStr, CultureInfo.InvariantCulture);
+            var actualResultRaw = double.Parse((string)actualResultRawStr, CultureInfo.InvariantCulture);
 
             Assert.That(actualResult, Is.EqualTo(expectedResult).Within(1.0 / Math.Pow(10, 15)));
             Assert.That(actualResult, Is.EqualTo(actualResultRaw).Within(1.0 / Math.Pow(10, 15)));

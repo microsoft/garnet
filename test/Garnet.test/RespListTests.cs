@@ -1320,7 +1320,8 @@ namespace Garnet.test
 
             result = db.ListRightPop([new RedisKey("test"), key2], 2);
             ClassicAssert.AreEqual(key2, result.Key);
-            ClassicAssert.AreEqual(key2Values.Reverse(), result.Values);
+            key2Values.Reverse();
+            ClassicAssert.AreEqual(key2Values, result.Values);
         }
 
         [Test]

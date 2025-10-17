@@ -13,7 +13,7 @@ namespace Garnet.cluster
     internal sealed class ReplicationSyncManager
     {
         SingleWriterMultiReaderLock syncInProgress;
-        readonly CancellationTokenSource cts;
+        CancellationTokenSource cts;
         readonly TimeSpan replicaSyncTimeout;
         readonly ILogger logger;
 
@@ -24,6 +24,8 @@ namespace Garnet.cluster
         public ReplicaSyncSession[] Sessions { get; private set; }
 
         public ClusterProvider ClusterProvider { get; }
+
+        SingleWriterMultiReaderLock disposed;
 
         public ReplicationSyncManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
@@ -38,8 +40,11 @@ namespace Garnet.cluster
 
         public void Dispose()
         {
-            cts.Cancel();
-            cts.Dispose();
+            // Return if original value is true, hence already disposed
+            disposed.WriteLock();
+            cts?.Cancel();
+            cts?.Dispose();
+            cts = null;
             syncInProgress.WriteLock();
         }
 
@@ -280,47 +285,81 @@ namespace Garnet.cluster
 
                 // Iterate through main store
                 var mainStoreCheckpointTask = ClusterProvider.storeWrapper.store.
-                    TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.mainStoreSnapshotIterator);
+                    TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, cancellationToken: cts.Token, streamingSnapshotIteratorFunctions: manager.mainStoreSnapshotIterator);
 
                 var result = await WaitOrDie(checkpointTask: mainStoreCheckpointTask, iteratorManager: manager);
                 if (!result.success)
-                    throw new InvalidOperationException("Main store checkpoint stream failed!");
+                    throw new GarnetException("Main store checkpoint stream failed!");
 
                 if (!ClusterProvider.serverOptions.DisableObjects)
                 {
                     // Iterate through object store
                     var objectStoreCheckpointTask = ClusterProvider.storeWrapper.objectStore.
-                        TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
+                        TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, cancellationToken: cts.Token, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
                     result = await WaitOrDie(checkpointTask: objectStoreCheckpointTask, iteratorManager: manager);
                     if (!result.success)
-                        throw new InvalidOperationException("Object store checkpoint stream failed!");
+                        throw new GarnetException("Object store checkpoint stream failed!");
                 }
 
                 // Note: We do not truncate the AOF here as this was just a "virtual" checkpoint
-
+                // WaitOrDie is needed here to check if streaming checkpoint is making progress.
+                // We cannot use a timeout on the cancellationToken because we don't know in total how long the streaming checkpoint will take
                 async ValueTask<(bool success, Guid token)> WaitOrDie(ValueTask<(bool success, Guid token)> checkpointTask, SnapshotIteratorManager iteratorManager)
                 {
-                    var timeout = replicaSyncTimeout;
-                    var delay = TimeSpan.FromSeconds(1);
-                    while (true)
+                    try
                     {
-                        // Check if cancellation requested
-                        cts.Token.ThrowIfCancellationRequested();
+                        var timeout = replicaSyncTimeout;
+                        var delay = TimeSpan.FromSeconds(1);
+                        while (true)
+                        {
+                            // Check if cancellation requested
+                            cts.Token.ThrowIfCancellationRequested();
 
-                        // Wait for stream sync to make some progress
-                        await Task.Delay(delay);
+                            // Wait for stream sync to make some progress
+                            await Task.Delay(delay);
 
-                        // Check if checkpoint has completed
-                        if (checkpointTask.IsCompleted)
-                            return await checkpointTask;
+                            // Trigger exception to test reset cts mechanism
+                            ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
 
-                        // Check if we made some progress
-                        timeout = !manager.IsProgressing() ? timeout.Subtract(delay) : replicaSyncTimeout;
+                            // Check if checkpoint has completed
+                            if (checkpointTask.IsCompleted)
+                                return await checkpointTask;
 
-                        // Throw timeout equals to zero
-                        if (timeout.TotalSeconds <= 0)
-                            throw new TimeoutException("Streaming snapshot checkpoint timed out");
+                            // Check if we made some progress
+                            timeout = !manager.IsProgressing() ? timeout.Subtract(delay) : replicaSyncTimeout;
+
+                            // Throw timeout equals to zero
+                            if (timeout.TotalSeconds <= 0)
+                                throw new TimeoutException("Streaming snapshot checkpoint timed out");
+                        }
                     }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "{method} faulted", nameof(WaitOrDie));
+                        cts.Cancel();
+                    }
+
+                    // At this point we failed through a timeout or any other exception
+                    // so try to reset token.
+                    // No race here because the only other cancellation will happen at dispose only
+                    try
+                    {
+                        _ = await checkpointTask;
+                    }
+                    finally
+                    {
+                        var readLock = disposed.TryReadLock();
+                        if (readLock && !cts.TryReset())
+                        {
+                            cts.Dispose();
+                            cts = new();
+                        }
+
+                        if (readLock)
+                            disposed.ReadUnlock();
+                    }
+
+                    return (false, default);
                 }
             }
         }

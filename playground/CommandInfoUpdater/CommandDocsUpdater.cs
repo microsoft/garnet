@@ -70,7 +70,7 @@ namespace CommandInfoUpdater
 
             IDictionary<string, RespCommandDocs> queriedCommandsDocs = new Dictionary<string, RespCommandDocs>();
             var commandsToQuery = commandsToAdd.Keys.Select(k => k.Command)
-                .Where(c => updatedCommandsInfo.ContainsKey(c) && !updatedCommandsInfo[c].IsInternal).ToArray();
+                .Where(c => updatedCommandsInfo.ContainsKey(c) || (updatedCommandsInfo[c].SubCommands?.Length > 0 && !updatedCommandsInfo[c].IsInternal)).ToArray();
             if (commandsToQuery.Length > 0)
             {
                 for (var i = 0; i < commandsToQuery.Length; i += QUERY_CMD_BATCH_SIZE)
