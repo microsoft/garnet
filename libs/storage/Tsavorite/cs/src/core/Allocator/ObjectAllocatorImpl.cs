@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-//#define READ_WRITE
-
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -58,6 +56,7 @@ namespace Tsavorite.core
             maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
 
             freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, static p => { });
+            pageHeaderSize = PageHeader.Size;
 
             if (settings.LogSettings.NumberOfFlushBuffers < LogSettings.kMinFlushBuffers || settings.LogSettings.NumberOfFlushBuffers > LogSettings.kMaxFlushBuffers || !IsPowerOfTwo(settings.LogSettings.NumberOfFlushBuffers))
                 throw new TsavoriteException($"{nameof(settings.LogSettings.NumberOfFlushBuffers)} must be between {LogSettings.kMinFlushBuffers} and {LogSettings.kMaxFlushBuffers - 1} and a power of 2");
@@ -69,7 +68,7 @@ namespace Tsavorite.core
 
             if (settings.LogSettings.ObjectLogSegmentSizeBits is < LogSettings.kMinObjectLogSegmentSizeBits or > LogSettings.kMaxSegmentSizeBits)
                 throw new TsavoriteException($"{nameof(settings.LogSettings.ObjectLogSegmentSizeBits)} must be between {LogSettings.kMinObjectLogSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
-            objectLogNextRecordStartPosition.SegmentSizeBits = settings.LogSettings.ObjectLogSegmentSizeBits;
+            objectLogNextRecordStartPosition = new(0, settings.LogSettings.ObjectLogSegmentSizeBits);
 
             pages = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ii++)
@@ -325,13 +324,18 @@ namespace Tsavorite.core
 
         /// <summary>Create the flush buffer (for <see cref="ObjectAllocator{Tsavorite}"/> only)</summary>
         internal override CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger)
-            => new(bufferPool, IStreamBuffer.BufferSize, numberOfFlushBuffers, objectLogDevice ?? this.objectLogDevice, logger);
+        {
+            var localObjectLogDevice = objectLogDevice ?? this.objectLogDevice;
+            return localObjectLogDevice is not null
+                ? new(bufferPool, IStreamBuffer.BufferSize, numberOfFlushBuffers, localObjectLogDevice, logger)
+                : null;
+        }
 
         /// <summary>Create the flush buffer (for <see cref="ObjectAllocator{Tsavorite}"/> only)</summary>
         internal override CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger)
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice ?? this.objectLogDevice, logger);
 
-        private CircularDiskReadBuffer CreateCircularReadBuffers()
+        internal override CircularDiskReadBuffer CreateCircularReadBuffers()
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice, logger);
 
         private void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
@@ -341,9 +345,17 @@ namespace Tsavorite.core
             // We flush within the DiskStreamWriteBuffer, so we do not use the asyncResult here for IO (until the final callback), but it has necessary fields.
 
             // Short circuit if we are using a null device
-            if ((device as NullDevice) != null)
+            if (device is NullDevice)
             {
                 device.WriteAsync(IntPtr.Zero, 0, 0, numBytesToWrite, callback, asyncResult);
+                return;
+            }
+
+            // Short circuit if we are not using flushBuffers (e.g. using ObjectAllocator for string-only purposes).
+            if (flushBuffers is null)
+            {
+                WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage),
+                                (uint)AlignedPageSizeBytes, callback, asyncResult, device);
                 return;
             }
 
@@ -423,8 +435,12 @@ namespace Tsavorite.core
                 srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
 
                 // Overflow Keys and Values are written to, and Object values are serialized to, this Stream.
-                var logWriter = new ObjectLogWriter<TStoreFunctions>(device, flushBuffers, storeFunctions);
-                _ = logWriter.OnBeginPartialFlush(objectLogNextRecordStartPosition);
+                ObjectLogWriter<TStoreFunctions> logWriter = null;
+                if (flushBuffers is not null)
+                {
+                    logWriter = new(device, flushBuffers, storeFunctions);
+                    _ = logWriter.OnBeginPartialFlush(objectLogNextRecordStartPosition);
+                }
 
                 // Include page header when calculating end address.
                 var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + startPadding + numBytesToWrite;
@@ -443,7 +459,8 @@ namespace Tsavorite.core
                         // Do not write v+1 records (e.g. during a checkpoint)
                         if (logicalAddress < fuzzyStartLogicalAddress || !logRecord.Info.IsInNewVersion)
                         {
-                            // Do not write objects for fully-inline records
+                            // Do not write objects for fully-inline records. This should always be false if we don't have a logWriter (i.e. no flushBuffers),
+                            // which would be the case where we were created to be used for inline string records only.
                             if (logRecord.Info.RecordHasObjects)
                             {
                                 var recordStartPosition = logWriter.GetNextRecordStartPosition();
@@ -476,10 +493,13 @@ namespace Tsavorite.core
                     numBytesToWrite = (uint)(aligned_end - alignedStartOffset);
                 }
 
-                // Finally write the main log page as part of OnPartialFlushComplete.
+                // Finally write the main log page as part of OnPartialFlushComplete, or directly if we had no flushBuffers.
                 // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
-                logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset,
-                    callback, asyncResult, out objectLogNextRecordStartPosition);
+                if (logWriter is not null)
+                    logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset,
+                        callback, asyncResult, out objectLogNextRecordStartPosition);
+                else
+                    device.WriteAsync((IntPtr)srcBuffer.GetValidPointer(), alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
             }
             finally
             {
@@ -554,43 +574,43 @@ namespace Tsavorite.core
 
             var result = (PageAsyncReadResult<TContext>)context;
             var pageStartAddress = (long)result.destinationPtr;
-            result.maxPtr = numBytes;
+            if (numBytes < result.maxPtr)
+                result.maxPtr = numBytes;
 
             // Iterate all records in range to determine how many bytes we need to read from objlog.
-            ObjectLogFilePositionInfo startPosition = new();
+            ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
+            int endKeyLength = 0;
+            ulong endValueLength = 0;
             ulong totalBytesToRead = 0;
             var recordAddress = pageStartAddress + PageHeader.Size;
-            while (true)
+            var endAddress = pageStartAddress + result.maxPtr;
+
+            while (recordAddress < endAddress)
             {
                 var logRecord = new LogRecord(recordAddress);
 
                 // Use allocatedSize here because that is what LogicalAddress is based on.
-                var logRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
-                recordAddress += logRecordSize;
-
-                if (logRecord.Info.Invalid || logRecord.Info.RecordIsInline)
-                    continue;
-
-                if (!startPosition.IsSet)
+                if (logRecord.Info.RecordIsInline)
                 {
-                    startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogNextRecordStartPosition.SegmentSizeBits);
+                    recordAddress += logRecord.GetInlineRecordSizes().allocatedSize;
                     continue;
                 }
 
-                // We have already incremented record address to get to the next record; if it is at or beyond the maxPtr, we have processed all records.
-                if (recordAddress >= pageStartAddress + result.maxPtr)
+                recordAddress += logRecord.GetInlineRecordSizesWithUnreadObjects().allocatedSize;
+                if (logRecord.Info.Valid)
                 {
-                    ObjectLogFilePositionInfo endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength),
-                                                                objectLogNextRecordStartPosition.SegmentSizeBits);
-                    endPosition.Advance((ulong)keyLength + valueLength);
-                    totalBytesToRead = endPosition - startPosition;
-                    break;
+                    if (!startPosition.IsSet)
+                        startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogNextRecordStartPosition.SegmentSizeBits);
+                    endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogNextRecordStartPosition.SegmentSizeBits);
                 }
             }
 
             // The page may not have contained any records with objects
             if (startPosition.IsSet)
             {
+                endPosition.Advance((ulong)endKeyLength + endValueLength);
+                totalBytesToRead = endPosition - startPosition;
+
                 // Iterate all records again to actually do the deserialization.
                 result.readBuffers.nextReadFilePosition = startPosition;
                 recordAddress = pageStartAddress + PageHeader.Size;
@@ -598,23 +618,25 @@ namespace Tsavorite.core
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
                 logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
 
-                do
+                while (recordAddress < endAddress)
                 {
-                    var logRecord = new LogRecord(recordAddress);
+                    var logRecord = new LogRecord(recordAddress, transientObjectIdMap);
 
                     // Use allocatedSize here because that is what LogicalAddress is based on.
-                    var logRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
-                    recordAddress += logRecordSize;
-
-                    if (logRecord.Info.Invalid || logRecord.Info.RecordIsInline)
+                    if (logRecord.Info.RecordIsInline)
+                    {
+                        recordAddress += logRecord.GetInlineRecordSizes().allocatedSize;
                         continue;
+                    }
 
-                    // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
-                    // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
-                    _ = logReader.ReadRecordObjects(pageStartAddress, logRecordSize, noKey, transientObjectIdMap, startPosition.SegmentSizeBits, out _ /*diskLogRecord*/);
-
-                    // If the incremented record address is at or beyond the maxPtr, we have processed all records.
-                } while (recordAddress < pageStartAddress + result.maxPtr);
+                    recordAddress += logRecord.GetInlineRecordSizesWithUnreadObjects().allocatedSize;
+                    if (logRecord.Info.Valid)
+                    {
+                        // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
+                        // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
+                        _ = logReader.ReadRecordObjects(ref logRecord, noKey, transientObjectIdMap, startPosition.SegmentSizeBits);
+                    }
+                }
             }
 
             // Call the "real" page read callback
@@ -629,7 +651,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         public override ITsavoriteScanIterator Scan(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, bool includeClosedRecords)
-            => new ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>(CreateCircularReadBuffers(), store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeClosedRecords: includeClosedRecords);
+            => new ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>(store, this, beginAddress, endAddress, epoch, diskScanBufferingMode, includeClosedRecords: includeClosedRecords);
 
         /// <summary>
         /// Implementation for push-scanning Tsavorite log, called from LogAccessor
@@ -637,7 +659,7 @@ namespace Tsavorite.core
         internal override bool Scan<TScanFunctions>(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 long beginAddress, long endAddress, ref TScanFunctions scanFunctions, DiskScanBufferingMode scanBufferingMode)
         {
-            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(CreateCircularReadBuffers(), store, this, beginAddress, endAddress, epoch, scanBufferingMode, includeClosedRecords: false, logger: logger);
+            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, endAddress, epoch, scanBufferingMode, includeClosedRecords: false, logger: logger);
             return PushScanImpl(beginAddress, endAddress, ref scanFunctions, iter);
         }
 
@@ -648,7 +670,7 @@ namespace Tsavorite.core
                 ScanCursorState scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress,
                 bool resetCursor = true, bool includeTombstones = false)
         {
-            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(CreateCircularReadBuffers(), store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering,
+            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, cursor, endAddress, epoch, DiskScanBufferingMode.SinglePageBuffering,
                 includeClosedRecords: maxAddress < long.MaxValue, logger: logger);
             return ScanLookup<long, long, TScanFunctions, ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>>(store, scanCursorState, ref cursor, count, scanFunctions, iter, validateCursor,
                 maxAddress, resetCursor: resetCursor, includeTombstones: includeTombstones);
@@ -660,58 +682,16 @@ namespace Tsavorite.core
         internal override bool IterateKeyVersions<TScanFunctions>(TsavoriteKV<TStoreFunctions, ObjectAllocator<TStoreFunctions>> store,
                 ReadOnlySpan<byte> key, long beginAddress, ref TScanFunctions scanFunctions)
         {
-            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(CreateCircularReadBuffers(), store, this, beginAddress, epoch, logger: logger);
+            using ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>> iter = new(store, this, beginAddress, epoch, logger: logger);
             return IterateHashChain(store, key, beginAddress, ref scanFunctions, iter);
-        }
-
-        private void ComputeScanBoundaries(long beginAddress, long endAddress, out long pageStartAddress, out int start, out int end)
-        {
-#if READ_WRITE
-            pageStartAddress = beginAddress & ~PageSizeMask;
-            start = (int)(beginAddress & PageSizeMask) / RecordSize;
-            var count = (int)(endAddress - beginAddress) / RecordSize;
-            end = start + count;
-#else
-            pageStartAddress = 0;
-            start = end = 0;
-#endif // READ_WRITE
-        }
-
-        /// <inheritdoc />
-        internal override void EvictPage(long page)
-        {
-#if READ_WRITE
-            if (OnEvictionObserver is not null)
-            {
-                var beginAddress = page << LogPageSizeBits;
-                var endAddress = (page + 1) << LogPageSizeBits;
-                ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
-                using var iter = new MemoryPageScanIterator(values[(int)(page % BufferSize)], start, end, pageStartAddress, RecordSize);
-                OnEvictionObserver?.OnNext(iter);
-            }
-
-            FreePage(page);
-#endif // READ_WRITE
         }
 
         /// <inheritdoc />
         internal override void MemoryPageScan(long beginAddress, long endAddress, IObserver<ITsavoriteScanIterator> observer)
         {
-#if READ_WRITE
-            var page = (beginAddress >> LogPageSizeBits) % BufferSize;
-            ComputeScanBoundaries(beginAddress, endAddress, out var pageStartAddress, out var start, out var end);
-            using var iter = new MemoryPageScanIterator(values[page], start, end, pageStartAddress, RecordSize);
-            Debug.Assert(epoch.ThisInstanceProtected());
-            try
-            {
-                epoch.Suspend();
-                observer?.OnNext(iter);
-            }
-            finally
-            {
-                epoch.Resume();
-            }
-#endif // READ_WRITE
+            using var iter = new ObjectScanIterator<TStoreFunctions, ObjectAllocator<TStoreFunctions>>(store: null, this, beginAddress, endAddress, epoch, DiskScanBufferingMode.NoBuffering, InMemoryScanBufferingMode.NoBuffering,
+                    includeClosedRecords: false, assumeInMemory: true, logger: logger);
+            observer?.OnNext(iter);
         }
 
         internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)

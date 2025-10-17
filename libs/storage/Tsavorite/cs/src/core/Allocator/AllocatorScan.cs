@@ -74,7 +74,7 @@ namespace Tsavorite.core
                         continue;
 
                     // Pull Iter records are in temp storage so do not need locks.
-                    stop = !scanFunctions.Reader(in iter, new RecordMetadata(iter.CurrentAddress), numRecords, out _);
+                    stop = !scanFunctions.Reader(in iter, new RecordMetadata(iter.CurrentAddress, iter.ETag), numRecords, out _);
                 }
                 catch (Exception ex)
                 {
@@ -109,7 +109,7 @@ namespace Tsavorite.core
                     // We hold the epoch so iter does not need to copy, so do not use iter's ISourceLogRecord implementation; create a local LogRecord around the address.
                     if (iter.CurrentAddress >= readOnlyAddress && !logRecord.Info.IsClosed)
                         store.LockForScan(ref stackCtx, key);
-                    stop = !scanFunctions.Reader(in logRecord, new RecordMetadata(iter.CurrentAddress), numRecords, out _);
+                    stop = !scanFunctions.Reader(in logRecord, new RecordMetadata(iter.CurrentAddress, iter.ETag), numRecords, out _);
                 }
                 catch (Exception ex)
                 {
@@ -168,7 +168,7 @@ namespace Tsavorite.core
 
             var logRecord = DiskLogRecord.TransferFrom(ref completionEvent.request.record, transientObjectIdMap);
             logRecord.InfoRef.ClearBitsForDiskImages();
-            stop = !scanFunctions.Reader(in logRecord, new RecordMetadata(completionEvent.request.logicalAddress), numRecords, out _);
+            stop = !scanFunctions.Reader(in logRecord, new RecordMetadata(completionEvent.request.logicalAddress, logRecord.ETag), numRecords, out _);
             logicalAddress = logRecord.Info.PreviousAddress;
             return !stop;
         }
@@ -285,7 +285,7 @@ namespace Tsavorite.core
                 epoch.Suspend();
                 try
                 {
-                    RecordMetadata recordMetadata = new(stackCtx.recSrc.LogicalAddress);
+                    RecordMetadata recordMetadata = new(stackCtx.recSrc.LogicalAddress, srcLogRecord.ETag);
                     var stop = !scanCursorState.functions.Reader(in srcLogRecord, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult);
                     if (stop)
                         scanCursorState.stop = true;

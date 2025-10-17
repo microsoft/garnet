@@ -108,7 +108,7 @@ namespace Tsavorite.core
         public readonly LogRecord CreateRemappedLogRecordOverTransientMemory(long logicalAddress, long physicalAddress) => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
-        public readonly ObjectIdMap TranssientObjectIdMap => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
+        public readonly ObjectIdMap TransientObjectIdMap => throw new NotImplementedException("Not implemented for TsavoriteLogAllocator");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

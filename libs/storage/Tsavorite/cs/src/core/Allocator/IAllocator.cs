@@ -71,7 +71,7 @@ namespace Tsavorite.core
         LogRecord CreateRemappedLogRecordOverTransientMemory(long logicalAddress, long physicalAddress);
 
         /// <summary>Return the <see cref="ObjectIdMap"/> for transient log records (e.g. iterator)</summary>
-        ObjectIdMap TranssientObjectIdMap { get; }
+        ObjectIdMap TransientObjectIdMap { get; }
 
         /// <summary>Dispose an in-memory log record</summary>
         void DisposeRecord(ref LogRecord logRecord, DisposeReason disposeReason);

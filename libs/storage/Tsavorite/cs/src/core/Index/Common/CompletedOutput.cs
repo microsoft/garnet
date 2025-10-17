@@ -118,7 +118,7 @@ namespace Tsavorite.core
 
             Output = pendingContext.output;
             Context = pendingContext.userContext;
-            RecordMetadata = new(pendingContext.logicalAddress);
+            RecordMetadata = new(pendingContext.logicalAddress, pendingContext.ETag);
             Status = status;
         }
 

@@ -303,7 +303,7 @@ namespace Garnet.server
 
         bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref SpanByteAndMemory output)
         {
-            var o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
+            var o = (OutputHeader*)output.SpanByte.ToPointer();
             o->result1 = 0;
             if (logRecord.Info.HasExpiration)
             {
@@ -360,7 +360,7 @@ namespace Garnet.server
         bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, ReadOnlySpan<byte> newValue, ref SpanByteAndMemory output)
         {
             var expiryExists = logRecord.Info.HasExpiration;
-            var o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
+            var o = (OutputHeader*)output.SpanByte.ToPointer();
             o->result1 = 0;
 
             // TODO ETag?

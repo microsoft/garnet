@@ -100,6 +100,10 @@ namespace Garnet.cluster
             try
             {
                 SuspendConfigMerge();
+
+                // Reset recovery operations before proceeding with reset
+                clusterProvider.replicationManager.ResetRecovery();
+
                 var resp = CmdStrings.RESP_OK;
                 while (true)
                 {
@@ -113,8 +117,9 @@ namespace Garnet.cluster
                     this.clusterConnectionStore.CloseAll();
 
                     var newNodeId = soft ? current.LocalNodeId : Generator.CreateHexId();
-                    var address = current.LocalNodeIp;
-                    var port = current.LocalNodePort;
+                    var endpoint = clusterProvider.storeWrapper.GetClusterEndpoint();
+                    var address = endpoint.Address.ToString();
+                    var port = endpoint.Port;
 
                     var configEpoch = soft ? current.LocalNodeConfigEpoch : 0;
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;

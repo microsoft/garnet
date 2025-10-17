@@ -36,10 +36,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="type"></param>
-        /// <param name="isObject"></param>
-        protected void AddKey(PinnedSpanByte key, LockType type, bool isObject)
+        /// <param name="storeType"></param>
+        protected void AddKey(PinnedSpanByte key, LockType type, StoreType storeType)
         {
-            txnManager.SaveKeyEntryToLock(key, isObject, type);
+            txnManager.AddTransactionStoreType(storeType);
+            txnManager.SaveKeyEntryToLock(key, type);
             txnManager.VerifyKeyOwnership(key, type);
         }
 
@@ -76,6 +77,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Finalize transaction: runs after the transactions commits/aborts, allowed to read and write (non-transactionally) with per-key locks and produce output
+        /// NOTE: Finalize is considered post transaction processing and therefore is not executed at recovery time. Instead, the individual Tsavorite commands are logged and replayed through the AOF.
+        /// If you are not using AOF for persistence then this is implementation detail you can ignore.
         /// </summary>
         public virtual void Finalize<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
             where TGarnetApi : IGarnetApi

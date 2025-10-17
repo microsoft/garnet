@@ -52,6 +52,7 @@ namespace Tsavorite.core
                 }
 
                 stackCtx.SetRecordSourceToHashEntry(hlogBase);
+                pendingContext.eTag = pendingContext.diskLogRecord.ETag;
 
                 try
                 {
@@ -124,6 +125,8 @@ namespace Tsavorite.core
                             return OperationStatus.CANCELED;
                         if (readInfo.Action == ReadAction.Expire)
                             return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.Expired);
+                        if (readInfo.Action == ReadAction.WrongType)
+                            return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.WrongType);
                         goto NotFound;
                     }
 

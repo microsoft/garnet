@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
 
     /// <summary>
@@ -48,14 +49,14 @@ namespace Tsavorite.core
         /// <remarks>This array is in parallel with <see cref="loadCompletionEvents"/>, <see cref="loadCTSs"/>, and <see cref="loadedPages"/>.</remarks>
         private long[] nextLoadedPages;
 
+        /// <summary>The circular buffer we cycle through for object-log deserialization.</summary>
+        CircularDiskReadBuffer[] readBuffers;
+
         /// <summary>Number of bits in the size of the log page</summary>
         private readonly int logPageSizeBits;
 
         /// <summary>Whether to include closed records in the scan</summary>
         protected readonly bool includeClosedRecords;
-
-        /// <summary>The circular buffer we cycle through for object-log deserialization.</summary>
-        readonly CircularDiskReadBuffer readBuffers;
 
         /// <summary>
         /// Current address
@@ -90,10 +91,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Constructor
         /// </summary>
-        public unsafe ScanIteratorBase(CircularDiskReadBuffer readBuffers, long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode,
+        public unsafe ScanIteratorBase(long beginAddress, long endAddress, DiskScanBufferingMode diskScanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode,
                 bool includeClosedRecords, LightEpoch epoch, int logPageSizeBits, bool initForReads = true, ILogger logger = null)
         {
-            this.readBuffers = readBuffers;
             this.logger = logger;
             this.memScanBufferingMode = memScanBufferingMode;
 
@@ -122,16 +122,14 @@ namespace Tsavorite.core
                 InitializeForReads();
         }
 
-        /// <summary>
-        /// Initialize for reads
-        /// </summary>
+        /// <summary>Initialize fields for read callback management</summary>
         public virtual void InitializeForReads()
         {
             loadCompletionEvents = new CountdownEvent[frameSize];
             loadCTSs = new CancellationTokenSource[frameSize];
             loadedPages = new long[frameSize];
             nextLoadedPages = new long[frameSize];
-            for (int i = 0; i < frameSize; i++)
+            for (var i = 0; i < frameSize; i++)
             {
                 loadedPages[i] = -1;
                 nextLoadedPages[i] = -1;
@@ -139,6 +137,14 @@ namespace Tsavorite.core
             }
             currentAddress = -1;
             nextAddress = beginAddress;
+        }
+
+        /// <summary>Initialize read buffers</summary>
+        public virtual void InitializeReadBuffers(AllocatorBase allocatorBase = default)
+        {
+            readBuffers = new CircularDiskReadBuffer[frameSize];
+            for (var i = 0; i < frameSize; i++)
+                readBuffers[i] = allocatorBase?.CreateCircularReadBuffers();
         }
 
         /// <summary>
@@ -153,7 +159,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         protected unsafe bool BufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
         {
-            for (int i = 0; i < frameSize; i++)
+            for (var i = 0; i < frameSize; i++)
             {
                 var nextPage = currentPage + i;
 
@@ -182,18 +188,19 @@ namespace Tsavorite.core
                     if (val < pageEndAddress && Interlocked.CompareExchange(ref nextLoadedPages[nextFrame], pageEndAddress, val) == val)
                     {
                         var tmp_page = i;
+                        var readBuffer = readBuffers is not null ? readBuffers[nextFrame] : default;
                         if (epoch != null)
                         {
                             epoch.BumpCurrentEpoch(() =>
                             {
-                                AsyncReadPagesFromDeviceToFrame(readBuffers, tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress,
+                                AsyncReadPagesFromDeviceToFrame(readBuffer, tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress,
                                         Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
                                 loadedPages[nextFrame] = pageEndAddress;
                             });
                         }
                         else
                         {
-                            AsyncReadPagesFromDeviceToFrame(readBuffers, tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress,
+                            AsyncReadPagesFromDeviceToFrame(readBuffer, tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress,
                                     Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
                             loadedPages[nextFrame] = pageEndAddress;
                         }
@@ -213,7 +220,7 @@ namespace Tsavorite.core
         /// </summary>
         protected unsafe bool NeedBufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
         {
-            for (int i = 0; i < frameSize; i++)
+            for (var i = 0; i < frameSize; i++)
             {
                 var nextPage = currentPage + i;
 
@@ -263,7 +270,7 @@ namespace Tsavorite.core
                 // The exception may have been an OperationCanceledException.
                 loadedPages[currentFrame] = -1;
                 loadCTSs[currentFrame] = new CancellationTokenSource();
-                Utility.MonotonicUpdate(ref nextAddress, GetLogicalAddressOfStartOfPage(1 + GetPageOfAddress(currentAddress, logPageSizeBits), logPageSizeBits), out _);
+                _ = Utility.MonotonicUpdate(ref nextAddress, GetLogicalAddressOfStartOfPage(1 + GetPageOfAddress(currentAddress, logPageSizeBits), logPageSizeBits), out _);
                 throw new TsavoriteException("Page read from storage failed, skipping page. Inner exception: " + e.ToString());
             }
             finally
@@ -278,20 +285,31 @@ namespace Tsavorite.core
         /// </summary>
         public virtual void Dispose()
         {
-            if (loadCompletionEvents != null)
+            for (var i = 0; i < frameSize; i++)
             {
-                // Wait for ongoing reads to complete/fail
-                for (int i = 0; i < frameSize; i++)
+                try
                 {
-                    if (loadedPages[i] != -1)
+                    // Wait for ongoing reads to complete/fail
+                    if (loadCompletionEvents != null)
                     {
-                        try
-                        {
-                            loadCompletionEvents[i].Wait(loadCTSs[i].Token);
-                        }
-                        catch { }
+                        if (loadedPages[i] != -1)
+                            loadCompletionEvents[i]?.Wait(loadCTSs[i].Token);
+                        loadCompletionEvents[i]?.Dispose();
+                        loadCompletionEvents = default;
+                    }
+                    if (loadCTSs is not null)
+                    {
+                        loadCTSs[i]?.Dispose();
+                        loadCTSs[i] = null;
+                    }
+                    if (readBuffers is not null)
+                    {
+                        // Do not null this; we didn't hold onto the hlogBase to recreate. CircularDiskReadBuffer.Dispose() clears
+                        // things and leaves it in an "initialized" state.
+                        readBuffers[i]?.Dispose();
                     }
                 }
+                catch { }
             }
         }
 
@@ -300,15 +318,18 @@ namespace Tsavorite.core
         /// </summary>
         public void Reset()
         {
+            Dispose();
             loadCompletionEvents = new CountdownEvent[frameSize];
             loadCTSs = new CancellationTokenSource[frameSize];
             loadedPages = new long[frameSize];
             nextLoadedPages = new long[frameSize];
-            for (int i = 0; i < frameSize; i++)
+            for (var i = 0; i < frameSize; i++)
             {
                 loadedPages[i] = -1;
                 nextLoadedPages[i] = -1;
                 loadCTSs[i] = new CancellationTokenSource();
+                // readBuffers do not need to be reset because that is done in its Dispose, leaving it in an "initialized" state.
+                // Also, OnBeginReadRecords() will do reinitialization internally.
             }
             currentAddress = -1;
             nextAddress = beginAddress;

@@ -53,5 +53,13 @@ namespace Garnet.common
         /// Delay response on receive checkpoint to trigger timeout
         /// </summary>
         Replication_Timeout_On_Receive_Checkpoint,
+        /// <summary>
+        /// Replication InProgress during disk-based replica attach sync operation
+        /// </summary>
+        Replication_InProgress_During_DiskBased_Replica_Attach_Sync,
+        /// <summary>
+        /// Replication InProgress during diskless replica attach sync operation
+        /// </summary>
+        Replication_InProgress_During_Diskless_Replica_Attach_Sync,
     }
 }

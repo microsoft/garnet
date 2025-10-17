@@ -573,9 +573,6 @@ namespace Garnet.server
         private unsafe bool HashExpire<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
-
             if (parseState.Count <= 4)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -669,9 +666,6 @@ namespace Garnet.server
         private unsafe bool HashTimeToLive<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
-
             if (parseState.Count <= 3)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -751,9 +745,6 @@ namespace Garnet.server
         private unsafe bool HashPersist<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
-
             if (parseState.Count <= 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.HPERSIST));

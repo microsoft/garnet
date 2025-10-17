@@ -11,6 +11,9 @@ namespace Tsavorite.core
     /// </summary>
     internal struct ObjectLogFilePositionInfo
     {
+        /// <summary>Indicates the word has not been set.</summary>
+        internal const ulong NotSet = ulong.MaxValue;
+
         /// <summary>Object log segment size bits</summary>
         internal int SegmentSizeBits;
 
@@ -19,9 +22,16 @@ namespace Tsavorite.core
 
         internal readonly bool IsSet => SegmentSizeBits != 0;
 
+        public ObjectLogFilePositionInfo()
+        {
+            SegmentSizeBits = 0;
+            word = NotSet;
+        }
+
         internal ObjectLogFilePositionInfo(int segSizeBits)
         {
             SegmentSizeBits = segSizeBits;
+            word = NotSet;
         }
 
         internal ObjectLogFilePositionInfo(ulong word, int segSizeBits)
@@ -88,7 +98,7 @@ namespace Tsavorite.core
             Offset = 0;
         }
 
-        public static ulong operator-(ObjectLogFilePositionInfo left, ObjectLogFilePositionInfo right)
+        public static ulong operator -(ObjectLogFilePositionInfo left, ObjectLogFilePositionInfo right)
         {
             Debug.Assert(left.SegmentSizeBits == right.SegmentSizeBits, "Segment size bits must match to compute distance");
             Debug.Assert(left.word >= right.word, "comparison position must be greater");

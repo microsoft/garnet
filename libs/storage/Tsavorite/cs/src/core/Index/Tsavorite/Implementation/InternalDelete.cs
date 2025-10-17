@@ -6,6 +6,8 @@ using System.Diagnostics;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -47,6 +49,8 @@ namespace Tsavorite.core
 
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
+            pendingContext.logicalAddress = kInvalidAddress;
+            pendingContext.eTag = LogRecord.NoETag;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -101,6 +105,9 @@ namespace Tsavorite.core
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
                 {
                     srcLogRecord = stackCtx.recSrc.CreateLogRecord();
+
+                    pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                    pendingContext.eTag = srcLogRecord.ETag;
 
                     // If we already have a deleted record, there's nothing to do.
                     if (srcLogRecord.Info.Tombstone)
@@ -250,6 +257,7 @@ namespace Tsavorite.core
 
                 stackCtx.ClearNewRecord();
                 pendingContext.logicalAddress = newLogicalAddress;
+                pendingContext.eTag = newLogRecord.ETag;
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
             }
 

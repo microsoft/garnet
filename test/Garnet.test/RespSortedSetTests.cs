@@ -20,10 +20,13 @@ using SetOperation = StackExchange.Redis.SetOperation;
 namespace Garnet.test
 {
     using TestBasicGarnetApi = GarnetApi<BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>>,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
         BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
     [TestFixture]
@@ -78,7 +81,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, enableAOF: true, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableAOF: true, lowMemory: true);
             server.Start();
         }
 
@@ -100,7 +103,8 @@ namespace Garnet.test
             db.SortedSetAdd("key1", "b", 2);
 
             var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
-            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext, session.storageSession.objectStoreBasicContext);
+            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext,
+                session.storageSession.objectStoreBasicContext, session.storageSession.unifiedStoreBasicContext);
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
             {
@@ -132,7 +136,8 @@ namespace Garnet.test
             Thread.Sleep(200);
 
             var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
-            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext, session.storageSession.objectStoreBasicContext);
+            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext,
+                session.storageSession.objectStoreBasicContext, session.storageSession.unifiedStoreBasicContext);
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
             {
@@ -2180,7 +2185,7 @@ namespace Garnet.test
                 ]);
             }
 
-            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
             // Ensure data has spilled to disk
             ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
 

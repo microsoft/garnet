@@ -8,13 +8,13 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Session provider for Garnet
     /// </summary>
-    public sealed class GarnetProvider : TsavoriteKVProviderBase<PinnedSpanByte, SpanByteAndMemory, MainStoreFunctions, MainStoreAllocator>
+    public sealed class GarnetProvider : TsavoriteKVProviderBase<PinnedSpanByte, SpanByteAndMemory, StoreFunctions, StoreAllocator>
     {
         readonly StoreWrapper storeWrapper;
 
