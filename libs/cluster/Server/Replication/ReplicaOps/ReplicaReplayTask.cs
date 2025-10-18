@@ -51,43 +51,35 @@ namespace Garnet.cluster
 
         public unsafe void Consume(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
         {
-            try
+            ReplicationOffset = currentAddress;
+            var ptr = record;
+            while (ptr < record + recordLength)
             {
-                ReplicationOffset = currentAddress;
-                var ptr = record;
-                while (ptr < record + recordLength)
+                replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
+                var entryLength = storeWrapper.appendOnlyFile.HeaderSize;
+                var payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
+                if (payloadLength > 0)
                 {
-                    replicaReplayTaskCts.Token.ThrowIfCancellationRequested();
-                    var entryLength = storeWrapper.appendOnlyFile.HeaderSize;
-                    var payloadLength = storeWrapper.appendOnlyFile.UnsafeGetLength(ptr);
-                    if (payloadLength > 0)
-                    {
-                        aofProcessor.ProcessAofRecordInternal(ptr + entryLength, payloadLength, true, out var isCheckpointStart);
-                        // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
-                        // point when we take a checkpoint at the checkpoint end marker
-                        if (isCheckpointStart)
-                            ReplicationCheckpointStartOffset = ReplicationOffset;
-                        entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
-                    }
-                    else if (payloadLength < 0)
-                    {
-                        if (!clusterProvider.serverOptions.EnableFastCommit)
-                        {
-                            throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
-                        }
-                        TsavoriteLogRecoveryInfo info = new();
-                        info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                        storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(info, isProtected);
-                        entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
-                    }
-                    ptr += entryLength;
-                    ReplicationOffset += entryLength;
+                    aofProcessor.ProcessAofRecordInternal(ptr + entryLength, payloadLength, true, out var isCheckpointStart);
+                    // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
+                    // point when we take a checkpoint at the checkpoint end marker
+                    if (isCheckpointStart)
+                        ReplicationCheckpointStartOffset = ReplicationOffset;
+                    entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                 }
-            }
-            finally
-            {
-                // We need to wait, because once we return the record pointer is invalid
-                aofProcessor.WaitForPendingReplayOps();
+                else if (payloadLength < 0)
+                {
+                    if (!clusterProvider.serverOptions.EnableFastCommit)
+                    {
+                        throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
+                    }
+                    TsavoriteLogRecoveryInfo info = new();
+                    info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
+                    storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(info, isProtected);
+                    entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
+                }
+                ptr += entryLength;
+                ReplicationOffset += entryLength;
             }
 
             if (ReplicationOffset != nextAddress)
