@@ -3,6 +3,7 @@
 
 using System;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -93,15 +94,15 @@ namespace Garnet.server
         {
             var dims = VectorManager.CalculateValueDimensions(valueType, values.ReadOnlySpan);
             
-            var dimsArg = new ArgSlice((byte*)&dims, sizeof(uint));
-            var reduceDimsArg = new ArgSlice((byte*)&reduceDims, sizeof(uint));
-            var valueTypeArg = new ArgSlice((byte*)&valueType, sizeof(VectorValueType));
+            var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
+            var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
+            var valueTypeArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
             var valuesArg = values;
             var elementArg = element;
-            var quantizerArg = new ArgSlice((byte*)&quantizer, sizeof(VectorQuantType));
-            var buildExplorationFactorArg = new ArgSlice((byte*)&buildExplorationFactor, sizeof(uint));
+            var quantizerArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
+            var buildExplorationFactorArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
             var attributesArg = attributes;
-            var numLinksArg = new ArgSlice((byte*)&numLinks, sizeof(uint));
+            var numLinksArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
 
             parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg]);
 
