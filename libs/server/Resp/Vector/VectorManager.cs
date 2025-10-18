@@ -1327,17 +1327,33 @@ namespace Garnet.server
                                 {
                                     try
                                     {
-                                        ApplyVectorSetAdd(self, session.storageSession, entry, ref reusableParseState);
-                                    }
-                                    finally
-                                    {
-                                        var pending = Interlocked.Decrement(ref self.replicationReplayPendingVAdds);
-                                        Debug.Assert(pending >= 0, "Pending VADD ops has fallen below 0 after processing op");
-
-                                        if (pending == 0)
+                                        try
                                         {
-                                            self.replicationBlockEvent.Set();
+                                            ApplyVectorSetAdd(self, session.storageSession, entry, ref reusableParseState);
                                         }
+                                        finally
+                                        {
+                                            var pending = Interlocked.Decrement(ref self.replicationReplayPendingVAdds);
+                                            Debug.Assert(pending >= 0, "Pending VADD ops has fallen below 0 after processing op");
+
+                                            if (pending == 0)
+                                            {
+                                                self.replicationBlockEvent.Set();
+                                            }
+                                        }
+                                    }
+                                    catch
+                                    {
+                                        unsafe
+                                        {
+                                            self.logger?.LogCritical("Faulting ApplyVectorSetAdd Key: {KeyWithNamespace}", *entry.KeyWithNamespace);
+                                            for (var i = 0; i < entry.Input.parseState.Count; i++)
+                                            {
+                                                self.logger?.LogCritical("Faulting ApplySetAdd Arg #{i}: {val}", i, entry.Input.parseState.GetArgSliceByRef(i).SpanByte);
+                                            }
+                                        }
+
+                                        throw;
                                     }
                                 }
                             }

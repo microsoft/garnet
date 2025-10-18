@@ -206,6 +206,12 @@ namespace Garnet.server
             AofHeader header = *(AofHeader*)ptr;
             isCheckpointStart = false;
 
+            // Aggressively do not move data if VADD are being replayed
+            if (header.opType != AofEntryType.StoreRMW)
+            {
+                storeWrapper.vectorManager.WaitForVectorOperationsToComplete();
+            }
+
             if (inflightTxns.ContainsKey(header.sessionID))
             {
                 switch (header.opType)
@@ -347,9 +353,6 @@ namespace Garnet.server
         {
             AofHeader header = *(AofHeader*)entryPtr;
 
-            // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
-            if (SkipRecord(entryPtr, length, replayAsReplica)) return false;
-
             // StoreRMW can queue VADDs onto different threads
             // but everything else needs to WAIT for those to complete
             // otherwise we might loose consistency
@@ -357,6 +360,9 @@ namespace Garnet.server
             {
                 storeWrapper.vectorManager.WaitForVectorOperationsToComplete();
             }
+
+            // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
+            if (SkipRecord(entryPtr, length, replayAsReplica)) return false;
 
             switch (header.opType)
             {
