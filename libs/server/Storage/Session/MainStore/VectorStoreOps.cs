@@ -93,7 +93,7 @@ namespace Garnet.server
         public unsafe GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             var dims = VectorManager.CalculateValueDimensions(valueType, values.ReadOnlySpan);
-            
+
             var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
             var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
             var valueTypeArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
@@ -156,6 +156,9 @@ namespace Garnet.server
 
                 if (res == VectorManagerResult.OK)
                 {
+                    // On successful removal, we need to manually replicate the write
+                    vectorManager.ReplicateVectorSetRemove(ref key, ref element, ref input, ref basicContext);
+
                     return GarnetStatus.OK;
                 }
 

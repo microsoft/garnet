@@ -43,6 +43,7 @@ namespace Garnet.server
         internal const long VADDAppendLogArg = long.MinValue;
         internal const long DeleteAfterDropArg = VADDAppendLogArg + 1;
         internal const long RecreateIndexArg = DeleteAfterDropArg + 1;
+        internal const long VREMAppendLogArg = RecreateIndexArg + 1;
 
         public unsafe struct VectorReadBatch : IReadArgBatch<SpanByte, VectorInput, SpanByte>
         {
@@ -303,7 +304,7 @@ namespace Garnet.server
         private static StorageSession ActiveThreadSession;
 
         private readonly ILogger logger;
-        
+
         internal readonly int readLockShardCount;
         private readonly long readLockShardMask;
 
@@ -545,8 +546,8 @@ namespace Garnet.server
 
             if (indexSpan.Length != Index.Size)
             {
-                logger?.LogCritical("Acquired space for vector set index does not match expections, {0} != {1}", indexSpan.Length, Index.Size);
-                throw new GarnetException($"Acquired space for vector set index does not match expections, {indexSpan.Length} != {Index.Size}");
+                logger?.LogCritical("Acquired space for vector set index does not match expectations, {0} != {1}", indexSpan.Length, Index.Size);
+                throw new GarnetException($"Acquired space for vector set index does not match expectations, {indexSpan.Length} != {Index.Size}");
             }
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
@@ -565,7 +566,7 @@ namespace Garnet.server
         /// 
         /// This implies the index still has element data, but the pointer is garbage.
         /// </summary>
-        internal void ReceateIndex(ref SpanByte indexValue)
+        internal void RecreateIndex(ref SpanByte indexValue)
         {
             AssertHaveStorageSession();
 
@@ -1129,10 +1130,7 @@ namespace Garnet.server
         internal void ReplicateVectorSetAdd<TContext>(ref SpanByte key, ref RawStringInput input, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            if (input.header.cmd != RespCommand.VADD)
-            {
-                throw new GarnetException($"Shouldn't be called with anything but VADD inputs, found {input.header.cmd}");
-            }
+            Debug.Assert(input.header.cmd == RespCommand.VADD, "Shouldn't be called with anything but VADD inputs");
 
             var inputCopy = input;
             inputCopy.arg1 = VectorManager.VADDAppendLogArg;
@@ -1157,6 +1155,61 @@ namespace Garnet.server
             {
                 logger?.LogCritical("Failed to inject replication write for VADD into log, result was {0}", res);
                 throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
+            }
+
+            // Helper to complete read/writes during vector set synthetic op goes async
+            static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref TContext context)
+            {
+                _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                var more = completedOutputs.Next();
+                Debug.Assert(more);
+                status = completedOutputs.Current.Status;
+                output = completedOutputs.Current.Output;
+                more = completedOutputs.Next();
+                Debug.Assert(!more);
+                completedOutputs.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// For replication purposes, we need a write against the main log.
+        /// 
+        /// But we don't actually want to do the (expensive) vector ops as part of a write.
+        /// 
+        /// So this fakes up a modify operation that we can then intercept as part of replication.
+        /// 
+        /// This the Primary part, on a Replica <see cref="HandleVectorSetRemoveReplication"/> runs.
+        /// </summary>
+        internal void ReplicateVectorSetRemove<TContext>(ref SpanByte key, ref SpanByte element, ref RawStringInput input, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            Debug.Assert(input.header.cmd == RespCommand.VREM, "Shouldn't be called with anything but VREM inputs");
+
+            var inputCopy = input;
+            inputCopy.arg1 = VectorManager.VREMAppendLogArg;
+
+            Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
+            var keyWithNamespace = SpanByte.FromPinnedSpan(keyWithNamespaceBytes);
+            keyWithNamespace.MarkNamespace();
+            keyWithNamespace.SetNamespaceInPayload(0);
+            key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
+
+            Span<byte> dummyBytes = stackalloc byte[4];
+            var dummy = SpanByteAndMemory.FromPinnedSpan(dummyBytes);
+
+            inputCopy.parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(element.AsReadOnlySpan()));
+
+            var res = context.RMW(ref keyWithNamespace, ref inputCopy, ref dummy);
+
+            if (res.IsPending)
+            {
+                CompletePending(ref res, ref dummy, ref context);
+            }
+
+            if (!res.IsCompletedSuccessfully)
+            {
+                logger?.LogCritical("Failed to inject replication write for VREM into log, result was {res}", res);
+                throw new GarnetException("Couldn't synthesize Vector Set remove operation for replication, data loss will occur");
             }
 
             // Helper to complete read/writes during vector set synthetic op goes async
@@ -1383,6 +1436,8 @@ namespace Garnet.server
 
                         using (self.ReadOrCreateVectorIndex(storageSession, ref key, ref input, indexSpan, out var status))
                         {
+                            Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when an add is successful, so index must exist");
+
                             var addRes = self.TryAdd(indexSpan, element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, out _);
 
                             if (addRes != VectorManagerResult.OK)
@@ -1413,6 +1468,37 @@ namespace Garnet.server
                     {
                         ArrayPool<byte>.Shared.Return(toFree.Array);
                     }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Vector Set removes are phrased as reads (once the index is created), so they require special handling.
+        /// 
+        /// Operations that are faked up by <see cref="ReplicateVectorSetRemove"/> running on the Primary get diverted here on a Replica.
+        /// </summary>
+        internal void HandleVectorSetRemoveReplication(StorageSession storageSession, ref SpanByte key, ref RawStringInput input)
+        {
+            Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
+            var element = input.parseState.GetArgSliceByRef(0);
+
+            // Replication adds a (0) namespace - remove it
+            Span<byte> keyWithoutNamespaceSpan = stackalloc byte[key.Length - 1];
+            key.AsReadOnlySpan().CopyTo(keyWithoutNamespaceSpan);
+            var keyWithoutNamespace = SpanByte.FromPinnedSpan(keyWithoutNamespaceSpan);
+
+            var inputCopy = input;
+            inputCopy.arg1 = default;
+
+            using (ReadVectorIndex(storageSession, ref keyWithoutNamespace, ref inputCopy, indexSpan, out var status))
+            {
+                Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a remove is successful, so index must exist");
+
+                var addRes = TryRemove(indexSpan, element.ReadOnlySpan);
+
+                if (addRes != VectorManagerResult.OK)
+                {
+                    throw new GarnetException("Failed to remove from vector set index during AOF sync, this should never happen but will cause data loss if it does");
                 }
             }
         }

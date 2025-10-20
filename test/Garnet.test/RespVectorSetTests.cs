@@ -951,7 +951,6 @@ namespace Garnet.test
         // TODO: FLUSHDB needs to cleanup too...
 
         [Test]
-        [Ignore("Not implemented on DiskANN yet")]
         public void VREM()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

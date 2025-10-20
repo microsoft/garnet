@@ -236,6 +236,33 @@ namespace Garnet.server
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
                     CopyUpdateNumber(incrByFloat, ref value, ref output);
                     break;
+
+                case RespCommand.VADD:
+                    {
+                        if (input.arg1 == VectorManager.VADDAppendLogArg)
+                        {
+                            // Synthetic op, do nothing
+                            break;
+                        }
+
+                        var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
+                        var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
+                        // ValueType is here, skipping during index creation
+                        // Values is here, skipping during index creation
+                        // Element is here, skipping during index creation
+                        var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
+                        var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
+                        // Attributes is here, skipping during index creation
+                        var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
+
+                        recordInfo.VectorSet = true;
+
+                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, ref value);
+                    }
+                    break;
+                case RespCommand.VREM:
+                    Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Should only see VREM writes as part of replication");
+                    break;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -273,29 +300,6 @@ namespace Garnet.server
 
                     // Copy value to output
                     CopyTo(ref value, ref output, functionsState.memoryPool);
-                    break;
-                case RespCommand.VADD:
-                    {
-                        if (input.arg1 == VectorManager.VADDAppendLogArg)
-                        {
-                            // Synthetic op, do nothing
-                            break;
-                        }
-
-                        var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
-                        var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
-                        // ValueType is here, skipping during index creation
-                        // Values is here, skipping during index creation
-                        // Element is here, skipping during index creation
-                        var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
-                        var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
-                        // Attributes is here, skipping during index creation
-                        var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
-
-                        recordInfo.VectorSet = true;
-
-                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, ref value);
-                    }
                     break;
             }
 
@@ -821,10 +825,18 @@ namespace Garnet.server
                     }
                     else if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
-                        functionsState.vectorManager.ReceateIndex(ref value);
+                        functionsState.vectorManager.RecreateIndex(ref value);
                     }
 
                     // Ignore everything else
+                    return true;
+                case RespCommand.VREM:
+                    // Removing from a VectorSet is modeled as a read operations
+                    //
+                    // However, we do synthesize some (pointless) writes to implement replication
+                    // in a similar manner to VADD.
+
+                    Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "VREM in place update should only happen for replication");                    // Ignore everything else
                     return true;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
@@ -1370,10 +1382,11 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.VADD:
-                    if (input.arg1 != VectorManager.VADDAppendLogArg)
-                    {
-                        throw new GarnetException("Unexpected CopyUpdater call on VADD key");
-                    }
+                    Debug.Assert(input.arg1 == VectorManager.VADDAppendLogArg, "Unexpected CopyUpdater call on VADD key");
+                    break;
+
+                case RespCommand.VREM:
+                    Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Unexpected CopyUpdater call on VREM key");
                     break;
 
                 default:

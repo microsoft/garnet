@@ -362,7 +362,7 @@ namespace Garnet.server
                     StoreUpsert(basicContext, storeInput, entryPtr);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(basicContext, storeInput, storeWrapper.vectorManager, ObtainServerSession, entryPtr);
+                    StoreRMW(basicContext, storeInput, storeWrapper.vectorManager, respServerSession, ObtainServerSession, entryPtr);
                     break;
                 case AofEntryType.StoreDelete:
                     StoreDelete(basicContext, entryPtr);
@@ -440,7 +440,14 @@ namespace Garnet.server
                 output.Memory.Dispose();
         }
 
-        static void StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, VectorManager vectorManager, Func<RespServerSession> obtainServerSession, byte* ptr)
+        static void StoreRMW(
+            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, 
+            RawStringInput storeInput, 
+            VectorManager vectorManager, 
+            RespServerSession currentSession,
+            Func<RespServerSession> obtainServerSession, 
+            byte* ptr
+        )
         {
             var curr = ptr + sizeof(AofHeader);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
@@ -459,7 +466,15 @@ namespace Garnet.server
             }
             else
             {
+                // Any other op (include other vector ops) need to wait for pending VADDs to complete
                 vectorManager.WaitForVectorOperationsToComplete();
+
+                // VREM is also read-like, so requires special handling - shove it over to the VectorManager
+                if (storeInput.header.cmd == RespCommand.VREM)
+                {
+                    vectorManager.HandleVectorSetRemoveReplication(currentSession.storageSession, ref key, ref storeInput);
+                    return;
+                }
             }
 
             var pbOutput = stackalloc byte[32];

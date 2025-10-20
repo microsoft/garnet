@@ -360,7 +360,7 @@ namespace Garnet.test.cluster
 
                 var addRes1 = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", bytes1, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
                 ClassicAssert.AreEqual(1, addRes1);
-                
+
                 var addRes2 = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", bytes2, new byte[] { 0, 0, 0, 1 }, "XPREQ8"]);
                 ClassicAssert.AreEqual(1, addRes2);
 
@@ -532,6 +532,200 @@ namespace Garnet.test.cluster
                         {
                             var s = (byte)float.Parse(fromSecondary[i]);
                             ClassicAssert.AreEqual(expected[i], s);
+                        }
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public async Task MultipleReplicasWithVectorSetsAndDeletesAsync()
+        {
+            const int PrimaryIndex = 0;
+            const int SecondaryStartIndex = 1;
+            const int SecondaryEndIndex = 5;
+            const int Vectors = 2_000;
+            const int Deletes = Vectors / 10;
+            const string Key = nameof(MultipleReplicasWithVectorSetsAndDeletesAsync);
+
+            context.CreateInstances(HighReplicationShards, useTLS: true, enableAOF: true);
+            context.CreateConnection(useTLS: true);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 5, logger: context.logger);
+
+            var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
+            var secondaries = new IPEndPoint[SecondaryEndIndex - SecondaryStartIndex + 1];
+            for (var i = SecondaryStartIndex; i <= SecondaryEndIndex; i++)
+            {
+                secondaries[i - SecondaryStartIndex] = (IPEndPoint)context.endpoints[i];
+            }
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+
+            foreach (var secondary in secondaries)
+            {
+                ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
+            }
+
+            // Build some repeatably random data for inserts
+            var vectors = new byte[Vectors][];
+            var toDeleteVectors = new HashSet<int>();
+            var pendingRemove = new List<int>();
+            {
+                var r = new Random(2025_10_20_00);
+
+                for (var i = 0; i < vectors.Length; i++)
+                {
+                    vectors[i] = new byte[75];
+                    r.NextBytes(vectors[i]);
+                }
+
+                while (toDeleteVectors.Count < Deletes)
+                {
+                    _ = toDeleteVectors.Add(r.Next(vectors.Length));
+                }
+
+                pendingRemove.AddRange(toDeleteVectors);
+            }
+
+            using var sync = new SemaphoreSlim(2);
+
+            var writeTask =
+                Task.Run(
+                    async () =>
+                    {
+                        await sync.WaitAsync();
+
+                        var key = new byte[4];
+                        for (var i = 0; i < vectors.Length; i++)
+                        {
+                            BinaryPrimitives.WriteInt32LittleEndian(key, i);
+                            var val = vectors[i];
+                            var addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", [Key, "XB8", val, key, "XPREQ8"]);
+                            ClassicAssert.AreEqual(1, addRes);
+                        }
+                    }
+                );
+
+            var deleteTask =
+                Task.Run(
+                    async () =>
+                    {
+                        await sync.WaitAsync();
+
+                        var key = new byte[4];
+
+                        while (pendingRemove.Count > 0)
+                        {
+                            var i = Random.Shared.Next(pendingRemove.Count);
+                            var id = pendingRemove[i];
+
+                            BinaryPrimitives.WriteInt32LittleEndian(key, id);
+                            var remRes = (int)context.clusterTestUtils.Execute(primary, "VREM", [Key, key]);
+                            if (remRes == 1)
+                            {
+                                pendingRemove.RemoveAt(i);
+                            }
+                        }
+                    }
+                );
+
+            using var cts = new CancellationTokenSource();
+
+            var readTasks = new Task<int>[secondaries.Length];
+
+            for (var i = 0; i < secondaries.Length; i++)
+            {
+                var secondary = secondaries[i];
+                var readTask =
+                    Task.Run(
+                        async () =>
+                        {
+                            var r = new Random(2025_09_23_01);
+
+                            var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
+                            ClassicAssert.AreEqual("OK", readonlyOnReplica);
+
+                            await sync.WaitAsync();
+
+                            var nonZeroReturns = 0;
+
+                            while (!cts.Token.IsCancellationRequested)
+                            {
+                                var val = vectors[r.Next(vectors.Length)];
+
+                                var readRes = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [Key, "XB8", val]);
+                                if (readRes.Length > 0)
+                                {
+                                    nonZeroReturns++;
+                                }
+                            }
+
+                            return nonZeroReturns;
+                        }
+                    );
+
+                readTasks[i] = readTask;
+            }
+
+            _ = sync.Release(secondaries.Length + 2);
+            await writeTask;
+            await deleteTask;
+
+            for (var secondaryIndex = SecondaryStartIndex; secondaryIndex <= SecondaryEndIndex; secondaryIndex++)
+            {
+                context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, secondaryIndex);
+            }
+
+            cts.CancelAfter(TimeSpan.FromSeconds(1));
+
+            var searchesWithNonZeroResults = await Task.WhenAll(readTasks);
+
+            ClassicAssert.IsTrue(searchesWithNonZeroResults.All(static x => x > 0));
+
+            // Validate all nodes have same vector embeddings
+            {
+                var idBytes = new byte[4];
+                for (var id = 0; id < vectors.Length; id++)
+                {
+                    BinaryPrimitives.WriteInt32LittleEndian(idBytes, id);
+                    var expected = vectors[id];
+
+                    var fromPrimary = (string[])context.clusterTestUtils.Execute(primary, "VEMB", [Key, idBytes]);
+
+                    var shouldBePresent = !toDeleteVectors.Contains(id);
+                    if (shouldBePresent)
+                    {
+                        ClassicAssert.AreEqual(expected.Length, fromPrimary.Length);
+
+                        for (var i = 0; i < expected.Length; i++)
+                        {
+                            var p = (byte)float.Parse(fromPrimary[i]);
+                            ClassicAssert.AreEqual(expected[i], p);
+                        }
+                    }
+                    else
+                    {
+                        ClassicAssert.IsEmpty(fromPrimary);
+                    }
+
+                    for (var secondaryIx = 0; secondaryIx < secondaries.Length; secondaryIx++)
+                    {
+                        var secondary = secondaries[secondaryIx];
+                        var fromSecondary = (string[])context.clusterTestUtils.Execute(secondary, "VEMB", [Key, idBytes]);
+
+                        if (shouldBePresent)
+                        {
+                            ClassicAssert.AreEqual(expected.Length, fromSecondary.Length);
+
+                            for (var i = 0; i < expected.Length; i++)
+                            {
+                                var s = (byte)float.Parse(fromSecondary[i]);
+                                ClassicAssert.AreEqual(expected[i], s);
+                            }
+                        }
+                        else
+                        {
+                            ClassicAssert.IsEmpty(fromSecondary);
                         }
                     }
                 }

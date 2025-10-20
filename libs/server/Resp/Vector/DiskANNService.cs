@@ -149,9 +149,7 @@ namespace Garnet.server
             var id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(id));
             var id_len = id.Length;
 
-            // TODO: DiskANN, implement!
-            //return NativeDiskANNMethods.remove(context, index, (nint)id_data, (nuint)id_len) == 1;
-            throw new NotImplementedException();
+            return NativeDiskANNMethods.remove(context, index, (nint)id_data, (nuint)id_len) == 1;
         }
 
         public void MultiInsert(ulong context, nint index, ReadOnlySpan<PointerLengthPair> ids, VectorValueType vectorType, ReadOnlySpan<PointerLengthPair> vectors, ReadOnlySpan<PointerLengthPair> attributes, Span<bool> insertSuccess)
