@@ -102,7 +102,9 @@ namespace Tsavorite.core
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
         public bool ReadRecordObjects(ref LogRecord logRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
         {
-            Debug.Assert(logRecord.Info.RecordHasObjects, $"Inline records should have been checked by the caller");
+            Debug.Assert(logRecord.Info.RecordHasObjects, "Inline records should have been checked by the caller");
+            if (readBuffers is null)
+                throw new TsavoriteException("ReadBuffers are required to ReadRecordObjects");
 
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
             readBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits));

@@ -1360,7 +1360,7 @@ namespace Garnet.test
             var actualResultRawStr = db.StringGet(key);
 
             var actualResult = double.Parse(actualResultStr, CultureInfo.InvariantCulture);
-            var actualResultRaw = double.Parse(actualResultRawStr, CultureInfo.InvariantCulture);
+            var actualResultRaw = double.Parse((string)actualResultRawStr, CultureInfo.InvariantCulture);
 
             Assert.That(actualResult, Is.EqualTo(expectedResult).Within(1.0 / Math.Pow(10, 15)));
             Assert.That(actualResult, Is.EqualTo(actualResultRaw).Within(1.0 / Math.Pow(10, 15)));
@@ -1390,7 +1390,7 @@ namespace Garnet.test
             var actualResultRawStr = db.StringGet(key);
 
             var actualResult = double.Parse(actualResultStr, CultureInfo.InvariantCulture);
-            var actualResultRaw = double.Parse(actualResultRawStr, CultureInfo.InvariantCulture);
+            var actualResultRaw = double.Parse((string)actualResultRawStr, CultureInfo.InvariantCulture);
 
             Assert.That(actualResult, Is.EqualTo(expectedResult).Within(1.0 / Math.Pow(10, 15)));
             Assert.That(actualResult, Is.EqualTo(actualResultRaw).Within(1.0 / Math.Pow(10, 15)));
@@ -1515,8 +1515,9 @@ namespace Garnet.test
             var mykey = "mykey";
             for (var i = 0; i < iter; i++)
             {
-                var exception = Assert.Throws<StackExchange.Redis.RedisServerException>(() => _ = db.ListLength(mykey));
-                ClassicAssert.AreEqual("ERR Garnet Exception: Object store is disabled", exception.Message);
+                //var exception = Assert.Throws<StackExchange.Redis.RedisServerException>(() => _ = db.ListLength(mykey));
+                //ClassicAssert.AreEqual("ERR Garnet Exception: Object store is disabled", exception.Message);
+                Assert.That(db.ListLength(mykey), Is.EqualTo(0));   // We do not actually disable object with UnifiedStore, just the commands that expose them
             }
 
             // Ensure connection is still healthy

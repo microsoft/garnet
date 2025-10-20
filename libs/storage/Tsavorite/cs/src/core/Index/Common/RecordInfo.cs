@@ -353,8 +353,10 @@ namespace Tsavorite.core
         public override readonly string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-            return $"prev {AddressString(PreviousAddress)}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)}, isRC {bstr(IsReadCache)},"
-                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, KisInl {KeyIsInline}, VisInl {ValueIsInline}, VisObj {bstr(ValueIsObject)},"
+            var keyString = KeyIsInline ? "inl" : "ovf";
+            var valString = ValueIsInline ? "inl" : (ValueIsObject ? "obj" : "ovf");
+            return $"prev {AddressString(PreviousAddress)}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)}, rc {bstr(IsReadCache)},"
+                 + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, Key::{keyString}, Val::{valString},"
                  + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}, Un4 {bstr(Unused4)}, Un5 {bstr(Unused5)}";
         }
     }

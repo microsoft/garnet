@@ -35,7 +35,7 @@ namespace Garnet.cluster
             return 0;
         }
 
-        private int CountKeysInSlot(int slot) => CountKeysInSessionStore(slot) + CountKeysInObjectStore(slot);
+        private int CountKeysInSlot(int slot) => CountKeysInSessionStore(slot); // UnifiedStore counts them all in main store:  + CountKeysInObjectStore(slot);
 
         private List<byte[]> GetKeysInSlot(int slot, int keyCount)
         {

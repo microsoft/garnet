@@ -422,6 +422,7 @@ namespace Garnet
                 servers[i]?.Dispose();
             subscribeBroker?.Dispose();
             kvSettings.LogDevice?.Dispose();
+            kvSettings.ObjectLogDevice?.Dispose();
             opts.AuthSettings?.Dispose();
             if (disposeLoggerFactory)
                 loggerFactory?.Dispose();

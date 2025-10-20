@@ -272,6 +272,12 @@ namespace Tsavorite.core
                 HasETag = Info.HasETag,
                 HasExpiration = Info.HasExpiration
             };
+
+            /// <inheritdoc/>
+            public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes() => diskLogRecord.GetInlineRecordSizes();
+
+            /// <inheritdoc/>
+            public readonly (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects() => diskLogRecord.GetInlineRecordSizesWithUnreadObjects();
             #endregion // ISourceLogRecord
         }
     }

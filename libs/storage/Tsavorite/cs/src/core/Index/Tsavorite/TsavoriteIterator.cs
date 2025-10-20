@@ -335,6 +335,12 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetRecordFieldInfo() => CurrentIter.GetRecordFieldInfo();
+
+        /// <inheritdoc/>
+        public (int actualSize, int allocatedSize) GetInlineRecordSizes() => CurrentIter.GetInlineRecordSizes();
+
+        /// <inheritdoc/>
+        public (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects() => CurrentIter.GetInlineRecordSizesWithUnreadObjects();
         #endregion // ISourceLogRecord
     }
 }

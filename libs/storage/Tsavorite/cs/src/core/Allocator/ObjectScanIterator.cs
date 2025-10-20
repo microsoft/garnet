@@ -386,6 +386,12 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetRecordFieldInfo() => diskLogRecord.GetRecordFieldInfo();
+
+        /// <inheritdoc/>
+        public (int actualSize, int allocatedSize) GetInlineRecordSizes() => diskLogRecord.GetInlineRecordSizes();
+
+        /// <inheritdoc/>
+        public (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects() => diskLogRecord.GetInlineRecordSizesWithUnreadObjects();
         #endregion // ISourceLogRecord
 
         /// <summary>

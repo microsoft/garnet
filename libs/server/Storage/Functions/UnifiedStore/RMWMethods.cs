@@ -137,7 +137,6 @@ namespace Garnet.server
                 // the record was CASed into the hash chain before it gets modified
                 var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
                 var oldValueSize = srcLogRecord.ValueObject.HeapMemorySize;
-                _ = dstLogRecord.TrySetValueObject(value);
 
                 // First copy the new Value and optionals to the new record. This will also ensure space for expiration if it's present.
                 // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.

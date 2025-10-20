@@ -233,25 +233,30 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly RecordFieldInfo GetRecordFieldInfo() => logRecord.GetRecordFieldInfo();
 
+        /// <inheritdoc/>
+        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes() => logRecord.GetInlineRecordSizes();
+
+        /// <inheritdoc/>
+        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects() => logRecord.GetInlineRecordSizesWithUnreadObjects();
         #endregion //ISourceLogRecord
 
         #region Serialization to and from expanded record format
-        /// <summary>
-        /// Serialize a log record (which may be in-memory <see cref="LogRecord"/> or IO'd <see cref="DiskLogRecord"/>) to the <see cref="SpanByteAndMemory"/>
-        /// <paramref name="output"/> in inline-expanded format, with the Overflow Keys and Values and Object Values serialized inline to the Key and Value spans.
-        /// The serialized layout is:
-        /// <list type="bullet">
-        ///     <item>Inline portion of the LogRecord: RecordInfo, IndicatorWord, Key and Value data (each of 4 byte length, which restores to object Id), optionals (ETag, Expiration, ObjectLogPosition, ...)</item>
-        ///     <item>Key data, if key is Overflow</item>
-        ///     <item>Value data, if value is Overflow or Object</item>
-        /// </list>
-        /// </summary>
-        /// <remarks>
-        /// This is used for migration and replication, and output.SpanByteAndMemory is a span of the remaining space in the network buffer.
-        /// This allocates <see cref="SpanByteAndMemory.Memory"/> if needed; in that case the caller will flush the network buffer and retry with the full length.
-        /// The record stream is prefixed with the int length of the stream. RespReadUtils.GetSerializedRecordSpan sets up for deserialization from the network buffer.
-        /// </remarks>
-        /// <remarks>If <paramref name="output"/>.<see cref="SpanByteAndMemory.IsSpanByte"/>, it points directly to the network buffer so we include the length prefix in the output.</remarks>
+            /// <summary>
+            /// Serialize a log record (which may be in-memory <see cref="LogRecord"/> or IO'd <see cref="DiskLogRecord"/>) to the <see cref="SpanByteAndMemory"/>
+            /// <paramref name="output"/> in inline-expanded format, with the Overflow Keys and Values and Object Values serialized inline to the Key and Value spans.
+            /// The serialized layout is:
+            /// <list type="bullet">
+            ///     <item>Inline portion of the LogRecord: RecordInfo, IndicatorWord, Key and Value data (each of 4 byte length, which restores to object Id), optionals (ETag, Expiration, ObjectLogPosition, ...)</item>
+            ///     <item>Key data, if key is Overflow</item>
+            ///     <item>Value data, if value is Overflow or Object</item>
+            /// </list>
+            /// </summary>
+            /// <remarks>
+            /// This is used for migration and replication, and output.SpanByteAndMemory is a span of the remaining space in the network buffer.
+            /// This allocates <see cref="SpanByteAndMemory.Memory"/> if needed; in that case the caller will flush the network buffer and retry with the full length.
+            /// The record stream is prefixed with the int length of the stream. RespReadUtils.GetSerializedRecordSpan sets up for deserialization from the network buffer.
+            /// </remarks>
+            /// <remarks>If <paramref name="output"/>.<see cref="SpanByteAndMemory.IsSpanByte"/>, it points directly to the network buffer so we include the length prefix in the output.</remarks>
         public static void Serialize<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, IObjectSerializer<IHeapObject> valueObjectSerializer, MemoryPool<byte> memoryPool, ref SpanByteAndMemory output)
             where TSourceLogRecord : ISourceLogRecord
         {

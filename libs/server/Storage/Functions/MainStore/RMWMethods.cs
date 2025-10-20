@@ -1344,8 +1344,12 @@ namespace Garnet.server
                     // byte* oldDstHLLPtr = oldValue.ToPointer(); // original HLL merging to (too small to hold its data plus srcA)
                     // byte* newDstHLLPtr = newValue.ToPointer(); // new HLL merging to (large enough to hold srcA and srcB
 
-                    // Some duplicate code to avoid "fixed" when possible
+                    // Zeroinit any extra space in the new value (e.g. revivified record does not clear it out, for efficiency).
                     newValue = dstLogRecord.ValueSpan;
+                    if (oldValue.Length < newValue.Length)
+                        newValue.Slice(oldValue.Length).Clear();
+
+                    // Some duplicate code to avoid "fixed" when possible
                     if (srcLogRecord.IsPinnedValue)
                     {
                         var oldDstHLLPtr = srcLogRecord.PinnedValuePointer;

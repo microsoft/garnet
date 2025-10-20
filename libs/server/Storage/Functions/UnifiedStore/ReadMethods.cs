@@ -41,22 +41,22 @@ namespace Garnet.server
         private bool HandleMemoryUsage<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
             ref GarnetUnifiedStoreOutput output, ref ReadInfo readInfo) where TSourceLogRecord : ISourceLogRecord
         {
-            long memoryUsage;
-            if (srcLogRecord.Info.ValueIsObject)
+            var inlineRecordSize = srcLogRecord.GetInlineRecordSizes().allocatedSize;
+            long heapMemoryUsage = 0;
+            if (srcLogRecord.Info.KeyIsOverflow)
+                heapMemoryUsage += srcLogRecord.Key.Length + MemoryUtils.ByteArrayOverhead;
+
+            if (srcLogRecord.Info.ValueIsOverflow)
+                heapMemoryUsage += srcLogRecord.ValueSpan.Length + MemoryUtils.ByteArrayOverhead;
+            else if (srcLogRecord.Info.ValueIsObject)
             {
-                memoryUsage = RecordInfo.Size + (2 * IntPtr.Size) + // Log record length
+                heapMemoryUsage = RecordInfo.Size + (2 * IntPtr.Size) + // Log record length
                               Utility.RoundUp(srcLogRecord.Key.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + // Key allocation in heap with overhead
-                              srcLogRecord.ValueObject.SerializedSize; // Value allocation in heap
-            }
-            else
-            {
-                memoryUsage = RecordInfo.Size +
-                              Utility.RoundUp(srcLogRecord.Key.TotalSize(), RecordInfo.Size) +
-                              Utility.RoundUp(srcLogRecord.ValueSpan.TotalSize(), RecordInfo.Size);
+                              srcLogRecord.ValueObject.HeapMemorySize; // Value allocation in heap
             }
 
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-            writer.WriteInt64(memoryUsage);
+            writer.WriteInt64(heapMemoryUsage + inlineRecordSize);
 
             return true;
         }
