@@ -523,7 +523,7 @@ namespace Tsavorite.core
                 {
                     const int PrefetchSize = 12;
 
-                    Span<long> hashes = stackalloc long[PrefetchSize];
+                    var hashes = stackalloc long[PrefetchSize];
 
                     // Prefetch the hash table entries for all keys
                     var tableAligned = state[resizeInfo.version].tableAligned;
