@@ -124,14 +124,6 @@ jobs:
           }
         if: ${{ always() }}
 
-      - name: Copy mock allure-results to test output
-        shell: pwsh
-        run: |
-          $source = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/Allure/TestData/${{ matrix.framework }}/allure-results"
-          $dest   = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          Copy-Item -Path $source -Destination $dest -Recurse -Force
-        if: ${{ always() }}
-
       - name: DEBUG Check if allure-results exists
         shell: pwsh
         run: |
