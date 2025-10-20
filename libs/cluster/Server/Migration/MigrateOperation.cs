@@ -55,47 +55,27 @@ namespace Garnet.cluster
             /// <summary>
             /// Perform scan to gather keys and build sketch
             /// </summary>
-            /// <param name="storeType"></param>
             /// <param name="currentAddress"></param>
             /// <param name="endAddress"></param>
-            public void Scan(StoreType storeType, ref long currentAddress, long endAddress)
-            {
-                if (storeType == StoreType.Main)
-                    _ = localServerSession.BasicGarnetApi.IterateMainStore(ref mss, ref currentAddress, endAddress, endAddress, includeTombstones: true);
-                else if (storeType == StoreType.Object)
-                    _ = localServerSession.BasicGarnetApi.IterateObjectStore(ref oss, ref currentAddress, endAddress, endAddress, includeTombstones: true);
-            }
+            public void Scan(ref long currentAddress, long endAddress)
+                => localServerSession.BasicGarnetApi.IterateStore(ref mss, ref currentAddress, endAddress, endAddress,
+                    includeTombstones: true);
 
             /// <summary>
             /// Transmit gathered keys
             /// </summary>
-            /// <param name="storeType"></param>
             /// <returns></returns>
-            public bool TransmitSlots(StoreType storeType)
+            public bool TransmitSlots()
             {
-                // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
-                // so we can reuse the SpanByteAndMemory.Memory across iterations.
-                var output = new GarnetObjectStoreOutput();
+                var output = new GarnetUnifiedStoreOutput();
 
                 try
                 {
-                    if (storeType == StoreType.Main)
+                    var input = new UnifiedStoreInput(RespCommand.MIGRATE);
+                    foreach (var key in sketch.argSliceVector)
                     {
-                        var input = new RawStringInput(RespCommandAccessor.MIGRATE);
-                        foreach (var key in sketch.argSliceVector)
-                        {
-                            if (!session.WriteOrSendMainStoreKeyValuePair(gcs, localServerSession, key, ref input, ref output.SpanByteAndMemory, out _))
-                                return false;
-                        }
-                    }
-                    else
-                    {
-                        var input = new ObjectInput(new RespInputHeader(GarnetObjectType.Migrate));
-                        foreach (var key in sketch.argSliceVector)
-                        {
-                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, key, ref input, ref output, out _))
-                                return false;
-                        }
+                        if (!session.WriteOrSendKeyValuePair(gcs, localServerSession, key, ref input, ref output, out _))
+                            return false;
                     }
 
                     // Flush final data in client buffer
@@ -110,48 +90,28 @@ namespace Garnet.cluster
                 return true;
             }
 
-            public bool TransmitKeys(StoreType storeType)
+            public bool TransmitKeys()
             {
                 // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
                 // so we can reuse the SpanByteAndMemory.Memory across iterations.
-                var output = new GarnetObjectStoreOutput();
+                var output = new GarnetUnifiedStoreOutput();
 
                 try
                 {
                     var keys = sketch.Keys;
-                    if (storeType == StoreType.Main)
+
+                    var input = new UnifiedStoreInput(RespCommand.MIGRATE);
+                    for (var i = 0; i < keys.Count; i++)
                     {
-                        var input = new RawStringInput(RespCommandAccessor.MIGRATE);
+                        if (keys[i].Item2)
+                            continue;
 
-                        for (var i = 0; i < keys.Count; i++)
-                        {
-                            if (keys[i].Item2)
-                                continue;
+                        if (!session.WriteOrSendKeyValuePair(gcs, localServerSession, keys[i].Item1, ref input, ref output, out var status))
+                            return false;
 
-                            if (!session.WriteOrSendMainStoreKeyValuePair(gcs, localServerSession, keys[i].Item1, ref input, ref output.SpanByteAndMemory, out var status))
-                                return false;
-
-                            // If key was FOUND, mark it for deletion
-                            if (status != GarnetStatus.NOTFOUND)
-                                keys[i] = (keys[i].Item1, true);
-                        }
-                    }
-                    else
-                    {
-                        var input = new ObjectInput(new RespInputHeader(GarnetObjectType.Migrate));
-
-                        for (var i = 0; i < keys.Count; i++)
-                        {
-                            if (keys[i].Item2)
-                                continue;
-
-                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, keys[i].Item1, ref input, ref output, out var status))
-                                return false;
-
-                            // If key was FOUND, mark it for deletion
-                            if (status != GarnetStatus.NOTFOUND)
-                                keys[i] = (keys[i].Item1, true);
-                        }
+                        // If key was FOUND, mark it for deletion
+                        if (status != GarnetStatus.NOTFOUND)
+                            keys[i] = (keys[i].Item1, true);
                     }
 
                     // Flush final data in client buffer

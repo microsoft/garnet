@@ -473,36 +473,19 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Methods used to cleanup keys for given slot collection in main store
+        /// Methods used to cleanup keys for given slot collection
         /// </summary>
-        /// <param name="BasicGarnetApi"></param>
+        /// <param name="basicGarnetApi"></param>
         /// <param name="slots">Slot list</param>
-        public static unsafe void DeleteKeysInSlotsFromMainStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
+        public static unsafe void DeleteKeysInSlots(BasicGarnetApi basicGarnetApi, HashSet<int> slots)
         {
-            using var iter = BasicGarnetApi.IterateMainStore();
+            using var iter = basicGarnetApi.IterateStore();
             while (iter.GetNext())
             {
                 var key = iter.Key;
                 var s = HashSlotUtils.HashSlot(key);
                 if (slots.Contains(s))
-                    _ = BasicGarnetApi.DELETE(PinnedSpanByte.FromPinnedSpan(key));
-            }
-        }
-
-        /// <summary>
-        /// Methods used to cleanup keys for given slot collection in object store
-        /// </summary>
-        /// <param name="BasicGarnetApi"></param>
-        /// <param name="slots">Slot list</param>
-        public static unsafe void DeleteKeysInSlotsFromObjectStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
-        {
-            using var iterObject = BasicGarnetApi.IterateObjectStore();
-            while (iterObject.GetNext())
-            {
-                var key = iterObject.Key;
-                var s = HashSlotUtils.HashSlot(key);
-                if (slots.Contains(s))
-                    _ = BasicGarnetApi.DELETE(PinnedSpanByte.FromPinnedSpan(key));
+                    _ = basicGarnetApi.DELETE(PinnedSpanByte.FromPinnedSpan(key));
             }
         }
     }

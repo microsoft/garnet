@@ -1923,7 +1923,7 @@ namespace Garnet.server
         public bool DbScan(PinnedSpanByte patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> Keys, long count = 10, ReadOnlySpan<byte> type = default);
 
         /// <summary>
-        /// Iterate the contents of the main store
+        /// Iterate the contents of the store
         /// </summary>
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
@@ -1932,33 +1932,14 @@ namespace Garnet.server
         /// <param name="cursor"></param>
         /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
+        public bool IterateStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions;
 
         /// <summary>
-        /// Iterate the contents of the main store (pull based)
+        /// Iterate the contents of the store (pull based)
         /// </summary>
         /// <returns></returns>
-        public ITsavoriteScanIterator IterateMainStore();
-
-        /// <summary>
-        /// Iterate the contents of the object store
-        /// </summary>
-        /// <typeparam name="TScanFunctions"></typeparam>
-        /// <param name="scanFunctions"></param>
-        /// <param name="untilAddress"></param>
-        /// <param name="maxAddress"></param>
-        /// <param name="cursor"></param>
-        /// <param name="includeTombstones"></param>
-        /// <returns></returns>
-        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
-            where TScanFunctions : IScanIteratorFunctions;
-
-        /// <summary>
-        /// Iterate the contents of the object store (pull based)
-        /// </summary>
-        /// <returns></returns>
-        public ITsavoriteScanIterator IterateObjectStore();
+        public ITsavoriteScanIterator IterateStore();
 
         #endregion
 

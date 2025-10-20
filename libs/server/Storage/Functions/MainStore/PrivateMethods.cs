@@ -99,10 +99,6 @@ namespace Garnet.server
                     CopyRespTo(value, ref output);
                     break;
 
-                case RespCommand.MIGRATE:
-                    DiskLogRecord.Serialize(in srcLogRecord, valueObjectSerializer: null, memoryPool: functionsState.memoryPool, output: ref output);
-                    break;
-
                 case RespCommand.GET:
                     // Get value without RESP header; exclude expiration
                     if (value.Length <= output.Length)

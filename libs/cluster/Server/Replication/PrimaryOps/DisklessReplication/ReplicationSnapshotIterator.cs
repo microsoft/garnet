@@ -235,7 +235,11 @@ namespace Garnet.cluster
 
         public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
             where TSourceLogRecord : ISourceLogRecord
-            => snapshotIteratorManager.StringReader(in srcLogRecord, recordMetadata, numberOfRecords);
+        {
+            return srcLogRecord.Info.ValueIsObject
+                ? snapshotIteratorManager.ObjectReader(in srcLogRecord, recordMetadata, numberOfRecords)
+                : snapshotIteratorManager.StringReader(in srcLogRecord, recordMetadata, numberOfRecords);
+        }
 
         public void OnException(Exception exception, long numberOfRecords)
             => snapshotIteratorManager.logger?.LogError(exception, $"{nameof(StoreSnapshotIterator)}");

@@ -104,7 +104,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Iterate the contents of the main store (push-based)
+        /// Iterate the contents of the store (push-based)
         /// </summary>
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
@@ -114,57 +114,15 @@ namespace Garnet.server
         /// <param name="validateCursor"></param>
         /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        internal bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
+        internal bool IterateStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
             => basicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
 
         /// <summary>
-        /// Iterate the contents of the main store (pull based)
+        /// Iterate the contents of the store (pull based)
         /// </summary>
-        internal ITsavoriteScanIterator IterateMainStore()
+        internal ITsavoriteScanIterator IterateStore()
             => basicContext.Session.Iterate();
-
-        /// <summary>
-        /// Iterate the contents of the object store (push-based)
-        /// </summary>
-        /// <typeparam name="TScanFunctions"></typeparam>
-        /// <param name="scanFunctions"></param>
-        /// <param name="untilAddress"></param>
-        /// <param name="cursor"></param>
-        /// <param name="maxAddress"></param>
-        /// <param name="validateCursor"></param>
-        /// <param name="includeTombstones"></param>
-        /// <returns></returns>
-        internal bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
-            where TScanFunctions : IScanIteratorFunctions
-            => objectStoreBasicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
-
-        /// <summary>
-        /// Iterate the contents of the main store (pull based)
-        /// </summary>
-        internal ITsavoriteScanIterator IterateObjectStore()
-            => objectStoreBasicContext.Session.Iterate();
-
-        /// <summary>
-        /// Iterate the contents of the unified store (push-based)
-        /// </summary>
-        /// <typeparam name="TScanFunctions"></typeparam>
-        /// <param name="scanFunctions"></param>
-        /// <param name="untilAddress"></param>
-        /// <param name="cursor"></param>
-        /// <param name="maxAddress"></param>
-        /// <param name="validateCursor"></param>
-        /// <param name="includeTombstones"></param>
-        /// <returns></returns>
-        internal bool IterateUnifiedStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
-            where TScanFunctions : IScanIteratorFunctions
-            => unifiedStoreBasicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
-
-        /// <summary>
-        /// Iterate the contents of the unified store (pull based)
-        /// </summary>
-        internal ITsavoriteScanIterator IterateUnifiedStore()
-            => unifiedStoreBasicContext.Session.Iterate();
 
         /// <summary>
         ///  Get a list of the keys in the store and object store when using pattern
