@@ -51,4 +51,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+	<PropertyGroup>
+		<AspectInjector_Enabled>false</AspectInjector_Enabled>
+	</PropertyGroup>
+
 </Project>

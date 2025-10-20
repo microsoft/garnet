@@ -25,4 +25,8 @@
 		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\Request.cs" Link="Embedded\Request.cs" />
 	</ItemGroup>
 
+	<PropertyGroup>
+		<AspectInjector_Enabled>false</AspectInjector_Enabled>
+	</PropertyGroup>
+
 </Project>
