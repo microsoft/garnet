@@ -31,7 +31,7 @@ namespace Tsavorite.core
         {
             var adjustedSize = pageSize + 2 * sectorSize;
 
-            var tmp = GC.AllocateArray<byte>(adjustedSize, pinned:true);
+            var tmp = GC.AllocateArray<byte>(adjustedSize, pinned: true);
             var p = (long)Unsafe.AsPointer(ref tmp[0]);
             pointers[index] = RoundUp(p, sectorSize);
             frame[index] = tmp;

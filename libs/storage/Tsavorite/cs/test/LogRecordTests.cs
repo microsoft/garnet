@@ -26,7 +26,7 @@ namespace Tsavorite.test.LogRecordTests
 #pragma warning disable IDE1006 // Naming Styles
         const int initialKeyLen = 10;
         const int initialValueLen = 40;
-        const int initialVarbyteSize = 3;  // indicator byte, and 1 byte each for key and value len
+        const int initialVarbyteSize = MinLengthMetadataBytes;
         const int initialOptionalSize = sizeof(long) * 2;
 
         const int maxInlineKeySize = 64;
@@ -124,7 +124,7 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(valueLengthBytes, Is.EqualTo(3));
             VerifyKeyAndValue();
 
-            // Test 3- and 4-byte valueLengthByte boundary with 3-keyLengthByte key
+            // Test 3-byte valueLengthByte boundary with 3-keyLengthByte key
             inputKeyLength = inputValueLength = (1 << 24) - 1;
             Assert.That(GetByteCount(inputValueLength), Is.EqualTo(3));
             value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, flagBits: 0, out keyLengthBytes, out valueLengthBytes);
@@ -132,18 +132,10 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(valueLengthBytes, Is.EqualTo(3));
             VerifyKeyAndValue();
 
+            // Test past-max ValueLength (the actual value-setting code will convert this to overflow, so it will use only 4 bytes for ObjectId).
             inputValueLength = 1 << 24;
             Assert.That(GetByteCount(inputValueLength), Is.EqualTo(4));
-            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, flagBits: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
-            Assert.That(valueLengthBytes, Is.EqualTo(4));
-            VerifyKeyAndValue();
-
-            // Test max ValueLength
-            inputValueLength = int.MaxValue;
-            Assert.That(GetByteCount(inputValueLength), Is.EqualTo(4));
-            value = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, flagBits: 0, out _ /*keyLengthBytes*/, out valueLengthBytes);
-            Assert.That(valueLengthBytes, Is.EqualTo(4));
-            VerifyKeyAndValue();
+            _ = Assert.Throws<ArgumentOutOfRangeException>(() => _ = ConstructInlineVarbyteLengthWord(inputKeyLength, inputValueLength, flagBits: 0, out _ /*keyLengthBytes*/, out valueLengthBytes));
 
             void VerifyKeyAndValue()
             {
@@ -153,7 +145,7 @@ namespace Tsavorite.test.LogRecordTests
                 Assert.That(outputKeyLength, Is.EqualTo(inputKeyLength));
                 Assert.That(outputValueLength, Is.EqualTo(inputValueLength));
                 Assert.That((long)keyPtr, Is.EqualTo((long)(ptr + NumIndicatorBytes + outputKeyLengthBytes + outputValueLengthBytes)));
-                Assert.That((long)keyLengthPtr, Is.EqualTo((long)(ptr + 1)));
+                Assert.That((long)keyLengthPtr, Is.EqualTo((long)(ptr + NumIndicatorBytes)));
                 Assert.That((long)valuePtr, Is.EqualTo((long)(keyPtr + outputKeyLength)));
                 Assert.That((long)valueLengthPtr, Is.EqualTo((long)(keyLengthPtr + keyLengthBytes)));
 
@@ -278,8 +270,8 @@ namespace Tsavorite.test.LogRecordTests
             var sizeInfo = new RecordSizeInfo();
             InitializeRecord(key, value, ref sizeInfo, out var logRecord, out var expectedFillerLengthAddress, out var expectedFillerLength, out long eTag, out long expiration);
 
-            // Convert to overflow. Because objectIdSize is the same as InlineLengthPrefixSize, our value space will shrink by the original value data size.
-            var offset = value.Length;
+            // Convert to overflow. Because objectIdSize is 4 bytes our value space will shrink by the original value data size less 4 bytes, but we will use 8 bytes for ObjectLogLogPosition.
+            var offset = value.Length - 4 - LogRecord.ObjectLogPositionSize;
             ConvertToOverflow(overflowValue, ref sizeInfo, ref logRecord, expectedFillerLengthAddress, expectedFillerLength, eTag, expiration, offset);
             RestoreToOriginal(value, ref sizeInfo, ref logRecord, expectedFillerLengthAddress, expectedFillerLength, eTag, expiration);
 

@@ -17,6 +17,12 @@ namespace Garnet.server
         public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
+            if (!srcLogRecord.Info.ValueIsObject)
+            {
+                readInfo.Action = ReadAction.WrongType;
+                return false;
+            }
+
             if (srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.Now.UtcTicks)
             {
                 // Do not set 'value = null' or otherwise mark this; Reads should not update the database. We rely on consistently checking for expiration everywhere.
@@ -28,9 +34,6 @@ namespace Garnet.server
             {
                 switch (input.header.type)
                 {
-                    case GarnetObjectType.Migrate:
-                        DiskLogRecord.Serialize(in srcLogRecord, functionsState.garnetObjectSerializer, functionsState.memoryPool, ref output.SpanByteAndMemory);
-                        return true;
                     case GarnetObjectType.Ttl:
                         var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
                         functionsState.CopyRespNumber(ttlValue, ref output.SpanByteAndMemory);
@@ -38,15 +41,6 @@ namespace Garnet.server
                     case GarnetObjectType.PTtl:
                         ttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
                         functionsState.CopyRespNumber(ttlValue, ref output.SpanByteAndMemory);
-                        return true;
-
-                    case GarnetObjectType.ExpireTime:
-                        var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                        functionsState.CopyRespNumber(expireTime, ref output.SpanByteAndMemory);
-                        return true;
-                    case GarnetObjectType.PExpireTime:
-                        expireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                        functionsState.CopyRespNumber(expireTime, ref output.SpanByteAndMemory);
                         return true;
 
                     default:
@@ -61,7 +55,7 @@ namespace Garnet.server
 
                         if (IncorrectObjectType(ref input, (IGarnetObject)srcLogRecord.ValueObject, ref output.SpanByteAndMemory))
                         {
-                            output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                            output.OutputFlags |= OutputFlags.WrongType;
                             return true;
                         }
 

@@ -348,26 +348,25 @@ namespace Garnet.cluster
             invalidParameters = false;
 
             // Expecting exactly 7 arguments
-            if (parseState.Count != 7)
+            if (parseState.Count != 6)
             {
                 invalidParameters = true;
                 return true;
             }
 
             if (!parseState.TryGetBool(0, out var recoverMainStoreFromToken) ||
-                !parseState.TryGetBool(1, out var recoverObjectStoreFromToken) ||
-                !parseState.TryGetBool(2, out var replayAOF))
+                !parseState.TryGetBool(1, out var replayAOF))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_BOOLEAN, ref dcurr, dend))
                     SendAndReset();
                 return true;
             }
 
-            var primaryReplicaId = parseState.GetString(3);
-            var checkpointEntryBytes = parseState.GetArgSliceByRef(4).ToArray();
+            var primaryReplicaId = parseState.GetString(2);
+            var checkpointEntryBytes = parseState.GetArgSliceByRef(3).ToArray();
 
-            if (!parseState.TryGetLong(5, out var beginAddress) ||
-                !parseState.TryGetLong(6, out var tailAddress))
+            if (!parseState.TryGetLong(4, out var beginAddress) ||
+                !parseState.TryGetLong(5, out var tailAddress))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER, ref dcurr, dend))
                     SendAndReset();
@@ -377,7 +376,6 @@ namespace Garnet.cluster
             var entry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
             var replicationOffset = clusterProvider.replicationManager.BeginReplicaRecover(
                 recoverMainStoreFromToken,
-                recoverObjectStoreFromToken,
                 replayAOF,
                 primaryReplicaId,
                 entry,
@@ -448,16 +446,14 @@ namespace Garnet.cluster
         {
             invalidParameters = false;
 
-            // Expecting exactly 3 arguments
-            if (parseState.Count != 3)
+            // Expecting exactly 2 arguments
+            if (parseState.Count != 2)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var primaryNodeId = parseState.GetString(0);
-            var storeTypeSpan = parseState.GetArgSliceByRef(1).ReadOnlySpan;
-            var payload = parseState.GetArgSliceByRef(2);
+            var payload = parseState.GetArgSliceByRef(1);
             var payloadPtr = payload.ToPointer();
             var lastParam = parseState.GetArgSliceByRef(parseState.Count - 1);
             var payloadEndPtr = lastParam.ToPointer() + lastParam.Length;
@@ -465,56 +461,31 @@ namespace Garnet.cluster
             var recordCount = *(int*)payloadPtr;
             var i = 0;
             payloadPtr += 4;
-            if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("SSTORE"u8))
+
+            TrackImportProgress(recordCount, recordCount == 0);
+            var storeWrapper = clusterProvider.storeWrapper;
+            var transientObjectIdMap = storeWrapper.store.Log.TransientObjectIdMap;
+
+            // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
+            DiskLogRecord diskLogRecord = default;
+            try
             {
-                TrackImportProgress(recordCount, isMainStore: true, recordCount == 0);
-                var storeWrapper = clusterProvider.storeWrapper;
-
-                // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
-                DiskLogRecord diskLogRecord = default;
-                try
+                while (i < recordCount)
                 {
-                    while (i < recordCount)
-                    {
-                        if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
-                            return false;
+                    if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
+                        return false;
 
-                        diskLogRecord = DiskLogRecord.Deserialize(recordSpan, valueObjectSerializer: default, transientObjectIdMap: default, storeWrapper.mainStoreFunctions);
-                        _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Main);
-                        diskLogRecord.Dispose();
-                        i++;
-                    }
-                }
-                finally
-                {
+                    diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer,
+                        transientObjectIdMap, storeWrapper.storeFunctions);
+
+                    _ = basicGarnetApi.SET(in diskLogRecord);
                     diskLogRecord.Dispose();
+                    i++;
                 }
             }
-            else if (storeTypeSpan.EqualsUpperCaseSpanIgnoringCase("OSTORE"u8))
+            finally
             {
-                TrackImportProgress(recordCount, isMainStore: false, recordCount == 0);
-                var storeWrapper = clusterProvider.storeWrapper;
-                var transientObjectIdMap = storeWrapper.objectStore.Log.TransientObjectIdMap;
-
-                // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
-                DiskLogRecord diskLogRecord = default;
-                try
-                {
-                    while (i < recordCount)
-                    {
-                        if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
-                            return false;
-
-                        diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.objectStoreFunctions);
-                        _ = basicGarnetApi.SET(in diskLogRecord, StoreType.Object);
-                        diskLogRecord.Dispose();
-                        i++;
-                    }
-                }
-                finally
-                {
-                    diskLogRecord.Dispose();
-                }
+                diskLogRecord.Dispose();
             }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))

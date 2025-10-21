@@ -23,7 +23,6 @@ namespace Garnet.server
                 case RespCommand.PERSIST:
                 case RespCommand.EXPIRE:
                 case RespCommand.GETDEL:
-                case RespCommand.DELIFEXPIM:
                 case RespCommand.GETEX:
                 case RespCommand.DELIFGREATER:
                     return false;
@@ -371,6 +370,12 @@ namespace Garnet.server
         /// <inheritdoc />
         public readonly bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
+            if (logRecord.Info.ValueIsObject)
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                return false;
+            }
+
             if (InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
             {
                 if (!logRecord.Info.Modified)
@@ -390,7 +395,7 @@ namespace Garnet.server
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
-                rmwInfo.Action = cmd is RespCommand.DELIFEXPIM ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
+                rmwInfo.Action = RMWAction.ExpireAndResume;
                 logRecord.RemoveETag();
                 return false;
             }
@@ -756,8 +761,8 @@ namespace Garnet.server
                     // If both EX and PERSIST were specified, EX wins
                     if (input.arg1 > 0)
                     {
-                        var pbOutput = stackalloc byte[ObjectOutputHeader.Size];
-                        var _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
+                        var pbOutput = stackalloc byte[OutputHeader.Size];
+                        var _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, OutputHeader.Size));
 
                         var newExpiry = input.arg1;
                         if (!EvaluateExpireInPlace(ref logRecord, ExpireOption.None, newExpiry, ref _output))
@@ -797,10 +802,6 @@ namespace Garnet.server
                     // reset etag state that may have been initialized earlier, but don't update etag
                     ETagState.ResetState(ref functionsState.etagState);
                     return CopyValueLengthToOutput(logRecord.ValueSpan, ref output);
-                case RespCommand.DELIFEXPIM:
-                    // this is the case where it isn't expired
-                    shouldUpdateEtag = false;
-                    break;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -870,13 +871,6 @@ namespace Garnet.server
         {
             switch (input.header.cmd)
             {
-                case RespCommand.DELIFEXPIM:
-                    if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
-                    {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                    }
-
-                    return false;
                 case RespCommand.DELIFGREATER:
                     if (srcLogRecord.Info.HasETag)
                         ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
@@ -1338,8 +1332,12 @@ namespace Garnet.server
                     // byte* oldDstHLLPtr = oldValue.ToPointer(); // original HLL merging to (too small to hold its data plus srcA)
                     // byte* newDstHLLPtr = newValue.ToPointer(); // new HLL merging to (large enough to hold srcA and srcB
 
-                    // Some duplicate code to avoid "fixed" when possible
+                    // Zeroinit any extra space in the new value (e.g. revivified record does not clear it out, for efficiency).
                     newValue = dstLogRecord.ValueSpan;
+                    if (oldValue.Length < newValue.Length)
+                        newValue.Slice(oldValue.Length).Clear();
+
+                    // Some duplicate code to avoid "fixed" when possible
                     if (srcLogRecord.IsPinnedValue)
                     {
                         var oldDstHLLPtr = srcLogRecord.PinnedValuePointer;
@@ -1412,8 +1410,8 @@ namespace Garnet.server
                     Debug.Assert(newValue.Length == oldValue.Length);
                     if (input.arg1 > 0)
                     {
-                        var pbOutput = stackalloc byte[ObjectOutputHeader.Size];
-                        var _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
+                        var pbOutput = stackalloc byte[OutputHeader.Size];
+                        var _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, OutputHeader.Size));
                         var newExpiry = input.arg1;
                         if (!EvaluateExpireCopyUpdate(ref dstLogRecord, in sizeInfo, ExpireOption.None, newExpiry, newValue, ref _output))
                             return false;

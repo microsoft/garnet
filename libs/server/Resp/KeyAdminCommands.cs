@@ -358,10 +358,15 @@ namespace Garnet.server
 
             var exists = 0;
 
+            // Prepare input
+            var input = new UnifiedStoreInput(RespCommand.EXISTS);
+
+            var output = new GarnetUnifiedStoreOutput();
+
             for (var i = 0; i < parseState.Count; i++)
             {
                 var key = parseState.GetArgSliceByRef(i);
-                var status = storageApi.EXISTS(key);
+                var status = storageApi.EXISTS(key, ref input, ref output);
                 if (status == GarnetStatus.OK)
                     exists++;
             }
@@ -454,10 +459,14 @@ namespace Garnet.server
             // Encode expiration time and expiration option and pass them into the input object
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
-            var input = new RawStringInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
-            var status = storageApi.EXPIRE(key, ref input, out var timeoutSet);
+            var input = new UnifiedStoreInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
 
-            if (status == GarnetStatus.OK && timeoutSet)
+            // Prepare GarnetUnifiedStoreOutput output
+            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.EXPIRE(key, ref input, ref output);
+
+            if (status == GarnetStatus.OK && ((OutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer())->result1 == 1)
             {
                 while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
                     SendAndReset();
@@ -486,12 +495,18 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            var status = storageApi.PERSIST(key);
+
+            // Prepare input
+            var input = new UnifiedStoreInput(RespCommand.PERSIST);
+
+            // Prepare GarnetUnifiedStoreOutput output
+            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.PERSIST(key, ref input, ref output);
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
-                    SendAndReset();
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {
@@ -513,21 +528,22 @@ namespace Garnet.server
         {
             if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.PERSIST));
+                return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            var status = command == RespCommand.TTL ?
-                        storageApi.TTL(key, StoreType.All, ref o) :
-                        storageApi.PTTL(key, StoreType.All, ref o);
+
+            // Prepare input
+            var input = new UnifiedStoreInput(command);
+
+            // Prepare GarnetUnifiedStoreOutput output
+            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.TTL(key, ref input, ref output);
 
             if (status == GarnetStatus.OK)
             {
-                if (!o.IsSpanByte)
-                    SendAndReset(o.Memory, o.Length);
-                else
-                    dcurr += o.Length;
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {
@@ -553,17 +569,18 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            var status = command == RespCommand.EXPIRETIME ?
-                        storageApi.EXPIRETIME(key, StoreType.All, ref o) :
-                        storageApi.PEXPIRETIME(key, StoreType.All, ref o);
+
+            // Prepare input
+            var input = new UnifiedStoreInput(command);
+
+            // Prepare GarnetUnifiedStoreOutput output
+            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.EXPIRETIME(key, ref input, ref output);
 
             if (status == GarnetStatus.OK)
             {
-                if (!o.IsSpanByte)
-                    SendAndReset(o.Memory, o.Length);
-                else
-                    dcurr += o.Length;
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {

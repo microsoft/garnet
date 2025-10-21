@@ -90,48 +90,12 @@ namespace Garnet
         public string ReadCachePageSize { get; set; }
 
         [MemorySizeValidation(false)]
-        [Option("obj-heap-memory", Required = false, HelpText = "Object store heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
-        public string ObjectStoreHeapMemorySize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-log-memory", Required = false, HelpText = "Object store log memory used in bytes (Size of only the log with references to heap objects, excludes size of heap memory consumed by the objects themselves referred to from the log)")]
-        public string ObjectStoreLogMemorySize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-page", Required = false, HelpText = "Size of each object store page in bytes (rounds down to power of 2)")]
-        public string ObjectStorePageSize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-segment", Required = false, HelpText = "Size of each object store log segment in bytes on disk (rounds down to power of 2)")]
-        public string ObjectStoreSegmentSize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-index", Required = false, HelpText = "Start size of object store hash index in bytes (rounds down to power of 2)")]
-        public string ObjectStoreIndexSize { get; set; }
+        [Option("heap-memory", Required = false, HelpText = "Heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
+        public string HeapMemorySize { get; set; }
 
         [MemorySizeValidation(false)]
-        [Option("obj-index-max-size", Required = false, HelpText = "Max size of object store hash index in bytes (rounds down to power of 2)")]
-        public string ObjectStoreIndexMaxSize { get; set; }
-
-        [PercentageValidation]
-        [Option("obj-mutable-percent", Required = false, HelpText = "Percentage of object store log memory that is kept mutable")]
-        public int ObjectStoreMutablePercent { get; set; }
-
-        [OptionValidation]
-        [Option("obj-readcache", Required = false, HelpText = "Enables object store read cache for faster access to on-disk records.")]
-        public bool? EnableObjectStoreReadCache { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-readcache-log-memory", Required = false, HelpText = "Total object store read cache log memory used in bytes (rounds down to power of 2)")]
-        public string ObjectStoreReadCacheLogMemorySize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-readcache-page", Required = false, HelpText = "Size of each object store read cache page in bytes (rounds down to power of 2)")]
-        public string ObjectStoreReadCachePageSize { get; set; }
-
-        [MemorySizeValidation(false)]
-        [Option("obj-readcache-heap-memory", Required = false, HelpText = "Object store read cache heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
-        public string ObjectStoreReadCacheHeapMemorySize { get; set; }
+        [Option("readcache-heap-memory", Required = false, HelpText = "Read cache heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
+        public string ReadCacheHeapMemorySize { get; set; }
 
         [OptionValidation]
         [Option("storage-tier", Required = false, HelpText = "Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory.")]
@@ -140,10 +104,6 @@ namespace Garnet
         [OptionValidation]
         [Option("copy-reads-to-tail", Required = false, HelpText = "When records are read from the main store's in-memory immutable region or storage device, copy them to the tail of the log.")]
         public bool? CopyReadsToTail { get; set; }
-
-        [OptionValidation]
-        [Option("obj-copy-reads-to-tail", Required = false, HelpText = "When records are read from the object store's in-memory immutable region or storage device, copy them to the tail of the log.")]
-        public bool? ObjectStoreCopyReadsToTail { get; set; }
 
         [LogDirValidation(false, false)]
         [Option('l', "logdir", Required = false, HelpText = "Storage directory for tiered records (hybrid log), if storage tiering (--storage) is enabled. Uses current directory if unspecified.")]
@@ -272,10 +232,6 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-max-segments", Required = false, HelpText = "Number of log segments created on disk before compaction triggers.")]
         public int CompactionMaxSegments { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("obj-compaction-max-segments", Required = false, HelpText = "Number of object store log segments created on disk before compaction triggers.")]
-        public int ObjectStoreCompactionMaxSegments { get; set; }
 
         [OptionValidation]
         [Option("lua", Required = false, HelpText = "Enable Lua scripts on server.")]
@@ -518,8 +474,7 @@ namespace Garnet
 
         [DoubleRangeValidation(0, 1)]
         [Option("reviv-fraction", Required = false,
-            HelpText = "#: Fraction of mutable in-memory log space, from the highest log address down to the read-only region, that is eligible for revivification." +
-                       "        Applies to both main and object store.")]
+            HelpText = "#: Fraction of mutable in-memory log space, from the highest log address down to the read-only region, that is eligible for revivification.")]
         public double RevivifiableFraction { get; set; }
 
         [OptionValidation]
@@ -545,14 +500,8 @@ namespace Garnet
         [OptionValidation]
         [Option("reviv-in-chain-only", Required = false,
             HelpText = "Revivify tombstoned records in tag chains only (do not use free list)." +
-                       "    Cannot be used with reviv-bin-record-sizes or reviv-bin-record-counts. Propagates to object store by default.")]
+                       "    Cannot be used with reviv-bin-record-sizes or reviv-bin-record-counts.")]
         public bool? RevivInChainOnly { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("reviv-obj-bin-record-count", Required = false,
-            HelpText = "Number of records in the single free record bin for the object store. The Object store has only a single bin, unlike the main store." +
-                       "        Ignored unless the main store is using the free record list.")]
-        public int RevivObjBinRecordCount { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("object-scan-count-limit", Required = false, HelpText = "Limit of items to return in one iteration of *SCAN command")]
@@ -823,20 +772,10 @@ namespace Garnet
                 EnableReadCache = EnableReadCache.GetValueOrDefault(),
                 ReadCacheMemorySize = ReadCacheMemorySize,
                 ReadCachePageSize = ReadCachePageSize,
-                ObjectStoreHeapMemorySize = ObjectStoreHeapMemorySize,
-                ObjectStoreLogMemorySize = ObjectStoreLogMemorySize,
-                ObjectStorePageSize = ObjectStorePageSize,
-                ObjectStoreSegmentSize = ObjectStoreSegmentSize,
-                ObjectStoreIndexSize = ObjectStoreIndexSize,
-                ObjectStoreIndexMaxSize = ObjectStoreIndexMaxSize,
-                ObjectStoreMutablePercent = ObjectStoreMutablePercent,
-                EnableObjectStoreReadCache = EnableObjectStoreReadCache.GetValueOrDefault(),
-                ObjectStoreReadCachePageSize = ObjectStoreReadCachePageSize,
-                ObjectStoreReadCacheLogMemorySize = ObjectStoreReadCacheLogMemorySize,
-                ObjectStoreReadCacheHeapMemorySize = ObjectStoreReadCacheHeapMemorySize,
+                HeapMemorySize = HeapMemorySize,
+                ReadCacheHeapMemorySize = ReadCacheHeapMemorySize,
                 EnableStorageTier = enableStorageTier,
                 CopyReadsToTail = CopyReadsToTail.GetValueOrDefault(),
-                ObjectStoreCopyReadsToTail = ObjectStoreCopyReadsToTail.GetValueOrDefault(),
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
                 Recover = Recover.GetValueOrDefault(),
@@ -863,7 +802,6 @@ namespace Garnet
                 CompactionType = CompactionType,
                 CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),
                 CompactionMaxSegments = CompactionMaxSegments,
-                ObjectStoreCompactionMaxSegments = ObjectStoreCompactionMaxSegments,
                 GossipSamplePercent = GossipSamplePercent,
                 GossipDelay = GossipDelay,
                 ClusterTimeout = ClusterTimeout,
@@ -920,7 +858,6 @@ namespace Garnet
                 RevivBinBestFitScanLimit = RevivBinBestFitScanLimit,
                 RevivNumberOfBinsToSearch = RevivNumberOfBinsToSearch,
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
-                RevivObjBinRecordCount = RevivObjBinRecordCount,
                 EnableDebugCommand = EnableDebugCommand,
                 EnableModuleCommand = EnableModuleCommand,
                 ExtensionBinPaths = FileUtils.ConvertToAbsolutePaths(ExtensionBinPaths),

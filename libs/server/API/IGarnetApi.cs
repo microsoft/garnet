@@ -61,8 +61,8 @@ namespace Garnet.server
         /// <summary>
         /// SET
         /// </summary>
-        GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, StoreType storeType)
-            where TSourceLogRecord : ISourceLogRecord;
+        GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
+
         #endregion
 
         #region SETEX
@@ -149,13 +149,23 @@ namespace Garnet.server
         #endregion
 
         #region EXISTS
+
         /// <summary>
         /// EXISTS
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="storeType"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus EXISTS(PinnedSpanByte key, StoreType storeType = StoreType.All);
+        GarnetStatus EXISTS(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
+
+        /// <summary>
+        /// EXISTS
+        /// </summary>
+        /// <param name="key">Key</param>
+        /// <returns></returns>
+        GarnetStatus EXISTS(PinnedSpanByte key);
+
         #endregion
 
         #region EXPIRE
@@ -165,20 +175,18 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiryMs">Expiry in milliseconds, formatted as ASCII digits</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
-        /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
 
         /// <summary>
         /// Set a timeout on key using a timeSpan in seconds
         /// </summary>
         /// <param name="key">Key</param>
         /// <param name="input"></param>
-        /// <param name="timeoutSet">Whether timeout was set by the call</param>
-        /// <param name="storeType">Store type: main, object, or both</param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(PinnedSpanByte key, ref RawStringInput input, out bool timeoutSet, StoreType storeType = StoreType.All);
+        GarnetStatus EXPIRE(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
 
         /// <summary>
         /// Set a timeout on key using a timeSpan in seconds
@@ -186,10 +194,9 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiry">Expiry in TimeSpan</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
-        /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
         #endregion
 
         #region EXPIREAT
@@ -200,10 +207,9 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiryTimestamp">Absolute Unix timestamp in seconds</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
-        /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
 
         /// <summary>
         /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970) in milliseconds
@@ -211,21 +217,22 @@ namespace Garnet.server
         /// <param name="key">Key</param>
         /// <param name="expiryTimestamp">Absolute Unix timestamp in milliseconds</param>
         /// <param name="timeoutSet">Whether timeout was set by the call</param>
-        /// <param name="storeType">Store type: main, object, or both</param>
         /// <param name="expireOption">Expire option</param>
         /// <returns></returns>
-        GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None);
+        GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption = ExpireOption.None);
 
         #endregion
 
         #region PERSIST
+
         /// <summary>
         /// PERSIST
         /// </summary>
         /// <param name="key">Key</param>
-        /// <param name="storeType">Store type: main, object, or both</param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus PERSIST(PinnedSpanByte key, StoreType storeType = StoreType.All);
+        GarnetStatus PERSIST(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
         #endregion
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
@@ -276,13 +283,19 @@ namespace Garnet.server
         #endregion
 
         #region DELETE
+
         /// <summary>
-        /// DELETE
+        /// Deletes a key from the unified store
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="storeType"></param>
         /// <returns></returns>
-        GarnetStatus DELETE(PinnedSpanByte key, StoreType storeType = StoreType.All);
+        GarnetStatus DELETE(PinnedSpanByte key);
+
+        /// <summary>
+        /// Deletes a key if it is in memory and expired
+        /// </summary>
+        GarnetStatus DELIFEXPIM(PinnedSpanByte key);
+
         #endregion
 
         #region GETDEL
@@ -302,9 +315,10 @@ namespace Garnet.server
         /// string, list, set, zset, and hash.
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="typeName"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GetKeyType(PinnedSpanByte key, out string typeName);
+        GarnetStatus TYPE(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
 
         #endregion
 
@@ -314,10 +328,10 @@ namespace Garnet.server
         ///  Gets the number of bytes that a key and its value require to be stored in RAM.
         /// </summary>
         /// <param name="key">Name of the key or object to get the memory usage</param>
-        /// <param name="memoryUsage">The value in bytes the key or object is using</param>
-        /// <param name="samples">Number of sampled nested values</param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <returns>GarnetStatus</returns>
-        GarnetStatus MemoryUsageForKey(PinnedSpanByte key, out long memoryUsage, int samples = 0);
+        GarnetStatus MEMORYUSAGE(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
 
         #endregion
 
@@ -386,7 +400,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemove(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetRemove(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Removes all elements in the sorted set between the
@@ -396,7 +410,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetRemoveRangeByLex(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetRemoveRangeByLex(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Removes and returns the first element from the sorted set stored at key,
@@ -637,7 +651,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetAdd(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SetAdd(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Removes the specified member from the set.
@@ -670,7 +684,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetRemove(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SetRemove(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Removes and returns one random member from the set at key.
@@ -769,13 +783,13 @@ namespace Garnet.server
         GarnetStatus ListPosition(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
-        /// ListLeftPush ArgSlice version with ObjectOutputHeader output
+        /// ListLeftPush ArgSlice version with OutputHeader output
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListLeftPush(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus ListLeftPush(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// ListLeftPush ArgSlice version, one element
@@ -798,13 +812,13 @@ namespace Garnet.server
         GarnetStatus ListLeftPush(PinnedSpanByte key, PinnedSpanByte[] elements, out int count, bool whenExists = false);
 
         /// <summary>
-        /// ListRightPush ArgSlice version with ObjectOutputHeader output
+        /// ListRightPush ArgSlice version with OutputHeader output
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        public GarnetStatus ListRightPush(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        public GarnetStatus ListRightPush(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// ListRightPush ArgSlice version, one element
@@ -941,7 +955,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListInsert(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus ListInsert(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Removes the first count occurrences of elements equal to element from the list.
@@ -950,7 +964,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListRemove(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus ListRemove(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Sets the list element at index to element.
@@ -995,7 +1009,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashSet(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus HashSet(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Set only if field does not yet exist. If key does not exist, a new key holding a hash is created.
@@ -1034,7 +1048,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashDelete(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus HashDelete(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Increments the number stored at field in the hash key by increment parameter.
@@ -1043,7 +1057,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashIncrement(PinnedSpanByte key, PinnedSpanByte input, out ObjectOutputHeader output);
+        GarnetStatus HashIncrement(PinnedSpanByte key, PinnedSpanByte input, out OutputHeader output);
 
         /// <summary>
         /// Increments the number stored at field representing a floating point value
@@ -1241,19 +1255,10 @@ namespace Garnet.server
         /// Returns the remaining time to live in seconds of a key that has a timeout.
         /// </summary>
         /// <param name="key">The key to return the remaining time to live in the store</param>
-        /// <param name="storeType">The store type to operate on.</param>
+        /// <param name="input"></param>
         /// <param name="output">The span to allocate the output of the operation.</param>
         /// <returns></returns>
-        GarnetStatus TTL(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output);
-
-        /// <summary>
-        /// Returns the remaining time to live in milliseconds of a key that has a timeout.
-        /// </summary>
-        /// <param name="key">The key to return the remaining time to live in the store.</param>
-        /// <param name="storeType">The store type to operate on.</param>
-        /// <param name="output">The span to allocate the output of the operation.</param>
-        /// <returns></returns>
-        GarnetStatus PTTL(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output);
+        GarnetStatus TTL(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
 
         #endregion
 
@@ -1263,19 +1268,10 @@ namespace Garnet.server
         /// Returns the absolute Unix timestamp (since January 1, 1970) in seconds at which the given key will expire.
         /// </summary>
         /// <param name="key">The key to get the expiration time for.</param>
-        /// <param name="storeType">The type of store to retrieve the key from.</param>
+        /// <param name="input"></param>
         /// <param name="output">The output containing the expiration time.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus EXPIRETIME(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output);
-
-        /// <summary>
-        /// Returns the absolute Unix timestamp (since January 1, 1970) in milliseconds at which the given key will expire.
-        /// </summary>
-        /// <param name="key">The key to get the expiration time for.</param>
-        /// <param name="storeType">The type of store to retrieve the key from.</param>
-        /// <param name="output">The output containing the expiration time.</param>
-        /// <returns>The status of the operation.</returns>
-        GarnetStatus PEXPIRETIME(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output);
+        GarnetStatus EXPIRETIME(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
 
         #endregion
 
@@ -1296,7 +1292,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Returns the specified range of elements in the sorted set stored at key.
@@ -1357,7 +1353,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// ZRANK: Returns the rank of member in the sorted set, the scores in the sorted set are ordered from low to high
@@ -1521,7 +1517,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Gets the specified elements of the list stored at key.
@@ -1560,7 +1556,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// SMEMBERS key
@@ -1716,7 +1712,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Returns the number of fields contained in the hash Key.
@@ -1725,7 +1721,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Returns if field is an existing field in the hash stored at key.
@@ -1743,7 +1739,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output);
+        GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
         /// Returns count random fields from the hash value.
@@ -1927,7 +1923,7 @@ namespace Garnet.server
         public bool DbScan(PinnedSpanByte patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> Keys, long count = 10, ReadOnlySpan<byte> type = default);
 
         /// <summary>
-        /// Iterate the contents of the main store
+        /// Iterate the contents of the store
         /// </summary>
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
@@ -1936,33 +1932,14 @@ namespace Garnet.server
         /// <param name="cursor"></param>
         /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
+        public bool IterateStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions;
 
         /// <summary>
-        /// Iterate the contents of the main store (pull based)
+        /// Iterate the contents of the store (pull based)
         /// </summary>
         /// <returns></returns>
-        public ITsavoriteScanIterator IterateMainStore();
-
-        /// <summary>
-        /// Iterate the contents of the object store
-        /// </summary>
-        /// <typeparam name="TScanFunctions"></typeparam>
-        /// <param name="scanFunctions"></param>
-        /// <param name="untilAddress"></param>
-        /// <param name="maxAddress"></param>
-        /// <param name="cursor"></param>
-        /// <param name="includeTombstones"></param>
-        /// <returns></returns>
-        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
-            where TScanFunctions : IScanIteratorFunctions;
-
-        /// <summary>
-        /// Iterate the contents of the object store (pull based)
-        /// </summary>
-        /// <returns></returns>
-        public ITsavoriteScanIterator IterateObjectStore();
+        public ITsavoriteScanIterator IterateStore();
 
         #endregion
 

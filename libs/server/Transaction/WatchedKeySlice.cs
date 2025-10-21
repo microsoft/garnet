@@ -19,6 +19,6 @@ namespace Garnet.server
         public long hash;
 
         [FieldOffset(28)]
-        public StoreType type;
+        public bool isWatched;
     }
 }

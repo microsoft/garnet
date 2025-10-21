@@ -21,7 +21,6 @@ namespace Garnet.client
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
     {
         IncrementalSendType ist;
-        bool isMainStore;
         byte* curr, head;
         int recordCount;
         TaskCompletionSource<string> currTcsIterationTask = null;
@@ -122,7 +121,7 @@ namespace Garnet.client
         /// <summary>
         /// Try to write the span for the entire record directly to the client buffer
         /// </summary>
-        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, out Task<string> task)
+        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, bool isObject, out Task<string> task)
         {
             // We include space for newline at the end, to be added before sending
             var totalLen = recordSpan.TotalSize() + 2;
@@ -159,9 +158,8 @@ namespace Garnet.client
             var duration = TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog);
             if (completed || lastLog == 0 || duration >= iterationProgressFreq)
             {
-                logger?.LogTrace("[{op}]: store:({storeType}) totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)",
+                logger?.LogTrace("[{op}]: totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)",
                     completed ? "COMPLETED" : ist,
-                    isMainStore ? "MAIN STORE" : "OBJECT STORE",
                     totalKeyCount.ToString("N0"),
                     ((long)((double)totalPayloadSize / 1024)).ToString("N0"));
                 lastLog = Stopwatch.GetTimestamp();

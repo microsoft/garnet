@@ -42,7 +42,7 @@ namespace Tsavorite.core
                 long beginAddress, long endAddress, LightEpoch epoch,
                 DiskScanBufferingMode diskScanBufferingMode, InMemoryScanBufferingMode memScanBufferingMode = InMemoryScanBufferingMode.NoBuffering,
                 bool includeClosedRecords = false, bool assumeInMemory = false, ILogger logger = null)
-            : base(readBuffers: default, beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress, 
+            : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress,
                 diskScanBufferingMode, memScanBufferingMode, includeClosedRecords, epoch, hlogBase.LogPageSizeBits, logger: logger)
         {
             this.store = store;
@@ -57,7 +57,7 @@ namespace Tsavorite.core
         /// </summary>
         internal SpanByteScanIterator(TsavoriteKV<TStoreFunctions, TAllocator> store, AllocatorBase<TStoreFunctions, TAllocator> hlogBase,
                 long beginAddress, LightEpoch epoch, ILogger logger = null)
-            : base(readBuffers: default, beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, hlogBase.GetTailAddress(),
+            : base(beginAddress == 0 ? hlogBase.GetFirstValidLogicalAddressOnPage(0) : beginAddress, hlogBase.GetTailAddress(),
                 DiskScanBufferingMode.SinglePageBuffering, InMemoryScanBufferingMode.NoBuffering, false, epoch, hlogBase.LogPageSizeBits, logger: logger)
         {
             this.store = store;
@@ -254,7 +254,7 @@ namespace Tsavorite.core
                     {
                         // We advance a record at a time in the IO frame so set the diskLogRecord to the current frame offset and advance nextAddress.
                         // We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail (SpanByteAllocator has no objects).
-                        diskLogRecord = new(new LogRecord(physicalAddress, hlogBase._wrapper.TranssientObjectIdMap),
+                        diskLogRecord = new(new LogRecord(physicalAddress, hlogBase._wrapper.TransientObjectIdMap),
                                             obj => store.storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
                     }
                 }
@@ -382,6 +382,12 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordFieldInfo GetRecordFieldInfo() => diskLogRecord.GetRecordFieldInfo();
+
+        /// <inheritdoc/>
+        public (int actualSize, int allocatedSize) GetInlineRecordSizes() => diskLogRecord.GetInlineRecordSizes();
+
+        /// <inheritdoc/>
+        public (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects() => diskLogRecord.GetInlineRecordSizesWithUnreadObjects();
         #endregion // ISourceLogRecord
 
         /// <summary>

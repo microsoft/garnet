@@ -19,30 +19,20 @@ namespace Garnet.server
         {
             var type = input.header.type;
 
-            switch (type)
-            {
-                case GarnetObjectType.Expire:
-                case GarnetObjectType.Persist:
-                case GarnetObjectType.DelIfExpIm:
-                    return false;
-                default:
-                    if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
-                        return GarnetObject.NeedToCreate(input.header);
-                    else
-                    {
-                        var customObjectCommand = GetCustomObjectCommand(ref input, type);
+            if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
+                return GarnetObject.NeedToCreate(input.header);
 
-                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-                        try
-                        {
-                            var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref writer);
-                            return ret;
-                        }
-                        finally
-                        {
-                            writer.Dispose();
-                        }
-                    }
+            var customObjectCommand = GetCustomObjectCommand(ref input, type);
+
+            var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+            try
+            {
+                var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref writer);
+                return ret;
+            }
+            finally
+            {
+                writer.Dispose();
             }
         }
 
@@ -60,10 +50,6 @@ namespace Garnet.server
                 _ = logRecord.TrySetValueObject(value, in sizeInfo);
                 return true;
             }
-            else
-                Debug.Assert(type != GarnetObjectType.Expire && type != GarnetObjectType.Persist, "Expire and Persist commands should have been handled already by NeedInitialUpdate.");
-
-            Debug.Assert(type is not GarnetObjectType.Expire and not GarnetObjectType.PExpire and not GarnetObjectType.Persist, "Expire and Persist commands should have returned false from NeedInitialUpdate.");
 
             var customObjectCommand = GetCustomObjectCommand(ref input, type);
             value = functionsState.GetCustomObjectFactory((byte)type).Create((byte)type);
@@ -99,6 +85,13 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
+            if (!logRecord.Info.ValueIsObject)
+            {
+                rmwInfo.Action = RMWAction.WrongType;
+                output.OutputFlags |= OutputFlags.WrongType;
+                return true;
+            }
+
             if (InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out long sizeChange))
             {
                 if (!logRecord.Info.Modified)
@@ -123,87 +116,58 @@ namespace Garnet.server
                 // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                 functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Expired);
                 logRecord.ClearValueIfHeap(obj => { });
-                rmwInfo.Action = input.header.type == GarnetObjectType.DelIfExpIm ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
+                rmwInfo.Action = RMWAction.ExpireAndResume;
                 return false;
             }
 
-            switch (input.header.type)
+            if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                case GarnetObjectType.Expire:
-                    var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
-                    if (!EvaluateObjectExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, ref output))
-                        return false;
-                    return true;    // The options may or may not produce a result that matches up with what sizeInfo has, so return rather than drop down to AssertOptionals
-                case GarnetObjectType.Persist:
-                    if (logRecord.Info.HasExpiration)
-                    {
-                        logRecord.RemoveExpiration();
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
-                    }
-                    else
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
+                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out sizeChange);
+                if (output.HasWrongType)
                     return true;
-                case GarnetObjectType.DelIfExpIm:
-                    return true;
-                default:
-                    if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
-                    {
-                        var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out sizeChange);
-                        if (output.HasWrongType)
-                            return true;
-                        if (output.HasRemoveKey)
-                        {
-                            functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
+                if (output.HasRemoveKey)
+                {
+                    functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
 
-                            // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
-                            functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                            logRecord.ClearValueIfHeap(obj => { });
-                            rmwInfo.Action = RMWAction.ExpireAndStop;
-                            return false;
-                        }
+                    // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
+                    functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
+                    logRecord.ClearValueIfHeap(obj => { });
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    return false;
+                }
 
-                        sizeInfo.AssertOptionals(logRecord.Info);
-                        return operateSuccessful;
-                    }
-                    else
-                    {
-                        var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
-                        if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
-                        {
-                            output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
-                            return true;
-                        }
-
-                        var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-                        try
-                        {
-                            var result = customObjectCommand.Updater(logRecord.Key, ref input, garnetValueObject, ref writer, ref rmwInfo);
-                            if (!result)
-                                return false;
-                            break;
-                        }
-                        finally
-                        {
-                            writer.Dispose();
-                        }
-                    }
+                sizeInfo.AssertOptionals(logRecord.Info);
+                return operateSuccessful;
             }
+
+            var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
+            if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
+            {
+                output.OutputFlags |= OutputFlags.WrongType;
+                return true;
+            }
+
+            var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+            var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+            try
+            {
+                var result = customObjectCommand.Updater(logRecord.Key, ref input, garnetValueObject, ref writer, ref rmwInfo);
+                if (!result)
+                    return false;
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+
             sizeInfo.AssertOptionals(logRecord.Info);
             return true;
         }
 
         /// <inheritdoc />
-        public bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            if (input.header.type == GarnetObjectType.DelIfExpIm && srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
-            {
-                rmwInfo.Action = RMWAction.ExpireAndStop;
-                return false;
-            }
-            return true;
-        }
+        public bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ObjectInput input,
+            ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
+            => true;
 
         /// <inheritdoc />
         public bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
@@ -237,67 +201,40 @@ namespace Garnet.server
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
-            switch (input.header.type)
+            if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                case GarnetObjectType.Expire:
-                    var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
-
-                    // Expire will have allocated space for the expiration, so copy it over and do the "in-place" logic to replace it in the new record
-                    if (srcLogRecord.Info.HasExpiration)
-                        dstLogRecord.TrySetExpiration(srcLogRecord.Expiration);
-                    if (!EvaluateObjectExpireInPlace(ref dstLogRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, ref output))
-                        return false;
-                    break;
-
-                case GarnetObjectType.Persist:
-                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
-                        return false;
-                    if (srcLogRecord.Info.HasExpiration)
-                    {
-                        dstLogRecord.RemoveExpiration();
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
-                    }
-                    else
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
-                    break;
-                case GarnetObjectType.DelIfExpIm:
-                    break;
-                default:
-                    if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
-                    {
-                        value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
-                        if (output.HasWrongType)
-                            return true;
-                        if (output.HasRemoveKey)
-                        {
-                            rmwInfo.Action = RMWAction.ExpireAndStop;
-                            return false;
-                        }
-                        break;
-                    }
-                    else
-                    {
-                        // TODO: Update to invoke CopyUpdater of custom object command without creating a new object
-                        // using Clone. Currently, expire and persist commands are performed on the new copy of the object.
-                        if (IncorrectObjectType(ref input, value, ref output.SpanByteAndMemory))
-                        {
-                            output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
-                            return true;
-                        }
-
-                        var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-                        try
-                        {
-                            var result = customObjectCommand.Updater(srcLogRecord.Key, ref input, value, ref writer, ref rmwInfo);
-                            return result;
-                        }
-                        finally
-                        {
-                            writer.Dispose();
-                        }
-                    }
+                value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+                if (output.HasWrongType)
+                    return true;
+                if (output.HasRemoveKey)
+                {
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    return false;
+                }
             }
+            else
+            {
+                // TODO: Update to invoke CopyUpdater of custom object command without creating a new object
+                // using Clone. Currently, expire and persist commands are performed on the new copy of the object.
+                if (IncorrectObjectType(ref input, value, ref output.SpanByteAndMemory))
+                {
+                    output.OutputFlags |= OutputFlags.WrongType;
+                    return true;
+                }
+
+                var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                try
+                {
+                    var result = customObjectCommand.Updater(srcLogRecord.Key, ref input, value, ref writer, ref rmwInfo);
+                    return result;
+                }
+                finally
+                {
+                    writer.Dispose();
+                }
+            }
+
             sizeInfo.AssertOptionals(dstLogRecord.Info);
 
             // If oldValue has been set to null, subtract its size from the tracked heap size

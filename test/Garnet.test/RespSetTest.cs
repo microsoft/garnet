@@ -90,7 +90,7 @@ namespace Garnet.test
 
             var response = db.Execute("MEMORY", "USAGE", "user1:set");
             var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 272;
+            var expectedResponse = 312;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -183,7 +183,7 @@ namespace Garnet.test
 
             var memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
             var actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            var expectedResponse = 424;
+            var expectedResponse = 464;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var response = db.SetRemove(key, new RedisValue("ItemOne"));
@@ -191,7 +191,7 @@ namespace Garnet.test
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
             actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 352;
+            expectedResponse = 392;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             response = db.SetRemove(key, new RedisValue("ItemFive"));
@@ -199,7 +199,7 @@ namespace Garnet.test
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
             actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 352;
+            expectedResponse = 392;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var longResponse = db.SetRemove(key, ["ItemTwo", "ItemThree"]);
@@ -207,7 +207,7 @@ namespace Garnet.test
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
             actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 200;
+            expectedResponse = 240;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var members = db.SetMembers(key);

@@ -23,7 +23,7 @@ namespace Tsavorite.core
         internal readonly TAllocator hlog;
         internal readonly AllocatorBase<TStoreFunctions, TAllocator> hlogBase;
         internal readonly TAllocator readcache;
-        internal readonly AllocatorBase<TStoreFunctions, TAllocator> readCacheBase;
+        internal readonly AllocatorBase<TStoreFunctions, TAllocator> readcacheBase;
 
         internal readonly TStoreFunctions storeFunctions;
 
@@ -157,8 +157,8 @@ namespace Tsavorite.core
                 allocatorSettings.logger = kvSettings.logger ?? kvSettings.loggerFactory?.CreateLogger($"{typeof(TAllocator).Name} ReadCache");
                 allocatorSettings.evictCallback = ReadCacheEvict;
                 readcache = allocatorFactory(allocatorSettings, storeFunctions);
-                readCacheBase = readcache.GetBase<TAllocator>();
-                readCacheBase.Initialize();
+                readcacheBase = readcache.GetBase<TAllocator>();
+                readcacheBase.Initialize();
                 ReadCache = new(this, readcache);
             }
 
@@ -242,6 +242,7 @@ namespace Tsavorite.core
         /// Initiate index-only checkpoint
         /// </summary>
         /// <param name="token">Checkpoint token</param>
+        /// <param name="cancellationToken">Caller's cancellation token</param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TryInitiateIndexCheckpoint(out Guid token, CancellationToken cancellationToken = default)
         {
@@ -277,6 +278,8 @@ namespace Tsavorite.core
         /// <param name="token">Checkpoint token</param>
         /// <param name="checkpointType">Checkpoint type</param>
         /// <param name="tryIncremental">For snapshot, try to store as incremental delta over last snapshot</param>
+        /// <param name="streamingSnapshotIteratorFunctions">Iterator functions</param>
+        /// <param name="cancellationToken">Caller's cancellation token</param>
         /// <returns>Whether we could initiate the checkpoint. Use CompleteCheckpointAsync to wait completion.</returns>
         public bool TryInitiateHybridLogCheckpoint(out Guid token, CheckpointType checkpointType, bool tryIncremental = false,
             IStreamingSnapshotIteratorFunctions streamingSnapshotIteratorFunctions = null, CancellationToken cancellationToken = default)
@@ -406,9 +409,7 @@ namespace Tsavorite.core
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <returns>Version we actually recovered to</returns>
         public long Recover(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
-        {
-            return InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, -1);
-        }
+            => InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, -1);
 
         /// <summary>
         /// Asynchronously recover from specific token (blocking operation)
@@ -495,7 +496,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -526,7 +527,7 @@ namespace Tsavorite.core
                 internalStatus = InternalReadAtAddress(address, key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -544,7 +545,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue, srcObjectValue: null, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -562,7 +563,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -580,7 +581,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, in inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -596,7 +597,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -635,7 +636,7 @@ namespace Tsavorite.core
         {
             Free();
             hlogBase.Dispose();
-            readCacheBase?.Dispose();
+            readcacheBase?.Dispose();
             LockTable.Dispose();
             _lastSnapshotCheckpoint.Dispose();
             if (disposeCheckpointManager)
@@ -706,7 +707,7 @@ namespace Tsavorite.core
                         if (x.Tentative)
                             ++total_entries_with_tentative_bit_set;
 
-                        if (((!x.IsReadCache) && (x.Address >= beginAddress)) || (x.IsReadCache && (x.Address >= readCacheBase.HeadAddress)))
+                        if (((!x.IsReadCache) && (x.Address >= beginAddress)) || (x.IsReadCache && (x.Address >= readcacheBase.HeadAddress)))
                         {
                             if (tags.Contains(x.Tag) && !x.Tentative)
                                 throw new TsavoriteException("Duplicate tag found in index");

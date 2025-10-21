@@ -8,8 +8,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     sealed partial class StorageSession : IDisposable
     {
@@ -24,7 +24,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus GeoAdd<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+          where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
           => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
@@ -39,7 +39,7 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <returns></returns>
         public GarnetStatus GeoCommands<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+          where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
@@ -61,7 +61,7 @@ namespace Garnet.server
                                                       ref ObjectInput input,
                                                       ref SpanByteAndMemory output,
                                                       ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+          where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var createTransaction = false;
 
@@ -69,7 +69,8 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(key, true, LockType.Shared);
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object);
+                txnManager.SaveKeyEntryToLock(key, LockType.Shared);
                 txnManager.Run(true);
             }
 
@@ -118,7 +119,7 @@ namespace Garnet.server
                                                                   ref ObjectInput input,
                                                                   ref SpanByteAndMemory output,
                                                                   ref TObjectContext objectContext)
-          where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+          where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var createTransaction = false;
 
@@ -126,11 +127,13 @@ namespace Garnet.server
             {
                 Debug.Assert(txnManager.state == TxnState.None);
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(destination, true, LockType.Exclusive);
-                txnManager.SaveKeyEntryToLock(key, true, LockType.Shared);
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object | TransactionStoreTypes.Unified);
+                txnManager.SaveKeyEntryToLock(destination, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(key, LockType.Shared);
                 _ = txnManager.Run(true);
             }
-            var objectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var geoObjectStoreTransactionalContext = txnManager.ObjectStoreTransactionalContext;
+            var geoUnifiedStoreTransactionalContext = txnManager.UnifiedStoreTransactionalContext;
 
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
 
@@ -138,7 +141,7 @@ namespace Garnet.server
             {
                 SpanByteAndMemory searchOutMem = default;
 
-                var status = GET(key, out var firstObj, ref objectStoreTransactionalContext);
+                var status = GET(key, out var firstObj, ref geoObjectStoreTransactionalContext);
                 if (status == GarnetStatus.OK)
                 {
                     if (firstObj.GarnetObject is SortedSetObject firstSortedSet)
@@ -155,7 +158,7 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     // Expire/Delete the destination key if the source key is not found
-                    _ = EXPIRE(destination, TimeSpan.Zero, out _, StoreType.Object, ExpireOption.None, ref transactionalContext, ref objectStoreTransactionalContext);
+                    _ = EXPIRE(destination, TimeSpan.Zero, out _, ExpireOption.None, ref geoUnifiedStoreTransactionalContext);
                     writer.WriteInt32(0);
                     return GarnetStatus.OK;
                 }
@@ -175,7 +178,7 @@ namespace Garnet.server
                         return GarnetStatus.OK;
                     }
 
-                    _ = objectStoreTransactionalContext.Delete(destination.ReadOnlySpan);
+                    _ = geoObjectStoreTransactionalContext.Delete(destination.ReadOnlySpan);
 
                     _ = RespReadUtils.TryReadUnsignedArrayLength(out var foundItems, ref currOutPtr, endOutPtr);
 
@@ -201,7 +204,7 @@ namespace Garnet.server
                     }, ref parseState);
 
                     var zAddOutput = new GarnetObjectStoreOutput();
-                    RMWObjectStoreOperationWithOutput(destination, ref zAddInput, ref objectStoreTransactionalContext, ref zAddOutput);
+                    RMWObjectStoreOperationWithOutput(destination, ref zAddInput, ref geoObjectStoreTransactionalContext, ref zAddOutput);
 
                     writer.WriteInt32(foundItems);
                 }

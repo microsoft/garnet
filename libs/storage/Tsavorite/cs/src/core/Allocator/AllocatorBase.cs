@@ -18,9 +18,28 @@ namespace Tsavorite.core
     using static VarbyteLengthUtility;
 
     /// <summary>
+    /// Type-free base class for hybrid log memory allocator. Contains utility methods that do not need type args and are not performance-critical
+    /// so can be virtual.
+    /// </summary>
+    public abstract class AllocatorBase
+    {
+        /// <summary>Create the circular buffers for <see cref="LogRecord"/> flushing to device. Only implemented by ObjectAllocator.</summary>
+        internal virtual CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger) => default;
+        /// <summary>Create the circular flush buffers for object dexerialization from device. Only implemented by ObjectAllocator.</summary>
+        internal virtual CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger) => default;
+        /// <summary>Create the circular flush buffers for object dexerialization from device. Only implemented by ObjectAllocator.</summary>
+        internal virtual CircularDiskReadBuffer CreateCircularReadBuffers() => default;
+
+        /// <summary>Get the ObjectLog tail position, if this is ObjectAllocator.</summary>
+        internal virtual ObjectLogFilePositionInfo GetObjectLogTail() => new();  // This marks it as "unset"
+        /// <summary>Set the ObjectLog tail position, if this is ObjectAllocator.</summary>
+        internal virtual void SetObjectLogTail(ObjectLogFilePositionInfo tail) { }
+    }
+
+    /// <summary>
     /// Base class for hybrid log memory allocator. Contains utility methods, some of which are not performance-critical so can be virtual.
     /// </summary>
-    public abstract unsafe partial class AllocatorBase<TStoreFunctions, TAllocator> : IDisposable
+    public abstract unsafe partial class AllocatorBase<TStoreFunctions, TAllocator> : AllocatorBase, IDisposable
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -40,6 +59,10 @@ namespace Tsavorite.core
 
         /// <summary>Sometimes it's useful to know this explicitly rather than rely on method overrides etc.</summary>
         internal bool IsObjectAllocator => transientObjectIdMap is not null;
+
+        /// <summary>If true, then this allocator has <see cref="PageHeader"/> as the first bytes on a page, so allocating a logical address
+        ///     in <see cref="HandlePageOverflow"/> must skip these bytes.</summary>
+        internal int pageHeaderSize;
 
         #region Protected size definitions
         /// <summary>Buffer size</summary>
@@ -1057,12 +1080,12 @@ namespace Tsavorite.core
 
             // Set up the TailPageOffset to account for the page header and then this allocation.
             localTailPageOffset.Page++;
-            localTailPageOffset.Offset = PageHeader.Size + numSlots;
+            localTailPageOffset.Offset = numSlots + pageHeaderSize;
             TailPageOffset = localTailPageOffset;
 
             // At this point the slot is allocated and we are not allowed to refresh epochs any longer.
             // Return the first logical address after the page header.
-            return GetFirstValidLogicalAddressOnPage(localTailPageOffset.Page);
+            return GetLogicalAddressOfStartOfPage(localTailPageOffset.Page) + pageHeaderSize;   // Same as GetFirstValidLogicalAddressOnPage(localTailPageOffset.Page) but faster
         }
 
         /// <summary>Try allocate, no thread spinning allowed</summary>
@@ -1229,6 +1252,9 @@ namespace Tsavorite.core
             var end = GetLogicalAddressOfStartOfPage(page + 1);
             if (OnEvictionObserver is not null)
                 MemoryPageScan(start, end, OnEvictionObserver);
+
+            // TODO: Currently we don't call DisposeRecord or DisposeValueObject on eviction; we defer to the OnEvictionObserver
+            // and do nothing if that is not supplied. Should we add our own observer if they don't supply one?
             _wrapper.FreePage(page);
         }
 
@@ -1546,21 +1572,22 @@ namespace Tsavorite.core
         }
 
         /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event</summary>
-        public void AsyncReadPagesForRecovery<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, DeviceIOCompletionCallback callback,
-                                TContext context, long devicePageOffset = 0, IDevice logDevice = null)
-            => AsyncReadPagesForRecovery(readBuffers, readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice);
+        public void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, DeviceIOCompletionCallback callback,
+                                TContext context, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null)
+            => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice, objectLogDevice);
 
         /// <summary>Read pages from specified device for recovery, returning the countdown event</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void AsyncReadPagesForRecovery<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, DeviceIOCompletionCallback callback,
+        private void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, DeviceIOCompletionCallback callback,
                                 TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null)
         {
             var usedDevice = device ?? this.device;
-            IDevice usedObjlogDevice = objectLogDevice;
 
             completed = new CountdownEvent(numPages);
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
             {
+                using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
+
                 var pageIndex = (int)(readPage % BufferSize);
                 if (!IsAllocated(pageIndex))
                     _wrapper.AllocatePage(pageIndex);
@@ -1573,7 +1600,8 @@ namespace Tsavorite.core
                     devicePageOffset = devicePageOffset,
                     context = context,
                     handle = completed,
-                    maxPtr = PageSize
+                    maxPtr = PageSize,
+                    isForRecovery = true
                 };
 
                 var offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
@@ -1587,6 +1615,8 @@ namespace Tsavorite.core
                     readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
                 }
 
+                // If device != null then it is the snapshot file device. In that case we may have an offset into it due to FlushedUntilAddress
+                // having advanced; see Recovery.cs:RecoverHybridLog.
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
@@ -1594,11 +1624,6 @@ namespace Tsavorite.core
                 ReadAsync(readBuffers, offsetInFile, (IntPtr)pagePointers[pageIndex], readLength, callback, asyncResult, usedDevice);
             }
         }
-
-        /// <summary>Create the circular buffers for <see cref="LogRecord"/> flushing to device. Only implemented by ObjectAllocator.</summary>
-        internal virtual CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger) => default;
-        /// <summary>Create the circular flush buffers for object dexerialization from device. Only implemented by ObjectAllocator.</summary>
-        internal virtual CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger) => default;
 
         /// <summary>
         /// Flush page range to disk
@@ -1731,6 +1756,7 @@ namespace Tsavorite.core
                     context = context,
                     count = 1,
                     partial = false,
+                    fromAddress = GetLogicalAddressOfStartOfPage(flushPage),
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
                     flushBuffers = flushBuffers
                 };

@@ -70,17 +70,10 @@ namespace Garnet.server
 
         #region TTL
         /// <inheritdoc />
-        public GarnetStatus TTL(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+        public GarnetStatus TTL(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
         {
-            garnetApi.WATCH(key, storeType);
-            return garnetApi.TTL(key, storeType, ref output);
-        }
-
-        /// <inheritdoc />
-        public GarnetStatus PTTL(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
-        {
-            garnetApi.WATCH(key, storeType);
-            return garnetApi.PTTL(key, storeType, ref output);
+            garnetApi.WATCH(key, StoreType.All);
+            return garnetApi.TTL(key, ref input, ref output);
         }
 
         #endregion
@@ -88,17 +81,10 @@ namespace Garnet.server
         #region EXPIRETIME
 
         /// <inheritdoc />
-        public GarnetStatus EXPIRETIME(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
+        public GarnetStatus EXPIRETIME(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
         {
-            garnetApi.WATCH(key, storeType);
-            return garnetApi.EXPIRETIME(key, storeType, ref output);
-        }
-
-        /// <inheritdoc />
-        public GarnetStatus PEXPIRETIME(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
-        {
-            garnetApi.WATCH(key, storeType);
-            return garnetApi.PEXPIRETIME(key, storeType, ref output);
+            garnetApi.WATCH(key, StoreType.All);
+            return garnetApi.EXPIRETIME(key, ref input, ref output);
         }
 
         #endregion
@@ -113,7 +99,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.SortedSetLength(key, ref input, out output);
@@ -134,7 +120,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.SortedSetLengthByValue(key, ref input, out output);
@@ -277,7 +263,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.ListLength(key, ref input, out output);
@@ -309,7 +295,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.SetLength(key, ref input, out output);
@@ -468,14 +454,14 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.HashStrLength(key, ref input, out output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.HashExists(key, ref input, out output);
@@ -496,7 +482,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, out ObjectOutputHeader output)
+        public GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.HashLength(key, ref input, out output);
@@ -611,22 +597,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
+        public bool IterateStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
-            => garnetApi.IterateMainStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
+            => garnetApi.IterateStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
-        public ITsavoriteScanIterator IterateMainStore()
-            => garnetApi.IterateMainStore();
-
-        /// <inheritdoc />
-        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
-            where TScanFunctions : IScanIteratorFunctions
-            => garnetApi.IterateObjectStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
-
-        /// <inheritdoc />
-        public ITsavoriteScanIterator IterateObjectStore()
-            => garnetApi.IterateObjectStore();
+        public ITsavoriteScanIterator IterateStore()
+            => garnetApi.IterateStore();
 
         #endregion
 

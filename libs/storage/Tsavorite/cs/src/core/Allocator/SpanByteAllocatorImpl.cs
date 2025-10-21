@@ -19,6 +19,7 @@ namespace Tsavorite.core
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
             freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
+            pageHeaderSize = PageHeader.Size;
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -69,7 +70,7 @@ namespace Tsavorite.core
         internal LogRecord CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new (physicalAddress);
+        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public RecordSizeInfo GetRMWCopyRecordSize<TSourceLogRecord, TInput, TVariableLengthInput>(in TSourceLogRecord srcLogRecord, ref TInput input, TVariableLengthInput varlenInput)

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -58,18 +59,18 @@ namespace Tsavorite.core
 #pragma warning restore IDE1006 // Naming Styles
 
         /// <summary>The minimum number of length metadata bytes--NumIndicatorBytes, 1 byte key length, 1 byte value length</summary>
-        public const int MinLengthMetadataBytes = 3;
+        public const int MinLengthMetadataBytes = NumIndicatorBytes + 2;
         /// <summary>The maximum number of length metadata bytes--NumIndicatorBytes, 4 bytes key length, 7 bytes value length</summary>
-        internal const int MaxLengthMetadataBytes = 12;
+        internal const int MaxLengthMetadataBytes = NumIndicatorBytes + 11;
         /// <summary>The number of indicator bytes; currently 1 for the length indicator.</summary>
         internal const int NumIndicatorBytes = 3;
 
         /// <summary>The maximum number of key length bytes in the in-memory single-long word representation. We use zero-based sizes and add 1, so
         /// 1 bit allows us to specify 1 or 2 bytes; we max at 2, or <see cref="LogSettings.kMaxInlineKeySize"/>. Anything over this becomes overflow.</summary>
-        internal const int MaxKeyLengthBytesInWord = 1;
+        internal const int MaxKeyLengthBytesInWord = 2;
         /// <summary>The maximum number of value length bytes in the in-memory single-long word representation. We use zero-based sizes and add 1, so
         /// 2 bits allows us to specify 1 to 4 bytes; we max at 3, or <see cref="LogSettings.kMaxInlineValueSize"/>. Anything over this becomes overflow.</summary>
-        internal const int MaxValueLengthBytesInWord = 2;
+        internal const int MaxValueLengthBytesInWord = 3;
 
         /// <summary>Read var-length bytes at the given location.</summary>
         /// <remark>This is compatible with little-endian 'long'; thus, the indicator byte is the low byte of the word, then keyLengthBytes, valueLengthBytes, keyLength, valueLength in ascending address order</remark>
@@ -206,6 +207,9 @@ namespace Tsavorite.core
             return (keyLength, indicatorAddress + NumIndicatorBytes + keyLengthBytes + valueLengthBytes);
         }
 
+        /// <summary>
+        /// Gets the value field information for an in-memory or on-disk with object size changes to value length restored (objects have been read).
+        /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static (long length, long dataAddress) GetValueFieldInfo(long indicatorAddress)
         {
@@ -222,6 +226,22 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Gets the value field information for an in-memory or on-disk with object size changes to value length not yet restored (objects have not yet been read).
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static (long length, long dataAddress) GetValueFieldInfoWithUnreadObjects(long indicatorAddress)
+        {
+            var (keyLengthBytes, valueLengthBytes, _ /*hasFiller*/) = DeconstructIndicatorByte(*(byte*)indicatorAddress);
+
+            // Move past the indicator byte; the next bytes are key length
+            var keyLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: 0, keyLengthBytes);
+
+            // We know the valueLength is the size of the object Id.
+            // Move past the key and value length bytes and the key data to the start of the value data
+            return (ObjectIdMap.ObjectIdSize, indicatorAddress + NumIndicatorBytes + keyLengthBytes + valueLengthBytes + keyLength);
+        }
+
+        /// <summary>
         /// Get the value data pointer, as well as the pointer to length, length, and number of length bytes. This is to support in-place updating.
         /// </summary>
         /// <returns>The value data pointer</returns>
@@ -229,7 +249,7 @@ namespace Tsavorite.core
         {
             var ptr = (byte*)indicatorAddress;
             var (keyLengthBytes, valueLengthBytes, _ /*hasFiller*/) = DeconstructIndicatorByte(*ptr);
-            ptr++;
+            ptr += NumIndicatorBytes;
 
             // Move past the indicator byte; the next bytes are key length
             var keyLength = ReadVarbyteLengthInWord(*(long*)indicatorAddress, precedingNumBytes: 0, keyLengthBytes);
@@ -294,10 +314,12 @@ namespace Tsavorite.core
         /// <returns></returns>
         internal static unsafe long ConstructInlineVarbyteLengthWord(int keyLengthBytes, int keyLength, int valueLengthBytes, int valueLength, long flagBits)
         {
+            if (valueLengthBytes > MaxValueLengthBytesInWord)
+                throw new ArgumentOutOfRangeException(nameof(valueLengthBytes), $"Value length bytes {valueLengthBytes} exceeds max {MaxValueLengthBytesInWord}");
             var word = (long)0;
             var ptr = (byte*)&word;
-            *ptr++ = (byte)(ConstructIndicatorByte(keyLengthBytes, valueLengthBytes) | flagBits);
-            ptr += 2;   // Space for RecordType and Namespace
+            *ptr = (byte)(ConstructIndicatorByte(keyLengthBytes, valueLengthBytes) | flagBits);
+            ptr += NumIndicatorBytes;
 
             WriteVarbyteLengthInWord(ref word, keyLength, precedingNumBytes: 0, keyLengthBytes);
             WriteVarbyteLengthInWord(ref word, valueLength, precedingNumBytes: keyLengthBytes, valueLengthBytes);

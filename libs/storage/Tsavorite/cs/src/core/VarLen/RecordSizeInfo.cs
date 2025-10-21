@@ -126,8 +126,9 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public override readonly string ToString()
         {
-            static string bstr(bool value) => value ? "T" : "F";
-            return $"[{FieldInfo}] | KeyIsInl {bstr(KeyIsInline)}, ValIsInl {bstr(ValueIsInline)}, ValIsObj {bstr(ValueIsObject)}, ActRecSize {ActualInlineRecordSize}, AllocRecSize {AllocatedInlineRecordSize}, OptSize {OptionalSize}";
+            var keyString = KeyIsInline ? "inl" : "ovf";
+            var valString = ValueIsInline ? "inl" : (ValueIsObject ? "obj" : "ovf");
+            return $"[{FieldInfo}] | Key::{keyString}, Val::{valString}, ActRecSize {ActualInlineRecordSize}, AllocRecSize {AllocatedInlineRecordSize}, OptSize {OptionalSize}";
         }
     }
 }

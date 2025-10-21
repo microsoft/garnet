@@ -37,7 +37,7 @@ namespace Garnet.server
             using (createDatabaseDelegate(0))
             {
                 // Check if there are multiple databases to recover from checkpoint
-                var checkpointParentDir = serverOptions.MainStoreCheckpointBaseDirectory;
+                var checkpointParentDir = serverOptions.StoreCheckpointBaseDirectory;
                 var checkpointDirBaseName = serverOptions.GetCheckpointDirectoryName(0);
 
                 if (MultiDatabaseManager.TryGetSavedDatabaseIds(checkpointParentDir, checkpointDirBaseName,

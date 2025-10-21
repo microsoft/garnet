@@ -12,7 +12,7 @@ namespace Garnet
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput input)
         {
             int offset = 0;
-            AddKey(GetNextArg(ref input, ref offset), LockType.Shared, true);
+            AddKey(GetNextArg(ref input, ref offset), LockType.Shared, StoreType.Object);
             return true;
         }
 

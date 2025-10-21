@@ -1431,12 +1431,17 @@ namespace Garnet.server
                 }
             }
 
-            var status = storageApi.MemoryUsageForKey(key, out var memoryUsage);
+            // Prepare input
+            var input = new UnifiedStoreInput(RespCommand.MEMORY_USAGE);
+
+            // Prepare GarnetUnifiedStoreOutput output
+            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.MEMORYUSAGE(key, ref input, ref output);
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.TryWriteInt32((int)memoryUsage, ref dcurr, dend))
-                    SendAndReset();
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {

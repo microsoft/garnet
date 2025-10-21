@@ -39,7 +39,7 @@ namespace Garnet.server
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
             this.objectStoreSizeTracker = objectStoreSizeTracker;
             this.garnetObjectSerializer = storeWrapper.GarnetObjectSerializer;
-            storeFunctions = storeWrapper.objectStoreFunctions;
+            storeFunctions = storeWrapper.storeFunctions;
 
             this.etagState = new ETagState();
             this.logger = logger;

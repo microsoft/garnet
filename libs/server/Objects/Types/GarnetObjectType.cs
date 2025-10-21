@@ -34,31 +34,6 @@ namespace Garnet.server
         // Any new special type inserted here should update GarnetObjectTypeExtensions.FirstSpecialObjectType
 
         /// <summary>
-        /// Special type indicating MIGRATE command
-        /// </summary>
-        Migrate = 0xf6,
-
-        /// <summary>
-        /// Special type indicating DELIFEXPIM command, a conditional deletion when a key is in memory and expired
-        /// </summary>
-        DelIfExpIm = 0xf7,
-
-        /// <summary>
-        /// Special type indicating PEXPIRE command
-        /// </summary>
-        PExpire = 0xf8,
-
-        /// <summary>
-        /// Special type indicating EXPIRETIME command
-        /// </summary>
-        ExpireTime = 0xf9,
-
-        /// <summary>
-        /// Special type indicating PEXPIRETIME command
-        /// </summary>
-        PExpireTime = 0xfa,
-
-        /// <summary>
         /// Indicating a Custom Object command
         /// </summary>
         All = 0xfb,
@@ -69,25 +44,15 @@ namespace Garnet.server
         PTtl = 0xfc,
 
         /// <summary>
-        /// Special type indicating PERSIST command
-        /// </summary>
-        Persist = 0xfd,
-
-        /// <summary>
         /// Special type indicating TTL command
         /// </summary>
         Ttl = 0xfe,
-
-        /// <summary>
-        /// Special type indicating EXPIRE command
-        /// </summary>
-        Expire = 0xff,
     }
 
     public static class GarnetObjectTypeExtensions
     {
         internal const GarnetObjectType LastObjectType = GarnetObjectType.Set;
 
-        internal const GarnetObjectType FirstSpecialObjectType = GarnetObjectType.Migrate;
+        internal const GarnetObjectType FirstSpecialObjectType = GarnetObjectType.All;
     }
 }

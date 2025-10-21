@@ -266,15 +266,15 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("2. Creating slot data {keyCount} done", keyCount);
 
             var sourceIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
-            var expectedKeyCount = context.clusterTestUtils.CountKeysInSlot(slot, context.logger);
-            ClassicAssert.AreEqual(keyCount, expectedKeyCount);
+            var actualKeyCount = context.clusterTestUtils.CountKeysInSlot(slot, context.logger);
+            ClassicAssert.AreEqual(keyCount, actualKeyCount);
             _ = context.clusterTestUtils.CountKeysInSlot(-1, context.logger);
             _ = context.clusterTestUtils.CountKeysInSlot(ushort.MaxValue, context.logger);
 
-            var result = context.clusterTestUtils.GetKeysInSlot(sourceIndex, slot, expectedKeyCount, context.logger);
+            var result = context.clusterTestUtils.GetKeysInSlot(sourceIndex, slot, actualKeyCount, context.logger);
             ClassicAssert.AreEqual(keyCount, result.Count);
-            _ = context.clusterTestUtils.GetKeysInSlot(-1, expectedKeyCount);
-            _ = context.clusterTestUtils.GetKeysInSlot(ushort.MaxValue, expectedKeyCount);
+            _ = context.clusterTestUtils.GetKeysInSlot(-1, actualKeyCount);
+            _ = context.clusterTestUtils.GetKeysInSlot(ushort.MaxValue, actualKeyCount);
 
             context.logger.LogDebug("3. ClusterSimpleSlotInfoTest done");
         }
@@ -929,7 +929,7 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("4. Set slot {_slot} to MIGRATING state on node {port}", _workingSlot, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port);
 
             var countKeys = context.clusterTestUtils.CountKeysInSlot(sourceNodeIndex, _workingSlot, context.logger);
-            ClassicAssert.AreEqual(countKeys, keyCount);
+            ClassicAssert.AreEqual(keyCount, countKeys);
             context.logger.LogDebug("5. CountKeysInSlot {countKeys}", countKeys);
 
             var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, _workingSlot, countKeys, context.logger);
@@ -1056,7 +1056,7 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("6. Set slot {_slot} to MIGRATING state on node {port}", _slot, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port);
 
             var countKeys = context.clusterTestUtils.CountKeysInSlot(sourceNodeIndex, _slot, context.logger);
-            ClassicAssert.AreEqual(countKeys, keyCount);
+            ClassicAssert.AreEqual(keyCount, countKeys);
             context.logger.LogDebug("7. CountKeysInSlot {countKeys}", countKeys);
 
             var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, _slot, countKeys, context.logger);

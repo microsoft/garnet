@@ -44,6 +44,9 @@ namespace Tsavorite.core
         /// <summary>The max offset on the main log page to iterate records when determining how many bytes in the ObjectLog to read.</summary>
         internal long maxPtr;
 
+        /// <summary>If true, we are called from recovery, and should use the non-transient <see cref="ObjectIdMap"/>.</summary>
+        internal bool isForRecovery;
+
         public override string ToString()
             => $"page {page}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} ({destinationPtr:X}), maxPtr {maxPtr}";
 
@@ -355,7 +358,7 @@ namespace Tsavorite.core
     {
         /// <summary>If we had separate Reads directly into multiple spans of a single byte[], such as across segments, this is a refcounted wrapper for the <see cref="GCHandle"/>;
         /// it is released after the write and if it is the final release, all spans have been written and the GCHandle is freed (and the object unpinned).</summary>
-        public RefCountedPinnedGCHandle refCountedGCHandle {  get; private set; }
+        public RefCountedPinnedGCHandle refCountedGCHandle { get; private set; }
 
         /// <summary>Separate public Set() call so we ensure it is AddRef'd</summary>
         /// <param name="refGcHandle"></param>

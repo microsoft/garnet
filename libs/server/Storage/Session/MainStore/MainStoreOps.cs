@@ -10,16 +10,13 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
-
-    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     sealed partial class StorageSession : IDisposable
     {
         public GarnetStatus GET<TContext>(PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             long ctx = default;
             var status = context.Read(key.ReadOnlySpan, ref input, ref output, ctx);
@@ -44,7 +41,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus ReadWithUnsafeContext<TContext>(PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, long localHeadAddress, out bool epochChanged, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>, IUnsafeContext
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>, IUnsafeContext
         {
             epochChanged = false;
             var status = context.Read(key.ReadOnlySpan, ref Unsafe.AsRef(in input), ref output, userContext: default);
@@ -77,7 +74,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus GET<TContext>(PinnedSpanByte key, out PinnedSpanByte value, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var input = new RawStringInput(RespCommand.GET);
             value = default;
@@ -101,7 +98,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus GET<TContext>(PinnedSpanByte key, out MemoryResult<byte> value, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var input = new RawStringInput(RespCommand.GET);
 
@@ -113,7 +110,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus GET<TObjectContext>(PinnedSpanByte key, out GarnetObjectStoreOutput output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             ObjectInput input = default;
             output = default;
@@ -139,7 +136,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus GETEX<TContext>(PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = context.RMW(key.ReadOnlySpan, ref input, ref output);
 
@@ -170,7 +167,7 @@ namespace Garnet.server
         /// <param name="context">Basic Context of the store</param>
         /// <returns> Operation status </returns>
         public unsafe GarnetStatus GETDEL<TContext>(PinnedSpanByte key, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var input = new RawStringInput(RespCommand.GETDEL);
 
@@ -184,7 +181,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus GETRANGE<TContext>(PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = context.Read(key.ReadOnlySpan, ref input, ref output);
 
@@ -221,8 +218,8 @@ namespace Garnet.server
         /// <param name="milliseconds">when true the command to execute is PTTL.</param>
         /// <returns></returns>
         public unsafe GarnetStatus TTL<TContext, TObjectContext>(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output, ref TContext context, ref TObjectContext objectContext, bool milliseconds = false)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL;
             var input = new RawStringInput(cmd);
@@ -262,68 +259,15 @@ namespace Garnet.server
             return GarnetStatus.NOTFOUND;
         }
 
-        /// <summary>
-        /// Get the absolute Unix timestamp at which the given key will expire.
-        /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">The key to get the Unix timestamp.</param>
-        /// <param name="storeType">The store to operate on</param>
-        /// <param name="output">Span to allocate the output of the operation</param>
-        /// <param name="context">Basic Context of the store</param>
-        /// <param name="objectContext">Object Context of the store</param>
-        /// <param name="milliseconds">when true the command to execute is PEXPIRETIME.</param>
-        /// <returns>Returns the absolute Unix timestamp (since January 1, 1970) in seconds or milliseconds at which the given key will expire.</returns>
-        public unsafe GarnetStatus EXPIRETIME<TContext, TObjectContext>(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output, ref TContext context, ref TObjectContext objectContext, bool milliseconds = false)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            if (storeType == StoreType.Main || storeType == StoreType.All)
-            {
-                var cmd = milliseconds ? RespCommand.PEXPIRETIME : RespCommand.EXPIRETIME;
-                var input = new RawStringInput(cmd);
-                var status = context.Read(key.ReadOnlySpan, ref input, ref output);
-
-                if (status.IsPending)
-                {
-                    StartPendingMetrics();
-                    CompletePendingForSession(ref status, ref output, ref context);
-                    StopPendingMetrics();
-                }
-
-                if (status.Found) return GarnetStatus.OK;
-            }
-
-            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
-            {
-                var type = milliseconds ? GarnetObjectType.PExpireTime : GarnetObjectType.ExpireTime;
-                var header = new RespInputHeader(type);
-                var input = new ObjectInput(header);
-
-                var objO = new GarnetObjectStoreOutput(output);
-                var status = objectContext.Read(key.ReadOnlySpan, ref input, ref objO);
-
-                if (status.IsPending)
-                    CompletePendingForObjectStoreSession(ref status, ref objO, ref objectContext);
-
-                if (status.Found)
-                {
-                    output = objO.SpanByteAndMemory;
-                    return GarnetStatus.OK;
-                }
-            }
-            return GarnetStatus.NOTFOUND;
-        }
-
         public GarnetStatus SET<TContext>(PinnedSpanByte key, PinnedSpanByte value, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             context.Upsert(key.ReadOnlySpan, value.ReadOnlySpan);
             return GarnetStatus.OK;
         }
 
         public GarnetStatus SET<TContext>(PinnedSpanByte key, ref RawStringInput input, PinnedSpanByte value, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var output = new SpanByteAndMemory();
             context.Upsert(key.ReadOnlySpan, ref input, value.ReadOnlySpan, ref output);
@@ -331,7 +275,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus SET_Conditional<TContext>(PinnedSpanByte key, ref RawStringInput input, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             byte* pbOutput = stackalloc byte[8];
             var o = SpanByteAndMemory.FromPinnedPointer(pbOutput, 8);
@@ -359,9 +303,9 @@ namespace Garnet.server
 
 
         public unsafe GarnetStatus DEL_Conditional<TContext>(PinnedSpanByte key, ref RawStringInput input, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            Debug.Assert(input.header.cmd is RespCommand.DELIFGREATER or RespCommand.DELIFEXPIM);
+            Debug.Assert(input.header.cmd is RespCommand.DELIFGREATER);
 
             Span<byte> outputSpan = stackalloc byte[8];
             var output = SpanByteAndMemory.FromPinnedSpan(outputSpan);
@@ -390,7 +334,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus SET_Conditional<TContext>(PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = context.RMW(key.ReadOnlySpan, ref input, ref output);
 
@@ -414,7 +358,7 @@ namespace Garnet.server
         }
 
         internal GarnetStatus MSET_Conditional<TContext>(ref RawStringInput input, ref TContext ctx)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var error = false;
             var count = input.parseState.Count;
@@ -426,21 +370,21 @@ namespace Garnet.server
                 for (var i = 0; i < count; i += 2)
                 {
                     var srcKey = input.parseState.GetArgSliceByRef(i);
-                    txnManager.SaveKeyEntryToLock(srcKey, false, LockType.Exclusive);
-                    txnManager.SaveKeyEntryToLock(srcKey, true, LockType.Exclusive);
+                    txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Unified);
+                    txnManager.SaveKeyEntryToLock(srcKey, LockType.Exclusive);
                 }
                 txnManager.Run(true);
             }
 
             var context = txnManager.TransactionalContext;
-            var objContext = txnManager.ObjectStoreTransactionalContext;
+            var unifiedContext = txnManager.UnifiedStoreTransactionalContext;
 
             try
             {
                 for (var i = 0; i < count; i += 2)
                 {
                     var srcKey = input.parseState.GetArgSliceByRef(i);
-                    var status = EXISTS(srcKey, StoreType.All, ref context, ref objContext);
+                    var status = EXISTS(srcKey, ref unifiedContext);
                     if (status != GarnetStatus.NOTFOUND)
                     {
                         count = 0;
@@ -465,14 +409,14 @@ namespace Garnet.server
         }
 
         public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, IGarnetObject value, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             objectContext.Upsert(key.ReadOnlySpan, value);
             return GarnetStatus.OK;
         }
 
         public GarnetStatus SET<TContext>(PinnedSpanByte key, Memory<byte> value, ref TContext context)   // TODO are memory<byte> overloads needed?
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             unsafe
             {
@@ -482,24 +426,12 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus SET<TContext, TObjectContext, TSourceLogRecord>(in TSourceLogRecord srcLogRecord, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            if (storeType == StoreType.Main)
-                context.Upsert(in srcLogRecord);
-            else
-                objectContext.Upsert(in srcLogRecord);
-            return GarnetStatus.OK;
-        }
-
         public unsafe GarnetStatus SETEX<TContext>(PinnedSpanByte key, PinnedSpanByte value, PinnedSpanByte expiryMs, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             => SETEX(key, value, TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ToPointer())), ref context);
 
         public GarnetStatus SETEX<TContext>(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var input = new RawStringInput(RespCommand.APPEND, ref parseState, arg1: DateTimeOffset.UtcNow.Ticks + expiry.Ticks);
             return SET(key, ref input, value, ref context);
@@ -515,7 +447,7 @@ namespace Garnet.server
         /// <param name="context">Store context</param>
         /// <returns>Operation status</returns>
         public unsafe GarnetStatus APPEND<TContext>(PinnedSpanByte key, PinnedSpanByte value, ref PinnedSpanByte output, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var _output = new SpanByteAndMemory(output);
 
@@ -535,7 +467,7 @@ namespace Garnet.server
         /// <param name="context">Store context</param>
         /// <returns>Operation status</returns>
         public unsafe GarnetStatus APPEND<TContext>(PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = context.RMW(key.ReadOnlySpan, ref input, ref output);
             if (status.IsPending)
@@ -550,26 +482,18 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus DELETE<TContext, TObjectContext>(PinnedSpanByte key, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        /// <summary>
+        /// Deletes a key from the main store context.
+        /// </summary>
+        /// <param name="key">The name of the key to use in the operation</param>
+        /// <param name="context">Basic context for the main store.</param>
+        /// <returns></returns>
+        public GarnetStatus DELETE_MainStore<TContext>(PinnedSpanByte key, ref TContext context)
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var found = false;
-
-            if (storeType == StoreType.Main || storeType == StoreType.All)
-            {
-                var status = context.Delete(key.ReadOnlySpan);
-                Debug.Assert(!status.IsPending);
-                if (status.Found) found = true;
-            }
-
-            if (!objectStoreBasicContext.IsNull && (storeType == StoreType.Object || storeType == StoreType.All))
-            {
-                var status = objectContext.Delete(key.ReadOnlySpan);
-                Debug.Assert(!status.IsPending);
-                if (status.Found) found = true;
-            }
-            return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+            var status = context.Delete(key.ReadOnlySpan);
+            Debug.Assert(!status.IsPending);
+            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
         public unsafe GarnetStatus RENAME(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, StoreType storeType, bool withEtag)
@@ -602,8 +526,9 @@ namespace Garnet.server
             if (txnManager.state != TxnState.Running)
             {
                 createTransaction = true;
-                txnManager.SaveKeyEntryToLock(oldKeySlice, false, LockType.Exclusive);
-                txnManager.SaveKeyEntryToLock(newKeySlice, false, LockType.Exclusive);
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Object);
+                txnManager.SaveKeyEntryToLock(oldKeySlice, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(newKeySlice, LockType.Exclusive);
                 _ = txnManager.Run(true);
             }
 
@@ -703,12 +628,12 @@ namespace Garnet.server
                             // Delete the old key only when SET NX succeeded
                             if (isNX && result == 1)
                             {
-                                DELETE(oldKey, StoreType.Main, ref context, ref objectContext);
+                                DELETE_MainStore(oldKey, ref context);
                             }
                             else if (!isNX)
                             {
                                 // Delete the old key
-                                DELETE(oldKey, StoreType.Main, ref context, ref objectContext);
+                                DELETE_MainStore(oldKey, ref context);
                                 returnStatus = GarnetStatus.OK;
                             }
                         }
@@ -726,8 +651,9 @@ namespace Garnet.server
                 createTransaction = false;
                 if (txnManager.state != TxnState.Running)
                 {
-                    txnManager.SaveKeyEntryToLock(oldKeySlice, true, LockType.Exclusive);
-                    txnManager.SaveKeyEntryToLock(newKeySlice, true, LockType.Exclusive);
+                    txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object);
+                    txnManager.SaveKeyEntryToLock(oldKeySlice, LockType.Exclusive);
+                    txnManager.SaveKeyEntryToLock(newKeySlice, LockType.Exclusive);
                     txnManager.Run(true);
                     createTransaction = true;
                 }
@@ -755,7 +681,7 @@ namespace Garnet.server
                             SET(newKeySlice, valObj, ref objectContext);
 
                             // Delete the old key
-                            DELETE(oldKeySlice, StoreType.Object, ref context, ref objectContext);
+                            DELETE_ObjectStore(oldKeySlice, ref objectContext);
 
                             result = 1;
                         }
@@ -775,278 +701,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Returns if key is an existing one in the store.
-        /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">The name of the key to use in the operation</param>
-        /// <param name="storeType">The store to operate on.</param>
-        /// <param name="context">Basic context for the main store.</param>
-        /// <param name="objectContext">Object context for the object store.</param>
-        /// <returns></returns>
-        public GarnetStatus EXISTS<TContext, TObjectContext>(PinnedSpanByte key, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            var status = GarnetStatus.NOTFOUND;
-            RawStringInput input = default;
-
-            if (storeType == StoreType.Main || storeType == StoreType.All)
-            {
-                var _output = new SpanByteAndMemory { SpanByte = scratchBufferBuilder.ViewRemainingArgSlice() };
-                status = GET(key, ref input, ref _output, ref context);
-
-                if (status == GarnetStatus.OK)
-                {
-                    if (!_output.IsSpanByte)
-                        _output.Memory.Dispose();
-                    return status;
-                }
-            }
-
-            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
-            {
-                status = GET(key, out _, ref objectContext);
-            }
-
-            return status;
-        }
-
-        /// <summary>
-        /// Set a timeout on key
-        /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">The key to set the timeout on.</param>
-        /// <param name="expiryMs">Milliseconds value for the timeout.</param>
-        /// <param name="timeoutSet">True when the timeout was properly set.</param>
-        /// <param name="storeType">The store to operate on.</param>
-        /// <param name="expireOption">>Flags to use for the operation.</param>
-        /// <param name="context">Basic context for the main store.</param>
-        /// <param name="objectStoreContext">Object context for the object store.</param>
-        /// <returns></returns>
-        public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-            => EXPIRE(key, TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ToPointer())), out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext);
-
-        /// <summary>
-        /// Set a timeout on key.
-        /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">The key to set the timeout on.</param>
-        /// <param name="input">Input for the main store</param>
-        /// <param name="timeoutSet">True when the timeout was properly set.</param>
-        /// <param name="storeType">The store to operate on.</param>
-        /// <param name="context">Basic context for the main store</param>
-        /// <param name="objectStoreContext">Object context for the object store</param>
-        /// <returns></returns>
-        public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(PinnedSpanByte key, ref RawStringInput input, out bool timeoutSet, StoreType storeType, ref TContext context, ref TObjectContext objectStoreContext)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            Span<byte> rmwOutput = stackalloc byte[ObjectOutputHeader.Size];
-            var output = SpanByteAndMemory.FromPinnedSpan(rmwOutput);
-            timeoutSet = false;
-
-            var found = false;
-
-            if (storeType == StoreType.Main || storeType == StoreType.All)
-            {
-                var status = context.RMW(key.ReadOnlySpan, ref input, ref output);
-
-                if (status.IsPending)
-                    CompletePendingForSession(ref status, ref output, ref context);
-                if (status.Found) found = true;
-            }
-
-            if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
-                !objectStoreBasicContext.IsNull)
-            {
-                var header = new RespInputHeader(GarnetObjectType.Expire);
-
-                // Re-encode expiration and expiration option as two integers instead of a long
-                var expirationWithOption = new ExpirationWithOption(input.arg1);
-
-                var objInput = new ObjectInput(header, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
-
-                // Retry on object store
-                var objOutput = new GarnetObjectStoreOutput(output);
-                var status = objectStoreContext.RMW(key.ReadOnlySpan, ref objInput, ref objOutput);
-
-                if (status.IsPending)
-                    CompletePendingForObjectStoreSession(ref status, ref objOutput, ref objectStoreContext);
-                if (status.Found) found = true;
-
-                output = objOutput.SpanByteAndMemory;
-            }
-
-            Debug.Assert(output.IsSpanByte);
-            if (found) timeoutSet = ((ObjectOutputHeader*)output.SpanByte.ToPointer())->result1 == 1;
-
-            return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
-        }
-
-
-
-        /// <summary>
-        /// Set a timeout on key using absolute Unix timestamp (seconds since January 1, 1970).
-        /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">The key to set the timeout on.</param>
-        /// <param name="expiryTimestamp">Absolute Unix timestamp</param>
-        /// <param name="timeoutSet">True when the timeout was properly set.</param>
-        /// <param name="storeType">The store to operate on.</param>
-        /// <param name="expireOption">Flags to use for the operation.</param>
-        /// <param name="context">Basic context for the main store</param>
-        /// <param name="objectStoreContext">Object context for the object store</param>
-        /// <param name="milliseconds">When true, <paramref name="expiryTimestamp"/> is treated as milliseconds else seconds</param>
-        /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
-        public unsafe GarnetStatus EXPIREAT<TContext, TObjectContext>(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext, bool milliseconds = false)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            return EXPIRE(key, expiryTimestamp, out timeoutSet, storeType, expireOption, ref context, ref objectStoreContext, milliseconds ? RespCommand.PEXPIREAT : RespCommand.EXPIREAT);
-        }
-
-        /// <summary>
-        /// Set a timeout on key.
-        /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">The key to set the timeout on.</param>
-        /// <param name="expiry">The timespan value to set the expiration for.</param>
-        /// <param name="timeoutSet">True when the timeout was properly set.</param>
-        /// <param name="storeType">The store to operate on.</param>
-        /// <param name="expireOption">Flags to use for the operation.</param>
-        /// <param name="context">Basic context for the main store</param>
-        /// <param name="objectStoreContext">Object context for the object store</param>
-        /// <param name="milliseconds">When true the command executed is PEXPIRE, expire by default.</param>
-        /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
-        public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext, bool milliseconds = false)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            return EXPIRE(key, (long)(milliseconds ? expiry.TotalMilliseconds : expiry.TotalSeconds), out timeoutSet, storeType, expireOption,
-                ref context, ref objectStoreContext, milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE);
-        }
-
-        /// <summary>
-        /// Set a timeout on key.
-        /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">The key to set the timeout on.</param>
-        /// <param name="expiration">The timespan value to set the expiration for.</param>
-        /// <param name="timeoutSet">True when the timeout was properly set.</param>
-        /// <param name="storeType">The store to operate on.</param>
-        /// <param name="expireOption">Flags to use for the operation.</param>
-        /// <param name="context">Basic context for the main store</param>
-        /// <param name="objectStoreContext">Object context for the object store</param>
-        /// <param name="respCommand">The current RESP command</param>
-        /// <returns></returns>
-        public unsafe GarnetStatus EXPIRE<TContext, TObjectContext>(PinnedSpanByte key, long expiration, out bool timeoutSet, StoreType storeType, ExpireOption expireOption, ref TContext context, ref TObjectContext objectStoreContext, RespCommand respCommand)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            Span<byte> rmwOutput = stackalloc byte[ObjectOutputHeader.Size];
-            var output = SpanByteAndMemory.FromPinnedSpan(rmwOutput);
-            timeoutSet = false;
-            var found = false;
-
-            // Convert to expiration time in ticks
-            var expirationTimeInTicks = respCommand switch
-            {
-                RespCommand.EXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
-                RespCommand.PEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
-                RespCommand.EXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
-                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
-            };
-
-            var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
-
-            if (storeType == StoreType.Main || storeType == StoreType.All)
-            {
-                var input = new RawStringInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
-                var status = context.RMW(key.ReadOnlySpan, ref input, ref output);
-
-                if (status.IsPending)
-                    CompletePendingForSession(ref status, ref output, ref context);
-                if (status.Found) found = true;
-            }
-
-            if (!found && (storeType == StoreType.Object || storeType == StoreType.All) &&
-                !objectStoreBasicContext.IsNull)
-            {
-                var header = new RespInputHeader(GarnetObjectType.Expire);
-                var objInput = new ObjectInput(header, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
-
-                // Retry on object store
-                var objOutput = new GarnetObjectStoreOutput(output);
-                var keyBytes = key.ToArray();
-                var status = objectStoreContext.RMW(key.ReadOnlySpan, ref objInput, ref objOutput);
-
-                if (status.IsPending)
-                    CompletePendingForObjectStoreSession(ref status, ref objOutput, ref objectStoreContext);
-                if (status.Found) found = true;
-
-                output = objOutput.SpanByteAndMemory;
-            }
-
-            Debug.Assert(output.IsSpanByte);
-            if (found) timeoutSet = ((ObjectOutputHeader*)output.SpanByte.ToPointer())->result1 == 1;
-
-            return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
-        }
-
-        public unsafe GarnetStatus PERSIST<TContext, TObjectContext>(PinnedSpanByte key, StoreType storeType, ref TContext context, ref TObjectContext objectStoreContext)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            GarnetStatus status = GarnetStatus.NOTFOUND;
-
-            var inputHeader = new RawStringInput(RespCommand.PERSIST);
-
-            var pbOutput = stackalloc byte[8];
-            var o = SpanByteAndMemory.FromPinnedPointer(pbOutput, 8);
-
-            if (storeType == StoreType.Main || storeType == StoreType.All)
-            {
-                var _status = context.RMW(key.ReadOnlySpan, ref inputHeader, ref o);
-
-                if (_status.IsPending)
-                    CompletePendingForSession(ref _status, ref o, ref context);
-
-                Debug.Assert(o.IsSpanByte);
-                if (o.SpanByte.ReadOnlySpan[0] == 1)
-                    status = GarnetStatus.OK;
-            }
-
-            if (status == GarnetStatus.NOTFOUND && (storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
-            {
-                // Retry on object store
-                var header = new RespInputHeader(GarnetObjectType.Persist);
-                var objInput = new ObjectInput(header);
-
-                var objO = new GarnetObjectStoreOutput(o);
-                var _key = key.ToArray();
-                var _status = objectStoreContext.RMW(key.ReadOnlySpan, ref objInput, ref objO);
-
-                if (_status.IsPending)
-                    CompletePendingForObjectStoreSession(ref _status, ref objO, ref objectStoreContext);
-
-                Debug.Assert(o.IsSpanByte);
-                if (o.SpanByte.ReadOnlySpan.Slice(0, CmdStrings.RESP_RETURN_VAL_1.Length)
-                    .SequenceEqual(CmdStrings.RESP_RETURN_VAL_1))
-                    status = GarnetStatus.OK;
-            }
-
-            return status;
-        }
-
-        /// <summary>
         /// For existing keys - overwrites part of the value at a specified offset (in-place if possible)
         /// For non-existing keys - creates a new string with the value at a specified offset (padded with '\0's)
         /// </summary>
@@ -1057,7 +711,7 @@ namespace Garnet.server
         /// <param name="context">Basic context for the main store</param>
         /// <returns></returns>
         public unsafe GarnetStatus SETRANGE<TContext>(PinnedSpanByte key, ref RawStringInput input, ref PinnedSpanByte output, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             SpanByteAndMemory sbmOut = new(output);
 
@@ -1072,7 +726,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus Increment<TContext>(PinnedSpanByte key, ref RawStringInput input, ref PinnedSpanByte output, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             SpanByteAndMemory _output = new(output);
 
@@ -1085,7 +739,7 @@ namespace Garnet.server
         }
 
         public unsafe GarnetStatus Increment<TContext>(PinnedSpanByte key, out long output, long increment, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var cmd = RespCommand.INCRBY;
             if (increment < 0)
@@ -1111,76 +765,13 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public void WATCH(PinnedSpanByte key, StoreType type) => txnManager.Watch(key, type);
+        public void WATCH(PinnedSpanByte key, StoreType type)
+        {
+            txnManager.AddTransactionStoreType(type);
+            txnManager.Watch(key);
+        }
 
         public unsafe GarnetStatus SCAN<TContext>(long cursor, PinnedSpanByte match, long count, ref TContext context) => GarnetStatus.OK;
-
-        public GarnetStatus GetKeyType<TContext, TObjectContext>(PinnedSpanByte key, out string keyType, ref TContext context, ref TObjectContext objectContext)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            keyType = "string";
-            // Check if key exists in Main store
-            var status = EXISTS(key, StoreType.Main, ref context, ref objectContext);
-
-            // If key was not found in the main store then it is an object
-            if (status != GarnetStatus.OK && !objectStoreBasicContext.IsNull)
-            {
-                status = GET(key, out GarnetObjectStoreOutput output, ref objectContext);
-                if (status == GarnetStatus.OK)
-                {
-                    if ((output.GarnetObject as SortedSetObject) != null)
-                    {
-                        keyType = "zset";
-                    }
-                    else if ((output.GarnetObject as ListObject) != null)
-                    {
-                        keyType = "list";
-                    }
-                    else if ((output.GarnetObject as SetObject) != null)
-                    {
-                        keyType = "set";
-                    }
-                    else if ((output.GarnetObject as HashObject) != null)
-                    {
-                        keyType = "hash";
-                    }
-                }
-                else
-                {
-                    keyType = "none";
-                    status = GarnetStatus.NOTFOUND;
-                }
-            }
-            return status;
-        }
-
-        public GarnetStatus MemoryUsageForKey<TContext, TObjectContext>(PinnedSpanByte key, out long memoryUsage, ref TContext context, ref TObjectContext objectContext, int samples = 0)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
-        {
-            memoryUsage = -1;
-
-            // Check if key exists in Main store
-            var status = GET(key, out PinnedSpanByte keyValue, ref context);
-
-            if (status == GarnetStatus.NOTFOUND)
-            {
-                status = GET(key, out GarnetObjectStoreOutput objectValue, ref objectContext);
-                if (status != GarnetStatus.NOTFOUND)
-                {
-                    memoryUsage = RecordInfo.Size + (2 * IntPtr.Size) + // Log record length
-                        Utility.RoundUp(key.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + // Key allocation in heap with overhead
-                        objectValue.GarnetObject.HeapMemorySize; // Value allocation in heap
-                }
-            }
-            else
-            {
-                memoryUsage = RecordInfo.Size + Utility.RoundUp(key.TotalSize, RecordInfo.Size) + Utility.RoundUp(keyValue.TotalSize, RecordInfo.Size);
-            }
-
-            return status;
-        }
 
         /// <summary>
         /// Computes the Longest Common Subsequence (LCS) of two keys.
@@ -1198,8 +789,9 @@ namespace Garnet.server
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)
             {
-                txnManager.SaveKeyEntryToLock(key1, false, LockType.Shared);
-                txnManager.SaveKeyEntryToLock(key2, false, LockType.Shared);
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main);
+                txnManager.SaveKeyEntryToLock(key1, LockType.Shared);
+                txnManager.SaveKeyEntryToLock(key2, LockType.Shared);
                 txnManager.Run(true);
                 createTransaction = true;
             }
@@ -1218,7 +810,7 @@ namespace Garnet.server
         }
 
         private unsafe GarnetStatus LCSInternal<TContext>(PinnedSpanByte key1, PinnedSpanByte key2, ref SpanByteAndMemory output, ref TContext context, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             PinnedSpanByte val1, val2;
             var status1 = GET(key1, out val1, ref context);

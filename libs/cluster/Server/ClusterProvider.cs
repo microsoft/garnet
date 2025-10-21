@@ -16,10 +16,13 @@ using Tsavorite.core;
 namespace Garnet.cluster
 {
     using BasicGarnetApi = GarnetApi<BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>>,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
         BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
     /// <summary>
@@ -157,7 +160,6 @@ namespace Garnet.cluster
         public void FlushDB(bool unsafeTruncateLog = false)
         {
             storeWrapper.store.Log.ShiftBeginAddress(storeWrapper.store.Log.TailAddress, truncateLog: unsafeTruncateLog);
-            storeWrapper.objectStore?.Log.ShiftBeginAddress(storeWrapper.objectStore.Log.TailAddress, truncateLog: unsafeTruncateLog);
         }
 
         /// <inheritdoc />
@@ -170,12 +172,6 @@ namespace Garnet.cluster
             entry.metadata.storeIndexToken = storeCheckpointToken;
             entry.metadata.storeCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
             entry.metadata.storePrimaryReplId = replicationManager.PrimaryReplId;
-
-            entry.metadata.objectStoreVersion = serverOptions.DisableObjects ? -1 : storeWrapper.objectStore.CurrentVersion;
-            entry.metadata.objectStoreHlogToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
-            entry.metadata.objectStoreIndexToken = serverOptions.DisableObjects ? default : objectStoreCheckpointToken;
-            entry.metadata.objectCheckpointCoveredAofAddress = CheckpointCoveredAofAddress;
-            entry.metadata.objectStorePrimaryReplId = replicationManager.PrimaryReplId;
 
             // Keep track of checkpoints for replica
             // Used to delete old checkpoints and cleanup and also cleanup during attachment to new primary
@@ -241,8 +237,6 @@ namespace Garnet.cluster
                 new("second_repl_offset", replication_offset2),
                 new("store_current_safe_aof_address", clusterEnabled ? replicationManager.StoreCurrentSafeAofAddress.ToString() : "N/A"),
                 new("store_recovered_safe_aof_address", clusterEnabled ? replicationManager.StoreRecoveredSafeAofTailAddress.ToString() : "N/A"),
-                new("object_store_current_safe_aof_address", clusterEnabled && !serverOptions.DisableObjects ? replicationManager.ObjectStoreCurrentSafeAofAddress.ToString() : "N/A"),
-                new("object_store_recovered_safe_aof_address", clusterEnabled && !serverOptions.DisableObjects ? replicationManager.ObjectStoreRecoveredSafeAofTailAddress.ToString() : "N/A"),
                 new("recover_status", replicationManager.currentRecoveryStatus.ToString()),
                 new("last_failover_state", !clusterEnabled ? FailoverUtils.GetFailoverStatus(FailoverStatus.NO_FAILOVER) : failoverManager.GetLastFailoverStatus())
             };
@@ -427,15 +421,10 @@ namespace Garnet.cluster
         public void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
             => clusterManager.TryClusterPublish(cmd, ref channel, ref message);
 
-        internal GarnetClusterCheckpointManager GetReplicationLogCheckpointManager(StoreType storeType)
+        internal GarnetClusterCheckpointManager GetReplicationLogCheckpointManager()
         {
             Debug.Assert(serverOptions.EnableCluster);
-            return storeType switch
-            {
-                StoreType.Main => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager,
-                StoreType.Object => (GarnetClusterCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
-                _ => throw new Exception($"GetCkptManager: unexpected state {storeType}")
-            };
+            return (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
         }
 
         /// <summary>

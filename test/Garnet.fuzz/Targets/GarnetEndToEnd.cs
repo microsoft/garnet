@@ -358,7 +358,6 @@ namespace Garnet.fuzz.Targets
             {
                 ThreadPoolMinThreads = 100,
                 SegmentSize = "1g",
-                ObjectStoreSegmentSize = "1g",
                 EnableStorageTier = true,
                 LogDir = LogDir.FullName,
                 CheckpointDir = CheckpointDir.FullName,
@@ -368,7 +367,6 @@ namespace Garnet.fuzz.Targets
                 EnableDebugCommand = ConnectionProtectionOption.Yes,
                 Recover = false,
                 IndexSize = "1m",
-                ObjectStoreIndexSize = "16k",
                 EnableCluster = true,
                 CleanClusterConfig = true,
                 ClusterTimeout = -1,

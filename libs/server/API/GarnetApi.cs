@@ -8,30 +8,30 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
-
-    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     // See TransactionManager.cs for aliases BasicGarnetApi and TransactionalGarnetApi
 
     /// <summary>
     /// Garnet API implementation
     /// </summary>
-    public partial struct GarnetApi<TContext, TObjectContext> : IGarnetApi, IGarnetWatchApi
-        where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-        where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+    public partial struct GarnetApi<TContext, TObjectContext, TUnifiedContext> : IGarnetApi, IGarnetWatchApi
+        where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
     {
         readonly StorageSession storageSession;
         TContext context;
         TObjectContext objectContext;
+        TUnifiedContext unifiedContext;
 
-        internal GarnetApi(StorageSession storageSession, TContext context, TObjectContext objectContext)
+        internal GarnetApi(StorageSession storageSession, TContext context, TObjectContext objectContext, TUnifiedContext unifiedContext)
         {
             this.storageSession = storageSession;
             this.context = context;
             this.objectContext = objectContext;
+            this.unifiedContext = unifiedContext;
         }
 
         #region WATCH
@@ -87,30 +87,6 @@ namespace Garnet.server
             => storageSession.GETRANGE(key, ref input, ref output, ref context);
         #endregion
 
-        #region TTL
-
-        /// <inheritdoc />
-        public GarnetStatus TTL(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
-            => storageSession.TTL(key, storeType, ref output, ref context, ref objectContext);
-
-        /// <inheritdoc />
-        public GarnetStatus PTTL(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
-            => storageSession.TTL(key, storeType, ref output, ref context, ref objectContext, milliseconds: true);
-
-        #endregion
-
-        #region EXPIRETIME
-
-        /// <inheritdoc />
-        public GarnetStatus EXPIRETIME(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
-            => storageSession.EXPIRETIME(key, storeType, ref output, ref context, ref objectContext);
-
-        /// <inheritdoc />
-        public GarnetStatus PEXPIRETIME(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output)
-            => storageSession.EXPIRETIME(key, storeType, ref output, ref context, ref objectContext, milliseconds: true);
-
-        #endregion
-
         #region SET
         /// <inheritdoc />
         public GarnetStatus SET(PinnedSpanByte key, PinnedSpanByte value)
@@ -141,9 +117,10 @@ namespace Garnet.server
             => storageSession.SET(key, value, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, StoreType storeType)
+        public GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => storageSession.SET(in srcLogRecord, storeType, ref context, ref objectContext);
+            => storageSession.SET(in srcLogRecord, ref unifiedContext);
+
         #endregion
 
         #region SETEX
@@ -191,44 +168,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false, StoreType storeType = StoreType.All)
             => storageSession.RENAMENX(oldKey, newKey, storeType, out result, withEtag);
-        #endregion
-
-        #region EXISTS
-        /// <inheritdoc />
-        public GarnetStatus EXISTS(PinnedSpanByte key, StoreType storeType = StoreType.All)
-            => storageSession.EXISTS(key, storeType, ref context, ref objectContext);
-        #endregion
-
-        #region EXPIRE
-        /// <inheritdoc />
-        public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, ref RawStringInput input, out bool timeoutSet, StoreType storeType = StoreType.All)
-            => storageSession.EXPIRE(key, ref input, out timeoutSet, storeType, ref context, ref objectContext);
-
-        /// <inheritdoc />
-        public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
-            => storageSession.EXPIRE(key, expiryMs, out timeoutSet, storeType, expireOption, ref context, ref objectContext);
-
-        /// <inheritdoc />
-        public GarnetStatus EXPIRE(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
-            => storageSession.EXPIRE(key, expiry, out timeoutSet, storeType, expireOption, ref context, ref objectContext);
-        #endregion
-
-        #region EXPIREAT
-
-        /// <inheritdoc />
-        public GarnetStatus EXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
-            => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, storeType, expireOption, ref context, ref objectContext);
-
-        /// <inheritdoc />
-        public GarnetStatus PEXPIREAT(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, StoreType storeType = StoreType.All, ExpireOption expireOption = ExpireOption.None)
-             => storageSession.EXPIREAT(key, expiryTimestamp, out timeoutSet, storeType, expireOption, ref context, ref objectContext, milliseconds: true);
-
-        #endregion
-
-        #region PERSIST
-        /// <inheritdoc />
-        public unsafe GarnetStatus PERSIST(PinnedSpanByte key, StoreType storeType = StoreType.All)
-            => storageSession.PERSIST(key, storeType, ref context, ref objectContext);
         #endregion
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
@@ -290,32 +229,10 @@ namespace Garnet.server
         }
         #endregion
 
-        #region DELETE
-        /// <inheritdoc />
-        public GarnetStatus DELETE(PinnedSpanByte key, StoreType storeType = StoreType.All)
-            => storageSession.DELETE(key, storeType, ref context, ref objectContext);
-        #endregion
-
         #region GETDEL
         /// <inheritdoc />
         public GarnetStatus GETDEL(PinnedSpanByte key, ref SpanByteAndMemory output)
             => storageSession.GETDEL(key, ref output, ref context);
-        #endregion
-
-        #region TYPE
-
-        /// <inheritdoc />
-        public GarnetStatus GetKeyType(PinnedSpanByte key, out string typeName)
-            => storageSession.GetKeyType(key, out typeName, ref context, ref objectContext);
-
-        #endregion
-
-        #region MEMORY
-
-        /// <inheritdoc />
-        public GarnetStatus MemoryUsageForKey(PinnedSpanByte key, out long memoryUsage, int samples = 0)
-            => storageSession.MemoryUsageForKey(key, out memoryUsage, ref context, ref objectContext, samples);
-
         #endregion
 
         #region Advanced ops
@@ -334,6 +251,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus Read_ObjectStore(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
             => storageSession.Read_ObjectStore(key.ReadOnlySpan, ref input, ref output, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus RMW_UnifiedStore(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+            => storageSession.RMW_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
+
+        /// <inheritdoc />
+        public GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+            => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
         #endregion
 
         #region Bitmap Methods
@@ -425,22 +350,13 @@ namespace Garnet.server
             => storageSession.DbScan(patternB, allKeys, cursor, out storeCursor, out Keys, count, type);
 
         /// <inheritdoc />
-        public readonly bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
+        public readonly bool IterateStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
-            => storageSession.IterateMainStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
+            => storageSession.IterateStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
-        public readonly ITsavoriteScanIterator IterateMainStore()
-            => storageSession.IterateMainStore();
-
-        /// <inheritdoc />
-        public readonly bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
-            where TScanFunctions : IScanIteratorFunctions
-            => storageSession.IterateObjectStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
-
-        /// <inheritdoc />
-        public readonly ITsavoriteScanIterator IterateObjectStore()
-            => storageSession.IterateObjectStore();
+        public readonly ITsavoriteScanIterator IterateStore()
+            => storageSession.IterateStore();
 
         #endregion
 

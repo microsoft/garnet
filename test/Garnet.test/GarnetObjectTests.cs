@@ -10,13 +10,13 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    using ObjectStoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using ObjectStoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     [TestFixture]
     public class GarnetObjectTests
     {
-        TsavoriteKV<ObjectStoreFunctions, ObjectStoreAllocator> store;
+        TsavoriteKV<StoreFunctions, StoreAllocator> store;
         IDevice logDevice, objectLogDevice;
 
         [SetUp]
@@ -146,6 +146,7 @@ namespace Garnet.test
             public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref IGarnetObject input, ref IGarnetObject output, ref RMWInfo rmwInfo)
             {
                 Assert.That(dstLogRecord.Info.ValueIsObject, Is.True);
+                dstLogRecord.TrySetValueObject(srcLogRecord.ValueObject);
                 return true;
             }
 
@@ -173,7 +174,7 @@ namespace Garnet.test
             };
 
             store = new(kvSettings
-                , StoreFunctions.Create(new SpanByteComparer(), () => new MyGarnetObjectSerializer())
+                , Tsavorite.core.StoreFunctions.Create(new SpanByteComparer(), () => new MyGarnetObjectSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
         }
     }

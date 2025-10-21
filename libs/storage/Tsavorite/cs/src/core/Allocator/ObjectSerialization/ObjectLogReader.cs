@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -65,48 +66,8 @@ namespace Tsavorite.core
         public void Write(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default) => throw new InvalidOperationException("Write is not supported for DiskStreamReadBuffer");
 
         /// <summary>
-        /// Get the object log entries for Overflow Keys and Values and Object Values for the record at <paramref name="physicalAddress"/>. We create the log record here,
-        /// because we are calling this over a pages from iterator frames or Restore.
-        /// </summary>
-        /// <param name="physicalAddress">Pointer to the initial record read from disk, either from iterator or Restore.</param>
-        /// <param name="recordSize">Number of bytes available at <paramref name="physicalAddress"/></param>
-        /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
-        /// <param name="transientObjectIdMap">The <see cref="ObjectIdMap"/> to place Overflow and Object Keys and Values in.</param>
-        /// <param name="segmentSizeBits">Number of bits in segment size</param>
-        /// <param name="logRecord">The output <see cref="LogRecord"/>, which has its Key and Value ObjectIds filled in in the log record.</param>
-        /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
-        public bool ReadRecordObjects(long physicalAddress, int recordSize, ReadOnlySpan<byte> requestedKey, ObjectIdMap transientObjectIdMap, int segmentSizeBits, out LogRecord logRecord)
-        {
-            logRecord = new LogRecord(physicalAddress, transientObjectIdMap);
-            Debug.Assert(logRecord.GetInlineRecordSizes().actualSize <= recordSize, $"RecordSize ({recordSize}) is less than required LogRecord size ({logRecord.GetInlineRecordSizes().actualSize})");
-            return logRecord.Info.RecordIsInline || ReadRecordObjects(ref logRecord, requestedKey, segmentSizeBits);
-        }
-
-        /// <summary>
         /// Get the object log entries for Overflow Keys and Values and Object Values for the input <paramref name="logRecord"/>. We do not create the log record here;
-        /// that was already done by the caller (probably from a single-record disk IO).
-        /// </summary>
-        /// <param name="logRecord">The input <see cref="LogRecord"/>, which already has its inline components set and will have its Key and Value ObjectIds filled in by this call.</param>
-        /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
-        /// <param name="transientObjectIdMap">The <see cref="ObjectIdMap"/> to place Overflow and Object Keys and Values in.</param>
-        /// <param name="segmentSizeBits">Number of bits in segment size</param>
-        /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
-        public bool ReadRecordObjects(ref LogRecord logRecord, ReadOnlySpan<byte> requestedKey, ObjectIdMap transientObjectIdMap, int segmentSizeBits)
-            => logRecord.Info.RecordIsInline || ReadRecordObjects(ref logRecord, requestedKey, segmentSizeBits);
-
-        /// <summary>
-        /// Get the object log entries for Overflow Keys and Values and Object Values for the record in <paramref name="diskLogRecord"/>, which came
-        /// from the initial IO operation.
-        /// </summary>
-        /// <param name="diskLogRecord">The initial record read from disk from Pending IO, so it is of size <see cref="IStreamBuffer.InitialIOSize"/> or less.</param>
-        /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
-        /// <param name="segmentSizeBits">Number of bits in segment size</param>
-        /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
-        public bool ReadRecordObjects(ref DiskLogRecord diskLogRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
-            => diskLogRecord.logRecord.Info.RecordIsInline || ReadRecordObjects(ref diskLogRecord.logRecord, requestedKey, segmentSizeBits);
-
-        /// <summary>
-        /// Get the object log entries for Overflow Keys and Values and Object Values for the <paramref name="logRecord"/>:
+        /// that was already done by the caller from a single-record disk IO or from Recovery.
         /// <list type="bullet">
         /// <item>If there is an Overflow key, read it and if we have a <paramref name="requestedKey"/> compare it and return false if it does not match.
         ///     Otherwise, store the Key Overflow in the transient <see cref="ObjectIdMap"/> in <paramref name="logRecord"/>.
@@ -118,9 +79,12 @@ namespace Tsavorite.core
         /// <param name="requestedKey">The requested key, if not ReadAtAddress; we will compare to see if it matches the record.</param>
         /// <param name="segmentSizeBits">Number of bits in segment size</param>
         /// <returns>False if requestedKey is set and we read an Overflow key and it did not match; otherwise true</returns>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         public bool ReadRecordObjects(ref LogRecord logRecord, ReadOnlySpan<byte> requestedKey, int segmentSizeBits)
         {
-            Debug.Assert(logRecord.Info.RecordHasObjects, $"Inline records should have been checked by the caller");
+            Debug.Assert(logRecord.Info.RecordHasObjects, "Inline records should have been checked by the caller");
+            if (readBuffers is null)
+                throw new TsavoriteException("ReadBuffers are required to ReadRecordObjects");
 
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
             readBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits));
@@ -132,7 +96,7 @@ namespace Tsavorite.core
             if (logRecord.Info.KeyIsOverflow)
             {
                 // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
-                logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset:0, endOffset:0, zeroInit:false);
+                logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                 _ = Read(logRecord.KeyOverflow.Span);
                 if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord.KeyOverflow.Span))
                     return false;

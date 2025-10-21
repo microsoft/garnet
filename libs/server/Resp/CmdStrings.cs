@@ -358,6 +358,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> hash => "hash"u8;
         public static ReadOnlySpan<byte> STRING => "STRING"u8;
         public static ReadOnlySpan<byte> stringt => "string"u8;
+        public static ReadOnlySpan<byte> none => "none"u8;
 
         /// <summary>
         /// Register object types

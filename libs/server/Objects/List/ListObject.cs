@@ -136,7 +136,7 @@ namespace Garnet.server
             if (input.header.type != GarnetObjectType.List)
             {
                 // Indicates an incorrect type of key
-                output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                output.OutputFlags |= OutputFlags.WrongType;
                 output.SpanByteAndMemory.Length = 0;
                 return true;
             }
@@ -190,7 +190,7 @@ namespace Garnet.server
             memorySizeChange = this.HeapMemorySize - previousMemorySize;
 
             if (list.Count == 0)
-                output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
+                output.OutputFlags |= OutputFlags.RemoveKey;
 
             return true;
         }

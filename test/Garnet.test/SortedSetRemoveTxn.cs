@@ -21,7 +21,7 @@ namespace Garnet
             var offset = 0;
             var subscriptionContainerKey = GetNextArg(ref procInput.parseState, ref offset);
 
-            AddKey(subscriptionContainerKey, LockType.Exclusive, true);
+            AddKey(subscriptionContainerKey, LockType.Exclusive, StoreType.Object);
             return true;
         }
 
