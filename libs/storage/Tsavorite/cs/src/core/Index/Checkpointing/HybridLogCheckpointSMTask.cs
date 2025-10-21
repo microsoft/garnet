@@ -73,7 +73,11 @@ namespace Tsavorite.core
             }
         }
 
-        protected static void CollectMetadata(SystemState next, TsavoriteKV<TStoreFunctions, TAllocator> store) { /* Currently nothing to do here */ }
+        protected static void CollectMetadata(SystemState next, TsavoriteKV<TStoreFunctions, TAllocator> store)
+        {
+            // Collect object log tail only after flushes are completed
+            store._hybridLogCheckpoint.info.objectLogTail = store.hlogBase.GetObjectLogTail();
+        }
 
         /// <inheritdoc />
         public virtual void GlobalAfterEnteringState(SystemState next, StateMachineDriver stateMachineDriver)

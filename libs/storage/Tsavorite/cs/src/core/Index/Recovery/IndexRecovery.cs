@@ -54,9 +54,7 @@ namespace Tsavorite.core
                 Initialize(info.info.table_size, (int)sectorSize);
             }
 
-
             BeginMainIndexRecovery(ht_version, info.main_ht_device, info.info.num_ht_bytes, isAsync);
-
 
             var alignedIndexSize = (info.info.num_ht_bytes + (sectorSize - 1)) & ~((ulong)sectorSize - 1);
             return alignedIndexSize;
@@ -147,9 +145,7 @@ namespace Tsavorite.core
         private unsafe void AsyncPageReadCallback(uint errorCode, uint numBytes, object overlap)
         {
             if (errorCode != 0)
-            {
                 logger?.LogError($"{nameof(AsyncPageReadCallback)} error: {{errorCode}}", errorCode);
-            }
             recoveryCountdown.Decrement();
         }
 

@@ -11,8 +11,8 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.recovery.objects
 {
-    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
 
     [TestFixture]
     public class ObjectRecoveryTests2
@@ -68,7 +68,7 @@ namespace Tsavorite.test.recovery.objects
             Destroy(log, objlog, store);
         }
 
-        private static void Prepare(out IDevice log, out IDevice objlog, out TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store, out MyContext context)
+        private static void Prepare(out IDevice log, out IDevice objlog, out TsavoriteKV<ClassStoreFunctions, ClassAllocator> store, out MyContext context)
         {
             log = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "RecoverTests.log"));
             objlog = Devices.CreateLogDevice(Path.Combine(TestUtils.MethodTestDir, "RecoverTests_HEAP.log"));
@@ -154,5 +154,4 @@ namespace Tsavorite.test.recovery.objects
         }
     }
 }
-
 #endif // LOGRECORD_TODO

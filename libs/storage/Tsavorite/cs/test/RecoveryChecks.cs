@@ -1086,4 +1086,5 @@ namespace Tsavorite.test.recovery
         }
     }
 }
-#endif
+
+#endif // LOGRECORD_TODO

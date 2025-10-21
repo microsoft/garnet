@@ -9,6 +9,8 @@ namespace Tsavorite.test.recovery.sumstore
 {
     public struct AdId
     {
+        public const int Size = sizeof(long);
+
         public long adId;
 
         public override string ToString() => adId.ToString();

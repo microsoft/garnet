@@ -29,6 +29,11 @@ namespace Tsavorite.core
         internal virtual CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger) => default;
         /// <summary>Create the circular flush buffers for object dexerialization from device. Only implemented by ObjectAllocator.</summary>
         internal virtual CircularDiskReadBuffer CreateCircularReadBuffers() => default;
+
+        /// <summary>Get the ObjectLog tail position, if this is ObjectAllocator.</summary>
+        internal virtual ObjectLogFilePositionInfo GetObjectLogTail() => new();  // This marks it as "unset"
+        /// <summary>Set the ObjectLog tail position, if this is ObjectAllocator.</summary>
+        internal virtual void SetObjectLogTail(ObjectLogFilePositionInfo tail) { }
     }
 
     /// <summary>
@@ -1247,6 +1252,9 @@ namespace Tsavorite.core
             var end = GetLogicalAddressOfStartOfPage(page + 1);
             if (OnEvictionObserver is not null)
                 MemoryPageScan(start, end, OnEvictionObserver);
+
+            // TODO: Currently we don't call DisposeRecord or DisposeValueObject on eviction; we defer to the OnEvictionObserver
+            // and do nothing if that is not supplied. Should we add our own observer if they don't supply one?
             _wrapper.FreePage(page);
         }
 
@@ -1607,6 +1615,8 @@ namespace Tsavorite.core
                     readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
                 }
 
+                // If device != null then it is the snapshot file device. In that case we may have an offset into it due to FlushedUntilAddress
+                // having advanced; see Recovery.cs:RecoverHybridLog.
                 if (device != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 

@@ -626,7 +626,11 @@ namespace Tsavorite.core
             return true;
         }
 
-        private void RestoreMetadata(HybridLogCheckpointInfo recoveredHLCInfo) { /* Currently nothing to do here */ }
+        private void RestoreMetadata(HybridLogCheckpointInfo recoveredHLCInfo)
+        {
+            // Recover object log tail position
+            hlogBase.SetObjectLogTail(recoveredHLCInfo.info.objectLogTail);
+        }
 
         /// <summary>
         /// This method ensures that before 'pagesToRead' number of pages are read into memory, any previously allocated pages 

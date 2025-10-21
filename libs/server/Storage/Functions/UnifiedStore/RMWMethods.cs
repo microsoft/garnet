@@ -55,9 +55,7 @@ namespace Garnet.server
             }
 
             if (logRecord.Info.ValueIsObject)
-            {
                 functionsState.objectStoreSizeTracker?.AddTrackedSize(logRecord.ValueObject.HeapMemorySize);
-            }
         }
 
         public bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
@@ -220,9 +218,7 @@ namespace Garnet.server
                     logRecord.ClearValueIfHeap(_ => { });
                 }
                 else
-                {
                     logRecord.RemoveETag();
-                }
 
                 rmwInfo.Action = RMWAction.ExpireAndResume;
 
@@ -264,9 +260,7 @@ namespace Garnet.server
                         shouldUpdateEtag = false;
                     }
                     else
-                    {
                         return true;
-                    }
                     break;
                 default:
                     throw new NotImplementedException();
