@@ -8,12 +8,14 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Security;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Garnet.server.TLS;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
@@ -2895,7 +2897,11 @@ namespace Garnet.test.cluster
                 primaryReplicationOffset = GetReplicationOffset(primaryIndex, logger);
                 secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
                 if (primaryReplicationOffset == secondaryReplicationOffset1)
+                {
+                    GetVectorManager(this.context.nodes[secondaryIndex]).WaitForVectorOperationsToComplete();
+
                     break;
+                }
 
                 var primaryMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger);
                 var replicaMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(secondaryIndex, isMainStore: true, logger);
@@ -3162,5 +3168,8 @@ namespace Garnet.test.cluster
                 return -1;
             }
         }
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "vectorManager")]
+        private static extern ref VectorManager GetVectorManager(GarnetServer server);
     }
 }

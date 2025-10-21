@@ -592,7 +592,7 @@ namespace Garnet.server
                 if (status.IsCanceled)
                 {
                     // Might be a vector set
-                    status = TryDeleteVectorSet(ref key);
+                    status = vectorManager.TryDeleteVectorSet(this, ref key);
                 }
 
                 Debug.Assert(!status.IsPending);
@@ -625,7 +625,7 @@ namespace Garnet.server
                     fixed (byte* keyPtr = key)
                     {
                         SpanByte keySpan = new(key.Length, (nint)keyPtr);
-                        status = TryDeleteVectorSet(ref keySpan);
+                        status = vectorManager.TryDeleteVectorSet(this, ref keySpan);
                     }
 
                     if (status.Found) found = true;

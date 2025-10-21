@@ -4,7 +4,6 @@
 using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -274,59 +273,6 @@ namespace Garnet.server
                 dimensions = (int)(reducedDimensionsUS == 0 ? dimensionsUS : reducedDimensionsUS);
 
                 return GarnetStatus.OK;
-            }
-        }
-
-        /// <summary>
-        /// Deletion of a Vector Set needs special handling.
-        /// 
-        /// This is called by DEL and UNLINK after a naive delete fails for us to _try_ and delete a Vector Set.
-        /// </summary>
-        [SkipLocalsInit]
-        private unsafe Status TryDeleteVectorSet(ref SpanByte key)
-        {
-            parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
-
-            var input = new RawStringInput(RespCommand.VADD, ref parseState);
-
-            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
-
-            Span<TxnKeyEntry> exclusiveLocks = stackalloc TxnKeyEntry[vectorManager.readLockShardCount];
-
-            using (vectorManager.ReadForDeleteVectorIndex(this, ref key, ref input, indexSpan, exclusiveLocks, out var status))
-            {
-                if (status != GarnetStatus.OK)
-                {
-                    // This can happen is something else successfully deleted before we acquired the lock
-                    return Status.CreateNotFound();
-                }
-
-                vectorManager.DropIndex(indexSpan);
-
-                // Update the index to be delete-able
-                var updateToDroppableVectorSet = new RawStringInput();
-                updateToDroppableVectorSet.arg1 = VectorManager.DeleteAfterDropArg;
-                updateToDroppableVectorSet.header.cmd = RespCommand.VADD;
-
-                var update = basicContext.RMW(ref key, ref updateToDroppableVectorSet);
-                if (!update.IsCompletedSuccessfully)
-                {
-                    throw new GarnetException("Failed to make Vector Set delete-able, this should never happen but will leave vector sets corrupted");
-                }
-
-                // Actually delete the value
-                var del = basicContext.Delete(ref key);
-                if (!del.IsCompletedSuccessfully)
-                {
-                    throw new GarnetException("Failed to delete dropped Vector Set, this should never happen but will leave vector sets corrupted");
-                }
-
-                // Cleanup incidental additional state
-                vectorManager.DropVectorSetReplicationKey(key, ref basicContext);
-
-                vectorManager.CleanupDroppedIndex(ref vectorContext, indexSpan);
-
-                return Status.CreateFound();
             }
         }
     }

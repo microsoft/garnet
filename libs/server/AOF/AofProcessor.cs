@@ -365,7 +365,7 @@ namespace Garnet.server
                     StoreRMW(basicContext, storeInput, storeWrapper.vectorManager, respServerSession, ObtainServerSession, entryPtr);
                     break;
                 case AofEntryType.StoreDelete:
-                    StoreDelete(basicContext, entryPtr);
+                    StoreDelete(basicContext, storeWrapper.vectorManager, respServerSession.storageSession, entryPtr);
                     break;
                 case AofEntryType.ObjectStoreRMW:
                     ObjectStoreRMW(objectStoreBasicContext, objectStoreInput, entryPtr, bufferPtr, buffer.Length);
@@ -441,11 +441,11 @@ namespace Garnet.server
         }
 
         static void StoreRMW(
-            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, 
-            RawStringInput storeInput, 
-            VectorManager vectorManager, 
+            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+            RawStringInput storeInput,
+            VectorManager vectorManager,
             RespServerSession currentSession,
-            Func<RespServerSession> obtainServerSession, 
+            Func<RespServerSession> obtainServerSession,
             byte* ptr
         )
         {
@@ -486,10 +486,22 @@ namespace Garnet.server
                 output.Memory.Dispose();
         }
 
-        static void StoreDelete(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
+        static void StoreDelete(
+            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+            VectorManager vectorManager,
+            StorageSession storageSession,
+            byte* ptr)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
-            basicContext.Delete(ref key);
+            var res = basicContext.Delete(ref key);
+
+            if (res.IsCanceled)
+            {
+                // Might be a vector set
+                res = vectorManager.TryDeleteVectorSet(storageSession, ref key);
+                if (res.IsPending)
+                    _ = basicContext.CompletePending(true);
+            }
         }
 
         static void ObjectStoreUpsert(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,

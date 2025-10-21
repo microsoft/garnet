@@ -479,7 +479,7 @@ namespace Garnet.server
         internal readonly int readLockShardCount;
         private readonly long readLockShardMask;
 
-        private TaskCompletionSource cleanupTaskTcs;
+        private Channel<object> cleanupTaskChannel;
         private readonly Task cleanupTask;
         private readonly Func<IMessageConsumer> getCleanupSession;
 
@@ -503,7 +503,7 @@ namespace Garnet.server
             readLockShardMask = readLockShardCount - 1;
 
             this.getCleanupSession = getCleanupSession;
-            cleanupTaskTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             cleanupTask = RunCleanupTaskAsync();
         }
 
@@ -519,7 +519,8 @@ namespace Garnet.server
             replicationBlockEvent.Dispose();
 
             // Wait for any in progress cleanup to finish
-            _ = cleanupTaskTcs.TrySetCanceled();
+            cleanupTaskChannel.Writer.Complete();
+            cleanupTaskChannel.Reader.Completion.Wait();
             cleanupTask.Wait();
         }
 
@@ -530,15 +531,31 @@ namespace Garnet.server
         /// </summary>
         private ulong NextContext()
         {
-            // Lock isn't amazing, but _new_ vector set creation should be rare
-            // So just serializing it all is easier.
-            lock (this)
+            // TODO: This retry is no good, but will go away when namespaces >= 256 are possible
+            while (true)
             {
-                var nextFree = contextMetadata.NextNotInUse();
+                // Lock isn't amazing, but _new_ vector set creation should be rare
+                // So just serializing it all is easier.
+                try
+                {
+                    ulong nextFree;
+                    lock (this)
+                    {
+                        nextFree = contextMetadata.NextNotInUse();
 
-                contextMetadata.MarkInUse(nextFree);
+                        contextMetadata.MarkInUse(nextFree);
+                    }
 
-                return nextFree;
+                    logger?.LogDebug("Allocated vector set with context {nextFree}", nextFree);
+                    return nextFree;
+                }
+                catch (Exception e)
+                {
+                    logger?.LogError(e, "NextContext not available, delaying and retrying");
+                }
+
+                // HACK HACK HACK
+                Thread.Sleep(1_000);
             }
         }
 
@@ -959,6 +976,57 @@ namespace Garnet.server
             var del = Service.Remove(context, indexPtr, element);
 
             return del ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
+        }
+        /// <summary>
+         /// Deletion of a Vector Set needs special handling.
+         /// 
+         /// This is called by DEL and UNLINK after a naive delete fails for us to _try_ and delete a Vector Set.
+         /// </summary>
+        internal unsafe Status TryDeleteVectorSet(StorageSession storageSession, ref SpanByte key)
+        {
+            storageSession.parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
+
+            var input = new RawStringInput(RespCommand.VADD, ref storageSession.parseState);
+
+            Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
+
+            Span<TxnKeyEntry> exclusiveLocks = stackalloc TxnKeyEntry[readLockShardCount];
+
+            using (ReadForDeleteVectorIndex(storageSession, ref key, ref input, indexSpan, exclusiveLocks, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    // This can happen is something else successfully deleted before we acquired the lock
+                    return Status.CreateNotFound();
+                }
+
+                DropIndex(indexSpan);
+
+                // Update the index to be delete-able
+                var updateToDroppableVectorSet = new RawStringInput();
+                updateToDroppableVectorSet.arg1 = VectorManager.DeleteAfterDropArg;
+                updateToDroppableVectorSet.header.cmd = RespCommand.VADD;
+
+                var update = storageSession.basicContext.RMW(ref key, ref updateToDroppableVectorSet);
+                if (!update.IsCompletedSuccessfully)
+                {
+                    throw new GarnetException("Failed to make Vector Set delete-able, this should never happen but will leave vector sets corrupted");
+                }
+
+                // Actually delete the value
+                var del = storageSession.basicContext.Delete(ref key);
+                if (!del.IsCompletedSuccessfully)
+                {
+                    throw new GarnetException("Failed to delete dropped Vector Set, this should never happen but will leave vector sets corrupted");
+                }
+
+                // Cleanup incidental additional state
+                DropVectorSetReplicationKey(key, ref storageSession.basicContext);
+
+                CleanupDroppedIndex(ref storageSession.vectorContext, indexSpan);
+
+                return Status.CreateFound();
+            }
         }
 
         /// <summary>
@@ -1492,7 +1560,8 @@ namespace Garnet.server
             UpdateContextMetadata(ref ctx);
 
             // Wake up cleanup task
-            _ = cleanupTaskTcs.TrySetResult();
+            var writeRes = cleanupTaskChannel.Writer.TryWrite(null);
+            Debug.Assert(writeRes, "Request for cleanup failed, this should never happen");
         }
 
         /// <summary>
@@ -2019,7 +2088,7 @@ namespace Garnet.server
         /// <summary>
         /// Wait until all ops passed to <see cref="HandleVectorSetAddReplication"/> have completed.
         /// </summary>
-        internal void WaitForVectorOperationsToComplete()
+        public void WaitForVectorOperationsToComplete()
         {
             try
             {
@@ -2035,25 +2104,12 @@ namespace Garnet.server
 
         private async Task RunCleanupTaskAsync()
         {
-            // Go async immediately
-            await Task.Yield();
-
-            while (true)
+            // Each drop index will queue a null object here
+            // We'll handle multiple at once if possible, but using a channel simplifies cancellation and dispose
+            await foreach (var ignored in cleanupTaskChannel.Reader.ReadAllAsync())
             {
                 try
                 {
-                    try
-                    {
-                        await cleanupTaskTcs.Task;
-                    }
-                    catch (TaskCanceledException)
-                    {
-                        // Can happen during dispose
-                        return;
-                    }
-
-                    cleanupTaskTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
                     HashSet<ulong> needCleanup;
                     lock (this)
                     {

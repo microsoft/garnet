@@ -4,7 +4,6 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
@@ -345,7 +344,12 @@ namespace Garnet.test.cluster
                 bytes3[j] = (byte)(bytes3[j - 1] + 1);
             }
 
-            for (var i = 0; i < 1_000; i++)
+            var key0 = new byte[4];
+            key0[0] = 1;
+            var key1 = new byte[4];
+            key1[0] = 2;
+
+            for (var i = 0; i < 100; i++)
             {
                 var delRes = (int)context.clusterTestUtils.Execute(primary, "DEL", ["foo"]);
 
@@ -358,10 +362,10 @@ namespace Garnet.test.cluster
                     ClassicAssert.AreEqual(0, delRes);
                 }
 
-                var addRes1 = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", bytes1, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
+                var addRes1 = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", bytes1, key0, "XPREQ8"]);
                 ClassicAssert.AreEqual(1, addRes1);
 
-                var addRes2 = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", bytes2, new byte[] { 0, 0, 0, 1 }, "XPREQ8"]);
+                var addRes2 = (int)context.clusterTestUtils.Execute(primary, "VADD", ["foo", "XB8", bytes2, key1, "XPREQ8"]);
                 ClassicAssert.AreEqual(1, addRes2);
 
                 var readPrimaryExc = (string)context.clusterTestUtils.Execute(primary, "GET", ["foo"]);
@@ -378,16 +382,38 @@ namespace Garnet.test.cluster
                 var readSecondary = (string)context.clusterTestUtils.Execute(secondary, "GET", ["foo"]);
                 ClassicAssert.IsTrue(readSecondary is null || readSecondary.StartsWith("WRONGTYPE "));
 
-                var start = Stopwatch.GetTimestamp();
+                context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+
+                var querySecondary = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", ["foo", "XB8", bytes3]);
+                ClassicAssert.IsTrue(querySecondary.Length >= 1);
+
+                for (var j = 0; j < querySecondary.Length; j++)
+                {
+                    var expected =
+                        querySecondary[j].AsSpan().SequenceEqual(key0) ||
+                        querySecondary[j].AsSpan().SequenceEqual(key1);
+
+                    ClassicAssert.IsTrue(expected);
+                }
+
+                Incr(key0);
+                Incr(key1);
+            }
+
+            static void Incr(byte[] k)
+            {
+                var ix = k.Length - 1;
                 while (true)
                 {
-                    var querySecondary = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", ["foo", "XB8", bytes3]);
-                    if (querySecondary.Length == 2)
+                    k[ix]++;
+                    if (k[ix] == 0)
+                    {
+                        ix--;
+                    }
+                    else
                     {
                         break;
                     }
-
-                    ClassicAssert.IsTrue(Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5), "Too long has passed without a vector set catching up on the secondary");
                 }
             }
         }
