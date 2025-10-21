@@ -1564,21 +1564,22 @@ namespace Tsavorite.core
         }
 
         /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event</summary>
-        public void AsyncReadPagesForRecovery<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, DeviceIOCompletionCallback callback,
-                                TContext context, long devicePageOffset = 0, IDevice logDevice = null)
-            => AsyncReadPagesForRecovery(readBuffers, readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice);
+        public void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, DeviceIOCompletionCallback callback,
+                                TContext context, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null)
+            => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice, objectLogDevice);
 
         /// <summary>Read pages from specified device for recovery, returning the countdown event</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private void AsyncReadPagesForRecovery<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, DeviceIOCompletionCallback callback,
+        private void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, DeviceIOCompletionCallback callback,
                                 TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null)
         {
             var usedDevice = device ?? this.device;
-            IDevice usedObjlogDevice = objectLogDevice;
 
             completed = new CountdownEvent(numPages);
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
             {
+                using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
+
                 var pageIndex = (int)(readPage % BufferSize);
                 if (!IsAllocated(pageIndex))
                     _wrapper.AllocatePage(pageIndex);
@@ -1591,7 +1592,8 @@ namespace Tsavorite.core
                     devicePageOffset = devicePageOffset,
                     context = context,
                     handle = completed,
-                    maxPtr = PageSize
+                    maxPtr = PageSize,
+                    isForRecovery = true
                 };
 
                 var offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
@@ -1744,6 +1746,7 @@ namespace Tsavorite.core
                     context = context,
                     count = 1,
                     partial = false,
+                    fromAddress = GetLogicalAddressOfStartOfPage(flushPage),
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
                     flushBuffers = flushBuffers
                 };

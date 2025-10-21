@@ -464,26 +464,27 @@ namespace Tsavorite.core
             // inlineValueGrowth and fillerLen may be negative if shrinking value or converting to Overflow/Object.
             // ETag and Expiration won't change, but optionalGrowth may be positive or negative if adding or removing ObjectLogPosition.
             var inlineValueGrowth = (int)(newInlineValueSize - oldInlineValueSize);
-            var oldOptionalSize = OptionalLength;
+            var oldObjectLogPositionLen = ObjectLogPositionLen;
+            var oldOptionalSize = ETagLen + ExpirationLen + oldObjectLogPositionLen;
             var newOptionalSize = sizeInfo.OptionalSize;
             var optionalGrowth = newOptionalSize - oldOptionalSize;
 
             var optionalStartAddress = valueAddress + oldInlineValueSize;
-            var fillerLenAddress = optionalStartAddress + oldOptionalSize;
-            var fillerLen = GetFillerLength(fillerLenAddress);
+            var oldFillerLenAddress = optionalStartAddress + oldOptionalSize;
+            var oldFillerLen = GetFillerLength(oldFillerLenAddress);
 
             // See if we have enough room for the change in Value inline data. Note: This includes things like moving inline data that is less than
             // overflow length into overflow, which frees up inline space > ObjectIdMap.ObjectIsSize. We calculate the inline size required for the
             // new value (including whether it is overflow) and the existing optionals, and success is based on whether that can fit into the allocated
             // record space. We do not change the presence of optionals h ere; we just ensure there is enough for the larger of (current optionals,
             // new optionals) and a later operation will actually read/update the optional(s), including setting/clearing the flag(s).
-            if (fillerLen < inlineValueGrowth + optionalGrowth)
+            if (oldFillerLen < inlineValueGrowth + optionalGrowth)
                 return false;
 
             // Update record part 1: Set varbyte value length to the full length of the value, including filler but NOT optionalSize (which is calculated
             // directly from RecordInfo's HasETag and HasExpiration bits, which we do not change here). Scan will now be able to navigate to the end of
             // the record via GetInlineRecordSizes().allocatedSize.
-            var oldValueAndFillerSize = (int)(oldInlineValueSize + fillerLen);
+            var oldValueAndFillerSize = (int)(oldInlineValueSize + oldFillerLen);
             *(long*)IndicatorAddress = CreateIgnoreOptionalsVarbyteWord(*(long*)IndicatorAddress, keyLengthBytes, valueLengthBytes, oldValueAndFillerSize);
 
             // Update record part 2: Save the optionals if shifting is needed. We can't just shift now because we may be e.g. converting from inline to
@@ -563,21 +564,21 @@ namespace Tsavorite.core
             // int value) if we have shrunk the value. Optional data size for ETag/Expiration is unchanged even if newOptionalSize != oldOptionalSize,
             // because we are not updating those optionals here; however, a change in the presence or absence of the pseudo-optional ObjectLogPosition
             // must be accounted for if we have changed whether the record is inline or has objects.
-            var objLogPosGrowth = sizeInfo.ObjectLogPositionSize - ObjectLogPositionLen;
-            fillerLen -= inlineValueGrowth + objLogPosGrowth;
+            var objLogPosGrowth = sizeInfo.ObjectLogPositionSize;
+            var newFillerLen = oldFillerLen - (inlineValueGrowth + objLogPosGrowth);
             var hasFillerBit = 0L;
-            var newFillerLenAddress = optionalStartAddress + oldOptionalSize;   // optional data is unchanged so use old optional size
+            var newFillerLenAddress = optionalStartAddress + oldOptionalSize + objLogPosGrowth;   // optional data is unchanged so use old optional size but adjust for objLogPos space
             var endOfNewFillerSpace = newFillerLenAddress;
-            if (fillerLen >= FillerLengthSize)
+            if (newFillerLen >= FillerLengthSize)
             {
-                *(int*)newFillerLenAddress = fillerLen;
+                *(int*)newFillerLenAddress = newFillerLen;
                 hasFillerBit = kHasFillerBitMask;
                 endOfNewFillerSpace += FillerLengthSize;
             }
             if (inlineValueGrowth < 0)
             {
                 // Zeroinit any empty space we opened up by shrinking.
-                var endOfOldFillerSpace = fillerLenAddress + (fillerLen >= FillerLengthSize ? FillerLengthSize : 0);
+                var endOfOldFillerSpace = oldFillerLenAddress + (oldFillerLen >= FillerLengthSize ? FillerLengthSize : 0);
                 var clearLength = (int)(endOfOldFillerSpace - endOfNewFillerSpace);
                 // If old filler space was < FillerLengthSize and we only shrank by a couple bytes, we may have written FillerLengthSize leaving clearLength <= 0
                 if (clearLength > 0)

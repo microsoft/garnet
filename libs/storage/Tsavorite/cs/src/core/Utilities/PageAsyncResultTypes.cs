@@ -44,6 +44,9 @@ namespace Tsavorite.core
         /// <summary>The max offset on the main log page to iterate records when determining how many bytes in the ObjectLog to read.</summary>
         internal long maxPtr;
 
+        /// <summary>If true, we are called from recovery, and should use the non-transient <see cref="ObjectIdMap"/>.</summary>
+        internal bool isForRecovery;
+
         public override string ToString()
             => $"page {page}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} ({destinationPtr:X}), maxPtr {maxPtr}";
 

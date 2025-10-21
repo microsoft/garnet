@@ -210,9 +210,8 @@ namespace Tsavorite.test
 
         public enum AllocatorType
         {
-            FixedBlittable,
             SpanByte,
-            Generic
+            Object
         }
 
         internal enum CompletionSyncMode { Sync, Async }

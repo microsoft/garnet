@@ -50,13 +50,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Prepare the <see cref="DiskReadBuffer"/> and local variables to read the next buffer (or as much of it as we need). This is called 
-        /// by OnBeginReadRecords and when we are leaving a buffer with more data, to fill that buffer so it is available when we wrap around
-        /// to it again. For both of these, we do not have to worry that there is pending IO in the buffer.
+        /// Prepare the <see cref="DiskReadBuffer"/> and local variables to read the next buffer (or as much of it as we need) and issue the read.
+        /// This is called by OnBeginReadRecords and when we are leaving a buffer with more data, to fill that buffer so it is available when we
+        /// wrap around to it again. For both of these, we do not have to worry that there is pending IO in the buffer.
         /// </summary>
         /// <param name="bufferIndex">The index into <see cref="buffers"/> of the <see cref="DiskReadBuffer"/> that will do the reading</param>
         /// <param name="unalignedRecordStartPosition">Start position on the page (relative to start of page)</param>
-        private void ReadBuffer(int bufferIndex, int unalignedRecordStartPosition)
+        private void DoReadBuffer(int bufferIndex, int unalignedRecordStartPosition)
         {
             var buffer = buffers[bufferIndex];
             if (buffer is null)
@@ -126,7 +126,7 @@ namespace Tsavorite.core
             {
                 if (unreadLengthRemaining == 0)
                     break;
-                ReadBuffer(ii, recordStartPosition);
+                DoReadBuffer(ii, recordStartPosition);
                 recordStartPosition = 0;  // After the first read, subsequent reads start on an aligned address
             }
         }
@@ -178,7 +178,7 @@ namespace Tsavorite.core
         {
             // If we have more data to read, "backfill" this buffer with a read before departing it, else initialize it.
             if (unreadLengthRemaining > 0)
-                ReadBuffer(currentIndex, unalignedRecordStartPosition: 0);
+                DoReadBuffer(currentIndex, unalignedRecordStartPosition: 0);
             else
                 buffers[currentIndex].Initialize();
 

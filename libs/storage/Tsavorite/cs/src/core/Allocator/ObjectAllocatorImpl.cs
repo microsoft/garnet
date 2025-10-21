@@ -522,7 +522,8 @@ namespace Tsavorite.core
         /// <remarks>This override of the base function reads Overflow keys or values, or Object values.</remarks>
         private protected override bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
         {
-            // If this fails it is either too-short main-log record or a key mismatch. Let the top-level retry handle it.
+            // If this fails it is either too-short main-log record or a key mismatch. Let the top-level retry handle it. This will always
+            // use the transientObjectIdMap (unless we are copying to tail, in which case we will remap to the allocator page's objectIdMap).
             if (!base.VerifyRecordFromDiskCallback(ref ctx, out prevAddressToRead, out prevLengthToRead))
                 return false;
 
@@ -539,7 +540,7 @@ namespace Tsavorite.core
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
             logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
-            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.request_key, transientObjectIdMap, startPosition.SegmentSizeBits))
+            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.request_key, startPosition.SegmentSizeBits))
             {
                 // Success; set the DiskLogRecord objectDisposer. We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
                 ctx.diskLogRecord.objectDisposer = obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk);
@@ -579,7 +580,7 @@ namespace Tsavorite.core
 
             // Iterate all records in range to determine how many bytes we need to read from objlog.
             ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
-            int endKeyLength = 0;
+            var endKeyLength = 0;
             ulong endValueLength = 0;
             ulong totalBytesToRead = 0;
             var recordAddress = pageStartAddress + PageHeader.Size;
@@ -618,9 +619,11 @@ namespace Tsavorite.core
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
                 logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
 
+                var objectIdMapToUse = result.isForRecovery ? pages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
+
                 while (recordAddress < endAddress)
                 {
-                    var logRecord = new LogRecord(recordAddress, transientObjectIdMap);
+                    var logRecord = new LogRecord(recordAddress, objectIdMapToUse);
 
                     // Use allocatedSize here because that is what LogicalAddress is based on.
                     if (logRecord.Info.RecordIsInline)
@@ -634,7 +637,7 @@ namespace Tsavorite.core
                     {
                         // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
                         // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
-                        _ = logReader.ReadRecordObjects(ref logRecord, noKey, transientObjectIdMap, startPosition.SegmentSizeBits);
+                        _ = logReader.ReadRecordObjects(ref logRecord, noKey, startPosition.SegmentSizeBits);
                     }
                 }
             }

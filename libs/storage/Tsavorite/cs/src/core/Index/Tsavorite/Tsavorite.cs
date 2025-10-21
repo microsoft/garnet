@@ -409,9 +409,7 @@ namespace Tsavorite.core
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
         /// <returns>Version we actually recovered to</returns>
         public long Recover(Guid fullCheckpointToken, int numPagesToPreload = -1, bool undoNextVersion = true)
-        {
-            return InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, -1);
-        }
+            => InternalRecover(fullCheckpointToken, fullCheckpointToken, numPagesToPreload, undoNextVersion, -1);
 
         /// <summary>
         /// Asynchronously recover from specific token (blocking operation)

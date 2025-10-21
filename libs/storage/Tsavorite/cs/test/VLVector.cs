@@ -15,7 +15,7 @@ namespace Tsavorite.test
         //      Span<int> valueSpan = stackalloc int[numElem];
         //      for (var ii = 0; ii < numElem; ++ii) valueSpan[ii] = someInt;
         //      var valueSpanByte = valueSpan.AsSpanByte();
-        public static PinnedSpanByte FromPinnedSpan<T>(this Span<T> span) where T : unmanaged
+        public static PinnedSpanByte FromPinnedSpan<T>(Span<T> span) where T : unmanaged
             => PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<T, byte>(span));
 
         internal static T[] ToArray<T>(this Span<byte> byteSpan) where T : unmanaged
