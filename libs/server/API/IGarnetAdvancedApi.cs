@@ -49,5 +49,15 @@ namespace Garnet.server
         /// Read operation on object store
         /// </summary>
         GarnetStatus Read_ObjectStore(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+
+        /// <summary>
+        /// RMW operation on unified store
+        /// </summary>
+        GarnetStatus RMW_UnifiedStore(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
+
+        /// <summary>
+        /// Read operation on unified store
+        /// </summary>
+        GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output);
     }
 }

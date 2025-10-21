@@ -24,22 +24,26 @@ namespace Garnet.server
                 return false;
             }
 
+            if (srcLogRecord.Info.ValueIsObject)
+                output.OutputFlags |= OutputFlags.ValueIsObject;
+
             var cmd = input.header.cmd;
             return cmd switch
             {
                 RespCommand.EXISTS => true,
-                RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref input, ref output, ref readInfo),
-                RespCommand.TYPE => HandleType(in srcLogRecord, ref input, ref output, ref readInfo),
+                RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, ref output),
+                RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref output),
+                RespCommand.TYPE => HandleType(in srcLogRecord, ref output),
                 RespCommand.TTL or
-                RespCommand.PTTL => HandleTtl(in srcLogRecord, ref input, ref output, ref readInfo, cmd == RespCommand.PTTL),
+                RespCommand.PTTL => HandleTtl(in srcLogRecord, ref output, cmd == RespCommand.PTTL),
                 RespCommand.EXPIRETIME or
-                RespCommand.PEXPIRETIME => HandleExpireTime(in srcLogRecord, ref input, ref output, ref readInfo, cmd == RespCommand.PEXPIRETIME),
+                RespCommand.PEXPIRETIME => HandleExpireTime(in srcLogRecord, ref output, cmd == RespCommand.PEXPIRETIME),
                 _ => throw new NotImplementedException(),
             };
         }
 
-        private bool HandleMemoryUsage<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref ReadInfo readInfo) where TSourceLogRecord : ISourceLogRecord
+        private bool HandleMemoryUsage<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
+            ref GarnetUnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
         {
             var inlineRecordSize = srcLogRecord.GetInlineRecordSizes().allocatedSize;
             long heapMemoryUsage = 0;
@@ -61,8 +65,8 @@ namespace Garnet.server
             return true;
         }
 
-        private bool HandleType<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref ReadInfo readInfo) where TSourceLogRecord : ISourceLogRecord
+        private bool HandleType<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
+            ref GarnetUnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -92,8 +96,8 @@ namespace Garnet.server
             return true;
         }
 
-        private bool HandleTtl<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref ReadInfo readInfo, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
+        private bool HandleTtl<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
+            ref GarnetUnifiedStoreOutput output, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -106,8 +110,8 @@ namespace Garnet.server
             return true;
         }
 
-        private bool HandleExpireTime<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref ReadInfo readInfo, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
+        private bool HandleExpireTime<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
+            ref GarnetUnifiedStoreOutput output, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -117,6 +121,15 @@ namespace Garnet.server
                 : ConvertUtils.UnixTimeInSecondsFromTicks(expiration);
 
             writer.WriteInt64(expireTime);
+            return true;
+        }
+
+        private bool HandleMigrate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref GarnetUnifiedStoreOutput output)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            DiskLogRecord.Serialize(in srcLogRecord,
+                valueObjectSerializer: srcLogRecord.Info.ValueIsObject ? functionsState.garnetObjectSerializer : null,
+                memoryPool: functionsState.memoryPool, output: ref output.SpanByteAndMemory);
             return true;
         }
     }

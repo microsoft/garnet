@@ -169,20 +169,17 @@ namespace Garnet.client
         /// </summary>
         /// <param name="sourceNodeId"></param>
         /// <param name="replace"></param>
-        /// <param name="isMainStore"></param>
-        public void SetClusterMigrateHeader(string sourceNodeId, bool replace, bool isMainStore)
+        public void SetClusterMigrateHeader(string sourceNodeId, bool replace)
         {
             // For Migration we send the (curr - end) buffer as the SpanByteAndMemory.SpanByte output to Tsavorite. Thus we must
             // initialize the header first, so we have curr properly positioned, but we cannot yet enqueue currTcsIterationTask.
             // Therefore we defer this until the actual Flush(), when we know we have records to send. This is not a concern for
             // Replication, because it uses an iterator and thus knows it has a record before it initializes the header.
             curr = offset;
-            this.isMainStore = isMainStore;
             this.ist = IncrementalSendType.MIGRATE;
-            var storeType = isMainStore ? MAIN_STORE : OBJECT_STORE;
             var replaceOption = replace ? T : F;
 
-            var arraySize = 6;
+            var arraySize = 5;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
@@ -224,14 +221,6 @@ namespace Garnet.client
             offset = curr;
 
             // 5
-            while (!RespWriteUtils.TryWriteBulkString(storeType, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            // 6
             // Reserve space for the bulk string header + final newline
             while (ExtraSpace + 2 > (int)(end - curr))
             {
@@ -247,11 +236,10 @@ namespace Garnet.client
         /// </summary>
         /// <param name="sourceNodeId"></param>
         /// <param name="replace"></param>
-        /// <param name="isMainStore"></param>
         /// <returns></returns>
-        public Task<string> CompleteMigrate(string sourceNodeId, bool replace, bool isMainStore)
+        public Task<string> CompleteMigrate(string sourceNodeId, bool replace)
         {
-            SetClusterMigrateHeader(sourceNodeId, replace, isMainStore);
+            SetClusterMigrateHeader(sourceNodeId, replace);
 
             Debug.Assert(end - curr >= 2);
             *curr++ = (byte)'\r';

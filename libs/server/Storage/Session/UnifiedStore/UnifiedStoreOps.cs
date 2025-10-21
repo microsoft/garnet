@@ -14,6 +14,22 @@ namespace Garnet.server
     sealed partial class StorageSession : IDisposable
     {
         /// <summary>
+        /// SET a log record in the unified store context.
+        /// </summary>
+        /// <typeparam name="TUnifiedContext"></typeparam>
+        /// <typeparam name="TSourceLogRecord"></typeparam>
+        /// <param name="srcLogRecord">The log record</param>
+        /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
+        /// <returns></returns>
+        public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            unifiedContext.Upsert(in srcLogRecord);
+            return GarnetStatus.OK;
+        }
+
+        /// <summary>
         /// Checks if a key exists in the unified store context.
         /// </summary>
         /// <typeparam name="TUnifiedContext"></typeparam>

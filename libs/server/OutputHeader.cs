@@ -26,6 +26,11 @@ namespace Garnet.server
         /// Wrong type of value
         /// </summary>
         WrongType = 1 << 1,
+
+        /// <summary>
+        /// Is value found an object
+        /// </summary>
+        ValueIsObject = 1 << 2,
     }
 
     /// <summary>
