@@ -472,12 +472,11 @@ namespace Garnet.cluster
             {
                 while (i < recordCount)
                 {
-                    if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, out var isObject,  ref payloadPtr, payloadEndPtr))
+                    if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
                         return false;
 
-                    diskLogRecord = DiskLogRecord.Deserialize(recordSpan,
-                        valueObjectSerializer: isObject ? storeWrapper.GarnetObjectSerializer : null,
-                        transientObjectIdMap: isObject ? transientObjectIdMap : null, storeWrapper.storeFunctions);
+                    diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer,
+                        transientObjectIdMap, storeWrapper.storeFunctions);
 
                     _ = basicGarnetApi.SET(in diskLogRecord);
                     diskLogRecord.Dispose();

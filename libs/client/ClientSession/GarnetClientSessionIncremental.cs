@@ -124,7 +124,7 @@ namespace Garnet.client
         public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, bool isObject, out Task<string> task)
         {
             // We include space for newline at the end, to be added before sending
-            var totalLen = 1 + recordSpan.TotalSize() + 2;
+            var totalLen = recordSpan.TotalSize() + 2;
             if (totalLen > (int)(end - curr))
             {
                 // If there is no space left, send outstanding data and return the send-completion task.
@@ -133,18 +133,8 @@ namespace Garnet.client
                 return false;
             }
 
-            // Write the total length (serialized length + the isObject flag length)
-            *(int*)curr = 1 + recordSpan.Length;
-            curr += sizeof(int);
-
-            // Write the isObject flag
-            *curr = isObject ? (byte)1 : (byte)0;
-            curr++;
-
-            // Write the serialized record
-            recordSpan.CopyTo(new Span<byte>(curr, recordSpan.Length));
-            curr += recordSpan.Length;
-
+            recordSpan.SerializeTo(curr);
+            curr += recordSpan.TotalSize();
             ++recordCount;
             task = null;
             return true;

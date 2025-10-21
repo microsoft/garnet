@@ -1228,27 +1228,20 @@ namespace Garnet.common
         /// <summary>
         /// Read serialized data for migration and replication. For details of the layout see <see cref="DiskLogRecord.Serialize"/>.
         /// </summary>  
-        public static bool GetSerializedRecordSpan(out PinnedSpanByte recordSpan, out bool isObject, ref byte* ptr, byte* end)
+        public static bool GetSerializedRecordSpan(out PinnedSpanByte recordSpan, ref byte* ptr, byte* end)
         {
-            isObject = false;
-
             // 1. Safe read recordSize.
             if (ptr + sizeof(int) > end)
             {
                 recordSpan = default;
                 return false;
             }
-
-            var length = *(int*)ptr;
+            var recordLength = *(int*)ptr;
             ptr += sizeof(int);
 
-            // 2. Read isObject flag.
-            isObject = *ptr == 1;
-            ptr++;
-
-            // 3. Read the serialized record
-            recordSpan = PinnedSpanByte.FromPinnedPointer(ptr, length - 1);
-            ptr += length - 1;
+            // 2. The record starts immediately after the length prefix.
+            recordSpan = PinnedSpanByte.FromPinnedPointer(ptr, recordLength);
+            ptr += recordLength;
             return true;
         }
 

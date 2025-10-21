@@ -96,7 +96,7 @@ namespace Garnet.cluster
                     {
                         while (i < keyCount)
                         {
-                            if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, out var isObject, ref payloadPtr, payloadEndPtr))
+                            if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
                                 return;
 
                             // An error has occurred
@@ -106,9 +106,8 @@ namespace Garnet.cluster
                                 continue;
                             }
 
-                            diskLogRecord = DiskLogRecord.Deserialize(recordSpan,
-                                isObject ? storeWrapper.GarnetObjectSerializer : null,
-                                isObject ? transientObjectIdMap : null, storeWrapper.storeFunctions);
+                            diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer,
+                                transientObjectIdMap, storeWrapper.storeFunctions);
 
                             var slot = HashSlotUtils.HashSlot(diskLogRecord.Key);
                             if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
