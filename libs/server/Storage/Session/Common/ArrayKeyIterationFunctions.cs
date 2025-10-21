@@ -323,6 +323,13 @@ namespace Garnet.server
 
                 public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
+                    // TODO: A better check for "is probably a vector key"
+                    if (key.MetadataSize == 1)
+                    {
+                        cursorRecordResult = CursorRecordResult.Skip;
+                        return true;
+                    }
+
                     if ((info.patternB != null && !GlobUtils.Match(info.patternB, info.patternLength, key.ToPointer(), key.Length, true))
                         || (value.MetadataSize == 8 && MainSessionFunctions.CheckExpiry(ref value)))
                     {
@@ -410,6 +417,13 @@ namespace Garnet.server
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     cursorRecordResult = CursorRecordResult.Skip;
+
+                    // TODO: Better way to ignore internal vector set elements
+                    if (key.MetadataSize == 1)
+                    {
+                        return true;
+                    }
+
                     if (value.MetadataSize != 8 || !MainSessionFunctions.CheckExpiry(ref value))
                     {
                         ++info.count;

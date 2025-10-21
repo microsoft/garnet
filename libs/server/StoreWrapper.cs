@@ -848,6 +848,13 @@ namespace Garnet.server
                     while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
                     {
                         ref var key = ref iter.GetKey();
+
+                        // TODO: better way to ignore vector set elements
+                        if (key.MetadataSize == 1)
+                        {
+                            continue;
+                        }
+
                         ushort hashSlotForKey = HashSlotUtils.HashSlot(ref key);
                         if (slots.Contains(hashSlotForKey))
                         {
