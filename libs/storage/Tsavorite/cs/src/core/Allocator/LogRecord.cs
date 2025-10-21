@@ -564,7 +564,7 @@ namespace Tsavorite.core
             // int value) if we have shrunk the value. Optional data size for ETag/Expiration is unchanged even if newOptionalSize != oldOptionalSize,
             // because we are not updating those optionals here; however, a change in the presence or absence of the pseudo-optional ObjectLogPosition
             // must be accounted for if we have changed whether the record is inline or has objects.
-            var objLogPosGrowth = sizeInfo.ObjectLogPositionSize;
+            var objLogPosGrowth = sizeInfo.ObjectLogPositionSize - oldObjectLogPositionLen;
             var newFillerLen = oldFillerLen - (inlineValueGrowth + objLogPosGrowth);
             var hasFillerBit = 0L;
             var newFillerLenAddress = optionalStartAddress + oldOptionalSize + objLogPosGrowth;   // optional data is unchanged so use old optional size but adjust for objLogPos space

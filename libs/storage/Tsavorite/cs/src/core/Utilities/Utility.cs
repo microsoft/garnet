@@ -361,6 +361,25 @@ namespace Tsavorite.core
         /// <param name="variable">The variable to possibly replace</param>
         /// <param name="newValue">The value that replaces the variable if successful</param>
         /// <param name="oldValue">The orignal value in the variable</param>
+        /// <returns> if oldValue less than newValue </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool MonotonicUpdate(ref ulong variable, ulong newValue, out ulong oldValue)
+        {
+            do
+            {
+                oldValue = variable;
+                if (oldValue >= newValue)
+                    return false;
+            } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
+            return true;
+        }
+
+        /// <summary>
+        /// Updates the variable to newValue only if the current value is smaller than the new value.
+        /// </summary>
+        /// <param name="variable">The variable to possibly replace</param>
+        /// <param name="newValue">The value that replaces the variable if successful</param>
+        /// <param name="oldValue">The orignal value in the variable</param>
         /// <returns>if oldValue less than or equal to newValue</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool MonotonicUpdate(ref int variable, int newValue, out int oldValue)

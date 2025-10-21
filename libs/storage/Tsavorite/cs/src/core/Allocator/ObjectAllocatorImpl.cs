@@ -33,7 +33,7 @@ namespace Tsavorite.core
         internal ObjectPage[] pages;
 
         /// <summary>The position information for the next write to the object log.</summary>
-        ObjectLogFilePositionInfo objectLogNextRecordStartPosition;
+        ObjectLogFilePositionInfo objectLogTail;
 
         // Default to max sizes so testing a size as "greater than" will always be false
         readonly int maxInlineKeySize = LogSettings.kMaxInlineKeySize;
@@ -68,7 +68,7 @@ namespace Tsavorite.core
 
             if (settings.LogSettings.ObjectLogSegmentSizeBits is < LogSettings.kMinObjectLogSegmentSizeBits or > LogSettings.kMaxSegmentSizeBits)
                 throw new TsavoriteException($"{nameof(settings.LogSettings.ObjectLogSegmentSizeBits)} must be between {LogSettings.kMinObjectLogSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
-            objectLogNextRecordStartPosition = new(0, settings.LogSettings.ObjectLogSegmentSizeBits);
+            objectLogTail = new(0, settings.LogSettings.ObjectLogSegmentSizeBits);
 
             pages = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ii++)
@@ -322,7 +322,7 @@ namespace Tsavorite.core
                 ReturnPage((int)(page % BufferSize));
         }
 
-        /// <summary>Create the flush buffer (for <see cref="ObjectAllocator{Tsavorite}"/> only)</summary>
+        /// <inheritdoc/>
         internal override CircularDiskWriteBuffer CreateCircularFlushBuffers(IDevice objectLogDevice, ILogger logger)
         {
             var localObjectLogDevice = objectLogDevice ?? this.objectLogDevice;
@@ -331,12 +331,18 @@ namespace Tsavorite.core
                 : null;
         }
 
-        /// <summary>Create the flush buffer (for <see cref="ObjectAllocator{Tsavorite}"/> only)</summary>
+        /// <inheritdoc/>
         internal override CircularDiskReadBuffer CreateCircularReadBuffers(IDevice objectLogDevice, ILogger logger)
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice ?? this.objectLogDevice, logger);
 
+        /// <inheritdoc/>
         internal override CircularDiskReadBuffer CreateCircularReadBuffers()
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice, logger);
+
+        /// <inheritdoc/>
+        internal override ObjectLogFilePositionInfo GetObjectLogTail() => objectLogTail;
+        /// <inheritdoc/>
+        internal override void SetObjectLogTail(ObjectLogFilePositionInfo tail) => objectLogTail = tail;
 
         private void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
@@ -439,7 +445,7 @@ namespace Tsavorite.core
                 if (flushBuffers is not null)
                 {
                     logWriter = new(device, flushBuffers, storeFunctions);
-                    _ = logWriter.OnBeginPartialFlush(objectLogNextRecordStartPosition);
+                    _ = logWriter.OnBeginPartialFlush(objectLogTail);
                 }
 
                 // Include page header when calculating end address.
@@ -497,7 +503,7 @@ namespace Tsavorite.core
                 // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
                 if (logWriter is not null)
                     logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset,
-                        callback, asyncResult, out objectLogNextRecordStartPosition);
+                        callback, asyncResult, out objectLogTail);
                 else
                     device.WriteAsync((IntPtr)srcBuffer.GetValidPointer(), alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
             }
@@ -533,7 +539,7 @@ namespace Tsavorite.core
                 return true;
 
             var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength),
-                                                              objectLogNextRecordStartPosition.SegmentSizeBits);
+                                                              objectLogTail.SegmentSizeBits);
             var totalBytesToRead = (ulong)keyLength + valueLength;
 
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
@@ -601,8 +607,8 @@ namespace Tsavorite.core
                 if (logRecord.Info.Valid)
                 {
                     if (!startPosition.IsSet)
-                        startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogNextRecordStartPosition.SegmentSizeBits);
-                    endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogNextRecordStartPosition.SegmentSizeBits);
+                        startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogTail.SegmentSizeBits);
+                    endPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out endKeyLength, out endValueLength), objectLogTail.SegmentSizeBits);
                 }
             }
 
@@ -619,7 +625,12 @@ namespace Tsavorite.core
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
                 logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
 
-                var objectIdMapToUse = result.isForRecovery ? pages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
+                var objectIdMapToUse = transientObjectIdMap;
+                if (result.isForRecovery)
+                {
+                    objectIdMapToUse = pages[result.page % BufferSize].objectIdMap;
+                    _ = MonotonicUpdate(ref objectLogTail.word, endPosition.word, out _);
+                }
 
                 while (recordAddress < endAddress)
                 {

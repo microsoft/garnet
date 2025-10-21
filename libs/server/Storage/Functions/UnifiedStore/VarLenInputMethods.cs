@@ -41,7 +41,7 @@ namespace Garnet.server
                                 // case ExpireOption.XXGT:
                                 // case ExpireOption.LT:
                                 // case ExpireOption.XXLT:
-                                fieldInfo.HasExpiration = true; // Will update or retain
+                                fieldInfo.HasExpiration = true;         // Will update or retain
                             }
                             else
                             {
@@ -50,17 +50,16 @@ namespace Garnet.server
                                 {
                                     case ExpireOption.NX:
                                     case ExpireOption.None:
-                                    case ExpireOption.LT
-                                        : // If expiry doesn't exist, LT should treat the current expiration as infinite, so the new value must be less
-                                        fieldInfo.HasExpiration = true; // Will update or retain
+                                    case ExpireOption.LT:
+                                        // If expiry doesn't exist, LT should treat the current expiration as infinite, so the new value must be less
+                                        fieldInfo.HasExpiration = true;     // Will update or retain
                                         break;
                                     default:
                                         // case ExpireOption.XX:
                                         // case ExpireOption.GT:            // If expiry doesn't exist, GT should treat the current expiration as infinite, so the new value cannot be greater
                                         // case ExpireOption.XXGT:
                                         // case ExpireOption.XXLT:
-                                        fieldInfo.HasExpiration =
-                                            false; // Will not add one and there is not one there now
+                                        fieldInfo.HasExpiration = false;    // Will not add one and there is not one there now
                                         break;
                                 }
                             }

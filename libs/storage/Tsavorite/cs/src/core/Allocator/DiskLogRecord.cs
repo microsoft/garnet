@@ -300,13 +300,15 @@ namespace Tsavorite.core
         {
             // TotalSize includes the length prefix, which is included in the output stream if we can write directly to the SpanByte,
             // which is a span in the network buffer.
-            var inlineRecordSize = logRecord.ActualRecordSize;
+            var inlineRecordSize = RoundUp(logRecord.ActualRecordSize, Constants.kRecordAlignment);     // In case of significant shrinkage, calculate this AllocatedSize separately
             var totalSize = inlineRecordSize + sizeof(int) + heapSize;
             if (output.IsSpanByte && output.SpanByte.TotalSize >= totalSize)
             {
                 var outPtr = output.SpanByte.ToPointer();
                 *(int*)outPtr = inlineRecordSize;
                 Buffer.MemoryCopy((byte*)logRecord.physicalAddress, outPtr + sizeof(int), inlineRecordSize, inlineRecordSize);
+                var newLogRecord = new LogRecord((long)(outPtr + sizeof(int)));
+                VarbyteLengthUtility.ClearHasFiller(newLogRecord.IndicatorAddress); // Must clear filler bit; rounding will handle length alignment to end of record without interpreting it as filler
             }
             else
             {
@@ -314,7 +316,11 @@ namespace Tsavorite.core
                 totalSize -= sizeof(int);
                 output.EnsureHeapMemorySize(totalSize, memoryPool);
                 fixed (byte* outPtr = output.MemorySpan)
+                {
                     Buffer.MemoryCopy((byte*)logRecord.physicalAddress, outPtr, inlineRecordSize, inlineRecordSize);
+                    var newLogRecord = new LogRecord((long)(outPtr + sizeof(int)));
+                    VarbyteLengthUtility.ClearHasFiller(newLogRecord.IndicatorAddress); // Must clear filler bit; rounding will handle length alignment to end of record without interpreting it as filler
+                }
             }
             return inlineRecordSize;
         }

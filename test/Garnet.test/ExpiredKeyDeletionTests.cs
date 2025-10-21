@@ -126,19 +126,14 @@ namespace Garnet.test
                 bool isMainStore = rnd.Next(0, 2) == 0;
                 bool hasExpiration = rnd.Next(0, 2) == 0;
                 if (isMainStore)
-                {
                     db.StringSet(keys[i], Guid.NewGuid().ToString());
-                }
                 else
-                {
                     db.SortedSetAdd(keys[i], Guid.NewGuid().ToString(), expirationOrScore);
-                }
 
                 if (hasExpiration || forceExpirationaddition)
                 {
                     if (expirationOrScore < ExpiredKeyDeletionScanFrequencySecs)
                         totalKeysThatWillExpire++;
-
                     ClassicAssert.IsTrue(db.KeyExpire(keys[i], TimeSpan.FromSeconds(expirationOrScore)));
                 }
             }
