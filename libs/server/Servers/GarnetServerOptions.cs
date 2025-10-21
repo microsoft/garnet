@@ -149,7 +149,7 @@ namespace Garnet.server
         /// <summary>
         /// Frequency (in ms) of execution of the AutoCheckpointBasedOnAofSizeLimit background task.
         /// </summary>
-        public int AofSizeLimitEnforceFrequency = 1000;
+        public int AofSizeLimitEnforceFrequencySecs = 5;
 
         /// <summary>
         /// Hybrid log compaction frequency in seconds. 0 = disabled

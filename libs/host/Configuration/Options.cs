@@ -247,8 +247,8 @@ namespace Garnet
         public string AofSizeLimit { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("aof-size-limit-enforce-frequency", Required = false, HelpText = "Frequency (in ms) of execution of the AutoCheckpointBasedOnAofSizeLimit background task.")]
-        public int AofSizeLimitEnforceFrequency { get; set; }
+        [Option("aof-size-limit-enforce-frequency", Required = false, HelpText = "Frequency (in secs) of execution of the AutoCheckpointBasedOnAofSizeLimit background task.")]
+        public int AofSizeLimitEnforceFrequencySecs { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("aof-refresh-freq", Required = false, HelpText = "AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.")]
@@ -862,7 +862,7 @@ namespace Garnet
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,
-                AofSizeLimitEnforceFrequency = AofSizeLimitEnforceFrequency,
+                AofSizeLimitEnforceFrequencySecs = AofSizeLimitEnforceFrequencySecs,
                 CompactionFrequencySecs = CompactionFrequencySecs,
                 ExpiredObjectCollectionFrequencySecs = ExpiredObjectCollectionFrequencySecs,
                 CompactionType = CompactionType,
