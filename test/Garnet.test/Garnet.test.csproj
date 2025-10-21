@@ -9,10 +9,6 @@
   <PropertyGroup>
     <NoWarn>1701;1702;1591</NoWarn>
   </PropertyGroup>
-
-	<PropertyGroup>
-		<AspectInjector_Enabled>false</AspectInjector_Enabled>
-	</PropertyGroup>	
 	
   <ItemGroup>
     <Compile Include="..\..\benchmark\BDN.benchmark\Embedded\EmbeddedNetworkSender.cs" Link="EmbeddedNetworkSender.cs" />

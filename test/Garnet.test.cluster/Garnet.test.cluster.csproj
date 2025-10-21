@@ -24,6 +24,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Allure.Net.Commons" />
+    <PackageReference Include="Allure.NUnit" />
     <PackageReference Include="CommandLineParser" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
@@ -51,9 +53,5 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
-
-	<PropertyGroup>
-		<AspectInjector_Enabled>false</AspectInjector_Enabled>
-	</PropertyGroup>
 
 </Project>

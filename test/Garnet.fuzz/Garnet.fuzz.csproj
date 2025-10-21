@@ -10,6 +10,8 @@
   </PropertyGroup>
 
 	<ItemGroup>
+		<PackageReference Include="Allure.Net.Commons" />
+		<PackageReference Include="Allure.NUnit" />
 		<PackageReference Include="CommandLineParser" />
 	</ItemGroup>
 
@@ -24,9 +26,5 @@
 		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\EmbeddedNetworkHandler.cs" Link="Embedded\EmbeddedNetworkHandler.cs" />
 		<Compile Include="..\..\benchmark\BDN.benchmark\Embedded\Request.cs" Link="Embedded\Request.cs" />
 	</ItemGroup>
-
-	<PropertyGroup>
-		<AspectInjector_Enabled>false</AspectInjector_Enabled>
-	</PropertyGroup>
 
 </Project>

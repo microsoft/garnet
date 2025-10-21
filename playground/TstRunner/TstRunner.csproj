@@ -9,6 +9,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Allure.Net.Commons" />
+    <PackageReference Include="Allure.NUnit" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="..\..\test\testcerts\testcert.pfx" Link="testcert.pfx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -18,9 +23,5 @@
     <ProjectReference Include="..\..\test\Garnet.test.cluster\Garnet.test.cluster.csproj" />
     <ProjectReference Include="..\..\test\Garnet.test\Garnet.test.csproj" />
   </ItemGroup>
-
-	<PropertyGroup>
-		<AspectInjector_Enabled>false</AspectInjector_Enabled>
-	</PropertyGroup>
 
 </Project>
