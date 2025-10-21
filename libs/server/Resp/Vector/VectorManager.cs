@@ -222,6 +222,9 @@ namespace Garnet.server
         {
             internal const int Size = 3 * sizeof(ulong);
 
+            // MUST BE A POWER OF 2
+            internal const ulong ContextStep = 8;
+
             [FieldOffset(0)]
             public ulong Version;
 
@@ -234,10 +237,10 @@ namespace Garnet.server
             public readonly bool IsInUse(ulong context)
             {
                 Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
-                Debug.Assert((context % 4) == 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
                 Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
 
-                var bitIx = context / 4;
+                var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
                 return (InUse & mask) != 0;
@@ -254,7 +257,7 @@ namespace Garnet.server
                     throw new GarnetException("All possible Vector Sets allocated");
                 }
 
-                var ret = bit * 4;
+                var ret = bit * ContextStep;
 
                 return ret;
             }
@@ -262,10 +265,10 @@ namespace Garnet.server
             public void MarkInUse(ulong context)
             {
                 Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
-                Debug.Assert((context % 4) == 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
                 Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
 
-                var bitIx = context / 4;
+                var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
                 Debug.Assert((InUse & mask) == 0, "About to mark context which is already in use");
@@ -277,10 +280,10 @@ namespace Garnet.server
             public void MarkCleaningUp(ulong context)
             {
                 Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
-                Debug.Assert((context % 4) == 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
                 Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
 
-                var bitIx = context / 4;
+                var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
                 Debug.Assert((InUse & mask) != 0, "About to mark for cleanup when not actually in use");
@@ -293,10 +296,10 @@ namespace Garnet.server
             public void FinishedCleaningUp(ulong context)
             {
                 Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
-                Debug.Assert((context % 4) == 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
                 Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
 
-                var bitIx = context / 4;
+                var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
                 Debug.Assert((InUse & mask) != 0, "Cleaned up context which isn't in use");
@@ -321,7 +324,7 @@ namespace Garnet.server
                 {
                     var ix = BitOperations.TrailingZeroCount(remaining);
 
-                    _ = ret.Add((ulong)ix * 4);
+                    _ = ret.Add((ulong)ix * ContextStep);
 
                     remaining &= ~(1UL << (byte)ix);
                 }
@@ -863,10 +866,7 @@ namespace Garnet.server
             indexPtr = (nint)asIndex.IndexPtr;
             processInstanceId = asIndex.ProcessInstanceId;
 
-            if ((context % 4) != 0)
-            {
-                throw new GarnetException($"Context ({context}) not as expected (% 4 == {context % 4}), vector set index is probably corrupted");
-            }
+            Debug.Assert((context % ContextMetadata.ContextStep) == 0, $"Context ({context}) not as expected (% 4 == {context % 4}), vector set index is probably corrupted");
         }
 
         /// <summary>
@@ -978,10 +978,10 @@ namespace Garnet.server
             return del ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
         /// <summary>
-         /// Deletion of a Vector Set needs special handling.
-         /// 
-         /// This is called by DEL and UNLINK after a naive delete fails for us to _try_ and delete a Vector Set.
-         /// </summary>
+        /// Deletion of a Vector Set needs special handling.
+        /// 
+        /// This is called by DEL and UNLINK after a naive delete fails for us to _try_ and delete a Vector Set.
+        /// </summary>
         internal unsafe Status TryDeleteVectorSet(StorageSession storageSession, ref SpanByte key)
         {
             storageSession.parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
