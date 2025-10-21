@@ -403,20 +403,17 @@ namespace Garnet.client
         /// Set CLUSTER SYNC header info
         /// </summary>
         /// <param name="sourceNodeId"></param>
-        /// <param name="isMainStore"></param>
         /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterSync"/>
-        public void SetClusterSyncHeader(string sourceNodeId, bool isMainStore)
+        public void SetClusterSyncHeader(string sourceNodeId)
         {
             // Unlike Migration, where we don't know at the time of header initialization if we have a record or not, in Replication 
             // we know we have a record at the time this is called, so we can initialize it directly.
             currTcsIterationTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(currTcsIterationTask);
             curr = offset;
-            this.isMainStore = isMainStore;
             this.ist = IncrementalSendType.SYNC;
-            var storeType = isMainStore ? MAIN_STORE : OBJECT_STORE;
 
-            var arraySize = 5;
+            var arraySize = 4;
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
                 Flush();
@@ -449,14 +446,6 @@ namespace Garnet.client
             offset = curr;
 
             // 4
-            while (!RespWriteUtils.TryWriteBulkString(storeType, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            // 5
             // Reserve space for the bulk string header + final newline
             while (ExtraSpace + 2 > (int)(end - curr))
             {

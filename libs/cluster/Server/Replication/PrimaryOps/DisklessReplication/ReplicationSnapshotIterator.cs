@@ -127,10 +127,10 @@ namespace Garnet.cluster
                         continue;
 
                     // Initialize header if necessary
-                    sessions[i].SetClusterSyncHeader(isMainStore: true);
+                    sessions[i].SetClusterSyncHeader();
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, isObject: false, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
@@ -179,10 +179,10 @@ namespace Garnet.cluster
                         continue;
 
                     // Initialize header if necessary
-                    sessions[i].SetClusterSyncHeader(isMainStore: false);
+                    sessions[i].SetClusterSyncHeader();
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, isObject: true, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
@@ -200,7 +200,7 @@ namespace Garnet.cluster
             return true;
         }
 
-        public void OnStop(bool completed, long numberOfRecords, bool isMainStore, long targetVersion)
+        public void OnStop(bool completed, long numberOfRecords, long targetVersion)
         {
             // Flush remaining data
             for (var i = 0; i < numSessions; i++)
@@ -212,8 +212,8 @@ namespace Garnet.cluster
             // Wait for flush and response to complete
             replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
 
-            logger?.LogTrace("{OnStop} {store} {numberOfRecords} {targetVersion}",
-                nameof(OnStop), isMainStore ? "MAIN STORE" : "OBJECT STORE", numberOfRecords, targetVersion);
+            logger?.LogTrace("{OnStop} {numberOfRecords} {targetVersion}",
+                nameof(OnStop), numberOfRecords, targetVersion);
 
             // Reset read marker
             firstRead = false;
@@ -245,6 +245,6 @@ namespace Garnet.cluster
             => snapshotIteratorManager.logger?.LogError(exception, $"{nameof(StoreSnapshotIterator)}");
 
         public void OnStop(bool completed, long numberOfRecords)
-            => snapshotIteratorManager.OnStop(completed, numberOfRecords, isMainStore: true, targetVersion);
+            => snapshotIteratorManager.OnStop(completed, numberOfRecords, targetVersion);
     }
 }

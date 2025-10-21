@@ -117,14 +117,9 @@ namespace Garnet.server
             => storageSession.SET(key, value, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SET_Main<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
+        public GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => storageSession.SET_Main(in srcLogRecord, ref context);
-
-        /// <inheritdoc />
-        public GarnetStatus SET_Object<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
-            where TSourceLogRecord : ISourceLogRecord
-            => storageSession.SET_Object(in srcLogRecord, ref objectContext);
+            => storageSession.SET(in srcLogRecord, ref unifiedContext);
 
         #endregion
 

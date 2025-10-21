@@ -59,14 +59,9 @@ namespace Garnet.server
         GarnetStatus SET(PinnedSpanByte key, IGarnetObject value);
 
         /// <summary>
-        /// SET in main store
+        /// SET
         /// </summary>
-        GarnetStatus SET_Main<TSourceLogRecord>(in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
-
-        /// <summary>
-        /// SET in object store
-        /// </summary>
-        GarnetStatus SET_Object<TSourceLogRecord>(in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
+        GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
 
         #endregion
 
