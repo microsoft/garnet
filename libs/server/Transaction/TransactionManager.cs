@@ -184,6 +184,9 @@ namespace Garnet.server
                 // If cluster is enabled reset slot verification state cache
                 ResetCacheSlotVerificationResult();
 
+                // Reset logAccess for sharded log
+                proc.logAccessMap = 0UL;
+
                 functionsState.StoredProcMode = true;
                 // Prepare phase
                 if (!proc.Prepare(garnetTxPrepareApi, ref procInput))
@@ -213,9 +216,6 @@ namespace Garnet.server
 
                 // Log the transaction to AOF
                 Log(id, ref procInput);
-
-                // Transaction Commit
-                Commit();
             }
             catch (Exception ex)
             {
@@ -244,6 +244,23 @@ namespace Garnet.server
 
 
             return true;
+
+            void Log(byte id, ref CustomProcedureInput procInput)
+            {
+                Debug.Assert(functionsState.StoredProcMode);
+
+                appendOnlyFile?.EnqueueCustomProc(
+                    proc.logAccessMap,
+                    new AofHeader
+                    {
+                        opType = AofEntryType.StoredProcedure,
+                        procedureId = id,
+                        storeVersion = txnVersion,
+                        sessionID = basicContext.Session.ID,
+                        logAccessMap = (long)proc.logAccessMap
+                    },
+                    ref procInput);
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -255,16 +272,6 @@ namespace Garnet.server
         internal void Abort()
         {
             state = TxnState.Aborted;
-        }
-
-        internal void Log(byte id, ref CustomProcedureInput procInput)
-        {
-            Debug.Assert(functionsState.StoredProcMode);
-
-            appendOnlyFile?.EnqueueCustomProc(
-                new AofHeader { opType = AofEntryType.StoredProcedure, procedureId = id, storeVersion = txnVersion, sessionID = basicContext.Session.ID, timestamp = Stopwatch.GetTimestamp() },
-                ref procInput,
-                out _);
         }
 
         internal void Commit(bool internal_txn = false)
@@ -398,6 +405,7 @@ namespace Garnet.server
             // Update sessions with transaction version
             LocksAcquired(transactionStoreType, txnVersion);
 
+            // Add TxnStart Marker
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {
                 ComputeShardedLogAccess(out var logAccessMap);
@@ -416,16 +424,31 @@ namespace Garnet.server
             return true;
         }
 
+        public void IterativeShardedLogAccess(SpanByte key, ref ulong logAccessMap)
+        {
+            // Skip if AOF is disabled
+            if (appendOnlyFile == null)
+                return;
+
+            if (appendOnlyFile.Log.Size == 1)
+                return;
+            appendOnlyFile.Log.Hash(key, out _, out var sublogIdx);
+            logAccessMap |= 1UL << sublogIdx;
+        }
+
         void ComputeShardedLogAccess(out ulong logAccessMap)
         {
             logAccessMap = 0UL;
+            // Skip if AOF is disabled
+            if (appendOnlyFile == null)
+                return;
 
             // If singleLog no computation is necessary
             if (appendOnlyFile.Log.Size == 1)
                 return;
 
             // If sharded log is enabled calculate sublog access bitmap
-            for(var i = 0; i < keyCount; i++)
+            for (var i = 0; i < keyCount; i++)
             {
                 appendOnlyFile.Log.Hash(keys[i].SpanByte, out _, out var sublogIdx);
                 logAccessMap |= 1UL << sublogIdx;

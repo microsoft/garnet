@@ -57,9 +57,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Update timestamp for all keys corresponding to sublog.
-        /// NOTE: This is triggered by the RefreshSublogTail task when a sublog has stalled
-        /// (i.e. failed to keep moving its timestamp forward) due to lack of new data being added.
-        /// In that case we need to move the timestamp forward to avoid a deadlock in the consistent read protocol
+        /// This is triggered by RefreshSublogTail, TxnReplay or CustomProcReplay.
         /// </summary>
         /// <param name="sublogIdx"></param>
         /// <param name="timestamp"></param>

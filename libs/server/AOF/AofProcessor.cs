@@ -310,6 +310,7 @@ namespace Garnet.server
             if (SkipRecord(sublogIdx, entryPtr, length, asReplica)) return false;
 
             ref var key = ref Unsafe.NullRef<SpanByte>();
+            var updateKeyTimestamp = true;
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
@@ -331,14 +332,20 @@ namespace Garnet.server
                     key = ref ObjectStoreDelete(objectStoreBasicContext, entryPtr);
                     break;
                 case AofEntryType.StoredProcedure:
+                    updateKeyTimestamp = false;
                     RunStoredProc(header.procedureId, customProcInput, entryPtr);
                     break;
                 case AofEntryType.TxnCommit:
-                    aofReplayBuffer.ProcessFuzzyRegionTransactionGroup(sublogIdx, header.sessionID, asReplica);
+                    updateKeyTimestamp = false;
+                    aofReplayBuffer.ProcessFuzzyRegionTransactionGroup(sublogIdx, header, asReplica);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
+
+            if(storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.AofSublogCount > 1 && updateKeyTimestamp)
+                storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateKeyTimestamp(sublogIdx, ref key, header.timestamp);
+
             return true;
 
             void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)

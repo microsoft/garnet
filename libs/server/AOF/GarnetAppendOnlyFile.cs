@@ -67,16 +67,31 @@ namespace Garnet.server
             }
         }
 
-        public void EnqueueRefreshSublogTail(int sublogIdx, long timestamp)
-        {
-            var refreshSublogTailHeader = new AofHeader { opType = AofEntryType.RefreshSublogTail, timestamp = timestamp };
-            Log.GetSubLog(sublogIdx).Enqueue(refreshSublogTailHeader, out _);
-        }
-
-        public void EnqueueCustomProc<THeader, TInput>(THeader userHeader, ref TInput input, out long logicalAddress)
+        public void EnqueueCustomProc<THeader, TInput>(ulong logAccessBitmap, THeader userHeader, ref TInput input)
             where THeader : unmanaged where TInput : IStoreInput
-            // FIXME: Handle custom proce enqueue in sharded environment
-            => Log.GetSubLog(0).Enqueue(userHeader, ref input, out logicalAddress);
+        {
+            if (serverOptions.AofSublogCount == 1)
+            {
+                Log.GetSubLog(0).Enqueue(userHeader, ref input, out _);
+            }
+            else
+            {
+                try
+                {
+                    Log.LockSublogs(logAccessBitmap);
+                    var _logAccessBitmap = logAccessBitmap;
+                    while (_logAccessBitmap > 0)
+                    {
+                        var offset = _logAccessBitmap.GetNextOffset();
+                        Log.GetSubLog(offset).Enqueue(userHeader, ref input, out _);
+                    }
+                }
+                finally
+                {
+                    Log.UnlockSublogs(logAccessBitmap);
+                }
+            }
+        }
 
         public void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
             where THeader : unmanaged
@@ -101,6 +116,12 @@ namespace Garnet.server
 
         public void TruncateUntil(int sublogIdx, long untilAddress)
             => Log.GetSubLog(sublogIdx).TruncateUntil(untilAddress);
+
+        public void EnqueueRefreshSublogTail(int sublogIdx, long timestamp)
+        {
+            var refreshSublogTailHeader = new AofHeader { opType = AofEntryType.RefreshSublogTail, timestamp = timestamp };
+            Log.GetSubLog(sublogIdx).Enqueue(refreshSublogTailHeader, out _);
+        }
 
         public ulong ComputeAofSyncReplayAddress(
             bool recoverFromRemote,

@@ -95,9 +95,19 @@ namespace Garnet.server
             public readonly Queue<TransactionGroup> txnGroupBuffer = [];
             public readonly Dictionary<int, TransactionGroup> activeTxns = [];
 
+            /// <summary>
+            /// Add transaction group to this replay buffer
+            /// </summary>
+            /// <param name="sessionID"></param>
+            /// <param name="logAccessBitmap"></param>
             public void AddTransactionGroup(int sessionID, ulong logAccessBitmap)
                 => activeTxns[sessionID] = new(logAccessBitmap);
 
+            /// <summary>
+            /// Add transaction group to fuzzy region buffer
+            /// </summary>
+            /// <param name="group"></param>
+            /// <param name="commitMarker"></param>
             public void AddToFuzzyRegionBuffer(TransactionGroup group, ReadOnlySpan<byte> commitMarker)
             {
                 // Add commit marker operation and enqueue transaction group
@@ -123,8 +133,17 @@ namespace Garnet.server
                 return sublogReplayBuffers;
             }
 
+            /// <summary>
+            /// Get fuzzy region buffer count
+            /// </summary>
+            /// <param name="sublogIdx"></param>
+            /// <returns></returns>
             internal int FuzzyRegionBufferCount(int sublogIdx) => sublogReplayBuffers[sublogIdx].fuzzyRegionOps.Count;
 
+            /// <summary>
+            /// Clear fuzzy region buffer
+            /// </summary>
+            /// <param name="sublogIdx"></param>
             internal void ClearFuzzyRegionBuffer(int sublogIdx) => sublogReplayBuffers[sublogIdx].fuzzyRegionOps.Clear();
 
             /// <summary>
@@ -171,7 +190,7 @@ namespace Garnet.server
                             else
                             {
                                 // Otherwise process transaction group immediately
-                                ProcessTransactionGroup(sublogIdx, header.sessionID, asReplica, group);
+                                ProcessTransactionGroup(sublogIdx, header, asReplica, group);
                             }
 
                             // We want to clear and remove in both cases to make space for next txn from session
@@ -236,23 +255,23 @@ namespace Garnet.server
             /// Process fuzzy region transaction groups
             /// </summary>
             /// <param name="sublogIdx"></param>
-            /// <param name="sessionID"></param>
+            /// <param name="header"></param>
             /// <param name="asReplica"></param>
-            internal void ProcessFuzzyRegionTransactionGroup(int sublogIdx, int sessionID, bool asReplica)
+            internal void ProcessFuzzyRegionTransactionGroup(int sublogIdx, AofHeader header, bool asReplica)
             {
                 // Process transaction groups in FIFO order
                 var txnGroup = sublogReplayBuffers[sublogIdx].txnGroupBuffer.Dequeue();
-                ProcessTransactionGroup(sublogIdx, sessionID, asReplica, txnGroup);
+                ProcessTransactionGroup(sublogIdx, header, asReplica, txnGroup);
             }
 
             /// <summary>
             /// Process provided transaction group
             /// </summary>
             /// <param name="sublogIdx"></param>
-            /// <param name="sessionID"></param>
+            /// <param name="header"></param>
             /// <param name="asReplica"></param>
             /// <param name="txnGroup"></param>
-            internal void ProcessTransactionGroup(int sublogIdx, int sessionID, bool asReplica, TransactionGroup txnGroup)
+            internal void ProcessTransactionGroup(int sublogIdx, AofHeader header, bool asReplica, TransactionGroup txnGroup)
             {
                 // No need to coordinate replay of transaction if operating with single sublog
                 if(aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1)
@@ -263,7 +282,7 @@ namespace Garnet.server
 
                 // Add coordinator group if does not exist and add to that the txnGroup that needs to be replayed
                 var participantCount = BitOperations.PopCount(txnGroup.logAccessMap);
-                var txnReplayCoordinator = txnReplayCoordinators.GetOrAdd(sessionID, _ => new TransactionGroupReplayCoordinator(participantCount));
+                var txnReplayCoordinator = txnReplayCoordinators.GetOrAdd(header.sessionID, _ => new TransactionGroupReplayCoordinator(participantCount));
                 txnReplayCoordinator.AddTransactionGroup(sublogIdx, txnGroup);
                 var IsLeader = txnReplayCoordinator.Signal();
 
@@ -284,9 +303,11 @@ namespace Garnet.server
                 {
                     if (IsLeader)
                     {
-                        _ = txnReplayCoordinators.Remove(sessionID, out _);
+                        _ = txnReplayCoordinators.Remove(header.sessionID, out _);
                         txnReplayCoordinator.Set();
                     }
+
+                    aofProcessor.storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateSublogTimestamp(sublogIdx, header.timestamp);
                 }
                 
                 // Process transaction 

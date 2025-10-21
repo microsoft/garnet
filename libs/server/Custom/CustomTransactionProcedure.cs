@@ -14,6 +14,7 @@ namespace Garnet.server
     {
         internal ScratchBufferAllocator scratchBufferAllocator;
         internal TransactionManager txnManager;
+        internal ulong logAccessMap;
 
         /// <summary>
         /// If enabled, transaction fails fast on key locking failure instead of waiting on lock
@@ -41,6 +42,7 @@ namespace Garnet.server
         {
             txnManager.SaveKeyEntryToLock(key, isObject, type);
             txnManager.VerifyKeyOwnership(key, type);
+            txnManager.IterativeShardedLogAccess(key.SpanByte, ref logAccessMap);
         }
 
         /// <summary>
