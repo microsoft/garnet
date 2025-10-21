@@ -136,11 +136,11 @@ namespace Garnet.test.cluster
             //Populate Primary
             context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
 
-            for (var i = 1; i < replica_count; i++)
-                context.clusterTestUtils.WaitForReplicaAofSync(0, i);
+            // Wait for replica sync
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: 0, secondaryIndex: 1);
 
-            for (var i = 1; i < replica_count; i++)
-                context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, i);
+            // Validate data
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
         }
 
         [Test, Order(2)]
