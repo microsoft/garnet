@@ -476,8 +476,6 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(0, delRes);
                 }
 
-
-
                 var addRes1 = (int)db.Execute("VADD", ["foo", "XB8", bytes1, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
                 ClassicAssert.AreEqual(1, addRes1);
 

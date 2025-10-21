@@ -256,7 +256,7 @@ namespace Garnet
                 }
             }
 
-            vectorManager = new(loggerFactory?.CreateLogger<VectorManager>());
+            vectorManager = new(() => Provider.GetSession(WireFormat.ASCII, null), loggerFactory?.CreateLogger<VectorManager>());
 
             storeWrapper = new StoreWrapper(version, RedisProtocolVersion, servers, customCommandManager, opts, subscribeBroker,
                 createDatabaseDelegate: createDatabaseDelegate,

@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -89,19 +90,31 @@ namespace Garnet.server
         #region Initial Values
         /// <inheritdoc />
         public bool NeedInitialUpdate(ref SpanByte key, ref VectorInput input, ref SpanByte output, ref RMWInfo rmwInfo)
-        => false;
+        {
+            // Only needed when updating ContextMetadata via RMW
+            return key.LengthWithoutMetadata == 0 && key.GetNamespaceInPayload() == 0;
+        }
         /// <inheritdoc />
-        public bool InitialUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => throw new NotImplementedException();
+        public bool InitialUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        {
+            Debug.Assert(key.LengthWithoutMetadata == 0 && key.GetNamespaceInPayload() == 0, "Should only be updating ContextMetadata");
+
+            SpanByte newMetadataValue;
+            unsafe
+            {
+                newMetadataValue = SpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
+            }
+
+            return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref newMetadataValue, ref value, ref rmwInfo, ref recordInfo);
+        }
         /// <inheritdoc />
-        public void PostInitialUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo) => throw new NotImplementedException();
+        public void PostInitialUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo) { }
         #endregion
 
         #region Writes
         /// <inheritdoc />
         public bool SingleWriter(ref SpanByte key, ref VectorInput input, ref SpanByte src, ref SpanByte dst, ref SpanByte output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-        {
-            return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, 0);
-        }
+        => ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, ref recordInfo);
 
         /// <inheritdoc />
         public void PostSingleWriter(ref SpanByte key, ref VectorInput input, ref SpanByte src, ref SpanByte dst, ref SpanByte output, ref UpsertInfo upsertInfo, WriteReason reason) { }
@@ -114,22 +127,50 @@ namespace Garnet.server
 
         #region RMW
         /// <inheritdoc />
-        public bool CopyUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => throw new NotImplementedException();
-        /// <inheritdoc />
-        public int GetRMWInitialValueLength(ref VectorInput input) => throw new NotImplementedException();
+        public int GetRMWInitialValueLength(ref VectorInput input)
+        => sizeof(byte) + sizeof(int) + VectorManager.ContextMetadata.Size;
         /// <inheritdoc />
         public int GetRMWModifiedValueLength(ref SpanByte value, ref VectorInput input) => throw new NotImplementedException();
         /// <inheritdoc />
+
         public int GetUpsertValueLength(ref SpanByte value, ref VectorInput input)
         => sizeof(byte) + sizeof(int) + value.Length;
         /// <inheritdoc />
-        public bool InPlaceUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => throw new NotImplementedException();
+        public bool InPlaceUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        {
+            Debug.Assert(key.GetNamespaceInPayload() == 0 && key.LengthWithoutMetadata == 0, "Should be special context key");
+            Debug.Assert(value.LengthWithoutMetadata == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
+            Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+
+            ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(value.AsReadOnlySpan())[0];
+
+            SpanByte newMetadataValue;
+            unsafe
+            {
+                newMetadataValue = SpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
+            }
+
+            ref readonly var newMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(newMetadataValue.AsReadOnlySpan())[0];
+
+            if (newMetadata.Version < oldMetadata.Version)
+            {
+                rmwInfo.Action = RMWAction.CancelOperation;
+                return false;
+            }
+
+            return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref newMetadataValue, ref value, ref rmwInfo, ref recordInfo);
+        }
+
         /// <inheritdoc />
-        public bool NeedCopyUpdate(ref SpanByte key, ref VectorInput input, ref SpanByte oldValue, ref SpanByte output, ref RMWInfo rmwInfo) => throw new NotImplementedException();
+        public bool NeedCopyUpdate(ref SpanByte key, ref VectorInput input, ref SpanByte oldValue, ref SpanByte output, ref RMWInfo rmwInfo) => false;
+
+        /// <inheritdoc />
+        public bool CopyUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => throw new NotImplementedException();
+
         /// <inheritdoc />
         public bool PostCopyUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByte output, ref RMWInfo rmwInfo) => throw new NotImplementedException();
         /// <inheritdoc />
-        public void RMWCompletionCallback(ref SpanByte key, ref VectorInput input, ref SpanByte output, long ctx, Status status, RecordMetadata recordMetadata) => throw new NotImplementedException();
+        public void RMWCompletionCallback(ref SpanByte key, ref VectorInput input, ref SpanByte output, long ctx, Status status, RecordMetadata recordMetadata) { }
         #endregion
 
         #region Utilities

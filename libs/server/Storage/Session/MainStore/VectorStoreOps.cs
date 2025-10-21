@@ -324,7 +324,7 @@ namespace Garnet.server
                 // Cleanup incidental additional state
                 vectorManager.DropVectorSetReplicationKey(key, ref basicContext);
 
-                // TODO: This doesn't clean up element data, we should do that...  or DiskANN should do that, we'll figure it out later
+                vectorManager.CleanupDroppedIndex(ref vectorContext, indexSpan);
 
                 return Status.CreateFound();
             }

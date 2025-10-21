@@ -4,6 +4,8 @@
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
+using System.Collections.Frozen;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -13,6 +15,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.networking;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -211,6 +214,122 @@ namespace Garnet.server
             public Guid ProcessInstanceId;
         }
 
+        /// <summary>
+        /// Used for tracking which contexts are currently active.
+        /// </summary>
+        [StructLayout(LayoutKind.Explicit, Size = Size)]
+        internal struct ContextMetadata
+        {
+            internal const int Size = 3 * sizeof(ulong);
+
+            [FieldOffset(0)]
+            public ulong Version;
+
+            [FieldOffset(8)]
+            public ulong InUse;
+
+            [FieldOffset(16)]
+            public ulong CleaningUp;
+
+            public readonly bool IsInUse(ulong context)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % 4) == 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / 4;
+                var mask = 1UL << (byte)bitIx;
+
+                return (InUse & mask) != 0;
+            }
+
+            public readonly ulong NextNotInUse()
+            {
+                var ignoringZero = InUse | 1;
+
+                var bit = (ulong)BitOperations.TrailingZeroCount(~ignoringZero & (ulong)-(long)(~ignoringZero));
+
+                if (bit == 64)
+                {
+                    throw new GarnetException("All possible Vector Sets allocated");
+                }
+
+                var ret = bit * 4;
+
+                return ret;
+            }
+
+            public void MarkInUse(ulong context)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % 4) == 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / 4;
+                var mask = 1UL << (byte)bitIx;
+
+                Debug.Assert((InUse & mask) == 0, "About to mark context which is already in use");
+                InUse |= mask;
+
+                Version++;
+            }
+
+            public void MarkCleaningUp(ulong context)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % 4) == 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / 4;
+                var mask = 1UL << (byte)bitIx;
+
+                Debug.Assert((InUse & mask) != 0, "About to mark for cleanup when not actually in use");
+                Debug.Assert((CleaningUp & mask) == 0, "About to mark for cleanup when already marked");
+                CleaningUp |= mask;
+
+                Version++;
+            }
+
+            public void FinishedCleaningUp(ulong context)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % 4) == 0, "Context 0 is reserved, should never queried");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / 4;
+                var mask = 1UL << (byte)bitIx;
+
+                Debug.Assert((InUse & mask) != 0, "Cleaned up context which isn't in use");
+                Debug.Assert((CleaningUp & mask) != 0, "Cleaned up context not marked for it");
+                CleaningUp &= ~mask;
+                InUse &= ~mask;
+
+                Version++;
+            }
+
+            public readonly HashSet<ulong> GetNeedCleanup()
+            {
+                if (CleaningUp == 0)
+                {
+                    return null;
+                }
+
+                var ret = new HashSet<ulong>();
+
+                var remaining = CleaningUp;
+                while (remaining != 0UL)
+                {
+                    var ix = BitOperations.TrailingZeroCount(remaining);
+
+                    _ = ret.Add((ulong)ix * 4);
+
+                    remaining &= ~(1UL << (byte)ix);
+                }
+
+                return ret;
+            }
+        }
+
         private readonly record struct VADDReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks)
         {
         }
@@ -280,6 +399,58 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Used as part of scanning post-index-delete to cleanup abandoned data.
+        /// </summary>
+        private sealed class PostDropCleanupFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
+        {
+            private readonly StorageSession storageSession;
+            private readonly FrozenSet<ulong> contexts;
+
+            public PostDropCleanupFunctions(StorageSession storageSession, HashSet<ulong> contexts)
+            {
+                this.contexts = contexts.ToFrozenSet();
+                this.storageSession = storageSession;
+            }
+
+            public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
+
+            public void OnException(Exception exception, long numberOfRecords) { }
+            public bool OnStart(long beginAddress, long endAddress) => true;
+            public void OnStop(bool completed, long numberOfRecords) { }
+
+            public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            {
+                if (key.MetadataSize != 1)
+                {
+                    // Not Vector Set, ignore
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    return true;
+                }
+
+                var ns = key.GetNamespaceInPayload();
+                var pairedContext = (ulong)ns & ~0b11UL;
+                if (!contexts.Contains(pairedContext))
+                {
+                    // Vector Set, but not one we're scanning for
+                    cursorRecordResult = CursorRecordResult.Skip;
+                    return true;
+                }
+
+                // Delete it
+                var status = storageSession.vectorContext.Delete(ref key, 0);
+                if (status.IsPending)
+                {
+                    SpanByte ignored = default;
+                    CompletePending(ref status, ref ignored, ref storageSession.vectorContext);
+                }
+
+                cursorRecordResult = CursorRecordResult.Accept;
+                return true;
+            }
+        }
+
+        /// <summary>
         /// Minimum size of an id is assumed to be at least 4 bytes + a length prefix.
         /// </summary>
         private const int MinimumSpacePerId = sizeof(int) + 4;
@@ -292,7 +463,7 @@ namespace Garnet.server
 
         private readonly Guid processInstanceId = Guid.NewGuid();
 
-        private ulong nextContextValue;
+        private ContextMetadata contextMetadata;
 
         private int replicationReplayStarted;
         private long replicationReplayPendingVAdds;
@@ -308,7 +479,11 @@ namespace Garnet.server
         internal readonly int readLockShardCount;
         private readonly long readLockShardMask;
 
-        public VectorManager(ILogger logger)
+        private TaskCompletionSource cleanupTaskTcs;
+        private readonly Task cleanupTask;
+        private readonly Func<IMessageConsumer> getCleanupSession;
+
+        public VectorManager(Func<IMessageConsumer> getCleanupSession, ILogger logger)
         {
             replicationBlockEvent = new(true);
             replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
@@ -326,6 +501,10 @@ namespace Garnet.server
             // For now, nearest power of 2 >= process count;
             readLockShardCount = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount);
             readLockShardMask = readLockShardCount - 1;
+
+            this.getCleanupSession = getCleanupSession;
+            cleanupTaskTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            cleanupTask = RunCleanupTaskAsync();
         }
 
         /// <inheritdoc/>
@@ -338,6 +517,10 @@ namespace Garnet.server
             Task.WhenAll(replicationReplayTasks).Wait();
 
             replicationBlockEvent.Dispose();
+
+            // Wait for any in progress cleanup to finish
+            _ = cleanupTaskTcs.TrySetCanceled();
+            cleanupTask.Wait();
         }
 
         /// <summary>
@@ -345,30 +528,55 @@ namespace Garnet.server
         /// 
         /// This value is guaranteed to not be shared by any other vector set in the store.
         /// </summary>
-        /// <returns></returns>
         private ulong NextContext()
         {
-            // TODO: how do we avoid creating a context that is already present in the log?
-
-            while (true)
+            // Lock isn't amazing, but _new_ vector set creation should be rare
+            // So just serializing it all is easier.
+            lock (this)
             {
-                var ret = Interlocked.Add(ref nextContextValue, 4);
+                var nextFree = contextMetadata.NextNotInUse();
 
-                // 0 is special, don't return it (even if we wrap around)
-                if (ret == 0)
-                {
-                    continue;
-                }
+                contextMetadata.MarkInUse(nextFree);
 
-                return ret;
+                return nextFree;
             }
         }
 
         /// <summary>
-        /// For testing purposes.
+        /// Called when an index creation succeeds to flush <see cref="contextMetadata"/> into the store.
         /// </summary>
-        public ulong HighestContext()
-        => nextContextValue;
+        private void UpdateContextMetadata<TContext>(ref TContext ctx)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            Span<byte> keySpan = stackalloc byte[1];
+            Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
+
+            lock (this)
+            {
+                MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0] = contextMetadata;
+            }
+
+            var key = SpanByte.FromPinnedSpan(keySpan);
+
+            key.MarkNamespace();
+            key.SetNamespaceInPayload(0);
+
+            VectorInput input = default;
+            unsafe
+            {
+                input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
+            }
+
+            var data = SpanByte.FromPinnedSpan(dataSpan);
+
+            var status = ctx.RMW(ref key, ref input);
+
+            if (status.IsPending)
+            {
+                SpanByte ignored = default;
+                CompletePending(ref status, ref ignored, ref ctx);
+            }
+        }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe void ReadCallbackUnmanaged(
@@ -1269,6 +1477,25 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// After an index is dropped, called to start the process of removing ancillary data (elements, neighbor lists, attributes, etc.).
+        /// </summary>
+        internal void CleanupDroppedIndex<TContext>(ref TContext ctx, ReadOnlySpan<byte> index)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            ReadIndex(index, out var context, out _, out _, out _, out _, out _, out _, out _);
+
+            lock (this)
+            {
+                contextMetadata.MarkCleaningUp(context);
+            }
+
+            UpdateContextMetadata(ref ctx);
+
+            // Wake up cleanup task
+            _ = cleanupTaskTcs.TrySetResult();
+        }
+
+        /// <summary>
         /// Vector Set adds are phrased as reads (once the index is created), so they require special handling.
         /// 
         /// Operations that are faked up by <see cref="ReplicateVectorSetAdd"/> running on the Primary get diverted here on a Replica.
@@ -1635,7 +1862,7 @@ namespace Garnet.server
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
 
-            this.PrepareReadLockHash(storageSession, ref key, out var keyHash, out var readLockHash);
+            PrepareReadLockHash(storageSession, ref key, out var keyHash, out var readLockHash);
 
             Span<TxnKeyEntry> sharedLocks = stackalloc TxnKeyEntry[1];
             scoped Span<TxnKeyEntry> exclusiveLocks = default;
@@ -1693,6 +1920,11 @@ namespace Garnet.server
                     try
                     {
                         writeRes = storageSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+
+                        if (!needsRecreate)
+                        {
+                            UpdateContextMetadata(ref storageSession.vectorContext);
+                        }
                     }
                     catch
                     {
@@ -1798,6 +2030,69 @@ namespace Garnet.server
                 // This is possible during dispose
                 //
                 // Dispose already takes pains to drain everything before disposing, so this is safe to ignore
+            }
+        }
+
+        private async Task RunCleanupTaskAsync()
+        {
+            // Go async immediately
+            await Task.Yield();
+
+            while (true)
+            {
+                try
+                {
+                    try
+                    {
+                        await cleanupTaskTcs.Task;
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        // Can happen during dispose
+                        return;
+                    }
+
+                    cleanupTaskTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                    HashSet<ulong> needCleanup;
+                    lock (this)
+                    {
+                        needCleanup = contextMetadata.GetNeedCleanup();
+                    }
+
+                    if (needCleanup == null)
+                    {
+                        // Previous run already got here, so bail
+                        continue;
+                    }
+
+                    // TODO: this doesn't work with multi-db setups
+                    // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
+                    using var cleanupSession = (RespServerSession)getCleanupSession();
+
+                    PostDropCleanupFunctions callbacks = new(cleanupSession.storageSession, needCleanup);
+
+                    ref var ctx = ref cleanupSession.storageSession.vectorContext;
+
+                    // Scan whole keyspace (sigh) and remove any associated data
+                    //
+                    // We don't really have a choice here, just do it
+                    _ = ctx.Session.Iterate(ref callbacks);
+
+                    lock (this)
+                    {
+                        foreach (var cleanedUp in needCleanup)
+                        {
+                            contextMetadata.FinishedCleaningUp(cleanedUp);
+                        }
+                    }
+
+                    UpdateContextMetadata(ref ctx);
+                }
+                catch (Exception e)
+                {
+                    logger?.LogError(e, "Failure during background cleanup of deleted vector sets, implies storage leak");
+                }
             }
         }
 
