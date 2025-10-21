@@ -67,6 +67,10 @@ namespace Garnet.server
         public GarnetStatus DELETE(PinnedSpanByte key)
             => storageSession.DELETE(key, ref unifiedContext);
 
+        /// <inheritdoc />
+        public GarnetStatus DELIFEXPIM(PinnedSpanByte key)
+            => storageSession.DELIFEXPIM(key, ref unifiedContext);
+
         #endregion
 
         #region EXPIRE

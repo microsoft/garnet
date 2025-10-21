@@ -177,18 +177,10 @@ namespace Garnet.server
 
             internal sealed class MainStoreExpiredKeyDeletionScan : ExpiredKeysBase
             {
-                protected override bool DeleteIfExpiredInMemory<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata)
-                {
-                    if (logRecord.Info.ValueIsObject)
-                    {
-                        var objInput = new ObjectInput(new RespInputHeader(GarnetObjectType.DelIfExpIm));
-                        var output = new GarnetObjectStoreOutput();
-                        return GarnetStatus.OK == storageSession.RMW_ObjectStore(logRecord.Key, ref objInput, ref output, ref storageSession.objectStoreBasicContext);
-                    }
-
-                    var input = new RawStringInput(RespCommand.DELIFEXPIM);
-                    return GarnetStatus.OK == storageSession.DEL_Conditional(PinnedSpanByte.FromPinnedSpan(logRecord.Key), ref input, ref storageSession.basicContext);
-                }
+                protected override bool DeleteIfExpiredInMemory<TSourceLogRecord>(in TSourceLogRecord logRecord,
+                    RecordMetadata recordMetadata)
+                    => GarnetStatus.OK == storageSession.DELIFEXPIM(PinnedSpanByte.FromPinnedSpan(logRecord.Key),
+                        ref storageSession.unifiedStoreBasicContext);
             }
 
             internal abstract class ExpiredKeysBase : IScanIteratorFunctions
