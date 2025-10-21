@@ -291,6 +291,11 @@ namespace Garnet.server
         /// <returns></returns>
         GarnetStatus DELETE(PinnedSpanByte key);
 
+        /// <summary>
+        /// Deletes a key if it is in memory and expired
+        /// </summary>
+        GarnetStatus DELIFEXPIM(PinnedSpanByte key);
+
         #endregion
 
         #region GETDEL

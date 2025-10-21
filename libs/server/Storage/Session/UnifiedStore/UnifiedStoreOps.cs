@@ -65,6 +65,21 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Deletes a key if it is in memory and expired.
+        /// </summary>
+        /// <param name="key">The name of the key to use in the operation</param>
+        /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
+        /// <returns></returns>
+        public GarnetStatus DELIFEXPIM<TUnifiedContext>(PinnedSpanByte key, ref TUnifiedContext unifiedContext)
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long,
+                UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var input = new UnifiedStoreInput(RespCommand.DELIFEXPIM);
+            var status = unifiedContext.RMW(key.ReadOnlySpan, ref input);
+            return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+        }
+
+        /// <summary>
         /// Set a timeout on key
         /// </summary>
         /// <typeparam name="TUnifiedContext"></typeparam>

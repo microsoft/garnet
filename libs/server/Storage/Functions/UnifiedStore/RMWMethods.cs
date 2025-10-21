@@ -59,7 +59,8 @@ namespace Garnet.server
         }
 
         public bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord => true;
+            ref GarnetUnifiedStoreOutput output, ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
+            => true;
 
         public bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,
             in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output,
@@ -203,6 +204,7 @@ namespace Garnet.server
         bool InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
         {
             sizeChange = 0;
+            var cmd = input.header.cmd;
 
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
@@ -229,7 +231,6 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
             var shouldCheckExpiration = true;
 
-            var cmd = input.header.cmd;
             switch (cmd)
             {
                 case RespCommand.EXPIRE:

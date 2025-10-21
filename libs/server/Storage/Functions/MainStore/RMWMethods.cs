@@ -23,7 +23,6 @@ namespace Garnet.server
                 case RespCommand.PERSIST:
                 case RespCommand.EXPIRE:
                 case RespCommand.GETDEL:
-                case RespCommand.DELIFEXPIM:
                 case RespCommand.GETEX:
                 case RespCommand.DELIFGREATER:
                     return false;
@@ -396,7 +395,7 @@ namespace Garnet.server
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
             {
-                rmwInfo.Action = cmd is RespCommand.DELIFEXPIM ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
+                rmwInfo.Action = RMWAction.ExpireAndResume;
                 logRecord.RemoveETag();
                 return false;
             }
@@ -803,10 +802,6 @@ namespace Garnet.server
                     // reset etag state that may have been initialized earlier, but don't update etag
                     ETagState.ResetState(ref functionsState.etagState);
                     return CopyValueLengthToOutput(logRecord.ValueSpan, ref output);
-                case RespCommand.DELIFEXPIM:
-                    // this is the case where it isn't expired
-                    shouldUpdateEtag = false;
-                    break;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -876,13 +871,6 @@ namespace Garnet.server
         {
             switch (input.header.cmd)
             {
-                case RespCommand.DELIFEXPIM:
-                    if (srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
-                    {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                    }
-
-                    return false;
                 case RespCommand.DELIFGREATER:
                     if (srcLogRecord.Info.HasETag)
                         ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
