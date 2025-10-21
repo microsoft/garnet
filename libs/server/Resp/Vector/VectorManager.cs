@@ -510,6 +510,45 @@ namespace Garnet.server
             cleanupTask = RunCleanupTaskAsync();
         }
 
+        /// <summary>
+        /// Load state necessary for VectorManager from main store.
+        /// </summary>
+        public void Initialize()
+        {
+            using var session = (RespServerSession)getCleanupSession();
+
+            Span<byte> keySpan = stackalloc byte[1];
+            Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
+
+            var key = SpanByte.FromPinnedSpan(keySpan);
+
+            key.MarkNamespace();
+            key.SetNamespaceInPayload(0);
+
+            VectorInput input = default;
+            unsafe
+            {
+                input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
+            }
+
+            var data = SpanByte.FromPinnedSpan(dataSpan);
+
+            ref var ctx = ref session.storageSession.vectorContext;
+
+            var status = ctx.RMW(ref key, ref input);
+
+            if (status.IsPending)
+            {
+                SpanByte ignored = default;
+                CompletePending(ref status, ref ignored, ref ctx);
+            }
+
+            if (status.Found)
+            {
+                contextMetadata = MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0];
+            }
+        }
+
         /// <inheritdoc/>
         public void Dispose()
         {
@@ -637,28 +676,6 @@ namespace Garnet.server
             }
 
             return status.IsCompletedSuccessfully ? (byte)1 : default;
-        }
-
-        private static unsafe bool WriteCallbackManaged(ulong context, ReadOnlySpan<byte> key, ReadOnlySpan<byte> data)
-        {
-            // TODO: this whole method goes away once DiskANN is setting attributes
-            Span<byte> keySpace = stackalloc byte[sizeof(int) + key.Length];
-            key.CopyTo(keySpace[sizeof(int)..]);
-
-            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, (nint)Unsafe.AsPointer(ref keySpace[sizeof(int)]), (nuint)key.Length);
-
-            ref var ctx = ref ActiveThreadSession.vectorContext;
-            VectorInput input = default;
-            var valueSpan = SpanByte.FromPinnedSpan(data);
-            SpanByte outputSpan = default;
-
-            var status = ctx.Upsert(ref keyWithNamespace, ref input, ref valueSpan, ref outputSpan);
-            if (status.IsPending)
-            {
-                CompletePending(ref status, ref outputSpan, ref ctx);
-            }
-
-            return status.IsCompletedSuccessfully;
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -944,17 +961,6 @@ namespace Garnet.server
 
             if (insert)
             {
-                // HACK HACK HACK
-                // Once DiskANN is doing this, remove
-                if (!attributes.IsEmpty)
-                {
-                    var res = WriteCallbackManaged(context | DiskANNService.Attributes, element, attributes);
-                    if (!res)
-                    {
-                        throw new GarnetException($"Failed to insert attribute");
-                    }
-                }
-
                 return VectorManagerResult.OK;
             }
 
@@ -977,12 +983,13 @@ namespace Garnet.server
 
             return del ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
+
         /// <summary>
         /// Deletion of a Vector Set needs special handling.
         /// 
         /// This is called by DEL and UNLINK after a naive delete fails for us to _try_ and delete a Vector Set.
         /// </summary>
-        internal unsafe Status TryDeleteVectorSet(StorageSession storageSession, ref SpanByte key)
+        internal Status TryDeleteVectorSet(StorageSession storageSession, ref SpanByte key)
         {
             storageSession.parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
 
@@ -1004,7 +1011,7 @@ namespace Garnet.server
 
                 // Update the index to be delete-able
                 var updateToDroppableVectorSet = new RawStringInput();
-                updateToDroppableVectorSet.arg1 = VectorManager.DeleteAfterDropArg;
+                updateToDroppableVectorSet.arg1 = DeleteAfterDropArg;
                 updateToDroppableVectorSet.header.cmd = RespCommand.VADD;
 
                 var update = storageSession.basicContext.RMW(ref key, ref updateToDroppableVectorSet);
