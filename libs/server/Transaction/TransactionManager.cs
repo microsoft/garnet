@@ -216,6 +216,9 @@ namespace Garnet.server
 
                 // Log the transaction to AOF
                 Log(id, ref procInput);
+
+                // Transaction Commit
+                Commit();
             }
             catch (Exception ex)
             {
@@ -257,7 +260,6 @@ namespace Garnet.server
                         procedureId = id,
                         storeVersion = txnVersion,
                         sessionID = basicContext.Session.ID,
-                        logAccessMap = (long)proc.logAccessMap
                     },
                     ref procInput);
             }
@@ -287,7 +289,6 @@ namespace Garnet.server
                         opType = AofEntryType.TxnCommit,
                         storeVersion = txnVersion,
                         txnID = basicContext.Session.ID,
-                        timestamp = Stopwatch.GetTimestamp()
                     });
             }
             if (!internal_txn)
@@ -415,8 +416,7 @@ namespace Garnet.server
                     {
                         opType = AofEntryType.TxnStart,
                         storeVersion = txnVersion,
-                        txnID = basicContext.Session.ID,
-                        logAccessMap = (long)logAccessMap
+                        txnID = basicContext.Session.ID
                     });
             }
 

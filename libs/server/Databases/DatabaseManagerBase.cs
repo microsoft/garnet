@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server.Metrics;
@@ -340,8 +339,7 @@ namespace Garnet.server
             {
                 opType = entryType,
                 storeVersion = version,
-                sessionID = -1,
-                timestamp = Stopwatch.GetTimestamp()
+                sessionID = -1
             };
 
             db.AppendOnlyFile.Enqueue(ulong.MaxValue, header);

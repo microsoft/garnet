@@ -203,7 +203,7 @@ namespace Garnet.server
             isCheckpointStart = false;
 
             // Handle transactions
-            if (aofReplayBuffer.AddOrReplayTransactionOperation(sublogIdx, header, ptr, length, asReplica))
+            if (aofReplayBuffer.AddOrReplayTransactionOperation(sublogIdx, ptr, length, asReplica))
                 return;
 
             switch (header.opType)
@@ -278,7 +278,8 @@ namespace Garnet.server
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     break;
                 case AofEntryType.RefreshSublogTail:
-                    storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateSublogTimestamp(sublogIdx, header.timestamp);
+                    var extendedHeader = *(AofExtendedHeader*)ptr;
+                    storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
                     break;
                 default:
                     _ = ReplayOp(sublogIdx, ptr, length, asReplica);
@@ -337,14 +338,17 @@ namespace Garnet.server
                     break;
                 case AofEntryType.TxnCommit:
                     updateKeyTimestamp = false;
-                    aofReplayBuffer.ProcessFuzzyRegionTransactionGroup(sublogIdx, header, asReplica);
+                    aofReplayBuffer.ProcessFuzzyRegionTransactionGroup(sublogIdx, entryPtr, asReplica);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
 
-            if(storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.AofSublogCount > 1 && updateKeyTimestamp)
-                storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateKeyTimestamp(sublogIdx, ref key, header.timestamp);
+            if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.AofSublogCount > 1 && updateKeyTimestamp)
+            {
+                var extendedHeader = *(AofExtendedHeader*)entryPtr;
+                storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateKeyTimestamp(sublogIdx, ref key, extendedHeader.timestamp);
+            }
 
             return true;
 
@@ -551,7 +555,7 @@ namespace Garnet.server
             var ptr = record;
             while (ptr < record + recordLength)
             {
-                var header = *(AofHeader*)ptr;
+                var header = *(AofExtendedHeader*)ptr;
                 var timestamp = header.timestamp;
                 maxSendTimestamp = Math.Max(maxSendTimestamp, timestamp);
                 ptr += entryLength;

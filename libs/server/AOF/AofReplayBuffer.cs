@@ -161,14 +161,14 @@ namespace Garnet.server
             ///     4. Default: Add an operation to an existing transaction group
             /// </summary>
             /// <param name="sublogIdx"></param>
-            /// <param name="header"></param>
             /// <param name="ptr"></param>
             /// <param name="length"></param>
             /// <param name="asReplica"></param>
             /// <returns>Returns true if a txn operation was processed and added otherwise false</returns>
             /// <exception cref="GarnetException"></exception>
-            internal unsafe bool AddOrReplayTransactionOperation(int sublogIdx, AofHeader header, byte* ptr, int length, bool asReplica)
+            internal unsafe bool AddOrReplayTransactionOperation(int sublogIdx, byte* ptr, int length, bool asReplica)
             {
+                var header = *(AofHeader*)ptr;
                 // First try to process this as an existing transaction
                 if (sublogReplayBuffers[sublogIdx].activeTxns.TryGetValue(header.sessionID, out var group))
                 {
@@ -190,7 +190,7 @@ namespace Garnet.server
                             else
                             {
                                 // Otherwise process transaction group immediately
-                                ProcessTransactionGroup(sublogIdx, header, asReplica, group);
+                                ProcessTransactionGroup(sublogIdx, ptr, asReplica, group);
                             }
 
                             // We want to clear and remove in both cases to make space for next txn from session
@@ -216,7 +216,8 @@ namespace Garnet.server
                 switch (header.opType)
                 {
                     case AofEntryType.TxnStart:
-                        sublogReplayBuffers[sublogIdx].AddTransactionGroup(header.sessionID, (ulong)header.logAccessMap);
+                        var logAccessBitmap = aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1 ? 0 : (*(AofExtendedHeader*)ptr).logAccessMap;
+                        sublogReplayBuffers[sublogIdx].AddTransactionGroup(header.sessionID, (ulong)logAccessBitmap);
                         break;
                     case AofEntryType.TxnAbort:
                     case AofEntryType.TxnCommit:
@@ -255,34 +256,35 @@ namespace Garnet.server
             /// Process fuzzy region transaction groups
             /// </summary>
             /// <param name="sublogIdx"></param>
-            /// <param name="header"></param>
+            /// <param name="ptr"></param>
             /// <param name="asReplica"></param>
-            internal void ProcessFuzzyRegionTransactionGroup(int sublogIdx, AofHeader header, bool asReplica)
+            internal void ProcessFuzzyRegionTransactionGroup(int sublogIdx, byte* ptr, bool asReplica)
             {
                 // Process transaction groups in FIFO order
                 var txnGroup = sublogReplayBuffers[sublogIdx].txnGroupBuffer.Dequeue();
-                ProcessTransactionGroup(sublogIdx, header, asReplica, txnGroup);
+                ProcessTransactionGroup(sublogIdx, ptr, asReplica, txnGroup);
             }
 
             /// <summary>
             /// Process provided transaction group
             /// </summary>
             /// <param name="sublogIdx"></param>
-            /// <param name="header"></param>
             /// <param name="asReplica"></param>
             /// <param name="txnGroup"></param>
-            internal void ProcessTransactionGroup(int sublogIdx, AofHeader header, bool asReplica, TransactionGroup txnGroup)
+            internal void ProcessTransactionGroup(int sublogIdx, byte *ptr, bool asReplica, TransactionGroup txnGroup)
             {
                 // No need to coordinate replay of transaction if operating with single sublog
-                if(aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1)
+                if (aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1)
                 {
                     ProcessTransactionGroupOperations(txnGroup);
                     return;
                 }
+                
+                var header = *(AofExtendedHeader*)ptr;
 
                 // Add coordinator group if does not exist and add to that the txnGroup that needs to be replayed
                 var participantCount = BitOperations.PopCount(txnGroup.logAccessMap);
-                var txnReplayCoordinator = txnReplayCoordinators.GetOrAdd(header.sessionID, _ => new TransactionGroupReplayCoordinator(participantCount));
+                var txnReplayCoordinator = txnReplayCoordinators.GetOrAdd(header.header.sessionID, _ => new TransactionGroupReplayCoordinator(participantCount));
                 txnReplayCoordinator.AddTransactionGroup(sublogIdx, txnGroup);
                 var IsLeader = txnReplayCoordinator.Signal();
 
@@ -303,7 +305,7 @@ namespace Garnet.server
                 {
                     if (IsLeader)
                     {
-                        _ = txnReplayCoordinators.Remove(header.sessionID, out _);
+                        _ = txnReplayCoordinators.Remove(header.header.sessionID, out _);
                         txnReplayCoordinator.Set();
                     }
 

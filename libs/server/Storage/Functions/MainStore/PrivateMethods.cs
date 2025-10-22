@@ -735,11 +735,15 @@ namespace Garnet.server
                 input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = version, sessionID = sessionId, timestamp = Stopwatch.GetTimestamp() },
+                new AofHeader
+                {
+                    opType = AofEntryType.StoreUpsert,
+                    storeVersion = version,
+                    sessionID = sessionId,
+                },
                 ref key,
                 ref value,
-                ref input,
-                out _);
+                ref input);
         }
 
         /// <summary>
@@ -753,10 +757,9 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
             functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId, timestamp = Stopwatch.GetTimestamp() },
+                new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
                 ref key,
-                ref input,
-                out _);
+                ref input);
         }
 
         /// <summary>
@@ -769,10 +772,9 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             SpanByte def = default;
             functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID, timestamp = Stopwatch.GetTimestamp() },
+                new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID },
                 ref key,
-                ref def,
-                out _);
+                ref def);
         }
 
         BitFieldCmdArgs GetBitFieldArguments(ref RawStringInput input)

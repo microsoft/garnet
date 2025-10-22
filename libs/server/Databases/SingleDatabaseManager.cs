@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -432,8 +431,7 @@ namespace Garnet.server
                     storeVersion = 0,
                     sessionID = -1,
                     unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
-                    databaseId = (byte)defaultDatabase.Id,
-                    timestamp = Stopwatch.GetTimestamp()
+                    databaseId = (byte)defaultDatabase.Id
                 };
                 AppendOnlyFile?.Enqueue(ulong.MaxValue, header);
             }

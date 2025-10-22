@@ -5,7 +5,28 @@ using System.Runtime.InteropServices;
 
 namespace Garnet.server
 {
-    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    [StructLayout(LayoutKind.Explicit, Size = 32)]
+    struct AofExtendedHeader
+    {
+        /// <summary>
+        /// Singlelog AofHeader
+        /// </summary>
+        [FieldOffset(0)]
+        public AofHeader header;
+
+        /// <summary>
+        /// Used for multilog operations
+        /// </summary>
+        [FieldOffset(16)]
+        public long timestamp;
+        /// <summary>
+        /// Used for multi-log replay
+        /// </summary>
+        [FieldOffset(24)]
+        public long logAccessMap;
+    };
+
+    [StructLayout(LayoutKind.Explicit, Size = 16)]
     struct AofHeader
     {
         // Important: Update version number whenever any of the following change:
@@ -59,16 +80,6 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(3)]
         public byte databaseId;
-        /// <summary>
-        /// Used for multilog operations
-        /// </summary>
-        [FieldOffset(16)]
-        public long timestamp;
-        /// <summary>
-        /// Used for multi-log replay
-        /// </summary>
-        [FieldOffset(16)]
-        public long logAccessMap;        
 
         public AofHeader()
         {

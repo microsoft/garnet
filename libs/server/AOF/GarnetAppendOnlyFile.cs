@@ -5,6 +5,7 @@ using System;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 using Garnet.common;
+using System.Diagnostics;
 
 namespace Garnet.server
 {
@@ -41,8 +42,7 @@ namespace Garnet.server
         public void Initialize(in AofAddress beginAddress, in AofAddress committedUntilAddress, long lastCommitNum = 0)
             => Log.Initialize(beginAddress, committedUntilAddress, lastCommitNum);
 
-        public void Enqueue<THeader>(ulong logAccessBitmap, THeader userHeader)
-            where THeader : unmanaged
+        internal void Enqueue(ulong logAccessBitmap, AofHeader userHeader)
         {
             if (serverOptions.AofSublogCount == 1)
             {
@@ -54,10 +54,16 @@ namespace Garnet.server
                 {
                     Log.LockSublogs(logAccessBitmap);
                     var _logAccessBitmap = logAccessBitmap;
+                    var extendedAofHeader = new AofExtendedHeader
+                    {
+                        header = userHeader,
+                        logAccessMap = (long)logAccessBitmap,
+                        timestamp = Stopwatch.GetTimestamp()
+                    };
                     while (_logAccessBitmap > 0)
                     {
                         var offset = _logAccessBitmap.GetNextOffset();
-                        Log.GetSubLog(offset).Enqueue(userHeader, out _);
+                        Log.GetSubLog(offset).Enqueue(extendedAofHeader, out _);
                     }
                 }
                 finally
@@ -93,17 +99,58 @@ namespace Garnet.server
             }
         }
 
-        public void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
-            where THeader : unmanaged
-            => Log.GetSubLog(ref item1).Enqueue(userHeader, ref item1, ref item2, out logicalAddress);
+        internal void Enqueue(AofHeader userHeader, ref SpanByte item1, ref SpanByte item2)
+        {
+            if (serverOptions.AofSublogCount == 1)
+            {
+                Log.GetSubLog(0).Enqueue(userHeader, ref item1, ref item2, out _);
+            }
+            else
+            {
+                var extendedAofHeader = new AofExtendedHeader
+                {
+                    header = userHeader,
+                    timestamp = Stopwatch.GetTimestamp()
+                };
+                Log.GetSubLog(ref item1).Enqueue(extendedAofHeader, ref item1, ref item2, out _);
+            }
+        }
 
-        public void Enqueue<THeader, TInput>(THeader userHeader, ref SpanByte item1, ref TInput input, out long logicalAddress)
-            where THeader : unmanaged where TInput : IStoreInput
-            => Log.GetSubLog(ref item1).Enqueue(userHeader, ref item1, ref input, out logicalAddress);
+        internal void Enqueue<TInput>(AofHeader userHeader, ref SpanByte item1, ref TInput input)
+            where TInput : IStoreInput
+        {
+            if (serverOptions.AofSublogCount == 1)
+            {
+                Log.GetSubLog(ref item1).Enqueue(userHeader, ref item1, ref input, out _);
+            }
+            else
+            {
+                var extendedAofHeader = new AofExtendedHeader
+                {
+                    header = userHeader,
+                    timestamp = Stopwatch.GetTimestamp()
+                };
+                Log.GetSubLog(ref item1).Enqueue(extendedAofHeader, ref item1, ref input, out _);
+            }
+        }
 
-        public void Enqueue<THeader, TInput>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref TInput input, out long logicalAddress)
-            where THeader : unmanaged where TInput : IStoreInput
-            => Log.GetSubLog(ref item1).Enqueue(userHeader, ref item1, ref item2, ref input, out logicalAddress);
+        internal void Enqueue<TInput>(AofHeader userHeader, ref SpanByte item1, ref SpanByte item2, ref TInput input)
+            where TInput : IStoreInput
+        {
+            if (serverOptions.AofSublogCount == 1)
+            {
+                Log.GetSubLog(ref item1).Enqueue(userHeader, ref item1, ref item2, ref input, out _);
+            }
+            else
+            {
+                var extendedAofHeader = new AofExtendedHeader
+                {
+                    header = userHeader,
+                    timestamp = Stopwatch.GetTimestamp()
+                };
+                Log.GetSubLog(ref item1).Enqueue(extendedAofHeader, ref item1, ref input, out _);
+            }
+        }
 
         public long UnsafeEnqueueRaw(int sublogIdx, ReadOnlySpan<byte> entryBytes, bool noCommit = false)
             => Log.GetSubLog(sublogIdx).UnsafeEnqueueRaw(entryBytes, noCommit);
@@ -119,7 +166,10 @@ namespace Garnet.server
 
         public void EnqueueRefreshSublogTail(int sublogIdx, long timestamp)
         {
-            var refreshSublogTailHeader = new AofHeader { opType = AofEntryType.RefreshSublogTail, timestamp = timestamp };
+            var refreshSublogTailHeader = new AofExtendedHeader {
+                header = new AofHeader{ opType = AofEntryType.RefreshSublogTail },
+                timestamp = timestamp
+            };
             Log.GetSubLog(sublogIdx).Enqueue(refreshSublogTailHeader, out _);
         }
 
