@@ -300,8 +300,6 @@ namespace Garnet
                 servers[i].Register(WireFormat.ASCII, Provider);
 
             LoadModules(customCommandManager);
-
-            vectorManager.Initialize();
         }
 
         private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,

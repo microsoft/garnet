@@ -525,17 +525,11 @@ namespace Garnet.server
             key.MarkNamespace();
             key.SetNamespaceInPayload(0);
 
-            VectorInput input = default;
-            unsafe
-            {
-                input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
-            }
-
             var data = SpanByte.FromPinnedSpan(dataSpan);
 
             ref var ctx = ref session.storageSession.vectorContext;
 
-            var status = ctx.RMW(ref key, ref input);
+            var status = ctx.Read(ref key, ref data);
 
             if (status.IsPending)
             {
@@ -543,6 +537,7 @@ namespace Garnet.server
                 CompletePending(ref status, ref ignored, ref ctx);
             }
 
+            // Can be not found if we've never spun up a Vector Set
             if (status.Found)
             {
                 contextMetadata = MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0];
@@ -1847,8 +1842,11 @@ namespace Garnet.server
             ref var lockCtx = ref storageSession.objectStoreLockableContext;
             lockCtx.BeginLockable();
 
+            var readCmd = input.header.cmd;
+
             while (true)
             {
+                input.header.cmd = readCmd;
                 input.arg1 = 0;
 
                 lockCtx.Lock([readLockEntry]);
@@ -1882,6 +1880,7 @@ namespace Garnet.server
                         continue;
                     }
 
+                    input.header.cmd = RespCommand.VADD;
                     input.arg1 = RecreateIndexArg;
 
                     GarnetStatus writeRes;

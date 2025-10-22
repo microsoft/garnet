@@ -903,9 +903,13 @@ namespace Garnet.test
         }
 
         [Test]
-        [Ignore("Needs DiskANN implementation work before could possibly pass")]
         public void RecreateIndexesOnRestore()
         {
+            var addData1 = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
+            var addData2 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
+            var queryData = addData1.ToArray();
+            queryData[0]++;
+
             // VADD
             {
                 using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
@@ -914,9 +918,8 @@ namespace Garnet.test
                     var db = redis.GetDatabase(0);
 
                     _ = db.KeyDelete("foo");
-                    s.FlushAllDatabases();
 
-                    var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
                     ClassicAssert.AreEqual(1, (int)res1);
 
 #pragma warning disable CS0618 // Intentionally doing bad things
@@ -935,15 +938,208 @@ namespace Garnet.test
                 {
                     var db = redis.GetDatabase(0);
 
-                    var res2 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "5.0", "6.0", "7.0", "8.0", new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "fizz buzz"]);
+                    var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "fizz buzz"]);
                     ClassicAssert.AreEqual(1, (int)res2);
                 }
             }
 
-            // TODO: VSIM with vector
-            // TODO: VSIM with element
-            // TODO: VDIM
-            // TODO: VEMB
+            // VSIM with vector
+            {
+                byte[][] expectedVSimResult;
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var s = redis.GetServers()[0];
+                    var db = redis.GetDatabase(0);
+
+                    _ = db.KeyDelete("foo");
+
+                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    ClassicAssert.AreEqual(1, (int)res1);
+
+                    expectedVSimResult = (byte[][])db.Execute("VSIM", ["foo", "XB8", queryData]);
+                    ClassicAssert.AreEqual(1, expectedVSimResult.Length);
+#pragma warning disable CS0618 // Intentionally doing bad things
+                    s.Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+
+                    var commit = server.Store.WaitForCommit();
+                    ClassicAssert.IsTrue(commit);
+                    server.Dispose(deleteDir: false);
+
+                    server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+                    server.Start();
+                }
+
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var db = redis.GetDatabase(0);
+
+                    var res2 = (byte[][])db.Execute("VSIM", ["foo", "XB8", queryData]);
+                    ClassicAssert.AreEqual(expectedVSimResult.Length, res2.Length);
+                    for (var i = 0; i < res2.Length; i++)
+                    {
+                        ClassicAssert.IsTrue(expectedVSimResult[i].AsSpan().SequenceEqual(res2[i]));
+                    }
+                }
+            }
+
+            // VSIM with element
+            {
+                byte[][] expectedVSimResult;
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var s = redis.GetServers()[0];
+                    var db = redis.GetDatabase(0);
+
+                    _ = db.KeyDelete("foo");
+
+                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    ClassicAssert.AreEqual(1, (int)res1);
+
+                    var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    ClassicAssert.AreEqual(1, (int)res1);
+
+                    expectedVSimResult = (byte[][])db.Execute("VSIM", ["foo", "ELE", new byte[] { 0, 0, 0, 0 }]);
+                    ClassicAssert.AreEqual(1, expectedVSimResult.Length);
+#pragma warning disable CS0618 // Intentionally doing bad things
+                    s.Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+
+                    var commit = server.Store.WaitForCommit();
+                    ClassicAssert.IsTrue(commit);
+                    server.Dispose(deleteDir: false);
+
+                    server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+                    server.Start();
+                }
+
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var db = redis.GetDatabase(0);
+
+                    var res2 = (byte[][])db.Execute("VSIM", ["foo", "ELE", new byte[] { 0, 0, 0, 0 }]);
+                    ClassicAssert.AreEqual(expectedVSimResult.Length, res2.Length);
+                    for (var i = 0; i < res2.Length; i++)
+                    {
+                        ClassicAssert.IsTrue(expectedVSimResult[i].AsSpan().SequenceEqual(res2[i]));
+                    }
+                }
+            }
+
+            // VDIM
+            {
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var s = redis.GetServers()[0];
+                    var db = redis.GetDatabase(0);
+
+                    _ = db.KeyDelete("foo");
+
+                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    ClassicAssert.AreEqual(1, (int)res1);
+
+#pragma warning disable CS0618 // Intentionally doing bad things
+                    s.Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+
+                    var commit = server.Store.WaitForCommit();
+                    ClassicAssert.IsTrue(commit);
+                    server.Dispose(deleteDir: false);
+
+                    server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+                    server.Start();
+                }
+
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var db = redis.GetDatabase(0);
+
+                    var res2 = (int)db.Execute("VDIM", ["foo"]);
+                    ClassicAssert.AreEqual(addData1.Length, res2);
+                }
+            }
+
+            // VEMB
+            {
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var s = redis.GetServers()[0];
+                    var db = redis.GetDatabase(0);
+
+                    _ = db.KeyDelete("foo");
+
+                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    ClassicAssert.AreEqual(1, (int)res1);
+
+#pragma warning disable CS0618 // Intentionally doing bad things
+                    s.Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+
+                    var commit = server.Store.WaitForCommit();
+                    ClassicAssert.IsTrue(commit);
+                    server.Dispose(deleteDir: false);
+
+                    server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+                    server.Start();
+                }
+
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var db = redis.GetDatabase(0);
+
+                    var res2 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
+                    ClassicAssert.AreEqual(res2.Length, addData1.Length);
+
+                    for (var i = 0; i < res2.Length; i++)
+                    {
+                        ClassicAssert.AreEqual((float)addData1[i], float.Parse(res2[i]));
+                    }
+                }
+            }
+
+            // VREM
+            {
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var s = redis.GetServers()[0];
+                    var db = redis.GetDatabase(0);
+
+                    _ = db.KeyDelete("foo");
+
+                    var res1 = db.Execute("VADD", ["foo", "XB8", addData1, new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    ClassicAssert.AreEqual(1, (int)res1);
+
+                    var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
+                    ClassicAssert.AreEqual(1, (int)res1);
+
+#pragma warning disable CS0618 // Intentionally doing bad things
+                    s.Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+
+                    var commit = server.Store.WaitForCommit();
+                    ClassicAssert.IsTrue(commit);
+                    server.Dispose(deleteDir: false);
+
+                    server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+                    server.Start();
+                }
+
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+                {
+                    var db = redis.GetDatabase(0);
+
+                    var res1 = (int)db.Execute("VREM", ["foo", new byte[] { 0, 0, 0, 0 }]);
+                    ClassicAssert.AreEqual(1, res1);
+
+                    var res2 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 1 }]);
+                    ClassicAssert.AreEqual(res2.Length, addData1.Length);
+
+                    for (var i = 0; i < res2.Length; i++)
+                    {
+                        ClassicAssert.AreEqual((float)addData2[i], float.Parse(res2[i]));
+                    }
+                }
+            }
         }
 
         // TODO: FLUSHDB needs to cleanup too...

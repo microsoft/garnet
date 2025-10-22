@@ -359,6 +359,10 @@ namespace Garnet.server
                 if (serverOptions.Recover)
                 {
                     RecoverCheckpoint();
+
+                    // Before replaying AOF (and possibly applying VADDs, VREM, etc.), we need to get the VectorManager into a coherent state
+                    vectorManager.Initialize();
+
                     RecoverAOF();
                     ReplayAOF();
                 }
