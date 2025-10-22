@@ -20,18 +20,17 @@ namespace Garnet.cluster
 
             // Read the value for the key. This will populate output with the entire serialized record.
             status = localServerSession.BasicGarnetApi.Read_UnifiedStore(key, ref input, ref output);
-            var isObject = (output.OutputFlags & OutputFlags.ValueIsObject) == OutputFlags.ValueIsObject;
-
-            return WriteRecord(gcs, ref output.SpanByteAndMemory, status, isObject);
+            
+            return WriteRecord(gcs, ref output.SpanByteAndMemory, status);
         }
 
-        bool WriteRecord(GarnetClientSession gcs, ref SpanByteAndMemory output, GarnetStatus status, bool isObject)
+        bool WriteRecord(GarnetClientSession gcs, ref SpanByteAndMemory output, GarnetStatus status)
         {
             // Skip (do not fail) if key NOTFOUND
             if (status == GarnetStatus.NOTFOUND)
                 return true;
 
-            return WriteOrSendRecordSpan(gcs, ref output, isObject);
+            return WriteOrSendRecordSpan(gcs, ref output);
         }
 
         /// <summary>
@@ -39,9 +38,8 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="gcs">The client session</param>
         /// <param name="output">Output buffer from Read(), containing the full serialized record</param>
-        /// <param name="isObject">Whether the record contains an object</param>
         /// <returns>True on success, else false</returns>
-        private bool WriteOrSendRecordSpan(GarnetClientSession gcs, ref SpanByteAndMemory output, bool isObject)
+        private bool WriteOrSendRecordSpan(GarnetClientSession gcs, ref SpanByteAndMemory output)
         {
             // Check if we need to initialize cluster migrate command arguments
             if (gcs.NeedsInitialization)
@@ -50,7 +48,7 @@ namespace Garnet.cluster
             fixed (byte* ptr = output.MemorySpan)
             {
                 // Try to write serialized record to client buffer
-                while (!gcs.TryWriteRecordSpan(new(ptr, output.Length), isObject, out var task))
+                while (!gcs.TryWriteRecordSpan(new(ptr, output.Length), out var task))
                 {
                     // Flush records in the buffer
                     if (!HandleMigrateTaskResponse(task))

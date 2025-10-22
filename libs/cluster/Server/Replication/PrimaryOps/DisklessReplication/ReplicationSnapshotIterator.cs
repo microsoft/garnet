@@ -130,7 +130,7 @@ namespace Garnet.cluster
                     sessions[i].SetClusterSyncHeader();
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, isObject: false, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
@@ -182,7 +182,7 @@ namespace Garnet.cluster
                     sessions[i].SetClusterSyncHeader();
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, isObject: true, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
