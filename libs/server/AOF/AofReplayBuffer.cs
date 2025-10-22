@@ -10,34 +10,90 @@ using System.Threading;
 using System.Diagnostics;
 
 namespace Garnet.server
-{    
+{
     public sealed unsafe partial class AofProcessor
     {
+        readonly ConcurrentDictionary<int, TransactionGroupReplayCoordinator> txnReplayCoordinators = [];
+
         /// <summary>
-        /// Transaction group replay coordinator is used to coordinate replay of transactions between sublogs
+        /// Replay StoredProc wrapper for single and sharded logs
         /// </summary>
-        /// <param name="participantCount"></param>
-        internal class TransactionGroupReplayCoordinator(int participantCount)
+        /// <param name="sublogIdx"></param>
+        /// <param name="id"></param>
+        /// <param name="customProcInput"></param>
+        /// <param name="ptr"></param>
+        void ReplayStoredProc(int sublogIdx, byte id, CustomProcedureInput customProcInput, byte* ptr)
+        {
+            if (storeWrapper.serverOptions.AofSublogCount == 1)
+            {
+                RunStoredProc(id, customProcInput, ptr, false);
+            }
+            else
+            {
+                var extendedHeader = *(AofExtendedHeader*)ptr;
+                var participantCount = extendedHeader.logAccessCount;
+                var txnReplayCoordinator = txnReplayCoordinators.GetOrAdd(extendedHeader.header.sessionID, _ => new TransactionGroupReplayCoordinator(participantCount));
+
+                var IsLeader = txnReplayCoordinator.AddTransactionGroup(null);
+
+                try
+                {
+                    if (!IsLeader)
+                    {
+                        // Wait for leader to complete replay
+                        txnReplayCoordinator.Wait();
+                        return;
+                    }
+
+                    // Replay StoredProc
+                    RunStoredProc(id, customProcInput, ptr, false);
+                }
+                finally
+                {
+                    if (IsLeader)
+                    {
+                        _ = txnReplayCoordinators.Remove(extendedHeader.header.sessionID, out _);
+                        txnReplayCoordinator.Set();
+                    }
+
+                    // Update timestamps
+                    storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
+                }
+            }
+
+            void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr, bool shardedLog)
+            {
+                var curr = ptr + HeaderSize(shardedLog);
+
+                // Reconstructing CustomProcedureInput
+
+                // input
+                customProcInput.DeserializeFrom(curr);
+
+                // Run the stored procedure with the reconstructed input
+                respServerSession.RunTransactionProc(id, ref customProcInput, ref output, isRecovering: true);
+            }
+        }
+
+        internal class EventBarrier(int participantCount)
         {
             int count = participantCount;
-            /// <summary>
-            /// Allocating enough space to store the transaction groups from all participating sublogs
-            /// </summary>
-            readonly TransactionGroup[] participatingTxnGroups = new TransactionGroup[participantCount];
-            public TransactionGroup[] TxnGroups => participatingTxnGroups;
             ManualResetEventSlim eventSlim = new(false);
 
             /// <summary>
-            /// Add transaction group to be replayed
+            /// Decrements participant count but does not set signal
             /// </summary>
-            /// <param name="txnGroup"></param>
-            /// <returns>True if add operation was the last one to be added otherwise true</returns>
-            public bool AddTransactionGroup(TransactionGroup txnGroup)
+            /// <returns>True if participant count reaches zero otherwise false</returns>
+            /// <exception cref="Exception"></exception>
+            public bool Signal(out int pos)
             {
-                var offset = Interlocked.Decrement(ref count);
-                Debug.Assert(offset <= participatingTxnGroups.Length);
-                participatingTxnGroups[offset] = txnGroup;
-                return offset == 0;
+                pos = Interlocked.Decrement(ref count);
+                if (pos > 0)
+                    return false;
+                else if (pos == 0)
+                    return true;
+                else
+                    throw new Exception("Invalid count value < 0");
             }
 
             /// <summary>
@@ -48,17 +104,55 @@ namespace Garnet.server
             /// <summary>
             /// Wait for signal to be set
             /// </summary>
-            public void Wait() => eventSlim.Wait();            
-            
+            public void Wait() => eventSlim.Wait();
+        }
+
+        /// <summary>
+        /// Transaction group replay coordinator is used to coordinate replay of transactions between sublogs
+        /// </summary>
+        /// <param name="participantCount"></param>
+        internal class TransactionGroupReplayCoordinator(int participantCount)
+        {
+            EventBarrier eventBarrier = new(participantCount);
+            /// <summary>
+            /// Allocating enough space to store the transaction groups from all participating sublogs
+            /// </summary>
+            readonly TransactionGroup[] participatingTxnGroups = new TransactionGroup[participantCount];
+            public TransactionGroup[] TxnGroups => participatingTxnGroups;
+
+            /// <summary>
+            /// Add transaction group to be replayed
+            /// </summary>
+            /// <param name="txnGroup"></param>
+            /// <returns>True if add operation was the last one to be added otherwise true</returns>
+            public bool AddTransactionGroup(TransactionGroup txnGroup)
+            {
+                var isLeader = eventBarrier.Signal(out var offset);
+                Debug.Assert(offset <= participatingTxnGroups.Length);
+                participatingTxnGroups[offset] = txnGroup;
+                return isLeader;
+            }
+
+            /// <summary>
+            /// Set underlying event
+            /// </summary>
+            public void Set() => eventBarrier.Set();
+
+            /// <summary>
+            /// Wait for signal to be set
+            /// </summary>
+            public void Wait() => eventBarrier.Wait();
         }
 
         /// <summary>
         /// Transaction group contains logAccessMap and list of operations associated with this Txn
         /// </summary>
+        /// <param name="sublogIdx"></param>
         /// <param name="logAccessMap"></param>
-        internal class TransactionGroup(byte logAccessMap)
+        internal class TransactionGroup(int sublogIdx, byte logAccessMap)
         {
-            public byte logAccessMap = logAccessMap;
+            public readonly int sublogIdx = sublogIdx;
+            public readonly byte logAccessCount = logAccessMap;
 
             public List<byte[]> operations = [];
 
@@ -78,9 +172,10 @@ namespace Garnet.server
             /// Add transaction group to this replay buffer
             /// </summary>
             /// <param name="sessionID"></param>
+            /// <param name="sublogIdx"></param>
             /// <param name="logAccessBitmap"></param>
-            public void AddTransactionGroup(int sessionID, byte logAccessBitmap)
-                => activeTxns[sessionID] = new(logAccessBitmap);
+            public void AddTransactionGroup(int sessionID, int sublogIdx, byte logAccessBitmap)
+                => activeTxns[sessionID] = new(sublogIdx, logAccessBitmap);
 
             /// <summary>
             /// Add transaction group to fuzzy region buffer
@@ -101,7 +196,6 @@ namespace Garnet.server
         {
             readonly AofProcessor aofProcessor = aofProcessor;
             readonly SublogReplayBuffer[] sublogReplayBuffers = InitializeSublogBuffers(aofProcessor.storeWrapper.serverOptions.AofSublogCount);
-            readonly ConcurrentDictionary<int, TransactionGroupReplayCoordinator> txnReplayCoordinators = [];
             readonly ILogger logger = logger;
 
             internal static SublogReplayBuffer[] InitializeSublogBuffers(int AofSublogCount)
@@ -196,7 +290,7 @@ namespace Garnet.server
                 {
                     case AofEntryType.TxnStart:
                         var logAccessCount = aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1 ? 0 : (*(AofExtendedHeader*)ptr).logAccessCount;
-                        sublogReplayBuffers[sublogIdx].AddTransactionGroup(header.sessionID, (byte)logAccessCount);
+                        sublogReplayBuffers[sublogIdx].AddTransactionGroup(header.sessionID, sublogIdx, (byte)logAccessCount);
                         break;
                     case AofEntryType.TxnAbort:
                     case AofEntryType.TxnCommit:
@@ -250,7 +344,7 @@ namespace Garnet.server
             /// <param name="sublogIdx"></param>
             /// <param name="asReplica"></param>
             /// <param name="txnGroup"></param>
-            internal void ProcessTransactionGroup(int sublogIdx, byte *ptr, bool asReplica, TransactionGroup txnGroup)
+            internal void ProcessTransactionGroup(int sublogIdx, byte* ptr, bool asReplica, TransactionGroup txnGroup)
             {
                 // No need to coordinate replay of transaction if operating with single sublog
                 if (aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1)
@@ -258,12 +352,12 @@ namespace Garnet.server
                     ProcessTransactionGroupOperations(txnGroup);
                     return;
                 }
-                
-                var header = *(AofExtendedHeader*)ptr;
+
+                var extendedHeader = *(AofExtendedHeader*)ptr;
 
                 // Add coordinator group if does not exist and add to that the txnGroup that needs to be replayed
-                var participantCount = txnGroup.logAccessMap;
-                var txnReplayCoordinator = txnReplayCoordinators.GetOrAdd(header.header.sessionID, _ => new TransactionGroupReplayCoordinator(participantCount));
+                var participantCount = txnGroup.logAccessCount;
+                var txnReplayCoordinator = aofProcessor.txnReplayCoordinators.GetOrAdd(extendedHeader.header.sessionID, _ => new TransactionGroupReplayCoordinator(participantCount));
                 var IsLeader = txnReplayCoordinator.AddTransactionGroup(txnGroup);
 
                 try
@@ -283,20 +377,20 @@ namespace Garnet.server
                 {
                     if (IsLeader)
                     {
-                        _ = txnReplayCoordinators.Remove(header.header.sessionID, out _);
+                        _ = aofProcessor.txnReplayCoordinators.Remove(extendedHeader.header.sessionID, out _);
                         txnReplayCoordinator.Set();
                     }
 
-                    aofProcessor.storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateSublogTimestamp(sublogIdx, header.timestamp);
+                    aofProcessor.storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
                 }
-                
+
                 // Process transaction 
                 void ProcessTransactionGroupOperations(TransactionGroup txnGroup)
                 {
                     foreach (var entry in txnGroup.operations)
                     {
                         fixed (byte* entryPtr = entry)
-                            _ = aofProcessor.ReplayOp(sublogIdx, entryPtr, entry.Length, asReplica);
+                            _ = aofProcessor.ReplayOp(txnGroup.sublogIdx, entryPtr, entry.Length, asReplica);
                     }
                 }
             }

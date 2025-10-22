@@ -215,7 +215,7 @@ namespace Garnet.server
                 proc.Main(garnetTxMainApi, ref procInput, ref output);
 
                 // Log the transaction to AOF
-                Log(id, ref procInput);
+                Log(id, ref procInput, proc.logAccessMap);
 
                 // Transaction Commit
                 Commit();
@@ -245,24 +245,23 @@ namespace Garnet.server
                 scratchBufferAllocator.Reset();
             }
 
-
             return true;
+        }
 
-            void Log(byte id, ref CustomProcedureInput procInput)
-            {
-                Debug.Assert(functionsState.StoredProcMode);
+        void Log(byte id, ref CustomProcedureInput procInput, ulong logAccessMap)
+        {
+            Debug.Assert(functionsState.StoredProcMode);
 
-                appendOnlyFile?.EnqueueCustomProc(
-                    proc.logAccessMap,
-                    new AofHeader
-                    {
-                        opType = AofEntryType.StoredProcedure,
-                        procedureId = id,
-                        storeVersion = txnVersion,
-                        sessionID = basicContext.Session.ID,
-                    },
-                    ref procInput);
-            }
+            appendOnlyFile?.EnqueueCustomProc(
+                logAccessMap,
+                new AofHeader
+                {
+                    opType = AofEntryType.StoredProcedure,
+                    procedureId = id,
+                    storeVersion = txnVersion,
+                    sessionID = basicContext.Session.ID,
+                },
+                ref procInput);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

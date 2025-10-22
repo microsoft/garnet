@@ -311,30 +311,31 @@ namespace Garnet.server
             if (SkipRecord(sublogIdx, entryPtr, length, asReplica)) return false;
 
             ref var key = ref Unsafe.NullRef<SpanByte>();
-            var updateKeyTimestamp = true;            
+            var updateKeyTimestamp = true;
+            var shardedLog = storeWrapper.serverOptions.AofSublogCount > 1;
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    key = ref StoreUpsert(basicContext, storeInput, entryPtr);
+                    key = ref StoreUpsert(basicContext, storeInput, entryPtr, shardedLog);
                     break;
                 case AofEntryType.StoreRMW:
-                    key = ref StoreRMW(basicContext, storeInput, entryPtr);
+                    key = ref StoreRMW(basicContext, storeInput, entryPtr, shardedLog);
                     break;
                 case AofEntryType.StoreDelete:
-                    key = ref StoreDelete(basicContext, entryPtr);
+                    key = ref StoreDelete(basicContext, entryPtr, shardedLog);
                     break;
                 case AofEntryType.ObjectStoreRMW:
-                    key = ref ObjectStoreRMW(objectStoreBasicContext, objectStoreInput, entryPtr, bufferPtr, buffer.Length);
+                    key = ref ObjectStoreRMW(objectStoreBasicContext, objectStoreInput, entryPtr, bufferPtr, buffer.Length, shardedLog);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
-                    key = ref ObjectStoreUpsert(objectStoreBasicContext, storeWrapper.GarnetObjectSerializer, entryPtr, bufferPtr, buffer.Length);
+                    key = ref ObjectStoreUpsert(objectStoreBasicContext, storeWrapper.GarnetObjectSerializer, entryPtr, bufferPtr, buffer.Length, shardedLog);
                     break;
                 case AofEntryType.ObjectStoreDelete:
-                    key = ref ObjectStoreDelete(objectStoreBasicContext, entryPtr);
+                    key = ref ObjectStoreDelete(objectStoreBasicContext, entryPtr, shardedLog);
                     break;
                 case AofEntryType.StoredProcedure:
                     updateKeyTimestamp = false;
-                    RunStoredProc(header.procedureId, customProcInput, entryPtr);
+                    ReplayStoredProc(sublogIdx, header.procedureId, customProcInput, entryPtr);
                     break;
                 case AofEntryType.TxnCommit:
                     updateKeyTimestamp = false;
@@ -344,26 +345,14 @@ namespace Garnet.server
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
 
-            if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.AofSublogCount > 1 && updateKeyTimestamp)
+            if (storeWrapper.serverOptions.EnableAOF && shardedLog && updateKeyTimestamp)
             {
-                var extendedHeader = *(AofExtendedHeader*)entryPtr;
-                storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateKeyTimestamp(sublogIdx, ref key, extendedHeader.timestamp);
+                // FIXME: update timestamp protocol
+                // var extendedHeader = *(AofExtendedHeader*)entryPtr;
+                // storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateKeyTimestamp(sublogIdx, ref key, extendedHeader.timestamp);
             }
 
             return true;
-
-            void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)
-            {
-                var curr = ptr + sizeof(AofHeader);
-
-                // Reconstructing CustomProcedureInput
-
-                // input
-                customProcInput.DeserializeFrom(curr);
-
-                // Run the stored procedure with the reconstructed input
-                respServerSession.RunTransactionProc(id, ref customProcInput, ref output, isRecovering: true);
-            }
         }
 
         private void SwitchActiveDatabaseContext(GarnetDatabase db, bool initialSetup = false)
@@ -387,10 +376,15 @@ namespace Garnet.server
             }
         }
 
-        static ref SpanByte StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
-            RawStringInput storeInput, byte* ptr)
+        static int HeaderSize(bool useShardedLog) => useShardedLog ? sizeof(AofExtendedHeader) : sizeof(AofHeader);
+
+        static ref SpanByte StoreUpsert(
+            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+            RawStringInput storeInput,
+            byte* ptr,
+            bool useShardedLog)
         {
-            var curr = ptr + sizeof(AofHeader);
+            var curr = ptr + HeaderSize(useShardedLog);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
             curr += key.TotalSize;
 
@@ -409,9 +403,13 @@ namespace Garnet.server
             return ref key;
         }
 
-        static ref SpanByte StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, byte* ptr)
+        static ref SpanByte StoreRMW(
+            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+            RawStringInput storeInput,
+            byte* ptr,
+            bool useShardedLog)
         {
-            var curr = ptr + sizeof(AofHeader);
+            var curr = ptr + HeaderSize(useShardedLog);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
             curr += key.TotalSize;
 
@@ -430,20 +428,28 @@ namespace Garnet.server
             return ref key;
         }
 
-        static ref SpanByte StoreDelete(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
+        static ref SpanByte StoreDelete(
+            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+            byte* ptr,
+            bool useShardedLog)
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
+            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + HeaderSize(useShardedLog));
             basicContext.Delete(ref key);
             return ref key;
         }
 
-        static ref SpanByte ObjectStoreUpsert(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
-                GarnetObjectSerializer garnetObjectSerializer, byte* ptr, byte* outputPtr, int outputLength)
+        static ref SpanByte ObjectStoreUpsert(
+            BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
+            GarnetObjectSerializer garnetObjectSerializer,
+            byte* ptr,
+            byte* outputPtr,
+            int outputLength,
+            bool useShardedLog)
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
+            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + HeaderSize(useShardedLog));
             var keyB = key.ToByteArray();
 
-            ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
+            ref var value = ref Unsafe.AsRef<SpanByte>(ptr + HeaderSize(useShardedLog) + key.TotalSize);
             var valB = garnetObjectSerializer.Deserialize(value.ToByteArray());
 
             var output = new GarnetObjectStoreOutput(new(outputPtr, outputLength));
@@ -453,10 +459,15 @@ namespace Garnet.server
             return ref key;
         }
 
-        static ref SpanByte ObjectStoreRMW(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
-            ObjectInput objectStoreInput, byte* ptr, byte* outputPtr, int outputLength)
+        static ref SpanByte ObjectStoreRMW(
+            BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
+            ObjectInput objectStoreInput,
+            byte* ptr,
+            byte* outputPtr,
+            int outputLength,
+            bool useShardedLog)
         {
-            var curr = ptr + sizeof(AofHeader);
+            var curr = ptr + HeaderSize(useShardedLog);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
             curr += key.TotalSize;
             var keyB = key.ToByteArray();
@@ -476,9 +487,12 @@ namespace Garnet.server
             return ref key;
         }
 
-        static ref SpanByte ObjectStoreDelete(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext, byte* ptr)
+        static ref SpanByte ObjectStoreDelete(
+            BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
+            byte* ptr,
+            bool useShardedLog)
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
+            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + HeaderSize(useShardedLog));
             var keyB = key.ToByteArray();
             basicContext.Delete(ref keyB);
             return ref key;
@@ -552,14 +566,14 @@ namespace Garnet.server
 
         public static void UpdateMaxTimestamp(ref long maxSendTimestamp, byte* record, int recordLength, long entryLength)
         {
-            // var ptr = record;
-            // while (ptr < record + recordLength)
-            // {
-            //     var header = *(AofExtendedHeader*)ptr;
-            //     var timestamp = header.timestamp;
-            //     maxSendTimestamp = Math.Max(maxSendTimestamp, timestamp);
-            //     ptr += entryLength;
-            // }
+            var ptr = record;
+            while (ptr < record + recordLength)
+            {
+                var header = *(AofExtendedHeader*)ptr;
+                var timestamp = header.timestamp;
+                maxSendTimestamp = Math.Max(maxSendTimestamp, timestamp);
+                ptr += entryLength;
+            }
         }
     }
 }

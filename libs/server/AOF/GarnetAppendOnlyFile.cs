@@ -74,8 +74,8 @@ namespace Garnet.server
             }
         }
 
-        public void EnqueueCustomProc<THeader, TInput>(ulong logAccessBitmap, THeader userHeader, ref TInput input)
-            where THeader : unmanaged where TInput : IStoreInput
+        internal void EnqueueCustomProc<TInput>(ulong logAccessBitmap, AofHeader userHeader, ref TInput input)
+            where TInput : IStoreInput
         {
             if (serverOptions.AofSublogCount == 1)
             {
@@ -86,11 +86,17 @@ namespace Garnet.server
                 try
                 {
                     Log.LockSublogs(logAccessBitmap);
-                    var _logAccessBitmap = logAccessBitmap;                 
+                    var _logAccessBitmap = logAccessBitmap;
+                    var extendedAofHeader = new AofExtendedHeader
+                    {
+                        header = userHeader,
+                        logAccessCount = (byte)BitOperations.PopCount(logAccessBitmap),
+                        timestamp = Stopwatch.GetTimestamp()
+                    };
                     while (_logAccessBitmap > 0)
                     {
                         var offset = _logAccessBitmap.GetNextOffset();
-                        Log.GetSubLog(offset).Enqueue(userHeader, ref input, out _);
+                        Log.GetSubLog(offset).Enqueue(extendedAofHeader, ref input, out _);
                     }
                 }
                 finally
@@ -167,8 +173,9 @@ namespace Garnet.server
 
         public void EnqueueRefreshSublogTail(int sublogIdx, long timestamp)
         {
-            var refreshSublogTailHeader = new AofExtendedHeader {
-                header = new AofHeader{ opType = AofEntryType.RefreshSublogTail },
+            var refreshSublogTailHeader = new AofExtendedHeader
+            {
+                header = new AofHeader { opType = AofEntryType.RefreshSublogTail },
                 timestamp = timestamp
             };
             Log.GetSubLog(sublogIdx).Enqueue(refreshSublogTailHeader, out _);
