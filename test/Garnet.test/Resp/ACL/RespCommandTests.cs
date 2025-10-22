@@ -5664,6 +5664,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task GetEtagACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "GETETAG",
+                [DoGetEtagAsync]
+            );
+
+            static async Task DoGetEtagAsync(GarnetClient client)
+            {
+                var res = await client.ExecuteForStringResultAsync("GETETAG", ["foo"]);
+                ClassicAssert.IsNull(res);
+            }
+        }
+
+        [Test]
         public async Task GetWithEtagACLsAsync()
         {
             await CheckCommandsAsync(
