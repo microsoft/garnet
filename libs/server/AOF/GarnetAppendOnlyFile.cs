@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 using Garnet.common;
 using System.Diagnostics;
+using System.Numerics;
 
 namespace Garnet.server
 {
@@ -57,7 +58,7 @@ namespace Garnet.server
                     var extendedAofHeader = new AofExtendedHeader
                     {
                         header = userHeader,
-                        logAccessMap = (long)logAccessBitmap,
+                        logAccessCount = (byte)BitOperations.PopCount(logAccessBitmap),
                         timestamp = Stopwatch.GetTimestamp()
                     };
                     while (_logAccessBitmap > 0)
@@ -85,7 +86,7 @@ namespace Garnet.server
                 try
                 {
                     Log.LockSublogs(logAccessBitmap);
-                    var _logAccessBitmap = logAccessBitmap;
+                    var _logAccessBitmap = logAccessBitmap;                 
                     while (_logAccessBitmap > 0)
                     {
                         var offset = _logAccessBitmap.GetNextOffset();

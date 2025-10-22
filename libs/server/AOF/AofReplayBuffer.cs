@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
-using System.Numerics;
 using System.Threading;
 using System.Diagnostics;
 
@@ -31,34 +30,14 @@ namespace Garnet.server
             /// <summary>
             /// Add transaction group to be replayed
             /// </summary>
-            /// <param name="sublogIdx"></param>
             /// <param name="txnGroup"></param>
-            public void AddTransactionGroup(int sublogIdx, TransactionGroup txnGroup)
+            /// <returns>True if add operation was the last one to be added otherwise true</returns>
+            public bool AddTransactionGroup(TransactionGroup txnGroup)
             {
-                Debug.Assert(txnGroup.logAccessMap.IsSet(sublogIdx));
-                // Find position to add this transaction group
-                // E.g. sublogIdx:4 logAccessMap:0101 0100 offset: 1
-                // There shouldn't be a conflict here since each participating sublog in the transaction should have a unique spot in the participatingTxnGroup array
-                // logAccessMap is computed and provided at Enqueue of TxnStart in the primary <seealso cref="T:Garnet.server.TransactionManager.ComputeShardedLogAccess"/>
-                var offset = txnGroup.logAccessMap.GetOffset(sublogIdx);
+                var offset = Interlocked.Decrement(ref count);
                 Debug.Assert(offset <= participatingTxnGroups.Length);
                 participatingTxnGroups[offset] = txnGroup;
-            }
-
-            /// <summary>
-            /// Decrements participant count but does not set signal
-            /// </summary>
-            /// <returns>True if participant count reaches zero otherwise false</returns>
-            /// <exception cref="Exception"></exception>
-            public bool Signal()
-            {
-                var newValue = Interlocked.Decrement(ref count);
-                if (newValue > 0)
-                    return false;
-                else if (newValue == 0)
-                    return true;
-                else
-                    throw new Exception("Invalid count value < 0");
+                return offset == 0;
             }
 
             /// <summary>
@@ -76,10 +55,10 @@ namespace Garnet.server
         /// <summary>
         /// Transaction group contains logAccessMap and list of operations associated with this Txn
         /// </summary>
-        /// <param name="logAccessBitmap"></param>
-        internal class TransactionGroup(ulong logAccessBitmap)
+        /// <param name="logAccessMap"></param>
+        internal class TransactionGroup(byte logAccessMap)
         {
-            public ulong logAccessMap = logAccessBitmap;
+            public byte logAccessMap = logAccessMap;
 
             public List<byte[]> operations = [];
 
@@ -100,7 +79,7 @@ namespace Garnet.server
             /// </summary>
             /// <param name="sessionID"></param>
             /// <param name="logAccessBitmap"></param>
-            public void AddTransactionGroup(int sessionID, ulong logAccessBitmap)
+            public void AddTransactionGroup(int sessionID, byte logAccessBitmap)
                 => activeTxns[sessionID] = new(logAccessBitmap);
 
             /// <summary>
@@ -216,8 +195,8 @@ namespace Garnet.server
                 switch (header.opType)
                 {
                     case AofEntryType.TxnStart:
-                        var logAccessBitmap = aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1 ? 0 : (*(AofExtendedHeader*)ptr).logAccessMap;
-                        sublogReplayBuffers[sublogIdx].AddTransactionGroup(header.sessionID, (ulong)logAccessBitmap);
+                        var logAccessCount = aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1 ? 0 : (*(AofExtendedHeader*)ptr).logAccessCount;
+                        sublogReplayBuffers[sublogIdx].AddTransactionGroup(header.sessionID, (byte)logAccessCount);
                         break;
                     case AofEntryType.TxnAbort:
                     case AofEntryType.TxnCommit:
@@ -283,10 +262,9 @@ namespace Garnet.server
                 var header = *(AofExtendedHeader*)ptr;
 
                 // Add coordinator group if does not exist and add to that the txnGroup that needs to be replayed
-                var participantCount = BitOperations.PopCount(txnGroup.logAccessMap);
+                var participantCount = txnGroup.logAccessMap;
                 var txnReplayCoordinator = txnReplayCoordinators.GetOrAdd(header.header.sessionID, _ => new TransactionGroupReplayCoordinator(participantCount));
-                txnReplayCoordinator.AddTransactionGroup(sublogIdx, txnGroup);
-                var IsLeader = txnReplayCoordinator.Signal();
+                var IsLeader = txnReplayCoordinator.AddTransactionGroup(txnGroup);
 
                 try
                 {

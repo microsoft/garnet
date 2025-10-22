@@ -311,7 +311,7 @@ namespace Garnet.server
             if (SkipRecord(sublogIdx, entryPtr, length, asReplica)) return false;
 
             ref var key = ref Unsafe.NullRef<SpanByte>();
-            var updateKeyTimestamp = true;
+            var updateKeyTimestamp = true;            
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
@@ -552,14 +552,14 @@ namespace Garnet.server
 
         public static void UpdateMaxTimestamp(ref long maxSendTimestamp, byte* record, int recordLength, long entryLength)
         {
-            var ptr = record;
-            while (ptr < record + recordLength)
-            {
-                var header = *(AofExtendedHeader*)ptr;
-                var timestamp = header.timestamp;
-                maxSendTimestamp = Math.Max(maxSendTimestamp, timestamp);
-                ptr += entryLength;
-            }
+            // var ptr = record;
+            // while (ptr < record + recordLength)
+            // {
+            //     var header = *(AofExtendedHeader*)ptr;
+            //     var timestamp = header.timestamp;
+            //     maxSendTimestamp = Math.Max(maxSendTimestamp, timestamp);
+            //     ptr += entryLength;
+            // }
         }
     }
 }

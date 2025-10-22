@@ -536,28 +536,5 @@ namespace Garnet.common
             value &= ~((1UL) << offset);
             return offset;
         }
-
-        /// <summary>
-        /// Check whether the bit at i-th position is set
-        /// </summary>
-        /// <param name="value"></param>
-        /// <param name="i"></param>
-        /// <returns>Return true if bit is set at offset, otherwirse false</returns>
-        public static bool IsSet(this ulong value, int i)
-        {
-            return (((1UL) << i) & value) > 0;
-        }
-
-        /// <summary>
-        /// Get prefix sum of the first i-1 bits
-        /// </summary>
-        /// <param name="value"></param>
-        /// <param name="i"></param>
-        /// <returns></returns>
-        public static int GetOffset(this ref ulong value, int i)
-        {
-            var mask = (1UL << i) - 1;
-            return BitOperations.PopCount(value & mask);
-        }
     }
 }

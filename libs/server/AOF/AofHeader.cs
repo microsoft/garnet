@@ -5,11 +5,14 @@ using System.Runtime.InteropServices;
 
 namespace Garnet.server
 {
-    [StructLayout(LayoutKind.Explicit, Size = 32)]
+    /// <summary>
+    /// Used for sharded log to add a timestamp and logAccessCounter
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = 25)]
     struct AofExtendedHeader
     {
         /// <summary>
-        /// Singlelog AofHeader
+        /// AofHeader used with singleLog
         /// </summary>
         [FieldOffset(0)]
         public AofHeader header;
@@ -20,10 +23,10 @@ namespace Garnet.server
         [FieldOffset(16)]
         public long timestamp;
         /// <summary>
-        /// Used for multi-log replay
+        /// Used for synchronizing sublog replay
         /// </summary>
         [FieldOffset(24)]
-        public long logAccessMap;
+        public byte logAccessCount;
     };
 
     [StructLayout(LayoutKind.Explicit, Size = 16)]
