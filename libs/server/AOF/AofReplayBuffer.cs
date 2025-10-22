@@ -57,7 +57,7 @@ namespace Garnet.server
                     }
 
                     // Update timestamps
-                    storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
+                    storeWrapper.appendOnlyFile.replayedTimestampProgress.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
                 }
             }
 
@@ -381,7 +381,7 @@ namespace Garnet.server
                         txnReplayCoordinator.Set();
                     }
 
-                    aofProcessor.storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
+                    aofProcessor.storeWrapper.appendOnlyFile.replayedTimestampProgress.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
                 }
 
                 // Process transaction 

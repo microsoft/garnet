@@ -10,21 +10,33 @@ using System.Numerics;
 
 namespace Garnet.server
 {
-    public sealed class GarnetAppendOnlyFile(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
+    public sealed class GarnetAppendOnlyFile
     {
         const long kFirstValidAofAddress = 64;
 
         public long TotalSize() => Log.TailAddress.AggregateDiff(Log.BeginAddress);
 
-        public readonly ReplayTimestampTracker replayTimestampTracker = new((int)serverOptions.AofSublogCount);
-        public GarnetLog Log { get; private set; } = new(serverOptions, logSettings, logger);
-        readonly GarnetServerOptions serverOptions = serverOptions;
+        public readonly ReplicaTimestampTracker replayedTimestampProgress;
+        public GarnetLog Log { get; private set; }
+        readonly GarnetServerOptions serverOptions;
 
         public long HeaderSize => Log.HeaderSize;
 
-        public readonly AofAddress InvalidAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: -1);
+        public readonly AofAddress InvalidAofAddress;
 
-        public readonly AofAddress MaxAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: long.MaxValue);
+        public readonly AofAddress MaxAofAddress;
+
+        public readonly ILogger logger;
+
+        public GarnetAppendOnlyFile(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
+        {
+            Log = new(serverOptions, logSettings, logger);
+            this.serverOptions = serverOptions;
+            InvalidAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: -1);
+            MaxAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: long.MaxValue);
+            replayedTimestampProgress = new(this);
+            this.logger = logger;
+        }
 
         public void Dispose() => Log.Dispose();
 

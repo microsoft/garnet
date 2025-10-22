@@ -279,7 +279,7 @@ namespace Garnet.server
                     break;
                 case AofEntryType.RefreshSublogTail:
                     var extendedHeader = *(AofExtendedHeader*)ptr;
-                    storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
+                    storeWrapper.appendOnlyFile.replayedTimestampProgress.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
                     break;
                 default:
                     _ = ReplayOp(sublogIdx, ptr, length, asReplica);
@@ -348,8 +348,8 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableAOF && shardedLog && updateKeyTimestamp)
             {
                 // FIXME: update timestamp protocol
-                // var extendedHeader = *(AofExtendedHeader*)entryPtr;
-                // storeWrapper.appendOnlyFile.replayTimestampTracker.UpdateKeyTimestamp(sublogIdx, ref key, extendedHeader.timestamp);
+                var extendedHeader = *(AofExtendedHeader*)entryPtr;
+                storeWrapper.appendOnlyFile.replayedTimestampProgress.UpdateKeyTimestamp(sublogIdx, ref key, extendedHeader.timestamp);
             }
 
             return true;
@@ -548,22 +548,30 @@ namespace Garnet.server
                     _ => throw new GarnetException($"Unknown AOF header store type {storeType}"),
                 };
             }
-        }
 
-        static AofStoreType ToAofStoreType(AofEntryType type)
-        {
-            return type switch
+            static AofStoreType ToAofStoreType(AofEntryType type)
             {
-                AofEntryType.StoreUpsert or AofEntryType.StoreRMW or AofEntryType.StoreDelete => AofStoreType.MainStoreType,
-                AofEntryType.ObjectStoreUpsert or AofEntryType.ObjectStoreRMW or AofEntryType.ObjectStoreDelete => AofStoreType.ObjectStoreType,
-                AofEntryType.TxnStart or AofEntryType.TxnCommit or AofEntryType.TxnAbort or AofEntryType.StoredProcedure => AofStoreType.TxnType,
-                AofEntryType.CheckpointStartCommit or AofEntryType.ObjectStoreCheckpointStartCommit or AofEntryType.MainStoreStreamingCheckpointStartCommit or AofEntryType.ObjectStoreStreamingCheckpointStartCommit => AofStoreType.CheckpointType,
-                AofEntryType.CheckpointEndCommit or AofEntryType.ObjectStoreCheckpointEndCommit or AofEntryType.MainStoreStreamingCheckpointEndCommit or AofEntryType.ObjectStoreStreamingCheckpointEndCommit => AofStoreType.CheckpointType,
-                AofEntryType.FlushAll or AofEntryType.FlushDb => AofStoreType.FlushDbType,
-                _ => throw new GarnetException($"Conversion to AofStoreType not possible for {type}"),
-            };
+                return type switch
+                {
+                    AofEntryType.StoreUpsert or AofEntryType.StoreRMW or AofEntryType.StoreDelete => AofStoreType.MainStoreType,
+                    AofEntryType.ObjectStoreUpsert or AofEntryType.ObjectStoreRMW or AofEntryType.ObjectStoreDelete => AofStoreType.ObjectStoreType,
+                    AofEntryType.TxnStart or AofEntryType.TxnCommit or AofEntryType.TxnAbort or AofEntryType.StoredProcedure => AofStoreType.TxnType,
+                    AofEntryType.CheckpointStartCommit or AofEntryType.ObjectStoreCheckpointStartCommit or AofEntryType.MainStoreStreamingCheckpointStartCommit or AofEntryType.ObjectStoreStreamingCheckpointStartCommit => AofStoreType.CheckpointType,
+                    AofEntryType.CheckpointEndCommit or AofEntryType.ObjectStoreCheckpointEndCommit or AofEntryType.MainStoreStreamingCheckpointEndCommit or AofEntryType.ObjectStoreStreamingCheckpointEndCommit => AofStoreType.CheckpointType,
+                    AofEntryType.FlushAll or AofEntryType.FlushDb => AofStoreType.FlushDbType,
+                    _ => throw new GarnetException($"Conversion to AofStoreType not possible for {type}"),
+                };
+            }
         }
 
+        /// <summary>
+        /// This updates maxtimestamp seen in primary's shipped records
+        /// TODO: evaluate performance implications
+        /// </summary>
+        /// <param name="maxSendTimestamp"></param>
+        /// <param name="record"></param>
+        /// <param name="recordLength"></param>
+        /// <param name="entryLength"></param>
         public static void UpdateMaxTimestamp(ref long maxSendTimestamp, byte* record, int recordLength, long entryLength)
         {
             var ptr = record;

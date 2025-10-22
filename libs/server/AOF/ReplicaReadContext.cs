@@ -7,7 +7,7 @@ using System.Threading;
 namespace Garnet.server
 {
     [StructLayout(LayoutKind.Explicit, Size = 12)]
-    public struct ReplicaReadContext
+    public struct ReplicaReadSessionContext
     {
         /// <summary>
         /// Last read sublogIdx
@@ -19,13 +19,14 @@ namespace Garnet.server
         /// Maximum session timestamp
         /// </summary>
         [FieldOffset(4)]
-        public long maximumTimestamp;
+        public long maximumSessionTimestamp;
     }
 
     public class ReadSessionWaiter
     {
         public ManualResetEventSlim eventSlim;
         public long waitForTimestamp;
-        public long hash;
+        public byte sublogIdx;
+        public int keyOffset;
     }
 }

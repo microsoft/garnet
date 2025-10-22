@@ -14,7 +14,7 @@ namespace Garnet.server
         /// <summary>
         /// Replica read context used with sharded log
         /// </summary>
-        ReplicaReadContext replicaReadContext = new() { lastSublogIdx = -1, maximumTimestamp = 0 };
+        ReplicaReadSessionContext replicaReadContext = new() { lastSublogIdx = -1, maximumSessionTimestamp = 0 };
 
         /// <summary>
         /// Read session waiter used with sharded log to avoid spin-wait
@@ -55,7 +55,7 @@ namespace Garnet.server
             csvi.sessionAsking = SessionAsking;
             var canServeRead = !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
             if (storeWrapper.serverOptions.EnableAOF && (storeWrapper.serverOptions.AofSublogCount > 1) && storeWrapper.clusterProvider.IsReplica())
-                storeWrapper.appendOnlyFile.replayTimestampTracker.WaitForConsistentRead(ref replicaReadContext, ref parseState, ref csvi, readSessionWaiter);
+                storeWrapper.appendOnlyFile.replayedTimestampProgress.EnsureConsistentRead(ref replicaReadContext, ref parseState, ref csvi, readSessionWaiter);
 
             return canServeRead;
         }
