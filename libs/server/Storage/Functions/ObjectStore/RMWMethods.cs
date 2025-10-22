@@ -47,7 +47,7 @@ namespace Garnet.server
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value = GarnetObject.Create(type);
-                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, LogRecord.NoETag, out _);
+                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, logRecord.ETag, out _);
                 _ = logRecord.TrySetValueObject(value, in sizeInfo);
 
                 // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
@@ -56,7 +56,6 @@ namespace Garnet.server
                     functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
                     return false;
                 }
-
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
 
                 return true;
@@ -83,12 +82,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public void PostInitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref RMWInfo rmwInfo)
         {
-            var type = input.header.type;
-            if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
-            {
-                // reset etag state set at need initial update
-                ETagState.ResetState(ref functionsState.etagState);
-            }
+            // reset etag state set at need initial update
+            ETagState.ResetState(ref functionsState.etagState);
 
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
@@ -139,12 +134,7 @@ namespace Garnet.server
                 return false;
             }
 
-            // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
-            var inputHeaderHasEtag = input.header.CheckWithETagFlag();
             var hadETagPreMutation = logRecord.Info.HasETag;
-            if (!hadETagPreMutation && inputHeaderHasEtag)
-                return false;
-
             var shouldUpdateEtag = hadETagPreMutation;
             if (shouldUpdateEtag)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
@@ -153,60 +143,50 @@ namespace Garnet.server
             {
                 var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, logRecord.ETag, out sizeChange);
                 if (output.HasWrongType)
-                {
-                    if (shouldUpdateEtag)
-                        ETagState.ResetState(ref functionsState.etagState);
                     return true;
-                }
                 if (output.HasRemoveKey)
                 {
                     functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
 
                     // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
                     functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                    logRecord.ClearValueIfHeap(_ => { });
+                    logRecord.ClearValueIfHeap(obj => { });
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     logRecord.RemoveETag();
                     return false;
                 }
 
-                // Advance etag if the object was not explicitly marked as unchanged or if called with withetag and no previous etag was present.
-                if (!output.IsObjectUnchanged && !logRecord.TrySetETag(this.functionsState.etagState.ETag + 1))
-                    return false;
+                if (output.HasValueUpdated)
+                    logRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
 
-                if (shouldUpdateEtag)
+                if (output.HasValueUpdated || hadETagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
 
                 sizeInfo.AssertOptionals(logRecord.Info);
                 return operateSuccessful;
             }
+            else
+            {
+                var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
+                if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
+                {
+                    output.OutputFlags |= OutputFlags.WrongType;
+                    return true;
+                }
 
-            if (shouldUpdateEtag)
-            {
-                functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
-                // reset etag state that may have been initialized earlier but don't update ETag
-                ETagState.ResetState(ref functionsState.etagState);
-                return true;
-            }
-
-            var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
-            if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
-            {
-                output.OutputFlags |= OutputFlags.WrongType;
-                return true;
-            }
-
-            var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-            var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-            try
-            {
-                var result = customObjectCommand.Updater(logRecord.Key, ref input, garnetValueObject, ref writer, ref rmwInfo);
-                if (!result)
-                    return false;
-            }
-            finally
-            {
-                writer.Dispose();
+                var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                try
+                {
+                    var result = customObjectCommand.Updater(logRecord.Key, ref input, garnetValueObject, ref writer, ref rmwInfo);
+                    if (!result)
+                        return false;
+                    break;
+                }
+                finally
+                {
+                    writer.Dispose();
+                }
             }
 
             sizeInfo.AssertOptionals(logRecord.Info);
@@ -261,9 +241,6 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
             }
 
-            // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
-            var inputHeaderHasEtag = input.header.CheckWithETagFlag();
-
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value.Operate(ref input, ref output, functionsState.respProtocolVersion, srcLogRecord.ETag, out _);
@@ -274,13 +251,13 @@ namespace Garnet.server
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 }
+                if (output.HasValueUpdated)
+                    dstLogRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
 
-                // Advance etag if the object was not explicitly marked as unchanged
-                if (!output.IsObjectUnchanged || (!recordHadEtagPreMutation && inputHeaderHasEtag))
-                    dstLogRecord.TrySetETag(output.IsObjectUnchanged ? this.functionsState.etagState.ETag : this.functionsState.etagState.ETag + 1);
-
-                if (!output.IsObjectUnchanged || recordHadEtagPreMutation || inputHeaderHasEtag)
+                if (output.HasValueUpdated || recordHadEtagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
+
+                break;
             }
             else
             {
@@ -303,9 +280,8 @@ namespace Garnet.server
                 {
                     writer.Dispose();
                 }
-            }
 
-            sizeInfo.AssertOptionals(dstLogRecord.Info);
+                sizeInfo.AssertOptionals(dstLogRecord.Info);
 
             // If oldValue has been set to null, subtract its size from the tracked heap size
             var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;

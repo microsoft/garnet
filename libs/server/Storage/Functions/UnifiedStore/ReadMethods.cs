@@ -24,6 +24,9 @@ namespace Garnet.server
                 return false;
             }
 
+            if (srcLogRecord.Info.ValueIsObject)
+                output.OutputFlags |= OutputFlags.ValueIsObject;
+
             var cmd = input.header.cmd;
             return cmd switch
             {
