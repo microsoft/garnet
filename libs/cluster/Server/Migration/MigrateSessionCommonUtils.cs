@@ -48,7 +48,7 @@ namespace Garnet.cluster
             fixed (byte* ptr = output.MemorySpan)
             {
                 // Try to write serialized record to client buffer
-                while (!gcs.TryWriteRecordSpan(new(ptr, output.Length), isObject, out var task))
+                while (!gcs.TryWriteRecordSpan(new(ptr, output.Length), out var task))
                 {
                     // Flush records in the buffer
                     if (!HandleMigrateTaskResponse(task))
