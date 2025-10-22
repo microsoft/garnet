@@ -79,10 +79,10 @@ namespace Garnet.cluster
         /// Try to write the span of an entire record.
         /// </summary>
         /// <returns></returns>
-        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, bool isObject, out Task<string> task)
+        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, out Task<string> task)
         {
             WaitForFlush().GetAwaiter().GetResult();
-            return AofSyncTask.garnetClient.TryWriteRecordSpan(recordSpan, isObject, out task);
+            return AofSyncTask.garnetClient.TryWriteRecordSpan(recordSpan, out task);
         }
 
         /// <summary>
