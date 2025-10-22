@@ -156,37 +156,34 @@ namespace Garnet.server
                     return false;
                 }
 
-                if (output.HasValueUpdated)
+                if (!output.IsObjectUnchanged)
                     logRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
 
-                if (output.HasValueUpdated || hadETagPreMutation)
+                if (output.IsObjectUnchanged || hadETagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
 
                 sizeInfo.AssertOptionals(logRecord.Info);
                 return operateSuccessful;
             }
-            else
-            {
-                var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
-                if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
-                {
-                    output.OutputFlags |= OutputFlags.WrongType;
-                    return true;
-                }
 
-                var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-                try
-                {
-                    var result = customObjectCommand.Updater(logRecord.Key, ref input, garnetValueObject, ref writer, ref rmwInfo);
-                    if (!result)
-                        return false;
-                    break;
-                }
-                finally
-                {
-                    writer.Dispose();
-                }
+            var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
+            if (IncorrectObjectType(ref input, garnetValueObject, ref output.SpanByteAndMemory))
+            {
+                output.OutputFlags |= OutputFlags.WrongType;
+                return true;
+            }
+
+            var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+            var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+            try
+            {
+                var result = customObjectCommand.Updater(logRecord.Key, ref input, garnetValueObject, ref writer, ref rmwInfo);
+                if (!result)
+                    return false;
+            }
+            finally
+            {
+                writer.Dispose();
             }
 
             sizeInfo.AssertOptionals(logRecord.Info);
@@ -251,13 +248,11 @@ namespace Garnet.server
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 }
-                if (output.HasValueUpdated)
+                if (!output.IsObjectUnchanged)
                     dstLogRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
 
-                if (output.HasValueUpdated || recordHadEtagPreMutation)
+                if (!output.IsObjectUnchanged || recordHadEtagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
-
-                break;
             }
             else
             {
@@ -273,15 +268,17 @@ namespace Garnet.server
                 var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                 try
                 {
-                    var result = customObjectCommand.Updater(srcLogRecord.Key, ref input, value, ref writer, ref rmwInfo);
+                    var result =
+                        customObjectCommand.Updater(srcLogRecord.Key, ref input, value, ref writer, ref rmwInfo);
                     return result;
                 }
                 finally
                 {
                     writer.Dispose();
                 }
+            }
 
-                sizeInfo.AssertOptionals(dstLogRecord.Info);
+            sizeInfo.AssertOptionals(dstLogRecord.Info);
 
             // If oldValue has been set to null, subtract its size from the tracked heap size
             var sizeAdjustment = rmwInfo.ClearSourceValueObject ? value.HeapMemorySize - oldValueSize : value.HeapMemorySize;
