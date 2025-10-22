@@ -132,9 +132,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(8, store.IndexSize);
 
                 for (int i = 0; i < keys.Length; i++)
-                {
                     db.StringSet(keys[i], values[i]);
-                }
 
                 ClassicAssert.AreEqual(values[0], db.StringGet(keys[0]).ToString());
 
@@ -196,9 +194,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(8, store.IndexSize);
 
                 for (int i = 0; i < keys.Length; i++)
-                {
                     db.SetAdd(keys[i], values[i]);
-                }
 
                 VerifyObjectStoreSetMembers(db, keys, values);
 

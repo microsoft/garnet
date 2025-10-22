@@ -68,12 +68,11 @@ namespace Garnet.cluster
         /// <summary>
         /// Set Cluster Sync header
         /// </summary>
-        /// <param name="isMainStore"></param>
-        public void SetClusterSyncHeader(bool isMainStore)
+        public void SetClusterSyncHeader()
         {
             WaitForFlush().GetAwaiter().GetResult();
             if (AofSyncTask.garnetClient.NeedsInitialization)
-                AofSyncTask.garnetClient.SetClusterSyncHeader(clusterProvider.clusterManager.CurrentConfig.LocalNodeId, isMainStore: isMainStore);
+                AofSyncTask.garnetClient.SetClusterSyncHeader(clusterProvider.clusterManager.CurrentConfig.LocalNodeId);
         }
 
         /// <summary>

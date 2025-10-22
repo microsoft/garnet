@@ -321,7 +321,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Compaction")]
-        public void SpanByteLogCompactionCustomFunctionsTest2([Values] CompactionType compactionType, [Values] bool flushAndEvict)
+        public void SpanByteLogCompactionCustomFunctionsTest2([Values] CompactionType compactionType, [Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode)
         {
             // Update: irrelevant as session compaction no longer uses Copy/CopyInPlace
             // This test checks if CopyInPlace returning false triggers call to Copy
@@ -347,7 +347,7 @@ namespace Tsavorite.test
             status = bContext.Read(key, ref input, ref output, 0);
             Debug.Assert(status.Found);
 
-            if (flushAndEvict)
+            if (flushMode == FlushMode.OnDisk)
                 store.Log.FlushAndEvict(true);
             else
                 store.Log.Flush(true);

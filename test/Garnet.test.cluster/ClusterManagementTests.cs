@@ -396,6 +396,7 @@ namespace Garnet.test.cluster
 
             context.nodes[restartingNode] = context.CreateInstance(
                 context.clusterTestUtils.GetEndPoint(restartingNode),
+                disableObjects: true,
                 tryRecover: false,
                 enableAOF: true,
                 timeout: 60,

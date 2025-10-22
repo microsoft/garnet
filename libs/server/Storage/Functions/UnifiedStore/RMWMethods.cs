@@ -55,13 +55,12 @@ namespace Garnet.server
             }
 
             if (logRecord.Info.ValueIsObject)
-            {
                 functionsState.objectStoreSizeTracker?.AddTrackedSize(logRecord.ValueObject.HeapMemorySize);
-            }
         }
 
         public bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord => true;
+            ref GarnetUnifiedStoreOutput output, ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
+            => true;
 
         public bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,
             in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output,
@@ -137,7 +136,6 @@ namespace Garnet.server
                 // the record was CASed into the hash chain before it gets modified
                 var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
                 var oldValueSize = srcLogRecord.ValueObject.HeapMemorySize;
-                _ = dstLogRecord.TrySetValueObject(value);
 
                 // First copy the new Value and optionals to the new record. This will also ensure space for expiration if it's present.
                 // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
@@ -206,6 +204,7 @@ namespace Garnet.server
         bool InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
         {
             sizeChange = 0;
+            var cmd = input.header.cmd;
 
             // Expired data
             if (logRecord.Info.HasExpiration && input.header.CheckExpiry(logRecord.Expiration))
@@ -219,9 +218,7 @@ namespace Garnet.server
                     logRecord.ClearValueIfHeap(_ => { });
                 }
                 else
-                {
                     logRecord.RemoveETag();
-                }
 
                 rmwInfo.Action = RMWAction.ExpireAndResume;
 
@@ -234,7 +231,6 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
             var shouldCheckExpiration = true;
 
-            var cmd = input.header.cmd;
             switch (cmd)
             {
                 case RespCommand.EXPIRE:
@@ -264,9 +260,7 @@ namespace Garnet.server
                         shouldUpdateEtag = false;
                     }
                     else
-                    {
                         return true;
-                    }
                     break;
                 default:
                     throw new NotImplementedException();

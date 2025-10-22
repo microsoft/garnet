@@ -6,6 +6,8 @@ using System.Diagnostics;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -53,6 +55,8 @@ namespace Tsavorite.core
 
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(keyHash);
             pendingContext.keyHash = keyHash;
+            pendingContext.logicalAddress = kInvalidAddress;
+            pendingContext.eTag = LogRecord.NoETag;
 
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
@@ -132,6 +136,8 @@ namespace Tsavorite.core
                     {
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                        pendingContext.eTag = srcLogRecord.ETag;
+
                         status = OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.InPlaceUpdatedRecord);
                         goto LatchRelease;
                     }
@@ -214,6 +220,8 @@ namespace Tsavorite.core
                     // Success
                     MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                     pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
+                    pendingContext.eTag = logRecord.ETag;
+
                     // Return NOTFOUND OperationStatus to indicate that the operation was successful but a previous record was not found.
                     status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.InPlaceUpdatedRecord);
                     stats.inChainSuccesses++;
@@ -348,6 +356,8 @@ namespace Tsavorite.core
 
                 stackCtx.ClearNewRecord();
                 pendingContext.logicalAddress = newLogicalAddress;
+                pendingContext.eTag = newLogRecord.ETag;
+
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.CreatedRecord);
             }
 

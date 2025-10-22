@@ -1099,9 +1099,9 @@ namespace Garnet.server
             var keysFlagsIndexes = new List<(PinnedSpanByte Key, KeySpecificationFlags Flags, int Index)>();
 
             foreach (var spec in commandInfo.KeySpecs)
-                TryAppendKeysAndFlagsFromSpec(ref state, spec, commandInfo.IsSubCommand, keysFlagsIndexes);
+                _ = TryAppendKeysAndFlagsFromSpec(ref state, spec, commandInfo.IsSubCommand, keysFlagsIndexes);
 
-            return keysFlagsIndexes.OrderBy(k => k.Index).Select(k => (k.Key, k.Flags)).ToArray();
+            return [.. keysFlagsIndexes.OrderBy(k => k.Index).Select(k => (k.Key, k.Flags))];
         }
 
         /// <summary>

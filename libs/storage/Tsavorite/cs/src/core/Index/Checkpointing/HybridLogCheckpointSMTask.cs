@@ -75,15 +75,8 @@ namespace Tsavorite.core
 
         protected static void CollectMetadata(SystemState next, TsavoriteKV<TStoreFunctions, TAllocator> store)
         {
-#if READ_WRITE
-            // Collect object log offsets only after flushes are completed
-            var seg = store.hlog.GetSegmentOffsets();
-            if (seg != null)
-            {
-                store._hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
-                Array.Copy(seg, store._hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
-            }
-#endif // READ_WRITE
+            // Collect object log tail only after flushes are completed
+            store._hybridLogCheckpoint.info.objectLogTail = store.hlogBase.GetObjectLogTail();
         }
 
         /// <inheritdoc />

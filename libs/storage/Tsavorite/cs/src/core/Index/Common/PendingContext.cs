@@ -52,6 +52,9 @@ namespace Tsavorite.core
             /// <summary>The logical address of the found record, if any; used to create <see cref="RecordMetadata"/>.</summary>
             internal long logicalAddress;
 
+            /// <summary>The record's ETag, if any; used to create <see cref="RecordMetadata"/>.</summary>
+            internal long eTag;
+
             /// <summary>The initial highest logical address of the search; used to limit search ranges when the pending operation completes (e.g. to see if a duplicate was inserted).</summary>
             internal long initialLatestLogicalAddress;
 
@@ -127,12 +130,10 @@ namespace Tsavorite.core
             /// <param name="sessionFunctions">Session functions wrapper for the operation</param>
             /// <param name="bufferPool">Allocator for backing storage</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void SerializeForReadOrRMW<TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext,
+            internal void CopyInputsForReadOrRMW<TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext,
                     TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool)
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
-                if (diskLogRecord.IsSet)
-                    return;
                 request_key?.Dispose();
                 request_key = new(key, bufferPool);
 
@@ -241,7 +242,7 @@ namespace Tsavorite.core
             }
 
             /// <inheritdoc/>
-            public readonly long ETag => diskLogRecord.ETag;
+            public readonly long ETag => diskLogRecord.IsSet ? diskLogRecord.ETag : this.eTag;
 
             /// <inheritdoc/>
             public readonly long Expiration => diskLogRecord.Expiration;
@@ -271,6 +272,12 @@ namespace Tsavorite.core
                 HasETag = Info.HasETag,
                 HasExpiration = Info.HasExpiration
             };
+
+            /// <inheritdoc/>
+            public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes() => diskLogRecord.GetInlineRecordSizes();
+
+            /// <inheritdoc/>
+            public readonly (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects() => diskLogRecord.GetInlineRecordSizesWithUnreadObjects();
             #endregion // ISourceLogRecord
         }
     }

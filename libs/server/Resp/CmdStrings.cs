@@ -270,6 +270,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_WRONGPASS_INVALID_USERNAME_PASSWORD => "WRONGPASS Invalid username/password combination"u8;
         public static ReadOnlySpan<byte> RESP_SYNTAX_ERROR => "ERR syntax error"u8;
         public static ReadOnlySpan<byte> RESP_ERR_BITOP_KEY_LIMIT => "ERR Bitop source key limit (64) exceeded"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_BITOP_DIFF_TWO_SOURCE_KEYS_REQUIRED => "ERR BITOP DIFF must be called with at least two source keys."u8;
         public static ReadOnlySpan<byte> RESP_ERR_COUNT_IS_NOT_POSITIVE => "ERR COUNT must be > 0"u8;
         public static ReadOnlySpan<byte> RESP_ERR_COUNT_IS_OUT_OF_RANGE_N1 => "ERR count should be greater than or equal to -1."u8;
         public static ReadOnlySpan<byte> RESP_ERR_MODULE_LOADED_TYPES => "ERR Unable to load types from module. Ensure that the module is compatible with the current runtime."u8;
@@ -529,6 +530,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> LUA_OR => "OR"u8;
         public static ReadOnlySpan<byte> LUA_XOR => "XOR"u8;
         public static ReadOnlySpan<byte> LUA_NOT => "NOT"u8;
+        public static ReadOnlySpan<byte> LUA_DIFF => "DIFF"u8;
         public static ReadOnlySpan<byte> LUA_KEYS => "KEYS"u8;
         public static ReadOnlySpan<byte> LUA_ARGV => "ARGV"u8;
         public static ReadOnlySpan<byte> EXPDELSCAN => "EXPDELSCAN"u8;

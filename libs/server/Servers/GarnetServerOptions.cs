@@ -17,6 +17,11 @@ namespace Garnet.server
     public class GarnetServerOptions : ServerOptions
     {
         /// <summary>
+        /// Support data structure objects.
+        /// </summary>
+        public bool DisableObjects = false;
+
+        /// <summary>
         /// Heap memory size limit of object store.
         /// </summary>
         public string HeapMemorySize = "";
@@ -618,6 +623,8 @@ namespace Garnet.server
                     LogDir = Directory.GetCurrentDirectory();
                 logFactory = GetInitializedDeviceFactory(LogDir);
                 kvSettings.LogDevice = logFactory.Get(new FileDescriptor("Store", "hlog"));
+                if (!DisableObjects)
+                    kvSettings.ObjectLogDevice = logFactory.Get(new FileDescriptor("Store", "hlog_objs"));
             }
             else
             {

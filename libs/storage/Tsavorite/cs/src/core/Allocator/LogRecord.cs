@@ -161,7 +161,6 @@ namespace Tsavorite.core
             }
             set
             {
-
                 var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
                 if (!Info.KeyIsOverflow || length != ObjectIdMap.ObjectIdSize)
                     throw new TsavoriteException("set_KeyOverflow should only be called when transferring into a new record with KeyIsInline==false and key.Length==ObjectIdSize");
@@ -175,7 +174,8 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                Debug.Assert(!Info.ValueIsObject, "ValueSpan is not valid for Object values");
+                if (Info.ValueIsObject)
+                    throw new TsavoriteException("ValueSpan is not valid for Object values");
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 return Info.ValueIsInline ? new((byte*)dataAddress, (int)length) : objectIdMap.GetOverflowByteArray(*(int*)dataAddress).Span;
             }
@@ -187,23 +187,23 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                Debug.Assert(Info.ValueIsObject, "ValueObject is not valid for Span values");
                 if (!Info.ValueIsObject)
-                    return default;
+                    throw new TsavoriteException("ValueObject is not valid for Span values");
                 var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 return objectIdMap.GetHeapObject(*(int*)dataAddress);
             }
             internal set
             {
-                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
+                var (_ /*valueLength*/, valueAddress) = GetValueFieldInfo(IndicatorAddress);
 
                 // We cannot verify that value.Length==ObjectIdSize because we have reused the varbyte length as the high byte of the 5-byte length.
                 if (!Info.ValueIsObject)
                     throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord or Deserialization with ValueIsObject==true");
-                *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
+                *(int*)valueAddress = objectIdMap.AllocateAndSet(value);
 
-                // We reused the varbyte length as the high byte of the 5-byte length, so reset it now to ObjectIdSize.
+                // We reused the varbyte length as the high byte of the 5-byte length, so restore it now to ObjectIdSize and reset the object log file position.
                 UpdateVarbyteValueLengthByteInWord(IndicatorAddress, ObjectIdMap.ObjectIdSize);
+                *(ulong*)(valueAddress + ObjectIdMap.ObjectIdSize + ETagLen + ExpirationLen) = ObjectLogFilePositionInfo.NotSet;
             }
         }
 
@@ -279,6 +279,31 @@ namespace Tsavorite.core
                 HasExpiration = Info.HasExpiration
             };
         }
+
+        /// <inheritdoc/>
+        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes()
+        {
+            if (Info.IsNull)
+                return (RecordInfo.Size, RecordInfo.Size);
+            var actualSize = ActualRecordSize;
+            return (actualSize, actualSize + GetFillerLength());
+        }
+
+        /// <inheritdoc/>
+        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects()
+        {
+            if (Info.IsNull)
+                return (RecordInfo.Size, RecordInfo.Size);
+            if (!Info.ValueIsObject)
+                return GetInlineRecordSizes();
+
+            // Calculate this directly due to the possibly unread objects.
+            var (length, dataAddress) = GetValueFieldInfoWithUnreadObjects(IndicatorAddress);
+            var actualSize = (int)(dataAddress - physicalAddress + length + OptionalLength);
+
+            // Pass the calculated size here due ot unread objects.
+            return (actualSize, actualSize + GetFillerLength(physicalAddress + actualSize));
+        }
         #endregion // ISourceLogRecord
 
         /// <summary>
@@ -292,7 +317,6 @@ namespace Tsavorite.core
 
             var keyAddress = sizeInfo.GetKeyAddress(physicalAddress);
             var keySize = sizeInfo.FieldInfo.KeySize;
-            var valueAddress = keyAddress + sizeInfo.InlineKeySize;
 
             // Serialize Key
             if (sizeInfo.KeyIsInline)
@@ -317,17 +341,28 @@ namespace Tsavorite.core
                 InfoRef.SetValueIsInline();
             else
             {
-                // Unlike for Keys, we do not set the objectId here; we wait for the UMD operation to do that.
-                *(int*)valueAddress = ObjectIdMap.InvalidObjectId;
-                if (sizeInfo.ValueIsObject)
+                var valueAddress = keyAddress + sizeInfo.InlineKeySize;
+                if (!sizeInfo.ValueIsObject)
                 {
-                    Debug.Assert(sizeInfo.FieldInfo.ValueSize == ObjectIdMap.ObjectIdSize, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for Object ValueSize but was {sizeInfo.FieldInfo.ValueSize}");
-                    InfoRef.SetValueIsObject();
+                    // We must have the space allocated for Overflow just like we do for inline, so we set the Overflow allocation and objectId here.
+                    // We have no value data to copy yet.
+                    InfoRef.SetValueIsOverflow();
+                    var overflow = new OverflowByteArray(sizeInfo.FieldInfo.ValueSize, startOffset: 0, endOffset: 0, zeroInit: false);
+
+                    // This is record initialization so no object has been allocated for this field yet.
+                    var objectId = objectIdMap.Allocate();
+                    *(int*)valueAddress = objectId;
+                    objectIdMap.Set(objectId, overflow);
                 }
                 else
-                    InfoRef.SetValueIsOverflow();
-            }
+                {
+                    Debug.Assert(sizeInfo.FieldInfo.ValueSize == ObjectIdMap.ObjectIdSize, $"Expected object size ({ObjectIdMap.ObjectIdSize}) for Object ValueSize but was {sizeInfo.FieldInfo.ValueSize}");
 
+                    // Unlike for Keys and Overflow values, we do not set the objectId here; we wait for the UMD operation to do that.
+                    *(int*)valueAddress = ObjectIdMap.InvalidObjectId;
+                    InfoRef.SetValueIsObject();
+                }
+            }
             // The rest is considered filler
             InitializeFillerLength(in sizeInfo);
         }
@@ -426,27 +461,30 @@ namespace Tsavorite.core
             if (sizeInfo.ValueLengthBytes > valueLengthBytes)
                 return false;
 
-            // Growth and fillerLen may be negative if shrinking.
+            // inlineValueGrowth and fillerLen may be negative if shrinking value or converting to Overflow/Object.
+            // ETag and Expiration won't change, but optionalGrowth may be positive or negative if adding or removing ObjectLogPosition.
             var inlineValueGrowth = (int)(newInlineValueSize - oldInlineValueSize);
-            var oldOptionalSize = OptionalLength;
+            var oldObjectLogPositionLen = ObjectLogPositionLen;
+            var oldOptionalSize = ETagLen + ExpirationLen + oldObjectLogPositionLen;
             var newOptionalSize = sizeInfo.OptionalSize;
+            var optionalGrowth = newOptionalSize - oldOptionalSize;
 
             var optionalStartAddress = valueAddress + oldInlineValueSize;
-            var fillerLenAddress = optionalStartAddress + oldOptionalSize;
-            var fillerLen = GetFillerLength(fillerLenAddress);
+            var oldFillerLenAddress = optionalStartAddress + oldOptionalSize;
+            var oldFillerLen = GetFillerLength(oldFillerLenAddress);
 
             // See if we have enough room for the change in Value inline data. Note: This includes things like moving inline data that is less than
             // overflow length into overflow, which frees up inline space > ObjectIdMap.ObjectIsSize. We calculate the inline size required for the
             // new value (including whether it is overflow) and the existing optionals, and success is based on whether that can fit into the allocated
             // record space. We do not change the presence of optionals h ere; we just ensure there is enough for the larger of (current optionals,
             // new optionals) and a later operation will actually read/update the optional(s), including setting/clearing the flag(s).
-            if (fillerLen < inlineValueGrowth + (newOptionalSize - oldOptionalSize))
+            if (oldFillerLen < inlineValueGrowth + optionalGrowth)
                 return false;
 
             // Update record part 1: Set varbyte value length to the full length of the value, including filler but NOT optionalSize (which is calculated
             // directly from RecordInfo's HasETag and HasExpiration bits, which we do not change here). Scan will now be able to navigate to the end of
             // the record via GetInlineRecordSizes().allocatedSize.
-            var oldValueAndFillerSize = (int)(oldInlineValueSize + fillerLen);
+            var oldValueAndFillerSize = (int)(oldInlineValueSize + oldFillerLen);
             *(long*)IndicatorAddress = CreateIgnoreOptionalsVarbyteWord(*(long*)IndicatorAddress, keyLengthBytes, valueLengthBytes, oldValueAndFillerSize);
 
             // Update record part 2: Save the optionals if shifting is needed. We can't just shift now because we may be e.g. converting from inline to
@@ -523,21 +561,24 @@ namespace Tsavorite.core
             // RecordInfo (affecting OptionalSize), we cannot use the same "set valuelength to full value space minus optional size" as we
             // can't change both RecordInfo and the varbyte word atomically. Therefore we must zeroinit from the end of the current "filler
             // space" (either the address, if it was within the less-than-FillerLengthSize bytes at the end of the record, or the end of the
-            // int value) if we have shrunk the value.
-            fillerLen -= inlineValueGrowth;                                     // optional data is unchanged even if newOptionalSize != oldOptionalSize
+            // int value) if we have shrunk the value. Optional data size for ETag/Expiration is unchanged even if newOptionalSize != oldOptionalSize,
+            // because we are not updating those optionals here; however, a change in the presence or absence of the pseudo-optional ObjectLogPosition
+            // must be accounted for if we have changed whether the record is inline or has objects.
+            var objLogPosGrowth = sizeInfo.ObjectLogPositionSize - oldObjectLogPositionLen;
+            var newFillerLen = oldFillerLen - (inlineValueGrowth + objLogPosGrowth);
             var hasFillerBit = 0L;
-            var newFillerLenAddress = optionalStartAddress + oldOptionalSize;   // optional data is unchanged even if newOptionalSize != oldOptionalSize
+            var newFillerLenAddress = optionalStartAddress + oldOptionalSize + objLogPosGrowth;   // optional data is unchanged so use old optional size but adjust for objLogPos space
             var endOfNewFillerSpace = newFillerLenAddress;
-            if (fillerLen >= FillerLengthSize)
+            if (newFillerLen >= FillerLengthSize)
             {
-                *(int*)newFillerLenAddress = fillerLen;
+                *(int*)newFillerLenAddress = newFillerLen;
                 hasFillerBit = kHasFillerBitMask;
                 endOfNewFillerSpace += FillerLengthSize;
             }
             if (inlineValueGrowth < 0)
             {
                 // Zeroinit any empty space we opened up by shrinking.
-                var endOfOldFillerSpace = fillerLenAddress + (fillerLen >= FillerLengthSize ? FillerLengthSize : 0);
+                var endOfOldFillerSpace = oldFillerLenAddress + (oldFillerLen >= FillerLengthSize ? FillerLengthSize : 0);
                 var clearLength = (int)(endOfOldFillerSpace - endOfNewFillerSpace);
                 // If old filler space was < FillerLengthSize and we only shrank by a couple bytes, we may have written FillerLengthSize leaving clearLength <= 0
                 if (clearLength > 0)
@@ -545,7 +586,7 @@ namespace Tsavorite.core
             }
             else if (zeroInit)
             {
-                // Zeroinit any space we grew by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
+                // Zeroinit any extra space we grew the value by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
                 new Span<byte>((byte*)(valueAddress + oldInlineValueSize), (int)(newInlineValueSize - oldInlineValueSize)).Clear();
             }
 
@@ -612,15 +653,6 @@ namespace Tsavorite.core
         private readonly int ETagLen => Info.HasETag ? ETagSize : 0;
         private readonly int ExpirationLen => Info.HasExpiration ? ExpirationSize : 0;
         private readonly int ObjectLogPositionLen => Info.RecordHasObjects ? ObjectLogPositionSize : 0;
-
-        /// <summary>A tuple of the total size of the main-log (inline) portion of the record, with and without filler length.</summary>
-        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes()
-        {
-            if (Info.IsNull)
-                return (RecordInfo.Size, RecordInfo.Size);
-            var actualSize = ActualRecordSize;
-            return (actualSize, actualSize + GetFillerLength());
-        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetOptionalStartAddress()
@@ -1197,8 +1229,19 @@ namespace Tsavorite.core
             if (physicalAddress == 0)
                 return "<empty>";
             static string bstr(bool value) => value ? "T" : "F";
-            var valueString = Info.ValueIsObject ? $"obj:{ValueObject}" : ValueSpan.ToShortString(20);
-            return $"ri {Info} | key {Key.ToShortString(20)} | val {valueString} | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpiration {bstr(Info.HasExpiration)}:{Expiration}";
+
+            string keyString, valueString;
+            try { keyString = SpanByte.ToShortString(Key, 12); }
+            catch (Exception ex) { keyString = $"<exception: {ex.Message}>"; }
+            try { valueString = Info.ValueIsObject ? $"obj:{ValueObject}" : ValueSpan.ToShortString(20); }
+            catch (Exception ex) { valueString = $"<exception: {ex.Message}>"; }
+
+            var (keyLengthBytes, valueLengthBytes, hasFillerBit) = DeconstructIndicatorByte(*(byte*)IndicatorAddress);
+            var (keyLength, keyAddress) = GetKeyFieldInfo(IndicatorAddress);
+            var (valueLength, valueAddress) = GetValueFieldInfo(IndicatorAddress);
+            return $"ri {Info} | key ({keyLengthBytes}/{keyLength}/{keyAddress - physicalAddress}) {keyString}"
+                          + $" | val ({valueLengthBytes}/{valueLength}/{valueAddress - physicalAddress}) {valueString}"
+                          + $" | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpir {bstr(Info.HasExpiration)}:{Expiration}";
         }
     }
 }

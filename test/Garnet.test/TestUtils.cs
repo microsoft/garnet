@@ -229,6 +229,7 @@ namespace Garnet.test
             string pageSize = default,
             bool enableAOF = false,
             bool enableTLS = false,
+            bool disableObjects = false,
             int metricsSamplingFreq = -1,
             bool latencyMonitor = false,
             int commitFrequencyMs = 0,
@@ -329,6 +330,7 @@ namespace Garnet.test
                     issuerCertificatePath: null,
                     null, 0, false, null, logger: logger)
                 : null,
+                DisableObjects = disableObjects,
                 QuietMode = true,
                 MetricsSamplingFrequency = metricsSamplingFreq,
                 LatencyMonitor = latencyMonitor,
@@ -370,6 +372,7 @@ namespace Garnet.test
                 opts.ReadCacheHeapMemorySize = readCacheHeapMemorySize;
 
             if (indexMaxSize != default) opts.IndexMaxSize = indexMaxSize;
+
             if (lowMemory)
             {
                 opts.MemorySize = memorySize == default ? "1024" : memorySize;
@@ -444,6 +447,7 @@ namespace Garnet.test
             EndPointCollection endpoints,
             bool enableCluster = true,
             bool disablePubSub = false,
+            bool disableObjects = false,
             bool tryRecover = false,
             bool enableAOF = false,
             int timeout = -1,
@@ -506,6 +510,7 @@ namespace Garnet.test
                     endpoint,
                     enableCluster: enableCluster,
                     disablePubSub,
+                    disableObjects,
                     tryRecover,
                     enableAOF,
                     timeout,
@@ -577,6 +582,7 @@ namespace Garnet.test
             EndPoint endpoint,
             bool enableCluster = true,
             bool disablePubSub = false,
+            bool disableObjects = false,
             bool tryRecover = false,
             bool enableAOF = false,
             int timeout = -1,
@@ -680,6 +686,7 @@ namespace Garnet.test
                 CheckpointDir = checkpointDir,
                 EndPoints = [endpoint],
                 DisablePubSub = disablePubSub,
+                DisableObjects = disableObjects,
                 EnableDebugCommand = ConnectionProtectionOption.Yes,
                 EnableModuleCommand = ConnectionProtectionOption.Yes,
                 Recover = tryRecover,

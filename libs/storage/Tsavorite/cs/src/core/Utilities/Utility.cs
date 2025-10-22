@@ -37,7 +37,7 @@ namespace Tsavorite.core
         /// <returns>The number</returns>
         public static long ParseSize(string value)
         {
-            char[] suffix = ['k', 'm', 'g', 't', 'p'];
+            ReadOnlySpan<char> suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;
             foreach (char c in value)
             {
@@ -100,7 +100,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         internal static string PrettySize(long value)
         {
-            char[] suffix = ['K', 'M', 'G', 'T', 'P'];
+            ReadOnlySpan<char> suffix = ['K', 'M', 'G', 'T', 'P'];
             double v = value;
             int exp = 0;
             while (v - Math.Floor(v) > 0)
@@ -361,6 +361,25 @@ namespace Tsavorite.core
         /// <param name="variable">The variable to possibly replace</param>
         /// <param name="newValue">The value that replaces the variable if successful</param>
         /// <param name="oldValue">The orignal value in the variable</param>
+        /// <returns> if oldValue less than newValue </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool MonotonicUpdate(ref ulong variable, ulong newValue, out ulong oldValue)
+        {
+            do
+            {
+                oldValue = variable;
+                if (oldValue >= newValue)
+                    return false;
+            } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
+            return true;
+        }
+
+        /// <summary>
+        /// Updates the variable to newValue only if the current value is smaller than the new value.
+        /// </summary>
+        /// <param name="variable">The variable to possibly replace</param>
+        /// <param name="newValue">The value that replaces the variable if successful</param>
+        /// <param name="oldValue">The orignal value in the variable</param>
         /// <returns>if oldValue less than or equal to newValue</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool MonotonicUpdate(ref int variable, int newValue, out int oldValue)
@@ -408,7 +427,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// 
+        ///
         /// </summary>
         /// <returns></returns>
         public static ulong GetCurrentMilliseconds()

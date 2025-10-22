@@ -12,45 +12,25 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
-        private bool WriteOrSendMainStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, out GarnetStatus status)
+        private bool WriteOrSendKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output, out GarnetStatus status)
         {
-            const bool isMainStore = true;
-
             // Must initialize this here because we use the network buffer as output.
             if (gcs.NeedsInitialization)
-                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption);
 
             // Read the value for the key. This will populate output with the entire serialized record.
-            status = localServerSession.BasicGarnetApi.Read_MainStore(key, ref input, ref output);
-            return WriteRecord(gcs, ref output, status, isMainStore);
+            status = localServerSession.BasicGarnetApi.Read_UnifiedStore(key, ref input, ref output);
+
+            return WriteRecord(gcs, ref output.SpanByteAndMemory, status);
         }
 
-        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, out GarnetStatus status)
-        {
-            const bool isMainStore = false;
-
-            // Must initialize this here because we use the network buffer as output.
-            if (gcs.NeedsInitialization)
-                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
-
-            status = localServerSession.BasicGarnetApi.Read_ObjectStore(key, ref input, ref output);
-            return WriteRecord(gcs, ref output.SpanByteAndMemory, status, isMainStore);
-        }
-
-        bool WriteRecord(GarnetClientSession gcs, ref SpanByteAndMemory output, GarnetStatus status, bool isMainStore)
+        bool WriteRecord(GarnetClientSession gcs, ref SpanByteAndMemory output, GarnetStatus status)
         {
             // Skip (do not fail) if key NOTFOUND
             if (status == GarnetStatus.NOTFOUND)
                 return true;
 
-            // If the SBAM is still SpanByte then there was enough room to write directly to the network buffer, so increment curr and
-            // there is nothing more to do for this key. Otherwise, we need to Flush() and copy to the network buffer.
-            if (output.IsSpanByte)
-            {
-                gcs.IncrementRecordDirect(output.SpanByte.TotalSize);
-                return true;
-            }
-            return WriteOrSendRecordSpan(gcs, ref output, isMainStore);
+            return WriteOrSendRecordSpan(gcs, ref output);
         }
 
         /// <summary>
@@ -58,13 +38,12 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="gcs">The client session</param>
         /// <param name="output">Output buffer from Read(), containing the full serialized record</param>
-        /// <param name="isMainStore">Whether this is the main or object store</param>
         /// <returns>True on success, else false</returns>
-        private bool WriteOrSendRecordSpan(GarnetClientSession gcs, ref SpanByteAndMemory output, bool isMainStore)
+        private bool WriteOrSendRecordSpan(GarnetClientSession gcs, ref SpanByteAndMemory output)
         {
             // Check if we need to initialize cluster migrate command arguments
             if (gcs.NeedsInitialization)
-                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
+                gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption);
 
             fixed (byte* ptr = output.MemorySpan)
             {
@@ -76,7 +55,7 @@ namespace Garnet.cluster
                         return false;
 
                     // Re-initialize cluster migrate command parameters for the next loop iteration
-                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore);
+                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption);
                 }
             }
             return true;

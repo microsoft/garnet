@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -14,15 +12,15 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
 
     [TestFixture]
-    internal class GenericIterationTests
+    internal class ObjectIterationTests
     {
-        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
-        private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
-        private BasicContext<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> bContext;
+        private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
+        private ClientSession<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;
+        private BasicContext<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete, ClassStoreFunctions, ClassAllocator> bContext;
         private IDevice log, objlog;
 
         [SetUp]
@@ -35,8 +33,8 @@ namespace Tsavorite.test
         private void InternalSetup(bool largeMemory)
         {
             // Broke this out as we have different requirements by test.
-            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericIterationTests.log"), deleteOnClose: true);
-            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericIterationTests.obj.log"), deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectIterationTests.log"), deleteOnClose: true);
+            objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectIterationTests.obj.log"), deleteOnClose: true);
 
             store = new(new()
             {
@@ -46,10 +44,10 @@ namespace Tsavorite.test
                 MutableFraction = 0.1,
                 MemorySize = 1L << (largeMemory ? 25 : 14),
                 PageSize = 1L << (largeMemory ? 20 : 9)
-            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            session = store.NewSession<MyInput, MyOutput, int, MyFunctionsDelete>(new MyFunctionsDelete());
+            session = store.NewSession<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
             bContext = session.BasicContext;
         }
 
@@ -68,17 +66,18 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir);
         }
 
-        internal struct GenericPushIterationTestFunctions : IScanIteratorFunctions<MyKey, MyValue>
+        internal struct ObjectPushIterationTestFunctions : IScanIteratorFunctions
         {
             internal int keyMultToValue;
             internal long numRecords;
             internal int stopAt;
 
-            public bool Reader(ref MyKey key, ref MyValue value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
                 if (keyMultToValue > 0)
-                    ClassicAssert.AreEqual(key.key * keyMultToValue, value.value);
+                    ClassicAssert.AreEqual(logRecord.Key.AsRef<TestObjectKey>().key * keyMultToValue, ((TestObjectValue)logRecord.ValueObject).value);
                 return stopAt != ++numRecords;
             }
 
@@ -91,10 +90,10 @@ namespace Tsavorite.test
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
 
-        public void GenericIterationBasicTest([Values] ScanIteratorType scanIteratorType)
+        public void ObjectIterationBasicTest([Values] ScanIteratorType scanIteratorType)
         {
             InternalSetup(largeMemory: false);
-            GenericPushIterationTestFunctions scanIteratorFunctions = new();
+            ObjectPushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 2000;
 
@@ -106,8 +105,8 @@ namespace Tsavorite.test
                 if (scanIteratorType == ScanIteratorType.Pull)
                 {
                     using var iter = session.Iterate();
-                    while (iter.GetNext(out var recordInfo))
-                        _ = scanIteratorFunctions.Reader(ref iter.GetKey(), ref iter.GetValue(), default, default, out _);
+                    while (iter.GetNext())
+                        _ = scanIteratorFunctions.Reader(in iter, default, default, out _);
                 }
                 else
                     ClassicAssert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");
@@ -118,48 +117,48 @@ namespace Tsavorite.test
             // Initial population
             for (int i = 0; i < totalRecords; i++)
             {
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-                _ = bContext.Upsert(ref key1, ref value);
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
             }
             iterateAndVerify(1, totalRecords);
 
             for (int i = 0; i < totalRecords; i++)
             {
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = 2 * i };
-                _ = bContext.Upsert(ref key1, ref value);
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = 2 * i };
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
             }
             iterateAndVerify(2, totalRecords);
 
             for (int i = totalRecords / 2; i < totalRecords; i++)
             {
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-                _ = bContext.Upsert(ref key1, ref value);
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
             }
             iterateAndVerify(0, totalRecords);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-                _ = bContext.Upsert(ref key1, ref value);
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
             }
             iterateAndVerify(0, totalRecords);
 
             for (int i = 0; i < totalRecords; i += 2)
             {
-                var key1 = new MyKey { key = i };
-                _ = bContext.Delete(ref key1);
+                var key1 = new TestObjectKey { key = i };
+                _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key1));
             }
             iterateAndVerify(0, totalRecords / 2);
 
             for (int i = 0; i < totalRecords; i++)
             {
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = 3 * i };
-                _ = bContext.Upsert(ref key1, ref value);
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = 3 * i };
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
             }
             iterateAndVerify(3, totalRecords);
 
@@ -171,10 +170,10 @@ namespace Tsavorite.test
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
 
-        public void GenericIterationPushStopTest()
+        public void ObjectIterationPushStopTest()
         {
             InternalSetup(largeMemory: false);
-            GenericPushIterationTestFunctions scanIteratorFunctions = new();
+            ObjectPushIterationTestFunctions scanIteratorFunctions = new();
 
             const int totalRecords = 2000;
             var start = store.Log.TailAddress;
@@ -193,9 +192,9 @@ namespace Tsavorite.test
             // Initial population
             for (int i = 0; i < totalRecords; i++)
             {
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
-                _ = bContext.Upsert(ref key1, ref value);
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
             }
 
             scanAndVerify(42, useScan: true);
@@ -205,7 +204,7 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void GenericIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ScanMode scanMode)
+        public unsafe void ObjectIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ScanMode scanMode)
         {
             InternalSetup(largeMemory: true);
 
@@ -214,8 +213,8 @@ namespace Tsavorite.test
 
             void LocalScan(int i)
             {
-                using var session = store.NewSession<MyInput, MyOutput, int, MyFunctionsDelete>(new MyFunctionsDelete());
-                GenericPushIterationTestFunctions scanIteratorFunctions = new();
+                using var session = store.NewSession<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
+                ObjectPushIterationTestFunctions scanIteratorFunctions = new();
 
                 if (scanMode == ScanMode.Scan)
                     ClassicAssert.IsTrue(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress), $"Failed to complete push scan; numRecords = {scanIteratorFunctions.numRecords}");
@@ -226,21 +225,21 @@ namespace Tsavorite.test
 
             void LocalUpdate(int tid)
             {
-                using var session = store.NewSession<MyInput, MyOutput, int, MyFunctionsDelete>(new MyFunctionsDelete());
+                using var session = store.NewSession<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
                 for (int i = 0; i < totalRecords; i++)
                 {
-                    var key1 = new MyKey { key = i };
-                    var value = new MyValue { value = (tid + 1) * i };
-                    _ = bContext.Upsert(ref key1, ref value);
+                    var key1 = new TestObjectKey { key = i };
+                    var value = new TestObjectValue { value = (tid + 1) * i };
+                    _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
                 }
             }
 
             { // Initial population
                 for (int i = 0; i < totalRecords; i++)
                 {
-                    var key1 = new MyKey { key = i };
-                    var value = new MyValue { value = i };
-                    _ = bContext.Upsert(ref key1, ref value);
+                    var key1 = new TestObjectKey { key = i };
+                    var value = new TestObjectValue { value = i };
+                    _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
                 }
             }
 
@@ -258,5 +257,3 @@ namespace Tsavorite.test
         }
     }
 }
-
-#endif // LOGRECORD_TODO

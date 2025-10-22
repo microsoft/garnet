@@ -79,8 +79,8 @@ namespace Garnet.server
 
             // 8 byte start pointer
             // 4 byte int length
-            var output = stackalloc byte[12];
-            var srcBitmapStartPtrs = stackalloc byte*[keyCount - 1];
+            Span<byte> output = stackalloc byte[12];
+            var srcBitmapPtrs = stackalloc byte*[keyCount - 1];
             var srcBitmapEndPtrs = stackalloc byte*[keyCount - 1];
 
             var createTransaction = false;
@@ -109,7 +109,7 @@ namespace Garnet.server
                 {
                     var srcKey = keys[i];
                     //Read srcKey
-                    var outputBitmap = SpanByteAndMemory.FromPinnedPointer(output, 12);
+                    var outputBitmap = SpanByteAndMemory.FromPinnedSpan(output);
                     status = ReadWithUnsafeContext(srcKey, ref input, ref outputBitmap, localHeadAddress, out bool epochChanged, ref uc);
                     if (epochChanged)
                     {
@@ -121,48 +121,38 @@ namespace Garnet.server
                         continue;
 
                     var outputBitmapPtr = outputBitmap.SpanByte.ToPointer();
-                    var localSrcBitmapPtr = (byte*)((IntPtr)(*(long*)outputBitmapPtr));
-                    var len = *(int*)(outputBitmapPtr + 8);
+                    var localBitmapPtr = (byte*)(nuint)(*(ulong*)outputBitmapPtr);
+                    var localBitmapLength = *(int*)(outputBitmapPtr + 8);
 
                     // Keep track of pointers returned from ISessionFunctions
-                    srcBitmapStartPtrs[keysFound] = localSrcBitmapPtr;
-                    srcBitmapEndPtrs[keysFound] = localSrcBitmapPtr + len;
+                    srcBitmapPtrs[keysFound] = localBitmapPtr;
+                    srcBitmapEndPtrs[keysFound] = localBitmapPtr + localBitmapLength;
                     keysFound++;
-                    maxBitmapLen = Math.Max(len, maxBitmapLen);
-                    minBitmapLen = Math.Min(len, minBitmapLen);
+
+                    maxBitmapLen = Math.Max(localBitmapLength, maxBitmapLen);
+                    minBitmapLen = Math.Min(localBitmapLength, minBitmapLen);
                 }
-
-                #region performBitop
-                // Allocate result buffers
-                sectorAlignedMemoryBitmap ??= new SectorAlignedMemory(bitmapBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
-                var dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
-                if (maxBitmapLen + sectorAlignedMemoryPoolAlignment > bitmapBufferSize)
-                {
-                    do
-                    {
-                        bitmapBufferSize <<= 1;
-                    } while (maxBitmapLen + sectorAlignedMemoryPoolAlignment > bitmapBufferSize);
-
-                    sectorAlignedMemoryBitmap.Dispose();
-                    sectorAlignedMemoryBitmap = new SectorAlignedMemory(bitmapBufferSize + sectorAlignedMemoryPoolAlignment, sectorAlignedMemoryPoolAlignment);
-                    dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer() + sectorAlignedMemoryPoolAlignment;
-                }
-
 
                 // Check if at least one key is found and execute bitop
                 if (keysFound > 0)
                 {
-                    //1. Multi-way bitmap merge
-                    _ = BitmapManager.BitOpMainUnsafeMultiKey(dstBitmapPtr, maxBitmapLen, srcBitmapStartPtrs, srcBitmapEndPtrs, keysFound, minBitmapLen, (byte)bitOp);
-                    #endregion
+                    // Allocate result buffer
+                    if (sectorAlignedMemoryBitmap == null || maxBitmapLen > bitmapBufferSize)
+                    {
+                        bitmapBufferSize = Math.Max(bitmapBufferSize, maxBitmapLen);
+
+                        sectorAlignedMemoryBitmap?.Dispose();
+                        sectorAlignedMemoryBitmap = new SectorAlignedMemory(bitmapBufferSize, sectorAlignedMemoryPoolAlignment);
+                    }
+
+                    var dstBitmapPtr = sectorAlignedMemoryBitmap.GetValidPointer();
+                    BitmapManager.InvokeBitOperationUnsafe(bitOp, keysFound, srcBitmapPtrs, srcBitmapEndPtrs, dstBitmapPtr, maxBitmapLen, minBitmapLen);
 
                     if (maxBitmapLen > 0)
                     {
                         var dstKey = keys[0];
-                        var valPtr = dstBitmapPtr;
-                        valPtr -= sizeof(int);
-                        *(int*)valPtr = maxBitmapLen;
-                        status = SET(dstKey, PinnedSpanByte.FromLengthPrefixedPinnedPointer(valPtr), ref uc);
+                        var dstBitmapSpanByte = PinnedSpanByte.FromPinnedPointer(dstBitmapPtr, maxBitmapLen);
+                        status = SET(dstKey, dstBitmapSpanByte, ref uc);
                     }
                 }
                 else

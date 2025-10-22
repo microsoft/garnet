@@ -117,14 +117,9 @@ namespace Garnet.server
             => storageSession.SET(key, value, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SET_Main<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
+        public GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
             where TSourceLogRecord : ISourceLogRecord
-            => storageSession.SET_Main(in srcLogRecord, ref context);
-
-        /// <inheritdoc />
-        public GarnetStatus SET_Object<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
-            where TSourceLogRecord : ISourceLogRecord
-            => storageSession.SET_Object(in srcLogRecord, ref objectContext);
+            => storageSession.SET(in srcLogRecord, ref unifiedContext);
 
         #endregion
 
@@ -256,6 +251,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus Read_ObjectStore(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
             => storageSession.Read_ObjectStore(key.ReadOnlySpan, ref input, ref output, ref objectContext);
+
+        /// <inheritdoc />
+        public GarnetStatus RMW_UnifiedStore(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+            => storageSession.RMW_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
+
+        /// <inheritdoc />
+        public GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+            => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
         #endregion
 
         #region Bitmap Methods
@@ -347,22 +350,13 @@ namespace Garnet.server
             => storageSession.DbScan(patternB, allKeys, cursor, out storeCursor, out Keys, count, type);
 
         /// <inheritdoc />
-        public readonly bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
+        public readonly bool IterateStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
-            => storageSession.IterateMainStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
+            => storageSession.IterateStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
-        public readonly ITsavoriteScanIterator IterateMainStore()
-            => storageSession.IterateMainStore();
-
-        /// <inheritdoc />
-        public readonly bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
-            where TScanFunctions : IScanIteratorFunctions
-            => storageSession.IterateObjectStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
-
-        /// <inheritdoc />
-        public readonly ITsavoriteScanIterator IterateObjectStore()
-            => storageSession.IterateObjectStore();
+        public readonly ITsavoriteScanIterator IterateStore()
+            => storageSession.IterateStore();
 
         #endregion
 

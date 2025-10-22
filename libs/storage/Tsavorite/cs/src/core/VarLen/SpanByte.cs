@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace Tsavorite.core
 {
@@ -132,11 +133,23 @@ namespace Tsavorite.core
         /// <summary>Length-limited string representation of a Span</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static string ToShortString(this ReadOnlySpan<byte> span, int maxLen = 20)
-            => span.Length > maxLen ? $"{span.Slice(0, maxLen).ToString()}..." : span.ToString();
+        {
+            var len = Math.Min(span.Length, maxLen);
+            StringBuilder sb = new();
+            for (var ii = 0; ii < len; ++ii)
+            {
+                if (ii > 0 && ii % 4 == 0)
+                    _ = sb.Append(' ');
+                _ = sb.Append(span[ii].ToString("x2"));
+            }
+            if (span.Length > len)
+                _ = sb.Append("...");
+            return sb.ToString();
+        }
 
         /// <summary>Length-limited string representation of a Span</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static string ToShortString(this Span<byte> span, int maxLen = 20)
-            => span.Length > maxLen ? $"{span.Slice(0, maxLen).ToString()}..." : span.ToString();
+            => ToShortString((ReadOnlySpan<byte>)span, maxLen);
     }
 }

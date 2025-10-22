@@ -52,7 +52,7 @@ namespace Tsavorite.core
         public override string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-            return $"secSize {sectorSize}, numPend {numPending}, RO {bstr(readOnly)}, preAll {bstr(preallocateFile)}, delClose {bstr(deleteOnClose)}, noFiBuf {bstr(disableFileBuffering)}";
+            return $"secSize {sectorSize}, numPend {numPending}, RO {bstr(readOnly)}, preAll {bstr(preallocateFile)}, delClose {bstr(deleteOnClose)}, noFileBuf {bstr(disableFileBuffering)}";
         }
 
         /// <summary>

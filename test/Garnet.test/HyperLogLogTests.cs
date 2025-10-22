@@ -134,7 +134,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                Assert.That(ex.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
             }
 
             try
@@ -143,7 +143,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                Assert.That(ex.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
             }
 
             try
@@ -152,7 +152,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                Assert.That(ex.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
             }
 
             try
@@ -161,7 +161,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                Assert.That(ex.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
             }
 
             try
@@ -170,7 +170,7 @@ namespace Garnet.test
             }
             catch (Exception ex)
             {
-                ClassicAssert.AreEqual(ex.Message, "WRONGTYPE Key is not a valid HyperLogLog string value.");
+                Assert.That(ex.Message, Does.EndWith("WRONGTYPE Key is not a valid HyperLogLog string value."));
             }
         }
 

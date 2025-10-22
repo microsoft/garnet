@@ -50,13 +50,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Prepare the <see cref="DiskReadBuffer"/> and local variables to read the next buffer (or as much of it as we need). This is called 
-        /// by OnBeginReadRecords and when we are leaving a buffer with more data, to fill that buffer so it is available when we wrap around
-        /// to it again. For both of these, we do not have to worry that there is pending IO in the buffer.
+        /// Prepare the <see cref="DiskReadBuffer"/> and local variables to read the next buffer (or as much of it as we need) and issue the read.
+        /// This is called by OnBeginReadRecords and when we are leaving a buffer with more data, to fill that buffer so it is available when we
+        /// wrap around to it again. For both of these, we do not have to worry that there is pending IO in the buffer.
         /// </summary>
         /// <param name="bufferIndex">The index into <see cref="buffers"/> of the <see cref="DiskReadBuffer"/> that will do the reading</param>
         /// <param name="unalignedRecordStartPosition">Start position on the page (relative to start of page)</param>
-        private void ReadBuffer(int bufferIndex, int unalignedRecordStartPosition)
+        private void DoReadBuffer(int bufferIndex, int unalignedRecordStartPosition)
         {
             var buffer = buffers[bufferIndex];
             if (buffer is null)
@@ -126,7 +126,7 @@ namespace Tsavorite.core
             {
                 if (unreadLengthRemaining == 0)
                     break;
-                ReadBuffer(ii, recordStartPosition);
+                DoReadBuffer(ii, recordStartPosition);
                 recordStartPosition = 0;  // After the first read, subsequent reads start on an aligned address
             }
         }
@@ -137,16 +137,28 @@ namespace Tsavorite.core
 
             // Because each partial flush ends with a sector-aligning write, we may have a record start position greater than our ongoing buffer.currentPosition
             // incrementing. It should never be less. recordFilePosition is only guaranteed to be sector-aligned if it's the first record after a partial flush. 
-            var bufferFilePosition = buffer.GetCurrentFilePosition();
             if (!buffer.HasData)
                 _ = buffer.WaitForDataAvailable();
-            Debug.Assert(recordFilePosition.word >= bufferFilePosition.word, $"Record file position ({recordFilePosition}) should be >= ongoing position {bufferFilePosition}");
-            Debug.Assert(recordFilePosition.SegmentId == bufferFilePosition.SegmentId, $"Record file segment ({recordFilePosition.SegmentId}) should == ongoing position {bufferFilePosition.SegmentId}");
-            var increment = recordFilePosition - bufferFilePosition;
 
-            Debug.Assert(increment < objectLogDevice.SectorSize, $"Increment {increment} is more than SectorSize ({objectLogDevice.SectorSize})");
-            Debug.Assert(buffer.currentPosition + (int)increment < buffer.endPosition, $"Increment {increment} overflows buffer (curPos {buffer.currentPosition}, endPos {buffer.endPosition})");
-            buffer.currentPosition += (int)increment;
+            while (true)
+            {
+                var bufferFilePosition = buffer.GetCurrentFilePosition();
+                Debug.Assert(recordFilePosition.word >= bufferFilePosition.word, $"Record file position ({recordFilePosition}) should be >= ongoing position {bufferFilePosition}");
+                Debug.Assert(recordFilePosition.SegmentId == bufferFilePosition.SegmentId, $"Record file segment ({recordFilePosition.SegmentId}) should == ongoing position {bufferFilePosition.SegmentId}");
+                var increment = recordFilePosition - bufferFilePosition;
+                Debug.Assert(increment < objectLogDevice.SectorSize, $"Increment {increment} must be less than SectorSize ({objectLogDevice.SectorSize})");
+
+                // We might cleanly align to the start of the next buffer, if there was a flush that ended on a buffer boundary.
+                // Otherwise, we should always be within the current buffer. We should only do this "continue" once.
+                if (buffer.currentPosition + (int)increment < buffer.endPosition)
+                {
+                    buffer.currentPosition += (int)increment;
+                    break;
+                }
+
+                Debug.Assert(buffer.currentPosition + (int)increment == buffer.endPosition, $"Increment {increment} overflows buffer (curPos {buffer.currentPosition}, endPos {buffer.endPosition}) by more than alignment");
+                _ = MoveToNextBuffer(out buffer);
+            }
         }
 
         /// <summary>
@@ -166,7 +178,7 @@ namespace Tsavorite.core
         {
             // If we have more data to read, "backfill" this buffer with a read before departing it, else initialize it.
             if (unreadLengthRemaining > 0)
-                ReadBuffer(currentIndex, unalignedRecordStartPosition: 0);
+                DoReadBuffer(currentIndex, unalignedRecordStartPosition: 0);
             else
                 buffers[currentIndex].Initialize();
 
@@ -189,7 +201,10 @@ namespace Tsavorite.core
             // Finish setting up the buffer, and extract optionals if this was the last buffer.
             var buffer = (DiskReadBuffer)context;
             buffer.endPosition += (int)numBytes;
-            Debug.Assert(buffer.endPosition > buffer.currentPosition, $"buffer.endPosition ({buffer.endPosition}) must be >= buffer.currentPosition ({buffer.currentPosition})");
+            if (buffer.endPosition == 0)
+                Debug.Assert(buffer.currentPosition == 0, $"buffer.currentPosition ({buffer.currentPosition}) must be 0 if buffer.endPosition ({buffer.endPosition}) is 0");
+            else
+                Debug.Assert(buffer.endPosition > buffer.currentPosition, $"buffer.endPosition ({buffer.endPosition}) must be >= buffer.currentPosition ({buffer.currentPosition})");
 
             // Signal the buffer's event to indicate the data is available.
             _ = buffer.countdownEvent.Signal();

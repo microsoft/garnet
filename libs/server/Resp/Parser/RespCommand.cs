@@ -221,7 +221,8 @@ namespace Garnet.server
         BITOP_AND,
         BITOP_OR,
         BITOP_XOR,
-        BITOP_NOT, // Note: Update LastWriteCommand if adding new write commands after this
+        BITOP_NOT,
+        BITOP_DIFF, // Note: Update LastWriteCommand if adding new write commands after this
 
         // Script execution commands
         EVAL,
@@ -402,7 +403,7 @@ namespace Garnet.server
     public static class RespCommandExtensions
     {
         private static readonly RespCommand[] ExpandedSET = [RespCommand.SETEXNX, RespCommand.SETEXXX, RespCommand.SETKEEPTTL, RespCommand.SETKEEPTTLXX];
-        private static readonly RespCommand[] ExpandedBITOP = [RespCommand.BITOP_AND, RespCommand.BITOP_NOT, RespCommand.BITOP_OR, RespCommand.BITOP_XOR];
+        private static readonly RespCommand[] ExpandedBITOP = [RespCommand.BITOP_AND, RespCommand.BITOP_NOT, RespCommand.BITOP_OR, RespCommand.BITOP_XOR, RespCommand.BITOP_DIFF];
 
         // Commands that are either returning static data or commands that cannot have issues from concurrent AOF interaction in another session
         private static readonly RespCommand[] AofIndependentCommands = [
@@ -517,7 +518,7 @@ namespace Garnet.server
                     RespCommand.SETEXXX => RespCommand.SET,
                     RespCommand.SETKEEPTTL => RespCommand.SET,
                     RespCommand.SETKEEPTTLXX => RespCommand.SET,
-                    RespCommand.BITOP_AND or RespCommand.BITOP_NOT or RespCommand.BITOP_OR or RespCommand.BITOP_XOR => RespCommand.BITOP,
+                    RespCommand.BITOP_AND or RespCommand.BITOP_NOT or RespCommand.BITOP_OR or RespCommand.BITOP_XOR or RespCommand.BITOP_DIFF => RespCommand.BITOP,
                     _ => cmd
                 };
         }
@@ -542,7 +543,7 @@ namespace Garnet.server
 
         internal const RespCommand FirstWriteCommand = RespCommand.APPEND;
 
-        internal const RespCommand LastWriteCommand = RespCommand.BITOP_NOT;
+        internal const RespCommand LastWriteCommand = RespCommand.BITOP_DIFF;
 
         internal const RespCommand LastDataCommand = RespCommand.EVALSHA;
 
@@ -987,44 +988,64 @@ namespace Garnet.server
                                             // Check for matching bit-operation
                                             if (remainingBytes > length + 6 + 8)
                                             {
-                                                // TODO: AND|OR|XOR|NOT may not correctly handle mixed cases?
+                                                // TODO: AND|OR|XOR|NOT|DIFF may not correctly handle mixed cases?
 
-                                                // 2-character operations
-                                                if (*(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("$2\r\n"u8))
+                                                var tag64 = *(ulong*)(ptr + 11);
+                                                var tag32 = (uint)tag64;
+
+                                                if (tag32 == MemoryMarshal.Read<uint>("$2\r\n"u8))
                                                 {
-                                                    if (*(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nOR\r\n"u8) || *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("$2\r\nor\r\n"u8))
+                                                    if (tag64 == MemoryMarshal.Read<ulong>("$2\r\nOR\r\n"u8) || tag64 == MemoryMarshal.Read<ulong>("$2\r\nor\r\n"u8))
                                                     {
-                                                        readHead += 8;
+                                                        readHead += 8; // "$2\r\n" + "OR" + "\r\n"
                                                         count -= 1;
                                                         return RespCommand.BITOP_OR;
                                                     }
                                                 }
-                                                // 3-character operations
-                                                else if (remainingBytes > length + 6 + 9)
+                                                else if (tag32 == MemoryMarshal.Read<uint>("$3\r\n"u8) && remainingBytes > length + 6 + 9)
                                                 {
-                                                    if (*(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("$3\r\n"u8))
+                                                    // Optimistically adjust
+                                                    readHead += 9; // "$3\r\n" + AND|XOR|NOT + "\r\n"
+                                                    count -= 1;
+
+                                                    tag64 = *(ulong*)(ptr + 12);
+
+                                                    if (tag64 == MemoryMarshal.Read<ulong>("3\r\nAND\r\n"u8) || tag64 == MemoryMarshal.Read<ulong>("3\r\nand\r\n"u8))
                                                     {
-                                                        // Optimistically adjust read head and count
-                                                        readHead += 9;
-                                                        count -= 1;
-
-                                                        if (*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nAND\r\n"u8) || *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nand\r\n"u8))
-                                                        {
-                                                            return RespCommand.BITOP_AND;
-                                                        }
-                                                        else if (*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nXOR\r\n"u8) || *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nxor\r\n"u8))
-                                                        {
-                                                            return RespCommand.BITOP_XOR;
-                                                        }
-                                                        else if (*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nNOT\r\n"u8) || *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("3\r\nnot\r\n"u8))
-                                                        {
-                                                            return RespCommand.BITOP_NOT;
-                                                        }
-
-                                                        // Reset read head and count if we didn't match operator.
-                                                        readHead -= 9;
-                                                        count += 1;
+                                                        return RespCommand.BITOP_AND;
                                                     }
+                                                    else if (tag64 == MemoryMarshal.Read<ulong>("3\r\nXOR\r\n"u8) || tag64 == MemoryMarshal.Read<ulong>("3\r\nxor\r\n"u8))
+                                                    {
+                                                        return RespCommand.BITOP_XOR;
+                                                    }
+                                                    else if (tag64 == MemoryMarshal.Read<ulong>("3\r\nNOT\r\n"u8) || tag64 == MemoryMarshal.Read<ulong>("3\r\nnot\r\n"u8))
+                                                    {
+                                                        return RespCommand.BITOP_NOT;
+                                                    }
+
+                                                    // Reset if no match
+                                                    readHead -= 9;
+                                                    count += 1;
+                                                }
+                                                else if (tag32 == MemoryMarshal.Read<uint>("$4\r\n"u8) && remainingBytes > length + 6 + 10)
+                                                {
+                                                    // Optimistically adjust
+                                                    readHead += 10; // "$4\r\nDIFF\r\n"
+                                                    count -= 1;
+
+                                                    tag64 = *(ulong*)(ptr + 12);
+
+                                                    // Compare first 8 bytes then the trailing '\n' for "4\r\nDIFF\r\n"
+                                                    if ((*(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("4\r\nDIFF\r"u8) ||
+                                                        *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("4\r\ndiff\r"u8)) &&
+                                                        *(ptr + 20) == (byte)'\n')
+                                                    {
+                                                        return RespCommand.BITOP_DIFF;
+                                                    }
+
+                                                    // Reset if no match
+                                                    readHead -= 10;
+                                                    count += 1;
                                                 }
 
                                                 // Although we recognize BITOP, the pseudo-subcommand isn't recognized so fail early

@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -39,12 +38,7 @@ namespace Garnet.server
             ref UnifiedStoreInput input,
             in TSourceLogRecord inputLogRecord, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
-        {
-            if (!logRecord.Info.ValueIsObject)
-                throw new GarnetException("Unified store should not be called with IHeapObject");
-
-            return logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
-        }
+            => logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
             ReadOnlySpan<byte> srcValue, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
@@ -92,8 +86,10 @@ namespace Garnet.server
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
             {
-                WriteLogUpsert(logRecord.Key, ref input, inputLogRecord.ValueSpan, upsertInfo.Version,
-                    upsertInfo.SessionID);
+                if (!inputLogRecord.Info.ValueIsObject)
+                    WriteLogUpsert(logRecord.Key, ref input, logRecord.ValueSpan, upsertInfo.Version, upsertInfo.SessionID);
+                else
+                    WriteLogUpsert(logRecord.Key, ref input, (IGarnetObject)logRecord.ValueObject, upsertInfo.Version, upsertInfo.SessionID);
             }
 
             if (logRecord.Info.ValueIsObject)

@@ -74,7 +74,6 @@ namespace Garnet.server
                     HashOperation.HCOLLECT => false,
                     _ => true,
                 },
-                GarnetObjectType.Migrate => false,
                 _ => true,
             };
         }

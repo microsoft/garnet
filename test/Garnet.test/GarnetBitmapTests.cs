@@ -3,7 +3,8 @@
 
 using System;
 using System.Collections.Generic;
-using System.Runtime.Intrinsics.X86;
+using System.Linq;
+using System.Numerics.Tensors;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -44,14 +45,25 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        private long LongRandom() => ((long)this.rng.Next() << 32) | (long)this.rng.Next();
-
-        private ulong ULongRandom()
+        private GarnetServerTestProcess CreateServerWithEnvironmentVariables(string environment)
         {
-            ulong lsb = (ulong)(this.rng.Next());
-            ulong msb = (ulong)(this.rng.Next()) << 32;
-            return (msb | lsb);
+            var parts = environment.Split('=', 2);
+            if (parts.Length == 2)
+            {
+                Dictionary<string, string> envVars = [];
+                envVars.Add(parts[0], parts[1]);
+
+                return new GarnetServerTestProcess(envVars);
+            }
+            else
+            {
+                return new GarnetServerTestProcess();
+            }
         }
+
+        private long LongRandom() => rng.NextInt64(long.MinValue, long.MaxValue);
+
+        private ulong ULongRandom() => (ulong)LongRandom();
 
         private unsafe long ResponseToLong(byte[] response, int offset)
         {
@@ -271,60 +283,29 @@ namespace Garnet.test
 
         [Test, Order(6)]
         [Category("BITCOUNT")]
-        [TestCase(0, TestName = "BitmapSimpleBitCountTest(Hardware accelerated)")]
-        [TestCase(1, TestName = "BitmapSimpleBitCountTest(Avx2 disabled)")]
-        [TestCase(2, TestName = "BitmapSimpleBitCountTest(Software fallback)")]
-        public void BitmapSimpleBitCountTest(int acceleration)
+        [TestCase("DOTNET_EnableAVX2=0")]
+        [TestCase("DOTNET_EnableHWIntrinsic=1")]
+        [TestCase("DOTNET_EnableHWIntrinsic=0")]
+        public void BitmapSimpleBitCountTest(string environment)
         {
-            var configOptions = TestUtils.GetConfig();
+            using var server = CreateServerWithEnvironmentVariables(environment);
+            using var redis = ConnectionMultiplexer.Connect(server.Options);
 
-            if (acceleration == 0)
+            var db = redis.GetDatabase(0);
+            var maxBitmapLen = 1 << 12;
+            var iter = 1024;
+            var expectedCount = 0;
+            var key = "SimpleBitCountTest";
+
+            for (var i = 0; i < iter; i++)
             {
-                SimpleBitCountTest();
-            }
-            else
-            {
-                Dictionary<string, string> env = [];
-
-                if (acceleration == 1)
-                {
-                    if (!Avx2.IsSupported && Ssse3.IsSupported)
-                        Assert.Ignore("Already tested by main path");
-
-                    env.Add("DOTNET_EnableAVX2", "0");
-                }
-                else
-                {
-                    if (!Avx2.IsSupported && !Ssse3.IsSupported)
-                        Assert.Ignore("Already tested by main path");
-
-                    env.Add("DOTNET_EnableHWIntrinsic", "0");
-                }
-
-                using var p = new GarnetServerTestProcess(out configOptions, env);
-
-                SimpleBitCountTest();
+                var offset = rng.Next(1, maxBitmapLen);
+                var set = !db.StringSetBit(key, offset, true);
+                expectedCount += set ? 1 : 0;
             }
 
-            void SimpleBitCountTest()
-            {
-                using var redis = ConnectionMultiplexer.Connect(configOptions);
-                var db = redis.GetDatabase(0);
-                var maxBitmapLen = 1 << 12;
-                var iter = 1024;
-                var expectedCount = 0;
-                var key = "SimpleBitCountTest";
-
-                for (var i = 0; i < iter; i++)
-                {
-                    var offset = rng.Next(1, maxBitmapLen);
-                    var set = !db.StringSetBit(key, offset, true);
-                    expectedCount += set ? 1 : 0;
-                }
-
-                var count = db.StringBitCount(key);
-                ClassicAssert.AreEqual(expectedCount, count);
-            }
+            var count = db.StringBitCount(key);
+            ClassicAssert.AreEqual(expectedCount, count);
         }
 
         private static int Index(long offset) => (int)(offset >> 3);
@@ -801,390 +782,180 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedPos, pos);
         }
 
-        [Test, Order(16)]
-        [TestCase(100)]
-        public unsafe void BitmapSimpleBITOP_PCT(int bytesPerSend)
+        private static byte[] CopyBitmap(byte[] sourceBitmap, bool invert = false)
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            using var lightClientRequest = TestUtils.CreateRequest();
-            var db = redis.GetDatabase(0);
-
-            int tests = 32;
-            string a = "a";
-            string b = "b";
-            string c = "c";
-            string d = "d";
-
-            long src = 0;
-            long dst = 0;
-            byte[] data;
-
-            //Test NOT
-            for (int i = 0; i < tests; i++)
-            {
-                src = LongRandom();
-                data = BitConverter.GetBytes(src);
-                db.StringSet(a, data);
-
-                dst = ~src;
-                long size = 0;
-                byte[] response = lightClientRequest.SendCommandChunks("BITOP NOT " + d + " " + a, bytesPerSend);
-                size = ResponseToLong(response, 1);
-                ClassicAssert.AreEqual(size, 8);
-
-                data = db.StringGet(d);
-                src = BitConverter.ToInt64(data, 0);
-                ClassicAssert.AreEqual(dst, src);
-            }
-
-
-            //Test AND, OR, XOR
-            long srcA, srcB, srcC;
-            RedisKey[] keys = [a, b, c];
-            Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor];
-            for (int j = 0; j < bitwiseOps.Length; j++)
-            {
-                for (int i = 0; i < tests; i++)
-                {
-                    srcA = LongRandom();
-                    srcB = LongRandom();
-                    srcC = LongRandom();
-
-                    data = BitConverter.GetBytes(srcA);
-                    db.StringSet(a, data);
-                    data = BitConverter.GetBytes(srcB);
-                    db.StringSet(b, data);
-                    data = BitConverter.GetBytes(srcC);
-                    db.StringSet(c, data);
-
-                    byte[] response = null;
-                    long size = 0;
-                    //size = db.StringBitOperation(bitwiseOps[j], d, keys);
-                    switch (bitwiseOps[j])
-                    {
-                        case Bitwise.And:
-                            dst = srcA & srcB & srcC;
-                            response = lightClientRequest.SendCommandChunks("BITOP AND " + d + " " + a + " " + b + " " + c, bytesPerSend);
-                            break;
-                        case Bitwise.Or:
-                            dst = srcA | srcB | srcC;
-                            response = lightClientRequest.SendCommandChunks("BITOP OR " + d + " " + a + " " + b + " " + c, bytesPerSend);
-                            break;
-                        case Bitwise.Xor:
-                            dst = srcA ^ srcB ^ srcC;
-                            response = lightClientRequest.SendCommandChunks("BITOP XOR " + d + " " + a + " " + b + " " + c, bytesPerSend);
-                            break;
-                    }
-
-                    size = ResponseToLong(response, 1);
-                    ClassicAssert.AreEqual(size, 8);
-
-                    data = db.StringGet(d);
-                    src = BitConverter.ToInt64(data, 0);
-
-                    ClassicAssert.AreEqual(dst, src);
-                }
-            }
-        }
-
-        [Test, Order(17)]
-        [Category("BITOP")]
-        public void BitmapSimpleBitOpTests()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            int tests = 128;
-            string a = "a";
-            string b = "b";
-            string c = "c";
-            string d = "d";
-
-            long src = 0;
-            long dst = 0;
-            byte[] data;
-
-            //Test NOT
-            for (int i = 0; i < tests; i++)
-            {
-                src = LongRandom();
-                data = BitConverter.GetBytes(src);
-                db.StringSet(a, data);
-
-                dst = ~src;
-                long size = db.StringBitOperation(Bitwise.Not, d, a);
-                ClassicAssert.AreEqual(size, 8);
-
-                data = db.StringGet(d);
-                src = BitConverter.ToInt64(data, 0);
-                ClassicAssert.AreEqual(dst, src);
-            }
-
-            //Test AND, OR, XOR
-            long srcA, srcB, srcC;
-            RedisKey[] keys = [a, b, c];
-            Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor];
-            for (int j = 0; j < bitwiseOps.Length; j++)
-            {
-                for (int i = 0; i < tests; i++)
-                {
-                    srcA = LongRandom();
-                    srcB = LongRandom();
-                    srcC = LongRandom();
-
-                    data = BitConverter.GetBytes(srcA);
-                    db.StringSet(a, data);
-                    data = BitConverter.GetBytes(srcB);
-                    db.StringSet(b, data);
-                    data = BitConverter.GetBytes(srcC);
-                    db.StringSet(c, data);
-
-                    switch (bitwiseOps[j])
-                    {
-                        case Bitwise.And:
-                            dst = srcA & srcB & srcC;
-                            break;
-                        case Bitwise.Or:
-                            dst = srcA | srcB | srcC;
-                            break;
-                        case Bitwise.Xor:
-                            dst = srcA ^ srcB ^ srcC;
-                            break;
-                    }
-
-                    long size = db.StringBitOperation(bitwiseOps[j], d, keys);
-                    ClassicAssert.AreEqual(size, 8);
-
-                    data = db.StringGet(d);
-                    src = BitConverter.ToInt64(data, 0);
-
-                    ClassicAssert.AreEqual(dst, src);
-                }
-            }
-        }
-
-        private static void InitBitmap(ref byte[] dst, byte[] srcA, bool invert = false)
-        {
-            dst = new byte[srcA.Length];
+            var dst = new byte[sourceBitmap.Length];
             if (invert)
-                for (int i = 0; i < srcA.Length; i++) dst[i] = (byte)~srcA[i];
+                TensorPrimitives.OnesComplement<byte>(sourceBitmap, dst);
             else
-                for (int i = 0; i < srcA.Length; i++) dst[i] = srcA[i];
+                sourceBitmap.AsSpan().CopyTo(dst);
+
+            return dst;
         }
 
-        private static void ApplyBitop(ref byte[] dst, byte[] srcA, Func<byte, byte, byte> f8)
+        private static void ApplyBitop(ref byte[] dst, byte[] src, Func<byte, byte, byte> op)
         {
-            if (dst.Length < srcA.Length)
+            if (dst.Length < src.Length)
             {
-                byte[] newDst = new byte[srcA.Length];
-                Buffer.BlockCopy(dst, 0, newDst, 0, dst.Length);
+                var newDst = new byte[src.Length];
+                dst.AsSpan().CopyTo(newDst);
                 dst = newDst;
             }
 
-            for (int i = 0; i < srcA.Length; i++)
+            for (var i = 0; i < src.Length; i++)
             {
-                dst[i] = f8(dst[i], srcA[i]);
+                dst[i] = op(dst[i], src[i]);
             }
 
-            for (int i = srcA.Length; i < dst.Length; i++)
+            for (var i = src.Length; i < dst.Length; i++)
             {
-                dst[i] = f8(dst[i], 0);
-            }
-        }
-
-        [Test, Order(18)]
-        [Category("BITOP")]
-        public void BitmapSimpleVarLenBitOpTests()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-
-            int tests = 32;
-            string a = "a";
-            string b = "b";
-            string c = "c";
-            string d = "d";
-            string x = "x";
-
-            RedisKey[] keys = [a, b, c, d];
-            Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.And, Bitwise.Or, Bitwise.Xor];
-
-            int maxBytes = 512;
-            byte[] dataA = new byte[rng.Next(1, maxBytes)];
-            byte[] dataB = new byte[rng.Next(1, maxBytes)];
-            byte[] dataC = new byte[rng.Next(1, maxBytes)];
-            byte[] dataD = new byte[rng.Next(1, maxBytes)];
-            byte[] dataX = null;
-
-            for (int j = 0; j < bitwiseOps.Length; j++)
-            {
-                for (int i = 0; i < tests; i++)
-                {
-                    rng.NextBytes(dataA);
-                    rng.NextBytes(dataB);
-                    rng.NextBytes(dataC);
-                    rng.NextBytes(dataD);
-
-                    db.StringSet(a, dataA);
-                    db.StringSet(b, dataB);
-                    db.StringSet(c, dataC);
-                    db.StringSet(d, dataD);
-
-                    Func<byte, byte, byte> f8 = null;
-                    switch (bitwiseOps[j])
-                    {
-                        case Bitwise.And:
-                            f8 = (a, b) => (byte)(a & b);
-                            break;
-                        case Bitwise.Or:
-                            f8 = (a, b) => (byte)(a | b);
-                            break;
-                        case Bitwise.Xor:
-                            f8 = (a, b) => (byte)(a ^ b);
-                            break;
-                    }
-
-                    dataX = null;
-                    InitBitmap(ref dataX, dataA);
-                    ApplyBitop(ref dataX, dataB, f8);
-                    ApplyBitop(ref dataX, dataC, f8);
-                    ApplyBitop(ref dataX, dataD, f8);
-
-                    long actualSize = db.StringBitOperation(bitwiseOps[j], x, keys);
-                    ClassicAssert.AreEqual(dataX.Length, actualSize);
-
-                    byte[] actualX = db.StringGet(x);
-                    ClassicAssert.AreEqual(dataX, actualX);
-                }
-            }
-        }
-
-        private static void AssertNegatedEqual(byte[] dstVal, byte[] srcVal)
-        {
-            for (int i = 0; i < srcVal.Length; i++)
-            {
-                byte srcV = (byte)~srcVal[i];
-                ClassicAssert.AreEqual(srcV, dstVal[i]);
+                dst[i] = op(dst[i], 0);
             }
         }
 
         [Test, Order(19)]
         [Category("BITOP")]
-        public void BitmapBitOpNotTest()
+        public void BitOp_Unary_BitwiseNot(
+            [Values(Bitwise.Not)] Bitwise op,
+            [Values(1, 2, 16, 32 + 3, 128 + 32 + 3, 256 + 32 + 3, 512 + 32 + 3, 4096, 4096 + 32, 4096 + 32 + 3)] int bitmapLength)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            int tests = 32;
 
-            string srcKey = "srcKey";
-            string dstKey = "dstKey";
+            var srcKey = "src";
+            var dstKey = "dst";
 
-            int maxBytes = 256;
-            byte[] srcVal = new byte[rng.Next(1, maxBytes)];
-            byte[] dstVal;
-            for (int i = 0; i < tests; i++)
-            {
-                rng.NextBytes(srcVal);
-                db.StringSet(srcKey, srcVal);
+            var srcKeyBitmap = new byte[bitmapLength];
+            rng.NextBytes(srcKeyBitmap);
+            var expectedBitmap = CopyBitmap(srcKeyBitmap, invert: true);
+            db.StringSet(srcKey, srcKeyBitmap);
 
-                dstVal = db.StringGet(srcKey);
+            var size = db.StringBitOperation(op, dstKey, srcKey);
+            ClassicAssert.AreEqual(expectedBitmap.Length, size);
 
-                long size = db.StringBitOperation(Bitwise.Not, dstKey, srcKey);
-
-                ClassicAssert.AreEqual(size, srcVal.Length);
-                dstVal = db.StringGet(dstKey);
-
-                AssertNegatedEqual(dstVal, srcVal);
-
-                db.KeyDelete(srcKey);
-            }
+            byte[] actualBitmap = db.StringGet(dstKey);
+            ClassicAssert.AreEqual(expectedBitmap.Length, actualBitmap.Length);
+            ClassicAssert.AreEqual(expectedBitmap, actualBitmap);
         }
+
+        [Test]
+        [Category("BITOP")]
+        public void BitOp_Binary_SameSize(
+            [Values("DOTNET_EnableHWIntrinsic=1", "DOTNET_PreferredVectorBitWidth=128", "DOTNET_EnableHWIntrinsic=0")] string environment,
+            [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.Diff)] Bitwise op,
+            [Values(512 + 32 + 3)] int bitmapSize,
+            [Values(2, 3, 4)] int keys)
+        {
+            using var server = CreateServerWithEnvironmentVariables(environment);
+            BitOp_Binary_SameSize(server.Options, op, bitmapSize, keys);
+        }
+
+        [Test]
+        [Category("BITOP")]
+        public void BitOp_Binary_SameSize(
+            [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.Diff)] Bitwise op,
+            [Values(1, 2, 16, 32 + 3, 128 + 32 + 3, 256 + 32 + 3, 512 + 32 + 3, 4096, 4096 + 32, 4096 + 32 + 3)] int bitmapSize,
+            [Values(2, 3, 4)] int keys)
+        {
+            BitOp_Binary_SameSize(TestUtils.GetConfig(), op, bitmapSize, keys);
+        }
+
+        private void BitOp_Binary_SameSize(
+            ConfigurationOptions configOptions,
+            Bitwise op,
+            int bitmapSize,
+            int keys)
+        {
+            Func<byte, byte, byte> opFunc = op switch
+            {
+                Bitwise.And => static (a, b) => (byte)(a & b),
+                Bitwise.Or => static (a, b) => (byte)(a | b),
+                Bitwise.Xor => static (a, b) => (byte)(a ^ b),
+                Bitwise.Diff => static (a, b) => (byte)(a & ~b),
+
+                _ => throw new NotSupportedException()
+            };
+
+            using var redis = ConnectionMultiplexer.Connect(configOptions);
+            var db = redis.GetDatabase(0);
+
+            var srcKeys = new RedisKey[keys];
+            var srcKeyBitmaps = new byte[keys][];
+
+            var dstKey = "dst";
+            var expectedBitmap = new byte[bitmapSize];
+
+            for (var i = 0; i < srcKeys.Length; i++)
+            {
+                srcKeyBitmaps[i] = new byte[bitmapSize];
+                rng.NextBytes(srcKeyBitmaps[i]);
+
+                srcKeys[i] = "src" + i;
+                db.StringSet(srcKeys[i], srcKeyBitmaps[i]);
+
+                if (i == 0)
+                    srcKeyBitmaps[i].AsSpan().CopyTo(expectedBitmap);
+                else
+                    ApplyBitop(ref expectedBitmap, srcKeyBitmaps[i], opFunc);
+            }
+
+            var size = db.StringBitOperation(op, dstKey, srcKeys);
+            ClassicAssert.AreEqual(expectedBitmap.Length, size);
+
+            byte[] actualBitmap = db.StringGet(dstKey);
+            ClassicAssert.AreEqual(expectedBitmap.Length, actualBitmap.Length);
+            ClassicAssert.AreEqual(expectedBitmap, actualBitmap);
+        }
+
 
         [Test, Order(20)]
         [Category("BITOP")]
-        public void BitmapSimpleBitOpVarLenGrowingSizeTests()
+        public void BitOp_Binary_DifferentTails(
+            [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.Diff)] Bitwise op,
+            [Values(1, 2, 16, 32 + 3, 128 + 32 + 3, 256 + 32 + 3, 512 + 32 + 3, 4096, 4096 + 32, 4096 + 32 + 3)] int sharedLength,
+            [Values(new int[] { 0, 7 }, new int[] { 16, 0, 7 }, new int[] { 1, 16, 1, 32 })] int[] additionalLengths)
         {
+            Func<byte, byte, byte> opFunc = op switch
+            {
+                Bitwise.And => static (a, b) => (byte)(a & b),
+                Bitwise.Or => static (a, b) => (byte)(a | b),
+                Bitwise.Xor => static (a, b) => (byte)(a ^ b),
+                Bitwise.Diff => static (a, b) => (byte)(a & ~b),
+
+                _ => throw new NotSupportedException()
+            };
+
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            int tests = 16;
-            string a = "a";
-            string b = "b";
-            string c = "c";
-            string d = "d";
-            string x = "x";
+            var srcKeyCount = additionalLengths.Length;
+            var srcKeys = new RedisKey[srcKeyCount];
+            var srcKeyBitmaps = new byte[srcKeyCount][];
+            var srcMaxLength = sharedLength + Enumerable.Max(additionalLengths);
 
-            byte[] dataA, dataB, dataC, dataD;
-            byte[] dataX;
-            int minSize = 512;
-            Bitwise[] bitwiseOps = [Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.And, Bitwise.Or, Bitwise.Xor];
-            RedisKey[] keys = [a, b, c, d];
+            var dstKey = "dst";
+            var expectedBitmap = new byte[srcMaxLength];
 
-            //Test NOT
-            for (int i = 0; i < tests; i++)
+            for (var i = 0; i < srcKeys.Length; i++)
             {
-                dataA = new byte[rng.Next(minSize, minSize + 32)];
-                rng.NextBytes(dataA);
-                db.StringSet(a, dataA);
+                srcKeyBitmaps[i] = new byte[sharedLength + additionalLengths[i]];
+                rng.NextBytes(srcKeyBitmaps[i]);
 
-                dataX = null;
-                InitBitmap(ref dataX, dataA, true);
-                long size = db.StringBitOperation(Bitwise.Not, x, a);
-                ClassicAssert.AreEqual(size, dataX.Length);
+                srcKeys[i] = "src" + i;
+                db.StringSet(srcKeys[i], srcKeyBitmaps[i]);
 
-                byte[] expectedX = db.StringGet(x);
-                ClassicAssert.AreEqual(dataX, expectedX);
+                if (i == 0)
+                    srcKeyBitmaps[i].AsSpan().CopyTo(expectedBitmap);
+                else
+                    ApplyBitop(ref expectedBitmap, srcKeyBitmaps[i], opFunc);
             }
 
-            //Test AND, OR, XOR
-            for (int j = 0; j < bitwiseOps.Length; j++)
-            {
-                for (int i = 0; i < tests; i++)
-                {
-                    dataA = new byte[rng.Next(minSize, minSize + 16)]; minSize = dataA.Length;
-                    dataB = new byte[rng.Next(minSize, minSize + 16)]; minSize = dataB.Length;
-                    dataC = new byte[rng.Next(minSize, minSize + 16)]; minSize = dataC.Length;
-                    dataD = new byte[rng.Next(minSize, minSize + 16)]; minSize = dataD.Length;
-                    minSize = 17;
+            var size = db.StringBitOperation(op, dstKey, srcKeys);
+            ClassicAssert.AreEqual(expectedBitmap.Length, size);
 
-                    rng.NextBytes(dataA);
-                    rng.NextBytes(dataB);
-                    rng.NextBytes(dataC);
-                    rng.NextBytes(dataD);
-
-                    db.StringSet(a, dataA);
-                    db.StringSet(b, dataB);
-                    db.StringSet(c, dataC);
-                    db.StringSet(d, dataD);
-
-                    Func<byte, byte, byte> f8 = null;
-                    switch (bitwiseOps[j])
-                    {
-                        case Bitwise.And:
-                            f8 = (a, b) => (byte)(a & b);
-                            break;
-                        case Bitwise.Or:
-                            f8 = (a, b) => (byte)(a | b);
-                            break;
-                        case Bitwise.Xor:
-                            f8 = (a, b) => (byte)(a ^ b);
-                            break;
-                    }
-
-                    dataX = null;
-                    InitBitmap(ref dataX, dataA);
-                    ApplyBitop(ref dataX, dataB, f8);
-                    ApplyBitop(ref dataX, dataC, f8);
-                    ApplyBitop(ref dataX, dataD, f8);
-
-                    long size = db.StringBitOperation(bitwiseOps[j], x, keys);
-                    ClassicAssert.AreEqual(size, dataX.Length);
-                    byte[] expectedX = db.StringGet(x);
-
-                    ClassicAssert.AreEqual(expectedX.Length, dataX.Length);
-                    ClassicAssert.AreEqual(dataX, expectedX);
-                }
-            }
+            byte[] actualBitmap = db.StringGet(dstKey);
+            ClassicAssert.AreEqual(expectedBitmap.Length, actualBitmap.Length);
+            ClassicAssert.AreEqual(expectedBitmap, actualBitmap);
         }
 
         private static long GetValueFromBitmap(ref byte[] bitmap, long offset, int bitCount, bool signed)

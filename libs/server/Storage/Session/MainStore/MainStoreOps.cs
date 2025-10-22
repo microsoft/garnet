@@ -305,7 +305,7 @@ namespace Garnet.server
         public unsafe GarnetStatus DEL_Conditional<TContext>(PinnedSpanByte key, ref RawStringInput input, ref TContext context)
             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            Debug.Assert(input.header.cmd is RespCommand.DELIFGREATER or RespCommand.DELIFEXPIM);
+            Debug.Assert(input.header.cmd is RespCommand.DELIFGREATER);
 
             Span<byte> outputSpan = stackalloc byte[8];
             var output = SpanByteAndMemory.FromPinnedSpan(outputSpan);
@@ -423,22 +423,6 @@ namespace Garnet.server
                 fixed (byte* ptr = value.Span)
                     context.Upsert(key.ReadOnlySpan, new ReadOnlySpan<byte>(ptr, value.Length));
             }
-            return GarnetStatus.OK;
-        }
-
-        public GarnetStatus SET_Main<TContext, TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TContext context)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            context.Upsert(in srcLogRecord);
-            return GarnetStatus.OK;
-        }
-
-        public GarnetStatus SET_Object<TObjectContext, TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            objectContext.Upsert(in srcLogRecord);
             return GarnetStatus.OK;
         }
 

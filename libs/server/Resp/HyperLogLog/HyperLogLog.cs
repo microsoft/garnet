@@ -383,7 +383,8 @@ namespace Garnet.server
             if (IsDense(value))
                 return this.DenseBytes;
 
-            throw new GarnetException("HyperLogLog UpdateGrowV2 invalid data structure type");
+            // This is called during GetRMWModifiedFieldInfo so be consistent between this and the actual updaters
+            throw new GarnetException(CmdStrings.RESP_ERR_WRONG_TYPE_HLL);
         }
 
         /// <summary>

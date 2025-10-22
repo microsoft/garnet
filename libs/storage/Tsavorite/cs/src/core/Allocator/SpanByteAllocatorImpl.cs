@@ -19,6 +19,7 @@ namespace Tsavorite.core
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger)
         {
             freePagePool = new OverflowPool<PageUnit<Empty>>(4, p => { });
+            pageHeaderSize = PageHeader.Size;
         }
 
         internal int OverflowPageCount => freePagePool.Count;
