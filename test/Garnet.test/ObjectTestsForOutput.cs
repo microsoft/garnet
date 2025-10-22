@@ -35,14 +35,10 @@ namespace Garnet.test
                     framework = lastPart.Replace("Version=v", "net");
                 }
             }
-
-//            var framework = Assembly.GetExecutingAssembly()
-//                .GetCustomAttribute<TargetFrameworkAttribute>()?
-//                .FrameworkName.Split(',').Last().Replace("Version=v", "net") ?? "unknown";
             var config = Assembly.GetExecutingAssembly()
                 .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration ?? "unknown";
             var timestamp = DateTime.Now.ToString("M/d/yyyy HH:mm"); // e.g., "9/17/2025 14:51"
-            var fullname = $"[{os}, {framework}, {config}]";
+            var fullName = $"[{os}, {framework}, {config}]";
             var namespaceName = GetType().Namespace ?? "UnknownNamespace";
 
             AllureLifecycle.Instance.UpdateTestCase(x =>
@@ -54,7 +50,7 @@ namespace Garnet.test
             });
 
             // allows to separate out tests based on config but still hold history
-            AllureApi.AddTestParameter("env", fullname);
+            AllureApi.AddTestParameter("env", fullName);
         }
     }
 
