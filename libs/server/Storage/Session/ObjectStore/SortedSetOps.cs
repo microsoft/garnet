@@ -462,16 +462,16 @@ namespace Garnet.server
 
             var rangeOpts = sortedSetOrderOperation switch
             {
-                SortedSetOrderOperation.ByScore => SortedSetRangeOption.ByScore,
-                SortedSetOrderOperation.ByLex => SortedSetRangeOption.ByLex,
-                _ => SortedSetRangeOption.None
+                SortedSetOrderOperation.ByScore => SortedSetRangeOptions.ByScore,
+                SortedSetOrderOperation.ByLex => SortedSetRangeOptions.ByLex,
+                _ => SortedSetRangeOptions.None
             };
 
             var arguments = new List<PinnedSpanByte> { min, max };
 
             if (reverse)
             {
-                rangeOpts |= SortedSetRangeOption.Reverse;
+                rangeOpts |= SortedSetRangeOptions.Reverse;
             }
 
             // Limit parameter
@@ -488,7 +488,7 @@ namespace Garnet.server
                 NumUtils.WriteInt64(limit.Item2, limitCountSlice.Span);
                 arguments.Add(limitCountSlice);
 
-                rangeOpts |= SortedSetRangeOption.Limit;
+                rangeOpts |= SortedSetRangeOptions.Limit;
             }
 
             parseState.InitializeWithArguments([.. arguments]);

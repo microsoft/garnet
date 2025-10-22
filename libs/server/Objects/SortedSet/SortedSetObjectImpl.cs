@@ -342,29 +342,29 @@ namespace Garnet.server
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             //ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
             //ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
-            var rangeOpts = (SortedSetRangeOption)input.arg2;
+            var rangeOpts = (SortedSetRangeOptions)input.arg2;
             var count = input.parseState.Count;
             var currIdx = 0;
 
             // read the rest of the arguments
             ZRangeOptions options = new()
             {
-                ByScore = (rangeOpts & SortedSetRangeOption.ByScore) != 0,
-                ByLex = (rangeOpts & SortedSetRangeOption.ByLex) != 0,
-                Reverse = (rangeOpts & SortedSetRangeOption.Reverse) != 0,
-                WithScores = (rangeOpts & SortedSetRangeOption.WithScores) != 0 || (rangeOpts & SortedSetRangeOption.Store) != 0
+                ByScore = (rangeOpts & SortedSetRangeOptions.ByScore) != 0,
+                ByLex = (rangeOpts & SortedSetRangeOptions.ByLex) != 0,
+                Reverse = (rangeOpts & SortedSetRangeOptions.Reverse) != 0,
+                WithScores = (rangeOpts & SortedSetRangeOptions.WithScores) != 0 || (rangeOpts & SortedSetRangeOptions.Store) != 0
             };
 
             // The ZRANGESTORE code will read our output and store it, it's used to RESP2 output.
             // Since in that case isn't displayed to the user, we can override the version to let it work.
-            if ((respProtocolVersion >= 3) && (rangeOpts & SortedSetRangeOption.Store) != 0)
+            if ((respProtocolVersion >= 3) && (rangeOpts & SortedSetRangeOptions.Store) != 0)
                 respProtocolVersion = 2;
 
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             try
             {
-                if ((rangeOpts & SortedSetRangeOption.Limit) != 0)
+                if ((rangeOpts & SortedSetRangeOptions.Limit) != 0)
                 {
                     while (currIdx < count)
                     {

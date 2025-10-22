@@ -54,7 +54,7 @@ namespace Garnet.server
     /// Options for specifying the range in sorted set operations.
     /// </summary>
     [Flags]
-    public enum SortedSetRangeOption : byte
+    public enum SortedSetRangeOptions : byte
     {
         /// <summary>
         /// No options specified.

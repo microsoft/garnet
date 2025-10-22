@@ -162,13 +162,10 @@ namespace Garnet.server
                 }
 
                 // Advance etag if the object was not explicitly marked as unchanged or if called with withetag and no previous etag was present.
-                if (!output.IsObjectUnchanged)
-                {
-                    if (!logRecord.TrySetETag(this.functionsState.etagState.ETag + 1))
-                        return false;
-                }
+                if (!output.IsObjectUnchanged && hadETagPreMutation)
+                    logRecord.TrySetETag(output.IsObjectUnchanged ? this.functionsState.etagState.ETag : this.functionsState.etagState.ETag + 1);
 
-                if (output.IsObjectUnchanged || hadETagPreMutation)
+                if (!output.IsObjectUnchanged || hadETagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
 
                 sizeInfo.AssertOptionals(logRecord.Info);

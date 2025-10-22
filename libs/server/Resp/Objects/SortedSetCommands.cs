@@ -2036,10 +2036,10 @@ namespace Garnet.server
             return true;
         }
 
-        private bool ValidateSortedSetRangeInput(int startIdx, SortedSetRangeOption options, out ReadOnlySpan<byte> error)
+        private bool ValidateSortedSetRangeInput(int startIdx, SortedSetRangeOptions options, out ReadOnlySpan<byte> error)
         {
             error = default;
-            if ((options & SortedSetRangeOption.ByScore) == SortedSetRangeOption.ByScore)
+            if ((options & SortedSetRangeOptions.ByScore) == SortedSetRangeOptions.ByScore)
             {
                 if (!parseState.TryGetSortedSetMinMaxParameter(startIdx, out _, out _) ||
                     !parseState.TryGetSortedSetMinMaxParameter(startIdx + 1, out _, out _))
@@ -2048,7 +2048,7 @@ namespace Garnet.server
                     return false;
                 }
             }
-            else if ((options & SortedSetRangeOption.ByLex) == SortedSetRangeOption.ByLex)
+            else if ((options & SortedSetRangeOptions.ByLex) == SortedSetRangeOptions.ByLex)
             {
                 if (!parseState.TryGetSortedSetLexMinMaxParameter(startIdx, out _, out _, out _) ||
                     !parseState.TryGetSortedSetLexMinMaxParameter(startIdx + 1, out _, out _, out _))

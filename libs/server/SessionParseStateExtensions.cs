@@ -684,21 +684,21 @@ namespace Garnet.server
         /// <param name="idx">The argument index</param>
         /// <param name="value">Parsed value</param>
         /// <returns>True if value parsed successfully</returns>
-        internal static bool TryGetSortedSetRangeOption(this SessionParseState parseState, int idx, out SortedSetRangeOption value)
+        internal static bool TryGetSortedSetRangeOption(this SessionParseState parseState, int idx, out SortedSetRangeOptions value)
         {
-            value = SortedSetRangeOption.None;
+            value = SortedSetRangeOptions.None;
             var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
 
             if (sbArg.EqualsUpperCaseSpanIgnoringCase("BYSCORE"u8))
-                value = SortedSetRangeOption.ByScore;
+                value = SortedSetRangeOptions.ByScore;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("BYLEX"u8))
-                value = SortedSetRangeOption.ByLex;
+                value = SortedSetRangeOptions.ByLex;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("REV"u8))
-                value = SortedSetRangeOption.Reverse;
+                value = SortedSetRangeOptions.Reverse;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("LIMIT"u8))
-                value = SortedSetRangeOption.Limit;
+                value = SortedSetRangeOptions.Limit;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("WITHSCORES"u8))
-                value = SortedSetRangeOption.WithScores;
+                value = SortedSetRangeOptions.WithScores;
             else return false;
 
             return true;
@@ -744,9 +744,9 @@ namespace Garnet.server
         /// <param name="limit">Parsed limit</param>
         /// <param name="error">Error message</param>
         /// <returns>Parsed options</returns>
-        internal static bool TryGetSortedSetRangeOptions(this SessionParseState parseState, int startIdx, RespCommand command, out SortedSetRangeOption options, out int nextIdxStep, out (int offset, int limit) limit, out ReadOnlySpan<byte> error)
+        internal static bool TryGetSortedSetRangeOptions(this SessionParseState parseState, int startIdx, RespCommand command, out SortedSetRangeOptions options, out int nextIdxStep, out (int offset, int limit) limit, out ReadOnlySpan<byte> error)
         {
-            options = SortedSetRangeOption.None;
+            options = SortedSetRangeOptions.None;
             limit = default;
             error = default;
             nextIdxStep = 0;
@@ -756,22 +756,22 @@ namespace Garnet.server
                 case RespCommand.ZRANGE:
                     break;
                 case RespCommand.ZREVRANGE:
-                    options = SortedSetRangeOption.Reverse;
+                    options = SortedSetRangeOptions.Reverse;
                     break;
                 case RespCommand.ZRANGEBYLEX:
-                    options = SortedSetRangeOption.ByLex;
+                    options = SortedSetRangeOptions.ByLex;
                     break;
                 case RespCommand.ZRANGEBYSCORE:
-                    options = SortedSetRangeOption.ByScore;
+                    options = SortedSetRangeOptions.ByScore;
                     break;
                 case RespCommand.ZREVRANGEBYLEX:
-                    options = SortedSetRangeOption.ByLex | SortedSetRangeOption.Reverse;
+                    options = SortedSetRangeOptions.ByLex | SortedSetRangeOptions.Reverse;
                     break;
                 case RespCommand.ZREVRANGEBYSCORE:
-                    options = SortedSetRangeOption.ByScore | SortedSetRangeOption.Reverse;
+                    options = SortedSetRangeOptions.ByScore | SortedSetRangeOptions.Reverse;
                     break;
                 case RespCommand.ZRANGESTORE:
-                    options = SortedSetRangeOption.Store;
+                    options = SortedSetRangeOptions.Store;
                     break;
             }
 
@@ -783,7 +783,7 @@ namespace Garnet.server
 
                 options |= currOption;
 
-                if (currOption == SortedSetRangeOption.Limit)
+                if (currOption == SortedSetRangeOptions.Limit)
                 {
                     if (parseState.Count - currTokenIdx < 2)
                     {
