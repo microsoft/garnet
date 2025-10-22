@@ -26,7 +26,7 @@ namespace Garnet.server
         {
             if (storeWrapper.serverOptions.AofSublogCount == 1)
             {
-                RunStoredProc(id, customProcInput, ptr, false);
+                RunStoredProc(id, customProcInput, ptr, false, null);
             }
             else
             {
@@ -45,8 +45,14 @@ namespace Garnet.server
                         return;
                     }
 
+                    // Initialize custom proc bitmap to keep track of hashes for keys for which their timestamp needs to be updated
+                    CustomProcKeyHashTracker customProcKeyHashTracker = new(storeWrapper.appendOnlyFile);
+
                     // Replay StoredProc
-                    RunStoredProc(id, customProcInput, ptr, false);
+                    RunStoredProc(id, customProcInput, ptr, false, customProcKeyHashTracker);
+
+                    // Update timestamps for associated keys
+                    customProcKeyHashTracker?.UpdateTimestamps(extendedHeader.timestamp);
                 }
                 finally
                 {
@@ -55,23 +61,18 @@ namespace Garnet.server
                         _ = txnReplayCoordinators.Remove(extendedHeader.header.sessionID, out _);
                         txnReplayCoordinator.Set();
                     }
-
-                    // Update timestamps
-                    storeWrapper.appendOnlyFile.replayedTimestampProgress.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
                 }
             }
 
-            void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr, bool shardedLog)
+            void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr, bool shardedLog, CustomProcKeyHashTracker customProcKeyHashTracker)
             {
                 var curr = ptr + HeaderSize(shardedLog);
 
                 // Reconstructing CustomProcedureInput
-
-                // input
                 customProcInput.DeserializeFrom(curr);
 
                 // Run the stored procedure with the reconstructed input
-                respServerSession.RunTransactionProc(id, ref customProcInput, ref output, isRecovering: true);
+                respServerSession.RunTransactionProc(id, ref customProcInput, ref output, isRecovering: true, customProcKeyHashTracker);
             }
         }
 

@@ -12,6 +12,27 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
+    /// Used to track the hashes of the keys associated with a given proc in order to update their timestamps in the ReplicaTimestampTracker
+    /// </summary>
+    /// <param name="appendOnlyFile"></param>
+    public class CustomProcKeyHashTracker(GarnetAppendOnlyFile appendOnlyFile)
+    {
+        readonly GarnetAppendOnlyFile appendOnlyFile = appendOnlyFile;
+        readonly List<long> hashes = [];
+
+        public void AddHash(long hash) => hashes.Add(hash);
+
+        public void UpdateTimestamps(long timestamp)
+        {
+            foreach(var hash in hashes)
+            {
+                appendOnlyFile.Log.Hash(hash, out var sublogIdx, out var keyOffset);
+                appendOnlyFile.replayedTimestampProgress.UpdateKeyTimestamp(sublogIdx, keyOffset, timestamp);
+            }
+        }
+    }
+
+    /// <summary>
     /// This implements the replica timestamp tracker to track the timestamps of keys for all sessions in a given replica.
     /// The class maintains a 2D-array of size [SublogCount][KeyOffsetCount + 1] which tracks the timestamps for a set of keys per sublog
     /// Every data replay operation will update this map on per key basis using a hash function to determine the keyOffset.
@@ -25,7 +46,7 @@ namespace Garnet.server
     /// <param name="appendOnlyFile"></param>
     public class ReplicaTimestampTracker(GarnetAppendOnlyFile appendOnlyFile)
     {
-        const int KeyOffsetCount = (1 << 15) + 1;
+        public const int KeyOffsetCount = (1 << 15) + 1;
         const int MaxSublogTimestampOffset = KeyOffsetCount - 1;
         readonly GarnetAppendOnlyFile appendOnlyFile = appendOnlyFile;
         static ReplicaTimestampTracker()
@@ -49,19 +70,6 @@ namespace Garnet.server
                 Array.Clear(array);
                 return array;
             })];
-
-        /// <summary>
-        /// Calculate sublogIdx and keyOffsets
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="sublogIdx"></param>
-        /// <param name="keyOffset"></param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void Hash(ref SpanByte key, out int sublogIdx, out int keyOffset)
-        {
-            appendOnlyFile.Log.Hash(key, out var hash, out sublogIdx);
-            keyOffset = (int)(hash & (KeyOffsetCount - 1));
-        }
 
         /// <summary>
         /// Get timestamp frontier which is the maximum between the key timestamp and the sublog maximum timestamp
@@ -99,10 +107,16 @@ namespace Garnet.server
         /// <param name="timestamp"></param>
         public void UpdateKeyTimestamp(int sublogIdx, ref SpanByte key, long timestamp)
         {
-            Hash(ref key, out var _sublogIdx, out var keyOffset);            
+            appendOnlyFile.Log.Hash(key, out _, out var _sublogIdx, out var keyOffset);
             Debug.Assert(sublogIdx == _sublogIdx);
             _ = Utility.MonotonicUpdate(ref timestamps[sublogIdx][keyOffset], timestamp, out _);
             SignalWaiters(sublogIdx);
+        }
+        
+        public void UpdateKeyTimestamp(int sublogIdx, int keyOffset, long timestamp)
+        {
+            _ = Utility.MonotonicUpdate(ref timestamps[sublogIdx][keyOffset], timestamp, out _);
+            SignalWaiters(sublogIdx);            
         }
 
         /// <summary>
@@ -140,7 +154,7 @@ namespace Garnet.server
             for (var i = csvi.firstKey; i < csvi.lastKey; i += csvi.step)
             {
                 var key = parseState.GetArgSliceByRef(i).SpanByte;
-                Hash(ref key, out var sublogIdx, out var keyOffset);
+                appendOnlyFile.Log.Hash(key, out _, out var sublogIdx, out var keyOffset);
 
                 // If first read initialize context
                 if (replicaReadSessionContext.lastSublogIdx == -1)

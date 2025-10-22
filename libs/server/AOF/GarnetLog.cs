@@ -32,6 +32,20 @@ namespace Garnet.server
             sublogIdx = (int)(hash % shardedLog.Length);
         }
 
+        public void Hash(SpanByte key, out long hash, out int sublogIdx, out int keyOffset)
+        {
+            Debug.Assert(shardedLog != null);
+            hash = HashSlotUtils.Hash(key.AsSpan());
+            sublogIdx = (int)(hash % shardedLog.Length);
+            keyOffset = (int)(hash & (ReplicaTimestampTracker.KeyOffsetCount - 1));
+        }
+
+        public void Hash(long hash, out int sublogIdx, out int keyOffset)
+        {
+            sublogIdx = (int)(hash % shardedLog.Length);
+            keyOffset = (int)(hash & (ReplicaTimestampTracker.KeyOffsetCount - 1));            
+        }
+
         public AofAddress BeginAddress
         {
             get

@@ -423,16 +423,25 @@ namespace Garnet.server
             return true;
         }
 
-        public void IterativeShardedLogAccess(SpanByte key, ref ulong logAccessMap)
+        public void IterativeShardedLogAccess(SpanByte key, ref ulong logAccessMap, CustomTransactionProcedure proc)
         {
             // Skip if AOF is disabled
             if (appendOnlyFile == null)
                 return;
 
+            // Skip if singleLog
             if (appendOnlyFile.Log.Size == 1)
                 return;
-            appendOnlyFile.Log.Hash(key, out _, out var sublogIdx);
-            logAccessMap |= 1UL << sublogIdx;
+            
+            appendOnlyFile.Log.Hash(key, out var hash, out var sublogIdx, out var keyOffset);
+            if (proc.customProcTimestampBitmap == null)
+            {
+                logAccessMap |= 1UL << sublogIdx;
+            }
+            else
+            {
+                proc.customProcTimestampBitmap.AddHash(hash);
+            }
         }
 
         void ComputeShardedLogAccess(out ulong logAccessMap)
