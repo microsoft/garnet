@@ -134,7 +134,12 @@ namespace Garnet.server
                 return false;
             }
 
+            // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
+            var inputHeaderHasEtag = input.header.CheckWithETagFlag();
             var hadETagPreMutation = logRecord.Info.HasETag;
+            if (!hadETagPreMutation && inputHeaderHasEtag)
+                return false;
+
             var shouldUpdateEtag = hadETagPreMutation;
             if (shouldUpdateEtag)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
@@ -156,8 +161,12 @@ namespace Garnet.server
                     return false;
                 }
 
+                // Advance etag if the object was not explicitly marked as unchanged or if called with withetag and no previous etag was present.
                 if (!output.IsObjectUnchanged)
-                    logRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
+                {
+                    if (!logRecord.TrySetETag(this.functionsState.etagState.ETag + 1))
+                        return false;
+                }
 
                 if (output.IsObjectUnchanged || hadETagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
@@ -238,6 +247,9 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
             }
 
+            // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
+            var inputHeaderHasEtag = input.header.CheckWithETagFlag();
+
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 value.Operate(ref input, ref output, functionsState.respProtocolVersion, srcLogRecord.ETag, out _);
@@ -248,10 +260,11 @@ namespace Garnet.server
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return false;
                 }
-                if (!output.IsObjectUnchanged)
-                    dstLogRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
 
-                if (!output.IsObjectUnchanged || recordHadEtagPreMutation)
+                if (!output.IsObjectUnchanged || (!recordHadEtagPreMutation && inputHeaderHasEtag))
+                    dstLogRecord.TrySetETag(output.IsObjectUnchanged ? this.functionsState.etagState.ETag : this.functionsState.etagState.ETag + 1);
+
+                if (!output.IsObjectUnchanged || recordHadEtagPreMutation || inputHeaderHasEtag)
                     ETagState.ResetState(ref functionsState.etagState);
             }
             else
