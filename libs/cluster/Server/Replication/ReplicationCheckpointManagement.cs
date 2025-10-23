@@ -31,7 +31,7 @@ namespace Garnet.cluster
         public bool TryAcquireSettledMetadataForMainStore(CheckpointEntry entry, out LogFileInfo hlog_size, out long index_size)
         {
             hlog_size = default;
-            index_size = -1;
+            index_size = -1L;
             try
             {
                 hlog_size = storeWrapper.store.GetLogFileSize(entry.metadata.storeHlogToken);

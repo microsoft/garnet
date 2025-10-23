@@ -47,6 +47,9 @@ namespace Tsavorite.core
         /// <summary>The free pages of the log</summary>
         private readonly OverflowPool<PageUnit<ObjectPage>> freePagePool;
 
+        /// <summary>Segment size</summary>
+        private long ObjectLogSegmentSize;
+
         public ObjectAllocatorImpl(AllocatorSettings settings, TStoreFunctions storeFunctions, Func<object, ObjectAllocator<TStoreFunctions>> wrapperCreator)
             : base(settings.LogSettings, storeFunctions, wrapperCreator, settings.evictCallback, settings.epoch, settings.flushCallback, settings.logger, transientObjectIdMap: new ObjectIdMap())
         {
@@ -54,6 +57,8 @@ namespace Tsavorite.core
 
             maxInlineKeySize = 1 << settings.LogSettings.MaxInlineKeySizeBits;
             maxInlineValueSize = 1 << settings.LogSettings.MaxInlineValueSizeBits;
+
+            ObjectLogSegmentSize = 1L << settings.LogSettings.ObjectLogSegmentSizeBits;
 
             freePagePool = new OverflowPool<PageUnit<ObjectPage>>(4, static p => { });
             pageHeaderSize = PageHeader.Size;
@@ -619,7 +624,7 @@ namespace Tsavorite.core
                 totalBytesToRead = endPosition - startPosition;
 
                 // Iterate all records again to actually do the deserialization.
-                result.readBuffers.nextReadFilePosition = startPosition;
+                result.readBuffers.nextFileReadPosition = startPosition;
                 recordAddress = pageStartAddress + PageHeader.Size;
                 ReadOnlySpan<byte> noKey = default;
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);

@@ -61,11 +61,12 @@ namespace Garnet.test
         /// <param name="largerSize">Memory size larger than the initial size (within buffer bounds)</param>
         /// <param name="largerThanBufferSize">Memory size larger than the buffer size</param>
         /// <param name="malformedSize">Malformed memory size string</param>
+        /// <remarks>Initial memory size for main log is 32GB</remarks>
         [Test]
         [TestCase("16g", "32g", "64g", "g4")]
         [TestCase("9gB", "28GB", "33G", "2gBB")]
-        [TestCase("16m", "32m", "64m", "3bm")]
-        [TestCase(StoreType.Object, "5MB", "30M", "128mb", "44d")]
+        [TestCase("16m", "32m", "256GB", "3bm")]
+        [TestCase("5MB", "30M", "128GB", "44d")]
         public void ConfigSetMemorySizeTest(string smallerSize, string largerSize, string largerThanBufferSize, string malformedSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -147,11 +148,12 @@ namespace Garnet.test
         /// <param name="largerSize">Index size larger than the initial size</param>
         /// <param name="illegalSize">Illegal index size (not a power of 2)</param>
         /// <param name="malformedSize">Malformed index size string</param>
+        /// <remarks>Initial index size for main log is 1MB</remarks>
         [Test]
         [TestCase("32m", "128m", "63m", "8d")]
         [TestCase("16mB", "256MB", "23m", "g8")]
-        [TestCase("2m", "32m", "28m", "m9")]
-        [TestCase("4Mb", "16mB", "129MB", "0.3gb")]
+        [TestCase("2m", "512m", "28m", "m9")]
+        [TestCase("4Mb", "1024mB", "129MB", "0.3gb")]
         public void ConfigSetIndexSizeTest(string smallerSize, string largerSize, string illegalSize, string malformedSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -216,17 +218,17 @@ namespace Garnet.test
         [Test]
         [TestCase("10m", "128m", "1.5mb")]
         [TestCase("16m", "65m", "g6")]
-        public void ConfigObjHeapSizeTest(string smallerSize, string largerSize, string malformedSize)
+        public void ConfigHeapMemorySizeTest(string smallerSize, string largerSize, string malformedSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var option = "obj-heap-memory";
+            var option = "heap-memory";
             var currObjHeapSize = ServerOptions.ParseSize(heapMemorySize, out _);
 
             // Check initial heap size before any changes
             var metrics = server.Metrics.GetInfoMetrics(InfoMetricsType.MEMORY);
-            var miObjHeapTargetSize = metrics.FirstOrDefault(mi => mi.Name == "object_store_heap_memory_target_size");
+            var miObjHeapTargetSize = metrics.FirstOrDefault(mi => mi.Name == "store_heap_memory_target_size");
             ClassicAssert.IsNotNull(miObjHeapTargetSize);
             ClassicAssert.IsTrue(long.TryParse(miObjHeapTargetSize.Value, out var objHeapTargetSize));
             ClassicAssert.AreEqual(currObjHeapSize, objHeapTargetSize);
@@ -237,7 +239,7 @@ namespace Garnet.test
 
             // Heap size should remain unchanged
             metrics = server.Metrics.GetInfoMetrics(InfoMetricsType.MEMORY);
-            miObjHeapTargetSize = metrics.FirstOrDefault(mi => mi.Name == "object_store_heap_memory_target_size");
+            miObjHeapTargetSize = metrics.FirstOrDefault(mi => mi.Name == "store_heap_memory_target_size");
             ClassicAssert.IsNotNull(miObjHeapTargetSize);
             ClassicAssert.IsTrue(long.TryParse(miObjHeapTargetSize.Value, out objHeapTargetSize));
             ClassicAssert.AreEqual(currObjHeapSize, objHeapTargetSize);
@@ -249,7 +251,7 @@ namespace Garnet.test
             // Check that heap size has changed accordingly
             currObjHeapSize = ServerOptions.ParseSize(smallerSize, out _);
             metrics = server.Metrics.GetInfoMetrics(InfoMetricsType.MEMORY);
-            miObjHeapTargetSize = metrics.FirstOrDefault(mi => mi.Name == "object_store_heap_memory_target_size");
+            miObjHeapTargetSize = metrics.FirstOrDefault(mi => mi.Name == "store_heap_memory_target_size");
             ClassicAssert.IsNotNull(miObjHeapTargetSize);
             ClassicAssert.IsTrue(long.TryParse(miObjHeapTargetSize.Value, out objHeapTargetSize));
             ClassicAssert.AreEqual(currObjHeapSize, objHeapTargetSize);
@@ -261,7 +263,7 @@ namespace Garnet.test
             // Check that heap size has changed accordingly
             currObjHeapSize = ServerOptions.ParseSize(largerSize, out _);
             metrics = server.Metrics.GetInfoMetrics(InfoMetricsType.MEMORY);
-            miObjHeapTargetSize = metrics.FirstOrDefault(mi => mi.Name == "object_store_heap_memory_target_size");
+            miObjHeapTargetSize = metrics.FirstOrDefault(mi => mi.Name == "store_heap_memory_target_size");
             ClassicAssert.IsNotNull(miObjHeapTargetSize);
             ClassicAssert.IsTrue(long.TryParse(miObjHeapTargetSize.Value, out objHeapTargetSize));
             ClassicAssert.AreEqual(currObjHeapSize, objHeapTargetSize);
@@ -412,7 +414,6 @@ namespace Garnet.test
         /// <param name="largerSize">Memory size larger than the initial size (within buffer bounds)</param>
         [Test]
         [TestCase("4m")]
-        [TestCase("4096")]
         public void ConfigSetMemorySizeRecoveryTest(string largerSize)
         {
             var option = "memory";
@@ -689,11 +690,12 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
-            var option = "obj-heap-memory";
+            var option = "heap-memory";
 
             // Verify that initial empty page count is zero
             var store = server.Provider.StoreWrapper.store;
-            ClassicAssert.AreEqual(0, store.Log.EmptyPageCount);
+            var initialEpc = 1024;  // Based on initial config
+            ClassicAssert.AreEqual(initialEpc, store.Log.EmptyPageCount);
 
             // Add objects to store to fill up heap
             var values = new RedisValue[16];
@@ -711,7 +713,7 @@ namespace Garnet.test
             Thread.Sleep(sizeTrackerDelay);
 
             // Verify that empty page count has increased
-            ClassicAssert.Greater(store.Log.EmptyPageCount, 0);
+            ClassicAssert.Greater(store.Log.EmptyPageCount, initialEpc);
             var prevEpc = store.Log.EmptyPageCount;
 
             // Try to set heap size to a larger value than current

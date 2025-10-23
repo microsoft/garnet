@@ -610,7 +610,7 @@ namespace Tsavorite.core
                 this.epoch = epoch;
 
             logSettings.LogDevice.Initialize(1L << logSettings.SegmentSizeBits, epoch);
-            logSettings.ObjectLogDevice?.Initialize(-1, epoch);
+            logSettings.ObjectLogDevice?.Initialize(1L << logSettings.ObjectLogSegmentSizeBits, epoch);
 
             // Page size
             LogPageSizeBits = logSettings.PageSizeBits;
@@ -862,8 +862,11 @@ namespace Tsavorite.core
             }
         }
 
-        /// <summary>Segment size</summary>
-        public long GetSegmentSize() => SegmentSize;
+        /// <summary>Main log segment size</summary>
+        public long GetMainLogSegmentSize() => SegmentSize;
+
+        /// <summary>Object log segment size</summary>
+        public virtual long GetObjectLogSegmentSize() => -1;
 
         /// <summary>Get tail address</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

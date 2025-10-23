@@ -152,6 +152,12 @@ namespace Tsavorite.core
 
         /// <summary>Delta log tail address</summary>
         public long deltaLogTailAddress;
+
+        /// <summary>Number of objectLog segments in the hybrid log</summary>
+        public int hybridLogObjectSegmentCount;
+
+        /// <summary>Number of objectLog segments in the snapshot</summary>
+        public int snapshotObjectSegmentCount;
     }
 
     public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
@@ -224,6 +230,8 @@ namespace Tsavorite.core
                 hybridLogFileStartAddress = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.beginAddress)),
                 hybridLogFileEndAddress = current.info.flushedLogicalAddress,
                 deltaLogTailAddress = current.info.deltaTailAddress,
+                hybridLogObjectSegmentCount = current.info.startObjectLogTail.HasData ? current.info.startObjectLogTail.SegmentId + 1 : 0,   // +1 as it's a 0-based ordinal
+                snapshotObjectSegmentCount = current.info.finalObjectLogTail.HasData ? current.info.finalObjectLogTail.SegmentId - current.info.startObjectLogTail.SegmentId + 1 : 0
             };
         }
 
@@ -629,7 +637,7 @@ namespace Tsavorite.core
         private void RestoreMetadata(HybridLogCheckpointInfo recoveredHLCInfo)
         {
             // Recover object log tail position
-            hlogBase.SetObjectLogTail(recoveredHLCInfo.info.objectLogTail);
+            hlogBase.SetObjectLogTail(recoveredHLCInfo.info.finalObjectLogTail);
         }
 
         /// <summary>
@@ -1003,8 +1011,8 @@ namespace Tsavorite.core
             var recoveryDevice = checkpointManager.GetSnapshotLogDevice(guid);
             var objectLogRecoveryDevice = checkpointManager.GetSnapshotObjectLogDevice(guid);
 
-            recoveryDevice.Initialize(hlogBase.GetSegmentSize());
-            objectLogRecoveryDevice.Initialize(-1);
+            recoveryDevice.Initialize(hlogBase.GetMainLogSegmentSize());
+            objectLogRecoveryDevice.Initialize(hlogBase.GetObjectLogSegmentSize());
             recoveryStatus = new RecoveryStatus(capacity, hlogBase.MinEmptyPageCount)
             {
                 recoveryDevice = recoveryDevice,
@@ -1155,7 +1163,7 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
-        /// Restore log
+        /// Restore log; called from TsavoriteLog
         /// </summary>
         /// <param name="beginAddress"></param>
         /// <param name="headAddress"></param>
@@ -1174,7 +1182,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Restore log
+        /// Restore log; called from TsavoriteLog
         /// </summary>
         /// <param name="beginAddress"></param>
         /// <param name="headAddress"></param>

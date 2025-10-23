@@ -34,6 +34,7 @@ namespace Tsavorite.core
             {
                 case Phase.PREPARE:
                     // Capture state before checkpoint starts
+                    CollectMetadata(next, store, isPrepare: true);
                     lastVersion = store._hybridLogCheckpoint.info.version = next.Version;
                     store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
@@ -58,7 +59,7 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:
-                    CollectMetadata(next, store);
+                    CollectMetadata(next, store, isPrepare: false);
                     store.WriteHybridLogMetaInfo();
                     store.lastVersion = lastVersion;
                     break;
@@ -73,10 +74,13 @@ namespace Tsavorite.core
             }
         }
 
-        protected static void CollectMetadata(SystemState next, TsavoriteKV<TStoreFunctions, TAllocator> store)
+        protected static void CollectMetadata(SystemState next, TsavoriteKV<TStoreFunctions, TAllocator> store, bool isPrepare)
         {
-            // Collect object log tail only after flushes are completed
-            store._hybridLogCheckpoint.info.objectLogTail = store.hlogBase.GetObjectLogTail();
+            // Collect object log tail at start and after flushes are completed; having both is necessary to provide a segment count for replication.
+            if (isPrepare)
+                store._hybridLogCheckpoint.info.startObjectLogTail = store.hlogBase.GetObjectLogTail();
+            else
+                store._hybridLogCheckpoint.info.finalObjectLogTail = store.hlogBase.GetObjectLogTail();
         }
 
         /// <inheritdoc />

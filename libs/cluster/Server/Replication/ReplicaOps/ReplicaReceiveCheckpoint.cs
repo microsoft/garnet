@@ -240,7 +240,8 @@ namespace Garnet.cluster
         {
             var device = type switch
             {
-                CheckpointFileType.STORE_HLOG => GetStoreHLogDevice(),
+                CheckpointFileType.STORE_HLOG => GetStoreHLogDevice(isObj: false),
+                CheckpointFileType.STORE_HLOG_OBJ => GetStoreHLogDevice(isObj: true),
                 _ => clusterProvider.GetReplicationLogCheckpointManager().GetDevice(type, token),
             };
 
@@ -248,7 +249,7 @@ namespace Garnet.cluster
                 device.Initialize(segmentSize: 1L << clusterProvider.serverOptions.SegmentSizeBits());
             return device;
 
-            IDevice GetStoreHLogDevice()
+            IDevice GetStoreHLogDevice(bool isObj)
             {
                 var opts = clusterProvider.serverOptions;
                 if (opts.EnableStorageTier)
@@ -256,7 +257,9 @@ namespace Garnet.cluster
                     var LogDir = opts.LogDir;
                     if (LogDir is null or "") LogDir = Directory.GetCurrentDirectory();
                     var logFactory = opts.GetInitializedDeviceFactory(LogDir);
-                    return logFactory.Get(new FileDescriptor("Store", "hlog"));
+                    return isObj 
+                        ? logFactory.Get(new FileDescriptor("StoreObjects", "hlog.obj"))
+                        : logFactory.Get(new FileDescriptor("StoreMain", "hlog"));
                 }
                 return null;
             }

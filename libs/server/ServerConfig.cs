@@ -144,7 +144,7 @@ namespace Garnet.server
 
                 if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.Memory, allowNonAlphabeticChars: false))
                     memorySize = Encoding.ASCII.GetString(value);
-                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjHeapMemory, allowNonAlphabeticChars: true))
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.HeapMemory, allowNonAlphabeticChars: true))
                     heapMemory = Encoding.ASCII.GetString(value);
                 else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.Index, allowNonAlphabeticChars: false))
                     index = Encoding.ASCII.GetString(value);
@@ -317,14 +317,14 @@ namespace Garnet.server
         {
             if (!ServerOptions.TryParseSize(heapMemorySize, out var newHeapMemorySize))
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, CmdStrings.ObjHeapMemory);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, CmdStrings.HeapMemory);
                 return;
             }
 
             // If the object store size tracker is not running, return an error
             if (storeWrapper.sizeTracker == null)
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrHeapMemorySizeTrackerNotRunning, CmdStrings.ObjHeapMemory);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrHeapMemorySizeTrackerNotRunning, CmdStrings.HeapMemory);
                 return;
             }
 

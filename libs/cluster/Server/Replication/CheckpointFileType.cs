@@ -13,9 +13,13 @@ namespace Garnet.cluster
         /// </summary>
         NONE = 0,
         /// <summary>
-        /// Store Hybrid LOG
+        /// Store Hybrid LOG - Main
         /// </summary>
         STORE_HLOG,
+        /// <summary>
+        /// Store Hybrid LOG - Object
+        /// </summary>
+        STORE_HLOG_OBJ,
         /// <summary>
         /// Store Delta Log
         /// </summary>
@@ -25,8 +29,12 @@ namespace Garnet.cluster
         /// </summary>
         STORE_INDEX,
         /// <summary>
-        /// Store Snapshot
+        /// Store Snapshot - Main
         /// </summary>
         STORE_SNAPSHOT,
+        /// <summary>
+        /// Store Snapshot - Object
+        /// </summary>
+        STORE_SNAPSHOT_OBJ,
     }
 }

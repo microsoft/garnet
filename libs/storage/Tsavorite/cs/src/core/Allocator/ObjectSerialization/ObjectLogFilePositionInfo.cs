@@ -22,6 +22,7 @@ namespace Tsavorite.core
         internal ulong word;
 
         internal readonly bool IsSet => SegmentSizeBits != 0;
+        internal readonly bool HasData => word != 0 && word != NotSet;
 
         public ObjectLogFilePositionInfo()
         {
