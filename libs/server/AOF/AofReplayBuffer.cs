@@ -7,13 +7,12 @@ using Garnet.common;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Threading;
-using System.Diagnostics;
 
 namespace Garnet.server
 {
     public sealed unsafe partial class AofProcessor
     {
-        readonly ConcurrentDictionary<int, TransactionGroupReplayCoordinator> txnReplayCoordinators = [];
+        readonly ConcurrentDictionary<int, EventBarrier> eventBarriers = [];
 
         /// <summary>
         /// Replay StoredProc wrapper for single and sharded logs
@@ -26,41 +25,34 @@ namespace Garnet.server
         {
             if (storeWrapper.serverOptions.AofSublogCount == 1)
             {
-                RunStoredProc(id, customProcInput, ptr, false, null);
+                RunStoredProc(id, customProcInput, ptr, shardedLog: false, null);
             }
             else
             {
                 var extendedHeader = *(AofExtendedHeader*)ptr;
                 var participantCount = extendedHeader.logAccessCount;
-                var txnReplayCoordinator = txnReplayCoordinators.GetOrAdd(extendedHeader.header.sessionID, _ => new TransactionGroupReplayCoordinator(participantCount));
+                var eventBarrier = eventBarriers.GetOrAdd(extendedHeader.header.sessionID, _ => new EventBarrier(participantCount));
 
-                var IsLeader = txnReplayCoordinator.AddTransactionGroup(null);
+                // Wait for leader to replay CustomProc
+                if (!eventBarrier.SignalAndWait())
+                    return;
 
+                // Only leader will execute this
                 try
                 {
-                    if (!IsLeader)
-                    {
-                        // Wait for leader to complete replay
-                        txnReplayCoordinator.Wait();
-                        return;
-                    }
-
                     // Initialize custom proc bitmap to keep track of hashes for keys for which their timestamp needs to be updated
                     CustomProcKeyHashTracker customProcKeyHashTracker = new(storeWrapper.appendOnlyFile);
 
                     // Replay StoredProc
-                    RunStoredProc(id, customProcInput, ptr, false, customProcKeyHashTracker);
+                    RunStoredProc(id, customProcInput, ptr, shardedLog: true, customProcKeyHashTracker);
 
                     // Update timestamps for associated keys
                     customProcKeyHashTracker?.UpdateTimestamps(extendedHeader.timestamp);
                 }
                 finally
                 {
-                    if (IsLeader)
-                    {
-                        _ = txnReplayCoordinators.Remove(extendedHeader.header.sessionID, out _);
-                        txnReplayCoordinator.Set();
-                    }
+                    _ = eventBarriers.Remove(extendedHeader.header.sessionID, out _);
+                    eventBarrier.Set();
                 }
             }
 
@@ -69,29 +61,32 @@ namespace Garnet.server
                 var curr = ptr + HeaderSize(shardedLog);
 
                 // Reconstructing CustomProcedureInput
-                customProcInput.DeserializeFrom(curr);
+                _ = customProcInput.DeserializeFrom(curr);
 
                 // Run the stored procedure with the reconstructed input
-                respServerSession.RunTransactionProc(id, ref customProcInput, ref output, isRecovering: true, customProcKeyHashTracker);
+                _ = respServerSession.RunTransactionProc(id, ref customProcInput, ref output, isRecovering: true, customProcKeyHashTracker);
             }
         }
 
         internal class EventBarrier(int participantCount)
         {
             int count = participantCount;
-            ManualResetEventSlim eventSlim = new(false);
+            readonly ManualResetEventSlim eventSlim = new(false);
 
             /// <summary>
             /// Decrements participant count but does not set signal
             /// </summary>
             /// <returns>True if participant count reaches zero otherwise false</returns>
             /// <exception cref="Exception"></exception>
-            public bool Signal(out int pos)
+            public bool SignalAndWait()
             {
-                pos = Interlocked.Decrement(ref count);
-                if (pos > 0)
+                var newValue = Interlocked.Decrement(ref count);
+                if (newValue > 0)
+                {
+                    Wait();
                     return false;
-                else if (pos == 0)
+                }
+                else if (newValue == 0)
                     return true;
                 else
                     throw new Exception("Invalid count value < 0");
@@ -106,43 +101,6 @@ namespace Garnet.server
             /// Wait for signal to be set
             /// </summary>
             public void Wait() => eventSlim.Wait();
-        }
-
-        /// <summary>
-        /// Transaction group replay coordinator is used to coordinate replay of transactions between sublogs
-        /// </summary>
-        /// <param name="participantCount"></param>
-        internal class TransactionGroupReplayCoordinator(int participantCount)
-        {
-            EventBarrier eventBarrier = new(participantCount);
-            /// <summary>
-            /// Allocating enough space to store the transaction groups from all participating sublogs
-            /// </summary>
-            readonly TransactionGroup[] participatingTxnGroups = new TransactionGroup[participantCount];
-            public TransactionGroup[] TxnGroups => participatingTxnGroups;
-
-            /// <summary>
-            /// Add transaction group to be replayed
-            /// </summary>
-            /// <param name="txnGroup"></param>
-            /// <returns>True if add operation was the last one to be added otherwise true</returns>
-            public bool AddTransactionGroup(TransactionGroup txnGroup)
-            {
-                var isLeader = eventBarrier.Signal(out var offset);
-                Debug.Assert(offset <= participatingTxnGroups.Length);
-                participatingTxnGroups[offset] = txnGroup;
-                return isLeader;
-            }
-
-            /// <summary>
-            /// Set underlying event
-            /// </summary>
-            public void Set() => eventBarrier.Set();
-
-            /// <summary>
-            /// Wait for signal to be set
-            /// </summary>
-            public void Wait() => eventBarrier.Wait();
         }
 
         /// <summary>
@@ -358,31 +316,31 @@ namespace Garnet.server
 
                 // Add coordinator group if does not exist and add to that the txnGroup that needs to be replayed
                 var participantCount = txnGroup.logAccessCount;
-                var txnReplayCoordinator = aofProcessor.txnReplayCoordinators.GetOrAdd(extendedHeader.header.sessionID, _ => new TransactionGroupReplayCoordinator(participantCount));
-                var IsLeader = txnReplayCoordinator.AddTransactionGroup(txnGroup);
 
-                try
+                // Wait for all participating subtasks to reach start of replay
+                Barrier();
+
+                // Process in parallel Transaction group
+                ProcessTransactionGroupOperations(txnGroup);
+
+                // Wait for all participating subtasks to complete replay
+                Barrier();
+
+                void Barrier()
                 {
-                    if (!IsLeader)
+                    var eventBarrier = aofProcessor.eventBarriers.GetOrAdd(extendedHeader.header.sessionID, _ => new EventBarrier(participantCount));
+                    if (eventBarrier.SignalAndWait())
                     {
-                        // Wait for leader to complete replay
-                        txnReplayCoordinator.Wait();
-                        return;
+                        try
+                        {
+                            if (!aofProcessor.eventBarriers.Remove(extendedHeader.header.sessionID, out _))
+                                throw new GarnetException("Failed to remove EventBarrier");
+                        }
+                        finally
+                        {
+                            eventBarrier.Set();
+                        }
                     }
-
-                    // Iterate over transaction groups and apply their operations
-                    foreach (var nextTxnGroup in txnReplayCoordinator.TxnGroups)
-                        ProcessTransactionGroupOperations(nextTxnGroup);
-                }
-                finally
-                {
-                    if (IsLeader)
-                    {
-                        _ = aofProcessor.txnReplayCoordinators.Remove(extendedHeader.header.sessionID, out _);
-                        txnReplayCoordinator.Set();
-                    }
-
-                    aofProcessor.storeWrapper.appendOnlyFile.replayedTimestampProgress.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
                 }
 
                 // Process transaction 

@@ -75,8 +75,8 @@ namespace Garnet.server
                     };
                     while (_logAccessBitmap > 0)
                     {
-                        var offset = _logAccessBitmap.GetNextOffset();
-                        Log.GetSubLog(offset).Enqueue(extendedAofHeader, out _);
+                        var sublogIdx = _logAccessBitmap.GetNextOffset();
+                        Log.GetSubLog(sublogIdx).Enqueue(extendedAofHeader, out _);
                     }
                 }
                 finally
@@ -105,10 +105,11 @@ namespace Garnet.server
                         logAccessCount = (byte)BitOperations.PopCount(logAccessBitmap),
                         timestamp = Stopwatch.GetTimestamp()
                     };
+
                     while (_logAccessBitmap > 0)
                     {
-                        var offset = _logAccessBitmap.GetNextOffset();
-                        Log.GetSubLog(offset).Enqueue(extendedAofHeader, ref input, out _);
+                        var sublogIdx = _logAccessBitmap.GetNextOffset();
+                        Log.GetSubLog(sublogIdx).Enqueue(extendedAofHeader, ref input, out _);
                     }
                 }
                 finally
