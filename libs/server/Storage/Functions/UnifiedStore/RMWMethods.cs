@@ -18,6 +18,7 @@ namespace Garnet.server
         {
             return input.header.cmd switch
             {
+                RespCommand.DELIFEXPIM or
                 RespCommand.PERSIST or
                 RespCommand.EXPIRE or
                 RespCommand.EXPIREAT or
@@ -35,6 +36,7 @@ namespace Garnet.server
 
             return input.header.cmd switch
             {
+                RespCommand.DELIFEXPIM or
                 RespCommand.PERSIST or
                 RespCommand.EXPIRE or
                 RespCommand.EXPIREAT or
@@ -60,7 +62,16 @@ namespace Garnet.server
 
         public bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
             ref GarnetUnifiedStoreOutput output, ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
-            => true;
+        {
+            var cmd = input.header.cmd;
+            if (cmd == RespCommand.DELIFEXPIM && srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
+            {
+                rmwInfo.Action = RMWAction.ExpireAndStop;
+                return false;
+            }
+
+            return true;
+        }
 
         public bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,
             in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output,
@@ -167,7 +178,6 @@ namespace Garnet.server
                         }
                         else
                             functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
-
                         break;
                 }
 
@@ -220,7 +230,7 @@ namespace Garnet.server
                 else
                     logRecord.RemoveETag();
 
-                rmwInfo.Action = RMWAction.ExpireAndResume;
+                rmwInfo.Action = cmd == RespCommand.DELIFEXPIM ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
 
                 return false;
             }
@@ -257,6 +267,15 @@ namespace Garnet.server
                     {
                         // reset etag state that may have been initialized earlier, but don't update etag because only the metadata was updated
                         ETagState.ResetState(ref functionsState.etagState);
+                        shouldUpdateEtag = false;
+                    }
+                    else
+                        return true;
+                    break;
+                case RespCommand.DELIFEXPIM:
+                    if (!logRecord.Info.ValueIsObject)
+                    {
+                        // this is the case where it isn't expired
                         shouldUpdateEtag = false;
                     }
                     else
