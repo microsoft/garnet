@@ -779,7 +779,30 @@ namespace Garnet.server
             nint indexPtr;
             unsafe
             {
-                indexPtr = Service.CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                // HACK HACK HACK
+                // TODO: do something less awful here
+                var threadCtx = ActiveThreadSession;
+
+                Task<nint> offload = Task.Factory.StartNew(
+                    () =>
+                    {
+                        ActiveThreadSession = threadCtx;
+                        try
+                        {
+                            return Service.CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                        }
+                        finally
+                        {
+                            ActiveThreadSession = null;
+                        }
+                    },
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                //indexPtr = Service.CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                indexPtr = offload.GetAwaiter().GetResult();
+
+                ActiveThreadSession = threadCtx;
             }
 
             var indexSpan = indexValue.AsSpan();
@@ -824,7 +847,30 @@ namespace Garnet.server
             nint indexPtr;
             unsafe
             {
-                indexPtr = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                // HACK HACK HACK
+                // TODO: do something less awful here
+                var threadCtx = ActiveThreadSession;
+
+                Task<nint> offload = Task.Factory.StartNew(
+                    () =>
+                    {
+                        ActiveThreadSession = threadCtx;
+                        try
+                        {
+                            return Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                        }
+                        finally
+                        {
+                            ActiveThreadSession = null;
+                        }
+                    },
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+
+                //indexPtr = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                indexPtr = offload.GetAwaiter().GetResult();
+
+                ActiveThreadSession = threadCtx;
             }
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
