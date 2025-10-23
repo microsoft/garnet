@@ -777,33 +777,38 @@ namespace Garnet.server
             var context = NextContext();
 
             nint indexPtr;
-            unsafe
-            {
-                // HACK HACK HACK
-                // TODO: do something less awful here
-                var threadCtx = ActiveThreadSession;
 
-                Task<nint> offload = Task.Factory.StartNew(
-                    () =>
+            // HACK HACK HACK
+            // TODO: do something less awful here
+            var threadCtx = ActiveThreadSession;
+
+            var offload = Task.Factory.StartNew(
+                async () =>
+                {
+                    // Force off current thread
+                    await Task.Yield();
+
+                    ActiveThreadSession = threadCtx;
+                    try
                     {
-                        ActiveThreadSession = threadCtx;
-                        try
+                        unsafe
                         {
                             return Service.CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
                         }
-                        finally
-                        {
-                            ActiveThreadSession = null;
-                        }
-                    },
-                    TaskCreationOptions.RunContinuationsAsynchronously
-                );
+                    }
+                    finally
+                    {
+                        ActiveThreadSession = null;
+                    }
+                },
+                TaskCreationOptions.RunContinuationsAsynchronously
+            )
+                .Unwrap();
 
-                //indexPtr = Service.CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
-                indexPtr = offload.GetAwaiter().GetResult();
+            //indexPtr = Service.CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+            indexPtr = offload.GetAwaiter().GetResult();
 
-                ActiveThreadSession = threadCtx;
-            }
+            ActiveThreadSession = threadCtx;
 
             var indexSpan = indexValue.AsSpan();
 
@@ -845,33 +850,38 @@ namespace Garnet.server
             Debug.Assert(processInstanceId != indexProcessInstanceId, "Should be recreating an index that matched our instance id");
 
             nint indexPtr;
-            unsafe
-            {
-                // HACK HACK HACK
-                // TODO: do something less awful here
-                var threadCtx = ActiveThreadSession;
 
-                Task<nint> offload = Task.Factory.StartNew(
-                    () =>
+            // HACK HACK HACK
+            // TODO: do something less awful here
+            var threadCtx = ActiveThreadSession;
+
+            var offload = Task.Factory.StartNew(
+                async () =>
+                {
+                    // Force off current thread
+                    await Task.Yield();
+
+                    ActiveThreadSession = threadCtx;
+                    try
                     {
-                        ActiveThreadSession = threadCtx;
-                        try
+                        unsafe
                         {
                             return Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
                         }
-                        finally
-                        {
-                            ActiveThreadSession = null;
-                        }
-                    },
-                    TaskCreationOptions.RunContinuationsAsynchronously
-                );
+                    }
+                    finally
+                    {
+                        ActiveThreadSession = null;
+                    }
+                },
+                TaskCreationOptions.RunContinuationsAsynchronously
+            )
+            .Unwrap();
 
-                //indexPtr = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
-                indexPtr = offload.GetAwaiter().GetResult();
+            //indexPtr = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+            indexPtr = offload.GetAwaiter().GetResult();
 
-                ActiveThreadSession = threadCtx;
-            }
+            ActiveThreadSession = threadCtx;
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
             asIndex.IndexPtr = (ulong)indexPtr;
