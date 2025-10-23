@@ -1413,7 +1413,7 @@ namespace Garnet.test
                 server.Register.NewProcedure($"SUM{i + 1}", () => new Sum());
             }
 
-                // This register should fail as there could only be byte.MaxValue + 1 procedures registered
+            // This register should fail as there could only be byte.MaxValue + 1 procedures registered
             var e = Assert.Throws<Exception>(() => server.Register.NewProcedure($"SUM{byte.MaxValue + 3}", () => new Sum()));
             ClassicAssert.AreEqual("Out of registration space", e.Message);
 
