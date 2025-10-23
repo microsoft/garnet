@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -57,6 +58,8 @@ namespace Tsavorite.core
         /// Callback queue
         /// </summary>
         public AsyncQueue<AsyncIOContext<TKey, TValue>> callbackQueue;
+
+        internal List<string> callbackLog;
 
         /// <summary>
         /// Async Operation ValueTask backer

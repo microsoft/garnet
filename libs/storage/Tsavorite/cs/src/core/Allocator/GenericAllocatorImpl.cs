@@ -703,6 +703,8 @@ namespace Tsavorite.core
             asyncResult.context = context;
             asyncResult.context.record = result;
             asyncResult.context.objBuffer = record;
+
+            context.callbackLog?.Add($"AsyncReadRecordToMemory: fromLogical={fromLogical}, numBytes={numBytes}, fileOffset={fileOffset}, alignedFileOffset={alignedFileOffset}, alignedReadLength={alignedReadLength}");
             objectLogDevice.ReadAsync(
                 (int)(context.logicalAddress >> LogSegmentSizeBits),
                 alignedFileOffset,
@@ -921,6 +923,7 @@ namespace Tsavorite.core
         /// <summary>Retrieve objects from object log</summary>
         internal bool RetrievedFullRecord(byte* record, ref AsyncIOContext<TKey, TValue> ctx)
         {
+            ctx.callbackLog?.Add("here50");
             if (!KeyHasObjects())
                 ctx.key = Unsafe.AsRef<AllocatorRecord<TKey, TValue>>(record).key;
             if (!ValueHasObjects())
@@ -931,6 +934,7 @@ namespace Tsavorite.core
 
             if (ctx.objBuffer == null)
             {
+                ctx.callbackLog?.Add("here51");
                 // Issue IO for objects
                 long startAddress = -1;
                 long endAddress = -1;
@@ -960,6 +964,7 @@ namespace Tsavorite.core
                 return false;
             }
 
+            ctx.callbackLog?.Add("here52");
             // Parse the key and value objects
             var ms = new MemoryStream(ctx.objBuffer.buffer);
             _ = ms.Seek(ctx.objBuffer.offset + ctx.objBuffer.valid_offset, SeekOrigin.Begin);
@@ -978,6 +983,7 @@ namespace Tsavorite.core
                 valueSerializer.EndDeserialize();
             }
 
+            ctx.callbackLog?.Add("here53");
             ctx.objBuffer.Return();
             return true;
         }

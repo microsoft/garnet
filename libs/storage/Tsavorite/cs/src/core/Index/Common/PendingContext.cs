@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -9,6 +10,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
+
         internal struct PendingContext<TInput, TOutput, TContext>
         {
             // User provided information
@@ -19,6 +21,7 @@ namespace Tsavorite.core
             internal TOutput output;
             internal TContext userContext;
             internal long keyHash;
+            internal List<string> logs;
 
             // Some additional information about the previous attempt
             internal long id;

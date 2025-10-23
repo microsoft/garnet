@@ -137,6 +137,7 @@ namespace Tsavorite.core
                 Debug.Assert(pendingContext.flushEvent.IsDefault(), "Cannot have flushEvent with RECORD_ON_DISK");
                 // Add context to dictionary
                 pendingContext.id = sessionCtx.totalPending++;
+                pendingContext.logs = new();
                 sessionCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
 
                 // Issue asynchronous I/O request
@@ -149,6 +150,8 @@ namespace Tsavorite.core
                     request.asyncOperation = new TaskCompletionSource<AsyncIOContext<TKey, TValue>>(TaskCreationOptions.RunContinuationsAsynchronously);
                 else
                     request.callbackQueue = sessionCtx.readyResponses;
+                
+                request.callbackLog = pendingContext.logs;
 
                 hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, hlog.GetAverageRecordSize(), request);
                 return new(StatusCode.Pending);

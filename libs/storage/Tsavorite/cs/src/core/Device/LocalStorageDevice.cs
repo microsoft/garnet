@@ -211,22 +211,23 @@ namespace Tsavorite.core
                                      DeviceIOCompletionCallback callback,
                                      object context)
         {
-            if (!results.TryDequeue(out SimpleAsyncResult result))
-            {
-                result = new SimpleAsyncResult();
-                result.overlapped = new Overlapped(0, 0, IntPtr.Zero, result);
-                result.nativeOverlapped = result.overlapped.UnsafePack(_callback, IntPtr.Zero);
-            }
-
-            result.context = context;
-            result.callback = callback;
-            var ovNative = result.nativeOverlapped;
-
-            ovNative->OffsetLow = unchecked((int)((ulong)sourceAddress & 0xFFFFFFFF));
-            ovNative->OffsetHigh = unchecked((int)(((ulong)sourceAddress >> 32) & 0xFFFFFFFF));
-
+            SimpleAsyncResult result = default;
             try
             {
+                if (!results.TryDequeue(out result))
+                {
+                    result = new SimpleAsyncResult();
+                    result.overlapped = new Overlapped(0, 0, IntPtr.Zero, result);
+                    result.nativeOverlapped = result.overlapped.UnsafePack(_callback, IntPtr.Zero);
+                }
+
+                result.context = context;
+                result.callback = callback;
+                var ovNative = result.nativeOverlapped;
+
+                ovNative->OffsetLow = unchecked((int)((ulong)sourceAddress & 0xFFFFFFFF));
+                ovNative->OffsetHigh = unchecked((int)(((ulong)sourceAddress >> 32) & 0xFFFFFFFF));
+
                 var logHandle = GetOrAddHandle(segmentId);
 
                 Interlocked.Increment(ref numPending);

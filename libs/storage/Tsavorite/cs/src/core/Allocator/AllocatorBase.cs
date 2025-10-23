@@ -1430,6 +1430,7 @@ namespace Tsavorite.core
             record.available_bytes = (int)(alignedReadLength - (fileOffset - alignedFileOffset));
             record.required_bytes = numBytes;
 
+            context.callbackLog?.Add($"AsyncReadRecordToMemory: fromLogical={fromLogical}, numBytes={numBytes}, fileOffset={fileOffset}, alignedFileOffset={alignedFileOffset}, alignedReadLength={alignedReadLength}");
             var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext<TKey, TValue>>);
             asyncResult.context = context;
             asyncResult.context.record = record;
@@ -1731,19 +1732,23 @@ namespace Tsavorite.core
             var ctx = result.context;
             try
             {
+                ctx.callbackLog?.Add("here1");
                 var record = ctx.record.GetValidPointer();
                 int requiredBytes = _wrapper.GetRequiredRecordSize((long)record, ctx.record.available_bytes);
                 if (ctx.record.available_bytes >= requiredBytes)
                 {
+                    ctx.callbackLog?.Add("here2");
                     Debug.Assert(!_wrapper.GetInfoFromBytePointer(record).Invalid, "Invalid records should not be in the hash chain for pending IO");
 
                     // We have all the required bytes. If we don't have the complete record, RetrievedFullRecord calls AsyncGetFromDisk.
                     if (!_wrapper.RetrievedFullRecord(record, ref ctx))
                         return;
 
+                    ctx.callbackLog?.Add("here30");
                     // If request_key is null we're called from ReadAtAddress, so it is an implicit match.
                     if (ctx.request_key is not null && !_storeFunctions.KeysEqual(ref ctx.request_key.Get(), ref _wrapper.GetContextRecordKey(ref ctx)))
                     {
+                        ctx.callbackLog?.Add("here31");
                         // Keys don't match so request the previous record in the chain if it is in the range to resolve.
                         ctx.logicalAddress = _wrapper.GetInfoFromBytePointer(record).PreviousAddress;
                         if (ctx.logicalAddress >= BeginAddress && ctx.logicalAddress >= ctx.minAddress)
@@ -1756,21 +1761,33 @@ namespace Tsavorite.core
                     }
 
                     // Either the keys match or we are below the range to retrieve (which ContinuePending* will detect), so we're done.
+                    ctx.callbackLog?.Add("here32");
                     if (ctx.completionEvent is not null)
+                    {
+                        ctx.callbackLog?.Add("here321");
                         ctx.completionEvent.Set(ref ctx);
+                    }
                     else if (ctx.callbackQueue is not null)
+                    {
+                        ctx.callbackLog?.Add("here322");
                         ctx.callbackQueue.Enqueue(ctx);
+                    }
                     else
+                    {
+                        ctx.callbackLog?.Add("here323");
                         _ = ctx.asyncOperation.TrySetResult(ctx);
+                    }
                 }
                 else
                 {
+                    ctx.callbackLog?.Add("here20");
                     ctx.record.Return();
                     AsyncGetFromDisk(ctx.logicalAddress, requiredBytes, ctx);
                 }
             }
             catch (Exception e)
             {
+                ctx.callbackLog?.Add("here21");
                 logger?.LogError(e, "AsyncGetFromDiskCallback error");
                 if (ctx.completionEvent is not null)
                     ctx.completionEvent.SetException(e);
