@@ -239,7 +239,7 @@ namespace Garnet.server
         /// <returns></returns>
         public static long ParseSize(string value, out int bytesRead)
         {
-            char[] suffix = ['k', 'm', 'g', 't', 'p'];
+            ReadOnlySpan<char> suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;
             bytesRead = 0;
             for (var i = 0; i < value.Length; i++)
@@ -289,7 +289,7 @@ namespace Garnet.server
         /// <returns></returns>
         internal static string PrettySize(long value)
         {
-            char[] suffix = ['k', 'm', 'g', 't', 'p'];
+            ReadOnlySpan<char> suffix = ['k', 'm', 'g', 't', 'p'];
             double v = value;
             int exp = 0;
             while (v - Math.Floor(v) > 0)
