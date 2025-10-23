@@ -15,6 +15,8 @@ namespace Tsavorite.test.recovery
     using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, DefaultRecordDisposer>>;
     using LongStoreFunctions = StoreFunctions<LongKeyComparer, DefaultRecordDisposer>;
 
+    public enum TimeFuzzMode { TimeFuzz, NoTimeFuzz };
+
     public abstract class StateMachineDriverTestsBase
     {
         readonly int numOpThreads = 2;
@@ -300,14 +302,14 @@ namespace Tsavorite.test.recovery
         public async ValueTask CheckpointVersionSwitchRmwTest(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values(1L << 13, 1L << 16)] long indexSize,
-            [Values] bool useTimingFuzzing)
-            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, indexSize, useTimingFuzzing);
+            [Values] TimeFuzzMode timeFuzzMode)
+            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz);
 
         [Test]
         public async ValueTask GrowIndexVersionSwitchRmwTest(
             [Values(1L << 13, 1L << 16)] long indexSize,
-            [Values] bool useTimingFuzzing)
-            => await DoGrowIndexVersionSwitchEquivalenceCheck(indexSize, useTimingFuzzing);
+            [Values] TimeFuzzMode timeFuzzMode)
+            => await DoGrowIndexVersionSwitchEquivalenceCheck(indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz);
     }
 
     [TestFixture]
@@ -389,13 +391,13 @@ namespace Tsavorite.test.recovery
         public async ValueTask CheckpointVersionSwitchTxnTest(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values(1L << 13, 1L << 16)] long indexSize,
-            [Values] bool useTimingFuzzing)
-            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, indexSize, useTimingFuzzing);
+            [Values] TimeFuzzMode timeFuzzMode)
+            => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz);
 
         [Test]
         public async ValueTask GrowIndexVersionSwitchTxnTest(
             [Values(1L << 13, 1L << 16)] long indexSize,
-            [Values] bool useTimingFuzzing)
-            => await DoGrowIndexVersionSwitchEquivalenceCheck(indexSize, useTimingFuzzing);
+            [Values] TimeFuzzMode timeFuzzMode)
+            => await DoGrowIndexVersionSwitchEquivalenceCheck(indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz);
     }
 }

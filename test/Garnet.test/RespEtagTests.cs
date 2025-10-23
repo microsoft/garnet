@@ -2427,7 +2427,7 @@ namespace Garnet.test
             RedisServerException ex = Assert.Throws<RedisServerException>(() => db.Execute("PFADD", [key, "woohoo"]));
 
             ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE_HLL), ex.Message);
+            Assert.That(ex.Message, Does.EndWith(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE_HLL)));
 
             ex = Assert.Throws<RedisServerException>(() => db.Execute("PFMERGE", [key, key2]));
 

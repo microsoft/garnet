@@ -1239,9 +1239,9 @@ namespace Tsavorite.core
             var (keyLengthBytes, valueLengthBytes, hasFillerBit) = DeconstructIndicatorByte(*(byte*)IndicatorAddress);
             var (keyLength, keyAddress) = GetKeyFieldInfo(IndicatorAddress);
             var (valueLength, valueAddress) = GetValueFieldInfo(IndicatorAddress);
-            return $"ri {Info} | key ({keyLengthBytes}/{keyLength}/{keyAddress - physicalAddress}) {keyString}"
-                          + $" | val ({valueLengthBytes}/{valueLength}/{valueAddress - physicalAddress}) {valueString}"
-                          + $" | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpir {bstr(Info.HasExpiration)}:{Expiration}";
+            return $"ri {Info} | key (b:{keyLengthBytes}/o:{keyAddress - physicalAddress}/l:{keyLength}) {keyString}"
+                            + $" | val (b:{valueLengthBytes}/o:{valueAddress - physicalAddress}/l:{valueLength}) {valueString}"
+                            + $" | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpir {bstr(Info.HasExpiration)}:{Expiration}";
         }
     }
 }

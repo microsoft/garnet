@@ -74,7 +74,7 @@ namespace Garnet.server
                             fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
                         return fieldInfo;
                     default:
-                        throw new NotImplementedException();
+                        return fieldInfo;
                 }
             }
 

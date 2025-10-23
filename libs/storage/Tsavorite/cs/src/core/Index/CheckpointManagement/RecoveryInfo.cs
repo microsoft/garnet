@@ -36,7 +36,7 @@ namespace Tsavorite.core
         /// </summary>
         public long nextVersion;
         /// <summary>
-        /// Flushed logical address; indicates the latest immutable address on the main Tsavorite log at checkpoint commit time.
+        /// Flushed logical address; indicates the latest immutable (flushed) address on the main Tsavorite log at checkpoint commit time.
         /// </summary>
         public long flushedLogicalAddress;
         /// <summary>
@@ -66,9 +66,14 @@ namespace Tsavorite.core
         public long beginAddress;
 
         /// <summary>
-        /// Object log tail (where the next record will be written).
+        /// Object log tail (where the next record will be written) at the start of the checkpoint.
         /// </summary>
-        public ObjectLogFilePositionInfo objectLogTail;
+        public ObjectLogFilePositionInfo startObjectLogTail;
+
+        /// <summary>
+        /// Object log tail (where the next record will be written) at the end of the checkpoint.
+        /// </summary>
+        public ObjectLogFilePositionInfo finalObjectLogTail;
 
         /// <summary>
         /// Tail address of delta file: -1 indicates this is not a delta checkpoint metadata
@@ -106,7 +111,8 @@ namespace Tsavorite.core
             deltaTailAddress = -1; // indicates this is not a delta checkpoint metadata
             headAddress = 0;
 
-            objectLogTail = new();  // Marks as "unset"
+            startObjectLogTail = new();  // Marks as "unset"
+            finalObjectLogTail = new();
         }
 
         const int checkpointTokenCount = 0;  // Temporary to keep compatibility with previous checkpoint versions
@@ -179,7 +185,8 @@ namespace Tsavorite.core
                     _ = reader.ReadLine();
             }
 
-            objectLogTail.Deserialize(reader);
+            startObjectLogTail.Deserialize(reader);
+            finalObjectLogTail.Deserialize(reader);
 
             if (cversion >= 6)
             {
@@ -278,7 +285,8 @@ namespace Tsavorite.core
 
                     writer.WriteLine(checkpointTokenCount);
 
-                    objectLogTail.Serialize(writer);
+                    startObjectLogTail.Serialize(writer);
+                    finalObjectLogTail.Serialize(writer);
 
                     // User cookie write
                     var cookieSize = cookie == null ? 0 : cookie.Length;
@@ -299,7 +307,7 @@ namespace Tsavorite.core
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
             return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress ^ headAddress ^ beginAddress
-                ^ checkpointTokensCount ^ ((long)objectLogTail.word);
+                ^ checkpointTokensCount ^ (long)startObjectLogTail.word ^ (long)finalObjectLogTail.word;
         }
 
         /// <summary>
@@ -318,7 +326,8 @@ namespace Tsavorite.core
             logger?.LogInformation("Snapshot Final Logical Address: {snapshotFinalLogicalAddress}", snapshotFinalLogicalAddress);
             logger?.LogInformation("Head Address: {headAddress}", headAddress);
             logger?.LogInformation("Begin Address: {beginAddress}", beginAddress);
-            logger?.LogInformation("Object Log Tail Position: {objectLogTail}", objectLogTail);
+            logger?.LogInformation("Start Object Log Tail Position: {startObjectLogTail}", startObjectLogTail);
+            logger?.LogInformation("Final Object Log Tail Position: {finalOtLogTail}", finalObjectLogTail);
             logger?.LogInformation("Delta Tail Address: {deltaTailAddress}", deltaTailAddress);
         }
     }

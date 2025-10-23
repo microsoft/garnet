@@ -25,7 +25,7 @@ namespace Tsavorite.core
 
         /// <summary>Device address to do the next read from (segment and offset); set at the start of a record by <see cref="ObjectLogReader{TStoreFunctions}"/>
         /// and incremented with each buffer read; all of these should be aligned to sector size, so this address remains sector-aligned.</summary>
-        internal ObjectLogFilePositionInfo nextReadFilePosition;
+        internal ObjectLogFilePositionInfo nextFileReadPosition;
 
         /// <summary>Track the remaining length to be read for one or more records for Object values, and we can also read some or all of Overflow values into the buffer.</summary>
         ulong unreadLengthRemaining;
@@ -78,21 +78,21 @@ namespace Tsavorite.core
             if ((ulong)unalignedReadLength > unreadLengthRemaining)
                 unalignedReadLength = (int)unreadLengthRemaining;
 
-            Debug.Assert(IsAligned(nextReadFilePosition.Offset, (int)objectLogDevice.SectorSize), $"filePosition.Offset ({nextReadFilePosition.Offset}) is not sector-aligned");
-            if (nextReadFilePosition.Offset + (ulong)unalignedReadLength > nextReadFilePosition.SegmentSize)
-                unalignedReadLength = (int)(nextReadFilePosition.SegmentSize - nextReadFilePosition.Offset);
+            Debug.Assert(IsAligned(nextFileReadPosition.Offset, (int)objectLogDevice.SectorSize), $"filePosition.Offset ({nextFileReadPosition.Offset}) is not sector-aligned");
+            if (nextFileReadPosition.Offset + (ulong)unalignedReadLength > nextFileReadPosition.SegmentSize)
+                unalignedReadLength = (int)(nextFileReadPosition.SegmentSize - nextFileReadPosition.Offset);
 
             // We may not have had a sector-aligned amount of remaining unread data.
             var alignedReadLength = RoundUp(unalignedReadLength, (int)objectLogDevice.SectorSize);
-            buffer.ReadFromDevice(nextReadFilePosition, recordStartPosition, (uint)alignedReadLength, ReadFromDeviceCallback);
+            buffer.ReadFromDevice(nextFileReadPosition, recordStartPosition, (uint)alignedReadLength, ReadFromDeviceCallback);
 
             // Advance the filePosition. This used aligned read length so may advance it past end of record but that's OK because
             // filePosition is for the "read buffer-sized chunks" logic while data transfer via Read() uses buffer.currentPosition.
-            nextReadFilePosition.Offset += (uint)alignedReadLength;
+            nextFileReadPosition.Offset += (uint)alignedReadLength;
 
-            Debug.Assert(nextReadFilePosition.Offset <= nextReadFilePosition.SegmentSize, $"filePosition.Offset ({nextReadFilePosition.Offset}) must be <= filePosition.SegmentSize ({nextReadFilePosition.SegmentSize})");
-            if (nextReadFilePosition.Offset == nextReadFilePosition.SegmentSize)
-                nextReadFilePosition.AdvanceToNextSegment();
+            Debug.Assert(nextFileReadPosition.Offset <= nextFileReadPosition.SegmentSize, $"filePosition.Offset ({nextFileReadPosition.Offset}) must be <= filePosition.SegmentSize ({nextFileReadPosition.SegmentSize})");
+            if (nextFileReadPosition.Offset == nextFileReadPosition.SegmentSize)
+                nextFileReadPosition.AdvanceToNextSegment();
 
             unreadLengthRemaining -= (uint)unalignedReadLength;
         }
@@ -106,7 +106,7 @@ namespace Tsavorite.core
         internal void OnBeginReadRecords(ObjectLogFilePositionInfo startFilePosition, ulong totalLength)
         {
             Debug.Assert(totalLength > 0, "TotalLength cannot be 0");
-            nextReadFilePosition = startFilePosition;
+            nextFileReadPosition = startFilePosition;
             unreadLengthRemaining = totalLength;
 
             // Initialize all buffers
@@ -116,10 +116,10 @@ namespace Tsavorite.core
 
             // Do an initial read to fill the buffers, at least as much as we have. Again, totalLength applies to all records in the ReadAsync range,
             // whether one or many. First align the initial read. recordStartPosition is the padding between rounded-down-to-align-readStart and recordStart.
-            var alignedReadPosition = RoundDown(nextReadFilePosition.Offset, (int)objectLogDevice.SectorSize);
-            var recordStartPosition = (int)(nextReadFilePosition.Offset - alignedReadPosition);
+            var alignedReadPosition = RoundDown(nextFileReadPosition.Offset, (int)objectLogDevice.SectorSize);
+            var recordStartPosition = (int)(nextFileReadPosition.Offset - alignedReadPosition);
             unreadLengthRemaining += (uint)recordStartPosition;
-            nextReadFilePosition.Offset -= (uint)recordStartPosition;
+            nextFileReadPosition.Offset -= (uint)recordStartPosition;
 
             // Load all the buffers as long as we have more unread data. Leave currentIndex at 0.
             for (var ii = 0; ii < buffers.Length; ii++)
@@ -131,14 +131,14 @@ namespace Tsavorite.core
             }
         }
 
-        internal void OnBeginRecord(ObjectLogFilePositionInfo recordFilePosition)
+        internal bool OnBeginRecord(ObjectLogFilePositionInfo recordFilePosition)
         {
             var buffer = buffers[currentIndex] ?? throw new TsavoriteException($"Internal error in read buffer sequencing; empty buffer[{currentIndex}] encountered with unreadLengthRemaining {unreadLengthRemaining}");
 
             // Because each partial flush ends with a sector-aligning write, we may have a record start position greater than our ongoing buffer.currentPosition
             // incrementing. It should never be less. recordFilePosition is only guaranteed to be sector-aligned if it's the first record after a partial flush. 
-            if (!buffer.HasData)
-                _ = buffer.WaitForDataAvailable();
+            if (!buffer.HasData && !buffer.WaitForDataAvailable())
+                return false;
 
             while (true)
             {
@@ -157,8 +157,10 @@ namespace Tsavorite.core
                 }
 
                 Debug.Assert(buffer.currentPosition + (int)increment == buffer.endPosition, $"Increment {increment} overflows buffer (curPos {buffer.currentPosition}, endPos {buffer.endPosition}) by more than alignment");
-                _ = MoveToNextBuffer(out buffer);
+                if (!MoveToNextBuffer(out buffer))
+                    break;
             }
+            return true;
         }
 
         /// <summary>
@@ -186,7 +188,7 @@ namespace Tsavorite.core
             // empty, we are done with this read op.
             currentIndex = GetNextBufferIndex(currentIndex);
             nextBuffer = buffers[currentIndex];
-            if (nextBuffer.WaitForDataAvailable())
+            if (nextBuffer is not null && nextBuffer.WaitForDataAvailable())
                 return true;
 
             Debug.Assert(unreadLengthRemaining == 0, $"unreadLengthRemaining ({unreadLengthRemaining}) was not 0 when WaitForDataAvailable returned false");
@@ -218,6 +220,6 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override string ToString()
-            => $"currIdx {currentIndex}; bufSize {bufferSize}; filePosition {nextReadFilePosition}; SecSize {(int)objectLogDevice.SectorSize}";
+            => $"currIdx {currentIndex}; bufSize {bufferSize}; filePosition {nextFileReadPosition}; SecSize {(int)objectLogDevice.SectorSize}";
     }
 }

@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 namespace Tsavorite.core
 {
     [StructLayout(LayoutKind.Explicit, Size = Size)]
-    internal struct PageHeader
+    public struct PageHeader
     {
         const ushort CurrentVersion = 1;
 
@@ -14,7 +14,7 @@ namespace Tsavorite.core
         internal const int SizeBits = 6;
 
         /// <summary>The size of the struct. Must be a power of 2. Currently set to the size that the 0'th page offset was; 64 bytes</summary>
-        internal const int Size = 1 << SizeBits;
+        public const int Size = 1 << SizeBits;
 
         /// <summary>Version of this page header.</summary>
         [FieldOffset(0)]

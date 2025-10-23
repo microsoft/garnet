@@ -40,8 +40,8 @@ namespace Tsavorite.core
                         store.checkpointManager.GetSnapshotLogDevice(store._hybridLogCheckpointToken);
                     store._hybridLogCheckpoint.snapshotFileObjectLogDevice =
                         store.checkpointManager.GetSnapshotObjectLogDevice(store._hybridLogCheckpointToken);
-                    store._hybridLogCheckpoint.snapshotFileDevice.Initialize(store.hlogBase.GetSegmentSize());
-                    store._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
+                    store._hybridLogCheckpoint.snapshotFileDevice.Initialize(store.hlogBase.GetMainLogSegmentSize());
+                    store._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(store.hlogBase.GetObjectLogSegmentSize());
 
                     // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
                     store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;

@@ -25,6 +25,8 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE:
+                    // Capture state before checkpoint starts
+                    CollectMetadata(next, store, isPrepare: true);
                     store._hybridLogCheckpoint = store._lastSnapshotCheckpoint;
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._hybridLogCheckpoint.prevVersion = next.Version;
@@ -61,7 +63,7 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:
-                    CollectMetadata(next, store);
+                    CollectMetadata(next, store, isPrepare: false);
                     store._hybridLogCheckpoint.info.deltaTailAddress = store._hybridLogCheckpoint.deltaLog.TailAddress;
                     store.WriteHybridLogIncrementalMetaInfo(store._hybridLogCheckpoint.deltaLog);
                     store._hybridLogCheckpoint.info.deltaTailAddress = store._hybridLogCheckpoint.deltaLog.TailAddress;

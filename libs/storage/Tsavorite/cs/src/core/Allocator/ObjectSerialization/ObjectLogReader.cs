@@ -86,8 +86,10 @@ namespace Tsavorite.core
             if (readBuffers is null)
                 throw new TsavoriteException("ReadBuffers are required to ReadRecordObjects");
 
+            // This is only called when we expect data to be there so throw if we don't have any.
             var positionWord = logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
-            readBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits));
+            if (!readBuffers.OnBeginRecord(new ObjectLogFilePositionInfo(positionWord, segmentSizeBits)))
+                throw new TsavoriteException("ReadRecordObjects found no data available in ReadBuffers");
 
             // TODO: Optimize the reading of large internal sector-aligned parts of Overflow Keys and Values to read directly into the overflow, similar to how ObjectLogWriter writes
             //       directly from overflow. This requires changing the read-ahead in CircularDiskReadBuffer.OnBeginReadRecords and the "backfill" in CircularDiskReadBuffer.MoveToNextBuffer.

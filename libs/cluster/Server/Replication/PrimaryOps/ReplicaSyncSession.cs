@@ -122,7 +122,7 @@ namespace Garnet.cluster
 
                 gcs.Connect((int)storeWrapper.serverOptions.ReplicaSyncTimeout.TotalMilliseconds);
 
-                long index_size = -1;
+                var index_size = -1L;
                 var hlog_size = default(LogFileInfo);
                 var skipLocalMainStoreCheckpoint = false;
                 var retryCount = validateMetadataMaxRetryCount;
@@ -140,15 +140,25 @@ namespace Garnet.cluster
                     logger?.LogInformation("Sending main store checkpoint {version} {storeHlogToken} {storeIndexToken} to replica", localEntry.metadata.storeVersion, localEntry.metadata.storeHlogToken, localEntry.metadata.storeIndexToken);
 
                     // 1. send hlog file segments
-                    if (clusterProvider.serverOptions.EnableStorageTier && hlog_size.hybridLogFileEndAddress > 64)
+                    if (clusterProvider.serverOptions.EnableStorageTier && hlog_size.hybridLogFileEndAddress > PageHeader.Size)
+                    {
+                        //send hlog file segments and object file segments
                         await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_HLOG, hlog_size.hybridLogFileStartAddress, hlog_size.hybridLogFileEndAddress);
+                        if (hlog_size.hybridLogObjectSegmentCount > 0)
+                            await SendObjectFiles(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_HLOG_OBJ, hlog_size.hybridLogObjectSegmentCount);
+                    }
 
                     // 2.Send index file segments
-                    //var index_size = storeWrapper.store.GetIndexFileSize(localEntry.storeIndexToken);
                     await SendFileSegments(gcs, localEntry.metadata.storeIndexToken, CheckpointFileType.STORE_INDEX, 0, index_size);
 
-                    // 3. Send snapshot file segments
-                    await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT, 0, hlog_size.snapshotFileEndAddress);
+                    // 3. Send object store snapshot files
+                    if (hlog_size.snapshotFileEndAddress > PageHeader.Size)
+                    {
+                        //send snapshot file segments and object file segments
+                        await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT, 0, hlog_size.snapshotFileEndAddress);
+                        if (hlog_size.snapshotObjectSegmentCount > 0)
+                            await SendObjectFiles(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT_OBJ, hlog_size.snapshotObjectSegmentCount);
+                    }
 
                     // 4. Send delta log segments
                     var dlog_size = hlog_size.deltaLogTailAddress;
