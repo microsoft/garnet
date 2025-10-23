@@ -123,16 +123,10 @@ namespace Garnet.test
             ClassicAssert.IsFalse(db.StringGetBit(key, 8999));
             ClassicAssert.IsTrue(db.StringGetBit(key, 9999));
 
-            try
-            {
-                db.Execute("SETBIT", key, "-1", "1");
-                Assert.Fail("Should be unreachable, arguments are incorrect");
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
-                                       ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("SETBIT", key, "-1", "1"),
+                "Should be unreachable, arguments are incorrect");
+            ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                   ex.Message);
         }
 
         [Test, Order(2)]
@@ -148,16 +142,9 @@ namespace Garnet.test
                 ClassicAssert.IsFalse(db.StringGetBit(key, i));
             }
 
-            try
-            {
-                db.Execute("GETBIT", key, "-1");
-                Assert.Fail("Should be unreachable, arguments are incorrect");
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
-                                       ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("GETBIT", key, "-1"));
+            ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                   ex.Message);
         }
 
         [Test, Order(3)]
@@ -2189,15 +2176,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var args = new List<object> { "INVALID_OPTION", "a", "b", "c" };
-            try
-            {
-                db.Execute("BITOP", args);
-                Assert.Fail("Should be unreachable, arguments are incorrect");
-            }
-            catch (Exception ex)
-            {
-                ClassicAssert.AreEqual("ERR syntax error", ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("BITOP", args),
+                "Should be unreachable, arguments are incorrect");
+            ClassicAssert.AreEqual("ERR syntax error", ex.Message);
         }
 
         [Test, Order(37)]
@@ -2212,15 +2193,9 @@ namespace Garnet.test
             for (var i = 0; i < 128; i++)
                 args.Add(i.ToString());
 
-            try
-            {
-                db.Execute("BITOP", args);
-                Assert.Fail("Should be unreachable, too many arguments");
-            }
-            catch (Exception ex)
-            {
-                ClassicAssert.AreEqual("ERR Bitop source key limit (64) exceeded", ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("BITOP", args),
+                "Should be unreachable, too many arguments");
+            ClassicAssert.AreEqual("ERR Bitop source key limit (64) exceeded", ex.Message);
         }
 
         [Test, Order(38)]
@@ -2374,119 +2349,59 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var key = "BitmapBitFieldInvalidOptionsTest";
 
-            try
-            {
-                db.Execute(testCmd.ToString(), key, "GET");
-                Assert.Fail("Should be unreachable, arguments are incorrect");
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
-                                       ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "GET"),
+                "Should be unreachable, arguments are incorrect");
+            ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                   ex.Message);
 
-            try
-            {
-                db.Execute(testCmd.ToString(), key, "GET", "u64", "0");
-                Assert.Fail("Should be unreachable, arguments are incorrect");
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
-                                       ex.Message);
-            }
+            ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "GET", "u64", "0"),
+                "Should be unreachable, arguments are incorrect");
+            ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                   ex.Message);
 
-            try
-            {
-                db.Execute(testCmd.ToString(), key, "GET", "i-1", "0");
-                Assert.Fail("Should be unreachable, arguments are incorrect");
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
-                                       ex.Message);
-            }
+            ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "GET", "i-1", "0"),
+                "Should be unreachable, arguments are incorrect");
+            ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                   ex.Message);
 
-            try
-            {
-                db.Execute(testCmd.ToString(), key, "GET", "u8", @"""");
-                Assert.Fail("Should be unreachable, arguments are incorrect");
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
-                                       ex.Message);
-            }
+            ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "GET", "u8", @""""),
+                "Should be unreachable, arguments are incorrect");
+            ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                   ex.Message);
 
-            try
-            {
-                db.Execute(testCmd.ToString(), key, "GET", "i16", "#");
-                Assert.Fail("Should be unreachable, arguments are incorrect");
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
-                                       ex.Message);
-            }
+            ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "GET", "i16", "#"),
+                "Should be unreachable, arguments are incorrect");
+            ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                   ex.Message);
 
-            try
-            {
-                db.Execute(testCmd.ToString(), key, "GET", "32", "1");
-                Assert.Fail("Should be unreachable, arguments are incorrect");
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
-                                       ex.Message);
-            }
+            ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "GET", "32", "1"),
+                "Should be unreachable, arguments are incorrect");
+            ClassicAssert.AreEqual("ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is",
+                                   ex.Message);
 
-            try
-            {
-                db.Execute(testCmd.ToString(), key, "GET", "u32", @"-1");
-                Assert.Fail("Should be unreachable, arguments are incorrect");
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
-                                       ex.Message);
-            }
+            ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "GET", "u32", @"-1"),
+                "Should be unreachable, arguments are incorrect");
+            ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
+                                   ex.Message);
 
             if (testCmd == RespCommand.BITFIELD)
             {
-                try
-                {
-                    db.Execute(testCmd.ToString(), key, "SET", "i32", "0");
-                    Assert.Fail("Should be unreachable, arguments are incorrect");
-                }
-                catch (RedisServerException ex)
-                {
-                    ClassicAssert.AreEqual("ERR value is not an integer or out of range.",
-                                           ex.Message);
-                }
+                ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "SET", "i32", "0"),
+                    "Should be unreachable, arguments are incorrect");
+                ClassicAssert.AreEqual("ERR value is not an integer or out of range.",
+                                       ex.Message);
 
-                try
-                {
-                    db.Execute(testCmd.ToString(), key, "OVERFLOW", "NONE");
-                    Assert.Fail("Should be unreachable, arguments are incorrect");
-                }
-                catch (RedisServerException ex)
-                {
-                    ClassicAssert.AreEqual("ERR Invalid OVERFLOW type specified",
-                                           ex.Message);
-                }
+                ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "OVERFLOW", "NONE"),
+                    "Should be unreachable, arguments are incorrect");
+                ClassicAssert.AreEqual("ERR Invalid OVERFLOW type specified",
+                                       ex.Message);
             }
             else
             {
-                try
-                {
-                    db.Execute(testCmd.ToString(), key, "SET", "i64", "0");
-                    Assert.Fail("Should be unreachable, arguments are incorrect");
-                }
-                catch (RedisServerException ex)
-                {
-                    ClassicAssert.AreEqual("ERR syntax error",
-                                           ex.Message);
-                }
+                ex = Assert.Throws<RedisServerException>(() => db.Execute(testCmd.ToString(), key, "SET", "i64", "0"),
+                    "Should be unreachable, arguments are incorrect");
+                ClassicAssert.AreEqual("ERR syntax error",
+                                       ex.Message);
             }
         }
     }
