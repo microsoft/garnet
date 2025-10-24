@@ -8,7 +8,7 @@ title: Vector Sets
 
 Garnet has partial support for Vector Sets, implemented on top of the [DiskANN project](TODO).
 
-This data is very strange when compared to others Garnet supports.
+This data type is very strange when compared to others Garnet supports.
 
 # Design
 
