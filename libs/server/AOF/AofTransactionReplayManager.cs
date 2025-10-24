@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
-using System.Threading;
 using System.Runtime.CompilerServices;
 using Tsavorite.core;
 
@@ -76,41 +75,6 @@ namespace Garnet.server
             }
         }
 
-        internal class EventBarrier(int participantCount)
-        {
-            int count = participantCount;
-            readonly ManualResetEventSlim eventSlim = new(false);
-
-            /// <summary>
-            /// Decrements participant count but does not set signal
-            /// </summary>
-            /// <returns>True if participant count reaches zero otherwise false</returns>
-            /// <exception cref="Exception"></exception>
-            public bool SignalAndWait()
-            {
-                var newValue = Interlocked.Decrement(ref count);
-                if (newValue > 0)
-                {
-                    Wait();
-                    return false;
-                }
-                else if (newValue == 0)
-                    return true;
-                else
-                    throw new Exception("Invalid count value < 0");
-            }
-
-            /// <summary>
-            /// Set underlying event
-            /// </summary>
-            public void Set() => eventSlim.Set();
-
-            /// <summary>
-            /// Wait for signal to be set
-            /// </summary>
-            public void Wait() => eventSlim.Wait();
-        }
-
         /// <summary>
         /// Transaction group contains logAccessMap and list of operations associated with this Txn
         /// </summary>
@@ -151,15 +115,16 @@ namespace Garnet.server
             /// <param name="commitMarker"></param>
             public void AddToFuzzyRegionBuffer(TransactionGroup group, ReadOnlySpan<byte> commitMarker)
             {
-                // Add commit marker operation and enqueue transaction group
+                // Add commit marker operation
                 fuzzyRegionOps.Add(commitMarker.ToArray());
+                // Enqueue transaction group
                 txnGroupBuffer.Enqueue(group);
             }
         }
 
-        readonly AofReplayBuffer aofReplayBuffer;
+        readonly AofTransactionReplayManager aofTxnReplayManager;
 
-        public class AofReplayBuffer(AofProcessor aofProcessor, ILogger logger = null)
+        public class AofTransactionReplayManager(AofProcessor aofProcessor, ILogger logger = null)
         {
             readonly AofProcessor aofProcessor = aofProcessor;
             readonly SublogReplayBuffer[] sublogReplayBuffers = InitializeSublogBuffers(aofProcessor.storeWrapper.serverOptions.AofSublogCount);

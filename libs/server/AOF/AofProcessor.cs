@@ -99,7 +99,7 @@ namespace Garnet.server
             handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
             bufferPtr = (byte*)handle.AddrOfPinnedObject();
 
-            aofReplayBuffer = new AofReplayBuffer(this, logger);
+            aofTxnReplayManager = new AofTransactionReplayManager(this, logger);
             this.logger = logger;
         }
 
@@ -219,7 +219,7 @@ namespace Garnet.server
             isCheckpointStart = false;
 
             // Handle transactions
-            if (aofReplayBuffer.AddOrReplayTransactionOperation(sublogIdx, ptr, length, asReplica))
+            if (aofTxnReplayManager.AddOrReplayTransactionOperation(sublogIdx, ptr, length, asReplica))
                 return;
 
             switch (header.opType)
@@ -231,8 +231,8 @@ namespace Garnet.server
                     {
                         if (inFuzzyRegion)
                         {
-                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", aofReplayBuffer.FuzzyRegionBufferCount(sublogIdx));
-                            aofReplayBuffer.ClearFuzzyRegionBuffer(sublogIdx);
+                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", aofTxnReplayManager.FuzzyRegionBufferCount(sublogIdx));
+                            aofTxnReplayManager.ClearFuzzyRegionBuffer(sublogIdx);
                         }
                         inFuzzyRegion = true;
                     }
@@ -263,8 +263,8 @@ namespace Garnet.server
                                 _ = storeWrapper.TakeCheckpoint(false, logger);
 
                             // Process buffered records
-                            aofReplayBuffer.ProcessFuzzyRegionOperations(sublogIdx, storeWrapper.store.CurrentVersion, asReplica);
-                            aofReplayBuffer.ClearFuzzyRegionBuffer(sublogIdx);
+                            aofTxnReplayManager.ProcessFuzzyRegionOperations(sublogIdx, storeWrapper.store.CurrentVersion, asReplica);
+                            aofTxnReplayManager.ClearFuzzyRegionBuffer(sublogIdx);
                         }
                     }
                     break;
@@ -341,7 +341,7 @@ namespace Garnet.server
                     break;
                 case AofEntryType.TxnCommit:
                     updateKeyTimestamp = false;
-                    aofReplayBuffer.ProcessFuzzyRegionTransactionGroup(sublogIdx, entryPtr, asReplica);
+                    aofTxnReplayManager.ProcessFuzzyRegionTransactionGroup(sublogIdx, entryPtr, asReplica);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
@@ -528,7 +528,7 @@ namespace Garnet.server
             {
                 if (IsNewVersionRecord(header))
                 {
-                    aofReplayBuffer.AddFuzzyRegionOperation(sublogIdx, new ReadOnlySpan<byte>(entryPtr, length));
+                    aofTxnReplayManager.AddFuzzyRegionOperation(sublogIdx, new ReadOnlySpan<byte>(entryPtr, length));
                     return true;
                 }
                 return false;
