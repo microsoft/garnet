@@ -1,80 +1,11 @@
 using System;
-using System.Buffers;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Garnet.server
 {
-
-    /// <summary>
-    /// For passing multiple Span-like values at once with well defined layout and offset on the native side.
-    /// 
-    /// Struct is 16 bytes for alignment purposes, although only 13 are used at maximum.
-    /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = 16)]
-    public readonly struct PointerLengthPair
-    {
-        /// <summary>
-        /// Pointer to a memory chunk.
-        /// </summary>
-        [FieldOffset(0)]
-        public readonly nint Pointer;
-
-        /// <summary>
-        /// Length of a memory chunk, in whatever units were intended.
-        /// </summary>
-        [FieldOffset(8)]
-        public readonly uint Length;
-
-        /// <summary>
-        /// Size of an individual unit in the <see cref="PointerLengthPair"/>.
-        /// For example, if we're storing bytes this is 1, floats this is 4, doubles this is 8, etc.
-        /// </summary>
-        [FieldOffset(12)]
-        public readonly byte UnitSizeBytes;
-
-        private unsafe PointerLengthPair(void* pointer, uint length, byte unitSize)
-        {
-            Pointer = (nint)pointer;
-            Length = length;
-        }
-
-        /// <summary>
-        /// Create a <see cref="PointerLengthPair"/> from a byte Span.
-        /// </summary>
-        public static unsafe PointerLengthPair From(ReadOnlySpan<byte> data)
-        => new(Unsafe.AsPointer(ref MemoryMarshal.GetReference(data)), (uint)data.Length, sizeof(byte));
-
-        /// <summary>
-        /// Create a <see cref="PointerLengthPair"/> from a float Span.
-        /// </summary>
-        public static unsafe PointerLengthPair From(ReadOnlySpan<float> data)
-        => new(Unsafe.AsPointer(ref MemoryMarshal.GetReference(data)), (uint)data.Length, sizeof(float));
-
-        /// <summary>
-        /// Convert this <see cref="PointerLengthPair"/> into a Span of bytes.
-        /// </summary>
-        public readonly unsafe Span<byte> AsByteSpan()
-        {
-            Debug.Assert(UnitSizeBytes == sizeof(byte), "Incompatible conversion");
-            return MemoryMarshal.CreateSpan(ref Unsafe.AsRef<byte>((void*)Pointer), (int)Length);
-        }
-
-        /// <summary>
-        /// Convert this <see cref="PointerLengthPair"/> into a Span of floats.
-        /// </summary>
-        public readonly unsafe Span<float> AsFloatSpan()
-        {
-            Debug.Assert(UnitSizeBytes == sizeof(float), "Incompatible conversion");
-            return MemoryMarshal.CreateSpan(ref Unsafe.AsRef<float>((void*)Pointer), (int)Length);
-        }
-    }
-
     internal sealed unsafe class DiskANNService
     {
-        private static readonly bool UseMultiInsertCallback = false;
-
         // Term types.
         internal const byte FullVector = 0;
         private const byte NeighborList = 1;
@@ -150,87 +81,6 @@ namespace Garnet.server
             var id_len = id.Length;
 
             return NativeDiskANNMethods.remove(context, index, (nint)id_data, (nuint)id_len) == 1;
-        }
-
-        public void MultiInsert(ulong context, nint index, ReadOnlySpan<PointerLengthPair> ids, VectorValueType vectorType, ReadOnlySpan<PointerLengthPair> vectors, ReadOnlySpan<PointerLengthPair> attributes, Span<bool> insertSuccess)
-        {
-            if (UseMultiInsertCallback)
-            {
-                var ids_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(ids));
-                var ids_len = (nuint)ids.Length;
-
-                nint vectors_data;
-                nuint vectors_len;
-
-                float[] rentedTempData = null;
-                try
-                {
-                    Span<float> tempData = vectorType == VectorValueType.XB8 ? stackalloc float[128] : default;
-                    Span<PointerLengthPair> temp = vectorType == VectorValueType.XB8 ? stackalloc PointerLengthPair[vectors.Length] : default;
-                    if (vectorType == VectorValueType.FP32)
-                    {
-                        vectors_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(vectors));
-                        vectors_len = (nuint)vectors.Length;
-                    }
-                    else
-                    {
-                        var vectorLength = vectors[0].Length;
-
-                        // TODO: Eventually DiskANN will just take this directly, for now map to floats
-                        var neededFloatSpace = (int)(ids.Length * vectorLength);
-                        if (tempData.Length < neededFloatSpace)
-                        {
-                            rentedTempData = ArrayPool<float>.Shared.Rent(neededFloatSpace);
-                            tempData = rentedTempData;
-                        }
-
-                        tempData = tempData[..neededFloatSpace];
-                        var remainingTempData = tempData;
-
-                        for (var i = 0; i < vectors.Length; i++)
-                        {
-                            var asBytes = vectors[i].AsByteSpan();
-                            Debug.Assert(asBytes.Length == vectorLength, "All vectors should have same length for insertion");
-
-                            var floatEquiv = remainingTempData[..asBytes.Length];
-                            for (var j = 0; j < asBytes.Length; j++)
-                            {
-                                floatEquiv[j] = asBytes[j];
-                            }
-
-                            temp[i] = PointerLengthPair.From(floatEquiv);
-
-                            remainingTempData = remainingTempData[asBytes.Length..];
-                        }
-
-                        vectors_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(temp));
-                        vectors_len = (nuint)temp.Length;
-                    }
-
-                    var attributes_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(attributes));
-                    var attributes_len = (nuint)attributes.Length;
-
-                    // These are treated as bytes on the Rust side
-                    var insert_success_data = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(insertSuccess));
-                    var insert_success_len = (nuint)insertSuccess.Length;
-
-                    NativeDiskANNMethods.multi_insert(context, index, ids_data, ids_len, vectors_data, vectors_len, attributes_data, attributes_len, insert_success_data, insert_success_len);
-                }
-                finally
-                {
-                    if (rentedTempData != null)
-                    {
-                        ArrayPool<float>.Shared.Return(rentedTempData);
-                    }
-                }
-            }
-            else
-            {
-                for (var i = 0; i < ids.Length; i++)
-                {
-                    insertSuccess[i] = Insert(context, index, ids[i].AsByteSpan(), vectorType, vectors[i].AsByteSpan(), attributes[i].AsByteSpan());
-                }
-            }
         }
 
         public int SearchVector(
