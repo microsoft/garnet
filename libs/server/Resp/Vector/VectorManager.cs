@@ -542,6 +542,12 @@ namespace Garnet.server
             {
                 contextMetadata = MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0];
             }
+
+            // Resume any cleanups we didn't complete before recovery
+            if (contextMetadata.CleaningUp != 0)
+            {
+                _ = cleanupTaskChannel.Writer.TryWrite(null);
+            }
         }
 
         /// <inheritdoc/>
