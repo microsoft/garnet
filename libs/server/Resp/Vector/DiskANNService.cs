@@ -249,20 +249,6 @@ namespace Garnet.server
         );
 
         [LibraryImport(DISKANN_GARNET)]
-        public static partial void multi_insert(
-            ulong context,
-            nint index,
-            nint ids_data,
-            nuint ids_len,
-            nint vectors_data,
-            nuint vectors_len,
-            nint attributes_data,
-            nuint attributes_len,
-            nint insert_success_data,
-            nuint insert_success_len
-        );
-
-        [LibraryImport(DISKANN_GARNET)]
         public static partial byte set_attribute(
             ulong context,
             nint index,
@@ -319,14 +305,6 @@ namespace Garnet.server
             nint output_distances,
             nuint output_distances_len,
             nint new_continuation
-        );
-
-        [LibraryImport(DISKANN_GARNET)]
-        public static partial byte delete(
-            ulong context,
-            nint index,
-            nint vector_data,
-            nuint vector_data_len
         );
 
         [LibraryImport(DISKANN_GARNET)]
