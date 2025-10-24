@@ -656,8 +656,8 @@
     ]
   },
   {
-    "Command": "GETWITHETAG",
-    "Name": "GETWITHETAG",
+    "Command": "GETETAG",
+    "Name": "GETETAG",
     "IsInternal": false,
     "Arity": 2,
     "Flags": "NONE",

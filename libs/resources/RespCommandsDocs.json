@@ -3627,6 +3627,22 @@
     ]
   },
   {
+    "Command": "GETETAG",
+    "Name": "GETETAG",
+    "Summary": "Gets the ETag for a key",
+    "Group": "String",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
     "Command": "GETEX",
     "Name": "GETEX",
     "Summary": "Returns the string value of a key after setting its expiration time.",

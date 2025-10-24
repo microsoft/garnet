@@ -6666,7 +6666,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoZRevRangeByLexAsync(GarnetClient client)
             {
-                string[] val = await client.ExecuteForStringArrayResultAsync("ZREVRANGEBYLEX", ["key", "10", "20"]);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZREVRANGEBYLEX", ["key", "[abc", "[def"]);
                 ClassicAssert.AreEqual(0, val.Length);
             }
         }
@@ -6696,13 +6696,13 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoZRangeByLexAsync(GarnetClient client)
             {
-                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "10", "20"]);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "[abc", "[def"]);
                 ClassicAssert.AreEqual(0, val.Length);
             }
 
             static async Task DoZRangeByLexLimitAsync(GarnetClient client)
             {
-                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "10", "20", "LIMIT", "2", "3"]);
+                string[] val = await client.ExecuteForStringArrayResultAsync("ZRANGEBYLEX", ["key", "[abc", "[def", "LIMIT", "2", "3"]);
                 ClassicAssert.AreEqual(0, val.Length);
             }
         }
@@ -6819,7 +6819,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoZRemRangeByLexAsync(GarnetClient client)
             {
-                long val = await client.ExecuteForLongResultAsync("ZREMRANGEBYLEX", ["foo", "abc", "def"]);
+                long val = await client.ExecuteForLongResultAsync("ZREMRANGEBYLEX", ["foo", "[abc", "[def"]);
                 ClassicAssert.AreEqual(0, val);
             }
         }
@@ -6864,7 +6864,7 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoZLexCountAsync(GarnetClient client)
             {
-                long val = await client.ExecuteForLongResultAsync("ZLEXCOUNT", ["foo", "abc", "def"]);
+                long val = await client.ExecuteForLongResultAsync("ZLEXCOUNT", ["foo", "[abc", "[def"]);
                 ClassicAssert.AreEqual(0, val);
             }
         }
