@@ -291,6 +291,7 @@ namespace Tsavorite.core
                     ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;
                     if (ok && sessionFunctions.InitialUpdater(ref key, ref input, ref recordValue, ref output, ref rmwInfo, ref srcRecordInfo))
                     {
+                        sessionFunctions.PostInitialUpdater(ref key, ref input, ref recordValue, ref output, ref rmwInfo, ref srcRecordInfo);
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.recordInfo = srcRecordInfo;
