@@ -34,13 +34,13 @@ The index key (represented by the [`Index`](TODO) struct) contains the following
  - `ulong IndexPtr` - a pointer to the DiskANN data structure, note this may be _dangling_ after [recovery](#recovery) or [replication](#replication)
  - `uint Dimensions` - the expected dimension of vectors in commands targetting the Vector Set, this is inferred based on the `VADD` that creates the Vector Set
  - `uint ReduceDims` - if a Vector Set was created with the `REDUCE` option that value, otherwise zero
-   * > TODO: Today this ignored except for validation purposes, eventually DiskANN will use it.
+   * > [!NOTE]
+     > Today this ignored except for validation purposes, eventually DiskANN will use it.
  - `uint NumLinks` - the `M` used to create the Vector Set, or the default value of 16 if not specified
  - `uint BuildExplorationFactor` - the `EF` used to create the Vector Set, or the default value of 200 if not specified
  - `VectorQuantType QuantType` - the quantizier specified at creation time, or the default value of `Q8` if not specified
    * > [!NOTE]
-     > We have an extension here, `XPREQ8` which is not 
-   from Redis.
+     > We have an extension here, `XPREQ8` which is not from Redis.
      > This is a quantizier for data sets which have already been 8-bit quantized or are otherwise naturally small byte vectors, and is extremely optimized for reducing reads during queries.
      > It forbids the `REDUCE` option and requires 4-byte element ids.
    * > [!IMPORTANT]
@@ -227,14 +227,14 @@ To fix that, synthetic writes against related keys are made after an insert or r
 > one of the other reserved namespaces.
 
 > [!NOTE]
-> These syntetic writes might appear to double write volume, but that is not the case.  Actual inserts and deletes have extreme write applification (that is, each cause DiskANN to perform many writes against the Main Store), whereas the synthetic writes cause a single (no-op) modification to the Main Store plus an AOF entry.
+> These syntetic writes might appear to double write volume, but that is not the case.  Actual inserts and deletes have extreme write amplification (that is, each cause DiskANN to perform many writes against the Main Store), whereas the synthetic writes cause a single (no-op) modification to the Main Store plus an AOF entry.
 
 > [!NOTE]
 > The replication key is the same for all operations against the same Vector Set, this could be sharded which may improve performance.
 
 ## On Replicas
 
-The synthetic writes on primary are intercepted on replicas and redirected to `VectorManager.HandleVectorSetAddReplication` and `VectorManager.HandleVectorSetRemoveReplication`, rather than being handled by directly by `AOFProcessor`.
+The synthetic writes on primary are intercepted on replicas and redirected to `VectorManager.HandleVectorSetAddReplication` and `VectorManager.HandleVectorSetRemoveReplication`, rather than being handled directly by `AOFProcessor`.
 
 For performance reasons, replicated `VADD`s are applied across many threads instead of serially.  This introduces a new source of non-determinism, since `VADD`s will occur in a different order than on the primary, but we believe this acceptable as Vector Sets are inherently non-deterministic.  While not _exactly_ the same Redis also permits a degree of non-determinism with its `CAS` option for `VADD`, so we're not diverging an incredible amount here.
 
@@ -252,7 +252,7 @@ To clean up the remaining data we record the deleted index context value in `Con
 > If we wanted to explore better options, we'd need to build something that can drop whole namespaces at once in Tsavorite.
 
 > [!IMPORTANT]
-> Today because we only have ~30 available Vector Set contexts, it is quite possible likely that deleting a Vector Set and then immediately creating a new one will fail if you're near the limit.
+> Today because we only have ~30 available Vector Set contexts, it is quite likely that deleting a Vector Set and then immediately creating a new one will fail if you're near the limit.
 >
 > This will be fixed once we have arbitrarily long namespaces in Store V2, and have updated `ContextMetadata` to track those.
 
@@ -266,7 +266,7 @@ During startup we read any old `ContextMetadata` out of the Main Store, cache it
 
 ## Vector Sets
 
-While reading out [`Index`](#indexes) before any performing a DiskANN function call, we check the stored `ProcessInstanceId` against the (randomly generated) one in our `VectorManager` instance.  If they do not match, we know that the DiskANN `IndexPtr` is dangling and we need to recreate the index.
+While reading out [`Index`](#indexes) before performing a DiskANN function call, we check the stored `ProcessInstanceId` against the (randomly generated) one in our `VectorManager` instance.  If they do not match, we know that the DiskANN `IndexPtr` is dangling and we need to recreate the index.
 
 To recreate, we simply acquire exclusive locks (in the same way we would for `VADD` or `DEL`) and invoke `create_index` again.  From DiskANN's perspective, there's no difference between creating a new empty index and recreating an old one which has existing data.
 
@@ -358,7 +358,7 @@ Garnet calls into the following [DiskANN functions](TODO):
  - [ ] `ulong card(ulong context, nint index)`
 
  Some non-obvious subtleties:
-  - The number of requests _requested_ from `search_vector` and `search_element` is indicated by `output_distances_len`
+  - The number of results _requested_ from `search_vector` and `search_element` is indicated by `output_distances_len`
   - `output_distances_len` is the number of _floats_ in `output_distances`, not bytes
   - When inserting, if `vector_value_type == FP32` then `vector_len` is the number of _floats_ in `vector_data`, otherwise it is the number of bytes
   - `byte` returning functions are effectively returning booleans, `0 == false` and `1 == true`
