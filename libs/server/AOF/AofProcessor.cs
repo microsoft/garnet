@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using System.Linq;
 using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
@@ -27,7 +28,7 @@ namespace Garnet.server
     public sealed unsafe partial class AofProcessor
     {
         readonly StoreWrapper storeWrapper;
-        readonly RespServerSession respServerSession;
+        readonly RespServerSession[] respServerSessions;
 
         private readonly RawStringInput storeInput;
         private readonly ObjectInput objectStoreInput;
@@ -39,7 +40,11 @@ namespace Garnet.server
         /// <summary>
         /// Set ReadWriteSession on the cluster session (NOTE: used for replaying stored procedures only)
         /// </summary>
-        public void SetReadWriteSession() => respServerSession.clusterSession.SetReadWriteSession();
+        public void SetReadWriteSession()
+        {
+            foreach(var respServerSession in respServerSessions)
+                respServerSession.clusterSession.SetReadWriteSession();
+        }
 
         /// <summary>
         /// Session for main store
@@ -73,7 +78,15 @@ namespace Garnet.server
             var replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
 
             this.activeDbId = 0;
-            this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
+            this.respServerSessions = [ .. Enumerable.Range(0, storeWrapper.serverOptions.AofSublogCount).Select(
+                    _ => new RespServerSession(
+                        0,
+                        networkSender: null,
+                        storeWrapper: replayAofStoreWrapper,
+                        subscribeBroker: null,
+                        authenticator: null,
+                        enableScripts: false,
+                        clusterProvider: clusterProvider))];
 
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
@@ -96,11 +109,14 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            var databaseSessionsSnapshot = respServerSession.GetDatabaseSessionsSnapshot();
-            foreach (var dbSession in databaseSessionsSnapshot)
+            foreach (var respServerSession in respServerSessions)
             {
-                dbSession.StorageSession.basicContext.Session?.Dispose();
-                dbSession.StorageSession.objectStoreBasicContext.Session?.Dispose();
+                var databaseSessionsSnapshot = respServerSession.GetDatabaseSessionsSnapshot();
+                foreach (var dbSession in databaseSessionsSnapshot)
+                {
+                    dbSession.StorageSession.basicContext.Session?.Dispose();
+                    dbSession.StorageSession.objectStoreBasicContext.Session?.Dispose();
+                }
             }
 
             handle.Free();
@@ -169,7 +185,8 @@ namespace Garnet.server
             finally
             {
                 output.MemoryOwner?.Dispose();
-                respServerSession.Dispose();
+                foreach(var respServerSession in respServerSessions)
+                    respServerSession.Dispose();
             }
 
             return AofAddress.Create(storeWrapper.serverOptions.AofSublogCount, -1);
@@ -347,7 +364,6 @@ namespace Garnet.server
 
             if (storeWrapper.serverOptions.EnableAOF && shardedLog && updateKeyTimestamp)
             {
-                // FIXME: update timestamp protocol
                 var extendedHeader = *(AofExtendedHeader*)entryPtr;
                 storeWrapper.appendOnlyFile.replayedTimestampProgress.UpdateKeyTimestamp(sublogIdx, ref key, extendedHeader.timestamp);
             }
@@ -357,22 +373,25 @@ namespace Garnet.server
 
         private void SwitchActiveDatabaseContext(GarnetDatabase db, bool initialSetup = false)
         {
-            // Switch the session's context to match the specified database, if necessary
-            if (respServerSession.activeDbId != db.Id)
+            foreach (var respServerSession in respServerSessions)
             {
-                var switchDbSuccessful = respServerSession.TrySwitchActiveDatabaseSession(db.Id);
-                Debug.Assert(switchDbSuccessful);
-            }
+                // Switch the session's context to match the specified database, if necessary
+                if (respServerSession.activeDbId != db.Id)
+                {
+                    var switchDbSuccessful = respServerSession.TrySwitchActiveDatabaseSession(db.Id);
+                    Debug.Assert(switchDbSuccessful);
+                }
 
-            // Switch the storage context to match the session, if necessary
-            if (this.activeDbId != db.Id || initialSetup)
-            {
-                var session = respServerSession.storageSession.basicContext.Session;
-                basicContext = session.BasicContext;
-                var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
-                if (objectStoreSession is not null)
-                    objectStoreBasicContext = objectStoreSession.BasicContext;
-                this.activeDbId = db.Id;
+                // Switch the storage context to match the session, if necessary
+                if (this.activeDbId != db.Id || initialSetup)
+                {
+                    var session = respServerSession.storageSession.basicContext.Session;
+                    basicContext = session.BasicContext;
+                    var objectStoreSession = respServerSession.storageSession.objectStoreBasicContext.Session;
+                    if (objectStoreSession is not null)
+                        objectStoreBasicContext = objectStoreSession.BasicContext;
+                    this.activeDbId = db.Id;
+                }
             }
         }
 
