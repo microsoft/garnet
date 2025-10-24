@@ -173,7 +173,7 @@ Concretely, there are 3 sorts of locks involved:
 
 ## Tsavorite Locks
 
-Whenver we read or write a key/value pair in the main store, we acquire locks in Tsavorite.  Importantly, we cannot start a new Tsavorite operation while still holding any lock - it is for this reason we must copy the index out before each operation.
+Whenver we read or write a key/value pair in the main store, we acquire locks in Tsavorite.  Importantly, we cannot start a new Tsavorite operation while still holding any lock - we must copy the index out before each operation so Garnet can use the read/write/delete callbacks.
 
 > [!NOTE]
 > Based on profiling, Tsavorite shared locks are a significant source of contention.  Even though reads will not block each other we still pay a cache coherency tax.  Accordingly, reducing the number of Tsavorite operations (even reads) can lead to significant performance gains.
@@ -183,13 +183,13 @@ Whenver we read or write a key/value pair in the main store, we acquire locks in
 
 ## Vector Set Sharded Locks
 
-As noted above, to prevent `DEL` from clobering in use Vector Sets and concurrent `VADD`s from calling `create_index` multiple times we have to hold locks based on the vector set key.  As every Vector Set operations starts by taking these locks, we have sharded them into `RoundUpToPowerOf2(Environment.ProcessorCount)` separate lock.  To derive many related keys from a single key, we mangle the low bits of a key's hash value - this is implemented in `VectorManager.PrepareReadLockHash`.
+As noted above, to prevent `DEL` from clobering in use Vector Sets and concurrent `VADD`s from calling `create_index` multiple times we have to hold locks based on the vector set key.  As every Vector Set operations starts by taking these locks, we have sharded them into `RoundUpToPowerOf2(Environment.ProcessorCount)` separate locks.  To derive many related keys from a single key, we mangle the low bits of a key's hash value - this is implemented in `VectorManager.PrepareReadLockHash`.
 
-For operations we remain reads, we only acquire a single shared lock (based on the current processor number) to prevent destructive operations.
+For operations which remain reads, we only acquire a single shared lock (based on the current processor number) to prevent destructive operations.
 
-For operations which are always writes (like `DEL`) we acquire all shards in exclusively.
+For operations which are always writes (like `DEL`) we acquire all sharded locks in exclusive mode.
 
-For operations which might be either (like `VADD`) we first acquire the usual single shared lock, then sweep the other shards (in order) acquiring them exclusively.  When we would normally acquire the shared lock exclusively in that sweep, we instead upgrade.  This logic is in `VectorManager.TryAcquireExclusiveLocks`.
+For operations which might be either (like `VADD`) we first acquire the usual single sharded lock (in shard ode), then sweep the other shards (in order) acquiring them exclusively.  When we would normally acquire the shared lock exclusively in that sweep, we instead upgrade from shared to exclusive modes.  This logic is in `VectorManager.TryAcquireExclusiveLocks`.
 
 > [!IMPORTANT]
 > Today the locks are manual locks against the Object Store (but using the Main Store's hash functions).
