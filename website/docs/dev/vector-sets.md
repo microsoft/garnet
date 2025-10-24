@@ -277,3 +277,96 @@ This means we recreate indexes lazily after recovery.  Consequently the _first_ 
 >
 > This comparison is highly predictable, but we could try and remove the comparison (with caching, as mentioned for `Index` above).
 > We could also make it cheaper by using a random `ulong` instead, but would need to do some math to convince ourselves collisions aren't possible in realistic scenarios.
+
+# DiskANN Integration
+
+Almost all of how Vector Sets actually function is handled by DiskANN.  Garnet simply embeds it, translates between RESP commands and DiskANN functions, and manages storage.
+
+In order for DiskANN to access and store data in Garnet, we provide a set of callbacks.  All callbacks are `[UnmanagedCallersOnly]` and converted to function pointers before they are passed to Garnet.
+
+All callbacks take a `ulong context` parameter which identifies the Vector Set involved (the high 61-bits of the context) and the associated namespace (the low 3-bits of the context).  On the Garnet side, the whole `context` is effectively a namespace, but from DiskANN's perspective the top 61-bits are an opqaue identifier.
+
+> [!IMPORTANT]
+> As noted elsewhere, we only have a byte's worth of namespaces today - so although `context` could handle quintillions of Vector Sets, today we're limited to just 31.
+>
+> This restriction will go away with Store V2, but we expect "lower" Vector Sets to out perform "higher" ones due to the need for copies at longer namespaces.
+
+## Read Callback
+
+The most complicated of our callbacks, the signature is:
+```csharp
+void ReadCallbackUnmanaged(ulong context, uint numKeys, nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext)
+```
+
+`context` identifies which Vector Set is being operated on AND the associated namespace, `numKeys` tells us how many keys have been encoded into `keysData`, `keysData` and `keysLength` define a `Span<byte>` of length prefixied keys, `dataCallback` is a `delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>` (more details below) used to push found keys back into DiskANN, and `dataCallbackContext` is passed back unaltered to `dataCallback`.
+
+In the `Span<byte>` defined by `keysData` and `keysLength` the keys are length prefixed with a 4-byte little endian `int`.  This is necessary to support variable length element ids, but also gives us some scratch space to store a namespace when we convert these to `SpanByte`s.  This mangling is done as part of the `IReadArgBatch` implementation we use to read keys from Tsavorite.
+
+> [!NOTE]
+> Once variable sized namespaces are supported we'll have to handle the case where the namespace can't fit in 4 bytes.  However, we expect that to be rare (4-bytes would give us ~53,000,000 Vector Sets) and the performacne benefits of _not_ copying during querying are very large.
+
+As we find keys, we invoke `dataCallback(index, dataCallbackContext, keyPointer, keyLength)`.  If a key is not found, it's index is simply skipped.  The benefits of this is that we don't copy data out of the Tsavorite log as part of reads, DiskANN is able to do distance calculations and traversal over in-place data.
+
+> [!NOTE]
+> Each invocation of `dataCallback` is a managed -&gt; native transition, which can add up very quickly.  We've reduced that as much as possible with function points and `SuppressGCTransition`, but that comes with risks.
+>
+> In particular if DiskANN raises an error or blocks in the `dataCallback` expect very bad things to happen, up to the runtime corrupting itself.  Great care must be taken to keep the DiskANN side of this call cheap and reliable.
+
+> [!IMPORTANT]
+> Tsavorite has been extended with a `ContextReadWithPrefetch` method to accomidate this pattern, which also employs prefetching when we have batches of keys to lookup.  This needs to be upstreamed before Vector Set work lands.
+>
+> Additionally, some experimentation to figure out good prefetch sizes (and if [AMAC](https://dl.acm.org/doi/10.14778/2856318.2856321) is useful) based on hardware is merited.  Right now we've chosen 12 based on testing with some 96-core Intel machines, but that is unlikely to be correct in all interesting circumstances.
+
+## Write Callback
+
+A relatively simple callback, the signature is:
+```csharp
+byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
+```
+
+`context` identifies which Vector Set is being operated on AND the associated namespace,  `keyData` and `keyLength` represent a `Span<byte>` of the key to write, and `writeData` and `writeLength` represent a `Span<byte>` of the value to write.
+
+DiskANN guarantees an extra 4-bytes BEFORE `keyData` that we can safely modify.  This is used to avoid copying the key value when we add a namespace to the `SpanByte` before invoking Tsavorite's `Upsert`.
+
+This callback returns 1 if successful, and 0 otherwise.
+
+## Delete Callback
+
+Another simple callback, the signarute is:
+```csharp
+byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
+```
+
+`context` identifies which Vector Set is being operated on AND the associated namespace,  and `keyData` and `keyLength` represent a `Span<byte>` of the key to delete.
+
+As with the write callback, DiskANN guarantees an extra 4-bytes BEFORE `keyData` that we use to store a namespace, and thus avoid copying the key value before invoking Tsavorite's `Delete`.
+
+This callback returns 1 if the key was found and removed, and 0 otherwise.
+
+## DiskANN Functions
+
+Garnet calls into the following [DiskANN functions](TODO):
+
+ - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback)`
+ - [x] `void drop_index(ulong context, nint index)`
+ - [x] `byte insert(ulong context, nint index, nint id_data, nuint id_len, VectorValueType vector_value_type, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
+ - [x] `byte remove(ulong context, nint index, nint id_data, nuint id_len)`
+ - [ ] `byte set_attribute(ulong context, nint index, nint id_data, nuint id_len, nint attribute_data, nuint attribute_len)`
+ - [x] `int search_vector(ulong context, nint index, VectorValueType vector_value_type, nint vector_data, nuint vector_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
+ - [x] `int search_element(ulong context, nint index, nint id_data, nuint id_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
+ - [ ] `int continue_search(ulong context, nint index, nint continuation, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint new_continuation)`
+ - [ ] `ulong card(ulong context, nint index)`
+
+ Some non-obvious subtleties:
+  - The number of requests _requested_ from `search_vector` and `search_element` is indicated by `output_distances_len`
+  - `output_distances_len` is the number of _floats_ in `output_distances`, not bytes
+  - When inserting, if `vector_value_type == FP32` then `vector_len` is the number of _floats_ in `vector_data`, otherwise it is the number of bytes
+  - `byte` returning functions are effectively returning booleans, `0 == false` and `1 == true`
+  - `index` is always a pointer created by DiskANN and returned from `create_index`
+  - `context` is always the `Context` value created by Garnet and stored in [`Index`](#indexes) for a Vector Set, this implies it is always a non-0 multiple of 8
+  - `search_vector`, `search_element`, and `continue_search` all return the number of ids written into `output_ids`, and if there are more values to return they set the `nint` _pointed to by_ `continuation` or `new_continuation`
+
+> [!IMPORTANT]
+> These p/invoke definitions are all a little rough and should be cleaned up.
+>
+> They were defined very loosely to ease getting the .NET &lt;-&gt; Rust interface working quickly.
