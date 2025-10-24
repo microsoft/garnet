@@ -31,7 +31,7 @@ This is loaded and cached on startup, and updated (both in memory and in Tsavori
 
 The index key (represented by the [`Index`](TODO) struct) contains the following data:
  - `ulong Context` - used to derive namespaces, detailed below
- - `ulong IndexPtr` - a pointer to the DiskANN data structure, note this may be _dangling_ after a recovery or replication
+ - `ulong IndexPtr` - a pointer to the DiskANN data structure, note this may be _dangling_ after [recovery](#recovery) or [replication](#replication)
  - `uint Dimensions` - the expected dimension of vectors in commands targetting the Vector Set, this is inferred based on the `VADD` that creates the Vector Set
  - `uint ReduceDims` - if a Vector Set was created with the `REDUCE` option that value, otherwise zero
    * > TODO: Today this ignored except for validation purposes, eventually DiskANN will use it.
@@ -45,7 +45,7 @@ The index key (represented by the [`Index`](TODO) struct) contains the following
      > It forbids the `REDUCE` option and requires 4-byte element ids.
    * > [!IMPORTANT]
      > Today only `XPREQ` is actually implemented, eventually DiskANN will provide reasonable versions of all the Redis builtin quantizers.
- - `Guid ProcessInstanceId` - an identifier which is used distinguish the current process from previous instances, this is used after recovery or replication to detect if `IndexPtr` is dangling
+ - `Guid ProcessInstanceId` - an identifier which is used distinguish the current process from previous instances, this is used after [recovery](#recovery) or [replication](#replication) to detect if `IndexPtr` is dangling
 
 The index key is in the main store alongside other binary values like strings, hyperloglogs, and so on.  It is distinguished for `WRONGTYPE` purposes with the `VectorSet` bit on `RecordInfo`.
 
@@ -147,7 +147,7 @@ We cope with this by _cancelling_ the Tsavorite delete operation once we have a 
 
 `VectorManager` performs the delete in five steps:
  - Acquire exclusive locks covering the Vector Set ([more locking details](#locking))
- - If the index was initialized in the current process (see recovery for more details), call DiskANN's `drop_index` function
+ - If the index was initialized in the current process ([see recovery for more details](#recovery)), call DiskANN's `drop_index` function
  - Perform a write to zero out the index key in Tsavorite
  - Reperform the Tsavorite delete
  - Cleanup ancillary metadata and schedule element data for cleanup (more details below)
