@@ -304,7 +304,7 @@ namespace Resp.benchmark
                 rg = run_rg;
             else
             {
-                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, ttl: ttl);
+                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, ttl: ttl, shardedKeys: opts.ShardedKeys);
                 rg.Generate();
             }
 
@@ -350,7 +350,7 @@ namespace Resp.benchmark
         {
             if (rg == null)
             {
-                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, numericValue, verbose, flatBufferClient: (opts.Client == ClientType.SERedis || opts.Client == ClientType.GarnetClientSession), ttl: opts.Ttl);
+                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, numericValue, verbose, flatBufferClient: (opts.Client == ClientType.SERedis || opts.Client == ClientType.GarnetClientSession), ttl: opts.Ttl, shardedKeys: opts.ShardedKeys);
                 rg.Generate();
             }
 
@@ -371,7 +371,7 @@ namespace Resp.benchmark
                 workers[idx] = opts.Client switch
                 {
 
-                    ClientType.LightClient => new Thread(() => LightOperateThreadRunner(OpsPerThread, opType, rg)),
+                    ClientType.LightClient => new Thread(() => LightOperateThreadRunner(x, OpsPerThread, opType, rg)),
                     ClientType.GarnetClientSession => new Thread(() => GarnetClientSessionOperateThreadRunner(OpsPerThread, opType, rg)),
                     ClientType.SERedis => new Thread(() => SERedisOperateThreadRunner(OpsPerThread, opType, rg)),
                     ClientType.InProc => new Thread(() => InProcOperateThreadRunner(x, OpsPerThread, opType, rg)),
@@ -411,6 +411,13 @@ namespace Resp.benchmark
                     var count = sessions[0].DbSize();
                     Console.WriteLine($"Bandwidth: {bytesPerSecond:N2} GiB/sec");
                     Console.WriteLine($"[DB Size: {count}]");
+                    if (sessions[0].StoreWrapper.appendOnlyFile != null)
+                    {
+                        var aofSize = sessions[0].StoreWrapper.AofSize();
+                        var tpt = (aofSize / seconds) / (double)1_000_000_000;
+                        Console.WriteLine($"[AOF Total Size]:{aofSize:N2} bytes");
+                        Console.WriteLine($"[AOF Append Tpt]:{tpt:N2} GiB/sec");
+                    }
                 }
             }
 
@@ -421,7 +428,7 @@ namespace Resp.benchmark
             return rg;
         }
 
-        private unsafe void LightOperateThreadRunner(int NumOps, OpType opType, ReqGen rg)
+        private unsafe void LightOperateThreadRunner(int threadId, int NumOps, OpType opType, ReqGen rg)
         {
             var lighClientOnResponseDelegate = new LightClient.OnResponseDelegateUnsafe(ReqGen.OnResponse);
             using ClientBase client = new LightClient(new IPEndPoint(IPAddress.Parse(opts.Address), opts.Port), (int)opType, lighClientOnResponseDelegate, rg.GetBufferSize(), opts.EnableTLS ? BenchUtils.GetTlsOptions(opts.TlsHost, opts.CertFileName, opts.CertPassword) : null);
@@ -438,7 +445,7 @@ namespace Resp.benchmark
             sw.Start();
             while (!done)
             {
-                byte[] buf = rg.GetRequest(out int len);
+                byte[] buf = rg.GetRequest(out var len, threadId);
                 client.Send(buf, len, (opType == OpType.MSET || opType == OpType.MPFADD) ? 1 : rg.BatchCount);
                 client.CompletePendingRequests();
                 numReqs++;
@@ -530,7 +537,7 @@ namespace Resp.benchmark
             sw.Start();
             while (!done)
             {
-                var buf = rg.GetRequest(out var len);
+                var buf = rg.GetRequest(out var len, threadId);
                 fixed (byte* ptr = buf)
                     _ = sessions[threadId].TryConsumeMessages(ptr, len);
 

@@ -116,6 +116,9 @@ namespace Resp.benchmark
         [Option("file-logger", Required = false, Default = null, HelpText = "Enable file logger and write to the specified path.")]
         public string FileLogger { get; set; }
 
+        [Option("sharded-keys", Required = false, Default = -1, HelpText = "Number of shards to consider when building key space (used for perferct sharding for sublog ideal benchmarking).")]
+        public int ShardedKeys { get; set; }
+
         /*
          * InProc server options
          */

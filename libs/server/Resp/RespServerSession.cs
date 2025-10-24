@@ -42,6 +42,8 @@ namespace Garnet.server
 
         public GarnetLatencyMetricsSession LatencyMetrics { get; }
 
+        public StoreWrapper StoreWrapper => storeWrapper;
+
         /// <summary>
         /// Get a copy of sessionMetrics
         /// </summary>

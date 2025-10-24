@@ -213,7 +213,7 @@ namespace Garnet.server
         public override async Task TaskCheckpointBasedOnAofSizeLimitAsync(long aofSizeLimit,
             CancellationToken token = default, ILogger logger = null)
         {
-            var aofSize = AppendOnlyFile.TailAddress - AppendOnlyFile.BeginAddress;
+            var aofSize = storeWrapper.AofSize();
             if (aofSize <= aofSizeLimit) return;
 
             if (!TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).GetAwaiter().GetResult())

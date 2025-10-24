@@ -56,6 +56,12 @@ namespace Garnet.server
         public TsavoriteLog appendOnlyFile => databaseManager.AppendOnlyFile;
 
         /// <summary>
+        /// Get total AOF size (i.e. diff TailAddres - BeginAddress)
+        /// </summary>
+        /// <returns></returns>
+        public long AofSize() => databaseManager.AppendOnlyFile.TailAddress - databaseManager.AppendOnlyFile.BeginAddress;
+
+        /// <summary>
         /// Last save time (of DB 0)
         /// </summary>
         public DateTimeOffset lastSaveTime => databaseManager.LastSaveTime;
