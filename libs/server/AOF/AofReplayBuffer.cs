@@ -12,6 +12,12 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
+    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+
+    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
+    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+
     public sealed unsafe partial class AofProcessor
     {
         readonly ConcurrentDictionary<int, EventBarrier> eventBarriers = [];
@@ -282,7 +288,7 @@ namespace Garnet.server
                 foreach (var entry in fuzzyRegionOps)
                 {
                     fixed (byte* entryPtr = entry)
-                        _ = aofProcessor.ReplayOp(sublogIdx, entryPtr, entry.Length, asReplica);
+                        _ = aofProcessor.ReplayOp(sublogIdx, aofProcessor.basicContext, aofProcessor.objectStoreBasicContext, entryPtr, entry.Length, asReplica);
                 }
             }
 
@@ -307,29 +313,36 @@ namespace Garnet.server
             /// <param name="txnGroup"></param>
             internal void ProcessTransactionGroup(int sublogIdx, byte* ptr, bool asReplica, TransactionGroup txnGroup)
             {
-                var respServerSession = aofProcessor.respServerSessions[sublogIdx];
-
-                // No need to coordinate replay of transaction if operating with single sublog
-                if (aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1)
+                if (!asReplica)
                 {
-                    SaveTransactionGroupKeys(txnGroup, useShardedLog: false);
-                    ProcessTransactionGroupOperations(txnGroup);
-                    return;
+                    // If recovering reads will not expose partial transactions so we can replay without locking.
+                    // Also we don't have to synchronize replay of sublogs because write ordering has been established at the time of enqueue.
+                    ProcessTransactionGroupOperations(aofProcessor, aofProcessor.basicContext, aofProcessor.objectStoreBasicContext, txnGroup, asReplica);
+                }
+                else
+                {
+                    var txnManager = aofProcessor.respServerSessions[sublogIdx].txnManager;
+                    var usingShardedLog = aofProcessor.storeWrapper.serverOptions.AofSublogCount > 1;
+
+                    // Start by saving transaction keys for locking
+                    SaveTransactionGroupKeysToLock(txnManager, txnGroup, usingShardedLog: usingShardedLog);
+
+                    // Start transaction
+                    _ = txnManager.Run(internal_txn: true);
+
+                    // Process in parallel transaction group
+                    ProcessTransactionGroupOperations(aofProcessor, txnManager.LockableContext, txnManager.ObjectStoreLockableContext, txnGroup, asReplica);
+
+                    // Wait for all participating subtasks to complete replay unless singleLog
+                    if (usingShardedLog)
+                        Synchronize(aofProcessor, txnGroup, ptr);
+
+                    // Commit (NOTE: need to ensure that we do not write to log here)
+                    txnManager.Commit(true);
                 }
 
-                // Start by saving transaction keys for locking
-                SaveTransactionGroupKeys(txnGroup, useShardedLog: true);
-
-                // Start transaction
-                respServerSession.txnManager.Run(internal_txn: true);
-
-                // Process in parallel transaction group
-                ProcessTransactionGroupOperations(txnGroup);
-
-                // Wait for all participating subtasks to complete replay
-                Barrier();            
-
-                unsafe void SaveTransactionGroupKeys(TransactionGroup txnGroup, bool useShardedLog)
+                // Helper to iterate of transaction keys and add them to lockset
+                static unsafe void SaveTransactionGroupKeysToLock(TransactionManager txnManager, TransactionGroup txnGroup, bool usingShardedLog)
                 {
                     foreach (var entry in txnGroup.operations)
                     {
@@ -343,30 +356,31 @@ namespace Garnet.server
                                 case AofEntryType.StoreUpsert:
                                 case AofEntryType.StoreRMW:
                                 case AofEntryType.StoreDelete:
-                                    key = ref Unsafe.AsRef<SpanByte>(ptr + HeaderSize(useShardedLog));
+                                    key = ref Unsafe.AsRef<SpanByte>(entryPtr + HeaderSize(usingShardedLog));
                                     isObject = false;
                                     break;
                                 case AofEntryType.ObjectStoreUpsert:
                                 case AofEntryType.ObjectStoreRMW:
                                 case AofEntryType.ObjectStoreDelete:
-                                    key = ref Unsafe.AsRef<SpanByte>(ptr + HeaderSize(useShardedLog));
+                                    key = ref Unsafe.AsRef<SpanByte>(entryPtr + HeaderSize(usingShardedLog));
                                     isObject = true;
                                     break;
                                 default:
                                     throw new GarnetException($"Invalid replay operation {header.opType} within transaction");
                             }
 
-                            // Prep key for locking when transaction runs
-                            respServerSession.txnManager.SaveKeyEntryToLock(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()), isObject: isObject, LockType.Exclusive);
+                            // Add key to the lockset
+                            txnManager.SaveKeyEntryToLock(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()), isObject: isObject, LockType.Exclusive);
                         }
                     }
-                }                
+                }
 
-                void Barrier()
+                // Use eventBarrier to synchronize between replay subtasks
+                static unsafe void Synchronize(AofProcessor aofProcessor, TransactionGroup txnGroup, byte* ptr)
                 {
                     var extendedHeader = *(AofExtendedHeader*)ptr;
                     // Add coordinator group if does not exist and add to that the txnGroup that needs to be replayed
-                    var participantCount = txnGroup.logAccessCount;                    
+                    var participantCount = txnGroup.logAccessCount;
                     var eventBarrier = aofProcessor.eventBarriers.GetOrAdd(extendedHeader.header.sessionID, _ => new EventBarrier(participantCount));
                     if (eventBarrier.SignalAndWait())
                     {
@@ -383,12 +397,14 @@ namespace Garnet.server
                 }
 
                 // Process transaction 
-                void ProcessTransactionGroupOperations(TransactionGroup txnGroup)
+                static void ProcessTransactionGroupOperations<TContext, TObjectContext>(AofProcessor aofProcessor, TContext context, TObjectContext objectContext, TransactionGroup txnGroup, bool asReplica)
+                    where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+                    where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
                 {
                     foreach (var entry in txnGroup.operations)
                     {
                         fixed (byte* entryPtr = entry)
-                            _ = aofProcessor.ReplayOp(txnGroup.sublogIdx, entryPtr, entry.Length, asReplica);
+                            _ = aofProcessor.ReplayOp(txnGroup.sublogIdx, context, objectContext, entryPtr, entry.Length, asReplica: asReplica);
                     }
                 }
             }

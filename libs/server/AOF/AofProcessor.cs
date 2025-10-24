@@ -3,7 +3,6 @@
 
 using System;
 using System.Buffers;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -42,7 +41,7 @@ namespace Garnet.server
         /// </summary>
         public void SetReadWriteSession()
         {
-            foreach(var respServerSession in respServerSessions)
+            foreach (var respServerSession in respServerSessions)
                 respServerSession.clusterSession.SetReadWriteSession();
         }
 
@@ -185,7 +184,7 @@ namespace Garnet.server
             finally
             {
                 output.MemoryOwner?.Dispose();
-                foreach(var respServerSession in respServerSessions)
+                foreach (var respServerSession in respServerSessions)
                     respServerSession.Dispose();
             }
 
@@ -299,28 +298,14 @@ namespace Garnet.server
                     storeWrapper.appendOnlyFile.replayedTimestampProgress.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
                     break;
                 default:
-                    _ = ReplayOp(sublogIdx, ptr, length, asReplica);
+                    _ = ReplayOp(sublogIdx, basicContext, objectStoreBasicContext, ptr, length, asReplica);
                     break;
             }
         }
 
-        /// <summary>
-        /// Method to process a batch of entries as a single txn.
-        /// Assumes that operations arg does not contain transaction markers (i.e. TxnStart,TxnCommit,TxnAbort)
-        /// </summary>
-        /// <param name="sublogIdx"></param>
-        /// <param name="operations"></param>
-        /// <param name="asReplica"></param>
-        private unsafe void ProcessTxn(int sublogIdx, List<byte[]> operations, bool asReplica)
-        {
-            foreach (var entry in operations)
-            {
-                fixed (byte* ptr = entry)
-                    _ = ReplayOp(sublogIdx, ptr, entry.Length, asReplica);
-            }
-        }
-
-        private unsafe bool ReplayOp(int sublogIdx, byte* entryPtr, int length, bool asReplica)
+        private unsafe bool ReplayOp<TContext, TObjectContext>(int sublogIdx, TContext storeContext, TObjectContext objectStoreContext, byte* entryPtr, int length, bool asReplica)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var header = *(AofHeader*)entryPtr;
 
@@ -333,13 +318,13 @@ namespace Garnet.server
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    key = ref StoreUpsert(basicContext, storeInput, entryPtr, shardedLog);
+                    key = ref StoreUpsert(storeContext, storeInput, entryPtr, shardedLog);
                     break;
                 case AofEntryType.StoreRMW:
-                    key = ref StoreRMW(basicContext, storeInput, entryPtr, shardedLog);
+                    key = ref StoreRMW(storeContext, storeInput, entryPtr, shardedLog);
                     break;
                 case AofEntryType.StoreDelete:
-                    key = ref StoreDelete(basicContext, entryPtr, shardedLog);
+                    key = ref StoreDelete(storeContext, entryPtr, shardedLog);
                     break;
                 case AofEntryType.ObjectStoreRMW:
                     key = ref ObjectStoreRMW(objectStoreBasicContext, objectStoreInput, entryPtr, bufferPtr, buffer.Length, shardedLog);
@@ -397,11 +382,12 @@ namespace Garnet.server
 
         static int HeaderSize(bool useShardedLog) => useShardedLog ? sizeof(AofExtendedHeader) : sizeof(AofHeader);
 
-        static ref SpanByte StoreUpsert(
-            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+        static ref SpanByte StoreUpsert<TContext>(
+            TContext basicContext,
             RawStringInput storeInput,
             byte* ptr,
             bool useShardedLog)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             var curr = ptr + HeaderSize(useShardedLog);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
@@ -422,11 +408,12 @@ namespace Garnet.server
             return ref key;
         }
 
-        static ref SpanByte StoreRMW(
-            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+        static ref SpanByte StoreRMW<TContext>(
+            TContext basicContext,
             RawStringInput storeInput,
             byte* ptr,
             bool useShardedLog)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             var curr = ptr + HeaderSize(useShardedLog);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
@@ -447,23 +434,25 @@ namespace Garnet.server
             return ref key;
         }
 
-        static ref SpanByte StoreDelete(
-            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+        static ref SpanByte StoreDelete<TContext>(
+            TContext basicContext,
             byte* ptr,
             bool useShardedLog)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + HeaderSize(useShardedLog));
             basicContext.Delete(ref key);
             return ref key;
         }
 
-        static ref SpanByte ObjectStoreUpsert(
-            BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
+        static ref SpanByte ObjectStoreUpsert<TObjectContext>(
+            TObjectContext basicContext,
             GarnetObjectSerializer garnetObjectSerializer,
             byte* ptr,
             byte* outputPtr,
             int outputLength,
             bool useShardedLog)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + HeaderSize(useShardedLog));
             var keyB = key.ToByteArray();
@@ -478,13 +467,14 @@ namespace Garnet.server
             return ref key;
         }
 
-        static ref SpanByte ObjectStoreRMW(
-            BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
+        static ref SpanByte ObjectStoreRMW<TObjectContext>(
+            TObjectContext basicContext,
             ObjectInput objectStoreInput,
             byte* ptr,
             byte* outputPtr,
             int outputLength,
             bool useShardedLog)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var curr = ptr + HeaderSize(useShardedLog);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
@@ -506,10 +496,11 @@ namespace Garnet.server
             return ref key;
         }
 
-        static ref SpanByte ObjectStoreDelete(
-            BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
+        static ref SpanByte ObjectStoreDelete<TObjectContext>(
+            TObjectContext basicContext,
             byte* ptr,
             bool useShardedLog)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + HeaderSize(useShardedLog));
             var keyB = key.ToByteArray();

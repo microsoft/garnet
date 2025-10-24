@@ -432,7 +432,7 @@ namespace Garnet.server
             // Skip if singleLog
             if (appendOnlyFile.Log.Size == 1)
                 return;
-            
+
             appendOnlyFile.Log.Hash(key, out var hash, out var sublogIdx, out var keyOffset);
             if (proc.customProcTimestampBitmap == null)
             {
