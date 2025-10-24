@@ -23,7 +23,7 @@ This is loaded and cached on startup, and updated (both in memory and in Tsavori
 > [!IMPORTANT]
 > Today `ContextMetadata` can track only 64 Vector Sets in some state of creation or cleanup.
 > 
-> The prartical limit is actually 31, because context must be &lt 256, divisible by 8, and not 0 (which is reserved).
+> The prartical limit is actually 31, because context must be &lt; 256, divisible by 8, and not 0 (which is reserved).
 >
 > This limitation will be lifted eventually, perhaps after Store V2 lands.
 
