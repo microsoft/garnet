@@ -42,6 +42,8 @@ namespace Garnet.server
 
         public GarnetLatencyMetricsSession LatencyMetrics { get; }
 
+        public StoreWrapper StoreWrapper => this.storeWrapper;
+
         /// <summary>
         /// Get a copy of sessionMetrics
         /// </summary>
@@ -125,8 +127,6 @@ namespace Garnet.server
         /// Clients must enable asking to make node respond to requests on slots that are being imported.
         /// </summary>
         public byte SessionAsking { get; set; }
-
-        public StoreWrapper StoreWrapper => this.storeWrapper;
 
         /// <summary>
         /// If set, commands can use this to enumerate details about the server or other sessions.
