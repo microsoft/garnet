@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System.IO;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -18,15 +19,15 @@ namespace Garnet.server
         /// Base constructor
         /// </summary>
         /// <param name="type">Object type</param>
-        /// <param name="size"></param>
-        protected CustomObjectBase(byte type, long expiration, long size = 0)
-            : base(expiration, size)
+        /// <param name="sizes"></param>
+        protected CustomObjectBase(byte type, ObjectSizes sizes = default)
+            : base(sizes)
         {
             this.type = type;
         }
 
-        protected CustomObjectBase(byte type, BinaryReader reader, long size = 0)
-            : base(reader, size)
+        protected CustomObjectBase(byte type, BinaryReader reader, ObjectSizes sizes = default)
+            : base(reader, sizes)
         {
             this.type = type;
         }
@@ -35,7 +36,7 @@ namespace Garnet.server
         /// Base copy constructor
         /// </summary>
         /// <param name="obj">Other object</param>
-        protected CustomObjectBase(CustomObjectBase obj) : this(obj.type, obj.Expiration, obj.Size) { }
+        protected CustomObjectBase(CustomObjectBase obj) : this(obj.type, obj.sizes) { }
 
         /// <inheritdoc />
         public override byte Type => type;
@@ -82,7 +83,7 @@ namespace Garnet.server
                     if ((byte)input.header.type != this.type)
                     {
                         // Indicates an incorrect type of key
-                        output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                        output.OutputFlags |= OutputFlags.WrongType;
                         output.SpanByteAndMemory.Length = 0;
                         return true;
                     }

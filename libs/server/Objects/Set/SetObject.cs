@@ -50,8 +50,8 @@ namespace Garnet.server
         /// <summary>
         ///  Constructor
         /// </summary>
-        public SetObject(long expiration = 0)
-            : base(expiration, MemoryUtils.HashSetOverhead)
+        public SetObject()
+            : base(new(MemoryUtils.HashSetOverhead, sizeof(int), serializedIsExact: true))
         {
             Set = new HashSet<byte[]>(ByteArrayComparer.Instance);
 
@@ -64,7 +64,7 @@ namespace Garnet.server
         /// Construct from binary serialized form
         /// </summary>
         public SetObject(BinaryReader reader)
-            : base(reader, MemoryUtils.HashSetOverhead)
+            : base(reader, new(MemoryUtils.HashSetOverhead, sizeof(int), serializedIsExact: true))
         {
             int count = reader.ReadInt32();
 
@@ -85,8 +85,8 @@ namespace Garnet.server
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public SetObject(HashSet<byte[]> set, long expiration, long size)
-            : base(expiration, size)
+        public SetObject(HashSet<byte[]> set, ObjectSizes sizes)
+            : base(sizes)
         {
             Set = set;
 
@@ -119,23 +119,23 @@ namespace Garnet.server
         public override void Dispose() { }
 
         /// <inheritdoc />
-        public override GarnetObjectBase Clone() => new SetObject(Set, Expiration, Size);
+        public override GarnetObjectBase Clone() => new SetObject(Set, sizes);
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
-                                     byte respProtocolVersion, out long sizeChange)
+                                     byte respProtocolVersion, out long memorySizeChange)
         {
-            sizeChange = 0;
+            memorySizeChange = 0;
 
             if (input.header.type != GarnetObjectType.Set)
             {
                 // Indicates an incorrect type of key
-                output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                output.OutputFlags |= OutputFlags.WrongType;
                 output.SpanByteAndMemory.Length = 0;
                 return true;
             }
 
-            var prevSize = this.Size;
+            var prevMemorySize = this.HeapMemorySize;
             switch (input.header.SetOp)
             {
                 case SetOperation.SADD:
@@ -169,19 +169,31 @@ namespace Garnet.server
                     throw new GarnetException($"Unsupported operation {input.header.SetOp} in SetObject.Operate");
             }
 
-            sizeChange = this.Size - prevSize;
+            memorySizeChange = this.HeapMemorySize - prevMemorySize;
 
             if (Set.Count == 0)
-                output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
+                output.OutputFlags |= OutputFlags.RemoveKey;
 
             return true;
         }
 
         internal void UpdateSize(ReadOnlySpan<byte> item, bool add = true)
         {
-            var size = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.HashSetEntryOverhead;
-            this.Size += add ? size : -size;
-            Debug.Assert(this.Size >= MemoryUtils.HashSetOverhead);
+            var memorySize = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.HashSetEntryOverhead;
+            var kvSize = sizeof(int) + item.Length;
+
+            if (add)
+            {
+                this.HeapMemorySize += memorySize;
+                this.SerializedSize += kvSize;
+            }
+            else
+            {
+                this.HeapMemorySize -= memorySize;
+                this.SerializedSize -= kvSize;
+                Debug.Assert(this.HeapMemorySize >= MemoryUtils.HashSetOverhead);
+                Debug.Assert(this.SerializedSize >= sizeof(int));
+            }
         }
 
         /// <inheritdoc />

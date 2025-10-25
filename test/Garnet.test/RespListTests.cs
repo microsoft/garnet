@@ -52,7 +52,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 184;
+            var expectedResponse = 224;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             string popval = db.ListLeftPop(key);
@@ -83,7 +83,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 904;
+            var expectedResponse = 944;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             db.ListTrim(key, 1, 5);
@@ -93,7 +93,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 504;
+            expectedResponse = 544;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             //all elements remain
@@ -103,7 +103,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 504;
+            expectedResponse = 544;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             db.ListTrim(key, 0, -3);
@@ -171,11 +171,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             var nVals = 100;
-            RedisValue[] values = new RedisValue[nVals];
+            var values = new RedisValue[nVals];
             for (int i = 0; i < 100; i++)
-            {
-                values[i] = ($"val-{i + 1}");
-            }
+                values[i] = $"val-{i + 1}";
 
             for (int j = 0; j < 25; j++)
             {
@@ -183,7 +181,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(nVals, nAdded);
             }
 
-            long nLen = db.ListLength("List_Test-10");
+            var nLen = db.ListLength("List_Test-10");
             ClassicAssert.AreEqual(100, nLen);
         }
 
@@ -293,7 +291,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 344;
+            var expectedResponse = 384;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             long nLen = db.ListLength(key);
@@ -307,7 +305,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 432;
+            expectedResponse = 472;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // test after
@@ -318,7 +316,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 520;
+            expectedResponse = 560;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -342,7 +340,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 584;
+            var expectedResponse = 624;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             long nLen = db.ListLength(key);
@@ -351,7 +349,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 424;
+            expectedResponse = 464;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             ret = db.ListRemove(key, "val_4", -1);
@@ -360,7 +358,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 344;
+            expectedResponse = 384;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             ret = db.ListRemove(key, "val_2", 0);
@@ -392,7 +390,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 904;
+            var expectedResponse = 944;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             long nLen = db.ListLength(key);
@@ -438,7 +436,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 904;
+            var expectedResponse = 944;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             long nLen = db.ListLength(key);
@@ -448,7 +446,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 744;
+            expectedResponse = 784;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -471,7 +469,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 904;
+            var expectedResponse = 944;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             string popval = string.Empty;
@@ -539,7 +537,7 @@ namespace Garnet.test
 
             var response = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 272;
+            var expectedResponse = 304;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var lrange = db.ListRange(key, 0, -1);
@@ -556,7 +554,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 272;
+            expectedResponse = 304;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             lrange = db.ListRange(key, 0, -1);
@@ -1237,7 +1235,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", "mylist");
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 904;
+            expectedResponse = 936;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             //this should not create a new list
@@ -1255,7 +1253,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", "myaux-list");
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 912;
+            expectedResponse = 952;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 

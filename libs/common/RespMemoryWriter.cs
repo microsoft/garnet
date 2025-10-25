@@ -379,6 +379,17 @@ namespace Garnet.common
         }
 
         /// <summary>
+        /// Write simple string to memory.
+        /// </summary>
+        /// <param name="simpleString">An ASCII encoded simple string. The string mustn't contain a CR (\r) or LF (\n) bytes.</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void WriteSimpleString(ReadOnlySpan<byte> simpleString)
+        {
+            while (!RespWriteUtils.TryWriteSimpleString(simpleString, ref curr, end))
+                ReallocateOutput(simpleString.Length);
+        }
+
+        /// <summary>
         /// Write RESP3 true
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

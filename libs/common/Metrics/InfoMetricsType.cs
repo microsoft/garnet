@@ -39,25 +39,13 @@ namespace Garnet.common
         /// </summary>
         STORE,
         /// <summary>
-        /// Object store info
-        /// </summary>
-        OBJECTSTORE,
-        /// <summary>
         /// Store hash table info
         /// </summary>
         STOREHASHTABLE,
         /// <summary>
-        /// Object store hash table info
-        /// </summary>
-        OBJECTSTOREHASHTABLE,
-        /// <summary>
         /// Store revivification info
         /// </summary>
         STOREREVIV,
-        /// <summary>
-        /// Object store hash table info
-        /// </summary>
-        OBJECTSTOREREVIV,
         /// <summary>
         /// Persistence information
         /// </summary>

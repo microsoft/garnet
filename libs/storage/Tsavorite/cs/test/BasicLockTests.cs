@@ -12,77 +12,68 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LockTests
 {
-    // Must be in a separate block so the "using StructStoreFunctions" is the first line in its namespace declaration.
-    internal sealed class LocalIntKeyComparer : IKeyComparer<int>
-    {
-        internal int mod;
-
-        internal LocalIntKeyComparer(int mod) => this.mod = mod;
-
-        public bool Equals(ref int k1, ref int k2) => k1 == k2;
-
-        public long GetHashCode64(ref int k) => Utility.GetHashCode(k % mod);
-    }
-}
-
-namespace Tsavorite.test.LockTests
-{
-    using StructStoreFunctions = StoreFunctions<int, int, LocalIntKeyComparer, DefaultRecordDisposer<int, int>>;
+    using StructStoreFunctions = StoreFunctions<LongKeyComparerModulo, SpanByteRecordDisposer>;
 
     [TestFixture]
     public class BasicLockTests
     {
-        internal class Functions : SimpleSimpleFunctions<int, int>
+        internal class Functions : SimpleLongSimpleFunctions
         {
             internal bool throwOnInitialUpdater;
             internal long initialUpdaterThrowAddress;
 
-            static bool Increment(ref int dst)
+            static bool Increment(Span<byte> field)
             {
-                ++dst;
+                ++field.AsRef<long>();
                 return true;
             }
 
-            public override bool ConcurrentWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => Increment(ref dst);
+            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
+            {
+                return Increment(logRecord.ValueSpan);
+            }
 
-            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => Increment(ref value);
+            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
+            {
+                return Increment(logRecord.ValueSpan);
+            }
 
-            public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
             {
                 if (throwOnInitialUpdater)
                 {
                     initialUpdaterThrowAddress = rmwInfo.Address;
                     throw new TsavoriteException(nameof(throwOnInitialUpdater));
                 }
-                return base.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
+                return base.InitialUpdater(ref dstLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
             }
 
-            public override bool SingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref long input, ReadOnlySpan<byte> srcValue, ref long output, ref UpsertInfo upsertInfo)
             {
                 if (throwOnInitialUpdater)
                 {
                     initialUpdaterThrowAddress = upsertInfo.Address;
                     throw new TsavoriteException(nameof(throwOnInitialUpdater));
                 }
-                return base.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
+                return base.InitialWriter(ref dstLogRecord, in sizeInfo, ref input, srcValue, ref output, ref upsertInfo);
             }
 
-            public override bool SingleDeleter(ref int key, ref int value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
+            public override bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
             {
                 if (throwOnInitialUpdater)
                 {
                     initialUpdaterThrowAddress = deleteInfo.Address;
                     throw new TsavoriteException(nameof(throwOnInitialUpdater));
                 }
-                return base.SingleDeleter(ref key, ref value, ref deleteInfo, ref recordInfo);
+                return base.InitialDeleter(ref logRecord, ref deleteInfo);
             }
         }
 
-        private TsavoriteKV<int, int, StructStoreFunctions, BlittableAllocator<int, int, StructStoreFunctions>> store;
-        private ClientSession<int, int, int, int, Empty, Functions, StructStoreFunctions, BlittableAllocator<int, int, StructStoreFunctions>> session;
-        private BasicContext<int, int, int, int, Empty, Functions, StructStoreFunctions, BlittableAllocator<int, int, StructStoreFunctions>> bContext;
+        private TsavoriteKV<StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> store;
+        private ClientSession<long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> session;
+        private BasicContext<long, long, Empty, Functions, StructStoreFunctions, SpanByteAllocator<StructStoreFunctions>> bContext;
         private IDevice log;
-        private LocalIntKeyComparer keyComparer = new(NumRecords);
+        private LongKeyComparerModulo keyComparer = new(NumRecords);
 
         const int NumRecords = 100;
         const int ValueMult = 1000000;
@@ -96,10 +87,10 @@ namespace Tsavorite.test.LockTests
             {
                 IndexSize = 1L << 26,
                 LogDevice = log
-            }, StoreFunctions<int, int>.Create(keyComparer)
+            }, StoreFunctions.Create(keyComparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
-            session = store.NewSession<int, int, Empty, Functions>(new Functions());
+            session = store.NewSession<long, long, Empty, Functions>(new Functions());
             bContext = session.BasicContext;
         }
 
@@ -121,10 +112,11 @@ namespace Tsavorite.test.LockTests
         public void FunctionsLockTest([Values(1, 20)] int numThreads)
         {
             // Populate
-            for (var key = 0; key < NumRecords; key++)
+            for (long key = 0; key < NumRecords; key++)
             {
                 // For this test we should be in-memory, so no pending
-                ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
+                long valueNum = key * ValueMult;
+                ClassicAssert.IsFalse(bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
             }
 
             // Update
@@ -133,25 +125,28 @@ namespace Tsavorite.test.LockTests
             Task.WaitAll(tasks);
 
             // Verify
-            for (var key = 0; key < NumRecords; key++)
+            for (long key = 0; key < NumRecords; key++)
             {
-                var expectedValue = key * ValueMult + numThreads * numIters;
-                ClassicAssert.IsFalse(bContext.Read(key, out var value).IsPending);
-                ClassicAssert.AreEqual(expectedValue, value);
+                var expectedOutput = key * ValueMult + numThreads * numIters;
+                long output = 0;
+                ClassicAssert.IsFalse(bContext.Read(SpanByte.FromPinnedVariable(ref key), ref output).IsPending);
+                ClassicAssert.AreEqual(expectedOutput, output);
             }
         }
 
         void UpdateFunc(bool useRMW, int numRecords, int numIters)
         {
-            for (var key = 0; key < numRecords; ++key)
+            for (long keyNum = 0; keyNum < numRecords; ++keyNum)
             {
+                var key = SpanByte.FromPinnedVariable(ref keyNum);
                 for (var iter = 0; iter < numIters; iter++)
                 {
                     if ((iter & 7) == 7)
                         ClassicAssert.IsFalse(bContext.Read(key).status.IsPending);
 
                     // These will both just increment the stored value, ignoring the input argument.
-                    _ = useRMW ? bContext.RMW(key, default) : bContext.Upsert(key, default);
+                    long input = default;
+                    _ = useRMW ? bContext.RMW(key, ref input) : bContext.Upsert(key, SpanByte.FromPinnedVariable(ref input));
                 }
             }
         }
@@ -161,50 +156,53 @@ namespace Tsavorite.test.LockTests
         public unsafe void CollidingDeletedRecordTest([Values(UpdateOp.RMW, UpdateOp.Upsert)] UpdateOp updateOp, [Values(FlushMode.NoFlush, FlushMode.OnDisk)] FlushMode flushMode)
         {
             // Populate
-            for (var key = 0; key < NumRecords; key++)
+            long keyNum = 0, valueNum = 0;
+            for (keyNum = 0; keyNum < NumRecords; keyNum++)
             {
                 // For this test we should be in-memory, so no pending
-                ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
+                valueNum = keyNum * ValueMult;
+                ClassicAssert.IsFalse(bContext.Upsert(SpanByte.FromPinnedVariable(ref keyNum), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
             }
 
             // Insert a colliding key so we don't elide the deleted key from the hash chain.
-            var deleteKey = NumRecords / 2;
-            var collidingKey = deleteKey + NumRecords;
-            ClassicAssert.IsFalse(bContext.Upsert(collidingKey, collidingKey * ValueMult).IsPending);
+            long deleteKeyNum = NumRecords / 2;
+            long collidingKeyNum = deleteKeyNum + NumRecords;
+            keyNum = collidingKeyNum;
+            valueNum = collidingKeyNum * ValueMult;
+            Span<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum), deleteKey = SpanByte.FromPinnedVariable(ref deleteKeyNum);
+            ClassicAssert.IsFalse(bContext.Upsert(key, value).IsPending);
 
             // Now make sure we did collide
-            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref deleteKey));
+            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(deleteKey));
             ClassicAssert.IsTrue(store.FindTag(ref hei), "Cannot find deleteKey entry");
-            ClassicAssert.Greater(hei.Address, Constants.kInvalidAddress, "Couldn't find deleteKey Address");
-            var physicalAddress = store.hlog.GetPhysicalAddress(hei.Address);
-            ref var recordInfo = ref store.hlog.GetInfo(physicalAddress);
-            ref var lookupKey = ref store.hlog.GetKey(physicalAddress);
-            ClassicAssert.AreEqual(collidingKey, lookupKey, "Expected collidingKey");
+            ClassicAssert.Greater(hei.Address, LogAddress.kInvalidAddress, "Couldn't find deleteKey Address");
+            var physicalAddress = store.hlogBase.GetPhysicalAddress(hei.Address);
+            var lookupKey = LogRecord.GetInlineKey(physicalAddress);
+            ClassicAssert.AreEqual(collidingKeyNum, lookupKey.AsRef<long>(), "Expected collidingKey");
 
             // Backtrace to deleteKey
-            physicalAddress = store.hlog.GetPhysicalAddress(recordInfo.PreviousAddress);
-            recordInfo = ref store.hlog.GetInfo(physicalAddress);
-            lookupKey = ref store.hlog.GetKey(physicalAddress);
-            ClassicAssert.AreEqual(deleteKey, lookupKey, "Expected deleteKey");
-            ClassicAssert.IsFalse(recordInfo.Tombstone, "Tombstone should be false");
+            physicalAddress = store.hlogBase.GetPhysicalAddress(LogRecord.GetInfo(physicalAddress).PreviousAddress);
+            lookupKey = LogRecord.GetInlineKey(physicalAddress);
+            ClassicAssert.AreEqual(deleteKey.AsRef<long>(), lookupKey.AsRef<long>(), "Expected deleteKey");
+            ClassicAssert.IsFalse(LogRecord.GetInfo(physicalAddress).Tombstone, "Tombstone should be false");
 
             // In-place delete.
             ClassicAssert.IsFalse(bContext.Delete(deleteKey).IsPending);
-            ClassicAssert.IsTrue(recordInfo.Tombstone, "Tombstone should be true after Delete");
+            ClassicAssert.IsTrue(LogRecord.GetInfo(physicalAddress).Tombstone, "Tombstone should be true after Delete");
 
             if (flushMode == FlushMode.ReadOnly)
                 _ = store.hlogBase.ShiftReadOnlyAddress(store.Log.TailAddress);
 
             var status = updateOp switch
             {
-                UpdateOp.RMW => bContext.RMW(deleteKey, default),
-                UpdateOp.Upsert => bContext.Upsert(deleteKey, default),
+                UpdateOp.RMW => bContext.RMW(deleteKey, ref valueNum),
+                UpdateOp.Upsert => bContext.Upsert(deleteKey, value),
                 UpdateOp.Delete => throw new InvalidOperationException("UpdateOp.Delete not expected in this test"),
                 _ => throw new InvalidOperationException($"Unknown updateOp {updateOp}")
             };
             ClassicAssert.IsFalse(status.IsPending);
 
-            ClassicAssert.IsTrue(recordInfo.Tombstone, "Tombstone should be true after Update");
+            ClassicAssert.IsTrue(LogRecord.GetInfo(physicalAddress).Tombstone, "Tombstone should be true after Update");
         }
 
         [Test]
@@ -215,18 +213,19 @@ namespace Tsavorite.test.LockTests
             keyComparer.mod = int.MaxValue;
 
             // Populate
-            for (var key = 0; key < NumRecords; key++)
+            for (long keyNum = 0; keyNum < NumRecords; keyNum++)
             {
                 // For this test we should be in-memory, so no pending
-                ClassicAssert.IsFalse(bContext.Upsert(key, key * ValueMult).IsPending);
+                long valueNum = keyNum * ValueMult;
+                ClassicAssert.IsFalse(bContext.Upsert(SpanByte.FromPinnedVariable(ref keyNum), SpanByte.FromPinnedVariable(ref valueNum)).IsPending);
             }
 
             var expectedThrowAddress = store.Log.TailAddress;
             session.functions.throwOnInitialUpdater = true;
 
             // Delete must try with an existing key; Upsert and Delete should insert a new key
-            var deleteKey = NumRecords / 2;
-            var insertKey = NumRecords + 1;
+            long deleteKeyNum = NumRecords / 2;
+            long insertKeyNum = NumRecords + 1;
 
             // Make sure everything will create a new record.
             store.Log.FlushAndEvict(wait: true);
@@ -234,11 +233,12 @@ namespace Tsavorite.test.LockTests
             var threw = false;
             try
             {
+                long input = 0;
                 var status = updateOp switch
                 {
-                    UpdateOp.RMW => bContext.RMW(insertKey, default),
-                    UpdateOp.Upsert => bContext.Upsert(insertKey, default),
-                    UpdateOp.Delete => bContext.Delete(deleteKey),
+                    UpdateOp.RMW => bContext.RMW(SpanByte.FromPinnedVariable(ref insertKeyNum), ref input),
+                    UpdateOp.Upsert => bContext.Upsert(SpanByte.FromPinnedVariable(ref insertKeyNum), SpanByte.FromPinnedVariable(ref input)),
+                    UpdateOp.Delete => bContext.Delete(SpanByte.FromPinnedVariable(ref deleteKeyNum)),
                     _ => throw new InvalidOperationException($"Unknown updateOp {updateOp}")
                 };
                 ClassicAssert.IsFalse(status.IsPending);
@@ -252,8 +252,8 @@ namespace Tsavorite.test.LockTests
             ClassicAssert.IsTrue(threw, "Test should have thrown");
             ClassicAssert.AreEqual(expectedThrowAddress, session.functions.initialUpdaterThrowAddress, "Unexpected throw address");
 
-            var physicalAddress = store.hlog.GetPhysicalAddress(expectedThrowAddress);
-            ref var recordInfo = ref store.hlog.GetInfo(physicalAddress);
+            var physicalAddress = store.hlogBase.GetPhysicalAddress(expectedThrowAddress);
+            var recordInfo = LogRecord.GetInfo(physicalAddress);
             ClassicAssert.IsTrue(recordInfo.Invalid, "Expected Invalid record");
         }
     }

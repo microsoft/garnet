@@ -64,8 +64,8 @@ namespace Garnet.server
         /// <summary>
         /// Constructor
         /// </summary>
-        public ListObject(long expiration = 0)
-            : base(expiration, MemoryUtils.ListOverhead)
+        public ListObject()
+            : base(new(MemoryUtils.ListOverhead, sizeof(int), serializedIsExact: true))
         {
             list = new LinkedList<byte[]>();
         }
@@ -74,7 +74,7 @@ namespace Garnet.server
         /// Construct from binary serialized form
         /// </summary>
         public ListObject(BinaryReader reader)
-            : base(reader, MemoryUtils.ListOverhead)
+            : base(reader, new(MemoryUtils.ListOverhead, sizeof(int), serializedIsExact: true))
         {
             list = new LinkedList<byte[]>();
 
@@ -91,8 +91,8 @@ namespace Garnet.server
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public ListObject(LinkedList<byte[]> list, long expiration, long size)
-            : base(expiration, size)
+        public ListObject(LinkedList<byte[]> list, ObjectSizes sizes)
+            : base(sizes)
         {
             this.list = list;
         }
@@ -125,23 +125,23 @@ namespace Garnet.server
         public override void Dispose() { }
 
         /// <inheritdoc />
-        public override GarnetObjectBase Clone() => new ListObject(list, Expiration, Size);
+        public override GarnetObjectBase Clone() => new ListObject(list, sizes);
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
-                                     byte respProtocolVersion, out long sizeChange)
+                                     byte respProtocolVersion, out long memorySizeChange)
         {
-            sizeChange = 0;
+            memorySizeChange = 0;
 
             if (input.header.type != GarnetObjectType.List)
             {
                 // Indicates an incorrect type of key
-                output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                output.OutputFlags |= OutputFlags.WrongType;
                 output.SpanByteAndMemory.Length = 0;
                 return true;
             }
 
-            var previousSize = this.Size;
+            var previousMemorySize = this.HeapMemorySize;
             switch (input.header.ListOp)
             {
                 case ListOperation.LPUSH:
@@ -187,19 +187,31 @@ namespace Garnet.server
                     throw new GarnetException($"Unsupported operation {input.header.ListOp} in ListObject.Operate");
             }
 
-            sizeChange = this.Size - previousSize;
+            memorySizeChange = this.HeapMemorySize - previousMemorySize;
 
             if (list.Count == 0)
-                output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
+                output.OutputFlags |= OutputFlags.RemoveKey;
 
             return true;
         }
 
         internal void UpdateSize(byte[] item, bool add = true)
         {
-            var size = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.ListEntryOverhead;
-            this.Size += add ? size : -size;
-            Debug.Assert(this.Size >= MemoryUtils.ListOverhead);
+            var memorySize = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.ListEntryOverhead;
+            var diskSize = sizeof(int) + item.Length;
+
+            if (add)
+            {
+                this.HeapMemorySize += memorySize;
+                this.SerializedSize += diskSize;
+            }
+            else
+            {
+                this.HeapMemorySize -= memorySize;
+                this.SerializedSize -= diskSize;
+                Debug.Assert(this.HeapMemorySize >= MemoryUtils.ListOverhead);
+                Debug.Assert(this.SerializedSize >= sizeof(int));
+            }
         }
 
         /// <inheritdoc />
