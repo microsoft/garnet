@@ -190,7 +190,12 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Clear() => elementArray.Clear();
+        public void Clear()
+        {
+            elementArray.Clear();
+            stack = new(SimpleFreeStackNode.Nil, version: 0);
+            freeNodes = new(SimpleFreeStackNode.Nil, version: 0);
+        }
 
         public override string ToString() => $"elements {elementArray.Count}; [stack {stack}]; [freeList {freeNodes}]";
     }

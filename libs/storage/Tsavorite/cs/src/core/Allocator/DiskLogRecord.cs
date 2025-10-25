@@ -404,31 +404,40 @@ namespace Tsavorite.core
             var offset = serializedLogRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
 
             // Note: Similar logic to this is in ObjectLogReader.ReadObjects.
-            if (serializedLogRecord.Info.KeyIsOverflow)
+            bool keyWasSet = false;
+            try
             {
-                // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
-                serializedLogRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
-                recordSpan.ReadOnlySpan.Slice((int)offset, keyLength).CopyTo(serializedLogRecord.KeyOverflow.Span);
-                offset += (uint)keyLength;
-            }
+                if (serializedLogRecord.Info.KeyIsOverflow)
+                {
+                    // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
+                    serializedLogRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
+                    recordSpan.ReadOnlySpan.Slice((int)offset, keyLength).CopyTo(serializedLogRecord.KeyOverflow.Span);
+                    offset += (uint)keyLength;
+                    keyWasSet = true;
+                }
 
-            if (serializedLogRecord.Info.ValueIsOverflow)
-            {
-                // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
-                serializedLogRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
-                recordSpan.ReadOnlySpan.Slice((int)offset, (int)valueLength).CopyTo(serializedLogRecord.KeyOverflow.Span);
+                if (serializedLogRecord.Info.ValueIsOverflow)
+                {
+                    // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
+                    serializedLogRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
+                    recordSpan.ReadOnlySpan.Slice((int)offset, (int)valueLength).CopyTo(serializedLogRecord.KeyOverflow.Span);
+                }
+                else
+                {
+                    var stream = new UnmanagedMemoryStream(ptr + offset, (int)valueLength);
+                    valueObjectSerializer.BeginDeserialize(stream);
+                    valueObjectSerializer.Deserialize(out var valueObject);
+                    serializedLogRecord.ValueObject = valueObject;
+                    valueObjectSerializer.EndDeserialize();
+                }
+                return new(serializedLogRecord, obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
             }
-            else
+            catch
             {
-                var stream = new UnmanagedMemoryStream(ptr + offset, (int)valueLength);
-                valueObjectSerializer.BeginDeserialize(stream);
-                valueObjectSerializer.Deserialize(out var valueObject);
-                serializedLogRecord.ValueObject = valueObject;
-                valueObjectSerializer.EndDeserialize();
+                serializedLogRecord.OnDeserializationError(keyWasSet);
+                throw;
             }
-            return new(serializedLogRecord, obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
         }
-
         #endregion Serialization to and from expanded record format
     }
 }

@@ -1218,6 +1218,27 @@ namespace Tsavorite.core
             return *(ulong*)(valueAddress + valueLength + ETagLen + ExpirationLen);
         }
 
+        internal void OnDeserializationError(bool keyWasSet)
+        {
+            // If the key was set, clear it. Then set things as inline so we don't try to release objects on Dispose().
+            // This is a transient logRecord, so it is no problem to clear these fields.
+            var (keyLengthBytes, valueLengthBytes, hasFillerBit) = DeconstructIndicatorByte(*(byte*)IndicatorAddress);
+            var keyAddress = IndicatorAddress + NumIndicatorBytes + keyLengthBytes + valueLengthBytes;
+            var keyLength = ReadVarbyteLengthInWord(*(long*)IndicatorAddress, precedingNumBytes: 0, keyLengthBytes);
+            if (keyWasSet)
+                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, keyAddress, objectIdMap, isKey: true);
+            else if (!Info.KeyIsInline)
+                InfoRef.SetKeyIsInline();
+
+            // Value length may not be ObjectIdSize.
+            if (!Info.ValueIsInline)
+            {
+                var valueAddress = keyAddress + keyLength;
+                *(int*)valueAddress = ObjectIdMap.InvalidObjectId;
+                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false);
+            }
+        }
+
         public void Dispose(Action<IHeapObject> objectDisposer)
         {
             if (IsSet)
