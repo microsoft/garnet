@@ -240,6 +240,11 @@ For performance reasons, replicated `VADD`s are applied across many threads inst
 
 While a `VADD` can proceed in parallel with respect to other `VADD`s, that is not the case for any other commands.  Accordingly, `AofProcessor` now calls `VectorManager.WaitForVectorOperationsToComplete()` before applying any other updates to maintain coherency.
 
+## Migration
+
+> [!IMPORTANT]
+> Gotta figure this out still!
+
 # Cleanup
 
 Deleting a Vector Set only drops the DiskANN index and removes the top-level keys (ie. the visible key and related hidden keys for replication).  This leaves all element, attribute, neighbor lists, etc. still in the Main Store.
