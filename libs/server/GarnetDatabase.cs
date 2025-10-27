@@ -66,6 +66,11 @@ namespace Garnet.server
         public TsavoriteLog AppendOnlyFile { get; }
 
         /// <summary>
+        /// 
+        /// </summary>
+        public long AofSize => AppendOnlyFile.TailAddress - AppendOnlyFile.BeginAddress;
+
+        /// <summary>
         /// Version map
         /// </summary>
         public WatchVersionMap VersionMap { get; }
