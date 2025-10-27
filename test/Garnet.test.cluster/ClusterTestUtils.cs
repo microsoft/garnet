@@ -95,8 +95,6 @@ namespace Garnet.test.cluster
 
         STORE_CURRENT_SAFE_AOF_ADDRESS,
         STORE_RECOVERED_SAFE_AOF_ADDRESS,
-        OBJECT_STORE_CURRENT_SAFE_AOF_ADDRESS,
-        OBJECT_STORE_RECOVERED_SAFE_AOF_ADDRESS,
         PRIMARY_SYNC_IN_PROGRESS,
         PRIMARY_FAILOVER_STATE,
         RECOVER_STATUS,
@@ -2589,42 +2587,6 @@ namespace Garnet.test.cluster
             }
         }
 
-        public long GetObjectStoreCurrentAofAddress(int nodeIndex, ILogger logger = null)
-            => GetObjectStoreCurrentAofAddress((IPEndPoint)endpoints[nodeIndex], logger);
-
-        public long GetObjectStoreCurrentAofAddress(IPEndPoint endPoint, ILogger logger = null)
-        {
-            try
-            {
-                var objectStoreCurrentSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.OBJECT_STORE_CURRENT_SAFE_AOF_ADDRESS], logger)[0].Item2;
-                return long.Parse(objectStoreCurrentSafeAofAddress);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "An error has occured; GetObjectStoreCurrentAofAddress");
-                Assert.Fail(ex.Message);
-                return 0;
-            }
-        }
-
-        public long GetObjectStoreRecoveredAofAddress(int nodeIndex, ILogger logger = null)
-            => GetObjectStoreRecoveredAofAddress((IPEndPoint)endpoints[nodeIndex], logger);
-
-        public long GetObjectStoreRecoveredAofAddress(IPEndPoint endPoint, ILogger logger = null)
-        {
-            try
-            {
-                var objectStoreRecoveredSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.OBJECT_STORE_RECOVERED_SAFE_AOF_ADDRESS], logger)[0].Item2;
-                return long.Parse(objectStoreRecoveredSafeAofAddress);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "An error has occurred; GetObjectStoreRecoveredAofAddress");
-                Assert.Fail(ex.Message);
-                return 0;
-            }
-        }
-
         public long GetConnectedReplicas(int nodeIndex, ILogger logger = null)
             => GetConnectedReplicas((IPEndPoint)endpoints[nodeIndex], logger);
 
@@ -2784,14 +2746,6 @@ namespace Garnet.test.cluster
                             continue;
                         case ReplicationInfoItem.STORE_RECOVERED_SAFE_AOF_ADDRESS:
                             startsWith = "store_recovered_safe_aof_address:";
-                            if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
-                            continue;
-                        case ReplicationInfoItem.OBJECT_STORE_CURRENT_SAFE_AOF_ADDRESS:
-                            startsWith = "object_store_current_safe_aof_address:";
-                            if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
-                            continue;
-                        case ReplicationInfoItem.OBJECT_STORE_RECOVERED_SAFE_AOF_ADDRESS:
-                            startsWith = "object_store_recovered_safe_aof_address:";
                             if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
                             continue;
                         case ReplicationInfoItem.PRIMARY_SYNC_IN_PROGRESS:

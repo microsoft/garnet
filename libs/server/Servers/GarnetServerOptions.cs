@@ -622,6 +622,8 @@ namespace Garnet.server
                 if (LogDir is null or "")
                     LogDir = Directory.GetCurrentDirectory();
                 logFactory = GetInitializedDeviceFactory(LogDir);
+
+                // These must match GetInitializedSegmentFileDevice.GetStoreHLogDevice
                 kvSettings.LogDevice = logFactory.Get(new FileDescriptor("Store", "hlog"));
                 if (!DisableObjects)
                     kvSettings.ObjectLogDevice = logFactory.Get(new FileDescriptor("Store", "hlog_objs"));

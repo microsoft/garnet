@@ -209,7 +209,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// This test verifies that dynamically changing the object store heap size configuration using CONFIG SET object_store_heap_memory_target_size
+        /// This test verifies that dynamically changing the object store heap size configuration using CONFIG SET "store_heap_memory_target_size"
         /// incurs the expected changes in Garnet server metrics, as well as verifies error handling for incorrect inputs.
         /// </summary>
         /// <param name="smallerSize">Heap size smaller than the initial size</param>
