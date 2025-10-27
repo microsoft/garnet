@@ -139,9 +139,10 @@ namespace Garnet.server
             finally
             {
                 var seconds = swatch.ElapsedMilliseconds / 1000.0;
-                var aofSize = db.AofSize;
+                var aofSize = db.AppendOnlyFile.TotalSize();
                 var GiBperSecs = (aofSize / seconds) / (double)1_000_000_000;
                 logger?.LogInformation("AOF Recovery in {seconds} secs", seconds);
+                logger?.LogInformation("AOF Recovery size {aofSize:N0} bytes", aofSize);
                 logger?.LogInformation("AOF Recovery throughput {GiBperSecs:N2} GiB/secs", GiBperSecs);
             }
         }

@@ -148,5 +148,56 @@ namespace Garnet.test.cluster
                 }
             }
         }
+
+        [Test, Order(2)]
+        [Category("REPLICATION")]
+        public void ClusterReplicationShardedLogRecover()
+        {
+            var primary_count = 1;
+            var primaryNodeIndex = 0;
+
+            context.CreateInstances(
+                primary_count,
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                sublogCount: 4);
+            context.CreateConnection(useTLS: useTLS);
+            
+            _ = context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, primaryNodeIndex + 1, logger: context.logger);
+            
+            var keyLength = 16;
+            var kvpairCount = keyCount;
+            context.kvPairs = [];
+
+            //Populate Primary
+            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
+
+            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            var expectedKeys = (string[])primaryServer.Execute("KEYS", ["*"]);
+
+            // Shutdown node
+            context.nodes[primaryNodeIndex].Dispose(false);
+
+            // Restart secondary
+            context.nodes[primaryNodeIndex] = context.CreateInstance(
+                context.clusterTestUtils.GetEndPoint(primaryNodeIndex),
+                tryRecover: true,
+                enableAOF: true,
+                useTLS: useTLS,
+                cleanClusterConfig: false,
+                asyncReplay: asyncReplay,
+                sublogCount: 4);
+            context.nodes[primaryNodeIndex].Start();
+            context.CreateConnection(useTLS: useTLS);
+
+            primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            var keys = (string[])primaryServer.Execute("KEYS", ["*"]);
+            Array.Sort(keys);
+            Array.Sort(expectedKeys);
+            ClassicAssert.AreEqual(expectedKeys, keys);
+        }
     }
 }

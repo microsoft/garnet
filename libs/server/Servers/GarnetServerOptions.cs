@@ -898,7 +898,7 @@ namespace Garnet.server
                 {
                     MemorySizeBits = AofMemorySizeBits(),
                     PageSizeBits = AofPageSizeBits(),
-                    LogDevice = GetAofDevice(dbId),
+                    LogDevice = GetAofDevice(dbId, subLogIdx: i),
                     TryRecoverLatest = false,
                     SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
                     FastCommitMode = EnableFastCommit,
@@ -1022,7 +1022,7 @@ namespace Garnet.server
             else
             {
                 return GetInitializedDeviceFactory(AppendOnlyFileBaseDirectory)
-                    .Get(new FileDescriptor(GetAppendOnlyFileDirectoryName(dbId), $"aof.{0}.log"));
+                    .Get(new FileDescriptor(GetAppendOnlyFileDirectoryName(dbId), $"aof.{subLogIdx}.log"));
             }
         }
     }

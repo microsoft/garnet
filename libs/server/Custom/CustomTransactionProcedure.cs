@@ -42,7 +42,8 @@ namespace Garnet.server
         {
             txnManager.SaveKeyEntryToLock(key, isObject, type);
             txnManager.VerifyKeyOwnership(key, type);
-            txnManager.IterativeShardedLogAccess(key.SpanByte, ref logAccessMap, this);
+            var keySpanByte = key.SpanByte;
+            txnManager.IterativeShardedLogAccess(ref keySpanByte, ref logAccessMap, this);
         }
 
         /// <summary>

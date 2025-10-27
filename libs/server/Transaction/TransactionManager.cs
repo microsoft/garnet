@@ -423,7 +423,7 @@ namespace Garnet.server
             return true;
         }
 
-        public void IterativeShardedLogAccess(SpanByte key, ref ulong logAccessMap, CustomTransactionProcedure proc)
+        public void IterativeShardedLogAccess(ref SpanByte key, ref ulong logAccessMap, CustomTransactionProcedure proc)
         {
             // Skip if AOF is disabled
             if (appendOnlyFile == null)
@@ -433,7 +433,7 @@ namespace Garnet.server
             if (appendOnlyFile.Log.Size == 1)
                 return;
 
-            appendOnlyFile.Log.Hash(key, out var hash, out var sublogIdx, out var keyOffset);
+            appendOnlyFile.Log.Hash(ref key, out var hash, out var sublogIdx, out var keyOffset);
             if (proc.customProcTimestampBitmap == null)
             {
                 logAccessMap |= 1UL << sublogIdx;
@@ -458,7 +458,8 @@ namespace Garnet.server
             // If sharded log is enabled calculate sublog access bitmap
             for (var i = 0; i < keyCount; i++)
             {
-                appendOnlyFile.Log.Hash(keys[i].SpanByte, out _, out var sublogIdx);
+                var keySpanByte = keys[i].SpanByte;
+                appendOnlyFile.Log.Hash(ref keySpanByte, out _, out var sublogIdx, out _);
                 logAccessMap |= 1UL << sublogIdx;
             }
         }

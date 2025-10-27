@@ -25,14 +25,7 @@ namespace Garnet.server
         public static long Hash(ref SpanByte key)
             => (long)HashSlotUtils.Hash(key.AsSpan());
 
-        public void Hash(SpanByte key, out long hash, out int sublogIdx)
-        {
-            Debug.Assert(shardedLog != null);
-            hash = HashSlotUtils.Hash(key.AsSpan());
-            sublogIdx = (int)(hash % shardedLog.Length);
-        }
-
-        public void Hash(SpanByte key, out long hash, out int sublogIdx, out int keyOffset)
+        public void Hash(ref SpanByte key, out long hash, out int sublogIdx, out int keyOffset)
         {
             Debug.Assert(shardedLog != null);
             hash = HashSlotUtils.Hash(key.AsSpan());
@@ -184,8 +177,8 @@ namespace Garnet.server
             if (singleLog != null)
                 return singleLog.log;
 
-            var hash = Hash(ref key);
-            return shardedLog.sublog[hash % shardedLog.Length];
+            Hash(ref key, out var hash, out var _sublogIdx, out _);
+            return shardedLog.sublog[_sublogIdx];
         }
 
         public unsafe int UnsafeGetLength(int sublogIdx, byte* headerPtr)

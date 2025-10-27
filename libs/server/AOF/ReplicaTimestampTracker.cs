@@ -107,7 +107,7 @@ namespace Garnet.server
         /// <param name="timestamp"></param>
         public void UpdateKeyTimestamp(int sublogIdx, ref SpanByte key, long timestamp)
         {
-            appendOnlyFile.Log.Hash(key, out _, out var _sublogIdx, out var keyOffset);
+            appendOnlyFile.Log.Hash(ref key, out var hash, out var _sublogIdx, out var keyOffset);
             Debug.Assert(sublogIdx == _sublogIdx);
             _ = Utility.MonotonicUpdate(ref timestamps[sublogIdx][keyOffset], timestamp, out _);
             SignalWaiters(sublogIdx);
@@ -154,7 +154,7 @@ namespace Garnet.server
             for (var i = csvi.firstKey; i < csvi.lastKey; i += csvi.step)
             {
                 var key = parseState.GetArgSliceByRef(i).SpanByte;
-                appendOnlyFile.Log.Hash(key, out _, out var sublogIdx, out var keyOffset);
+                appendOnlyFile.Log.Hash(ref key, out _, out var sublogIdx, out var keyOffset);
 
                 // If first read initialize context
                 if (replicaReadSessionContext.lastSublogIdx == -1)
