@@ -776,47 +776,15 @@ namespace Garnet.server
             VectorQuantType quantType,
             uint buildExplorationFactor,
             uint numLinks,
+            ulong newContext,
+            nint newIndexPtr,
             ref SpanByte indexValue)
         {
             AssertHaveStorageSession();
 
-            var context = NextContext();
-
-            nint indexPtr;
-
-            // HACK HACK HACK
-            // TODO: do something less awful here
-            var threadCtx = ActiveThreadSession;
-
-            var offload = Task.Factory.StartNew(
-                async () =>
-                {
-                    // Force off current thread
-                    await Task.Yield();
-
-                    ActiveThreadSession = threadCtx;
-                    try
-                    {
-                        unsafe
-                        {
-                            return Service.CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
-                        }
-                    }
-                    finally
-                    {
-                        ActiveThreadSession = null;
-                    }
-                },
-                TaskCreationOptions.RunContinuationsAsynchronously
-            )
-                .Unwrap();
-
-            //indexPtr = Service.CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
-            indexPtr = offload.GetAwaiter().GetResult();
-
-            ActiveThreadSession = threadCtx;
-
             var indexSpan = indexValue.AsSpan();
+
+            Debug.Assert((newContext % 8) == 0 && newContext != 0, "Illegal context provided");
 
             if (indexSpan.Length != Index.Size)
             {
@@ -825,13 +793,13 @@ namespace Garnet.server
             }
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
-            asIndex.Context = context;
+            asIndex.Context = newContext;
             asIndex.Dimensions = dimensions;
             asIndex.ReduceDims = reduceDims;
             asIndex.QuantType = quantType;
             asIndex.BuildExplorationFactor = buildExplorationFactor;
             asIndex.NumLinks = numLinks;
-            asIndex.IndexPtr = (ulong)indexPtr;
+            asIndex.IndexPtr = (ulong)newIndexPtr;
             asIndex.ProcessInstanceId = processInstanceId;
         }
 
@@ -1702,7 +1670,7 @@ namespace Garnet.server
                                 using var session = obtainServerSession();
 
                                 SessionParseState reusableParseState = default;
-                                reusableParseState.Initialize(9);
+                                reusableParseState.Initialize(11);
 
                                 await foreach (var entry in reader.ReadAllAsync())
                                 {
@@ -1992,7 +1960,13 @@ namespace Garnet.server
         /// 
         /// Returns a disposable that prevents the index from being deleted while undisposed.
         /// </summary>
-        internal ReadVectorLock ReadOrCreateVectorIndex(StorageSession storageSession, ref SpanByte key, ref RawStringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
+        internal ReadVectorLock ReadOrCreateVectorIndex(
+            StorageSession storageSession,
+            ref SpanByte key,
+            ref RawStringInput input,
+            scoped Span<byte> indexSpan,
+            out GarnetStatus status
+        )
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
 
@@ -2048,15 +2022,56 @@ namespace Garnet.server
                         continue;
                     }
 
+                    ulong newContext = 0;
+                    nint newlyAllocatedIndex = 0;
                     if (needsRecreate)
                     {
                         input.arg1 = RecreateIndexArg;
+                    }
+                    else
+                    {
+                        // Create a new index, grab a new context
+                        newContext = NextContext();
+
+                        var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
+                        var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
+                        // ValueType is here, skipping during index creation
+                        // Values is here, skipping during index creation
+                        // Element is here, skipping during index creation
+                        var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
+                        var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
+                        // Attributes is here, skipping during index creation
+                        var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
+
+                        unsafe
+                        {
+                            newlyAllocatedIndex = Service.CreateIndex(newContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                        }
+
+                        input.parseState.EnsureCapacity(11);
+
+                        // Save off for insertion
+                        input.parseState.SetArgument(9, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref newContext, 1))));
+                        input.parseState.SetArgument(10, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
                     }
 
                     GarnetStatus writeRes;
                     try
                     {
-                        writeRes = storageSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+                        try
+                        {
+                            writeRes = storageSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+                        }
+                        catch
+                        {
+                            if (newlyAllocatedIndex != 0)
+                            {
+                                // Free to avoid a leak
+                                Service.DropIndex(newContext, newlyAllocatedIndex);
+                            }
+
+                            throw;
+                        }
 
                         if (!needsRecreate)
                         {

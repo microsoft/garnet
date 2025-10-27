@@ -163,6 +163,22 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Expand (if necessary) capacity of <see cref="SessionParseState"/>, preserving contents.
+        /// </summary>
+        public void EnsureCapacity(int count)
+        {
+            if (count <= Count)
+            {
+                return;
+            }
+
+            var oldBuffer = rootBuffer;
+            Initialize(count);
+
+            oldBuffer?.AsSpan().CopyTo(rootBuffer);
+        }
+
+        /// <summary>
         /// Limit access to the argument buffer to start at a specified index.
         /// </summary>
         /// <param name="idxOffset">Offset value to the underlying buffer</param>
