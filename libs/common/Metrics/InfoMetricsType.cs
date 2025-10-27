@@ -71,7 +71,7 @@ namespace Garnet.common
         /// </summary>
         CINFO,
         /// <summary>
-        /// Scan and return distribution of in-memory portion of hybrid logs for main store and object store
+        /// Scan and return distribution of in-memory portion of hybrid logs
         /// </summary>
         HLOGSCAN,
     }

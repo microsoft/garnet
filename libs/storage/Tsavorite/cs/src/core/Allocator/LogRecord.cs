@@ -48,7 +48,7 @@ namespace Tsavorite.core
         /// <summary>Address-only ctor. Must only be used for simple record parsing, including inline size calculations.
         /// In particular, if knowledge of whether this is a string or object record is required, or an overflow allocator is needed, this method cannot be used.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord(long physicalAddress) => this.physicalAddress = physicalAddress;
+        public LogRecord(long physicalAddress) => this.physicalAddress = physicalAddress;
 
         internal readonly long IndicatorAddress => physicalAddress + RecordInfo.Size;
         private readonly long RecordTypeAddress => physicalAddress + RecordInfo.Size + 1;
@@ -1216,6 +1216,40 @@ namespace Tsavorite.core
             // If we've replaced the varbyte valueLength with the upper byte of valueObjectLength, the usual optional accessors (e.g.GetExpirationAddress())
             // won't work, so we add all the pieces together here.
             return *(ulong*)(valueAddress + valueLength + ETagLen + ExpirationLen);
+        }
+
+        internal void OnDeserializationError(bool keyWasSet)
+        {
+            // If the key was set, clear it. Then set things as inline so we don't try to release objects on Dispose().
+            // This is a transient logRecord, so it is no problem to clear these fields.
+            var (keyLengthBytes, valueLengthBytes, hasFillerBit) = DeconstructIndicatorByte(*(byte*)IndicatorAddress);
+            var keyAddress = IndicatorAddress + NumIndicatorBytes + keyLengthBytes + valueLengthBytes;
+            var keyLength = ReadVarbyteLengthInWord(*(long*)IndicatorAddress, precedingNumBytes: 0, keyLengthBytes);
+            if (keyWasSet)
+                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, keyAddress, objectIdMap, isKey: true);
+            else if (!Info.KeyIsInline)
+                InfoRef.SetKeyIsInline();
+
+            // Value length may not be ObjectIdSize.
+            if (!Info.ValueIsInline)
+            {
+                var valueAddress = keyAddress + keyLength;
+                *(int*)valueAddress = ObjectIdMap.InvalidObjectId;
+                LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false);
+            }
+        }
+
+        /// <summary>
+        /// Return the serialized size of the contained logRecord.
+        /// </summary>
+        public readonly int GetSerializedSize()
+        {
+            var recordSize = GetInlineRecordSizesWithUnreadObjects().allocatedSize;
+            if (Info.RecordIsInline)
+                return recordSize;
+
+            _ = GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
+            return recordSize + keyLength + (int)valueLength;
         }
 
         public void Dispose(Action<IHeapObject> objectDisposer)

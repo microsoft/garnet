@@ -23,8 +23,6 @@ namespace Garnet.client
         static ReadOnlySpan<byte> DELKEY => "DELKEY"u8;
         static ReadOnlySpan<byte> GETKVPAIRINSLOT => "GETKVPAIRINSLOT"u8;
 
-        static ReadOnlySpan<byte> MAIN_STORE => "SSTORE"u8;
-        static ReadOnlySpan<byte> OBJECT_STORE => "OSTORE"u8;
         static ReadOnlySpan<byte> T => "T"u8;
         static ReadOnlySpan<byte> F => "F"u8;
 

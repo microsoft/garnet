@@ -102,7 +102,11 @@ namespace Tsavorite.core
 
         /// <summary>Clear the array.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Clear() => objectArray?.Clear();    // TODO reduce allocated chapter count also?
+        public void Clear()
+        {
+            objectArray?.Clear();    // TODO reduce allocated chapter count also?
+            freeSlots.Clear();
+        }
 
         /// <inheritdoc/>
         public override string ToString() => $"tail: {(objectArray is not null ? objectArray.tail.ToString() : "<null>")}";

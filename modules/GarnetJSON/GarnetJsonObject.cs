@@ -42,10 +42,10 @@ namespace GarnetJSON
     public class GarnetJsonObject : CustomObjectBase
     {
         private static readonly JsonSerializerOptions DefaultJsonSerializerOptions =
-            new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+            new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
         private static readonly JsonSerializerOptions IndentedJsonSerializerOptions =
-            new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
+            new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true };
 
         private static readonly byte[] OpenBoxBracket = Encoding.UTF8.GetBytes("[");
         private static readonly byte[] CloseBoxBracket = Encoding.UTF8.GetBytes("]");
@@ -62,7 +62,7 @@ namespace GarnetJSON
         /// </summary>
         /// <param name="type">The type of the object.</param>
         public GarnetJsonObject(byte type)
-            : base(type, new(MemoryUtils.DictionaryOverhead, sizeof(int)))
+            : base(type, MemoryUtils.DictionaryOverhead)
         {
         }
 
@@ -224,8 +224,7 @@ namespace GarnetJSON
         /// <param name="errorMessage">The error message if the operation fails.</param>
         /// <returns>The result of the set operation.</returns>
         /// <exception cref="JsonException">Thrown when there is an error in JSON processing.</exception>
-        /// <remarks>TODO: This currently does not update <see cref="IHeapObject.HeapMemorySize"/> or <see cref="IHeapObject.SerializedSize"/>
-        ///     and does not support <see cref="IHeapObject.SerializedSizeIsExact"/>.</remarks>
+        /// <remarks>TODO: This currently does not update <see cref="IHeapObject.HeapMemorySize"/>.</remarks>
         public SetResult Set(ReadOnlySpan<byte> path, ReadOnlySpan<byte> value, ExistOptions existOptions, out ReadOnlySpan<byte> errorMessage)
         {
             try
@@ -246,7 +245,7 @@ namespace GarnetJSON
                 }
 
                 // Need ToArray to avoid modifying collection while iterating
-                JsonPath jsonPath = new JsonPath(pathStr);
+                var jsonPath = new JsonPath(pathStr);
                 var result = jsonPath.Evaluate(rootNode, rootNode, null).ToArray();
 
                 if (result.Length == 0)

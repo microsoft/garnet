@@ -19,18 +19,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Total estimated size of the object in heap memory, including .NET object overheads, for Overflow allocations and Objects.
         /// </summary>
-        long HeapMemorySize { get; set; }
-
-        /// <summary>
-        /// Total serialized size of the object; the size it will take when written to disk or other storage.
-        /// </summary>
-        long SerializedSize { get; set; }
-
-        /// <summary>
-        /// Total serialized size of the object as a byte stream; the size it will take when written to disk or other storage.
-        /// May be an estimate if 
-        /// </summary>
-        public bool SerializedSizeIsExact { get; }
+        long HeapMemorySize { get; }
 
         /// <summary>
         /// Create a cloned (shallow copy) of this object

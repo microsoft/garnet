@@ -35,7 +35,8 @@ namespace Tsavorite.core
         bool IsForWrite { get; }
 
         /// <summary>
-        /// Write a full buffer to storage or network and reset the buffer to the starting position.
+        /// Write a full buffer to storage or network and reset the buffer to the starting position. Note that this may also reset the
+        /// underlying buffer pointer.
         /// </summary>
         /// <param name="cancellationToken">Optional cancellation token</param>
         void FlushAndReset(CancellationToken cancellationToken = default);

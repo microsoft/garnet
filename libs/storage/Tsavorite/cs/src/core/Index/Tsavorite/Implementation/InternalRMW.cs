@@ -173,6 +173,7 @@ namespace Tsavorite.core
                         // status has been set by InPlaceUpdater, and no modification should have been made to the record.
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                         pendingContext.eTag = srcLogRecord.ETag;
+                        status = OperationStatusUtils.AdvancedOpCode(OperationStatus.NOTFOUND, StatusCode.WrongType);
                         goto LatchRelease;
                     }
 

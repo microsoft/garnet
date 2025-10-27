@@ -167,7 +167,7 @@ namespace Garnet.server
         /// Constructor
         /// </summary>
         public SortedSetObject()
-            : base(new(MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead, sizeof(int), serializedIsExact: true))
+            : base(MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead)
         {
             sortedSet = new(SortedSetComparer.Instance);
             sortedSetDict = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
@@ -177,13 +177,13 @@ namespace Garnet.server
         /// Construct from binary serialized form
         /// </summary>
         public SortedSetObject(BinaryReader reader)
-            : base(reader, new(MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead, sizeof(int), serializedIsExact: true))
+            : base(reader, MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead)
         {
             sortedSet = new(SortedSetComparer.Instance);
             sortedSetDict = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
 
-            int count = reader.ReadInt32();
-            for (int i = 0; i < count; i++)
+            var count = reader.ReadInt32();
+            for (var i = 0; i < count; i++)
             {
                 var keyLength = reader.ReadInt32();
                 var hasExpiration = (keyLength & ExpirationBitMask) != 0;
@@ -202,8 +202,8 @@ namespace Garnet.server
                 if (canAddItem)
                 {
                     sortedSetDict.Add(item, score);
-                    sortedSet.Add((score, item));
-                    this.UpdateSize(item);
+                    _ = sortedSet.Add((score, item));
+                    UpdateSize(item);
 
                     if (expiration > 0)
                     {
@@ -220,12 +220,12 @@ namespace Garnet.server
         /// Copy constructor
         /// </summary>
         public SortedSetObject(SortedSetObject sortedSetObject)
-            : base(sortedSetObject.sizes)
+            : base(sortedSetObject.HeapMemorySize)
         {
-            this.sortedSet = sortedSetObject.sortedSet;
-            this.sortedSetDict = sortedSetObject.sortedSetDict;
-            this.expirationTimes = sortedSetObject.expirationTimes;
-            this.expirationQueue = sortedSetObject.expirationQueue;
+            sortedSet = sortedSetObject.sortedSet;
+            sortedSetDict = sortedSetObject.sortedSetDict;
+            expirationTimes = sortedSetObject.expirationTimes;
+            expirationQueue = sortedSetObject.expirationQueue;
         }
 
         /// <inheritdoc />
@@ -264,7 +264,7 @@ namespace Garnet.server
 
             DeleteExpiredItems();
 
-            int count = sortedSetDict.Count; // Since expired items are already deleted, no need to worry about expiring items
+            var count = sortedSetDict.Count; // Since expired items are already deleted, no need to worry about expiring items
             writer.Write(count);
             foreach (var kvp in sortedSetDict)
             {
@@ -296,9 +296,9 @@ namespace Garnet.server
             DeleteExpiredItems();
 
             sortedSetDict.Add(item, score);
-            sortedSet.Add((score, item));
+            _ = sortedSet.Add((score, item));
 
-            this.UpdateSize(item);
+            UpdateSize(item);
         }
 
         /// <summary>
@@ -306,19 +306,16 @@ namespace Garnet.server
         /// </summary>
         public bool Equals(SortedSetObject other)
         {
-            if (sortedSetDict.Count() != other.sortedSetDict.Count()) return false;
+            if (sortedSetDict.Count != other.sortedSetDict.Count)
+                return false;
 
             foreach (var key in sortedSetDict)
             {
                 if (IsExpired(key.Key) && IsExpired(key.Key))
-                {
                     continue;
-                }
 
                 if (IsExpired(key.Key) || IsExpired(key.Key))
-                {
                     return false;
-                }
 
                 if (!other.sortedSetDict.TryGetValue(key.Key, out var otherValue) || key.Value != otherValue)
                     return false;
@@ -348,7 +345,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var prevMemorySize = this.HeapMemorySize;
+            var prevMemorySize = HeapMemorySize;
             var op = header.SortedSetOp;
             switch (op)
             {
@@ -434,7 +431,7 @@ namespace Garnet.server
                     throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");
             }
 
-            memorySizeChange = this.HeapMemorySize - prevMemorySize;
+            memorySizeChange = HeapMemorySize - prevMemorySize;
 
             if (sortedSetDict.Count == 0)
                 output.OutputFlags |= OutputFlags.RemoveKey;
@@ -446,7 +443,7 @@ namespace Garnet.server
         public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false)
         {
             cursor = start;
-            items = new List<byte[]>();
+            items = [];
 
             // Allocation for score to string conversion
             // Based on the reference https://en.wikipedia.org/wiki/IEEE_754-1985
@@ -454,8 +451,7 @@ namespace Garnet.server
             const int DOUBLE_MAX_STRING_LENGTH = 38;
             Span<byte> doubleValueToByteSpan = stackalloc byte[DOUBLE_MAX_STRING_LENGTH];
 
-            int index = 0;
-
+            var index = 0;
             if (sortedSetDict.Count < start)
             {
                 cursor = 0;
@@ -477,7 +473,7 @@ namespace Garnet.server
                     continue;
                 }
 
-                bool addToList = false;
+                var addToList = false;
                 if (patternLength == 0)
                 {
                     items.Add(item.Key);
@@ -498,7 +494,7 @@ namespace Garnet.server
                 if (addToList)
                 {
                     // Double.TryFormat was prefered to convert the value to UTF8 byte array, but is not available before .net 8
-                    if (Utf8Formatter.TryFormat(item.Value, doubleValueToByteSpan, out int bytesWritten, default))
+                    if (Utf8Formatter.TryFormat(item.Value, doubleValueToByteSpan, out var bytesWritten, default))
                         items.Add(doubleValueToByteSpan.Slice(0, bytesWritten).ToArray());
                     else
                         items.Add(null);
@@ -566,7 +562,7 @@ namespace Garnet.server
                 foreach (var item in dict1)
                 {
                     if (!sortedSetObject2.IsExpired(item.Key) && sortedSetObject2.sortedSetDict.ContainsKey(item.Key))
-                        dict1.Remove(item.Key);
+                        _ = dict1.Remove(item.Key);
                 }
             }
         }
@@ -627,7 +623,7 @@ namespace Garnet.server
             {
                 expirationTimes = new Dictionary<byte[], long>(ByteArrayComparer.Instance);
                 expirationQueue = new PriorityQueue<byte[], long>();
-                this.HeapMemorySize += MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
+                HeapMemorySize += MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
                 // No DiskSize adjustment needed yet; wait until keys are added or removed
             }
         }
@@ -641,16 +637,11 @@ namespace Garnet.server
                 memorySize += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
 
             if (add)
-            {
-                this.HeapMemorySize += memorySize;
-                this.SerializedSize += sizeof(long);  // DiskSize only needs to adjust the writing or not of the expiration value
-            }
+                HeapMemorySize += memorySize;
             else
             {
-                this.HeapMemorySize -= memorySize;
-                this.SerializedSize -= sizeof(long);  // DiskSize only needs to adjust the writing or not of the expiration value
-                Debug.Assert(this.HeapMemorySize >= MemoryUtils.DictionaryOverhead);
-                Debug.Assert(this.SerializedSize >= sizeof(int));
+                HeapMemorySize -= memorySize;
+                Debug.Assert(HeapMemorySize >= MemoryUtils.DictionaryOverhead);
             }
         }
 
@@ -659,9 +650,8 @@ namespace Garnet.server
         {
             if (expirationTimes.Count == 0)
             {
-                this.HeapMemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueOverhead) * expirationQueue.Count;
-                this.HeapMemorySize -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
-                this.SerializedSize -= sizeof(long) * expirationTimes.Count;
+                HeapMemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueOverhead) * expirationQueue.Count;
+                HeapMemorySize -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
                 expirationTimes = null;
                 expirationQueue = null;
             }
@@ -681,13 +671,13 @@ namespace Garnet.server
             {
                 if (expirationTimes.TryGetValue(key, out var actualExpiration) && actualExpiration == expiration)
                 {
-                    expirationTimes.Remove(key);
-                    expirationQueue.Dequeue();
+                    _ = expirationTimes.Remove(key);
+                    _ = expirationQueue.Dequeue();
                     UpdateExpirationSize(add: false);
                     if (sortedSetDict.TryGetValue(key, out var value))
                     {
-                        sortedSetDict.Remove(key);
-                        sortedSet.Remove((value, key));
+                        _ = sortedSetDict.Remove(key);
+                        _ = sortedSet.Remove((value, key));
                         UpdateSize(key, add: false);
                     }
                 }
@@ -697,7 +687,7 @@ namespace Garnet.server
                     _ = expirationQueue.Dequeue();
 
                     // Adjust memory size for the priority queue entry removal. No DiskSize change needed as it was not in expirationTimes.
-                    this.HeapMemorySize -= MemoryUtils.PriorityQueueEntryOverhead + IntPtr.Size + sizeof(long);
+                    HeapMemorySize -= MemoryUtils.PriorityQueueEntryOverhead + IntPtr.Size + sizeof(long);
                 }
             }
 
@@ -711,8 +701,8 @@ namespace Garnet.server
 
             if (expiration <= DateTimeOffset.UtcNow.Ticks)
             {
-                sortedSetDict.Remove(key, out var value);
-                sortedSet.Remove((value, key));
+                _ = sortedSetDict.Remove(key, out var value);
+                _ = sortedSet.Remove((value, key));
                 UpdateSize(key, add: false);
                 return (int)SortedSetExpireResult.KeyAlreadyExpired;
             }
@@ -733,7 +723,7 @@ namespace Garnet.server
 
                 // MemorySize of dictionary entry already accounted for as the key already exists.
                 // DiskSize of expiration already accounted for as the key already exists in expirationTimes.
-                this.HeapMemorySize += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
+                HeapMemorySize += IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead;
             }
             else
             {
@@ -768,7 +758,7 @@ namespace Garnet.server
             if (!expirationTimes.TryGetValue(key, out _))
                 return false;
 
-            expirationTimes.Remove(key);
+            _ = expirationTimes.Remove(key);
 
             UpdateExpirationSize(add: false, includePQ: false);
             CleanupExpirationStructuresIfEmpty();
@@ -797,7 +787,7 @@ namespace Garnet.server
                         return item;
                 }
 
-                throw new ArgumentOutOfRangeException("index is outside the bounds of the source sequence.");
+                throw new ArgumentOutOfRangeException(nameof(index), "index is outside the bounds of the source sequence.");
             }
 
             return sortedSetDict.ElementAt(index);
@@ -808,19 +798,13 @@ namespace Garnet.server
             // item's length + overhead to store item + value of type double added to sorted set and dictionary + overhead for those datastructures
             var memorySize = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + (2 * sizeof(double))
                 + MemoryUtils.SortedSetEntryOverhead + MemoryUtils.DictionaryEntryOverhead;
-            var kvSize = sizeof(int) + item.Length + sizeof(double);
 
             if (add)
-            {
-                this.HeapMemorySize += memorySize;
-                this.SerializedSize += kvSize;
-            }
+                HeapMemorySize += memorySize;
             else
             {
-                this.HeapMemorySize -= memorySize;
-                this.SerializedSize -= kvSize;
-                Debug.Assert(this.HeapMemorySize >= MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead);
-                Debug.Assert(this.SerializedSize >= sizeof(int));
+                HeapMemorySize -= memorySize;
+                Debug.Assert(HeapMemorySize >= MemoryUtils.SortedSetOverhead + MemoryUtils.DictionaryOverhead);
             }
         }
 

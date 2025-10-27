@@ -109,7 +109,7 @@ namespace Garnet.cluster
             }
 
             // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
-            DiskLogRecord.Serialize(in srcLogRecord, valueObjectSerializer: default, memoryPool, ref serializationOutput);
+            DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize: -1, valueObjectSerializer: default, memoryPool, ref serializationOutput);
 
             var needToFlush = false;
             while (true)
@@ -161,7 +161,8 @@ namespace Garnet.cluster
             }
 
             // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
-            DiskLogRecord.Serialize(in srcLogRecord, valueObjectSerializer, memoryPool, ref serializationOutput);
+            var maxHeapAllocationSize = replicationSyncManager.ClusterProvider.replicationManager.networkBufferSettings.sendBufferSize;
+            var recordSize = DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize, valueObjectSerializer, memoryPool, ref serializationOutput);
 
             var needToFlush = false;
             while (true)
@@ -182,7 +183,7 @@ namespace Garnet.cluster
                     sessions[i].SetClusterSyncHeader();
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan.Slice(0, recordSize), out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;

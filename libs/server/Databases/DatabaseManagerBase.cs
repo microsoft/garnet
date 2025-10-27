@@ -562,13 +562,15 @@ namespace Garnet.server
 
             // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
             // We can now safely remove these serialized versions as they are no longer needed.
-            using var iter1 = db.Store.Log.Scan(db.Store.Log.ReadOnlyAddress,
-                db.Store.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering, includeClosedRecords: true);
+            using var iter1 = db.Store.Log.Scan(db.Store.Log.ReadOnlyAddress, db.Store.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering, includeClosedRecords: true);
             while (iter1.GetNext())
             {
-                var valueObject = iter1.ValueObject;
-                if (valueObject != null)
-                    ((GarnetObjectBase)iter1.ValueObject).ClearSerializedObjectData();
+                if (iter1.Info.ValueIsObject)
+                {
+                    var valueObject = iter1.ValueObject;
+                    if (valueObject != null)
+                        ((GarnetObjectBase)iter1.ValueObject).ClearSerializedObjectData();
+                }
             }
 
             logger?.LogInformation("Completed checkpoint for DB ID: {id}", db.Id);

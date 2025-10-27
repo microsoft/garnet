@@ -209,7 +209,7 @@ namespace Garnet.test
         }
 
         /// <summary>
-        /// This test verifies that dynamically changing the object store heap size configuration using CONFIG SET object_store_heap_memory_target_size
+        /// This test verifies that dynamically changing the object store heap size configuration using CONFIG SET "store_heap_memory_target_size"
         /// incurs the expected changes in Garnet server metrics, as well as verifies error handling for incorrect inputs.
         /// </summary>
         /// <param name="smallerSize">Heap size smaller than the initial size</param>
@@ -429,12 +429,16 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 var garnetServer = redis.GetServer(TestUtils.EndPoint);
                 var info = TestUtils.GetStoreAddressInfo(garnetServer);
-                ClassicAssert.AreEqual(64, info.TailAddress);
+                ClassicAssert.AreEqual(PageHeader.Size, info.TailAddress);
+
+                // Insert records until head address moves. We want to fit two records per page; pages are 1024 bytes so after subtracting
+                // PageHeader.Size we have 960 / 2 = 480 bytes per record. Keys are 8 bytes, valueLength requires 2 bytes as it will be
+                // more than 255, we have no optionals (ETag or Expiration), and we are inline so have no ObjectLogPosition, so:
+                //   RecordInfo.Size + (MinLengthMetadataBytes + 1) + 8 + valueLength = 480, so valueLength = 480-22 = 458 bytes.
+                // It's rounded up to kRecordAlignment (8) anyway.
+                var val = new RedisValue(new string('x', 458));
 
                 var i = 0;
-                var val = new RedisValue(new string('x', 512 - 32));
-
-                // Insert records until head address moves
                 var prevHead = info.HeadAddress;
                 var prevTail = info.TailAddress;
                 while (info.HeadAddress == prevHead)
@@ -456,10 +460,8 @@ namespace Garnet.test
                 // Find the first key index that still exists in the server
                 ClassicAssert.IsTrue(db.KeyExists($"key{lastIdxFirstRound:00000}"));
                 var c = lastIdxFirstRound;
-                while (c > 0)
-                {
-                    if (!db.KeyExists($"key{--c:00000}")) break;
-                }
+                while (c > 0 && db.KeyExists($"key{--c:00000}"))
+                    continue;
 
                 // Record the number of keys inserted in the first round
                 keysInsertedFirstRound = lastIdxFirstRound + 1 - c;
@@ -489,12 +491,14 @@ namespace Garnet.test
                 Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(currMemorySize));
                 Assert.That(currMemorySize - (prevTail - prevHead), Is.LessThanOrEqualTo(parsedPageSize));
 
+                // SAVE and wait for completion
                 garnetServer.Save(SaveType.BackgroundSave);
-                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks)
+                    Thread.Sleep(10);
             }
 
             // Restart server with initial memory size and recover data
-            server.Dispose(false);
+            server.Dispose(deleteDir: false);
             server = TestUtils.CreateGarnetServer(null,
                 memorySize: memorySize,
                 indexSize: indexSize,
@@ -510,20 +514,15 @@ namespace Garnet.test
 
                 // Find the smallest key index that still exists in the server
                 var c = lastIdxSecondRound;
-                while (c > 0)
-                {
-                    if (!db.KeyExists($"key{--c:00000}"))
-                        break;
-                }
+                while (c > 0 && db.KeyExists($"key{--c:00000}"))
+                    continue;
 
                 // Verify that the number of existing keys matches the count of inserted keys in the first round of insertions
                 ClassicAssert.AreEqual(keysInsertedFirstRound, lastIdxSecondRound + 1 - c);
 
                 // Verify that all previous keys are not present in the database
                 while (c > 0)
-                {
                     ClassicAssert.IsFalse(db.KeyExists($"key{--c:00000}"));
-                }
             }
         }
     }

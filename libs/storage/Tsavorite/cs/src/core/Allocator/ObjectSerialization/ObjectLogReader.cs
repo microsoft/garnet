@@ -95,27 +95,36 @@ namespace Tsavorite.core
             //       directly from overflow. This requires changing the read-ahead in CircularDiskReadBuffer.OnBeginReadRecords and the "backfill" in CircularDiskReadBuffer.MoveToNextBuffer.
 
             // Note: Similar logic to this is in DiskLogRecord.Deserialize.
-            if (logRecord.Info.KeyIsOverflow)
+            var keyWasSet = false;
+            try
             {
-                // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
-                logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
-                _ = Read(logRecord.KeyOverflow.Span);
-                if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord.KeyOverflow.Span))
-                    return false;
-            }
+                if (logRecord.Info.KeyIsOverflow)
+                {
+                    // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
+                    logRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
+                    _ = Read(logRecord.KeyOverflow.Span);
+                    if (!requestedKey.IsEmpty && !storeFunctions.KeysEqual(requestedKey, logRecord.KeyOverflow.Span))
+                        return false;
+                }
 
-            if (logRecord.Info.ValueIsOverflow)
-            {
-                // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
-                logRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
-                _ = Read(logRecord.ValueOverflow.Span);
+                if (logRecord.Info.ValueIsOverflow)
+                {
+                    // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
+                    logRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
+                    _ = Read(logRecord.ValueOverflow.Span);
+                }
+                else if (logRecord.Info.ValueIsObject)
+                {
+                    // Info.ValueIsObject is true. This assignment also allocates the slot in ObjectIdMap and updates the varbyte length to be ObjectIdSize.
+                    logRecord.ValueObject = DoDeserialize();
+                }
+                return true;
             }
-            else if (logRecord.Info.ValueIsObject)
+            catch
             {
-                // Info.ValueIsObject is true. This assignment also allocates the slot in ObjectIdMap and updates the varbyte length to be ObjectIdSize.
-                logRecord.ValueObject = DoDeserialize();
+                logRecord.OnDeserializationError(keyWasSet);
+                throw;
             }
-            return true;
         }
 
         /// <inheritdoc/>
@@ -176,11 +185,6 @@ namespace Tsavorite.core
 
         void OnDeserializeComplete(IHeapObject valueObject)
         {
-            if (valueObject.SerializedSizeIsExact)
-                Debug.Assert(valueObject.SerializedSize == (long)deserializedLength, $"valueObject.SerializedSize(Exact) {valueObject.SerializedSize} != deserializedLength {deserializedLength}");
-            else
-                valueObject.SerializedSize = (long)deserializedLength;
-
             // TODO add size tracking; do not track deserialization size changes if we are deserializing to a frame
 
             inDeserialize = false;

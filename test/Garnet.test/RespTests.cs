@@ -1409,13 +1409,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var key = "key1";
             if (initialValue is double)
-            {
                 db.StringSet(key, (double)initialValue);
-            }
             else if (initialValue is string)
-            {
                 db.StringSet(key, (string)initialValue);
-            }
 
             Assert.Throws<RedisServerException>(() => db.Execute("INCRBYFLOAT", key, incrByValue));
         }

@@ -32,19 +32,19 @@ namespace Garnet.server
             RawStringInput input = default;
 
             var key = parseState.GetArgSliceByRef(0);
-            var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            var status = storageApi.GET(key, ref input, ref o);
+            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    if (!o.IsSpanByte)
-                        SendAndReset(o.Memory, o.Length);
+                    if (!output.IsSpanByte)
+                        SendAndReset(output.Memory, output.Length);
                     else
-                        dcurr += o.Length;
+                        dcurr += output.Length;
                     break;
                 case GarnetStatus.NOTFOUND:
-                    Debug.Assert(o.IsSpanByte);
+                    Debug.Assert(output.IsSpanByte);
                     WriteNull();
                     break;
             }
@@ -68,15 +68,11 @@ namespace Garnet.server
             {
                 var option = parseState.GetArgSliceByRef(1).ReadOnlySpan;
                 if (option.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST))
-                {
                     tsExpiry = TimeSpan.Zero;
-                }
                 else
                 {
                     if (parseState.Count < 3 || !parseState.TryGetLong(2, out var expireTime) || expireTime <= 0)
-                    {
                         return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_OUT_OF_RANGE);
-                    }
 
                     switch (option)
                     {

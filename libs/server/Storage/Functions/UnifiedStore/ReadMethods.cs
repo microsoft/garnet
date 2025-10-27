@@ -28,7 +28,7 @@ namespace Garnet.server
             return cmd switch
             {
                 RespCommand.EXISTS => true,
-                RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, ref output),
+                RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, (int)input.arg1, ref output),
                 RespCommand.GETETAG => HandleGetEtag(in srcLogRecord, ref output),
                 RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref output),
                 RespCommand.TYPE => HandleType(in srcLogRecord, ref output),
@@ -133,10 +133,10 @@ namespace Garnet.server
             return true;
         }
 
-        private bool HandleMigrate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref GarnetUnifiedStoreOutput output)
+        private bool HandleMigrate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, int maxHeapAllocationSize, ref GarnetUnifiedStoreOutput output)
             where TSourceLogRecord : ISourceLogRecord
         {
-            DiskLogRecord.Serialize(in srcLogRecord,
+            DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize,
                 valueObjectSerializer: srcLogRecord.Info.ValueIsObject ? functionsState.garnetObjectSerializer : null,
                 memoryPool: functionsState.memoryPool, output: ref output.SpanByteAndMemory);
             return true;
