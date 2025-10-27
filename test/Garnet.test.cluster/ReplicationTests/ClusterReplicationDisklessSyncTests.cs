@@ -241,8 +241,8 @@ namespace Garnet.test.cluster
             Validate(primaryIndex, replicaOneIndex, disableObjects);
 
             // Validate db version
-            var primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger: context.logger);
-            var replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, isMainStore: true, logger: context.logger);
+            var primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, logger: context.logger);
+            var replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, logger: context.logger);
 
             // Versions increase per scan and we have only a single store which takes a single scan regardless of 'disableObjects' setting
             var expectedVersion1 = 2;
@@ -265,9 +265,9 @@ namespace Garnet.test.cluster
             Validate(primaryIndex, replicaTwoIndex, disableObjects);
 
             // Validate db version
-            primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger: context.logger);
-            replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, isMainStore: true, logger: context.logger);
-            var replicaTwoVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaTwoIndex, isMainStore: true, logger: context.logger);
+            primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, logger: context.logger);
+            replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, logger: context.logger);
+            var replicaTwoVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaTwoIndex, logger: context.logger);
 
             // With unified store we have only a single scan so a single increment regardless of 'disableObjects' setting
             var expectedVersion2 = 3;
@@ -281,9 +281,9 @@ namespace Garnet.test.cluster
             // Validate second replica data
             Validate(primaryIndex, replicaOneIndex, disableObjects);
 
-            primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger: context.logger);
-            replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, isMainStore: true, logger: context.logger);
-            replicaTwoVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaTwoIndex, isMainStore: true, logger: context.logger);
+            primaryVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, logger: context.logger);
+            replicaOneVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaOneIndex, logger: context.logger);
+            replicaTwoVersion = context.clusterTestUtils.GetStoreCurrentVersion(replicaTwoIndex, logger: context.logger);
 
             // With unified store we have only a single scan so a single increment regardless of 'disableObjects' setting
             var expectedVersion3 = 4;

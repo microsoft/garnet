@@ -123,9 +123,9 @@ namespace Garnet.test
             for (int i = 0; i < keys.Count; i++)
             {
                 int expirationOrScore = rnd.Next(allowedExpirationRange.Item1, allowedExpirationRange.Item2);
-                bool isMainStore = rnd.Next(0, 2) == 0;
+                bool addString = rnd.Next(0, 2) == 0;
                 bool hasExpiration = rnd.Next(0, 2) == 0;
-                if (isMainStore)
+                if (addString)
                     db.StringSet(keys[i], Guid.NewGuid().ToString());
                 else
                     db.SortedSetAdd(keys[i], Guid.NewGuid().ToString(), expirationOrScore);
