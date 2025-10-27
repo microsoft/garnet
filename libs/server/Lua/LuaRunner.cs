@@ -1340,6 +1340,8 @@ namespace Garnet.server
                 respServerSession.storageSession.transactionalContext.BeginTransaction();
                 if (!respServerSession.storageSession.objectStoreTransactionalContext.IsNull)
                     respServerSession.storageSession.objectStoreTransactionalContext.BeginTransaction();
+                if (!respServerSession.storageSession.unifiedStoreTransactionalContext.IsNull)
+                    respServerSession.storageSession.unifiedStoreTransactionalContext.BeginTransaction();
                 respServerSession.SetTransactionMode(true);
                 txnKeyEntries.LockAllKeys();
 
@@ -1347,6 +1349,8 @@ namespace Garnet.server
                 respServerSession.storageSession.transactionalContext.LocksAcquired(txnVersion);
                 if (!respServerSession.storageSession.objectStoreTransactionalContext.IsNull)
                     respServerSession.storageSession.objectStoreTransactionalContext.LocksAcquired(txnVersion);
+                if (!respServerSession.storageSession.unifiedStoreTransactionalContext.IsNull)
+                    respServerSession.storageSession.unifiedStoreTransactionalContext.LocksAcquired(txnVersion);
                 RunCommon(ref response);
             }
             finally
@@ -1356,6 +1360,8 @@ namespace Garnet.server
                 respServerSession.storageSession.transactionalContext.EndTransaction();
                 if (!respServerSession.storageSession.objectStoreTransactionalContext.IsNull)
                     respServerSession.storageSession.objectStoreTransactionalContext.EndTransaction();
+                if (!respServerSession.storageSession.unifiedStoreTransactionalContext.IsNull)
+                    respServerSession.storageSession.unifiedStoreTransactionalContext.EndTransaction();
                 respServerSession.storageSession.stateMachineDriver.EndTransaction(txnVersion);
             }
         }

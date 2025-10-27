@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System.IO;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -19,15 +18,21 @@ namespace Garnet.server
         /// Base constructor
         /// </summary>
         /// <param name="type">Object type</param>
-        /// <param name="sizes"></param>
-        protected CustomObjectBase(byte type, ObjectSizes sizes = default)
-            : base(sizes)
+        /// <param name="heapMemorySize"></param>
+        protected CustomObjectBase(byte type, long heapMemorySize = 0)
+            : base(heapMemorySize)
         {
             this.type = type;
         }
 
-        protected CustomObjectBase(byte type, BinaryReader reader, ObjectSizes sizes = default)
-            : base(reader, sizes)
+        /// <summary>
+        /// Base constructor
+        /// </summary>
+        /// <param name="type">Object type</param>
+        /// <param name="reader"></param>
+        /// <param name="heapMemorySize"></param>
+        protected CustomObjectBase(byte type, BinaryReader reader, long heapMemorySize = 0)
+            : base(reader, heapMemorySize)
         {
             this.type = type;
         }
@@ -36,7 +41,7 @@ namespace Garnet.server
         /// Base copy constructor
         /// </summary>
         /// <param name="obj">Other object</param>
-        protected CustomObjectBase(CustomObjectBase obj) : this(obj.type, obj.sizes) { }
+        protected CustomObjectBase(CustomObjectBase obj) : this(obj.type) { }
 
         /// <inheritdoc />
         public override byte Type => type;

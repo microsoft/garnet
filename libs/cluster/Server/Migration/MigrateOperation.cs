@@ -67,14 +67,15 @@ namespace Garnet.cluster
             /// <returns></returns>
             public bool TransmitSlots()
             {
-                var output = new GarnetUnifiedStoreOutput();
+                var output = new GarnetUnifiedStoreOutput();    // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
 
                 try
                 {
                     var input = new UnifiedStoreInput(RespCommand.MIGRATE);
+                    input.arg1 = session.NetworkBufferSettings.sendBufferSize - 1024;   // Reserve some space for overhead
                     foreach (var key in sketch.argSliceVector)
                     {
-                        if (!session.WriteOrSendKeyValuePair(gcs, localServerSession, key, ref input, ref output, out _))
+                        if (!session.WriteOrSendRecord(gcs, localServerSession, key, ref input, ref output, out _))
                             return false;
                     }
 
@@ -94,19 +95,20 @@ namespace Garnet.cluster
             {
                 // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
                 // so we can reuse the SpanByteAndMemory.Memory across iterations.
-                var output = new GarnetUnifiedStoreOutput();
+                var output = new GarnetUnifiedStoreOutput();    // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
 
                 try
                 {
                     var keys = sketch.Keys;
 
                     var input = new UnifiedStoreInput(RespCommand.MIGRATE);
+                    input.arg1 = session.NetworkBufferSettings.sendBufferSize - 1024;   // Reserve some space for overhead
                     for (var i = 0; i < keys.Count; i++)
                     {
                         if (keys[i].Item2)
                             continue;
 
-                        if (!session.WriteOrSendKeyValuePair(gcs, localServerSession, keys[i].Item1, ref input, ref output, out var status))
+                        if (!session.WriteOrSendRecord(gcs, localServerSession, keys[i].Item1, ref input, ref output, out var status))
                             return false;
 
                         // If key was FOUND, mark it for deletion

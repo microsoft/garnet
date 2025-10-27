@@ -35,7 +35,7 @@ namespace Garnet.server
 
         public GarnetUnifiedStoreOutput() => SpanByteAndMemory = new(null);
 
-        public GarnetUnifiedStoreOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;
+        public GarnetUnifiedStoreOutput(SpanByteAndMemory sbam) => SpanByteAndMemory = sbam;
 
         public static unsafe GarnetUnifiedStoreOutput FromPinnedPointer(byte* pointer, int length)
             => new(new SpanByteAndMemory() { SpanByte = PinnedSpanByte.FromPinnedPointer(pointer, length) });

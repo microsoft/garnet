@@ -83,7 +83,7 @@ namespace Garnet.server
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var key = GetByteSpanFromInput(ref input, i);
-                if (Remove(key, out var hashValue))
+                if (Remove(key, out _))
                     output.Header.result1++;
             }
         }
@@ -213,9 +213,7 @@ namespace Garnet.server
                     else
                     {
                         // Adjust the size to account for the new value replacing the old one.
-                        this.HeapMemorySize += Utility.RoundUp(value.Length, IntPtr.Size) - Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
-                        this.SerializedSize += value.Length - hashValueRef.Length;
-
+                        HeapMemorySize += Utility.RoundUp(value.Length, IntPtr.Size) - Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
                         hashValueRef = value.ToArray();
                     }
 
@@ -227,7 +225,7 @@ namespace Garnet.server
                         expirationTimes.Remove(key))
 #endif
                     {
-                        this.HeapMemorySize -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
+                        HeapMemorySize -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
                         CleanupExpirationStructuresIfEmpty();
                     }
                 }
@@ -237,7 +235,6 @@ namespace Garnet.server
         private void HashCollect(ref ObjectInput input, ref GarnetObjectStoreOutput output)
         {
             DeleteExpiredItems();
-
             output.Header.result1 = 1;
         }
 
@@ -331,9 +328,7 @@ namespace Garnet.server
                 else
                 {
                     // Adjust the size to account for the new value replacing the old one.
-                    this.HeapMemorySize += Utility.RoundUp(formattedValue.Length, IntPtr.Size) - Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
-                    this.SerializedSize += formattedValue.Length - hashValueRef.Length;
-
+                    HeapMemorySize += Utility.RoundUp(formattedValue.Length, IntPtr.Size) - Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
                     hashValueRef = formattedValue.ToArray();
                 }
             }
@@ -414,9 +409,7 @@ namespace Garnet.server
                 else
                 {
                     // Adjust the size to account for the new value replacing the old one.
-                    this.HeapMemorySize += Utility.RoundUp(formattedValue.Length, IntPtr.Size) - Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
-                    this.SerializedSize += formattedValue.Length - hashValueRef.Length;
-
+                    HeapMemorySize += Utility.RoundUp(formattedValue.Length, IntPtr.Size) - Utility.RoundUp(hashValueRef.Length, IntPtr.Size);
                     hashValueRef = formattedValue.ToArray();
                 }
             }

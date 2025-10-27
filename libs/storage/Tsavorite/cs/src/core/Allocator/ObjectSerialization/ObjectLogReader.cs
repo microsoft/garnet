@@ -95,7 +95,7 @@ namespace Tsavorite.core
             //       directly from overflow. This requires changing the read-ahead in CircularDiskReadBuffer.OnBeginReadRecords and the "backfill" in CircularDiskReadBuffer.MoveToNextBuffer.
 
             // Note: Similar logic to this is in DiskLogRecord.Deserialize.
-            bool keyWasSet = false;
+            var keyWasSet = false;
             try
             {
                 if (logRecord.Info.KeyIsOverflow)
@@ -185,11 +185,6 @@ namespace Tsavorite.core
 
         void OnDeserializeComplete(IHeapObject valueObject)
         {
-            if (valueObject.SerializedSizeIsExact)
-                Debug.Assert(valueObject.SerializedSize == (long)deserializedLength, $"valueObject.SerializedSize(Exact) {valueObject.SerializedSize} != deserializedLength {deserializedLength}");
-            else
-                valueObject.SerializedSize = (long)deserializedLength;
-
             // TODO add size tracking; do not track deserialization size changes if we are deserializing to a frame
 
             inDeserialize = false;

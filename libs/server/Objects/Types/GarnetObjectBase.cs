@@ -17,14 +17,13 @@ namespace Garnet.server
         /// <inheritdoc />
         public abstract byte Type { get; }
 
-        protected GarnetObjectBase(ObjectSizes sizes)
+        protected GarnetObjectBase(long heapMemorySize)
         {
-            sizes.Verify();
-            this.sizes = sizes;
+            HeapMemorySize = heapMemorySize;
         }
 
-        protected GarnetObjectBase(BinaryReader reader, ObjectSizes sizes)
-            : this(sizes)
+        protected GarnetObjectBase(BinaryReader reader, long heapMemorySize)
+            : this(heapMemorySize)
         {
             // Add anything here that should match DoSerialize()
         }

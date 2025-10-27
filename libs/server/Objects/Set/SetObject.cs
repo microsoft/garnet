@@ -51,7 +51,7 @@ namespace Garnet.server
         ///  Constructor
         /// </summary>
         public SetObject()
-            : base(new(MemoryUtils.HashSetOverhead, sizeof(int), serializedIsExact: true))
+            : base(MemoryUtils.HashSetOverhead)
         {
             Set = new HashSet<byte[]>(ByteArrayComparer.Instance);
 
@@ -64,17 +64,16 @@ namespace Garnet.server
         /// Construct from binary serialized form
         /// </summary>
         public SetObject(BinaryReader reader)
-            : base(reader, new(MemoryUtils.HashSetOverhead, sizeof(int), serializedIsExact: true))
+            : base(reader, MemoryUtils.HashSetOverhead)
         {
-            int count = reader.ReadInt32();
+            var count = reader.ReadInt32();
 
             Set = new HashSet<byte[]>(count, ByteArrayComparer.Instance);
-            for (int i = 0; i < count; i++)
+            for (var i = 0; i < count; i++)
             {
                 var item = reader.ReadBytes(reader.ReadInt32());
                 Set.Add(item);
-
-                this.UpdateSize(item);
+                UpdateSize(item);
             }
 
 #if NET9_0_OR_GREATER
@@ -85,8 +84,8 @@ namespace Garnet.server
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public SetObject(HashSet<byte[]> set, ObjectSizes sizes)
-            : base(sizes)
+        public SetObject(HashSet<byte[]> set, long heapMemorySize)
+            : base(heapMemorySize)
         {
             Set = set;
 
@@ -104,7 +103,7 @@ namespace Garnet.server
         {
             base.DoSerialize(writer);
 
-            int count = Set.Count;
+            var count = Set.Count;
             writer.Write(count);
             foreach (var item in Set)
             {
@@ -119,7 +118,7 @@ namespace Garnet.server
         public override void Dispose() { }
 
         /// <inheritdoc />
-        public override GarnetObjectBase Clone() => new SetObject(Set, sizes);
+        public override GarnetObjectBase Clone() => new SetObject(Set, HeapMemorySize);
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
@@ -135,7 +134,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var prevMemorySize = this.HeapMemorySize;
+            var prevMemorySize = HeapMemorySize;
             switch (input.header.SetOp)
             {
                 case SetOperation.SADD:
@@ -169,7 +168,7 @@ namespace Garnet.server
                     throw new GarnetException($"Unsupported operation {input.header.SetOp} in SetObject.Operate");
             }
 
-            memorySizeChange = this.HeapMemorySize - prevMemorySize;
+            memorySizeChange = HeapMemorySize - prevMemorySize;
 
             if (Set.Count == 0)
                 output.OutputFlags |= OutputFlags.RemoveKey;
@@ -180,19 +179,13 @@ namespace Garnet.server
         internal void UpdateSize(ReadOnlySpan<byte> item, bool add = true)
         {
             var memorySize = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.HashSetEntryOverhead;
-            var kvSize = sizeof(int) + item.Length;
 
             if (add)
-            {
-                this.HeapMemorySize += memorySize;
-                this.SerializedSize += kvSize;
-            }
+                HeapMemorySize += memorySize;
             else
             {
-                this.HeapMemorySize -= memorySize;
-                this.SerializedSize -= kvSize;
-                Debug.Assert(this.HeapMemorySize >= MemoryUtils.HashSetOverhead);
-                Debug.Assert(this.SerializedSize >= sizeof(int));
+                HeapMemorySize -= memorySize;
+                Debug.Assert(HeapMemorySize >= MemoryUtils.HashSetOverhead);
             }
         }
 
@@ -200,7 +193,7 @@ namespace Garnet.server
         public override unsafe void Scan(long start, out List<byte[]> items, out long cursor, int count = 10, byte* pattern = default, int patternLength = 0, bool isNoValue = false)
         {
             cursor = start;
-            items = new List<byte[]>();
+            items = [];
 
             if (Set.Count < start)
             {
@@ -208,7 +201,7 @@ namespace Garnet.server
                 return;
             }
 
-            int index = 0;
+            var index = 0;
             foreach (var item in Set)
             {
                 if (index < start)

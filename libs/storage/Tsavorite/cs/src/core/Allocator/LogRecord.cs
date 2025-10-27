@@ -48,7 +48,7 @@ namespace Tsavorite.core
         /// <summary>Address-only ctor. Must only be used for simple record parsing, including inline size calculations.
         /// In particular, if knowledge of whether this is a string or object record is required, or an overflow allocator is needed, this method cannot be used.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord(long physicalAddress) => this.physicalAddress = physicalAddress;
+        public LogRecord(long physicalAddress) => this.physicalAddress = physicalAddress;
 
         internal readonly long IndicatorAddress => physicalAddress + RecordInfo.Size;
         private readonly long RecordTypeAddress => physicalAddress + RecordInfo.Size + 1;
@@ -1237,6 +1237,19 @@ namespace Tsavorite.core
                 *(int*)valueAddress = ObjectIdMap.InvalidObjectId;
                 LogField.ClearObjectIdAndConvertToInline(ref InfoRef, valueAddress, objectIdMap, isKey: false);
             }
+        }
+
+        /// <summary>
+        /// Return the serialized size of the contained logRecord.
+        /// </summary>
+        public readonly int GetSerializedSize()
+        {
+            var recordSize = GetInlineRecordSizesWithUnreadObjects().allocatedSize;
+            if (Info.RecordIsInline)
+                return recordSize;
+
+            _ = GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
+            return recordSize + keyLength + (int)valueLength;
         }
 
         public void Dispose(Action<IHeapObject> objectDisposer)

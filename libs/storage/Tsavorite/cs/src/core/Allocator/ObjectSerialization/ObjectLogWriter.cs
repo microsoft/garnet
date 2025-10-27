@@ -33,10 +33,6 @@ namespace Tsavorite.core
         /// <summary>The current buffer being written to in the circular buffer list.</summary>
         internal DiskWriteBuffer writeBuffer;
 
-        /// <summary>In the most common case, SerializedSizeIsExact is true and this is the expected length of the serialized value object
-        /// (used to verify the serialized size after serialization completes).</summary>
-        ulong expectedSerializedLength;
-
         /// <summary>For object serialization, the cumulative length of the value bytes.</summary>
         ulong valueObjectBytesWritten;
 
@@ -67,7 +63,6 @@ namespace Tsavorite.core
         /// <summary>Resets start positions for the next partial flush.</summary>
         internal DiskWriteBuffer OnBeginPartialFlush(ObjectLogFilePositionInfo filePosition)
         {
-            expectedSerializedLength = 0;
             valueObjectBytesWritten = 0;
             inSerialize = false;
             writeBuffer = flushBuffers.OnBeginPartialFlush(filePosition);
@@ -94,9 +89,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="logRecord">The <see cref="LogRecord"/> whose Keys and Values are to be written to the device.</param>
         /// <remarks>This only writes Overflow and Object Keys and Values; inline portions of the record are written separately.</remarks>
-        /// <returns>The number of bytes written for the value object, if any (Overflow lengths and the length of objects that support
-        ///     <see cref="IHeapObject.SerializedSizeIsExact"/> are already known, but an object that does not support that will not know its
-        ///     <see cref="IHeapObject.SerializedSize"/>) until we've serialized it).</returns>
+        /// <returns>The number of bytes written for the value object, if any.</returns>
         public ulong WriteRecordObjects(in LogRecord logRecord)
         {
             Debug.Assert(logRecord.Info.RecordHasObjects, "Cannot call ObjectLogWriter with an inline record");
@@ -110,15 +103,7 @@ namespace Tsavorite.core
             else if (logRecord.Info.ValueIsObject)
             {
                 var obj = logRecord.ValueObject;
-                if (obj.SerializedSizeIsExact)
-                {
-                    if (obj.SerializedSize >= IHeapObject.MaxSerializedObjectSize)
-                        throw new TsavoriteException($"Object size exceeds max serialization limit of {IHeapObject.MaxSerializedObjectSize}");
-                    expectedSerializedLength = (ulong)obj.SerializedSize;
-                }
                 DoSerialize(obj);
-                if (!obj.SerializedSizeIsExact && obj.SerializedSize >= IHeapObject.MaxSerializedObjectSize)
-                    throw new TsavoriteException($"Object size exceeds max serialization limit of {IHeapObject.MaxSerializedObjectSize}");
             }
             flushBuffers.OnRecordComplete();
             return valueObjectBytesWritten;
@@ -233,7 +218,11 @@ namespace Tsavorite.core
                 dataStart += requestLength;
                 writeBuffer.currentPosition += requestLength;
                 if (inSerialize)
+                {
                     valueObjectBytesWritten += (uint)requestLength;
+                    if (valueObjectBytesWritten >= IHeapObject.MaxSerializedObjectSize)
+                        throw new TsavoriteException($"Object serialized size currently at {valueObjectBytesWritten} which exceeds max serialization limit of {IHeapObject.MaxSerializedObjectSize}");
+                }
 
                 // See if we're at the end of the buffer.
                 if (writeBuffer.RemainingCapacity == 0)
@@ -274,13 +263,6 @@ namespace Tsavorite.core
 
         void OnSerializeComplete(IHeapObject valueObject)
         {
-            if (valueObject.SerializedSizeIsExact)
-            {
-                if (valueObjectBytesWritten != expectedSerializedLength)
-                    throw new TsavoriteException($"Expected value length {expectedSerializedLength} does not match actual value length {valueObjectBytesWritten}.");
-            }
-            else
-                valueObject.SerializedSize = (long)valueObjectBytesWritten;
             inSerialize = false;
         }
 

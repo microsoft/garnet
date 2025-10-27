@@ -12,7 +12,7 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
-        private bool WriteOrSendKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output, out GarnetStatus status)
+        private bool WriteOrSendRecord(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output, out GarnetStatus status)
         {
             // Must initialize this here because we use the network buffer as output.
             if (gcs.NeedsInitialization)
@@ -20,17 +20,9 @@ namespace Garnet.cluster
 
             // Read the value for the key. This will populate output with the entire serialized record.
             status = localServerSession.BasicGarnetApi.Read_UnifiedStore(key, ref input, ref output);
-            
-            return WriteRecord(gcs, ref output.SpanByteAndMemory, status);
-        }
 
-        bool WriteRecord(GarnetClientSession gcs, ref SpanByteAndMemory output, GarnetStatus status)
-        {
-            // Skip (do not fail) if key NOTFOUND
-            if (status == GarnetStatus.NOTFOUND)
-                return true;
-
-            return WriteOrSendRecordSpan(gcs, ref output);
+            // Skip (but do not fail) if key NOTFOUND
+            return status == GarnetStatus.NOTFOUND ? true : WriteOrSendRecordSpan(gcs, ref output.SpanByteAndMemory);
         }
 
         /// <summary>
@@ -45,10 +37,12 @@ namespace Garnet.cluster
             if (gcs.NeedsInitialization)
                 gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption);
 
-            fixed (byte* ptr = output.MemorySpan)
+            fixed (byte* ptr = output.Span)
             {
+                var serializedRecordLength = new LogRecord((long)ptr).GetSerializedSize();
+
                 // Try to write serialized record to client buffer
-                while (!gcs.TryWriteRecordSpan(new(ptr, output.Length), out var task))
+                while (!gcs.TryWriteRecordSpan(new(ptr, serializedRecordLength), out var task))
                 {
                     // Flush records in the buffer
                     if (!HandleMigrateTaskResponse(task))

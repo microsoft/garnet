@@ -299,7 +299,7 @@ namespace Garnet.server
                             _ = dstListObject.LnkList.AddLast(element);
 
                         dstListObject.UpdateSize(element);
-                        newListValue = new ListObject(dstListObject.LnkList, dstListObject.sizes);
+                        newListValue = new ListObject(dstListObject.LnkList, dstListObject.HeapMemorySize);
 
                         // Upsert
                         _ = SET(destinationKey, newListValue, ref objectContext);

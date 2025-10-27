@@ -9,48 +9,13 @@ using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
-    public struct ObjectSizes
-    {
-        /// <summary>In-memory size, including .NET object overheads</summary>
-        public long HeapMemory;
-
-        /// <summary>Serialized size, for disk IO or other storage</summary>
-        public long Serialized;
-
-        /// <summary>Serialized size, for disk IO or other storage</summary>
-        public bool SerializedIsExact;
-        public ObjectSizes(long heap, long serialized)
-        {
-            HeapMemory = heap;
-            Serialized = serialized + sizeof(byte); // Additional byte for GarnetObjectBase.Type
-        }
-
-        public ObjectSizes(long heap, long serialized, bool serializedIsExact)
-            : this(heap, serialized)
-        {
-            this.SerializedIsExact = serializedIsExact;
-        }
-
-        [Conditional("DEBUG")]
-        public void Verify() => Debug.Assert(HeapMemory >= 0 && Serialized >= 0, $"Invalid sizes [{HeapMemory}, {Serialized}]");
-    }
-
     /// <summary>
     /// The base class for heap Value Objects in Tsavorite.
     /// </summary>
     public abstract class HeapObjectBase : IHeapObject
     {
         /// <inheritdoc />
-        public long HeapMemorySize { get => sizes.HeapMemory; set => sizes.HeapMemory = value; }
-
-        /// <inheritdoc />
-        public long SerializedSize { get => sizes.Serialized; set => sizes.Serialized = value; }
-
-        /// <inheritdoc />
-        public bool SerializedSizeIsExact { get => sizes.SerializedIsExact; internal set => sizes.SerializedIsExact = value; }
-
-        /// <summary>Combination of object sizes for memory and disk.</summary>
-        public ObjectSizes sizes;
+        public long HeapMemorySize { get; protected set; }
 
         /// <summary>The current internal serialization phase of the object.</summary>
         SerializationPhase SerializationPhase
