@@ -394,7 +394,7 @@ namespace Resp.benchmark
                 Thread.Sleep(runTime);
                 done = true;
             }
-            foreach (Thread worker in workers)
+            foreach (var worker in workers)
                 worker.Join();
 
             swatch.Stop();

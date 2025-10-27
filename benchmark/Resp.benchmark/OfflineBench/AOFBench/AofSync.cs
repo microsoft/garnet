@@ -1,0 +1,213 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+using Garnet.client;
+using Garnet.common;
+using StackExchange.Redis;
+using Microsoft.Extensions.Logging;
+using Tsavorite.core;
+using System.Net;
+using System.Text;
+
+namespace Resp.benchmark
+{
+    internal sealed class AofSync : IBulkLogEntryConsumer, IDisposable
+    {
+        const int maxChunkSize = 1 << 20;
+        readonly Options options;
+        readonly AofBench aofBench;
+        readonly int threadId;
+        readonly CancellationTokenSource cts = new();
+        GarnetClientSession garnetClient;
+        string primaryId;
+        readonly long startAddress;
+        public long previousAddress;
+        readonly ILogger logger = null;
+
+        public long Size => previousAddress - startAddress;
+
+        public byte[] buffer;
+
+        readonly StringBuilder info;
+
+        public AofSync(AofBench aofBench, int threadId, long startAddress, Options options, AofGen aofGen, StringBuilder info)
+        {
+            this.options = options;
+            this.aofBench = aofBench;
+            this.threadId = threadId;
+            this.info = info;
+            primaryId = null;
+            garnetClient = null;
+            this.startAddress = startAddress;
+            previousAddress = startAddress;
+
+            if (options.Client == ClientType.InProc)
+            {
+                this.buffer = GC.AllocateArray<byte>(maxChunkSize, pinned: true);
+                primaryId = Generator.CreateHexId();
+                aofBench.sessions[0].clusterSession.UnsafeSetConfig(replicaOf: primaryId);
+            }
+            else
+            {
+                // Get replica information
+                var replicaNode = GetClusterNodes(options);
+                primaryId = replicaNode.ParentNodeId;
+
+                // Initialize client
+                var aofSyncNetworkBufferSettings = aofGen.GetAofSyncNetworkBufferSettings();
+                garnetClient = new GarnetClientSession(
+                            replicaNode.EndPoint,
+                            aofSyncNetworkBufferSettings,
+                            aofSyncNetworkBufferSettings.CreateBufferPool(),
+                            tlsOptions: null,
+                            logger: logger);
+                garnetClient.Connect();
+            }
+        }
+
+        public void Dispose()
+        {
+            cts.Cancel();
+            cts.Dispose();
+        }
+
+        ClusterNode GetClusterNodes(Options opts)
+        {
+            var redis = ConnectionMultiplexer.Connect(
+                BenchUtils.GetConfig(
+                    opts.Address,
+                    opts.Port,
+                    useTLS: opts.EnableTLS,
+                    tlsHost: opts.TlsHost,
+                    allowAdmin: true));
+
+            var servers = redis.GetServers();
+            if (servers.Length < 2)
+                throw new Exception("Too few nodes for AOF bench to run");
+
+            var endpoint = new IPEndPoint(IPAddress.Parse(opts.Address), opts.Port);
+            var primaryServer = redis.GetServer(endpoint);
+            var nodes = primaryServer.ClusterNodes();
+            var primaryNodeId = (string)primaryServer.Execute("cluster", "myid");
+
+            _ = info.AppendLine("[Cluster Config]");
+            ClusterNode replicaNode = null;
+            foreach (var node in nodes.Nodes)
+            {
+                _ = info.AppendLine($"{node}");
+                if (node.ParentNodeId != null && node.ParentNodeId.Equals(primaryNodeId))
+                    replicaNode = node;
+            }
+
+            if (replicaNode == null)
+            {
+                throw new Exception($"No replica found for [{endpoint}] to run AOF bench!");
+            }
+            else
+            {
+                _ = info.AppendLine("[Running AOF Bench at]");
+                _ = info.AppendLine($"{replicaNode}");
+            }
+            return replicaNode;
+        }
+
+        public unsafe int WriterClusterAppendLog(
+            byte* bufferPtr,
+            int bufferLength,
+            string nodeId,
+            int sublogIdx,
+            long previousAddress,
+            long currentAddress,
+            long nextAddress,
+            long payloadPtr,
+            int payloadLength)
+        {
+            var CLUSTER = "$7\r\nCLUSTER\r\n"u8;
+            var appendLog = "APPENDLOG"u8;
+
+            var curr = bufferPtr;
+            var end = bufferPtr + bufferLength;
+
+            var arraySize = 8;
+
+            // 
+            if (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
+                throw new GarnetException("Not enough space in buffer");
+            // 1
+            if (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
+                throw new GarnetException("Not enough space in buffer");
+            // 2
+            if (!RespWriteUtils.TryWriteDirect(appendLog, ref curr, end))
+                throw new GarnetException("Not enough space in buffer");
+            // 3
+            if (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
+                throw new GarnetException("Not enough space in buffer");
+            // 4
+            if (!RespWriteUtils.TryWriteArrayItem(sublogIdx, ref curr, end))
+                throw new GarnetException("Not enough space in buffer");
+            // 5
+            if (!RespWriteUtils.TryWriteArrayItem(previousAddress, ref curr, end))
+                throw new GarnetException("Not enough space in buffer");
+            // 6
+            if (!RespWriteUtils.TryWriteArrayItem(currentAddress, ref curr, end))
+                throw new GarnetException("Not enough space in buffer");
+            // 7
+            if (!RespWriteUtils.TryWriteArrayItem(nextAddress, ref curr, end))
+                throw new GarnetException("Not enough space in buffer");
+            // 8
+            if (!RespWriteUtils.TryWriteBulkString(new Span<byte>((void*)payloadPtr, payloadLength), ref curr, end))
+                throw new GarnetException("Not enough space in buffer");
+
+            return (int)(curr - bufferPtr);
+        }
+
+        public unsafe void Consume(byte* payloadPtr, int payloadLength, long currentAddress, long nextAddress, bool isProtected)
+        {
+            try
+            {
+                if (options.Client == ClientType.InProc)
+                {
+                    fixed (byte* ptr = buffer)
+                    {
+                        WriterClusterAppendLog(
+                            ptr,
+                            buffer.Length,
+                            nodeId: primaryId,
+                            sublogIdx: threadId,
+                            previousAddress,
+                            currentAddress,
+                            nextAddress,
+                            (long)payloadPtr,
+                            payloadLength);
+                        _ = aofBench.sessions[threadId].TryConsumeMessages(ptr, buffer.Length);
+                    }
+                }
+                else
+                {
+                    garnetClient.ExecuteClusterAppendLog(
+                        primaryId,
+                        sublogIdx: threadId,
+                        previousAddress,
+                        currentAddress,
+                        nextAddress,
+                        (long)payloadPtr,
+                        payloadLength);
+                }
+
+                previousAddress = nextAddress;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "An exception occurred at ReplicationManager.AofSyncTaskInfo.Consume");
+                throw;
+            }
+        }
+
+        public void Throttle()
+        {
+            // Trigger flush while we are out of epoch protection
+            garnetClient.CompletePending(false);
+            garnetClient.Throttle();
+        }
+    }
+}

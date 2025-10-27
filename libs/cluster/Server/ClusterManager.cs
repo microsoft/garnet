@@ -23,6 +23,12 @@ namespace Garnet.cluster
         readonly ILogger logger;
 
         /// <summary>
+        /// NOTE: Unsafe! DO NOT USE, other than benchmarking
+        /// </summary>
+        /// <param name="clusterConfig"></param>
+        public void UnsafeSetConfig(ClusterConfig clusterConfig) => currentConfig = clusterConfig;
+
+        /// <summary>
         /// Get current config
         /// </summary>
         public ClusterConfig CurrentConfig => currentConfig;

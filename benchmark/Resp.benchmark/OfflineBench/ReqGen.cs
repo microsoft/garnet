@@ -121,7 +121,7 @@ namespace Resp.benchmark
                 {
                     keyData = Encoding.ASCII.GetBytes(Generator.CreateHexId(size: Math.Max(keyLen, 8)));
                     slot = HashSlotUtils.Hash(keyData.AsSpan());
-                } while ((slot % shardedKeys) != i);
+                } while ((slot % shards) != i);
                 slotKeys.Add(keyData);
             }
         }

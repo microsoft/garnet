@@ -1,8 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -25,18 +27,26 @@ namespace Garnet.server
         public static long Hash(ref SpanByte key)
             => (long)HashSlotUtils.Hash(key.AsSpan());
 
-        public void Hash(ref SpanByte key, out long hash, out int sublogIdx, out int keyOffset)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Hash(Span<byte> key, out long hash, out int sublogIdx, out int keyOffset)
         {
-            Debug.Assert(shardedLog != null);
-            hash = HashSlotUtils.Hash(key.AsSpan());
+            hash = HashSlotUtils.Hash(key);
             sublogIdx = (int)(hash % shardedLog.Length);
             keyOffset = (int)(hash & (ReplicaTimestampTracker.KeyOffsetCount - 1));
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Hash(ref SpanByte key, out long hash, out int sublogIdx, out int keyOffset)
+        {
+            Debug.Assert(shardedLog != null);
+            Hash(key.AsSpan(), out hash, out sublogIdx, out keyOffset);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Hash(long hash, out int sublogIdx, out int keyOffset)
         {
             sublogIdx = (int)(hash % shardedLog.Length);
-            keyOffset = (int)(hash & (ReplicaTimestampTracker.KeyOffsetCount - 1));            
+            keyOffset = (int)(hash & (ReplicaTimestampTracker.KeyOffsetCount - 1));
         }
 
         public AofAddress BeginAddress

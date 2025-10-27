@@ -96,6 +96,9 @@ namespace Resp.benchmark
                 Console.WriteLine("------EMBEDDED-SERVER-CONFIG------");
                 Console.WriteLine($"aof:{opts.EnableAOF}");
                 Console.WriteLine($"aof-null-device:{opts.UseAofNullDevice}");
+                Console.WriteLine($"aof-commit-freq:{opts.CommitFrequencyMs}");
+                Console.WriteLine($"aof-memory-size:{opts.CalculateAofMemorySizeForLoad()}");
+                Console.WriteLine($"aof-page-size:{opts.AofPageSize}");
                 Console.WriteLine($"cluster:{opts.EnableCluster}");
                 Console.WriteLine($"index:{opts.IndexSize}");
                 Console.WriteLine("----------------------------------");
@@ -260,6 +263,12 @@ namespace Resp.benchmark
                 bench.LoadData();
                 bench.Run();
                 return;
+            }
+            else if (opts.AofBench)
+            {
+                var bench = new AofBench(opts);
+                bench.GenerateData();
+                bench.Run();
             }
             else
             {
