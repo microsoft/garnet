@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -269,14 +270,23 @@ namespace Garnet.test
 
             Span<byte> buffer = stackalloc byte[128];
 
-            // TODO: restore once VEMB is re-implemented
             // Check we haven't messed up the element
-            //var res7 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
-            //ClassicAssert.AreEqual(4, res7.Length);
-            //ClassicAssert.AreEqual(float.Parse("1.0"), float.Parse(res7[0]));
-            //ClassicAssert.AreEqual(float.Parse("2.0"), float.Parse(res7[1]));
-            //ClassicAssert.AreEqual(float.Parse("3.0"), float.Parse(res7[2]));
-            //ClassicAssert.AreEqual(float.Parse("4.0"), float.Parse(res7[3]));
+            var res7 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(75, res7.Length);
+            for (var i = 0; i < res7.Length; i++)
+            {
+                var expected =
+                    (i % 4) switch
+                    {
+                        0 => float.Parse("1.0"),
+                        1 => float.Parse("2.0"),
+                        2 => float.Parse("3.0"),
+                        3 => float.Parse("4.0"),
+                        _ => throw new InvalidOperationException(),
+                    };
+
+                ClassicAssert.AreEqual(expected, float.Parse(res7[i]));
+            }
         }
 
         [Test]
@@ -337,7 +347,13 @@ namespace Garnet.test
             ClassicAssert.IsTrue(res7.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
             ClassicAssert.IsTrue(res7.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
 
-            // TODO: WITHSCORES
+            // WITHSCORES
+            var res8 = (byte[][])db.Execute("VSIM", ["foo", "XB8", byte7, "COUNT", "100", "EPSILON", "1.0", "EF", "40", "WITHSCORES"]);
+            ClassicAssert.AreEqual(4, res8.Length);
+            ClassicAssert.IsTrue(res8.Where(static (x, ix) => (ix % 2) == 0).Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
+            ClassicAssert.IsTrue(res8.Where(static (x, ix) => (ix % 2) == 0).Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
+            ClassicAssert.IsFalse(double.IsNaN(double.Parse(Encoding.UTF8.GetString(res8[1]))));
+            ClassicAssert.IsFalse(double.IsNaN(double.Parse(Encoding.UTF8.GetString(res8[3]))));
         }
 
         [Test]
@@ -371,6 +387,43 @@ namespace Garnet.test
             {
                 var id = res6[i];
                 var attr = res6[i + 1];
+
+                if (id.SequenceEqual(new byte[] { 0, 0, 0, 0 }))
+                {
+                    ClassicAssert.True(attr.SequenceEqual("hello world"u8.ToArray()));
+                }
+                else if (id.SequenceEqual(new byte[] { 0, 0, 0, 1 }))
+                {
+                    ClassicAssert.True(attr.SequenceEqual("fizz buzz"u8.ToArray()));
+                }
+                else if (id.SequenceEqual(new byte[] { 0, 0, 0, 2 }))
+                {
+                    ClassicAssert.AreEqual(0, attr.Length);
+                }
+                else if (id.SequenceEqual(new byte[] { 0, 0, 0, 3 }))
+                {
+                    ClassicAssert.AreEqual(0, attr.Length);
+                }
+                else if (id.SequenceEqual(new byte[] { 0, 0, 0, 4 }))
+                {
+                    ClassicAssert.True(bigAttr.SequenceEqual(attr));
+                }
+                else
+                {
+                    ClassicAssert.Fail("Unexpected id");
+                }
+            }
+
+            // WITHSCORES
+            var res7 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "75", "140.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40", "WITHATTRIBS", "WITHSCORES"]);
+            ClassicAssert.AreEqual(15, res7.Length);
+            for (var i = 0; i < res7.Length; i += 3)
+            {
+                var id = res7[i];
+                var score = double.Parse(Encoding.UTF8.GetString(res7[i + 1]));
+                var attr = res7[i + 2];
+
+                ClassicAssert.IsFalse(double.IsNaN(score));
 
                 if (id.SequenceEqual(new byte[] { 0, 0, 0, 0 }))
                 {
