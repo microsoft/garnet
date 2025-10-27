@@ -830,7 +830,9 @@ namespace Garnet.server
                     }
                     else if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
-                        functionsState.vectorManager.RecreateIndex(ref value);
+                        var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(10).Span);
+
+                        functionsState.vectorManager.RecreateIndex(newIndexPtr, ref value);
                     }
 
                     // Ignore everything else

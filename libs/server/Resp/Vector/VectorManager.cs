@@ -808,7 +808,7 @@ namespace Garnet.server
         /// 
         /// This implies the index still has element data, but the pointer is garbage.
         /// </summary>
-        internal void RecreateIndex(ref SpanByte indexValue)
+        internal void RecreateIndex(nint newIndexPtr, ref SpanByte indexValue)
         {
             AssertHaveStorageSession();
 
@@ -820,45 +820,11 @@ namespace Garnet.server
                 throw new GarnetException($"Acquired space for vector set index does not match expectations, {indexSpan.Length} != {Index.Size}");
             }
 
-            ReadIndex(indexSpan, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out _, out var indexProcessInstanceId);
-            Debug.Assert(processInstanceId != indexProcessInstanceId, "Should be recreating an index that matched our instance id");
-
-            nint indexPtr;
-
-            // HACK HACK HACK
-            // TODO: do something less awful here
-            var threadCtx = ActiveThreadSession;
-
-            var offload = Task.Factory.StartNew(
-                async () =>
-                {
-                    // Force off current thread
-                    await Task.Yield();
-
-                    ActiveThreadSession = threadCtx;
-                    try
-                    {
-                        unsafe
-                        {
-                            return Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
-                        }
-                    }
-                    finally
-                    {
-                        ActiveThreadSession = null;
-                    }
-                },
-                TaskCreationOptions.RunContinuationsAsynchronously
-            )
-            .Unwrap();
-
-            //indexPtr = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
-            indexPtr = offload.GetAwaiter().GetResult();
-
-            ActiveThreadSession = threadCtx;
+            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out var indexProcessInstanceId);
+            Debug.Assert(processInstanceId != indexProcessInstanceId, "Shouldn't be recreating an index that matched our instance id");
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
-            asIndex.IndexPtr = (ulong)indexPtr;
+            asIndex.IndexPtr = (ulong)newIndexPtr;
             asIndex.ProcessInstanceId = processInstanceId;
         }
 
@@ -1584,6 +1550,15 @@ namespace Garnet.server
         {
             ReadIndex(index, out var context, out _, out _, out _, out _, out _, out _, out _);
 
+            CleanupDroppedIndex(ref ctx, context);
+        }
+
+        /// <summary>
+        /// After an index is dropped, called to start the process of removing ancillary data (elements, neighbor lists, attributes, etc.).
+        /// </summary>
+        internal void CleanupDroppedIndex<TContext>(ref TContext ctx, ulong context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
             lock (this)
             {
                 contextMetadata.MarkCleaningUp(context);
@@ -1910,13 +1885,44 @@ namespace Garnet.server
                         continue;
                     }
 
+                    ReadIndex(indexSpan, out var indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out _, out _);
+
+                    input.arg1 = RecreateIndexArg;
+
+                    nint newlyAllocatedIndex;
+                    unsafe
+                    {
+                        newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                    }
+
                     input.header.cmd = RespCommand.VADD;
                     input.arg1 = RecreateIndexArg;
+
+                    input.parseState.EnsureCapacity(11);
+
+                    // Save off for recreation
+                    input.parseState.SetArgument(9, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1)))); // Strictly we don't _need_ this, but it keeps everything else aligned nicely
+                    input.parseState.SetArgument(10, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
 
                     GarnetStatus writeRes;
                     try
                     {
-                        writeRes = storageSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+                        try
+                        {
+                            writeRes = storageSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+
+                            if (writeRes != GarnetStatus.OK)
+                            {
+                                // If we didn't write, drop index so we don't leak it
+                                Service.DropIndex(indexContext, newlyAllocatedIndex);
+                            }
+                        }
+                        catch
+                        {
+                            // Drop to avoid leak on error
+                            Service.DropIndex(indexContext, newlyAllocatedIndex);
+                            throw;
+                        }
                     }
                     catch
                     {
@@ -2022,16 +2028,29 @@ namespace Garnet.server
                         continue;
                     }
 
-                    ulong newContext = 0;
-                    nint newlyAllocatedIndex = 0;
+                    ulong indexContext;
+                    nint newlyAllocatedIndex;
                     if (needsRecreate)
                     {
+                        ReadIndex(indexSpan, out indexContext, out var dims, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out _, out _);
+
                         input.arg1 = RecreateIndexArg;
+
+                        unsafe
+                        {
+                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                        }
+
+                        input.parseState.EnsureCapacity(11);
+
+                        // Save off for recreation
+                        input.parseState.SetArgument(9, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1)))); // Strictly we don't _need_ this, but it keeps everything else aligned nicely
+                        input.parseState.SetArgument(10, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
                     }
                     else
                     {
                         // Create a new index, grab a new context
-                        newContext = NextContext();
+                        indexContext = NextContext();
 
                         var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
                         var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
@@ -2045,13 +2064,13 @@ namespace Garnet.server
 
                         unsafe
                         {
-                            newlyAllocatedIndex = Service.CreateIndex(newContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                            newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
                         }
 
                         input.parseState.EnsureCapacity(11);
 
                         // Save off for insertion
-                        input.parseState.SetArgument(9, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref newContext, 1))));
+                        input.parseState.SetArgument(9, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref indexContext, 1))));
                         input.parseState.SetArgument(10, ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1))));
                     }
 
@@ -2061,13 +2080,31 @@ namespace Garnet.server
                         try
                         {
                             writeRes = storageSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+
+                            if (writeRes != GarnetStatus.OK)
+                            {
+                                // Insertion failed, drop index
+                                Service.DropIndex(indexContext, newlyAllocatedIndex);
+
+                                // If the failure was for a brand new index, free up the context too
+                                if (!needsRecreate)
+                                {
+                                    CleanupDroppedIndex(ref ActiveThreadSession.vectorContext, indexContext);
+                                }
+                            }
                         }
                         catch
                         {
                             if (newlyAllocatedIndex != 0)
                             {
-                                // Free to avoid a leak
-                                Service.DropIndex(newContext, newlyAllocatedIndex);
+                                // Drop to avoid a leak on error
+                                Service.DropIndex(indexContext, newlyAllocatedIndex);
+
+                                // If the failure was for a brand new index, free up the context too
+                                if (!needsRecreate)
+                                {
+                                    CleanupDroppedIndex(ref ActiveThreadSession.vectorContext, indexContext);
+                                }
                             }
 
                             throw;
