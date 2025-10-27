@@ -114,5 +114,11 @@ namespace Garnet.server
         /// Sets the <see cref="UserHandle"/> currently authenticated in this session (used for permission checks)
         /// </summary>
         void SetUserHandle(UserHandle userHandle);
+
+        /// <summary>
+        /// NOTE: Unsafe! DO NOT USE, other than benchmarking
+        /// </summary>
+        /// <param name="replicaOf"></param>
+        void UnsafeSetConfig(string replicaOf);
     }
 }

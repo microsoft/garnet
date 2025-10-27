@@ -182,5 +182,16 @@ namespace Garnet.cluster
             _ = clusterProvider.BumpAndWaitForEpochTransition();
             AcquireCurrentEpoch();
         }
+
+        /// <summary>
+        /// NOTE: Unsafe! DO NOT USE, other than benchmarking
+        /// </summary>
+        /// <param name="replicaOf"></param>
+        public void UnsafeSetConfig(string replicaOf = null)
+        {
+            var config = clusterProvider.clusterManager.CurrentConfig;
+            config = config.MakeReplicaOf(replicaOf);
+            clusterProvider.clusterManager.UnsafeSetConfig(config);
+        }
     }
 }

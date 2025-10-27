@@ -119,8 +119,11 @@ namespace Resp.benchmark
         [Option("sharded-keys", Required = false, Default = -1, HelpText = "Number of shards to consider when building key space (used for perferct sharding for sublog ideal benchmarking).")]
         public int ShardedKeys { get; set; }
 
+        [Option("aof-bench", Required = false, Default = false, HelpText = "Run AOF bench at replica.")]
+        public bool AofBench { get; set; }
+
         /*
-         * InProc server options
+         * InProc/AofBench server options
          */
         [Option("aof", Required = false, Default = false, HelpText = "Enable AOF")]
         public bool EnableAOF { get; set; }
@@ -136,5 +139,94 @@ namespace Resp.benchmark
 
         [Option("aof-commit-freq", Required = false, Default = 0, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
         public int CommitFrequencyMs { get; set; }
+
+        [Option("aof-page-size", Required = false, Default = "4k", HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
+        public string AofPageSize { get; set; }
+
+        /// <summary>
+        /// Parse size from string specification
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="bytesRead"></param>
+        /// <returns></returns>
+        public static long ParseSize(string value, out int bytesRead)
+        {
+            ReadOnlySpan<char> suffix = ['k', 'm', 'g', 't', 'p'];
+            long result = 0;
+            bytesRead = 0;
+            for (var i = 0; i < value.Length; i++)
+            {
+                var c = value[i];
+                if (char.IsDigit(c))
+                {
+                    result = (result * 10) + (byte)c - '0';
+                    bytesRead++;
+                }
+                else
+                {
+                    for (var s = 0; s < suffix.Length; s++)
+                    {
+                        if (char.ToLower(c) == suffix[s])
+                        {
+                            result *= (long)Math.Pow(1024, s + 1);
+                            bytesRead++;
+
+                            if (i + 1 < value.Length && char.ToLower(value[i + 1]) == 'b')
+                                bytesRead++;
+
+                            return result;
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Get AOF Page size in bits
+        /// </summary>
+        /// <returns></returns>
+        public int AofPageSizeBits()
+        {
+            var size = ParseSize(AofPageSize, out _);
+            var adjustedSize = PreviousPowerOf2(size);
+            return (int)Math.Log(adjustedSize, 2);
+        }
+
+        /// <summary>
+        /// Previous power of 2
+        /// </summary>
+        /// <param name="v"></param>
+        /// <returns></returns>
+        internal static long PreviousPowerOf2(long v)
+        {
+            v |= v >> 1;
+            v |= v >> 2;
+            v |= v >> 4;
+            v |= v >> 8;
+            v |= v >> 16;
+            v |= v >> 32;
+            return v - (v >> 1);
+        }
+
+        public string CalculateAofMemorySizeForLoad()
+        {
+            var aofMemorySize = 16 << AofPageSizeBits();
+            ReadOnlySpan<char> suffix = ['k', 'm', 'g', 't', 'p'];
+            var offset = 0;
+            var unit = 1 << 10;
+            while (offset < suffix.Length)
+            {
+                var fraction = aofMemorySize / (unit << 10);
+                if (fraction == 0)
+                    break;
+                offset++;
+                unit <<= 10;
+            }
+
+            var memorySizeStr = $"{(aofMemorySize / unit).ToString()}{suffix[offset]}";
+            //  Console.WriteLine($"AOF Memory Size: {memorySize:N2} => {memorySizeStr}");
+            return memorySizeStr;
+        }
     }
 }
