@@ -199,7 +199,7 @@ namespace Resp.benchmark
 
             string keyStr = "{" + key.ToString() + "}";
             currKeyInSlot++;
-            return Encoding.ASCII.GetBytes(keyStr.PadRight(keyLen, numericValue ? '0' : 'X'));
+            return Encoding.ASCII.GetBytes(keyStr.PadRight(keyLen, numericValue ? '1' : 'X'));
         }
 
     }
