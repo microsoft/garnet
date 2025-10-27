@@ -61,6 +61,11 @@ namespace Garnet.server
         public GarnetAppendOnlyFile AppendOnlyFile { get; }
 
         /// <summary>
+        /// 
+        /// </summary>
+        public long AofSize => AppendOnlyFile.TotalSize();
+
+        /// <summary>
         /// Version map
         /// </summary>
         public WatchVersionMap VersionMap { get; }

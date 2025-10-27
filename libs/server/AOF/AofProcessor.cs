@@ -129,8 +129,21 @@ namespace Garnet.server
         /// <returns>Tail address</returns>
         public AofAddress Recover(GarnetDatabase db, AofAddress untilAddress)
         {
-            logger?.LogInformation("Begin AOF recovery for DB ID: {id}", db.Id);
-            return RecoverReplay(db, untilAddress);
+            Stopwatch swatch = new();
+            swatch.Start();
+            try
+            {
+                logger?.LogInformation("Begin AOF recovery for DB ID: {id}", db.Id);
+                return RecoverReplay(db, untilAddress);
+            }
+            finally
+            {
+                var seconds = swatch.ElapsedMilliseconds / 1000.0;
+                var aofSize = db.AofSize;
+                var GiBperSecs = (aofSize / seconds) / (double)1_000_000_000;
+                logger?.LogInformation("AOF Recovery in {seconds} secs", seconds);
+                logger?.LogInformation("AOF Recovery throughput {GiBperSecs:N2} GiB/secs", GiBperSecs);
+            }
         }
 
         private AofAddress RecoverReplay(GarnetDatabase db, AofAddress untilAddress)
@@ -166,7 +179,7 @@ namespace Garnet.server
                         count++;
                         ProcessAofRecord(sublogIdx, entry, length);
                         if (count % 100_000 == 0)
-                            logger?.LogInformation("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", count, nextAofAddress, db.Id);
+                            logger?.LogTrace("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", count, nextAofAddress, db.Id);
                     }
 
                     logger?.LogInformation("Completed full AOF sublog {taskId} replay of {count} records (DB ID: {id})", sublogIdx, count, db.Id);
