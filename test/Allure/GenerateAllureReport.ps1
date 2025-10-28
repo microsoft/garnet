@@ -54,12 +54,16 @@ if (-not (Test-Path -Path $reportDir)) {
     Write-Error -Message "The Allure report directory $reportDir did not get created." -Category ObjectNotFound
     exit
 }
+else {
+    Write-Host "Allure report generated successfully at $reportDir.  Use 'allure open allure-report' to view it locally."
+}
 
+# DEBUG DEBUG - Removes comments
 # Deletes all .json except categories.json - do this after the report is ran just so we don't have a 1000s of result files in artifacts for each run
-Write-Host "Deleting Allure result files from $allureResultsCombinedDir"
-Get-ChildItem -Path $allureResultsCombinedDir -Filter *.json |
-    Where-Object { $_.Name -ne 'categories.json' } |
-    Remove-Item
+# Write-Host "Deleting Allure result files from $allureResultsCombinedDir"
+# Get-ChildItem -Path $allureResultsCombinedDir -Filter *.json |
+#    Where-Object { $_.Name -ne 'categories.json' } |
+#    Remove-Item
 
 # Copy the history folder from .\test\Allure\allure-report to .\test\Allure
 $newHistoryDir = "$basePath/test/Allure/allure-report/history"

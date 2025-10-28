@@ -5,13 +5,17 @@
     This script copies the Allure results into the single location of arctifacts so that all can be merged into one big report.
 #>
 
-param (
-    [string]$framework,
-    [string]$configuration,
-    [string]$testsuite
-)
+#param (
+    #[string]$framework,
+    #[string]$configuration,
+    #[string]$testsuite
+#)
 
 $OFS = "`r`n"
+
+$framework = "net9.0"
+$configuration = "Release"
+$testsuite = "Garnet.test"
 
 Write-Host "Framework: $framework"
 Write-Host "Configuration: $configuration"
@@ -27,6 +31,15 @@ if ($pathstring.Contains("test")) {
     Set-Location .\test\Allure\
 }
 
+# Run Tests
+$resultsDir = "$basePath/test/$testsuite-Windows2022-$framework-$configuration"
+Write-Host "Results Directory: $resultsDir"
+
+
+#dotnet test -c Release --no-build --filter "FullyQualifiedName~CanUseHKEYSWithLeftOverBuffer" --logger "trx;LogFileName=results.trx" --results-directory "C:\GarnetGitHub\test\TestResults"
+dotnet test "$basePath/test/Garnet.test/Garnet.test.csproj" -c $configuration --filter "FullyQualifiedName~FunctionsLockTest" --logger "trx;LogFileName=results.trx" --results-directory $resultsDir
+# DEBUG DEBUG - all tests  dotnet test "$basePath/test/Garnet.test/Garnet.test.csproj" -c $configuration --logger "trx;LogFileName=results.trx" --results-directory $resultsDir
+
 # might not be needed as will have combined results dir in artifacts
 $allureResultsCombinedDir = "$basePath/test/Allure/CombinedResults"
 
@@ -37,8 +50,8 @@ if (-not (Test-Path -Path $allureResultsCombinedDir)) {
 }
 
 # Copy all the results from the test directory to the CombinedResults directory
-# $sourceAllureResultsDir = "$basePath/test/$testsuite/bin/$configuration/$framework/allure-results"   # <-- will use this one when we have real data
-$sourceAllureResultsDir = "$basePath/test/Allure/TestData/$framework/allure-results"   # <--- this is just using the test data that is checked in because real data not available yet
+$sourceAllureResultsDir = "$basePath/test/$testsuite/bin/$configuration/$framework/allure-results"   # <-- using real data
+# $sourceAllureResultsDir = "$basePath/test/Allure/TestData/$framework/allure-results"   # <--- this is just using the test data that is checked in because real data not available yet
 if (Test-Path -Path $sourceAllureResultsDir) {
     Write-Host "Copying Allure results from $sourceAllureResultsDir to $allureResultsCombinedDir"
     Copy-Item -Path "$sourceAllureResultsDir\*" -Destination $allureResultsCombinedDir -Recurse -Force

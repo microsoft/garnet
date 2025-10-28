@@ -15,6 +15,7 @@
     <Compile Include="..\..\test\Garnet.test\ServerCredential.cs" Link="ServerCredential.cs" />
     <Compile Include="..\..\test\Garnet.test\NUnitLoggerProvider.cs" Link="NUnitLoggerProvider.cs" />
     <Compile Include="..\..\test\Garnet.test\Extensions\RateLimiterTxn.cs" Link="RateLimiterTxn.cs" />
+    <Compile Include="..\Garnet.test\AllureUtils.cs" Link="AllureUtils.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -55,6 +56,7 @@
   </ItemGroup>
 
 	<PropertyGroup>
+		<!-- Nuget package used by Allure.NUnit that fails to build using .NET Core. This package is only needed if use attribute-based steps (the [AllureStep] attribute)   -->
 		<AspectInjector_Enabled>false</AspectInjector_Enabled>
 	</PropertyGroup>
 
