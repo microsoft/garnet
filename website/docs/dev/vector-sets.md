@@ -337,7 +337,7 @@ This callback returns 1 if successful, and 0 otherwise.
 
 ## Delete Callback
 
-Another simple callback, the signarute is:
+Another simple callback, the signature is:
 ```csharp
 byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
 ```
@@ -348,11 +348,26 @@ As with the write callback, DiskANN guarantees an extra 4-bytes BEFORE `keyData`
 
 This callback returns 1 if the key was found and removed, and 0 otherwise.
 
+## Read Modify Write Callback
+
+A slightly more complicated callback, the signature is:
+```csharp
+byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
+```
+
+`context` identifies which Vector Set is being operated on AND the associated namespace,  and `keyData` and `keyLength` represent a `Span<byte>` of the key to create, read, or update.
+
+`writeLength` is the desired number of bytes, this is only used used if we must allocate a new block.
+
+After we allocate a new block or find an existing one, `dataCallback(nint dataCallbackContext, nint dataPointer, nuint dataLength)`.  Changes made to data in this callback are persisted.  This needs to be _fast_ to prevent gumming up Tsavorite, as we are under epoch protection.
+
+The callback returns 1 if key was found or created, and 0 if some error was encountered.
+
 ## DiskANN Functions
 
 Garnet calls into the following [DiskANN functions](TODO):
 
- - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback)`
+ - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback)`
  - [x] `void drop_index(ulong context, nint index)`
  - [x] `byte insert(ulong context, nint index, nint id_data, nuint id_len, VectorValueType vector_value_type, nint vector_data, nuint vector_len, nint attribute_data, nuint attribute_len)`
  - [x] `byte remove(ulong context, nint index, nint id_data, nuint id_len)`

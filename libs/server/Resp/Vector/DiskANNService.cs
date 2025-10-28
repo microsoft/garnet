@@ -21,11 +21,13 @@ namespace Garnet.server
             uint numLinks,
             delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
-            delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
         )
         {
             unsafe
             {
+                //return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
                 return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback);
             }
         }
@@ -39,9 +41,10 @@ namespace Garnet.server
             uint numLinks,
             delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
-            delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
+            delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
         )
-        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, readCallback, writeCallback, deleteCallback);
+        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, readCallback, writeCallback, deleteCallback, readModifyWriteCallback);
 
         public void DropIndex(ulong context, nint index)
         {
@@ -218,7 +221,8 @@ namespace Garnet.server
             uint numLinks,
             nint readCallback,
             nint writeCallback,
-            nint deleteCallback
+            nint deleteCallback/*,
+            nint readModifyWriteCallback*/
         );
 
         [LibraryImport(DISKANN_GARNET)]

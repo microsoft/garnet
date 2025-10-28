@@ -549,7 +549,7 @@ namespace Garnet.test
             // Single key, 4 byte keys
             {
                 VectorInput input = default;
-                input.Callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)5678;
+                input.Callback = 5678;
                 input.CallbackContext = 9012;
 
                 var data = new int[] { 4, 1234 };
@@ -585,7 +585,7 @@ namespace Garnet.test
             // Multiple keys, 4 byte keys
             {
                 VectorInput input = default;
-                input.Callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)5678;
+                input.Callback = 5678;
                 input.CallbackContext = 9012;
 
                 var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
@@ -625,7 +625,7 @@ namespace Garnet.test
             // Multiple keys, 4 byte keys, random order
             {
                 VectorInput input = default;
-                input.Callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)5678;
+                input.Callback = 5678;
                 input.CallbackContext = 9012;
 
                 var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
@@ -664,7 +664,7 @@ namespace Garnet.test
             // Single key, variable length
             {
                 VectorInput input = default;
-                input.Callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)5678;
+                input.Callback = 5678;
                 input.CallbackContext = 9012;
 
                 var key0 = "hello"u8.ToArray();
@@ -720,7 +720,7 @@ namespace Garnet.test
             // Multiple keys, variable length
             {
                 VectorInput input = default;
-                input.Callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)5678;
+                input.Callback = 5678;
                 input.CallbackContext = 9012;
 
                 var key0 = "hello"u8.ToArray();
@@ -839,7 +839,7 @@ namespace Garnet.test
             // Multiple keys, variable length, random access
             {
                 VectorInput input = default;
-                input.Callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)5678;
+                input.Callback = 5678;
                 input.CallbackContext = 9012;
 
                 var key0 = "hello"u8.ToArray();

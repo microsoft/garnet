@@ -65,12 +65,12 @@ namespace Garnet.server
 
             private bool hasPending;
 
-            public VectorReadBatch(delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void> callback, nint callbackContext, ulong context, uint keyCount, SpanByte lengthPrefixedKeys)
+            public VectorReadBatch(nint callback, nint callbackContext, ulong context, uint keyCount, SpanByte lengthPrefixedKeys)
             {
                 this.context = context;
                 this.lengthPrefixedKeys = lengthPrefixedKeys;
 
-                this.callback = callback;
+                this.callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)callback;
                 this.callbackContext = callbackContext;
 
                 currentIndex = 0;
@@ -151,7 +151,7 @@ namespace Garnet.server
 
                 input = default;
                 input.CallbackContext = callbackContext;
-                input.Callback = callback;
+                input.Callback = (nint)callback;
                 input.Index = i;
             }
 
@@ -461,6 +461,7 @@ namespace Garnet.server
         private unsafe delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> ReadCallbackPtr { get; } = &ReadCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> WriteCallbackPtr { get; } = &WriteCallbackUnmanaged;
         private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> DeleteCallbackPtr { get; } = &DeleteCallbackUnmanaged;
+        private unsafe delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> ReadModifyWriteCallbackPtr { get; } = &ReadModifyWriteCallbackUnmanaged;
 
         private DiskANNService Service { get; } = new DiskANNService();
 
@@ -475,7 +476,7 @@ namespace Garnet.server
         private readonly Task[] replicationReplayTasks;
 
         [ThreadStatic]
-        private static StorageSession ActiveThreadSession;
+        internal static StorageSession ActiveThreadSession;
 
         private readonly ILogger logger;
 
@@ -622,6 +623,8 @@ namespace Garnet.server
             key.SetNamespaceInPayload(0);
 
             VectorInput input = default;
+            input.Callback = 0;
+            input.WriteDesiredSize = ContextMetadata.Size;
             unsafe
             {
                 input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
@@ -648,10 +651,9 @@ namespace Garnet.server
             nint dataCallbackContext
         )
         {
-            // Takes: index, dataCallbackContext, data pointer, data length, and returns nothing
-            var dataCallbackDel = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)dataCallback;
+            // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
 
-            var enumerable = new VectorReadBatch(dataCallbackDel, dataCallbackContext, context, numKeys, SpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength));
+            var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, context, numKeys, SpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength));
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
 
@@ -690,6 +692,29 @@ namespace Garnet.server
             Debug.Assert(!status.IsPending, "Deletes should never go async");
 
             return status.IsCompletedSuccessfully && status.Found ? (byte)1 : default;
+        }
+
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        private static unsafe byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
+        {
+            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength);
+
+            ref var ctx = ref ActiveThreadSession.vectorContext;
+
+            VectorInput input = default;
+            input.Callback = dataCallback;
+            input.CallbackContext = dataCallbackContext;
+            input.WriteDesiredSize = (int)writeLength;
+
+            var status = ctx.RMW(ref keyWithNamespace, ref input);
+            if (status.IsPending)
+            {
+                SpanByte ignored = default;
+
+                CompletePending(ref status, ref ignored, ref ctx);
+            }
+
+            return status.IsCompletedSuccessfully ? (byte)1 : default;
         }
 
         private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
@@ -1892,7 +1917,7 @@ namespace Garnet.server
                     nint newlyAllocatedIndex;
                     unsafe
                     {
-                        newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                        newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
                     }
 
                     input.header.cmd = RespCommand.VADD;
@@ -2038,7 +2063,7 @@ namespace Garnet.server
 
                         unsafe
                         {
-                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                            newlyAllocatedIndex = Service.RecreateIndex(indexContext, dims, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
                         }
 
                         input.parseState.EnsureCapacity(11);
@@ -2064,7 +2089,7 @@ namespace Garnet.server
 
                         unsafe
                         {
-                            newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr);
+                            newlyAllocatedIndex = Service.CreateIndex(indexContext, dims, reduceDims, quantizer, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
                         }
 
                         input.parseState.EnsureCapacity(11);

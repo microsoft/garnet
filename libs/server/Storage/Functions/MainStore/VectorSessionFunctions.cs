@@ -51,9 +51,11 @@ namespace Garnet.server
 
             unsafe
             {
-                if (input.Callback != null)
+                if (input.Callback != 0)
                 {
-                    input.Callback(input.Index, input.CallbackContext, (nint)value.ToPointer(), (nuint)value.Length);
+                    var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)input.Callback;
+
+                    callback(input.Index, input.CallbackContext, (nint)value.ToPointer(), (nuint)value.Length);
                     return true;
                 }
             }
@@ -91,21 +93,45 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool NeedInitialUpdate(ref SpanByte key, ref VectorInput input, ref SpanByte output, ref RMWInfo rmwInfo)
         {
-            // Only needed when updating ContextMetadata via RMW
-            return key.LengthWithoutMetadata == 0 && key.GetNamespaceInPayload() == 0;
+            // Only needed when updating ContextMetadata via RMW or the DiskANN RMW callback, both of which set WriteDesiredSize
+            return input.WriteDesiredSize > 0;
         }
         /// <inheritdoc />
         public bool InitialUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Debug.Assert(key.LengthWithoutMetadata == 0 && key.GetNamespaceInPayload() == 0, "Should only be updating ContextMetadata");
-
-            SpanByte newMetadataValue;
-            unsafe
+            if (input.Callback == 0)
             {
-                newMetadataValue = SpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
-            }
+                Debug.Assert(key.LengthWithoutMetadata == 0 && key.GetNamespaceInPayload() == 0, "Should only be updating ContextMetadata");
 
-            return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref newMetadataValue, ref value, ref rmwInfo, ref recordInfo);
+                SpanByte newMetadataValue;
+                unsafe
+                {
+                    newMetadataValue = SpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
+                }
+
+                return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref newMetadataValue, ref value, ref rmwInfo, ref recordInfo);
+            }
+            else
+            {
+                Debug.Assert(input.WriteDesiredSize <= value.LengthWithoutMetadata, "Insufficient space for initial update, this should never happen");
+
+                rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
+
+                // Must explicitly 0 before passing if we're doing an initial update
+                value.AsSpan().Clear();
+
+                unsafe
+                {
+                    // Callback takes: dataCallbackContext, dataPtr, dataLength
+                    var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
+                    callback(input.CallbackContext, (nint)value.ToPointer(), (nuint)input.WriteDesiredSize);
+
+                    value.ShrinkSerializedLength(input.WriteDesiredSize);
+                    value.Length = input.WriteDesiredSize;
+                }
+
+                return true;
+            }
         }
         /// <inheritdoc />
         public void PostInitialUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo) { }
@@ -128,37 +154,56 @@ namespace Garnet.server
         #region RMW
         /// <inheritdoc />
         public int GetRMWInitialValueLength(ref VectorInput input)
-        => sizeof(byte) + sizeof(int) + VectorManager.ContextMetadata.Size;
+        => sizeof(byte) + sizeof(int) + input.WriteDesiredSize;
         /// <inheritdoc />
         public int GetRMWModifiedValueLength(ref SpanByte value, ref VectorInput input) => throw new NotImplementedException();
-        /// <inheritdoc />
 
+        /// <inheritdoc />
         public int GetUpsertValueLength(ref SpanByte value, ref VectorInput input)
         => sizeof(byte) + sizeof(int) + value.Length;
+
         /// <inheritdoc />
         public bool InPlaceUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
-            Debug.Assert(key.GetNamespaceInPayload() == 0 && key.LengthWithoutMetadata == 0, "Should be special context key");
-            Debug.Assert(value.LengthWithoutMetadata == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
-            Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
-
-            ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(value.AsReadOnlySpan())[0];
-
-            SpanByte newMetadataValue;
-            unsafe
+            if (input.Callback == 0)
             {
-                newMetadataValue = SpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
+                // We're doing a Metadata update
+
+                Debug.Assert(key.GetNamespaceInPayload() == 0 && key.LengthWithoutMetadata == 0, "Should be special context key");
+                Debug.Assert(value.LengthWithoutMetadata == VectorManager.ContextMetadata.Size, "Should be ContextMetadata");
+                Debug.Assert(input.CallbackContext != 0, "Should have data on VectorInput");
+
+                ref readonly var oldMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(value.AsReadOnlySpan())[0];
+
+                SpanByte newMetadataValue;
+                unsafe
+                {
+                    newMetadataValue = SpanByte.FromPinnedPointer((byte*)input.CallbackContext, VectorManager.ContextMetadata.Size);
+                }
+
+                ref readonly var newMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(newMetadataValue.AsReadOnlySpan())[0];
+
+                if (newMetadata.Version < oldMetadata.Version)
+                {
+                    rmwInfo.Action = RMWAction.CancelOperation;
+                    return false;
+                }
+
+                return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref newMetadataValue, ref value, ref rmwInfo, ref recordInfo);
             }
-
-            ref readonly var newMetadata = ref MemoryMarshal.Cast<byte, VectorManager.ContextMetadata>(newMetadataValue.AsReadOnlySpan())[0];
-
-            if (newMetadata.Version < oldMetadata.Version)
+            else
             {
-                rmwInfo.Action = RMWAction.CancelOperation;
-                return false;
-            }
+                Debug.Assert(input.WriteDesiredSize <= value.LengthWithoutMetadata, "Insufficient space for inplace update, this should never happen");
 
-            return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref newMetadataValue, ref value, ref rmwInfo, ref recordInfo);
+                unsafe
+                {
+                    // Callback takes: dataCallbackContext, dataPtr, dataLength
+                    var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)input.Callback;
+                    callback(input.CallbackContext, (nint)value.ToPointer(), (nuint)input.WriteDesiredSize);
+                }
+
+                return true;
+            }
         }
 
         /// <inheritdoc />

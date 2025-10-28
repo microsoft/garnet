@@ -19,6 +19,7 @@ namespace Garnet.test
         private delegate void ReadCallbackDelegate(ulong context, uint numKeys, nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext);
         private delegate byte WriteCallbackDelegate(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength);
         private delegate byte DeleteCallbackDelegate(ulong context, nint keyData, nuint keyLength);
+        private delegate byte ReadModifyWriteCallbackDelegate(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext);
 
         private sealed class ContextAndKeyComparer : IEqualityComparer<(ulong Context, byte[] Data)>
         {
@@ -153,15 +154,55 @@ namespace Garnet.test
                 return 0;
             }
 
+            unsafe byte ReadModifyWriteCallback(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint callback, nint callbackContext)
+            {
+                var keyDataSpan = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef<byte>((byte*)keyData), (int)keyLength);
+
+                var lookup = (context, keyDataSpan.ToArray());
+
+                var callbackDel = (delegate* unmanaged[Cdecl, SuppressGCTransition]<nint, nint, nuint, void>)callback;
+
+                _ = data.AddOrUpdate(
+                    lookup,
+                    key =>
+                    {
+                        var ret = new byte[writeLength];
+                        fixed (byte* retPtr = ret)
+                        {
+                            callbackDel(callbackContext, (nint)retPtr, (nuint)ret.Length);
+                        }
+
+                        return ret;
+                    },
+                    (key, old) =>
+                    {
+                        // Garnet guarantees no concurrent RMW update same value, but ConcurrentDictionary doesn't; so use a lock
+                        lock (old)
+                        {
+                            fixed (byte* oldPtr = old)
+                            {
+                                callbackDel(callbackContext, (nint)oldPtr, (nuint)old.Length);
+                            }
+
+                            return old;
+                        }
+                    }
+                );
+
+                return 1;
+            }
+
             ReadCallbackDelegate readDel = ReadCallback;
             WriteCallbackDelegate writeDel = WriteCallback;
             DeleteCallbackDelegate deleteDel = DeleteCallback;
+            ReadModifyWriteCallbackDelegate rmwDel = ReadModifyWriteCallback;
 
             var readFuncPtr = Marshal.GetFunctionPointerForDelegate(readDel);
             var writeFuncPtr = Marshal.GetFunctionPointerForDelegate(writeDel);
             var deleteFuncPtr = Marshal.GetFunctionPointerForDelegate(deleteDel);
+            var rmwFuncPtr = Marshal.GetFunctionPointerForDelegate(rmwDel);
 
-            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr);
+            var rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr/*, rmwFuncPtr*/);
 
             Span<byte> id = [0, 1, 2, 3];
             Span<byte> elem = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -206,7 +247,7 @@ namespace Garnet.test
             {
                 NativeDiskANNMethods.drop_index(Context, rawIndex);
 
-                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr);
+                rawIndex = NativeDiskANNMethods.create_index(Context, 75, 0, VectorQuantType.XPreQ8, 10, 10, readFuncPtr, writeFuncPtr, deleteFuncPtr/*, rmwFuncPtr*/);
             }
 
             // Search value
@@ -242,6 +283,7 @@ namespace Garnet.test
             GC.KeepAlive(deleteDel);
             GC.KeepAlive(writeDel);
             GC.KeepAlive(readDel);
+            GC.KeepAlive(rmwDel);
         }
     }
 }
