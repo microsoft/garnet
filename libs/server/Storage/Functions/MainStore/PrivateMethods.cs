@@ -532,6 +532,7 @@ namespace Garnet.server
                 // Move to tail of the log even when oldValue is alphanumeric
                 // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
                 oldValue.CopyTo(ref newValue);
+                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
                 return;
             }
 
