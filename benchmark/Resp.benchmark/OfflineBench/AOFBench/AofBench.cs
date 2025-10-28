@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Garnet.server;
+using Garnet.common;
 using Embedded.server;
 using System.Text;
 using System.Diagnostics;
@@ -17,11 +18,14 @@ namespace Resp.benchmark
         StringBuilder stats = new();
         long total_bytes_processed = 0;
         long total_pages_processed = 0;
+        long total_records_replayed = 0;
 
         internal EmbeddedRespServer server;
         internal RespServerSession[] sessions;
 
         volatile bool done = false;
+
+        internal readonly string primaryId;
 
         public AofBench(Options options)
         {
@@ -34,17 +38,25 @@ namespace Resp.benchmark
             {
                 ClusterAnnounceEndpoint = new IPEndPoint(IPAddress.Loopback, 6379),
                 QuietMode = true,
-                EnableAOF = options.EnableAOF,
+                EnableAOF = true,
                 EnableCluster = options.EnableCluster,
                 IndexSize = options.IndexSize,
                 ClusterConfigFlushFrequencyMs = -1,
+                FastAofTruncate = options.EnableCluster && options.UseAofNullDevice,
                 UseAofNullDevice = options.UseAofNullDevice,
                 CommitFrequencyMs = options.CommitFrequencyMs,
                 AofPageSize = options.AofPageSize,
                 AofMemorySize = options.CalculateAofMemorySizeForLoad(),
-                AofSublogCount = options.AofSublogCount
+                AofSublogCount = options.AofSublogCount,
+                ReplicationOffsetMaxLag = 0
             };
-            server = new EmbeddedRespServer(serverOptions, null, new GarnetServerEmbedded());
+
+            if (options.Client == ClientType.InProc)
+            {
+                primaryId = Generator.CreateHexId();
+            }
+
+            server = new EmbeddedRespServer(serverOptions, Program.loggerFactory, new GarnetServerEmbedded());
             sessions = server.GetRespSessions(options.AofSublogCount);
             aofGen = new AofGen(options, stats);
             aofSync = [.. Enumerable.Range(0, options.AofSublogCount).Select(x => new AofSync(this, threadId: x, startAddress: 0, options, aofGen, stats))];
@@ -91,10 +103,13 @@ namespace Resp.benchmark
 
             var seconds = swatch.ElapsedMilliseconds / 1000.0;
             var bytesPerSecond = (total_bytes_processed / seconds) / (double)1_000_000_000;
-
-            Console.WriteLine($"Total time: {swatch.ElapsedMilliseconds:N2}ms for {total_bytes_processed:N2} bytes");
-            Console.WriteLine($"Bandwidth: {bytesPerSecond:N2} GiB/sec");
-            Console.WriteLine($"Total pages processed {total_pages_processed:N0}");
+            var recordsReplayedPerSecond = total_records_replayed / seconds;
+            Console.WriteLine($"[Total time]: {swatch.ElapsedMilliseconds:N2} ms for {total_bytes_processed:N0} bytes");
+            Console.WriteLine($"[Bandwidth]: {bytesPerSecond:N2} GiB/sec");
+            Console.WriteLine($"[Total pages send]: {total_pages_processed:N0}");
+            Console.WriteLine($"[Total records replayed]: {total_records_replayed:N0}");
+            Console.WriteLine($"[Total records replayed] {total_records_replayed:N0}");
+            Console.WriteLine($"[Throughput]: {recordsReplayedPerSecond:N2} ops/sec");
 
             unsafe void RunAOFBench(int threadId)
             {
@@ -104,6 +119,7 @@ namespace Resp.benchmark
                 var nextAddress = 64L;
                 var pagesSend = 0L;
                 var totalBytes = 0L;
+                var recordsReplayedCount = 0L;
                 while (!done)
                 {
                     var pos = offset++ % buffers.Length;
@@ -118,11 +134,14 @@ namespace Resp.benchmark
                         currentAddress = currentAddress == 64 ? currPage.Length : currentAddress + currPage.Length;
                         pagesSend++;
                         totalBytes += currPage.payloadLength;
+                        recordsReplayedCount += currPage.recordCount;
                     }
                 }
 
+                Console.WriteLine($"[{threadId}] - Pages send: {pagesSend:N0}, Total AOF bytes send: {totalBytes:N0}, Total records replayed:{recordsReplayedCount:N0}");
                 _ = Interlocked.Add(ref total_pages_processed, pagesSend);
                 _ = Interlocked.Add(ref total_bytes_processed, totalBytes);
+                _ = Interlocked.Add(ref total_records_replayed, recordsReplayedCount);
             }
         }
     }

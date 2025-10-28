@@ -44,7 +44,7 @@ namespace Resp.benchmark
             if (options.Client == ClientType.InProc)
             {
                 this.buffer = GC.AllocateArray<byte>(maxChunkSize, pinned: true);
-                primaryId = Generator.CreateHexId();
+                primaryId = aofBench.primaryId;
                 aofBench.sessions[0].clusterSession.UnsafeSetConfig(replicaOf: primaryId);
             }
             else
@@ -137,7 +137,7 @@ namespace Resp.benchmark
             if (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
                 throw new GarnetException("Not enough space in buffer");
             // 2
-            if (!RespWriteUtils.TryWriteDirect(appendLog, ref curr, end))
+            if (!RespWriteUtils.TryWriteBulkString(appendLog, ref curr, end))
                 throw new GarnetException("Not enough space in buffer");
             // 3
             if (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
@@ -169,7 +169,7 @@ namespace Resp.benchmark
                 {
                     fixed (byte* ptr = buffer)
                     {
-                        WriterClusterAppendLog(
+                        var respMessageSize = WriterClusterAppendLog(
                             ptr,
                             buffer.Length,
                             nodeId: primaryId,
@@ -179,7 +179,7 @@ namespace Resp.benchmark
                             nextAddress,
                             (long)payloadPtr,
                             payloadLength);
-                        _ = aofBench.sessions[threadId].TryConsumeMessages(ptr, buffer.Length);
+                        _ = aofBench.sessions[threadId].TryConsumeMessages(ptr, respMessageSize);
                     }
                 }
                 else

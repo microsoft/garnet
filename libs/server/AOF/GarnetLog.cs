@@ -24,9 +24,6 @@ namespace Garnet.server
 
         public int Size => singleLog != null ? 1 : shardedLog.Length;
 
-        public static long Hash(ref SpanByte key)
-            => (long)HashSlotUtils.Hash(key.AsSpan());
-
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Hash(Span<byte> key, out long hash, out int sublogIdx, out int keyOffset)
         {

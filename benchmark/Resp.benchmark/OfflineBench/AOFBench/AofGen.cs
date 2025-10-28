@@ -39,6 +39,7 @@ namespace Resp.benchmark
 
             this.aofServerOptions = new GarnetServerOptions()
             {
+                EnableAOF = true,
                 AofMemorySize = options.CalculateAofMemorySizeForLoad(),
                 AofPageSize = options.AofPageSize,
                 UseAofNullDevice = true,
@@ -118,27 +119,28 @@ namespace Resp.benchmark
 
             var seconds = swatch.ElapsedMilliseconds / 1000.0;
             Console.WriteLine($"Generated {threads}x{options.DbSize} pages of size {aofServerOptions.AofPageSize} in {seconds:N2} secs");
-            Console.WriteLine($"Total number of AOF records: {total_number_of_aof_records:N0}");
-            Console.WriteLine($"Total number of AOF bytes: {total_number_of_aof_bytes:N0}");
+            Console.WriteLine($"Generated number of AOF records: {total_number_of_aof_records:N0}");
+            Console.WriteLine($"Generated number of AOF bytes: {total_number_of_aof_bytes:N0}");
 
             void GenerateData(int threadId)
             {
                 var number_of_aof_records = 0L;
                 var number_of_aof_bytes = 0L;
                 var kvPairs = GenerateKVPairs(threadId);
+                //Console.WriteLine($"[{threadId}] {string.Join(',', kvPairs.Select(x => Encoding.ASCII.GetString(x.Item1) + "=" + Encoding.ASCII.GetString(x.Item2)))}");
                 var pages = options.DbSize;
                 pageBuffers[threadId] = new Page[pages];
                 for (var i = 0; i < pages; i++)
                 {
                     pageBuffers[threadId][i] = new Page(1 << aofServerOptions.AofPageSizeBits());
-                    FillPage(threadId, i, pageBuffers[threadId][i]);
+                    FillPage(threadId, kvPairs, i, pageBuffers[threadId][i]);
                 }
 
                 Console.WriteLine($"[{threadId}] - Generated {number_of_aof_records:N0} AOF records, {number_of_aof_bytes:N0} AOF bytes");
                 _ = Interlocked.Add(ref total_number_of_aof_records, number_of_aof_records);
                 _ = Interlocked.Add(ref total_number_of_aof_bytes, number_of_aof_bytes);
 
-                void FillPage(int threadId, int pageCount, Page page)
+                void FillPage(int threadId, List<(byte[], byte[])> kvPairs, int pageCount, Page page)
                 {
                     fixed (byte* pagePtr = page.payload)
                     {
@@ -148,23 +150,44 @@ namespace Resp.benchmark
                         var kvOffset = 0;
                         while (true)
                         {
-                            var kvPair = kvPairs[kvOffset++ % kvPairs.Count()];
+                            var kvPair = kvPairs[kvOffset++ % kvPairs.Count];
                             var keyData = kvPair.Item1;
                             var valueData = kvPair.Item2;
                             RawStringInput input = default;
-                            fixed (byte* keyPtr = GetKey())
-                            fixed (byte* valuePtr = GetValue())
+                            fixed (byte* keyPtr = keyData)
+                            fixed (byte* valuePtr = valueData)
                             {
                                 var key = SpanByte.FromPinnedPointer(keyPtr, keyData.Length);
                                 var value = SpanByte.FromPinnedPointer(valuePtr, valueData.Length);
-                                if (!garnetLog.GetSubLog(threadId).DummyEnqueue(
-                                    ref pageOffset,
-                                    pageEnd,
-                                    new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = 1, sessionID = 0 },
-                                    ref key,
-                                    ref value,
-                                    ref input))
-                                    break;
+                                var aofHeader = new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = 1, sessionID = 0 };
+                                if (options.AofSublogCount == 1)
+                                {
+                                    if (!garnetLog.GetSubLog(threadId).DummyEnqueue(
+                                        ref pageOffset,
+                                        pageEnd,
+                                        aofHeader,
+                                        ref key,
+                                        ref value,
+                                        ref input))
+                                        break;
+                                }
+                                else
+                                {
+                                    var extendedAofHeader = new AofExtendedHeader
+                                    {
+                                        header = aofHeader,
+                                        timestamp = Stopwatch.GetTimestamp()
+                                    };
+
+                                    if (!garnetLog.GetSubLog(threadId).DummyEnqueue(
+                                        ref pageOffset,
+                                        pageEnd,
+                                        extendedAofHeader,
+                                        ref key,
+                                        ref value,
+                                        ref input))
+                                        break;
+                                }
                                 page.recordCount++;
                             }
                         }

@@ -62,6 +62,16 @@ namespace Garnet.server
         public long AofSize() => appendOnlyFile.Log.TailAddress.AggregateDiff(appendOnlyFile.Log.BeginAddress);
 
         /// <summary>
+        /// AOF BeginAddress
+        /// </summary>
+        public AofAddress BeginAddress => appendOnlyFile.Log.BeginAddress;
+
+        /// <summary>
+        /// AOF TailAddress
+        /// </summary>
+        public AofAddress TailAddress => appendOnlyFile.Log.TailAddress;
+
+        /// <summary>
         /// Last save time (of DB 0)
         /// </summary>
         public DateTimeOffset lastSaveTime => databaseManager.LastSaveTime;

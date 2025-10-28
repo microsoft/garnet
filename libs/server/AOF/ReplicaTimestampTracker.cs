@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -24,7 +25,7 @@ namespace Garnet.server
 
         public void UpdateTimestamps(long timestamp)
         {
-            foreach(var hash in hashes)
+            foreach (var hash in hashes)
             {
                 appendOnlyFile.Log.Hash(hash, out var sublogIdx, out var keyOffset);
                 appendOnlyFile.replayedTimestampProgress.UpdateKeyTimestamp(sublogIdx, keyOffset, timestamp);
@@ -107,16 +108,17 @@ namespace Garnet.server
         /// <param name="timestamp"></param>
         public void UpdateKeyTimestamp(int sublogIdx, ref SpanByte key, long timestamp)
         {
-            appendOnlyFile.Log.Hash(ref key, out var hash, out var _sublogIdx, out var keyOffset);
-            Debug.Assert(sublogIdx == _sublogIdx);
+            appendOnlyFile.Log.Hash(ref key, out _, out var _sublogIdx, out var keyOffset);
+            if (sublogIdx != _sublogIdx)
+                throw new GarnetException("Sublog index does not match key mapping!");
             _ = Utility.MonotonicUpdate(ref timestamps[sublogIdx][keyOffset], timestamp, out _);
             SignalWaiters(sublogIdx);
         }
-        
+
         public void UpdateKeyTimestamp(int sublogIdx, int keyOffset, long timestamp)
         {
             _ = Utility.MonotonicUpdate(ref timestamps[sublogIdx][keyOffset], timestamp, out _);
-            SignalWaiters(sublogIdx);            
+            SignalWaiters(sublogIdx);
         }
 
         /// <summary>
@@ -166,7 +168,7 @@ namespace Garnet.server
 
                 // Here we have to wait for replay to catch up
                 // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
-                if (replicaReadSessionContext.lastSublogIdx != sublogIdx && replicaReadSessionContext.maximumSessionTimestamp > GetKeyTimestampFrontier(sublogIdx,keyOffset))
+                if (replicaReadSessionContext.lastSublogIdx != sublogIdx && replicaReadSessionContext.maximumSessionTimestamp > GetKeyTimestampFrontier(sublogIdx, keyOffset))
                 {
                     // Before adding to the waitQ set timestamp and reader associated information
                     readSessionWaiter.waitForTimestamp = replicaReadSessionContext.maximumSessionTimestamp;

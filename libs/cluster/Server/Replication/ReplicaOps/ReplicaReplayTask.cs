@@ -82,6 +82,7 @@ namespace Garnet.cluster
             public void Throttle() { }
             #endregion
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public void ValidateSublogIndex(int sublogIdx)
             {
                 if (sublogIdx != this.sublogIdx)
@@ -192,9 +193,9 @@ namespace Garnet.cluster
                             (currentAddress >= previousAddress + recordLength) // the skip will not be auto-handled by the AOF enqueue
                             )
                         {
-                            logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", ReplicationOffset, currentAddress);
+                            logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", replicationOffset[sublogIdx], currentAddress);
                             storeWrapper.appendOnlyFile.SafeInitialize(sublogIdx, currentAddress, currentAddress);
-                            replicationOffset[0] = currentAddress;
+                            replicationOffset[sublogIdx] = currentAddress;
                         }
                     }
                 }

@@ -94,13 +94,14 @@ namespace Resp.benchmark
             if (opts.Client == ClientType.InProc)
             {
                 Console.WriteLine("------EMBEDDED-SERVER-CONFIG------");
-                Console.WriteLine($"aof:{opts.EnableAOF}");
+                Console.WriteLine($"aof:{opts.EnableAOF || opts.AofBench}");
                 Console.WriteLine($"aof-null-device:{opts.UseAofNullDevice}");
                 Console.WriteLine($"aof-commit-freq:{opts.CommitFrequencyMs}");
                 Console.WriteLine($"aof-memory-size:{opts.CalculateAofMemorySizeForLoad()}");
                 Console.WriteLine($"aof-page-size:{opts.AofPageSize}");
                 Console.WriteLine($"cluster:{opts.EnableCluster}");
                 Console.WriteLine($"index:{opts.IndexSize}");
+                Console.WriteLine($"aof-sublog-count:{opts.AofSublogCount}");
                 Console.WriteLine("----------------------------------");
             }
         }

@@ -32,7 +32,7 @@ namespace Resp.benchmark
 
         volatile bool done = false;
         long total_ops_done = 0;
-        long total_bytes_processed = 0;
+        long total_bytes_consumed = 0;
 
         public RespPerfBench(Options opts, int Start, IConnectionMultiplexer redis)
         {
@@ -48,6 +48,7 @@ namespace Resp.benchmark
 
                 var serverOptions = new GarnetServerOptions
                 {
+                    ClusterAnnounceEndpoint = new IPEndPoint(IPAddress.Loopback, 6379),
                     QuietMode = true,
                     EnableAOF = opts.EnableAOF,
                     EnableCluster = opts.EnableCluster,
@@ -56,8 +57,9 @@ namespace Resp.benchmark
                     UseAofNullDevice = opts.UseAofNullDevice,
                     CommitFrequencyMs = opts.CommitFrequencyMs,
                     AofSublogCount = opts.AofSublogCount,
+                    FastAofTruncate = opts.UseAofNullDevice && opts.CommitFrequencyMs == -1
                 };
-                server = new EmbeddedRespServer(serverOptions, null, new GarnetServerEmbedded());
+                server = new EmbeddedRespServer(serverOptions, Program.loggerFactory, new GarnetServerEmbedded());
                 sessions = server.GetRespSessions(opts.NumThreads.Max());
 
                 if (opts.EnableCluster)
@@ -380,6 +382,10 @@ namespace Resp.benchmark
                 };
             }
 
+            AofAddress beginAddress = default;
+            if (opts.Client == ClientType.InProc && sessions[0].StoreWrapper.appendOnlyFile != null)
+                beginAddress = sessions[0].StoreWrapper.TailAddress;
+
             // Start threads.
             foreach (var worker in workers)
                 worker.Start();
@@ -401,29 +407,33 @@ namespace Resp.benchmark
 
             var seconds = swatch.ElapsedMilliseconds / 1000.0;
             var opsPerSecond = total_ops_done / seconds;
-            var bytesPerSecond = (total_bytes_processed / seconds) / (double)1_000_000_000;
+            var byteConsumerPerSecond = (total_bytes_consumed / seconds) / (double)1_000_000_000;
 
             if (verbose)
             {
-                Console.WriteLine($"Total time: {swatch.ElapsedMilliseconds:N2}ms for {total_ops_done:N2} ops");
-                Console.WriteLine($"Throughput: {opsPerSecond:N2} ops/sec");
+                Console.WriteLine($"[Total time]: {swatch.ElapsedMilliseconds:N2}ms for {total_ops_done:N2} ops");
+                Console.WriteLine($"[Throughput]: {opsPerSecond:N2} ops/sec");
                 if (ClientType.InProc == opts.Client)
                 {
                     var count = sessions[0].DbSize();
-                    Console.WriteLine($"Bandwidth: {bytesPerSecond:N2} GiB/sec");
-                    Console.WriteLine($"[DB Size: {count}]");
+                    Console.WriteLine($"[BytesConsumed]: {total_bytes_consumed:N0} bytes");
+                    Console.WriteLine($"[BytesConsumedPerSecond]: {byteConsumerPerSecond:N2} GiB/sec");
+                    Console.WriteLine($"[DB Size]: {count}");
                     if (sessions[0].StoreWrapper.appendOnlyFile != null)
                     {
-                        var aofSize = sessions[0].StoreWrapper.AofSize();
+                        var tailAddress = sessions[0].StoreWrapper.TailAddress;
+                        var aofSize = tailAddress.AggregateDiff(beginAddress);
+
                         var tpt = (aofSize / seconds) / (double)1_000_000_000;
-                        Console.WriteLine($"[AOF Total Size]:{aofSize:N2} bytes");
-                        Console.WriteLine($"[AOF Append Tpt]:{tpt:N2} GiB/sec");
+                        Console.WriteLine($"[AOF Total Size]: {aofSize:N2} bytes");
+                        Console.WriteLine($"[AOF Append Tpt]: {tpt:N2} GiB/sec");
                     }
                 }
             }
 
             done = false;
             total_ops_done = 0;
+            total_bytes_consumed = 0;
             waiter.Reset();
 
             return rg;
@@ -534,7 +544,7 @@ namespace Resp.benchmark
             waiter.Wait();
 
             Stopwatch sw = new();
-            var bytesProcessed = 0L;
+            var bytesConsumed = 0L;
             sw.Start();
             while (!done)
             {
@@ -542,14 +552,14 @@ namespace Resp.benchmark
                 fixed (byte* ptr = buf)
                     _ = sessions[threadId].TryConsumeMessages(ptr, len);
 
-                bytesProcessed += len;
+                bytesConsumed += len;
                 numReqs++;
                 if (numReqs == maxReqs) break;
             }
             sw.Stop();
 
             Interlocked.Add(ref total_ops_done, numReqs * rg.BatchCount);
-            Interlocked.Add(ref total_bytes_processed, bytesProcessed);
+            Interlocked.Add(ref total_bytes_consumed, bytesConsumed);
         }
 
         private void MGetThreadRunner(int threadid, int NumOps, int BatchSize = 1 << 12)
