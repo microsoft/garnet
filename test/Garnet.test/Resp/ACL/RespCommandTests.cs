@@ -7650,10 +7650,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoVRemAsync(GarnetClient client)
             {
-                // TODO: this is a placeholder implementation
-
-                string val = await client.ExecuteForStringResultAsync("VREM", ["foo"]);
-                ClassicAssert.AreEqual("OK", val);
+                long val = await client.ExecuteForLongResultAsync("VREM", ["foo", Encoding.UTF8.GetString("\0\0\0\0"u8)]);
+                ClassicAssert.AreEqual(0, val);
             }
         }
 
