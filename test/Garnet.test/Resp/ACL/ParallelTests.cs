@@ -3,6 +3,7 @@
 
 using System.Linq;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.server.ACL;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -12,6 +13,7 @@ namespace Garnet.test.Resp.ACL
     /// <summary>
     /// Tests that operate in parallel on the ACL
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
     internal class ParallelTests : AclTest
     {

@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -14,6 +15,7 @@ namespace Garnet.test.Resp.ACL
     /// <summary>
     /// Tests for ACL GETUSER command.
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
     internal class GetUserTests : AclTest
     {
