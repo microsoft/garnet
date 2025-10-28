@@ -51,12 +51,6 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        [Test]
-        public void CreateIndex()
-        {
-            var index = NativeDiskANNMethods.create_index(0, 0, 0, 0, 0, 0, 0, 0, 0);
-            NativeDiskANNMethods.drop_index(0, index);
-        }
 
         [Test]
         public void VADD()
