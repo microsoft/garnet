@@ -135,8 +135,8 @@ namespace Tsavorite.core
         internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord CreateRemappedLogRecordOverTransientMemory(long logicalAddress, long physicalAddress)
-            => LogRecord.CreateRemappedOverTransientMemory(physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap, transientObjectIdMap);
+        internal LogRecord CreateRemappedLogRecordOverPinnedTransientMemory(long logicalAddress, long physicalAddress)
+            => LogRecord.CreateRemappedOverPinnedTransientMemory(physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap, transientObjectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal ObjectIdMap GetObjectIdMap(long logicalAddress) => pages[GetPageIndexForAddress(logicalAddress)].objectIdMap;

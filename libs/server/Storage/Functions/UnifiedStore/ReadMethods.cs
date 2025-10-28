@@ -7,7 +7,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-#pragma warning disable IDE0005 // Using directive is unnecessary.
+#pragma warning disable IDE0065 // Misplaced using directive
+    using static Utility;
     using static LogRecordUtils;
 
     /// <summary>
@@ -35,6 +36,7 @@ namespace Garnet.server
                 RespCommand.PTTL => HandleTtl(in srcLogRecord, ref output, cmd == RespCommand.PTTL),
                 RespCommand.EXPIRETIME or
                 RespCommand.PEXPIRETIME => HandleExpireTime(in srcLogRecord, ref output, cmd == RespCommand.PEXPIRETIME),
+                RespCommand.RENAME => HandleRename(in srcLogRecord, ref output),
                 _ => throw new NotImplementedException(),
             };
         }
@@ -127,6 +129,27 @@ namespace Garnet.server
             DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize,
                 valueObjectSerializer: srcLogRecord.Info.ValueIsObject ? functionsState.garnetObjectSerializer : null,
                 memoryPool: functionsState.memoryPool, output: ref output.SpanByteAndMemory);
+            return true;
+        }
+
+        private bool HandleRename<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref GarnetUnifiedStoreOutput output)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            // First, copy the inline portion of the record to the output. Any object references are retained in this step; we do *not* serialize,
+            // but rather hand off the object references (remapped to the transient allocator if needed), because RENAME is an in-memory operation.
+
+            // network In case of significant shrinkage, calculate this AllocatedSize separately rather than logRecord.GetInlineRecordSizes().allocatedSize.
+            var inlineRecordSize = RoundUp(srcLogRecord.GetInlineRecordSizes().actualSize, 8); // TODO: Constants.kRecordAlignment
+            DiskLogRecord.DirectCopyInlinePortionOfRecord(in srcLogRecord, inlineRecordSize, estimatedTotalSize: inlineRecordSize, maxHeapAllocationSize: inlineRecordSize,
+                functionsState.memoryPool, ref output.SpanByteAndMemory);
+            if (srcLogRecord.Info.RecordHasObjects)
+            {
+                fixed (byte* recordPtr = output.SpanByteAndMemory.Span)
+                {
+                    var logRecord = new LogRecord(recordPtr, srcLogRecord.ObjectIdMap);
+                    logRecord.RemapOverPinnedTransientMemory(srcLogRecord.ObjectIdMap, functionsState.transientObjectIdMap);
+                }
+            }
             return true;
         }
     }

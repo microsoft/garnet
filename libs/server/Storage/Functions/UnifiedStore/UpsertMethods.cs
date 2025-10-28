@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -35,10 +36,21 @@ namespace Garnet.server
         }
 
         public bool InitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo,
-            ref UnifiedStoreInput input,
-            in TSourceLogRecord inputLogRecord, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
+            ref UnifiedStoreInput input, in TSourceLogRecord inputLogRecord, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
-            => logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+        {
+            if (!logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
+                return false;
+
+            if (input.header.CheckWithETagFlag())
+            {
+                // If the old record had an ETag, we will replace it. Otherwise, we must have reserved space for it.
+                Debug.Assert(sizeInfo.FieldInfo.HasETag, "CheckWithETagFlag specified but SizeInfo.HasETag is false");
+                var newETag = functionsState.etagState.ETag + 1;
+                logRecord.TrySetETag(newETag);
+            }
+            return true;
+        }
 
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
             ReadOnlySpan<byte> srcValue, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)

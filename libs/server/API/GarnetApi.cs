@@ -121,6 +121,11 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord
             => storageSession.SET(in srcLogRecord, ref unifiedContext);
 
+        /// <inheritdoc />
+        public GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, in TSourceLogRecord srcLogRecord)
+            where TSourceLogRecord : ISourceLogRecord
+            => storageSession.SET(key, in srcLogRecord, ref unifiedContext);
+
         #endregion
 
         #region SETEX
@@ -162,12 +167,12 @@ namespace Garnet.server
 
         #region RENAME
         /// <inheritdoc />
-        public GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false, StoreType storeType = StoreType.All)
-            => storageSession.RENAME(oldKey, newKey, storeType, withEtag);
+        public GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false)
+            => storageSession.RENAME(oldKey, newKey, withEtag);
 
         /// <inheritdoc />
-        public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false, StoreType storeType = StoreType.All)
-            => storageSession.RENAMENX(oldKey, newKey, storeType, out result, withEtag);
+        public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false)
+            => storageSession.RENAMENX(oldKey, newKey, out result, withEtag);
         #endregion
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)

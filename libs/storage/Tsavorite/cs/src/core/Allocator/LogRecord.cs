@@ -50,6 +50,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public LogRecord(long physicalAddress) => this.physicalAddress = physicalAddress;
 
+        /// <summary>Address-only ctor. Must only be used for simple record parsing, including inline size calculations.
+        /// In particular, if knowledge of whether this is a string or object record is required, or an overflow allocator is needed, this method cannot be used.</summary>
+        public LogRecord(byte *recordPtr) => this.physicalAddress = (long)recordPtr;
+
         internal readonly long IndicatorAddress => physicalAddress + RecordInfo.Size;
         private readonly long RecordTypeAddress => physicalAddress + RecordInfo.Size + 1;
         private readonly long NamespaceAddress => physicalAddress + RecordInfo.Size + 2;
@@ -58,41 +62,56 @@ namespace Tsavorite.core
 
         /// <summary>This ctor is primarily used for internal record-creation operations for the ObjectAllocator, and is passed to IObjectSessionFunctions callbacks.</summary> 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord(long physicalAddress, ObjectIdMap objectIdMap)
+        public LogRecord(long physicalAddress, ObjectIdMap objectIdMap)
             : this(physicalAddress)
         {
             this.objectIdMap = objectIdMap;
         }
 
+        /// <summary>This ctor is primarily used for internal record-creation operations for the ObjectAllocator, and is passed to IObjectSessionFunctions callbacks.</summary> 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public LogRecord(byte* recordPtr, ObjectIdMap objectIdMap)
+            : this((long)recordPtr, objectIdMap)
+        {
+        }
+
         /// <summary>This ctor is used construct a transient copy of an in-memory LogRecord that remaps the object Ids in <paramref name="physicalAddress"/> to the transient map. 
-        /// <paramref name="physicalAddress"/> is must be a pointer to transient memory that contains a copy of the in-memory allocator page's record span, including the objectIds
+        /// <paramref name="physicalAddress"/> is a pointer to transient memory that contains a copy of the in-memory allocator page's record span, including the objectIds
         /// in Key and Value data. This is used for iteration. Note that the objects are not removed from the allocator-page map, so for iteration they may temporarily be in both.
         /// </summary> 
         /// <remarks>This is ONLY to be done for transient log records, not records on the main log.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static LogRecord CreateRemappedOverTransientMemory(long physicalAddress, ObjectIdMap allocatorMap, ObjectIdMap transientMap)
+        public static LogRecord CreateRemappedOverPinnedTransientMemory(long physicalAddress, ObjectIdMap allocatorMap, ObjectIdMap transientMap)
         {
             var logRecord = new LogRecord(physicalAddress, transientMap);
-            if (logRecord.Info.KeyIsOverflow)
+            return logRecord;
+        }
+
+        /// <summary>Remaps the object Ids to the transient map.</summary>
+        /// <remarks>This is ONLY to be done for transient log records, not records on the main log.</remarks>
+        public readonly void RemapOverPinnedTransientMemory(ObjectIdMap allocatorMap, ObjectIdMap transientMap)
+        {
+            if (ReferenceEquals(allocatorMap, transientMap))
+                return;
+            if (Info.KeyIsOverflow)
             {
-                var (length, dataAddress) = GetKeyFieldInfo(logRecord.IndicatorAddress);
+                var (length, dataAddress) = GetKeyFieldInfo(IndicatorAddress);
                 var overflow = allocatorMap.GetOverflowByteArray(*(int*)dataAddress);
                 *(int*)dataAddress = transientMap.AllocateAndSet(overflow);
             }
 
-            if (logRecord.Info.ValueIsOverflow)
+            if (Info.ValueIsOverflow)
             {
-                var (length, dataAddress) = GetValueFieldInfo(logRecord.IndicatorAddress);
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 var overflow = allocatorMap.GetOverflowByteArray(*(int*)dataAddress);
                 *(int*)dataAddress = transientMap.AllocateAndSet(overflow);
             }
-            else if (logRecord.Info.ValueIsObject)
+            else if (Info.ValueIsObject)
             {
-                var (length, dataAddress) = GetValueFieldInfo(logRecord.IndicatorAddress);
+                var (length, dataAddress) = GetValueFieldInfo(IndicatorAddress);
                 var heapObj = allocatorMap.GetHeapObject(*(int*)dataAddress);
                 *(int*)dataAddress = transientMap.AllocateAndSet(heapObj);
             }
-            return logRecord;
         }
 
         #region ISourceLogRecord

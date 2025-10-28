@@ -8,11 +8,34 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+#pragma warning disable IDE0065 // Misplaced using directive
     using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
     using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     sealed partial class StorageSession : IDisposable
     {
+        public GarnetStatus GET<TContext>(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output, ref TContext context)
+            where TContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            long ctx = default;
+            var status = context.Read(key.ReadOnlySpan, ref input, ref output, ctx);
+
+            if (status.IsPending)
+            {
+                StartPendingMetrics();
+                CompletePendingForUnifiedStoreSession(ref status, ref output, ref context);
+                StopPendingMetrics();
+            }
+
+            if (status.Found)
+            {
+                incr_session_found();
+                return GarnetStatus.OK;
+            }
+            incr_session_notfound();
+            return GarnetStatus.NOTFOUND;
+        }
+
         /// <summary>
         /// SET a log record in the unified store context.
         /// </summary>
@@ -25,7 +48,24 @@ namespace Garnet.server
             where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            unifiedContext.Upsert(in srcLogRecord);
+            _ = unifiedContext.Upsert(in srcLogRecord);
+            return GarnetStatus.OK;
+        }
+
+        /// <summary>
+        /// SET a log record in the unified store context.
+        /// </summary>
+        /// <typeparam name="TUnifiedContext"></typeparam>
+        /// <typeparam name="TSourceLogRecord"></typeparam>
+        /// <param name="key">The key to override the one in <paramref name="srcLogRecord"/>, e.g. if from RENAME.</param>
+        /// <param name="srcLogRecord">The log record</param>
+        /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
+        /// <returns></returns>
+        public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            _ = unifiedContext.Upsert(key, in srcLogRecord);
             return GarnetStatus.OK;
         }
 
@@ -45,6 +85,7 @@ namespace Garnet.server
             // Prepare GarnetUnifiedStoreOutput output
             var output = new GarnetUnifiedStoreOutput();
 
+            // TODO: The output is unused so optimize ReadMethods to not copy it.
             var status = Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
 
             return status;
@@ -165,6 +206,103 @@ namespace Garnet.server
             timeoutSet = status.Found && ((OutputHeader*)unifiedOutput.SpanByteAndMemory.SpanByte.ToPointer())->result1 == 1;
 
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+        }
+
+        /// <inheritdoc/>
+        public unsafe GarnetStatus RENAME(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, bool withEtag)
+            => RENAME(oldKeySlice, newKeySlice, false, out _, withEtag);
+
+        /// <inheritdoc/>
+        public unsafe GarnetStatus RENAMENX(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, out int result, bool withEtag)
+            => RENAME(oldKeySlice, newKeySlice, true, out result, withEtag);
+
+        private unsafe GarnetStatus RENAME(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, bool isNX, out int result, bool withEtag)
+        {
+            result = -1;
+
+            // If same name check return early.
+            if (oldKeySlice.ReadOnlySpan.SequenceEqual(newKeySlice.ReadOnlySpan))
+            {
+                result = 1;
+                return GarnetStatus.OK;
+            }
+
+            // TODO verify the keys are in the same slot
+
+            var createTransaction = false;
+            if (txnManager.state != TxnState.Running)
+            {
+                createTransaction = true;
+                txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Main | TransactionStoreTypes.Object);
+                txnManager.SaveKeyEntryToLock(oldKeySlice, LockType.Exclusive);
+                txnManager.SaveKeyEntryToLock(newKeySlice, LockType.Exclusive);
+                _ = txnManager.Run(true);
+            }
+
+            var context = txnManager.UnifiedStoreTransactionalContext;
+            var oldKey = oldKeySlice;
+            var newKey = newKeySlice;
+
+            var returnStatus = GarnetStatus.NOTFOUND;
+            var abortTransaction = false;
+
+            var output = new GarnetUnifiedStoreOutput();
+            try
+            {
+                // Check if new key exists. This extra query isn't ideal, but it should be a rare operation and there's nowhere in Input to 
+                // pass the srcLogRecord or even the ValueObject to RMW.
+                if (isNX && EXISTS(newKey, ref context) != GarnetStatus.NOTFOUND)
+                {
+                    result = 0;             // This is the "oldkey was found" return
+                    abortTransaction = true;
+                    return GarnetStatus.OK;
+                }
+
+                // Set the input so Read knows to do the special "serialization" into output
+                UnifiedStoreInput input = new(RespCommand.RENAME);
+                var status = GET(oldKey, ref input, ref output, ref context);
+                if (status != GarnetStatus.OK)
+                {
+                    abortTransaction = true;
+                    return status;
+                }
+
+                if (status == GarnetStatus.OK)
+                {
+                    fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
+                    {
+                        // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
+                        var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
+
+                        // The spec is that Expiration does not change. Set input ETag flag if requested.
+                        input = new();
+                        if (withEtag)
+                            input.header.SetWithETagFlag();
+
+                        status = SET(newKey, in logRecord, ref context);
+                        if (status == GarnetStatus.OK)
+                        {
+                            result = 1;
+
+                            // Delete the old key
+                            _ = DELETE(oldKey, ref context);
+                            return GarnetStatus.OK;
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                if (createTransaction)
+                {
+                    if (abortTransaction)
+                        txnManager.Reset();
+                    else
+                        txnManager.Commit(true);
+                }
+                output.Dispose();
+            }
+            return returnStatus;
         }
     }
 }
