@@ -239,6 +239,29 @@ namespace Garnet.test
         #region ETAG GET Happy Paths
 
         [Test]
+        public void GetWithEtagReturnsValAndEtagForKey2()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            IDatabase db = redis.GetDatabase(0);
+
+            var key = "florida";
+            // Data that does not exist returns nil
+            RedisResult nonExistingData = db.Execute("EXECWITHETAG", ["GET", key]);
+            ClassicAssert.IsTrue(nonExistingData.IsNull);
+
+            // insert data
+            //var initEtag = db.Execute("SET", key, "hkhalid", "WITHETAG");
+            //ClassicAssert.AreEqual(1, long.Parse(initEtag.ToString()));
+
+            //RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", [key]);
+            //long etag = long.Parse(res[0].ToString());
+            //string value = res[1].ToString();
+
+            //ClassicAssert.AreEqual(1, etag);
+            //ClassicAssert.AreEqual("hkhalid", value);
+        }
+
+        [Test]
         public void GetWithEtagReturnsValAndEtagForKey()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
