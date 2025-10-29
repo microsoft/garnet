@@ -3,6 +3,7 @@
 
 using System;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Allure.Net.Commons;
 using NUnit.Framework;
@@ -18,7 +19,9 @@ namespace Garnet.test
         [SetUp]
         public void LabelEnvironment()
         {
-            var os = Environment.OSVersion.Platform.ToString().ToLower();
+            string os = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "linux" :
+                        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "windows" :
+                        "unknown";
             var frameworkAttr = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<TargetFrameworkAttribute>();
 
@@ -34,17 +37,17 @@ namespace Garnet.test
             }
             var config = Assembly.GetExecutingAssembly()
                 .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration ?? "unknown";
-            var timestamp = DateTime.Now.ToString("M/d/yyyy HH:mm"); // e.g., "9/17/2025 14:51"
+            // var timestamp = DateTime.Now.ToString("M/d/yyyy HH:mm"); // e.g., "9/17/2025 14:51"
+            var timestamp = DateTime.Now.ToString("M/d/yyyy"); // e.g., "9/17/2025"
             var fullName = $"[{os}, {framework}, {config}]";
             var namespaceName = GetType().Namespace ?? "UnknownNamespace";
 
             AllureLifecycle.Instance.UpdateTestCase(x =>
             {
-                //x.labels.Add(Label.ParentSuite($"{namespaceName} - {timestamp}"));
-                x.labels.Add(Label.ParentSuite($"{namespaceName}"));
+                x.labels.Add(Label.ParentSuite($"{namespaceName} - {timestamp}"));
                 x.labels.Add(Label.Suite(os));
                 x.labels.Add(Label.SubSuite($"{framework} | {config}"));
-                //x.historyId = Guid.NewGuid().ToString(); // Optional: breaks history grouping but keeps each test separate (shows as a "retry" if not separate). Adding the "TestParameter" also handles this.
+                //x.historyId = Guid.NewGuid().ToString(); // Optional: breaks history grouping but keeps each test separate (shows as a "retry" if not separate). Adding the "AddTestParameter" also handles this.
             });
 
             // allows to separate out tests based on config but still hold history
