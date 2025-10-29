@@ -358,6 +358,8 @@ byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLeng
 
 After we allocate a new block or find an existing one, `dataCallback(nint dataCallbackContext, nint dataPointer, nuint dataLength)`.  Changes made to data in this callback are persisted.  This needs to be _fast_ to prevent gumming up Tsavorite, as we are under epoch protection.
 
+Newly allocated blocks are guaranteed to be all zeros.
+
 The callback returns 1 if key was found or created, and 0 if some error was encountered.
 
 ## DiskANN Functions
