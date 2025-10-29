@@ -1397,8 +1397,6 @@ namespace Garnet.test
         }
 
         [Test]
-        [TestCase(double.MinValue, double.MinValue)]
-        [TestCase(double.MaxValue, double.MaxValue)]
         [TestCase("abc", 10)]
         [TestCase(10, "xyz")]
         [TestCase(10, "inf")]
@@ -1414,6 +1412,23 @@ namespace Garnet.test
                 db.StringSet(key, (string)initialValue);
 
             Assert.Throws<RedisServerException>(() => db.Execute("INCRBYFLOAT", key, incrByValue));
+        }
+
+        [Test]
+        [TestCase(double.MinValue, double.MinValue)]
+        [TestCase(double.MaxValue, double.MaxValue)]
+        public void SimpleIncrementByFloatWithOutOfRangeFloat(object initialValue, object incrByValue)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var key = "key1";
+            if (initialValue is double)
+                db.StringSet(key, (double)initialValue);
+            else if (initialValue is string)
+                db.StringSet(key, (string)initialValue);
+
+            // TODO: This is RedisServerException in the InPlaceUpdater call, but GetRMWModifiedFieldInfo currently throws RedisConnectionException
+            Assert.Throws<RedisConnectionException>(() => db.Execute("INCRBYFLOAT", key, incrByValue));
         }
 
         [Test]

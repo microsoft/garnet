@@ -499,7 +499,6 @@ namespace Garnet.server
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
-                                       + sizeof(long) // arg2
                                        + parseState.GetSerializedLength();
 
         /// <inheritdoc />

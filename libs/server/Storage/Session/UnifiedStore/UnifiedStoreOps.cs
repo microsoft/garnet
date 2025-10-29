@@ -251,7 +251,7 @@ namespace Garnet.server
             try
             {
                 // Check if new key exists. This extra query isn't ideal, but it should be a rare operation and there's nowhere in Input to 
-                // pass the srcLogRecord or even the ValueObject to RMW.
+                // pass the srcLogRecord or even the ValueObject to RMW. TODO: Optimize this to return only the ETag, or set functionsState.etagState.ETag directly.
                 // Set the input so Read knows to do the special "serialization" into output
                 UnifiedStoreInput input = new(RespCommand.RENAME);
                 var status = GET(newKey, ref input, ref output, ref context);

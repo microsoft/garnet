@@ -40,8 +40,6 @@ namespace Tsavorite.test
         public TestObjectValue()
         {
             HeapMemorySize = sizeof(int);
-            SerializedSize = HeapMemorySize;
-            SerializedSizeIsExact = true;
         }
 
         public class Serializer : BinaryObjectSerializer<IHeapObject>
@@ -201,14 +199,6 @@ namespace Tsavorite.test
             value = new byte[size];
             for (int i = 0; i < size; i++)
                 value[i] = (byte)(size + i);
-            SetSizes(serializedSizeIsExact);
-        }
-
-        private void SetSizes(bool serializedSizeIsExact = true)
-        {
-            SerializedSize = sizeof(int) + value.Length;
-            HeapMemorySize = SerializedSize + 24; // TODO: ByteArrayOverhead
-            SerializedSizeIsExact = serializedSizeIsExact;
         }
 
         public class Serializer : BinaryObjectSerializer<IHeapObject>
@@ -222,8 +212,6 @@ namespace Tsavorite.test
 
                 value.value = reader.ReadBytes(size);
                 Assert.That(value.value.Length, Is.EqualTo(size));
-
-                value.SetSizes();
             }
 
             public override void Serialize(IHeapObject obj)

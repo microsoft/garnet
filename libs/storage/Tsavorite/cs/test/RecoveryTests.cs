@@ -240,21 +240,25 @@ namespace Tsavorite.test.recovery.sumstore
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
-            log = new LocalMemoryDevice(1L << 26, 1L << 22, 2, sector_size: smallSector ? 64 : (uint)512, fileName: Path.Join(MethodTestDir, $"{allocatorType}.log"));
-            objlog = allocatorType == AllocatorType.Object
-                ? new LocalMemoryDevice(1L << 26, 1L << 22, 2, fileName: Path.Join(MethodTestDir, $"{allocatorType}.obj.log"))
-                : null;
-
-            var result = new TsavoriteKV<TStoreFunctions, TAllocator>(new()
+            var kvSettings = new KVSettings()
             {
                 IndexSize = DeviceTypeRecoveryTests.KeySpace,
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 SegmentSize = 1L << 25,
+                ObjectLogSegmentSize = 1L << 27,
                 CheckpointDir = MethodTestDir
-            }, storeFunctionsCreator()
-                , allocatorCreator
-            );
+            };
+
+            log = new LocalMemoryDevice(kvSettings.SegmentSize * 4, 1L << 22, 2, sector_size: smallSector ? 64 : (uint)512, fileName: Path.Join(MethodTestDir, $"{allocatorType}.log"));
+            objlog = allocatorType == AllocatorType.Object
+                ? new LocalMemoryDevice(capacity: kvSettings.ObjectLogSegmentSize * 4, 1L << 22, 2, fileName: Path.Join(MethodTestDir, $"{allocatorType}.obj.log"))
+                : null;
+
+            kvSettings.LogDevice = log;
+            kvSettings.ObjectLogDevice = objlog;
+
+            var result = new TsavoriteKV<TStoreFunctions, TAllocator>(kvSettings, storeFunctionsCreator(), allocatorCreator);
 
             storeDisp = result;
             return result;

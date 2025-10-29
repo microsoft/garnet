@@ -24,8 +24,6 @@ namespace Tsavorite.test.recovery.objects
         public NumClicksObj()
         {
             HeapMemorySize = sizeof(long);
-            SerializedSize = HeapMemorySize;
-            SerializedSizeIsExact = true;
         }
 
         public class Serializer : BinaryObjectSerializer<IHeapObject>

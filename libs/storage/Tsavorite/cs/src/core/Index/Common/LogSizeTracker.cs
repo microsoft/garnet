@@ -23,7 +23,7 @@ namespace Tsavorite.core
         Deserialize
     }
 
-    public class LogOperationObserver<TStoreFunctions, TAllocator, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator>
+    public class LogOperationObserver<TStoreFunctions, TAllocator, TLogSizeCalculator> : ITsavoriteRecordObserver<ITsavoriteScanIterator>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
         where TLogSizeCalculator : ILogSizeCalculator
@@ -47,10 +47,16 @@ namespace Tsavorite.core
             while (records.GetNext())
                 size += logSizeTracker.LogSizeCalculator.CalculateRecordSize(in records);
 
-            if (size == 0)
-                return;
+            if (size != 0 && logOperationType == LogOperationType.Deserialize)
+                logSizeTracker.IncrementSize(size);
+        }
 
-            if (logOperationType == LogOperationType.Deserialize)
+        public void OnRecord<TSourceLogRecord>(in TSourceLogRecord logRecord)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            var size = logSizeTracker.LogSizeCalculator.CalculateRecordSize(in logRecord);
+
+            if (size != 0 && logOperationType == LogOperationType.Deserialize)
                 logSizeTracker.IncrementSize(size);
         }
     }
@@ -59,7 +65,7 @@ namespace Tsavorite.core
     /// <typeparam name="TStoreFunctions"></typeparam>
     /// <typeparam name="TAllocator"></typeparam>
     /// <typeparam name="TLogSizeCalculator">Type of the log size calculator</typeparam>
-    public class LogSizeTracker<TStoreFunctions, TAllocator, TLogSizeCalculator> : IObserver<ITsavoriteScanIterator>
+    public class LogSizeTracker<TStoreFunctions, TAllocator, TLogSizeCalculator> : ITsavoriteRecordObserver<ITsavoriteScanIterator>
         where TLogSizeCalculator : ILogSizeCalculator
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
@@ -151,10 +157,17 @@ namespace Tsavorite.core
             while (records.GetNext())
                 size += LogSizeCalculator.CalculateRecordSize(in records);
 
-            if (size == 0)
-                return;
+            if (size != 0)
+                IncrementSize(-size); // Reduce size as records are being evicted
+        }
 
-            IncrementSize(-size); // Reduce size as records are being evicted
+        public void OnRecord<TSourceLogRecord>(in TSourceLogRecord logRecord)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            var size = LogSizeCalculator.CalculateRecordSize(in logRecord);
+
+            if (size != 0)
+                IncrementSize(-size); // Reduce size as records are being evicted
         }
 
         /// <summary>Adds size to the tracked total count</summary>

@@ -26,7 +26,6 @@ namespace Tsavorite.benchmark
         public ObjectValue()
         {
             HeapMemorySize = sizeof(long);
-            SerializedSize = HeapMemorySize;
         }
 
         public class Serializer : BinaryObjectSerializer<IHeapObject>

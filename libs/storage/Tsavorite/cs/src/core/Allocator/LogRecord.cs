@@ -84,6 +84,7 @@ namespace Tsavorite.core
         public static LogRecord CreateRemappedOverPinnedTransientMemory(long physicalAddress, ObjectIdMap allocatorMap, ObjectIdMap transientMap)
         {
             var logRecord = new LogRecord(physicalAddress, transientMap);
+            logRecord.RemapOverPinnedTransientMemory(allocatorMap, transientMap);
             return logRecord;
         }
 

@@ -208,10 +208,10 @@ namespace Tsavorite.core
         internal IObserver<ITsavoriteScanIterator> OnReadOnlyObserver;
 
         /// <summary>Observer for records getting evicted from memory (page closed)</summary>
-        internal IObserver<ITsavoriteScanIterator> OnEvictionObserver;
+        internal ITsavoriteRecordObserver<ITsavoriteScanIterator> OnEvictionObserver;
 
         /// <summary>Observer for records brought into memory by deserializing pages</summary>
-        internal IObserver<ITsavoriteScanIterator> OnDeserializationObserver;
+        internal ITsavoriteRecordObserver<ITsavoriteScanIterator> OnDeserializationObserver;
 
         /// <summary>The "event" to be waited on for flush completion by the initiator of an operation</summary>
         internal CompletionEvent FlushEvent;
@@ -902,7 +902,7 @@ namespace Tsavorite.core
 
         /// <summary>Get page index for address</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(LogAddress.GetPageOfAddress(logicalAddress, LogPageSizeBits));
+        public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(GetPageOfAddress(logicalAddress, LogPageSizeBits));
 
         /// <summary>Get capacity (number of pages)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
