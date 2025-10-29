@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -148,18 +149,25 @@ namespace Tsavorite.core
             }
         }
 
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
         async ValueTask ReadWorkerAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
         {
             uint errorCode = 0;
             uint numBytes = 0;
             StorageAccessContext storageAccessContext = default;
-            AsyncPool<StorageAccessContext> streamPool = default;
+            AsyncPool<StorageAccessContext> storageAccessContextPool = default;
 
             try
             {
                 _ = Interlocked.Increment(ref numPending);
-                streamPool = GetOrAddHandle(segmentId).Item1;
-                storageAccessContext = await streamPool.GetAsync().ConfigureAwait(false);
+                storageAccessContextPool = GetOrAddHandle(segmentId).Item1;
+
+                var task = storageAccessContextPool.GetAsync();
+                if (task.IsCompletedSuccessfully)
+                    storageAccessContext = task.Result;
+                else
+                    storageAccessContext = await task.ConfigureAwait(false);
+
                 unsafe
                 {
                     storageAccessContext.memoryManager.SetDestination((byte*)destinationAddress, (int)readLength);
@@ -178,7 +186,8 @@ namespace Tsavorite.core
             {
                 _ = Interlocked.Decrement(ref numPending);
                 // Sequentialize all reads from same handle
-                if (storageAccessContext.handle != default) streamPool.Return(storageAccessContext);
+                if (storageAccessContextPool != null && storageAccessContext.handle != default)
+                    storageAccessContextPool.Return(storageAccessContext);
                 // Issue user callback
                 callback(errorCode, numBytes, context);
             }
@@ -193,131 +202,58 @@ namespace Tsavorite.core
         /// <param name="numBytesToWrite"></param>
         /// <param name="callback"></param>
         /// <param name="context"></param>
-        public override void WriteAsync(IntPtr sourceAddress,
-                                      int segmentId,
-                                      ulong destinationAddress,
-                                      uint numBytesToWrite,
-                                      DeviceIOCompletionCallback callback,
-                                      object context)
+        public override void WriteAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
         {
-            StorageAccessContext storageAccessContext = default;
+            using (ExecutionContext.SuppressFlow())
+            {
+                _ = WriteWorkerAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
+            }
+        }
+
+        [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder))]
+        async ValueTask WriteWorkerAsync(IntPtr sourceAddress, int segmentId, ulong destinationAddress, uint numBytesToWrite, DeviceIOCompletionCallback callback, object context)
+        {
             uint errorCode = 0;
-            bool gotHandle;
+            StorageAccessContext storageAccessContext = default;
+            AsyncPool<StorageAccessContext> storageAccessContextPool = default;
 
             HandleCapacity(segmentId);
 
             try
             {
-                Interlocked.Increment(ref numPending);
-                var streamPool = GetOrAddHandle(segmentId).Item2;
-                gotHandle = streamPool.TryGet(out storageAccessContext);
-                if (gotHandle)
+                _ = Interlocked.Increment(ref numPending);
+                storageAccessContextPool = GetOrAddHandle(segmentId).Item2;
+
+                var task = storageAccessContextPool.GetAsync();
+                if (task.IsCompletedSuccessfully)
+                    storageAccessContext = task.Result;
+                else
+                    storageAccessContext = await task.ConfigureAwait(false);
+
+                unsafe
                 {
-                    unsafe
-                    {
-                        storageAccessContext.memoryManager.SetDestination((byte*)sourceAddress, (int)numBytesToWrite);
-                    }
-                    var task = RandomAccess.WriteAsync(storageAccessContext.handle.SafeFileHandle, storageAccessContext.memoryManager.Memory, (long)destinationAddress);
-
-                    if (task.IsCompletedSuccessfully)
-                    {
-                        Interlocked.Decrement(ref numPending);
-                        streamPool.Return(storageAccessContext);
-                        callback(0, numBytesToWrite, context);
-                        return;
-                    }
-                    else
-                    {
-                        task.GetAwaiter().UnsafeOnCompleted(() =>
-                        {
-                            try
-                            {
-                                task.GetAwaiter().GetResult();
-                            }
-                            catch (Exception ex)
-                            {
-                                if (ex.InnerException != null && ex.InnerException is IOException ioex)
-                                    errorCode = (uint)(ioex.HResult & 0x0000FFFF);
-                                else
-                                    errorCode = uint.MaxValue;
-                                numBytesToWrite = 0;
-                            }
-                            finally
-                            {
-                                Interlocked.Decrement(ref numPending);
-                                // Sequentialize all writes to same handle
-                                streamPool.Return(storageAccessContext);
-                                // Issue user callback
-                                callback(errorCode, numBytesToWrite, context);
-                            }
-                        });
-                    }
+                    storageAccessContext.memoryManager.SetDestination((byte*)sourceAddress, (int)numBytesToWrite);
                 }
+                await RandomAccess.WriteAsync(storageAccessContext.handle.SafeFileHandle, storageAccessContext.memoryManager.Memory, (long)destinationAddress);
             }
-            catch
+            catch (Exception ex)
             {
-                Interlocked.Decrement(ref numPending);
-
-                // Perform pool returns and disposals
-                if (storageAccessContext.handle != null) streamPool?.Return(storageAccessContext);
-
+                var ioex = ex as IOException ?? ex.InnerException as IOException;
+                if (ioex is not null)
+                    errorCode = (uint)(ioex.HResult & 0x0000FFFF);
+                else
+                    errorCode = uint.MaxValue;
+                numBytesToWrite = 0;
+            }
+            finally
+            {
+                _ = Interlocked.Decrement(ref numPending);
+                // Sequentialize all writes to same handle
+                if (storageAccessContextPool != null && storageAccessContext.handle != default)
+                    storageAccessContextPool.Return(storageAccessContext);
                 // Issue user callback
-                callback(uint.MaxValue, 0, context);
-                return;
+                callback(errorCode, numBytesToWrite, context);
             }
-
-            _ = Task.Run(async () =>
-            {
-                if (!gotHandle)
-                {
-                    try
-                    {
-                        logWriteHandle = await streampool.GetAsync().ConfigureAwait(false);
-                        logWriteHandle.Seek((long)destinationAddress, SeekOrigin.Begin);
-                        unsafe
-                        {
-                            umm = new UnmanagedMemoryManager<byte>((byte*)sourceAddress, (int)numBytesToWrite);
-                        }
-
-                        writeTask = logWriteHandle.WriteAsync(umm.Memory).AsTask();
-                    }
-                    catch
-                    {
-                        Interlocked.Decrement(ref numPending);
-
-                        // Perform pool returns and disposals
-                        if (logWriteHandle != null) streampool?.Return(logWriteHandle);
-
-                        // Issue user callback
-                        callback(uint.MaxValue, 0, context);
-                        return;
-                    }
-                }
-
-                try
-                {
-                    await writeTask.ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    if (ex.InnerException != null && ex.InnerException is IOException ioex)
-                        errorCode = (uint)(ioex.HResult & 0x0000FFFF);
-                    else
-                        errorCode = uint.MaxValue;
-                    numBytesToWrite = 0;
-                }
-                finally
-                {
-                    Interlocked.Decrement(ref numPending);
-
-                    // Sequentialize all writes to same handle
-                    await ((FileStream)logWriteHandle).FlushAsync().ConfigureAwait(false);
-                    streampool?.Return(logWriteHandle);
-
-                    // Issue user callback
-                    callback(errorCode, numBytesToWrite, context);
-                }
-            });
         }
 
         /// <summary>
@@ -326,7 +262,7 @@ namespace Tsavorite.core
         /// <param name="segment"></param>
         public override void RemoveSegment(int segment)
         {
-            if (logHandles.TryRemove(segment, out (AsyncPool<Stream>, AsyncPool<Stream>) logHandle))
+            if (logHandles.TryRemove(segment, out (AsyncPool<StorageAccessContext>, AsyncPool<StorageAccessContext>) logHandle))
             {
                 logHandle.Item1.Dispose();
                 logHandle.Item2.Dispose();
@@ -358,11 +294,10 @@ namespace Tsavorite.core
             if (!pool.Item1.TryGet(out var stream))
                 stream = pool.Item1.Get();
 
-            long size = stream.Length;
+            long size = stream.handle.Length;
             pool.Item1.Return(stream);
             return size;
         }
-
 
         /// <summary>
         /// Close device
@@ -390,11 +325,7 @@ namespace Tsavorite.core
                 return 512;
             }
 
-            if (!Native32.GetDiskFreeSpace(filename.Substring(0, 3),
-                                        out _,
-                                        out uint _sectorSize,
-                                        out _,
-                                        out _))
+            if (!Native32.GetDiskFreeSpace(filename.Substring(0, 3), out _, out uint _sectorSize, out _, out _))
             {
                 Debug.WriteLine("Unable to retrieve information for disk " + filename.Substring(0, 3) + " - check if the disk is available and you have specified the full path with drive name. Assuming sector size of 512 bytes.");
                 _sectorSize = 512;
@@ -419,7 +350,7 @@ namespace Tsavorite.core
             return new StorageAccessContext { handle = logReadHandle, memoryManager = new UnmanagedMemoryManager<byte>() };
         }
 
-        private Stream CreateWriteHandle(int segmentId)
+        private StorageAccessContext CreateWriteHandle(int segmentId)
         {
             const int FILE_FLAG_NO_BUFFERING = 0x20000000;
             FileOptions fo =
@@ -437,7 +368,7 @@ namespace Tsavorite.core
             if (preallocateFile && segmentSize != -1)
                 SetFileSize(logWriteHandle, segmentSize);
 
-            return logWriteHandle;
+            return new StorageAccessContext { handle = logWriteHandle, memoryManager = new UnmanagedMemoryManager<byte>() };
         }
 
         private (AsyncPool<StorageAccessContext>, AsyncPool<StorageAccessContext>) AddHandle(int _segmentId)
