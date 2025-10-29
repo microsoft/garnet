@@ -147,6 +147,9 @@ namespace Garnet.server
                     if (StoreWrapper.serverOptions.FailOnRecoveryError)
                         throw new GarnetException("Main store and object store checkpoint versions do not match");
                 }
+
+                // Once everything is setup, initialize the VectorManager
+                db.VectorManager.Initialize();
             }
         }
 
@@ -712,7 +715,7 @@ namespace Garnet.server
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
             return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper.customCommandManager, null, db.ObjectStoreSizeTracker,
-                StoreWrapper.GarnetObjectSerializer, StoreWrapper.vectorManager, respProtocolVersion);
+                StoreWrapper.GarnetObjectSerializer, db.VectorManager, respProtocolVersion);
         }
 
         /// <inheritdoc/>

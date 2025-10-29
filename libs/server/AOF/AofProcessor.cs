@@ -34,6 +34,7 @@ namespace Garnet.server
         private readonly SessionParseState parseState;
 
         int activeDbId;
+        VectorManager activeVectorManager;
 
         /// <summary>
         /// Set ReadWriteSession on the cluster session (NOTE: used for replaying stored procedures only)
@@ -201,7 +202,7 @@ namespace Garnet.server
             // Aggressively do not move data if VADD are being replayed
             if (header.opType != AofEntryType.StoreRMW)
             {
-                storeWrapper.vectorManager.WaitForVectorOperationsToComplete();
+                activeVectorManager.WaitForVectorOperationsToComplete();
             }
 
             if (inflightTxns.ContainsKey(header.sessionID))
@@ -350,7 +351,7 @@ namespace Garnet.server
             // otherwise we might loose consistency
             if (header.opType != AofEntryType.StoreRMW)
             {
-                storeWrapper.vectorManager.WaitForVectorOperationsToComplete();
+                activeVectorManager.WaitForVectorOperationsToComplete();
             }
 
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
@@ -362,10 +363,10 @@ namespace Garnet.server
                     StoreUpsert(basicContext, storeInput, entryPtr);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(basicContext, storeInput, storeWrapper.vectorManager, respServerSession, ObtainServerSession, entryPtr);
+                    StoreRMW(basicContext, storeInput, activeVectorManager, respServerSession, ObtainServerSession, entryPtr);
                     break;
                 case AofEntryType.StoreDelete:
-                    StoreDelete(basicContext, storeWrapper.vectorManager, respServerSession.storageSession, entryPtr);
+                    StoreDelete(basicContext, activeVectorManager, respServerSession.storageSession, entryPtr);
                     break;
                 case AofEntryType.ObjectStoreRMW:
                     ObjectStoreRMW(objectStoreBasicContext, objectStoreInput, entryPtr, bufferPtr, buffer.Length);
@@ -417,6 +418,8 @@ namespace Garnet.server
                     objectStoreBasicContext = objectStoreSession.BasicContext;
                 this.activeDbId = db.Id;
             }
+
+            activeVectorManager = db.VectorManager;
         }
 
         static void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,

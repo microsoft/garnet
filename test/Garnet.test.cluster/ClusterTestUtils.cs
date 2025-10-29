@@ -2898,7 +2898,10 @@ namespace Garnet.test.cluster
                 secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
                 if (primaryReplicationOffset == secondaryReplicationOffset1)
                 {
-                    GetVectorManager(this.context.nodes[secondaryIndex]).WaitForVectorOperationsToComplete();
+                    var storeWrapper = GetStoreWrapper(this.context.nodes[secondaryIndex]);
+                    var dbManager = GetDatabaseManager(storeWrapper);
+
+                    dbManager.DefaultDatabase.VectorManager.WaitForVectorOperationsToComplete();
 
                     break;
                 }
@@ -3169,7 +3172,10 @@ namespace Garnet.test.cluster
             }
         }
 
-        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "vectorManager")]
-        private static extern ref VectorManager GetVectorManager(GarnetServer server);
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
+        private static extern ref StoreWrapper GetStoreWrapper(GarnetServer server);
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "databaseManager")]
+        private static extern ref IDatabaseManager GetDatabaseManager(StoreWrapper server);
     }
 }

@@ -111,6 +111,9 @@ namespace Garnet.server
                 if (StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw new GarnetException("Main store and object store checkpoint versions do not match");
             }
+
+            // Once everything is setup, initialize the VectorManager
+            defaultDatabase.VectorManager.Initialize();
         }
 
         /// <inheritdoc/>
@@ -391,7 +394,7 @@ namespace Garnet.server
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
             return new(AppendOnlyFile, VersionMap, StoreWrapper.customCommandManager, null, ObjectStoreSizeTracker,
-                StoreWrapper.GarnetObjectSerializer, StoreWrapper.vectorManager, respProtocolVersion);
+                StoreWrapper.GarnetObjectSerializer, DefaultDatabase.VectorManager, respProtocolVersion);
         }
 
         private async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId,

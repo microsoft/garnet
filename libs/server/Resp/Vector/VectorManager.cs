@@ -483,12 +483,16 @@ namespace Garnet.server
         internal readonly int readLockShardCount;
         private readonly long readLockShardMask;
 
-        private Channel<object> cleanupTaskChannel;
+        private readonly int dbId;
+        private readonly Channel<object> cleanupTaskChannel;
         private readonly Task cleanupTask;
         private readonly Func<IMessageConsumer> getCleanupSession;
 
-        public VectorManager(Func<IMessageConsumer> getCleanupSession, ILogger logger)
+        public VectorManager(int dbId, Func<IMessageConsumer> getCleanupSession, ILogger logger)
         {
+            this.dbId = dbId;
+            this.logger = logger;
+
             replicationBlockEvent = new(true);
             replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
 
@@ -499,8 +503,6 @@ namespace Garnet.server
                 replicationReplayTasks[i] = Task.CompletedTask;
             }
 
-            this.logger = logger;
-
             // TODO: Probably configurable?
             // For now, nearest power of 2 >= process count;
             readLockShardCount = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount);
@@ -509,6 +511,8 @@ namespace Garnet.server
             this.getCleanupSession = getCleanupSession;
             cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             cleanupTask = RunCleanupTaskAsync();
+
+            this.logger?.LogInformation("Created VectorManager for DB={dbId}", dbId);
         }
 
         /// <summary>
@@ -517,6 +521,10 @@ namespace Garnet.server
         public void Initialize()
         {
             using var session = (RespServerSession)getCleanupSession();
+            if (session.activeDbId != dbId && !session.TrySwitchActiveDatabaseSession(dbId))
+            {
+                throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
+            }
 
             Span<byte> keySpan = stackalloc byte[1];
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
@@ -1656,58 +1664,67 @@ namespace Garnet.server
 
             static void StartReplicationReplayTasks(VectorManager self, Func<RespServerSession> obtainServerSession)
             {
-                self.logger?.LogInformation("Starting {0} replication tasks for VADDs", self.replicationReplayTasks.Length);
+                self.logger?.LogInformation("Starting {numTasks} replication tasks for VADDs", self.replicationReplayTasks.Length);
 
                 for (var i = 0; i < self.replicationReplayTasks.Length; i++)
                 {
+                    // Allocate session outside of task so we fail "nicely" if something goes wrong with acquiring them
+                    var allocatedSession = obtainServerSession();
+                    if (allocatedSession.activeDbId != self.dbId && !allocatedSession.TrySwitchActiveDatabaseSession(self.dbId))
+                    {
+                        allocatedSession.Dispose();
+                        throw new GarnetException($"Could not switch replication replay session to {self.dbId}, replication will fail");
+                    }
+
                     self.replicationReplayTasks[i] = Task.Factory.StartNew(
                         async () =>
                         {
                             try
                             {
-                                var reader = self.replicationReplayChannel.Reader;
-
-                                using var session = obtainServerSession();
-
-                                SessionParseState reusableParseState = default;
-                                reusableParseState.Initialize(11);
-
-                                await foreach (var entry in reader.ReadAllAsync())
+                                using (allocatedSession)
                                 {
-                                    try
+                                    var reader = self.replicationReplayChannel.Reader;
+
+                                    SessionParseState reusableParseState = default;
+                                    reusableParseState.Initialize(11);
+
+                                    await foreach (var entry in reader.ReadAllAsync())
                                     {
                                         try
                                         {
-                                            ApplyVectorSetAdd(self, session.storageSession, entry, ref reusableParseState);
-                                        }
-                                        finally
-                                        {
-                                            var pending = Interlocked.Decrement(ref self.replicationReplayPendingVAdds);
-                                            Debug.Assert(pending >= 0, "Pending VADD ops has fallen below 0 after processing op");
-
-                                            if (pending == 0)
+                                            try
                                             {
-                                                self.replicationBlockEvent.Set();
+                                                ApplyVectorSetAdd(self, allocatedSession.storageSession, entry, ref reusableParseState);
+                                            }
+                                            finally
+                                            {
+                                                var pending = Interlocked.Decrement(ref self.replicationReplayPendingVAdds);
+                                                Debug.Assert(pending >= 0, "Pending VADD ops has fallen below 0 after processing op");
+
+                                                if (pending == 0)
+                                                {
+                                                    self.replicationBlockEvent.Set();
+                                                }
                                             }
                                         }
-                                    }
-                                    catch
-                                    {
-                                        self.logger?.LogCritical(
-                                            "Faulting ApplyVectorSetAdd ({key}, {dims}, {reducedDims}, {valueType}, 0x{values}, 0x{element}, {quantizer}, {bef}, {attributes}, {numLinks}",
-                                            Encoding.UTF8.GetString(entry.Key.Span),
-                                            entry.Dims,
-                                            entry.ReduceDims,
-                                            entry.ValueType,
-                                            Convert.ToBase64String(entry.Values.Span),
-                                            Convert.ToBase64String(entry.Values.Span),
-                                            entry.Quantizer,
-                                            entry.BuildExplorationFactor,
-                                            Encoding.UTF8.GetString(entry.Attributes.Span),
-                                            entry.NumLinks
-                                        );
+                                        catch
+                                        {
+                                            self.logger?.LogCritical(
+                                                "Faulting ApplyVectorSetAdd ({key}, {dims}, {reducedDims}, {valueType}, 0x{values}, 0x{element}, {quantizer}, {bef}, {attributes}, {numLinks}",
+                                                Encoding.UTF8.GetString(entry.Key.Span),
+                                                entry.Dims,
+                                                entry.ReduceDims,
+                                                entry.ValueType,
+                                                Convert.ToBase64String(entry.Values.Span),
+                                                Convert.ToBase64String(entry.Values.Span),
+                                                entry.Quantizer,
+                                                entry.BuildExplorationFactor,
+                                                Encoding.UTF8.GetString(entry.Attributes.Span),
+                                                entry.NumLinks
+                                            );
 
-                                        throw;
+                                            throw;
+                                        }
                                     }
                                 }
                             }

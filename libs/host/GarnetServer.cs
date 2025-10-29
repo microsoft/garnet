@@ -57,8 +57,6 @@ namespace Garnet
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
 
-        private VectorManager vectorManager;
-
         /// <summary>
         /// Store and associated information used by this Garnet server
         /// </summary>
@@ -256,12 +254,9 @@ namespace Garnet
                 }
             }
 
-            vectorManager = new(() => Provider.GetSession(WireFormat.ASCII, null), loggerFactory?.CreateLogger<VectorManager>());
-
             storeWrapper = new StoreWrapper(version, RedisProtocolVersion, servers, customCommandManager, opts, subscribeBroker,
                 createDatabaseDelegate: createDatabaseDelegate,
                 clusterFactory: clusterFactory,
-                vectorManager: vectorManager,
                 loggerFactory: loggerFactory);
 
             if (logger != null)
@@ -308,9 +303,17 @@ namespace Garnet
             var store = CreateMainStore(dbId, clusterFactory, out var epoch, out var stateMachineDriver);
             var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, epoch, stateMachineDriver, out var objectStoreSizeTracker);
             var (aofDevice, aof) = CreateAOF(dbId);
+
+            var vectorManager = new VectorManager(
+                dbId,
+                () => Provider.GetSession(WireFormat.ASCII, null),
+                loggerFactory?.CreateLogger<VectorManager>()
+            );
+
             return new GarnetDatabase(dbId, store, objectStore, epoch, stateMachineDriver, objectStoreSizeTracker,
                 aofDevice, aof, serverOptions.AdjustedIndexMaxCacheLines == 0,
-                serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0);
+                serverOptions.AdjustedObjectStoreIndexMaxCacheLines == 0,
+                vectorManager);
         }
 
         private void LoadModules(CustomCommandManager customCommandManager)
@@ -468,8 +471,6 @@ namespace Garnet
             opts.AuthSettings?.Dispose();
             if (disposeLoggerFactory)
                 loggerFactory?.Dispose();
-
-            vectorManager.Dispose();
         }
 
         private static void DeleteDirectory(string path)

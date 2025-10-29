@@ -164,8 +164,6 @@ namespace Garnet.server
         /// </summary>
         public GarnetCheckpointManager ObjectStoreCheckpointManager => (GarnetCheckpointManager)objectStore?.CheckpointManager;
 
-        internal readonly VectorManager vectorManager;
-
         /// <summary>
         /// Constructor
         /// </summary>
@@ -176,7 +174,6 @@ namespace Garnet.server
             CustomCommandManager customCommandManager,
             GarnetServerOptions serverOptions,
             SubscribeBroker subscribeBroker,
-            VectorManager vectorManager,
             AccessControlList accessControlList = null,
             DatabaseCreatorDelegate createDatabaseDelegate = null,
             IDatabaseManager databaseManager = null,
@@ -189,7 +186,6 @@ namespace Garnet.server
             this.startupTime = DateTimeOffset.UtcNow.Ticks;
             this.serverOptions = serverOptions;
             this.subscribeBroker = subscribeBroker;
-            this.vectorManager = vectorManager;
             this.customCommandManager = customCommandManager;
             this.loggerFactory = loggerFactory;
             this.databaseManager = databaseManager ?? DatabaseManagerFactory.CreateDatabaseManager(serverOptions, createDatabaseDelegate, this);
@@ -288,7 +284,6 @@ namespace Garnet.server
             storeWrapper.customCommandManager,
             storeWrapper.serverOptions,
             storeWrapper.subscribeBroker,
-            storeWrapper.vectorManager,
             storeWrapper.accessControlList,
             databaseManager: storeWrapper.databaseManager.Clone(recordToAof),
             clusterFactory: null,
@@ -359,12 +354,8 @@ namespace Garnet.server
                 if (serverOptions.Recover)
                 {
                     RecoverCheckpoint();
-
-                    // Before replaying AOF (and possibly applying VADDs, VREM, etc.), we need to get the VectorManager into a coherent state
-                    vectorManager.Initialize();
-
                     RecoverAOF();
-                    ReplayAOF();
+                    _ = ReplayAOF();
                 }
             }
         }
