@@ -58,14 +58,15 @@ namespace Garnet.server
         /// <typeparam name="TUnifiedContext"></typeparam>
         /// <typeparam name="TSourceLogRecord"></typeparam>
         /// <param name="key">The key to override the one in <paramref name="srcLogRecord"/>, e.g. if from RENAME.</param>
+        /// <param name="input"></param>
         /// <param name="srcLogRecord">The log record</param>
         /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
         /// <returns></returns>
-        public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
+        public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
             where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
-            _ = unifiedContext.Upsert(key, in srcLogRecord);
+            _ = unifiedContext.Upsert(key, ref input, in srcLogRecord);
             return GarnetStatus.OK;
         }
 
@@ -251,43 +252,52 @@ namespace Garnet.server
             {
                 // Check if new key exists. This extra query isn't ideal, but it should be a rare operation and there's nowhere in Input to 
                 // pass the srcLogRecord or even the ValueObject to RMW.
-                if (isNX && EXISTS(newKey, ref context) != GarnetStatus.NOTFOUND)
+                // Set the input so Read knows to do the special "serialization" into output
+                UnifiedStoreInput input = new(RespCommand.RENAME);
+                var status = GET(newKey, ref input, ref output, ref context);
+                if (isNX && status != GarnetStatus.NOTFOUND)
                 {
                     result = 0;             // This is the "oldkey was found" return
                     abortTransaction = true;
                     return GarnetStatus.OK;
                 }
 
-                // Set the input so Read knows to do the special "serialization" into output
-                UnifiedStoreInput input = new(RespCommand.RENAME);
-                var status = GET(oldKey, ref input, ref output, ref context);
+                // Try to get the new key's etag, if exists
+                if (status != GarnetStatus.NOTFOUND)
+                {
+                    fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
+                    {
+                        // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
+                        var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
+                        if (logRecord.Info.HasETag)
+                            functionsState.etagState.ETag = logRecord.ETag;
+                    }
+                }                
+
+                status = GET(oldKey, ref input, ref output, ref context);
                 if (status != GarnetStatus.OK)
                 {
                     abortTransaction = true;
                     return status;
                 }
 
-                if (status == GarnetStatus.OK)
+                fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
                 {
-                    fixed (byte* recordPtr = output.SpanByteAndMemory.ReadOnlySpan)
+                    // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
+                    var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
+
+                    // The spec is that Expiration does not change. Set input ETag flag if requested.
+                    if (withEtag)
+                        input.header.SetWithETagFlag();
+
+                    status = SET(newKey, ref input, in logRecord, ref context);
+                    if (status == GarnetStatus.OK)
                     {
-                        // We have a record in in-memory, unserialized format, with its objects (if any) resolved to the TransientObjectIdMap.
-                        var logRecord = new LogRecord(recordPtr, functionsState.transientObjectIdMap);
+                        result = 1;
 
-                        // The spec is that Expiration does not change. Set input ETag flag if requested.
-                        input = new();
-                        if (withEtag)
-                            input.header.SetWithETagFlag();
-
-                        status = SET(newKey, in logRecord, ref context);
-                        if (status == GarnetStatus.OK)
-                        {
-                            result = 1;
-
-                            // Delete the old key
-                            _ = DELETE(oldKey, ref context);
-                            return GarnetStatus.OK;
-                        }
+                        // Delete the old key
+                        _ = DELETE(oldKey, ref context);
+                        return GarnetStatus.OK;
                     }
                 }
             }

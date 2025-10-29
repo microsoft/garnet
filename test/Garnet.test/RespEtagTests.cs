@@ -1581,8 +1581,12 @@ namespace Garnet.test
 
             // Scenario: old key had etag => new key has updated etag when made with withetag (new key exists withetag)
             // setup new key with updated etag
-            db.Execute("SET", newKey, origValue + "delta", "WITHETAG");
+            etag = long.Parse(db.Execute("SET", newKey, origValue + "delta", "WITHETAG").ToString());
+            ClassicAssert.AreEqual(1, etag);
+
             db.Execute("SETIFMATCH", newKey, origValue, 1); // updates etag to 2
+            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 2, origValue));
+
             // old key with etag
             etag = long.Parse(db.Execute("SET", [oldKey, origValue, "WITHETAG"]).ToString());
             ClassicAssert.AreEqual(1, etag);

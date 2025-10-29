@@ -37,16 +37,6 @@ namespace Garnet.server
         /// Indicating a Custom Object command
         /// </summary>
         All = 0xfb,
-
-        /// <summary>
-        /// Special type indicating PTTL command
-        /// </summary>
-        PTtl = 0xfc,
-
-        /// <summary>
-        /// Special type indicating TTL command
-        /// </summary>
-        Ttl = 0xfe,
     }
 
     public static class GarnetObjectTypeExtensions

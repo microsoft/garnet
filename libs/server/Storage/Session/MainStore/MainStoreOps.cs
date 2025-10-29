@@ -204,61 +204,6 @@ namespace Garnet.server
             }
         }
 
-
-        /// <summary>
-        /// Returns the remaining time to live of a key that has a timeout.
-        /// </summary>
-        /// <typeparam name="TContext"></typeparam>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">The key to get the remaining time to live in the store.</param>
-        /// <param name="storeType">The store to operate on</param>
-        /// <param name="output">Span to allocate the output of the operation</param>
-        /// <param name="context">Basic Context of the store</param>
-        /// <param name="objectContext">Object Context of the store</param>
-        /// <param name="milliseconds">when true the command to execute is PTTL.</param>
-        /// <returns></returns>
-        public unsafe GarnetStatus TTL<TContext, TObjectContext>(PinnedSpanByte key, StoreType storeType, ref SpanByteAndMemory output, ref TContext context, ref TObjectContext objectContext, bool milliseconds = false)
-            where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            var cmd = milliseconds ? RespCommand.PTTL : RespCommand.TTL;
-            var input = new RawStringInput(cmd);
-
-            if (storeType == StoreType.Main || storeType == StoreType.All)
-            {
-                var status = context.Read(key.ReadOnlySpan, ref input, ref output);
-
-                if (status.IsPending)
-                {
-                    StartPendingMetrics();
-                    CompletePendingForSession(ref status, ref output, ref context);
-                    StopPendingMetrics();
-                }
-
-                if (status.Found)
-                    return GarnetStatus.OK;
-            }
-
-            if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
-            {
-                var header = new RespInputHeader(milliseconds ? GarnetObjectType.PTtl : GarnetObjectType.Ttl);
-                var objInput = new ObjectInput(header);
-
-                var objO = new GarnetObjectStoreOutput(output);
-                var status = objectContext.Read(key.ReadOnlySpan, ref objInput, ref objO);
-
-                if (status.IsPending)
-                    CompletePendingForObjectStoreSession(ref status, ref objO, ref objectContext);
-
-                if (status.Found)
-                {
-                    output = objO.SpanByteAndMemory;
-                    return GarnetStatus.OK;
-                }
-            }
-            return GarnetStatus.NOTFOUND;
-        }
-
         public GarnetStatus SET<TContext>(PinnedSpanByte key, PinnedSpanByte value, ref TContext context)
             where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {

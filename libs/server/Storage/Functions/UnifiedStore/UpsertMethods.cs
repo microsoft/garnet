@@ -198,25 +198,48 @@ namespace Garnet.server
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
-            if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
-                return false;
-            sizeInfo.AssertOptionals(logRecord.Info);
 
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-            if (functionsState.appendOnlyFile != null)
+            var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
+            if (ok)
             {
-                if (!inputLogRecord.Info.ValueIsObject)
-                    WriteLogUpsert(logRecord.Key, ref input, logRecord.ValueSpan, upsertInfo.Version, upsertInfo.SessionID);
+                if (input.header.CheckWithETagFlag())
+                {
+                    var newETag = functionsState.etagState.ETag + 1;
+                    ok = logRecord.TrySetETag(newETag);
+                    if (ok)
+                    {
+                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
+                    }
+                }
                 else
-                    WriteLogUpsert(logRecord.Key, ref input, (IGarnetObject)logRecord.ValueObject, upsertInfo.Version, upsertInfo.SessionID);
+                    ok = logRecord.RemoveETag();
+            }
+            if (ok)
+            {
+                sizeInfo.AssertOptionals(logRecord.Info);
+
+                if (!logRecord.Info.Modified)
+                    functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+                if (functionsState.appendOnlyFile != null)
+                {
+                    if (!inputLogRecord.Info.ValueIsObject)
+                        WriteLogUpsert(logRecord.Key, ref input, logRecord.ValueSpan, upsertInfo.Version,
+                            upsertInfo.SessionID);
+                    else
+                        WriteLogUpsert(logRecord.Key, ref input, (IGarnetObject)logRecord.ValueObject,
+                            upsertInfo.Version, upsertInfo.SessionID);
+                }
+
+                var newSize = logRecord.Info.ValueIsInline
+                    ? 0
+                    : (!logRecord.Info.ValueIsObject
+                        ? logRecord.ValueSpan.Length
+                        : logRecord.ValueObject.HeapMemorySize);
+                functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
+                return true;
             }
 
-            var newSize = logRecord.Info.ValueIsInline
-                ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
-            return true;
+            return false;
         }
     }
 }
