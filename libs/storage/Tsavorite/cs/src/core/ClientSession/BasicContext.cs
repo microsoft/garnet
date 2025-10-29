@@ -301,6 +301,16 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, ref TInput input, in TSourceLogRecord diskLogRecord)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            TOutput output = default;
+            UpsertOptions upsertOptions = default;
+            return Upsert(key, ref input, in diskLogRecord, ref output, ref upsertOptions);
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Upsert<TSourceLogRecord>(ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
             where TSourceLogRecord : ISourceLogRecord
             => Upsert(inputLogRecord.Key, ref input, in inputLogRecord, ref output, ref upsertOptions, userContext);

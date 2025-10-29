@@ -27,6 +27,8 @@ namespace Tsavorite.core
 
         internal readonly int StartOffset => Unsafe.As<byte, OverflowHeader>(ref Array[0]).startOffset + OverflowHeader.Size;
 
+        public int TotalSize => Array.Length;
+
         readonly int EndOffset => Unsafe.As<byte, OverflowHeader>(ref Array[0]).endOffset;
 
         internal readonly int Length => Array.Length - StartOffset - EndOffset;

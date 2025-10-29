@@ -125,7 +125,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = inputLogRecord.Info.ValueIsObject,
-                HasETag = !inputLogRecord.Info.ValueIsObject && input.header.CheckWithETagFlag(),
+                HasETag = input.header.CheckWithETagFlag(),
                 HasExpiration = inputLogRecord.Info.HasExpiration
             };
         }

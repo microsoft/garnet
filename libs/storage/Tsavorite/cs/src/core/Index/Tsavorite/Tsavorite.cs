@@ -33,6 +33,11 @@ namespace Tsavorite.core
         internal readonly StateMachineDriver stateMachineDriver;
 
         /// <summary>
+        /// ObjectIdMap to be used by operations that map it transiently, such as RENAME
+        /// </summary>
+        public ObjectIdMap TransientObjectIdMap => hlogBase.transientObjectIdMap;
+
+        /// <summary>
         /// Number of active entries in hash index (does not correspond to total records, due to hash collisions)
         /// </summary>
         public long EntryCount => GetEntryCount();

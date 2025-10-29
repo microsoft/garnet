@@ -204,7 +204,7 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void ObjectIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(1, 4)] int updateThreads, [Values] ScanMode scanMode)
+        public unsafe void ObjectIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(0, 1, 4)] int updateThreads, [Values] ScanMode scanMode)
         {
             InternalSetup(largeMemory: true);
 
@@ -216,19 +216,22 @@ namespace Tsavorite.test
                 using var session = store.NewSession<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
                 ObjectPushIterationTestFunctions scanIteratorFunctions = new();
 
+                var end = store.Log.TailAddress;
                 if (scanMode == ScanMode.Scan)
-                    ClassicAssert.IsTrue(store.Log.Scan(ref scanIteratorFunctions, start, store.Log.TailAddress), $"Failed to complete push scan; numRecords = {scanIteratorFunctions.numRecords}");
+                    ClassicAssert.IsTrue(store.Log.Scan(ref scanIteratorFunctions, start, end), $"Failed to complete push scan; numRecords = {scanIteratorFunctions.numRecords}, start = {start}, end = {end}");
                 else
-                    ClassicAssert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}");
+                    ClassicAssert.IsTrue(session.Iterate(ref scanIteratorFunctions), $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}, start = {start}, end = {end}");
                 ClassicAssert.AreEqual(totalRecords, scanIteratorFunctions.numRecords);
             }
+
+            const int keyTag = 0x420000;
 
             void LocalUpdate(int tid)
             {
                 using var session = store.NewSession<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
                 for (int i = 0; i < totalRecords; i++)
                 {
-                    var key1 = new TestObjectKey { key = i };
+                    var key1 = new TestObjectKey { key = i + keyTag };
                     var value = new TestObjectValue { value = (tid + 1) * i };
                     _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
                 }
@@ -237,8 +240,8 @@ namespace Tsavorite.test
             { // Initial population
                 for (int i = 0; i < totalRecords; i++)
                 {
-                    var key1 = new TestObjectKey { key = i };
-                    var value = new TestObjectValue { value = i };
+                    var key1 = new TestObjectKey { key = i + keyTag };
+                    var value = new TestObjectValue { value = i + 340000};
                     _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
                 }
             }

@@ -229,9 +229,7 @@ namespace Garnet.server
         {
             // one optional command for with etag
             if (parseState.Count < 2 || parseState.Count > 3)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME));
-            }
 
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
@@ -240,10 +238,7 @@ namespace Garnet.server
             if (parseState.Count == 3)
             {
                 if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
-                {
                     return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
-                }
-
                 withEtag = true;
             }
 
@@ -271,9 +266,7 @@ namespace Garnet.server
         {
             // one optional command for with etag
             if (parseState.Count < 2 || parseState.Count > 3)
-            {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
-            }
 
             var oldKeySlice = parseState.GetArgSliceByRef(0);
             var newKeySlice = parseState.GetArgSliceByRef(1);
@@ -282,10 +275,7 @@ namespace Garnet.server
             if (parseState.Count == 3)
             {
                 if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
-                {
                     return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
-                }
-
                 withEtag = true;
             }
 

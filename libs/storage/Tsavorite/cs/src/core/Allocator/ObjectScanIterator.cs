@@ -174,7 +174,7 @@ namespace Tsavorite.core
         {
             var physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset);
 
-            // We are just getting sizes so no need for ObjectIdMap
+            // We are just getting inline sizes so no need for ObjectIdMap
             var logRecord = new LogRecord(physicalAddress);
             (var _, allocatedSize) = logRecord.GetInlineRecordSizes();
             return logRecord.physicalAddress;
@@ -242,7 +242,7 @@ namespace Tsavorite.core
                             // Don't pass the recordBuffer to diskLogRecord; we reuse that here.
                             var remapPtr = recordBuffer.GetValidPointer();
                             Buffer.MemoryCopy((byte*)physicalAddress, remapPtr, allocatedSize, allocatedSize);
-                            var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverTransientMemory(currentAddress, (long)remapPtr);
+                            var memoryLogRecord = hlogBase._wrapper.CreateRemappedLogRecordOverPinnedTransientMemory(currentAddress, (long)remapPtr);
                             diskLogRecord = new DiskLogRecord(in memoryLogRecord, obj => { });
                         }
                         finally

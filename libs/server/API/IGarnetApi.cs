@@ -63,6 +63,11 @@ namespace Garnet.server
         /// </summary>
         GarnetStatus SET<TSourceLogRecord>(in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
 
+        /// <summary>
+        /// SET
+        /// </summary>
+        GarnetStatus SET<TSourceLogRecord>(PinnedSpanByte key, ref UnifiedStoreInput input, in TSourceLogRecord srcLogRecord) where TSourceLogRecord : ISourceLogRecord;
+
         #endregion
 
         #region SETEX
@@ -134,7 +139,7 @@ namespace Garnet.server
         /// RENAME
         /// </summary>
         /// <returns></returns>
-        GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false, StoreType storeType = StoreType.All);
+        GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false);
 
         /// <summary>
         /// Renames key to newkey if newkey does not yet exist. It returns an error when key does not exist.
@@ -142,10 +147,9 @@ namespace Garnet.server
         /// <param name="oldKey">The old key to be renamed.</param>
         /// <param name="newKey">The new key name.</param>
         /// <param name="result">The result of the operation.</param>
-        /// <param name="withEtag"></param>
-        /// <param name="storeType">The type of store to perform the operation on.</param>
+        /// <param name="withEtag">Whether to include the ETag in the operation</param>
         /// <returns></returns>
-        GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false, StoreType storeType = StoreType.All);
+        GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false);
         #endregion
 
         #region EXISTS

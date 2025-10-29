@@ -217,6 +217,9 @@ namespace Tsavorite.core
                         ref logRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
                 if (ok)
                 {
+                    TValueSelector.PostInitialWriter<TSourceLogRecord, TInput, TOutput, TContext, TSessionFunctionsWrapper>(
+                            ref logRecord, in sizeInfo, ref input, srcStringValue, srcObjectValue, in inputLogRecord, ref output, ref upsertInfo, sessionFunctions);
+
                     // Success
                     MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                     pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;

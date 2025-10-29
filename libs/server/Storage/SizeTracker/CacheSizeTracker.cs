@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -54,9 +53,16 @@ namespace Garnet.server
             public readonly long CalculateRecordSize<TSourceLogRecord>(in TSourceLogRecord logRecord)
                 where TSourceLogRecord : ISourceLogRecord
             {
-                long size = Utility.RoundUp(logRecord.Key.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead;
+                long size = 0;
+                if (logRecord.Info.Tombstone)
+                    return size;
 
-                if (!logRecord.Info.Tombstone && logRecord.Info.ValueIsObject)
+                if (logRecord.Info.KeyIsOverflow)
+                    size += logRecord.KeyOverflow.TotalSize + MemoryUtils.ByteArrayOverhead;
+
+                if (logRecord.Info.ValueIsOverflow)
+                    size += logRecord.ValueOverflow.TotalSize + MemoryUtils.ByteArrayOverhead;
+                else if (logRecord.Info.ValueIsObject)
                 {
                     var value = logRecord.ValueObject;
                     if (value != null) // ignore deleted values being evicted (they are accounted for by InPlaceDeleter)

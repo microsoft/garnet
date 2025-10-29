@@ -22,6 +22,7 @@ namespace Garnet.server
         public readonly CacheSizeTracker objectStoreSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public IStoreFunctions storeFunctions;
+        public ObjectIdMap transientObjectIdMap;
         public ETagState etagState;
         public readonly ILogger logger;
         public byte respProtocolVersion;
@@ -40,6 +41,7 @@ namespace Garnet.server
             this.objectStoreSizeTracker = objectStoreSizeTracker;
             this.garnetObjectSerializer = storeWrapper.GarnetObjectSerializer;
             storeFunctions = storeWrapper.storeFunctions;
+            transientObjectIdMap = storeWrapper.store.TransientObjectIdMap;
 
             this.etagState = new ETagState();
             this.logger = logger;

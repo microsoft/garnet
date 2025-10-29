@@ -305,7 +305,13 @@ namespace Resp.benchmark
             if (numericValue)
             {
                 for (int i = 0; i < valueBuffer.Length; i++)
-                    valueBuffer[i] = ascii_digits[valueRandomGen.Next(ascii_digits.Length)];
+                {
+                    // The first digit of the output string should not be zero.
+                    if (i == 0)
+                        valueBuffer[i] = ascii_digits[1 + valueRandomGen.Next(ascii_digits.Length - 1)];
+                    else
+                        valueBuffer[i] = ascii_digits[valueRandomGen.Next(ascii_digits.Length)];
+                }
             }
             else
             {

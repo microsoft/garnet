@@ -32,54 +32,37 @@ namespace Garnet.server
 
             if (input.header.type != 0)
             {
-                switch (input.header.type)
+                if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
-                    case GarnetObjectType.Ttl:
-                        var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                        functionsState.CopyRespNumber(ttlValue, ref output.SpanByteAndMemory);
-                        return true;
-                    case GarnetObjectType.PTtl:
-                        ttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(srcLogRecord.Info.HasExpiration ? srcLogRecord.Expiration : -1);
-                        functionsState.CopyRespNumber(ttlValue, ref output.SpanByteAndMemory);
+                    var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+                    if (output.HasWrongType)
                         return true;
 
-                    default:
-                        if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
-                        {
-                            if (srcLogRecord.Info.HasETag)
-                                ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
+                    return opResult;
+                }
 
-                            var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, srcLogRecord.ETag, out _);
+                if (IncorrectObjectType(ref input, (IGarnetObject)srcLogRecord.ValueObject, ref output.SpanByteAndMemory))
+                {
+                    output.OutputFlags |= OutputFlags.WrongType;
+                    return true;
+                }
 
-                            if (srcLogRecord.Info.HasETag)
-                                ETagState.ResetState(ref functionsState.etagState);
+                if (srcLogRecord.Info.HasETag)
+                {
+                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
+                    return true;
+                }
 
-                            return output.HasWrongType || opResult;
-                        }
-
-                        if (IncorrectObjectType(ref input, (IGarnetObject)srcLogRecord.ValueObject, ref output.SpanByteAndMemory))
-                        {
-                            output.OutputFlags |= OutputFlags.WrongType;
-                            return true;
-                        }
-
-                        if (srcLogRecord.Info.HasETag)
-                        {
-                            functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
-                            return true;
-                        }
-
-                        var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
-                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-                        try
-                        {
-                            var result = customObjectCommand.Reader(srcLogRecord.Key, ref input, Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject), ref writer, ref readInfo);
-                            return result;
-                        }
-                        finally
-                        {
-                            writer.Dispose();
-                        }
+                var customObjectCommand = GetCustomObjectCommand(ref input, input.header.type);
+                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                try
+                {
+                    var result = customObjectCommand.Reader(srcLogRecord.Key, ref input, Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject), ref writer, ref readInfo);
+                    return result;
+                }
+                finally
+                {
+                    writer.Dispose();
                 }
             }
 

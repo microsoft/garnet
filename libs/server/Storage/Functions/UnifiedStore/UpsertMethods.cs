@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -35,10 +36,21 @@ namespace Garnet.server
         }
 
         public bool InitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo,
-            ref UnifiedStoreInput input,
-            in TSourceLogRecord inputLogRecord, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
+            ref UnifiedStoreInput input, in TSourceLogRecord inputLogRecord, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
-            => logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+        {
+            if (!logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
+                return false;
+
+            if (input.header.CheckWithETagFlag())
+            {
+                // If the old record had an ETag, we will replace it. Otherwise, we must have reserved space for it.
+                Debug.Assert(sizeInfo.FieldInfo.HasETag, "CheckWithETagFlag specified but SizeInfo.HasETag is false");
+                var newETag = functionsState.etagState.ETag + 1;
+                logRecord.TrySetETag(newETag);
+            }
+            return true;
+        }
 
         public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
             ReadOnlySpan<byte> srcValue, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
@@ -186,25 +198,48 @@ namespace Garnet.server
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
-            if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
-                return false;
-            sizeInfo.AssertOptionals(logRecord.Info);
 
-            if (!logRecord.Info.Modified)
-                functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-            if (functionsState.appendOnlyFile != null)
+            var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
+            if (ok)
             {
-                if (!inputLogRecord.Info.ValueIsObject)
-                    WriteLogUpsert(logRecord.Key, ref input, logRecord.ValueSpan, upsertInfo.Version, upsertInfo.SessionID);
+                if (input.header.CheckWithETagFlag())
+                {
+                    var newETag = functionsState.etagState.ETag + 1;
+                    ok = logRecord.TrySetETag(newETag);
+                    if (ok)
+                    {
+                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
+                    }
+                }
                 else
-                    WriteLogUpsert(logRecord.Key, ref input, (IGarnetObject)logRecord.ValueObject, upsertInfo.Version, upsertInfo.SessionID);
+                    ok = logRecord.RemoveETag();
+            }
+            if (ok)
+            {
+                sizeInfo.AssertOptionals(logRecord.Info);
+
+                if (!logRecord.Info.Modified)
+                    functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+                if (functionsState.appendOnlyFile != null)
+                {
+                    if (!inputLogRecord.Info.ValueIsObject)
+                        WriteLogUpsert(logRecord.Key, ref input, logRecord.ValueSpan, upsertInfo.Version,
+                            upsertInfo.SessionID);
+                    else
+                        WriteLogUpsert(logRecord.Key, ref input, (IGarnetObject)logRecord.ValueObject,
+                            upsertInfo.Version, upsertInfo.SessionID);
+                }
+
+                var newSize = logRecord.Info.ValueIsInline
+                    ? 0
+                    : (!logRecord.Info.ValueIsObject
+                        ? logRecord.ValueSpan.Length
+                        : logRecord.ValueObject.HeapMemorySize);
+                functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
+                return true;
             }
 
-            var newSize = logRecord.Info.ValueIsInline
-                ? 0
-                : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
-            return true;
+            return false;
         }
     }
 }

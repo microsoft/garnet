@@ -58,7 +58,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Constructs the <see cref="DiskLogRecord"/> from an already-constructed LogRecord (e.g. from <see cref="IAllocator{TStoreFunctions}.CreateRemappedLogRecordOverTransientMemory"/> which
+        /// Constructs the <see cref="DiskLogRecord"/> from an already-constructed LogRecord (e.g. from <see cref="IAllocator{TStoreFunctions}.CreateRemappedLogRecordOverPinnedTransientMemory"/> which
         /// has transient ObjectIds if it has objects).
         /// </summary>
         internal DiskLogRecord(in LogRecord memoryLogRecord, Action<IHeapObject> objectDisposer)
@@ -80,7 +80,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Creates a <see cref="DiskLogRecord"/> from an already-constructed LogRecord (e.g. from <see cref="IAllocator{TStoreFunctions}.CreateRemappedLogRecordOverTransientMemory"/> which
+        /// Creates a <see cref="DiskLogRecord"/> from an already-constructed LogRecord (e.g. from <see cref="IAllocator{TStoreFunctions}.CreateRemappedLogRecordOverPinnedTransientMemory"/> which
         /// has transient ObjectIds if it has objects).
         /// </summary>
         internal static DiskLogRecord CreateFromTransientLogRecord(in LogRecord memoryLogRecord, Action<IHeapObject> objectDisposer) => new(memoryLogRecord, objectDisposer);
@@ -325,7 +325,9 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>If <paramref name="output"/>.<see cref="SpanByteAndMemory.IsSpanByte"/>, it points directly to the network buffer so we include the length prefix in the output.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static void DirectCopyInlinePortionOfRecord(in LogRecord logRecord, int inlineRecordSize, int estimatedTotalSize, int maxHeapAllocationSize, MemoryPool<byte> memoryPool, ref SpanByteAndMemory output)
+        public static void DirectCopyInlinePortionOfRecord<TSourceLogRecord>(in TSourceLogRecord logRecord, int inlineRecordSize, int estimatedTotalSize, int maxHeapAllocationSize,
+            MemoryPool<byte> memoryPool, ref SpanByteAndMemory output)
+            where TSourceLogRecord : ISourceLogRecord
         {
             // See if we have enough space in the SpanByte and, if not, if we would fit in maxHeapAllocationSize.
             // For SpanByte the recordSize must include the length prefix, which is included in the output stream
@@ -346,7 +348,7 @@ namespace Tsavorite.core
                 var outPtr = output.SpanByte.ToPointer();
                 *(int*)outPtr = inlineRecordSize;
                 outPtr += sizeof(int);
-                Buffer.MemoryCopy((byte*)logRecord.physicalAddress, outPtr, inlineRecordSize, inlineRecordSize);
+                Buffer.MemoryCopy((byte*)logRecord.PhysicalAddress, outPtr, inlineRecordSize, inlineRecordSize);
                 VarbyteLengthUtility.ClearHasFiller(new LogRecord((long)outPtr).IndicatorAddress);
             }
             else
@@ -354,7 +356,7 @@ namespace Tsavorite.core
                 // Do not include the length prefix in the output stream; this is done by the caller before writing the stream, from a temporary LogRecord created over outPtr.
                 fixed (byte* outPtr = output.MemorySpan)
                 {
-                    Buffer.MemoryCopy((byte*)logRecord.physicalAddress, outPtr, inlineRecordSize, inlineRecordSize);
+                    Buffer.MemoryCopy((byte*)logRecord.PhysicalAddress, outPtr, inlineRecordSize, inlineRecordSize);
                     VarbyteLengthUtility.ClearHasFiller(new LogRecord((long)outPtr).IndicatorAddress);
                 }
             }
@@ -366,7 +368,7 @@ namespace Tsavorite.core
                 return inlineRecordSize;
 
             // Serialize Key then Value, just like the Object log file. And this will be easy to modify for future chunking of multi-networkBuffer Keys and Values.
-            ulong outputOffset = (ulong)inlineRecordSize;
+            var outputOffset = (ulong)inlineRecordSize;
             if (logRecord.Info.KeyIsOverflow)
             {
                 var overflow = logRecord.KeyOverflow;
@@ -391,7 +393,7 @@ namespace Tsavorite.core
                     fixed (byte* ptr = output.MemorySpan.Slice(inlineRecordSize))
                         valueObjectLength = DoSerialize(logRecord.ValueObject, valueObjectSerializer, ptr, output.Length);
                 }
-                outputOffset += (ulong)valueObjectLength;
+                outputOffset += valueObjectLength;
             }
 
             // Create a temp LogRecord over the output data so we can store the lengths in serialized format, using the offset to the serialized
@@ -428,7 +430,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Deserialize from a <see cref="PinnedSpanByte"/> over a stream of bytes created by <see cref="Serialize"/>.
         /// </summary>
-        /// <param name="recordSpan"></param>
         public static DiskLogRecord Deserialize<TStoreFunctions>(PinnedSpanByte recordSpan, IObjectSerializer<IHeapObject> valueObjectSerializer, ObjectIdMap transientObjectIdMap,
             TStoreFunctions storeFunctions)
             where TStoreFunctions : IStoreFunctions
@@ -442,7 +443,7 @@ namespace Tsavorite.core
             var offset = serializedLogRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength);
 
             // Note: Similar logic to this is in ObjectLogReader.ReadObjects.
-            bool keyWasSet = false;
+            var keyWasSet = false;
             try
             {
                 if (serializedLogRecord.Info.KeyIsOverflow)

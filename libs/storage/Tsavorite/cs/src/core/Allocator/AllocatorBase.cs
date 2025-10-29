@@ -208,10 +208,10 @@ namespace Tsavorite.core
         internal IObserver<ITsavoriteScanIterator> OnReadOnlyObserver;
 
         /// <summary>Observer for records getting evicted from memory (page closed)</summary>
-        internal IObserver<ITsavoriteScanIterator> OnEvictionObserver;
+        internal ITsavoriteRecordObserver<ITsavoriteScanIterator> OnEvictionObserver;
 
         /// <summary>Observer for records brought into memory by deserializing pages</summary>
-        internal IObserver<ITsavoriteScanIterator> OnDeserializationObserver;
+        internal ITsavoriteRecordObserver<ITsavoriteScanIterator> OnDeserializationObserver;
 
         /// <summary>The "event" to be waited on for flush completion by the initiator of an operation</summary>
         internal CompletionEvent FlushEvent;
@@ -776,6 +776,7 @@ namespace Tsavorite.core
             FlushedUntilAddress = firstValidAddress;
             BeginAddress = firstValidAddress;
 
+            // Initialize TailAddress (the address of the next allocaton); this will always be nonzero.
             TailPageOffset.Page = (int)GetPage(firstValidAddress);
             TailPageOffset.Offset = (int)GetOffsetOnPage(firstValidAddress);
         }
@@ -901,7 +902,7 @@ namespace Tsavorite.core
 
         /// <summary>Get page index for address</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(LogAddress.GetPageOfAddress(logicalAddress, LogPageSizeBits));
+        public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(GetPageOfAddress(logicalAddress, LogPageSizeBits));
 
         /// <summary>Get capacity (number of pages)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -944,6 +945,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetDeviceSectorSize() => sectorSize;
 
+        /// <summary>Have the derived allocator allocate the current and next page, if needed.</summary>
+        /// <remarks>The derived allocator "owns" the actual memory for the pages in its circular buffer, as it knows the details of their use,
+        ///     although for efficiency we keep the <see cref="pagePointers"/> and some utility operations here in
+        ///     <see cref="AllocatorBase{TStoreFunctions, TAllocator}"/> (as well as manage <see cref="TailPageOffset"/>).</remarks>
         [MethodImpl(MethodImplOptions.NoInlining)]
         void AllocatePagesWithException(int pageIndex, PageOffset localTailPageOffset, int numSlots)
         {
@@ -1102,6 +1107,7 @@ namespace Tsavorite.core
 
             PageOffset localTailPageOffset = default;
             localTailPageOffset.PageAndOffset = TailPageOffset.PageAndOffset;
+            Debug.Assert(localTailPageOffset.Offset >= pageHeaderSize, $"TailPageOffset consistency error: Offset {localTailPageOffset.Offset} should equal be >= pageHeaderSize {pageHeaderSize}");
 
             // Necessary to check because threads keep retrying and we do not
             // want to overflow the offset more than once per thread
@@ -1116,9 +1122,6 @@ namespace Tsavorite.core
             // it will see that another thread got there first because the subsequent "back up by numSlots" will still be past PageSize,
             // so they will exit and RETRY in HandlePageOverflow; the first thread "owns" the overflow operation and must stabilize it.
             localTailPageOffset.PageAndOffset = Interlocked.Add(ref TailPageOffset.PageAndOffset, numSlots);
-            Debug.Assert(localTailPageOffset.Offset >= PageHeader.Size, $"localTailPageOffset.Offset ({localTailPageOffset.Offset}) must be past PageHeader.Size ({PageHeader.Size})");
-
-            // Note: Below here we defer SetAddressType(..) to TryAllocateRetryNow, so 0 and -1 returns are preserved.
 
             // Slow path when we reach the end of a page.
             if (localTailPageOffset.Offset > PageSize)
@@ -1508,6 +1511,11 @@ namespace Tsavorite.core
             long offsetInPage = GetOffsetOnPage(tailAddress);
             TailPageOffset.Page = (int)tailPage;
             TailPageOffset.Offset = (int)offsetInPage;
+            // Sometimes the tailAddress calculation ends on a page boundary and this gets into the RecoveryInfo.
+            // Don't change GetTailAddress() as that may affect other calculations; instead, ensure it's set correctly here.
+            if (pageHeaderSize > 0 && TailPageOffset.Offset == 0)
+                TailPageOffset.Offset = pageHeaderSize;
+            Debug.Assert(TailPageOffset.Offset >= pageHeaderSize, $"TODOtestonly: localTailPageOffset.Offset ({TailPageOffset.Offset}) must be >= pageHeaderSize ({pageHeaderSize}), pt 0");
 
             // Allocate current page if necessary
             var pageIndex = TailPageOffset.Page % BufferSize;

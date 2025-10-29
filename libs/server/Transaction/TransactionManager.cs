@@ -164,6 +164,8 @@ namespace Garnet.server
             Reset(false);
         }
 
+        internal void Reset() => Reset(state == TxnState.Running);
+
         internal void Reset(bool isRunning)
         {
             if (isRunning)

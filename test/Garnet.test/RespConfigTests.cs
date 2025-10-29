@@ -284,7 +284,7 @@ namespace Garnet.test
         GarnetServer server;
         private string memorySize = "3m";
         private string indexSize = "1m";
-        private string heapMemorySize = "1m";
+        private string heapMemorySize = ""; // TODO convert this to test objects with this "1m";
         private string pageSize = "1024";
         private bool useReviv;
 

@@ -213,13 +213,13 @@ namespace Tsavorite.core
         /// To scan the historical part of the log, use the Scan(...) method
         /// </summary>
         /// <param name="evictionObserver">Observer to which scan iterator is pushed</param>
-        public IDisposable SubscribeEvictions(IObserver<ITsavoriteScanIterator> evictionObserver)
+        public IDisposable SubscribeEvictions(ITsavoriteRecordObserver<ITsavoriteScanIterator> evictionObserver)
         {
             allocatorBase.OnEvictionObserver = evictionObserver;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
         }
 
-        public IDisposable SubscribeDeserializations(IObserver<ITsavoriteScanIterator> deserializationObserver)
+        public IDisposable SubscribeDeserializations(ITsavoriteRecordObserver<ITsavoriteScanIterator> deserializationObserver)
         {
             allocatorBase.OnDeserializationObserver = deserializationObserver;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
