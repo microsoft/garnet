@@ -25,6 +25,12 @@ namespace Tsavorite.core
             _length = length;
         }
 
+        public UnmanagedMemoryManager()
+        {
+            _pointer = null;
+            _length = 0;
+        }
+
         /// <summary>
         /// Set destination for this object
         /// </summary>
