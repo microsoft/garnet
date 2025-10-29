@@ -76,7 +76,7 @@ Can work as expected.  Without namespacing, the `SET` would overwrite (or otherw
 We implement the [Redis Vector Set API](https://redis.io/docs/latest/commands/?group=vector_set):
 
 Implemented commands:
- - [ ] VADD
+ - [x] VADD
  - [ ] VCARD
  - [x] VDIM
  - [x] VEMB
@@ -93,18 +93,15 @@ Implemented commands:
 
 [`VADD`](https://redis.io/docs/latest/commands/vadd/) implicitly creates a Vector Set when run on an empty key.
 
-DiskANN index creation must be serialized, so this requires holding an exclusive lock ([more details on locking](#locking)) that covers just that key.  During `create_index` call to DiskANN, the read/write/delete callbacks provided may be invoked - accordingly creation is re-entrant and we cannot call `create_index` directly from any Tsavorite session functions.
-
-> [!IMPORTANT]
-> Today the `create_index` call _is_ trigger from session functions, but is moved onto the thread pool.  This is a hack to enable callbacks to function during index creation, and will be removed.
+DiskANN index creation must be serialized, so this requires holding an exclusive lock ([more details on locking](#locking)) that covers just that key.  During the `create_index` call to DiskANN the read/write/delete callbacks provided may be invoked - accordingly creation is re-entrant and we cannot call `create_index` directly from any Tsavorite session functions.
 
 ## Insertion (via `VADD`)
 
 Once a Vector Set exists, insertions (which also use `VADD`) can proceed in parallel.
 
-Every insertion begins with a Tsavorite read, to get the [`Index`](#indexes) metadata (for validation) and the pointer to DiskANN's index.  As a consequence, most `VADD` operations despite _semantically_ being writes are from Tsavorites perspective reads.  This has implications for replication, [which is discussed below](#replication).
+Every insertion begins with a Tsavorite read, to get the [`Index`](#indexes) metadata (for validation) and the pointer to DiskANN's index.  As a consequence, most `VADD` operations despite _semantically_ being writes are, from Tsavorite's perspective, reads.  This has implications for replication, [which is discussed below](#replication).
 
-To prevent the index from being deleted mid-insertion, we still hold a shared lock while calling DiskANN's `insert` function.  These locks are sharded for performance purposes, [which is discussed below](#locking).
+To prevent the index from being deleted mid-insertion, we hold a shared lock while calling DiskANN's `insert` function.  These locks are sharded for performance purposes, [which is discussed below](#locking).
 
 ## Removal (via `VREM`)
 
@@ -150,7 +147,7 @@ We cope with this by _cancelling_ the Tsavorite delete operation once we have a 
  - If the index was initialized in the current process ([see recovery for more details](#recovery)), call DiskANN's `drop_index` function
  - Perform a write to zero out the index key in Tsavorite
  - Reattempt the Tsavorite delete
- - Cleanup ancillary metadata and schedule element data for cleanup (more details below)
+ - Cleanup ancillary metadata and schedule element data for cleanup ([more details below](#cleanup))
 
 ## FlushDB
 
@@ -236,7 +233,7 @@ To fix that, synthetic writes against related keys are made after an insert or r
 
 The synthetic writes on primary are intercepted on replicas and redirected to `VectorManager.HandleVectorSetAddReplication` and `VectorManager.HandleVectorSetRemoveReplication`, rather than being handled directly by `AOFProcessor`.
 
-For performance reasons, replicated `VADD`s are applied across many threads instead of serially.  This introduces a new source of non-determinism, since `VADD`s will occur in a different order than on the primary, but we believe this acceptable as Vector Sets are inherently non-deterministic.  While not _exactly_ the same Redis also permits a degree of non-determinism with its `CAS` option for `VADD`, so we're not diverging an incredible amount here.
+For performance reasons, replicated `VADD`s are applied across many threads instead of serially.  This introduces a new source of non-determinism, since `VADD`s will occur in a different order than on the primary, but this is acceptable as Vector Sets are inherently non-deterministic.  While not _exactly_ the same Redis also permits a degree of non-determinism with its `CAS` option for `VADD`, so we're not diverging an incredible amount here.
 
 While a `VADD` can proceed in parallel with respect to other `VADD`s, that is not the case for any other commands.  Accordingly, `AofProcessor` now calls `VectorManager.WaitForVectorOperationsToComplete()` before applying any other updates to maintain coherency.
 
@@ -303,7 +300,7 @@ The most complicated of our callbacks, the signature is:
 void ReadCallbackUnmanaged(ulong context, uint numKeys, nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext)
 ```
 
-`context` identifies which Vector Set is being operated on AND the associated namespace, `numKeys` tells us how many keys have been encoded into `keysData`, `keysData` and `keysLength` define a `Span<byte>` of length prefixied keys, `dataCallback` is a `delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>` (more details below) used to push found keys back into DiskANN, and `dataCallbackContext` is passed back unaltered to `dataCallback`.
+`context` identifies which Vector Set is being operated on AND the associated namespace, `numKeys` tells us how many keys have been encoded into `keysData`, `keysData` and `keysLength` define a `Span<byte>` of length prefixied keys, `dataCallback` is a `delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>` used to push found keys back into DiskANN, and `dataCallbackContext` is passed back unaltered to `dataCallback`.
 
 In the `Span<byte>` defined by `keysData` and `keysLength` the keys are length prefixed with a 4-byte little endian `int`.  This is necessary to support variable length element ids, but also gives us some scratch space to store a namespace when we convert these to `SpanByte`s.  This mangling is done as part of the `IReadArgBatch` implementation we use to read keys from Tsavorite.
 
