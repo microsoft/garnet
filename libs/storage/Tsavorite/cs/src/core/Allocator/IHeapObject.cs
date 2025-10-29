@@ -44,10 +44,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Copy the ValueObject from srcLogRecord to newLogRecord, cloning and caching serialized data if needed.
         /// </summary>
-        void CacheSerializedObjectData(ref LogRecord srcLogRecord, ref LogRecord dstLogRecord);
+        void CacheSerializedObjectData(ref LogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RMWInfo rmwInfo);
 
         /// <summary>
-        /// Clear any serialized data from <see cref="CacheSerializedObjectData(ref LogRecord, ref LogRecord)"/>
+        /// Clear any serialized data from <see cref="CacheSerializedObjectData(ref LogRecord, ref LogRecord, ref RMWInfo)"/>
         /// </summary>
         void ClearSerializedObjectData();
     }

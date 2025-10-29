@@ -273,6 +273,8 @@ namespace Tsavorite.core
 
                     if (sessionFunctions.InitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                     {
+                        sessionFunctions.PostInitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+
                         // Success
                         MarkPage(stackCtx.recSrc.LogicalAddress, sessionFunctions.Ctx);
                         pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
@@ -557,10 +559,8 @@ namespace Tsavorite.core
                         // the object (and track sizes) before it is cleared. (If we are called from Pending IO then srcLogRecord will be a DiskLogRecord and we
                         // do not need to serialize data as this is not involved in checkpointing, and the DiskLogRecord is Disposed after we return up the Pending chain.)
                         var isMemoryLogRecord = srcLogRecord.IsMemoryLogRecord;
-                        if (newLogRecord.Info.IsInNewVersion && srcLogRecord.Info.ValueIsObject && isMemoryLogRecord)
-                            srcLogRecord.ValueObject.CacheSerializedObjectData(ref srcLogRecord.AsMemoryLogRecordRef(), ref newLogRecord);
-                        else
-                            rmwInfo.ClearSourceValueObject = true;
+                        if (srcLogRecord.Info.ValueIsObject && isMemoryLogRecord)
+                            srcLogRecord.ValueObject.CacheSerializedObjectData(ref srcLogRecord.AsMemoryLogRecordRef(), ref newLogRecord, ref rmwInfo);
                         var pcuSuccess = sessionFunctions.PostCopyUpdater(in srcLogRecord, ref newLogRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
                         if (pcuSuccess)
                         {

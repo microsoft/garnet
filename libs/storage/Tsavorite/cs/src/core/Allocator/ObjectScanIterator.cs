@@ -174,7 +174,7 @@ namespace Tsavorite.core
         {
             var physicalAddress = GetPhysicalAddress(currentAddress, headAddress, currentPage, offset);
 
-            // We are just getting sizes so no need for ObjectIdMap
+            // We are just getting inline sizes so no need for ObjectIdMap
             var logRecord = new LogRecord(physicalAddress);
             (var _, allocatedSize) = logRecord.GetInlineRecordSizes();
             return logRecord.physicalAddress;

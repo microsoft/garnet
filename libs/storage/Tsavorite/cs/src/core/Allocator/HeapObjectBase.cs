@@ -97,7 +97,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc />
-        public void CacheSerializedObjectData(ref LogRecord srcLogRecord, ref LogRecord dstLogRecord)
+        public void CacheSerializedObjectData(ref LogRecord srcLogRecord, ref LogRecord dstLogRecord, ref RMWInfo rmwInfo)
         {
             // We'll want to clone the source object to the destination log record so PostCopyUpdater can modify it.
             // Note that this does a shallow copy of the object's internal structures (e.g. List<>), which means subsequent modifications of newValue
@@ -107,12 +107,30 @@ namespace Tsavorite.core
             // probably (but not necessarily) be another Overflow.)
             Debug.Assert(ReferenceEquals(this, srcLogRecord.ValueObject), $"{GetCurrentMethodName()} must be called on the Source LogRecord's ValueObject.");
             Debug.Assert(dstLogRecord.Info.ValueIsObject, $"{GetCurrentMethodName()} must be called for non-object {nameof(dstLogRecord)}.");
-            Debug.Assert(dstLogRecord.Info.IsInNewVersion, $"{GetCurrentMethodName()} must only be called when taking a checkpoint.");
             _ = dstLogRecord.TrySetValueObject(srcLogRecord.ValueObject.Clone());
+
+            // If we are not currently taking a checkpoint, we can delete the old version
+            // since the new version of the object is already created.
+            var oldValueObject = (HeapObjectBase)srcLogRecord.ValueObject;
+            if (!srcLogRecord.Info.IsInNewVersion)
+            {
+                // Wait for any concurrent ongoing serialization of oldValue to complete
+                while (true)
+                {
+                    if (oldValueObject.SerializationPhase == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZED))
+                        break;
+
+                    if ((int)oldValueObject.SerializationPhase >= (int)SerializationPhase.SERIALIZED)
+                        break;
+
+                    _ = Thread.Yield();
+                }
+                rmwInfo.ClearSourceValueObject = true;
+                return;
+            }
 
             // Create a serialized version for checkpoint version (v). This is only done for CopyUpdate during a checkpoint, to preserve the (v) data
             // of the object during a checkpoint while the (v+1) version of the record may modify the shallow-copied internal structures.
-            var oldValueObject = (HeapObjectBase)srcLogRecord.ValueObject;
             while (true)
             {
                 if (oldValueObject.SerializationPhase == (int)SerializationPhase.REST && oldValueObject.MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
