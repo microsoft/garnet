@@ -40,10 +40,11 @@ namespace Garnet.test
 
             AllureLifecycle.Instance.UpdateTestCase(x =>
             {
-                x.labels.Add(Label.ParentSuite($"{namespaceName} - {timestamp}"));
+                //x.labels.Add(Label.ParentSuite($"{namespaceName} - {timestamp}"));
+                x.labels.Add(Label.ParentSuite($"{namespaceName}"));
                 x.labels.Add(Label.Suite(os));
                 x.labels.Add(Label.SubSuite($"{framework} | {config}"));
-                //x.historyId = Guid.NewGuid().ToString(); // Optional: breaks history grouping but keeps each test separate (not just a "retry) without adding the "TestParameter"
+                //x.historyId = Guid.NewGuid().ToString(); // Optional: breaks history grouping but keeps each test separate (shows as a "retry" if not separate). Adding the "TestParameter" also handles this.
             });
 
             // allows to separate out tests based on config but still hold history

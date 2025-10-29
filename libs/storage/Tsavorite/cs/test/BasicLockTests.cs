@@ -31,9 +31,8 @@ namespace Tsavorite.test.LockTests
 {
     using StructStoreFunctions = StoreFunctions<int, int, LocalIntKeyComparer, DefaultRecordDisposer<int, int>>;
 
-    [AllureNUnit]
     [TestFixture]
-    public class BasicLockTests : AllureTestBase
+    public class BasicLockTests
     {
         internal class Functions : SimpleSimpleFunctions<int, int>
         {

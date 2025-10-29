@@ -1,17 +1,10 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
-//using System;
-//using System.IO;
-//using System.Reflection;
-//using System.Runtime.Versioning;
 using System.Text;
 using System.Threading.Tasks;
-//using Allure.Net.Commons;
 using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
-
 
 namespace Garnet.test
 {
@@ -181,60 +174,47 @@ namespace Garnet.test
         [TestCase(131049)]
         [TestCase(131056)]
         [TestCase(131061)]
-        //public async Task CanUseHKEYSWithLeftOverBuffer(int size)  //ORIGINAL
-        public void CanUseHKEYSWithLeftOverBuffer(int size)
+        public async Task CanUseHKEYSWithLeftOverBuffer(int size)
         {
 
-            // Set Assert to fail if size = 100
-            if (size == 100)
-            {
-                Assert.Fail("Deliberate failure for size 100 to investigate CI issue.");
-            }
+            using var c = TestUtils.GetGarnetClientSession();
+            c.Connect();
+
+            var valueStr = await CreateKeyOfSize(size, "mykey");
+
+            string zaddResult = await c.ExecuteAsync("HSET", "myhash", "field1", "field1value", "field2", "field2value", "field3", "field3value", "field4", "field4value");
+            ClassicAssert.AreEqual("4", zaddResult);
+
+            var t1 = c.ExecuteAsyncBatch("GET", "mykey"); // feed partial batch without flushing
+
+            var t2 = c.ExecuteForArrayAsyncBatch("HKEYS", "myhash");
+
+            var t3Result = await c.ExecuteForArrayAsync("HKEYS", "myhash");
+
+            var t1Result = await t1;
+            ClassicAssert.AreEqual(valueStr, t1Result);
+
+            var t2Result = await t2;
+            ClassicAssert.AreEqual(4, t2Result.Length);
+            ClassicAssert.AreEqual("field1", t2Result[0]);
+            ClassicAssert.AreEqual("field2", t2Result[1]);
+            ClassicAssert.AreEqual("field3", t2Result[2]);
+            ClassicAssert.AreEqual("field4", t2Result[3]);
+
+            ClassicAssert.AreEqual(4, t3Result.Length);
+            ClassicAssert.AreEqual("field1", t3Result[0]);
+            ClassicAssert.AreEqual("field2", t3Result[1]);
+            ClassicAssert.AreEqual("field3", t3Result[2]);
+            ClassicAssert.AreEqual("field4", t3Result[3]);
 
 
-            /*  DEBUG DEBUG:  Temporarily commenting out to investigate a CI failure
-
-                        using var c = TestUtils.GetGarnetClientSession();
-                        c.Connect();
-
-                        var valueStr = await CreateKeyOfSize(size, "mykey");
-
-                        string zaddResult = await c.ExecuteAsync("HSET", "myhash", "field1", "field1value", "field2", "field2value", "field3", "field3value", "field4", "field4value");
-                        ClassicAssert.AreEqual("4", zaddResult);
-
-                        var t1 = c.ExecuteAsyncBatch("GET", "mykey"); // feed partial batch without flushing
-
-                        var t2 = c.ExecuteForArrayAsyncBatch("HKEYS", "myhash");
-
-                        var t3Result = await c.ExecuteForArrayAsync("HKEYS", "myhash");
-
-                        var t1Result = await t1;
-                        ClassicAssert.AreEqual(valueStr, t1Result);
-
-                        var t2Result = await t2;
-                        ClassicAssert.AreEqual(4, t2Result.Length);
-                        ClassicAssert.AreEqual("field1", t2Result[0]);
-                        ClassicAssert.AreEqual("field2", t2Result[1]);
-                        ClassicAssert.AreEqual("field3", t2Result[2]);
-                        ClassicAssert.AreEqual("field4", t2Result[3]);
-
-                        ClassicAssert.AreEqual(4, t3Result.Length);
-                        ClassicAssert.AreEqual("field1", t3Result[0]);
-                        ClassicAssert.AreEqual("field2", t3Result[1]);
-                        ClassicAssert.AreEqual("field3", t3Result[2]);
-                        ClassicAssert.AreEqual("field4", t3Result[3]);
-
-
-                        var t4Result = await c.ExecuteForArrayAsync("HKEYS", "myhash");
-                        ClassicAssert.AreEqual(4, t4Result.Length);
-                        ClassicAssert.AreEqual("field1", t4Result[0]);
-                        ClassicAssert.AreEqual("field2", t4Result[1]);
-                        ClassicAssert.AreEqual("field3", t4Result[2]);
-                        ClassicAssert.AreEqual("field4", t4Result[3]);
-            */
+            var t4Result = await c.ExecuteForArrayAsync("HKEYS", "myhash");
+            ClassicAssert.AreEqual(4, t4Result.Length);
+            ClassicAssert.AreEqual("field1", t4Result[0]);
+            ClassicAssert.AreEqual("field2", t4Result[1]);
+            ClassicAssert.AreEqual("field3", t4Result[2]);
+            ClassicAssert.AreEqual("field4", t4Result[3]);
         }
-
-
 
         #endregion
 

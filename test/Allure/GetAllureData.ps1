@@ -37,7 +37,7 @@ Write-Host "Results Directory: $resultsDir"
 
 
 #dotnet test -c Release --no-build --filter "FullyQualifiedName~CanUseHKEYSWithLeftOverBuffer" --logger "trx;LogFileName=results.trx" --results-directory "C:\GarnetGitHub\test\TestResults"
-dotnet test "$basePath/test/Garnet.test/Garnet.test.csproj" -c $configuration --filter "FullyQualifiedName~FunctionsLockTest" --logger "trx;LogFileName=results.trx" --results-directory $resultsDir
+dotnet test "$basePath/test/Garnet.test/Garnet.test.csproj" -c $configuration --filter "FullyQualifiedName~CanUseHKEYSWithLeftOverBuffer" --logger "trx;LogFileName=results.trx" --results-directory $resultsDir
 # DEBUG DEBUG - all tests  dotnet test "$basePath/test/Garnet.test/Garnet.test.csproj" -c $configuration --logger "trx;LogFileName=results.trx" --results-directory $resultsDir
 
 # might not be needed as will have combined results dir in artifacts
