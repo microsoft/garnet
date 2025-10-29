@@ -18,12 +18,12 @@ Vector Sets are a combination of one "index" key, which stores metadata and a po
 
 In order to track allocated Vector Sets and in progress cleanups, we keep a single `ContextMetadata` struct under the empty key in namespace 0.
 
-This is loaded and cached on startup, and updated (both in memory and in Tsavorite) whenver a Vector Set is created or deleted.  Simple locking (on the `VectorManager` instance) is used to serialize these updates as they should be rare.
+This is loaded and cached on startup, and updated (both in memory and in Tsavorite) whenever a Vector Set is created or deleted.  Simple locking (on the `VectorManager` instance) is used to serialize these updates as they should be rare.
 
 > [!IMPORTANT]
 > Today `ContextMetadata` can track only 64 Vector Sets in some state of creation or cleanup.
 > 
-> The prartical limit is actually 31, because context must be &lt; 256, divisible by 8, and not 0 (which is reserved).
+> The practical limit is actually 31, because context must be &lt; 256, divisible by 8, and not 0 (which is reserved).
 >
 > This limitation will be lifted eventually, perhaps after Store V2 lands.
 
@@ -32,7 +32,7 @@ This is loaded and cached on startup, and updated (both in memory and in Tsavori
 The index key (represented by the [`Index`](TODO) struct) contains the following data:
  - `ulong Context` - used to derive namespaces, detailed below
  - `ulong IndexPtr` - a pointer to the DiskANN data structure, note this may be _dangling_ after [recovery](#recovery) or [replication](#replication)
- - `uint Dimensions` - the expected dimension of vectors in commands targetting the Vector Set, this is inferred based on the `VADD` that creates the Vector Set
+ - `uint Dimensions` - the expected dimension of vectors in commands targeting the Vector Set, this is inferred based on the `VADD` that creates the Vector Set
  - `uint ReduceDims` - if a Vector Set was created with the `REDUCE` option that value, otherwise zero
    * > [!NOTE]
      > Today this ignored except for validation purposes, eventually DiskANN will use it.
@@ -69,7 +69,7 @@ To illustrate, this means that:
 VADD vector-set-key VALUES 1 123 element-key
 SET element-key string-value
 ```
-Can work as expected.  Without namespacing, the `SET` would overwrite (or otherwiswe mangle) the element data of the Vector Set.
+Can work as expected.  Without namespacing, the `SET` would overwrite (or otherwise mangle) the element data of the Vector Set.
 
 # Operations
 
@@ -149,7 +149,7 @@ We cope with this by _cancelling_ the Tsavorite delete operation once we have a 
  - Acquire exclusive locks covering the Vector Set ([more locking details](#locking))
  - If the index was initialized in the current process ([see recovery for more details](#recovery)), call DiskANN's `drop_index` function
  - Perform a write to zero out the index key in Tsavorite
- - Reperform the Tsavorite delete
+ - Reattempt the Tsavorite delete
  - Cleanup ancillary metadata and schedule element data for cleanup (more details below)
 
 ## FlushDB
@@ -179,11 +179,11 @@ Whenver we read or write a key/value pair in the main store, we acquire locks in
 > Based on profiling, Tsavorite shared locks are a significant source of contention.  Even though reads will not block each other we still pay a cache coherency tax.  Accordingly, reducing the number of Tsavorite operations (even reads) can lead to significant performance gains.
 
 > [!IMPORTANT]
-> Some effort was spent early attempting to elide the initial index read in common cases.  This did not pay divdends on smaller clusters, but is worth exploring again on large SKUs.
+> Some effort was spent early attempting to elide the initial index read in common cases.  This did not pay dividends on smaller clusters, but is worth exploring again on large SKUs.
 
 ## Vector Set Sharded Locks
 
-As noted above, to prevent `DEL` from clobering in use Vector Sets and concurrent `VADD`s from calling `create_index` multiple times we have to hold locks based on the vector set key.  As every Vector Set operations starts by taking these locks, we have sharded them into `RoundUpToPowerOf2(Environment.ProcessorCount)` separate locks.  To derive many related keys from a single key, we mangle the low bits of a key's hash value - this is implemented in `VectorManager.PrepareReadLockHash`.
+As noted above, to prevent `DEL` from clobbering in use Vector Sets and concurrent `VADD`s from calling `create_index` multiple times we have to hold locks based on the vector set key.  As every Vector Set operations starts by taking these locks, we have sharded them into `RoundUpToPowerOf2(Environment.ProcessorCount)` separate locks.  To derive many related keys from a single key, we mangle the low bits of a key's hash value - this is implemented in `VectorManager.PrepareReadLockHash`.
 
 For operations which remain reads, we only acquire a single shared lock (based on the current processor number) to prevent destructive operations.
 
@@ -198,7 +198,7 @@ For operations which might be either (like `VADD`) we first acquire the usual si
 
 ## `VectorManager` Lock Around `ContextMetadata`
 
-Whenever we need to allocate a new context or mark an old one for cleanup, we need to modify the cached `ContextMetadata` and write the new value to Tsavorite.  To simplify this, we take a simple `lock` around `VectorManager` while reparing a new `ContextMetadata`.
+Whenever we need to allocate a new context or mark an old one for cleanup, we need to modify the cached `ContextMetadata` and write the new value to Tsavorite.  To simplify this, we take a simple `lock` around `VectorManager` while preparing a new `ContextMetadata`.
 
 The `RMW` into Tsavorite still proceeds in parallel, outside of the lock, but a simple version counter in `ContextMetadata` allows us to keep only the latest version in the store.
 
@@ -227,7 +227,7 @@ To fix that, synthetic writes against related keys are made after an insert or r
 > one of the other reserved namespaces.
 
 > [!NOTE]
-> These syntetic writes might appear to double write volume, but that is not the case.  Actual inserts and deletes have extreme write amplification (that is, each cause DiskANN to perform many writes against the Main Store), whereas the synthetic writes cause a single (no-op) modification to the Main Store plus an AOF entry.
+> These synthetic writes might appear to double write volume, but that is not the case.  Actual inserts and deletes have extreme write amplification (that is, each cause DiskANN to perform many writes against the Main Store), whereas the synthetic writes cause a single (no-op) modification to the Main Store plus an AOF entry.
 
 > [!NOTE]
 > The replication key is the same for all operations against the same Vector Set, this could be sharded which may improve performance.
@@ -289,7 +289,7 @@ Almost all of how Vector Sets actually function is handled by DiskANN.  Garnet s
 
 In order for DiskANN to access and store data in Garnet, we provide a set of callbacks.  All callbacks are `[UnmanagedCallersOnly]` and converted to function pointers before they are passed to Garnet.
 
-All callbacks take a `ulong context` parameter which identifies the Vector Set involved (the high 61-bits of the context) and the associated namespace (the low 3-bits of the context).  On the Garnet side, the whole `context` is effectively a namespace, but from DiskANN's perspective the top 61-bits are an opqaue identifier.
+All callbacks take a `ulong context` parameter which identifies the Vector Set involved (the high 61-bits of the context) and the associated namespace (the low 3-bits of the context).  On the Garnet side, the whole `context` is effectively a namespace, but from DiskANN's perspective the top 61-bits are an opaque identifier.
 
 > [!IMPORTANT]
 > As noted elsewhere, we only have a byte's worth of namespaces today - so although `context` could handle quintillions of Vector Sets, today we're limited to just 31.
@@ -308,7 +308,7 @@ void ReadCallbackUnmanaged(ulong context, uint numKeys, nint keysData, nuint key
 In the `Span<byte>` defined by `keysData` and `keysLength` the keys are length prefixed with a 4-byte little endian `int`.  This is necessary to support variable length element ids, but also gives us some scratch space to store a namespace when we convert these to `SpanByte`s.  This mangling is done as part of the `IReadArgBatch` implementation we use to read keys from Tsavorite.
 
 > [!NOTE]
-> Once variable sized namespaces are supported we'll have to handle the case where the namespace can't fit in 4 bytes.  However, we expect that to be rare (4-bytes would give us ~53,000,000 Vector Sets) and the performacne benefits of _not_ copying during querying are very large.
+> Once variable sized namespaces are supported we'll have to handle the case where the namespace can't fit in 4 bytes.  However, we expect that to be rare (4-bytes would give us ~53,000,000 Vector Sets) and the performance benefits of _not_ copying during querying are very large.
 
 As we find keys, we invoke `dataCallback(index, dataCallbackContext, keyPointer, keyLength)`.  If a key is not found, it's index is simply skipped.  The benefits of this is that we don't copy data out of the Tsavorite log as part of reads, DiskANN is able to do distance calculations and traversal over in-place data.
 
@@ -318,7 +318,7 @@ As we find keys, we invoke `dataCallback(index, dataCallbackContext, keyPointer,
 > In particular if DiskANN raises an error or blocks in the `dataCallback` expect very bad things to happen, up to the runtime corrupting itself.  Great care must be taken to keep the DiskANN side of this call cheap and reliable.
 
 > [!IMPORTANT]
-> Tsavorite has been extended with a `ContextReadWithPrefetch` method to accomidate this pattern, which also employs prefetching when we have batches of keys to lookup.  This needs to be upstreamed before Vector Set work lands.
+> Tsavorite has been extended with a `ContextReadWithPrefetch` method to accommodate this pattern, which also employs prefetching when we have batches of keys to lookup.  This needs to be upstreamed before Vector Set work lands.
 >
 > Additionally, some experimentation to figure out good prefetch sizes (and if [AMAC](https://dl.acm.org/doi/10.14778/2856318.2856321) is useful) based on hardware is merited.  Right now we've chosen 12 based on testing with some 96-core Intel machines, but that is unlikely to be correct in all interesting circumstances.
 
