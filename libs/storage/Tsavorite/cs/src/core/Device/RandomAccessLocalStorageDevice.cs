@@ -142,7 +142,10 @@ namespace Tsavorite.core
         /// <param name="context"></param>
         public override void ReadAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
         {
-            _ = ReadWorkerAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+            using (ExecutionContext.SuppressFlow())
+            {
+                _ = ReadWorkerAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
+            }
         }
 
         async ValueTask ReadWorkerAsync(int segmentId, ulong sourceAddress, IntPtr destinationAddress, uint readLength, DeviceIOCompletionCallback callback, object context)
