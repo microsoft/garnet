@@ -7,7 +7,6 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -25,15 +24,18 @@ namespace Garnet.server
         public int Size => singleLog != null ? 1 : shardedLog.Length;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Hash(Span<byte> key, out long hash, out int sublogIdx, out int keyOffset)
+        public unsafe void Hash(Span<byte> key, out long hash, out int sublogIdx, out int keyOffset)
         {
-            hash = HashSlotUtils.Hash(key);
-            sublogIdx = (int)(hash % shardedLog.Length);
+            fixed (byte* keyPtr = key)
+            {
+                hash = Utility.HashBytes(keyPtr, key.Length);
+            }
+            sublogIdx = (int)(((ulong)hash) % (ulong)shardedLog.Length);
             keyOffset = (int)(hash & (ReplicaTimestampTracker.KeyOffsetCount - 1));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Hash(ref SpanByte key, out long hash, out int sublogIdx, out int keyOffset)
+        public void HashKey(ref SpanByte key, out long hash, out int sublogIdx, out int keyOffset)
         {
             Debug.Assert(shardedLog != null);
             Hash(key.AsSpan(), out hash, out sublogIdx, out keyOffset);
@@ -184,7 +186,7 @@ namespace Garnet.server
             if (singleLog != null)
                 return singleLog.log;
 
-            Hash(ref key, out var hash, out var _sublogIdx, out _);
+            HashKey(ref key, out var hash, out var _sublogIdx, out _);
             return shardedLog.sublog[_sublogIdx];
         }
 

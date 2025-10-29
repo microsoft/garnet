@@ -108,7 +108,7 @@ namespace Garnet.server
         /// <param name="timestamp"></param>
         public void UpdateKeyTimestamp(int sublogIdx, ref SpanByte key, long timestamp)
         {
-            appendOnlyFile.Log.Hash(ref key, out _, out var _sublogIdx, out var keyOffset);
+            appendOnlyFile.Log.HashKey(ref key, out _, out var _sublogIdx, out var keyOffset);
             if (sublogIdx != _sublogIdx)
                 throw new GarnetException("Sublog index does not match key mapping!");
             _ = Utility.MonotonicUpdate(ref timestamps[sublogIdx][keyOffset], timestamp, out _);
@@ -156,7 +156,7 @@ namespace Garnet.server
             for (var i = csvi.firstKey; i < csvi.lastKey; i += csvi.step)
             {
                 var key = parseState.GetArgSliceByRef(i).SpanByte;
-                appendOnlyFile.Log.Hash(ref key, out _, out var sublogIdx, out var keyOffset);
+                appendOnlyFile.Log.HashKey(ref key, out _, out var sublogIdx, out var keyOffset);
 
                 // If first read initialize context
                 if (replicaReadSessionContext.lastSublogIdx == -1)

@@ -29,6 +29,7 @@ namespace Garnet.cluster
         CancellationTokenSource resetHandler = new();
 
         readonly int pageSizeBits;
+        public int PageSizeBits => pageSizeBits;
 
         readonly ILogger logger;
         bool _disposed;
@@ -56,7 +57,7 @@ namespace Garnet.cluster
             {
                 if (!storeWrapper.serverOptions.EnableAOF)
                     return replicationOffset;
-                
+
                 // Primary tracks replicationOffset indirectly through AOF tailAddress
                 // Replica will adjust replication offset as it receives data from primary (TODO: since AOFs are synced this might obsolete)
                 var role = clusterProvider.clusterManager.CurrentConfig.LocalNodeRole;

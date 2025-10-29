@@ -433,7 +433,7 @@ namespace Garnet.server
             if (appendOnlyFile.Log.Size == 1)
                 return;
 
-            appendOnlyFile.Log.Hash(ref key, out var hash, out var sublogIdx, out var keyOffset);
+            appendOnlyFile.Log.HashKey(ref key, out var hash, out var sublogIdx, out var keyOffset);
             if (proc.customProcTimestampBitmap == null)
             {
                 logAccessMap |= 1UL << sublogIdx;
@@ -459,7 +459,7 @@ namespace Garnet.server
             for (var i = 0; i < keyCount; i++)
             {
                 var keySpanByte = keys[i].SpanByte;
-                appendOnlyFile.Log.Hash(ref keySpanByte, out _, out var sublogIdx, out _);
+                appendOnlyFile.Log.HashKey(ref keySpanByte, out _, out var sublogIdx, out _);
                 logAccessMap |= 1UL << sublogIdx;
             }
         }

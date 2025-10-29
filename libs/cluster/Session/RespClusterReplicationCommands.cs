@@ -160,7 +160,7 @@ namespace Garnet.cluster
             {
                 IsReplicating = true;
 
-                clusterProvider.replicationManager.ProcessPrimaryStream(sublogIdx, sbRecord.ToPointer(), sbRecord.Length,
+                ProcessPrimaryStream(sublogIdx, sbRecord.ToPointer(), sbRecord.Length,
                     previousAddress, currentAddress, nextAddress);
             }
 
