@@ -122,6 +122,9 @@ namespace Resp.benchmark
         [Option("aof-bench", Required = false, Default = false, HelpText = "Run AOF bench at replica.")]
         public bool AofBench { get; set; }
 
+        [Option("aof-bench-type", Required = false, Default = AofBenchType.Replay, HelpText = "Run AOF bench at replica.")]
+        public AofBenchType AofBenchType { get; set; }
+
         /*
          * InProc/AofBench server options
          */
@@ -143,7 +146,10 @@ namespace Resp.benchmark
         [Option("aof-sublog-count", Required = false, Default = 1, HelpText = "Number of sublogs used for AOF.")]
         public int AofSublogCount { get; set; }
 
-        [Option("aof-page-size", Required = false, Default = "4k", HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
+        [Option("aof-memory-size", Required = false, Default = "64m", HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit.")]
+        public string AofMemorySize { get; set; }
+
+        [Option("aof-page-size", Required = false, Default = "4m", HelpText = "Size of each AOF page in bytes(rounds down to power of 2)")]
         public string AofPageSize { get; set; }
 
         /// <summary>
@@ -210,26 +216,6 @@ namespace Resp.benchmark
             v |= v >> 16;
             v |= v >> 32;
             return v - (v >> 1);
-        }
-
-        public string CalculateAofMemorySizeForLoad()
-        {
-            var aofMemorySize = 16 << AofPageSizeBits();
-            ReadOnlySpan<char> suffix = ['k', 'm', 'g', 't', 'p'];
-            var offset = 0;
-            var unit = 1 << 10;
-            while (offset < suffix.Length)
-            {
-                var fraction = aofMemorySize / (unit << 10);
-                if (fraction == 0)
-                    break;
-                offset++;
-                unit <<= 10;
-            }
-
-            var memorySizeStr = $"{(aofMemorySize / unit).ToString()}{suffix[offset]}";
-            //  Console.WriteLine($"AOF Memory Size: {memorySize:N2} => {memorySizeStr}");
-            return memorySizeStr;
         }
     }
 }

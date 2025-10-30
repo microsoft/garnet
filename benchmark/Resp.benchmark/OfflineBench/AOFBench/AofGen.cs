@@ -20,17 +20,28 @@ namespace Resp.benchmark
     public sealed class AofGen
     {
         readonly GarnetLog garnetLog;
+
+        public readonly GarnetAppendOnlyFile appendOnlyFile;
+
         readonly Options options;
         readonly GarnetServerOptions aofServerOptions;
         readonly StringBuilder stats;
 
-        // threads x pageNum
+        /// <summary>
+        /// threads x pageNum
+        /// </summary>
         Page[][] pageBuffers;
+
+        /// <summary>
+        /// DBSize kv pairs
+        /// </summary>
+        List<(byte[], byte[])>[] kvPairBuffers;
 
         long total_number_of_aof_records = 0L;
         long total_number_of_aof_bytes = 0L;
 
         public Page[] GetPageBuffers(int threadIdx) => pageBuffers[threadIdx];
+        public List<(byte[], byte[])> GetKVPairBuffer(int threadIdx) => kvPairBuffers[threadIdx];
 
         public AofGen(Options options, StringBuilder stats)
         {
@@ -40,7 +51,7 @@ namespace Resp.benchmark
             this.aofServerOptions = new GarnetServerOptions()
             {
                 EnableAOF = true,
-                AofMemorySize = options.CalculateAofMemorySizeForLoad(),
+                AofMemorySize = options.AofMemorySize,
                 AofPageSize = options.AofPageSize,
                 UseAofNullDevice = true,
                 EnableFastCommit = true,
@@ -53,7 +64,20 @@ namespace Resp.benchmark
             };
             aofServerOptions.GetAofSettings(0, out var logSettings);
             garnetLog = new GarnetLog(aofServerOptions, logSettings);
-            pageBuffers = new Page[options.AofSublogCount][];
+
+            appendOnlyFile = new GarnetAppendOnlyFile(aofServerOptions, logSettings, Program.loggerFactory.CreateLogger("AofGen - AOF instance"));
+
+            if (options.AofBenchType == AofBenchType.Replay)
+            {
+                pageBuffers = new Page[options.AofSublogCount][];
+            }
+            else
+            {
+                kvPairBuffers = new List<(byte[], byte[])>[options.NumThreads.Max()];
+            }
+
+            if (options.AofSublogCount != options.NumThreads.Max() && options.AofBenchType == AofBenchType.EnqueueSharded)
+                throw new Exception("Use --threads(MAX)== --aof-sublog-count to generated perfectly sharded data!");
         }
 
         public NetworkBufferSettings GetAofSyncNetworkBufferSettings()
@@ -77,13 +101,13 @@ namespace Resp.benchmark
 
         byte[] GetValue() => Encoding.ASCII.GetBytes(Generator.CreateHexId(size: Math.Max(options.ValueLength, 8)));
 
-        List<(byte[], byte[])> GenerateKVPairs(int threadId)
+        List<(byte[], byte[])> GenerateKVPairs(int threadId, bool random)
         {
             var kvPairs = new List<(byte[], byte[])>();
 
             for (var i = 0; i < options.DbSize; i++)
             {
-                var key = options.AofSublogCount == 1 ? GetKey() : GetKey(threadId);
+                var key = random ? GetKey() : GetKey(threadId);
                 var value = GetValue();
                 kvPairs.Add((key, value));
             }
@@ -92,16 +116,20 @@ namespace Resp.benchmark
 
         public unsafe void GenerateData()
         {
-            var threads = options.AofSublogCount;
+            Console.WriteLine($"Generating AoFBench Data!");
+            var threads = options.AofBenchType == AofBenchType.Replay ? options.AofSublogCount : options.NumThreads.Max();
             var workers = new Thread[threads];
-
-            Console.WriteLine($"Generating {threads}x{options.DbSize} pages of size {aofServerOptions.AofPageSize}");
 
             // Run the experiment.
             for (var idx = 0; idx < threads; ++idx)
             {
                 var x = idx;
-                workers[idx] = new Thread(() => GenerateData(x));
+                workers[idx] = options.AofBenchType switch
+                {
+                    AofBenchType.Replay => new Thread(() => GeneratePages(x)),
+                    AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => new Thread(() => GenerateKeys(x)),
+                    _ => throw new Exception($"AofBenchType {options.AofBenchType} not supported"),
+                };
             }
 
             Stopwatch swatch = new();
@@ -118,15 +146,22 @@ namespace Resp.benchmark
             swatch.Stop();
 
             var seconds = swatch.ElapsedMilliseconds / 1000.0;
-            Console.WriteLine($"Generated {threads}x{options.DbSize} pages of size {aofServerOptions.AofPageSize} in {seconds:N2} secs");
-            Console.WriteLine($"Generated number of AOF records: {total_number_of_aof_records:N0}");
-            Console.WriteLine($"Generated number of AOF bytes: {total_number_of_aof_bytes:N0}");
+            if (options.AofBenchType == AofBenchType.Replay)
+            {
+                Console.WriteLine($"Generated {threads}x{options.DbSize} pages of size {aofServerOptions.AofPageSize} in {seconds:N2} secs");
+                Console.WriteLine($"Generated number of AOF records: {total_number_of_aof_records:N0}");
+                Console.WriteLine($"Generated number of AOF bytes: {total_number_of_aof_bytes:N0}");
+            }
+            else
+            {
+                Console.WriteLine($"Generated {threads}x{options.DbSize} KV pairs in {seconds:N2} secs");
+            }
 
-            void GenerateData(int threadId)
+            void GeneratePages(int threadId)
             {
                 var number_of_aof_records = 0L;
                 var number_of_aof_bytes = 0L;
-                var kvPairs = GenerateKVPairs(threadId);
+                var kvPairs = GenerateKVPairs(threadId, options.AofSublogCount == 1);
                 //Console.WriteLine($"[{threadId}] {string.Join(',', kvPairs.Select(x => Encoding.ASCII.GetString(x.Item1) + "=" + Encoding.ASCII.GetString(x.Item2)))}");
                 var pages = options.DbSize;
                 pageBuffers[threadId] = new Page[pages];
@@ -198,6 +233,12 @@ namespace Resp.benchmark
                         number_of_aof_bytes += payloadLength;
                     }
                 }
+            }
+
+            void GenerateKeys(int threadId)
+            {
+                kvPairBuffers[threadId] = GenerateKVPairs(threadId, options.AofBenchType == AofBenchType.EnqueueRandom);
+                //Console.WriteLine($"[{threadId}] - Generated {kvPairBuffers[threadId].Count} KV pairs for {options.AofBenchType}");
             }
         }
     }

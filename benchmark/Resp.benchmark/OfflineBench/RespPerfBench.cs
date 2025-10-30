@@ -46,19 +46,7 @@ namespace Resp.benchmark
                 if (opts.EnableCluster && !opts.SkipLoad && !opts.LSet)
                     throw new Exception("Use --lset when running InProc and with cluster enabled to load data!");
 
-                var serverOptions = new GarnetServerOptions
-                {
-                    ClusterAnnounceEndpoint = new IPEndPoint(IPAddress.Loopback, 6379),
-                    QuietMode = true,
-                    EnableAOF = opts.EnableAOF,
-                    EnableCluster = opts.EnableCluster,
-                    IndexSize = opts.IndexSize,
-                    ClusterConfigFlushFrequencyMs = -1,
-                    UseAofNullDevice = opts.UseAofNullDevice,
-                    CommitFrequencyMs = opts.CommitFrequencyMs,
-                    AofSublogCount = opts.AofSublogCount,
-                    FastAofTruncate = opts.UseAofNullDevice && opts.CommitFrequencyMs == -1
-                };
+                var serverOptions = AofBench.GetServerOptions(opts);
                 server = new EmbeddedRespServer(serverOptions, Program.loggerFactory, new GarnetServerEmbedded());
                 sessions = server.GetRespSessions(opts.NumThreads.Max());
 

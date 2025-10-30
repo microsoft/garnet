@@ -64,13 +64,14 @@ namespace Garnet.cluster
             var clusterDataPath = serverOptions.CheckpointDir + clusterFolder;
             var deviceFactory = serverOptions.GetInitializedDeviceFactory(clusterDataPath);
 
+
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "nodes.conf"));
             pool = new(1, (int)clusterConfigDevice.SectorSize);
 
             var clusterEndpoint = clusterProvider.storeWrapper.GetClusterEndpoint();
 
             this.logger = logger;
-            var recoverConfig = clusterConfigDevice.GetFileSize(0) > 0 && !serverOptions.CleanClusterConfig;
+            var recoverConfig = clusterProvider.serverOptions.ClusterConfigFlushFrequencyMs != -1 && clusterConfigDevice.GetFileSize(0) > 0 && !serverOptions.CleanClusterConfig;
 
             tlsOptions = serverOptions.TlsOptions;
             if (!serverOptions.CleanClusterConfig)
@@ -142,8 +143,8 @@ namespace Garnet.cluster
         {
             DisposeBackgroundTasks();
 
-            clusterConfigDevice.Dispose();
-            pool.Free();
+            clusterConfigDevice?.Dispose();
+            pool?.Free();
         }
 
         /// <summary>

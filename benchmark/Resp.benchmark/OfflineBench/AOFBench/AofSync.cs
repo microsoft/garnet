@@ -45,7 +45,8 @@ namespace Resp.benchmark
             {
                 this.buffer = GC.AllocateArray<byte>(maxChunkSize, pinned: true);
                 primaryId = aofBench.primaryId;
-                aofBench.sessions[0].clusterSession.UnsafeSetConfig(replicaOf: primaryId);
+                if (options.EnableCluster)
+                    aofBench.sessions[0].clusterSession.UnsafeSetConfig(replicaOf: primaryId);
             }
             else
             {

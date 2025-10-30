@@ -97,7 +97,7 @@ namespace Resp.benchmark
                 Console.WriteLine($"aof:{opts.EnableAOF || opts.AofBench}");
                 Console.WriteLine($"aof-null-device:{opts.UseAofNullDevice}");
                 Console.WriteLine($"aof-commit-freq:{opts.CommitFrequencyMs}");
-                Console.WriteLine($"aof-memory-size:{opts.CalculateAofMemorySizeForLoad()}");
+                Console.WriteLine($"aof-memory-size:{opts.AofMemorySize}");
                 Console.WriteLine($"aof-page-size:{opts.AofPageSize}");
                 Console.WriteLine($"cluster:{opts.EnableCluster}");
                 Console.WriteLine($"index:{opts.IndexSize}");
@@ -267,9 +267,20 @@ namespace Resp.benchmark
             }
             else if (opts.AofBench)
             {
-                var bench = new AofBench(opts);
-                bench.GenerateData();
-                bench.Run();
+                if (opts.AofBenchType == AofBenchType.Replay)
+                {
+                    var bench = new AofBench(opts);
+                    bench.GenerateData();
+                    bench.Run(opts.AofSublogCount);
+                }
+                else
+                {
+                    var bench = new AofBench(opts);
+                    bench.GenerateData();
+
+                    foreach (var threadCount in opts.NumThreads)
+                        bench.Run(threadCount);
+                }
             }
             else
             {

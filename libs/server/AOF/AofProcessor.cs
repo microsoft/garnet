@@ -12,6 +12,7 @@ using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using System.Threading;
 
 namespace Garnet.server
 {
@@ -131,6 +132,7 @@ namespace Garnet.server
         {
             Stopwatch swatch = new();
             swatch.Start();
+            var total_number_of_replayed_records = 0L;
             try
             {
                 logger?.LogInformation("Begin AOF recovery for DB ID: {id}", db.Id);
@@ -140,69 +142,74 @@ namespace Garnet.server
             {
                 var seconds = swatch.ElapsedMilliseconds / 1000.0;
                 var aofSize = db.AppendOnlyFile.TotalSize();
+                var recordsPerSec = total_number_of_replayed_records / seconds;
                 var GiBperSecs = (aofSize / seconds) / (double)1_000_000_000;
+
                 logger?.LogInformation("AOF Recovery in {seconds} secs", seconds);
-                logger?.LogInformation("AOF Recovery size {aofSize:N0} bytes", aofSize);
+                logger?.LogInformation("Total number of replayed records {total_number_of_replayed_records:N0} bytes", total_number_of_replayed_records);
+                logger?.LogInformation("Throughput {recordsPerSec:N2} records/sec", recordsPerSec);
+                logger?.LogInformation("AOF Recovery size {aofSize:N0}", aofSize);
                 logger?.LogInformation("AOF Recovery throughput {GiBperSecs:N2} GiB/secs", GiBperSecs);
             }
-        }
 
-        private AofAddress RecoverReplay(GarnetDatabase db, AofAddress untilAddress)
-        {
-            // Begin replay for specified database
-            logger?.LogInformation("Begin AOF replay for DB ID: {id}", db.Id);
-            try
+            AofAddress RecoverReplay(GarnetDatabase db, AofAddress untilAddress)
             {
-                // Fetch the database AOF and update the current database context for the processor
-                var appendOnlyFile = db.AppendOnlyFile;
-                SwitchActiveDatabaseContext(db);
-
-                // Set the tail address for replay recovery to the tail address of the AOF if none specified
-                untilAddress.SetValueIf(appendOnlyFile.Log.TailAddress, -1);
-
-                var tasks = new Task[untilAddress.Length];
-                for (var i = 0; i < untilAddress.Length; i++)
+                // Begin replay for specified database
+                logger?.LogInformation("Begin AOF replay for DB ID: {id}", db.Id);
+                try
                 {
-                    var sublogIdx = i;
-                    tasks[i] = Task.Run(() => RecoverReplayTask(sublogIdx, untilAddress));
-                }
+                    // Fetch the database AOF and update the current database context for the processor
+                    var appendOnlyFile = db.AppendOnlyFile;
+                    SwitchActiveDatabaseContext(db);
 
-                Task.WaitAll(tasks);
+                    // Set the tail address for replay recovery to the tail address of the AOF if none specified
+                    untilAddress.SetValueIf(appendOnlyFile.Log.TailAddress, -1);
 
-                void RecoverReplayTask(int sublogIdx, AofAddress untilAddress)
-                {
-                    var count = 0;
-                    using var scan = appendOnlyFile.Scan(sublogIdx, appendOnlyFile.Log.GetBeginAddress(sublogIdx), untilAddress[sublogIdx]);
-
-                    // Replay each AOF record in the current database context
-                    while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))
+                    var tasks = new Task[untilAddress.Length];
+                    for (var i = 0; i < untilAddress.Length; i++)
                     {
-                        count++;
-                        ProcessAofRecord(sublogIdx, entry, length);
-                        if (count % 100_000 == 0)
-                            logger?.LogTrace("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", count, nextAofAddress, db.Id);
+                        var sublogIdx = i;
+                        tasks[i] = Task.Run(() => RecoverReplayTask(sublogIdx, untilAddress));
                     }
 
-                    logger?.LogInformation("Completed full AOF sublog {taskId} replay of {count} records (DB ID: {id})", sublogIdx, count, db.Id);
+                    Task.WaitAll(tasks);
+
+                    void RecoverReplayTask(int sublogIdx, AofAddress untilAddress)
+                    {
+                        var count = 0;
+                        using var scan = appendOnlyFile.Scan(sublogIdx, appendOnlyFile.Log.GetBeginAddress(sublogIdx), untilAddress[sublogIdx]);
+
+                        // Replay each AOF record in the current database context
+                        while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))
+                        {
+                            count++;
+                            ProcessAofRecord(sublogIdx, entry, length);
+                            if (count % 100_000 == 0)
+                                logger?.LogTrace("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", count, nextAofAddress, db.Id);
+                        }
+
+                        logger?.LogInformation("Completed full AOF sublog {taskId} replay of {count:N0} records (DB ID: {id})", sublogIdx, count, db.Id);
+                        _ = Interlocked.Add(ref total_number_of_replayed_records, count);
+                    }
+
+                    return untilAddress;
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "An error occurred AofProcessor.RecoverReplay");
+
+                    if (storeWrapper.serverOptions.FailOnRecoveryError)
+                        throw;
+                }
+                finally
+                {
+                    output.MemoryOwner?.Dispose();
+                    foreach (var respServerSession in respServerSessions)
+                        respServerSession.Dispose();
                 }
 
-                return untilAddress;
+                return AofAddress.Create(storeWrapper.serverOptions.AofSublogCount, -1);
             }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "An error occurred AofProcessor.RecoverReplay");
-
-                if (storeWrapper.serverOptions.FailOnRecoveryError)
-                    throw;
-            }
-            finally
-            {
-                output.MemoryOwner?.Dispose();
-                foreach (var respServerSession in respServerSessions)
-                    respServerSession.Dispose();
-            }
-
-            return AofAddress.Create(storeWrapper.serverOptions.AofSublogCount, -1);
         }
 
         internal unsafe void ProcessAofRecord(int sublogIdx, IMemoryOwner<byte> entry, int length)
