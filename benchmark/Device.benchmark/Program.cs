@@ -131,6 +131,10 @@ namespace Resp.benchmark
 
                     sw.Stop();
 
+                    // Join all worker threads
+                    foreach (var worker in workers)
+                        worker.Join();
+
                     long ops = Interlocked.Read(ref totalOperations);
                     double seconds = sw.Elapsed.TotalSeconds;
                     double throughput = ops / seconds;
