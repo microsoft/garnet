@@ -220,7 +220,15 @@ namespace Garnet.server
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         internal struct ContextMetadata
         {
-            internal const int Size = 3 * sizeof(ulong);
+            [InlineArray(64)]
+            private struct HashSlots
+            {
+                private ushort _element0;
+            }
+
+            internal const int Size =
+                (3 * sizeof(ulong)) +   // Bitmaps
+                (64 * sizeof(ushort));  // HashSlots for assigned contexts
 
             // MUST BE A POWER OF 2
             internal const ulong ContextStep = 8;
@@ -229,10 +237,13 @@ namespace Garnet.server
             public ulong Version;
 
             [FieldOffset(8)]
-            public ulong InUse;
+            private ulong inUse;
 
             [FieldOffset(16)]
-            public ulong CleaningUp;
+            private ulong cleaningUp;
+
+            [FieldOffset(24)]
+            private HashSlots slots;
 
             public readonly bool IsInUse(ulong context)
             {
@@ -243,12 +254,12 @@ namespace Garnet.server
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                return (InUse & mask) != 0;
+                return (inUse & mask) != 0;
             }
 
             public readonly ulong NextNotInUse()
             {
-                var ignoringZero = InUse | 1;
+                var ignoringZero = inUse | 1;
 
                 var bit = (ulong)BitOperations.TrailingZeroCount(~ignoringZero & (ulong)-(long)(~ignoringZero));
 
@@ -262,7 +273,7 @@ namespace Garnet.server
                 return ret;
             }
 
-            public void MarkInUse(ulong context)
+            public void MarkInUse(ulong context, ushort hashSlot)
             {
                 Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
@@ -271,8 +282,10 @@ namespace Garnet.server
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((InUse & mask) == 0, "About to mark context which is already in use");
-                InUse |= mask;
+                Debug.Assert((inUse & mask) == 0, "About to mark context which is already in use");
+                inUse |= mask;
+
+                slots[(int)bitIx] = hashSlot;
 
                 Version++;
             }
@@ -286,9 +299,11 @@ namespace Garnet.server
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((InUse & mask) != 0, "About to mark for cleanup when not actually in use");
-                Debug.Assert((CleaningUp & mask) == 0, "About to mark for cleanup when already marked");
-                CleaningUp |= mask;
+                Debug.Assert((inUse & mask) != 0, "About to mark for cleanup when not actually in use");
+                Debug.Assert((cleaningUp & mask) == 0, "About to mark for cleanup when already marked");
+                cleaningUp |= mask;
+
+                // Leave the slot around, we need it
 
                 Version++;
             }
@@ -302,24 +317,26 @@ namespace Garnet.server
                 var bitIx = context / ContextStep;
                 var mask = 1UL << (byte)bitIx;
 
-                Debug.Assert((InUse & mask) != 0, "Cleaned up context which isn't in use");
-                Debug.Assert((CleaningUp & mask) != 0, "Cleaned up context not marked for it");
-                CleaningUp &= ~mask;
-                InUse &= ~mask;
+                Debug.Assert((inUse & mask) != 0, "Cleaned up context which isn't in use");
+                Debug.Assert((cleaningUp & mask) != 0, "Cleaned up context not marked for it");
+                cleaningUp &= ~mask;
+                inUse &= ~mask;
+
+                slots[(int)bitIx] = 0;
 
                 Version++;
             }
 
             public readonly HashSet<ulong> GetNeedCleanup()
             {
-                if (CleaningUp == 0)
+                if (cleaningUp == 0)
                 {
                     return null;
                 }
 
                 var ret = new HashSet<ulong>();
 
-                var remaining = CleaningUp;
+                var remaining = cleaningUp;
                 while (remaining != 0UL)
                 {
                     var ix = BitOperations.TrailingZeroCount(remaining);
@@ -553,10 +570,7 @@ namespace Garnet.server
             }
 
             // Resume any cleanups we didn't complete before recovery
-            if (contextMetadata.CleaningUp != 0)
-            {
-                _ = cleanupTaskChannel.Writer.TryWrite(null);
-            }
+            _ = cleanupTaskChannel.Writer.TryWrite(null);
         }
 
         /// <inheritdoc/>
@@ -581,7 +595,7 @@ namespace Garnet.server
         /// 
         /// This value is guaranteed to not be shared by any other vector set in the store.
         /// </summary>
-        private ulong NextContext()
+        private ulong NextVectorSetContext(ushort hashSlot)
         {
             // TODO: This retry is no good, but will go away when namespaces >= 256 are possible
             while (true)
@@ -595,7 +609,7 @@ namespace Garnet.server
                     {
                         nextFree = contextMetadata.NextNotInUse();
 
-                        contextMetadata.MarkInUse(nextFree);
+                        contextMetadata.MarkInUse(nextFree, hashSlot);
                     }
 
                     logger?.LogDebug("Allocated vector set with context {nextFree}", nextFree);
@@ -2092,7 +2106,12 @@ namespace Garnet.server
                     else
                     {
                         // Create a new index, grab a new context
-                        indexContext = NextContext();
+
+                        // We must associate the index with a hash slot at creation time to enable future migrations
+                        // TODO: RENAME and friends need to also update this data
+                        var slot = HashSlotUtils.HashSlot(ref key);
+
+                        indexContext = NextVectorSetContext(slot);
 
                         var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
                         var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);

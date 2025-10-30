@@ -10,6 +10,8 @@ namespace Garnet.common
 {
     public static unsafe class HashSlotUtils
     {
+        public const ushort MaxHashSlot = 16_383;
+
         /// <summary>
         /// This table is based on the CRC-16-CCITT polynomial (0x1021)
         /// </summary>
@@ -101,14 +103,14 @@ namespace Garnet.common
             var startPtr = keyPtr;
             var end = keyPtr + ksize;
 
-            // Find first occurence of '{'
+            // Find first occurrence of '{'
             while (startPtr < end && *startPtr != '{')
             {
                 startPtr++;
             }
 
             // Return early if did not find '{'
-            if (startPtr == end) return (ushort)(Hash(keyPtr, ksize) & 16383);
+            if (startPtr == end) return (ushort)(Hash(keyPtr, ksize) & MaxHashSlot);
 
             var endPtr = startPtr + 1;
 
@@ -116,10 +118,10 @@ namespace Garnet.common
             while (endPtr < end && *endPtr != '}') { endPtr++; }
 
             // Return early if did not find '}' after '{'
-            if (endPtr == end || endPtr == startPtr + 1) return (ushort)(Hash(keyPtr, ksize) & 16383);
+            if (endPtr == end || endPtr == startPtr + 1) return (ushort)(Hash(keyPtr, ksize) & MaxHashSlot);
 
             // Return hash for byte sequence between brackets
-            return (ushort)(Hash(startPtr + 1, (int)(endPtr - startPtr - 1)) & 16383);
+            return (ushort)(Hash(startPtr + 1, (int)(endPtr - startPtr - 1)) & MaxHashSlot);
         }
     }
 }
