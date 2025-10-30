@@ -276,9 +276,58 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(firstRes.SequenceEqual(id));
             }
 
-            // TODO: Search element
-            // TODO: Remove
-            // TODO: Insert
+            // Search element
+            unsafe
+            {
+                Span<byte> outputIds = stackalloc byte[1024];
+                Span<float> outputDistances = stackalloc float[64];
+
+                nint continuation = 0;
+
+                var numRes =
+                    NativeDiskANNMethods.search_element(
+                        Context, rawIndex,
+                        (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id)), (nuint)id.Length,
+                        1f, outputDistances.Length, // SearchExplorationFactor must >= Count
+                        (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(filter)), (nuint)filter.Length,
+                        0,
+                        (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds)), (nuint)outputIds.Length,
+                        (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances)), (nuint)outputDistances.Length,
+                        (nint)Unsafe.AsPointer(ref continuation)
+                    );
+                ClassicAssert.AreEqual(1, numRes);
+
+                var firstResLen = BinaryPrimitives.ReadInt32LittleEndian(outputIds);
+                var firstRes = outputIds.Slice(sizeof(int), firstResLen);
+                ClassicAssert.IsTrue(firstRes.SequenceEqual(id));
+            }
+
+            // Remove
+            unsafe
+            {
+                var numRes =
+                    NativeDiskANNMethods.remove(
+                        Context, rawIndex,
+                        (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id)), (nuint)id.Length
+                    );
+                ClassicAssert.AreEqual(1, numRes);
+            }
+
+            // Insert
+            unsafe
+            {
+                Span<byte> id2 = [4, 5, 6, 7];
+                Span<byte> elem2 = Enumerable.Range(0, 75).Select(static x => (byte)(x*2)).ToArray();
+                ReadOnlySpan<byte> attr2 = "{\"foo\": \"bar\"}"u8;
+
+                var insertRes = NativeDiskANNMethods.insert(
+                    Context, rawIndex, 
+                    (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id2)), (nuint)id2.Length, 
+                    VectorValueType.XB8, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem2)), (nuint)elem2.Length, 
+                    (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(attr2)), (nuint)attr2.Length
+                );
+                ClassicAssert.AreEqual(1, insertRes);
+            }
 
             GC.KeepAlive(deleteDel);
             GC.KeepAlive(writeDel);
