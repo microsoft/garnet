@@ -106,7 +106,7 @@ namespace Resp.benchmark
                         doneEvents[t] = new ManualResetEventSlim(false);
                         int threadIndex = t;
                         workers[t] = new Thread(() => RunWorker(device, opts, batchSize, ExpectedData, startEvent, timeUpEvent, doneEvents[threadIndex]));
-                        workers[t].IsBackground = true;
+                        workers[t].IsBackground = false;
                         workers[t].Start();
                     }
 
