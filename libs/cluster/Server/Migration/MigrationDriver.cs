@@ -78,6 +78,9 @@ namespace Garnet.cluster
                 if (!clusterProvider.BumpAndWaitForEpochTransition()) return;
                 #endregion
 
+                // Acquire namespaces at this point, after slots have been switch to migration
+                _namespaces = clusterProvider.storeWrapper.DefaultDatabase.VectorManager.GetNamespacesForHashSlots(_sslots);
+
                 #region migrateData
                 // Migrate actual data
                 if (!await MigrateSlotsDriverInline())

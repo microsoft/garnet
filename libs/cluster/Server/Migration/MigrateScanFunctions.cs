@@ -36,10 +36,21 @@ namespace Garnet.cluster
                 if (ClusterSession.Expired(ref value))
                     return true;
 
-                var s = HashSlotUtils.HashSlot(ref key);
-                // Check if key belongs to slot that is being migrated and if it can be added to our buffer
-                if (mss.Contains(s) && !mss.sketch.TryHashAndStore(key.AsSpan()))
-                    return false;
+                // TODO: Some other way to detect namespaces
+                if (key.MetadataSize == 1)
+                {
+                    var ns = key.GetNamespaceInPayload();
+
+                    if (mss.ContainsNamespace(ns) && !mss.sketch.TryHashAndStore(ns, key.AsSpan()))
+                        return false;
+                }
+                else
+                {
+                    var s = HashSlotUtils.HashSlot(ref key);
+                    // Check if key belongs to slot that is being migrated and if it can be added to our buffer
+                    if (mss.Contains(s) && !mss.sketch.TryHashAndStore(key.AsSpan()))
+                        return false;
+                }
 
                 return true;
             }

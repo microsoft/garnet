@@ -94,8 +94,6 @@ namespace Garnet.cluster
                         TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
                         while (i < keyCount)
                         {
-                            // TODO: need VectorManager mangling space
-
                             ref var key = ref SpanByte.Reinterpret(payloadPtr);
                             payloadPtr += key.TotalSize;
                             ref var value = ref SpanByte.Reinterpret(payloadPtr);
@@ -108,18 +106,30 @@ namespace Garnet.cluster
                                 continue;
                             }
 
-                            var slot = HashSlotUtils.HashSlot(ref key);
-                            if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                            // TODO: better way to handle namespaces
+                            if (key.MetadataSize == 1)
                             {
-                                migrateState = 1;
-                                i++;
-                                continue;
+                                // This is a Vector Set namespace key being migrated - it won't necessarily look like it's "in" a hash slot
+                                // because it's dependent on some other key (the index key) being migrated which is
+
+                                clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedKey(ref vectorContext, ref key, ref value);
+                            }
+                            else
+                            {
+                                var slot = HashSlotUtils.HashSlot(ref key);
+                                if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                                {
+                                    migrateState = 1;
+                                    i++;
+                                    continue;
+                                }
+
+                                // Set if key replace flag is set or key does not exist
+                                var keySlice = new ArgSlice(key.ToPointer(), key.Length);
+                                if (replaceOption || !Exists(ref keySlice))
+                                    _ = basicGarnetApi.SET(ref key, ref value);
                             }
 
-                            // Set if key replace flag is set or key does not exist
-                            var keySlice = new ArgSlice(key.ToPointer(), key.Length);
-                            if (replaceOption || !Exists(ref keySlice))
-                                _ = basicGarnetApi.SET(ref key, ref value);
                             i++;
                         }
                     }

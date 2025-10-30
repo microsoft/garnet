@@ -243,6 +243,9 @@ namespace Garnet.server
             private ulong cleaningUp;
 
             [FieldOffset(24)]
+            private ulong migrating;
+
+            [FieldOffset(32)]
             private HashSlots slots;
 
             public readonly bool IsInUse(ulong context)
@@ -255,6 +258,55 @@ namespace Garnet.server
                 var mask = 1UL << (byte)bitIx;
 
                 return (inUse & mask) != 0;
+            }
+
+            public readonly bool IsMigrating(ulong context)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / ContextStep;
+                var mask = 1UL << (byte)bitIx;
+
+                return (migrating & mask) != 0;
+            }
+
+            public readonly HashSet<ulong> GetNamespacesForHashSlots(HashSet<int> hashSlots)
+            {
+                HashSet<ulong> ret = null;
+
+                var remaining = inUse;
+                while (remaining != 0)
+                {
+                    var inUseIx = BitOperations.TrailingZeroCount(remaining);
+                    var inUseMask = 1UL << inUseIx;
+
+                    remaining &= ~inUseMask;
+
+                    if ((cleaningUp & inUseMask) != 0)
+                    {
+                        // If something is being cleaned up, no reason to migrate it
+                        continue;
+                    }
+
+                    var hashSlot = slots[inUseIx];
+                    if (!hashSlots.Contains(hashSlot))
+                    {
+                        // Active, but not a target
+                        continue;
+                    }
+
+                    ret ??= [];
+
+                    var nsStart = ContextStep * (ulong)inUseIx;
+                    for (var i = 0U; i < ContextStep; i++)
+                    {
+                        _ = ret.Add(nsStart + i);
+                    }
+                }
+
+                return ret;
             }
 
             public readonly ulong NextNotInUse()
@@ -302,6 +354,9 @@ namespace Garnet.server
                 Debug.Assert((inUse & mask) != 0, "About to mark for cleanup when not actually in use");
                 Debug.Assert((cleaningUp & mask) == 0, "About to mark for cleanup when already marked");
                 cleaningUp |= mask;
+
+                // If this slot were migrating, it isn't anymore
+                migrating &= ~mask;
 
                 // Leave the slot around, we need it
 
@@ -660,6 +715,19 @@ namespace Garnet.server
             {
                 SpanByte ignored = default;
                 CompletePending(ref status, ref ignored, ref ctx);
+            }
+        }
+
+        /// <summary>
+        /// Find all namespaces in use by vector sets that are logically members of the given hash slots.
+        /// 
+        /// Meant for use during migration.
+        /// </summary>
+        public HashSet<ulong> GetNamespacesForHashSlots(HashSet<int> hashSlots)
+        {
+            lock (this)
+            {
+                return contextMetadata.GetNamespacesForHashSlots(hashSlots);
             }
         }
 
@@ -1859,6 +1927,48 @@ namespace Garnet.server
                 {
                     throw new GarnetException("Failed to remove from vector set index during AOF sync, this should never happen but will cause data loss if it does");
                 }
+            }
+        }
+
+        /// <summary>
+        /// Called to handle a key in a namespace being received during a migration.
+        /// 
+        /// These keys are what DiskANN stores, that is they are "element" data.
+        /// 
+        /// The index is handled specially.
+        /// </summary>
+        public void HandleMigratedKey(
+            ref BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator> ctx, 
+            ref SpanByte key, 
+            ref SpanByte value
+        )
+        {
+            Debug.Assert(key.MetadataSize == 1, "Should have namespace if we're migrating a key");
+
+#if DEBUG
+            // Do some extra sanity checking in DEBUG builds
+            lock (this)
+            {
+                var ns = key.GetNamespaceInPayload();
+                var context = (ulong)(ns & (ContextMetadata.ContextStep - 1));
+                Debug.Assert(contextMetadata.IsInUse(context), "Shouldn't be migrating to an unused context");
+                Debug.Assert(contextMetadata.IsMigrating(context), "Shouldn't be migrating to context not marked for it");
+                Debug.Assert(!(contextMetadata.GetNeedCleanup()?.Contains(context) ?? false), "Shouldn't be migrating into context being deleted");
+            }
+#endif
+
+            VectorInput input = default;
+            SpanByte outputSpan = default;
+
+            var status = ctx.Upsert(ref key, ref input, ref value, ref outputSpan);
+            if (status.IsPending)
+            {
+                CompletePending(ref status, ref outputSpan, ref ctx);
+            }
+
+            if (!status.IsCompletedSuccessfully)
+            {
+                throw new GarnetException("Failed to migrate key, this should fail migration");
             }
         }
 

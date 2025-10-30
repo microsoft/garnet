@@ -28,6 +28,8 @@ namespace Garnet.cluster
 
             public bool Contains(int slot) => session._sslots.Contains(slot);
 
+            public bool ContainsNamespace(ulong ns) => session._namespaces?.Contains(ns) ?? false;
+
             public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
             {
                 this.session = session;
@@ -87,7 +89,7 @@ namespace Garnet.cluster
                     {
                         foreach (var key in sketch.argSliceVector)
                         {
-                            var spanByte = key.SpanByte;
+                            var spanByte = key;
                             if (!session.WriteOrSendMainStoreKeyValuePair(gcs, localServerSession, ref spanByte, ref input, ref o, out _))
                                 return false;
 
@@ -158,8 +160,8 @@ namespace Garnet.cluster
                             if (keys[i].Item2)
                                 continue;
 
-                            var argSlice = keys[i].Item1;
-                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, ref argSlice, out var status))
+                            var spanByte = keys[i].Item1.SpanByte;
+                            if (!session.WriteOrSendObjectStoreKeyValuePair(gcs, localServerSession, ref spanByte, out var status))
                                 return false;
 
                             // Skip if key NOTFOUND
@@ -193,7 +195,13 @@ namespace Garnet.cluster
                 {
                     foreach (var key in sketch.argSliceVector)
                     {
-                        var spanByte = key.SpanByte;
+                        if(key.MetadataSize == 1)
+                        {
+                            // Namespace'd keys are not deleted here, but when migration finishes
+                            continue;
+                        }
+
+                        var spanByte = key;
                         _ = localServerSession.BasicGarnetApi.DELETE(ref spanByte);
                     }
                 }

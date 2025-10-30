@@ -16,7 +16,7 @@ Vector Sets are a combination of one "index" key, which stores metadata and a po
 
 ## Global Metadata
 
-In order to track allocated Vector Sets and in progress cleanups, we keep a single `ContextMetadata` struct under the empty key in namespace 0.
+In order to track allocated Vector Sets (and their respective hash slots), in progress cleanups, in progress migrations - we keep a single `ContextMetadata` struct under the empty key in namespace 0.
 
 This is loaded and cached on startup, and updated (both in memory and in Tsavorite) whenever a Vector Set is created or deleted.  Simple locking (on the `VectorManager` instance) is used to serialize these updates as they should be rare.
 
@@ -239,8 +239,24 @@ While a `VADD` can proceed in parallel with respect to other `VADD`s, that is no
 
 ## Migration
 
-> [!IMPORTANT]
-> Gotta figure this out still!
+Migrating a Vector Set between two primaries (either as part of a `MIGRATE ... KEYS` or migration of a whole hash slot) is complicated by storing element data in namespaces.
+
+Namespaces (intentionally) do not participate in hash slots or clustering, and are a node specific idea.  This means that migration must also update the namespaces of elements as they are migrated.
+
+At a high level, migration between the originating primary a destination primary behaves as follows:
+ 1. Once target slots transition to `MIGRATING`...
+ 2. `VectorManager` on the originating primary enumerates all _namespaces_ and Vector Sets that are covered by those slots
+ 3. The originating primary contacts the destination primary and reserves enough new Vector Set contexts to handled those found in step 2
+    * These Vector Sets are "in use" but also in a migrating state in `ContextMetadata`
+ 4. During the scan of main store in `MigrateOperation` any keys found with namespaces found in step 2 are migrated, but their namespace is updated prior to transmission to the appropriate new namespaces reserved in step 3
+    * Unlike with normal keys, we do not _delete_ the keys in namespaces as we enumerate them
+ 5. Once all namespace keys are migrated, we migrate the Vector Set index keys, but mutate their values to have the appropriate context reserved in step 3
+ 6. When the target slots transition back to `STABLE`, we do a (non-replicated) delete of the Vector Set index keys, drop the DiskANN indexes, and schedule the original contexts for cleanup on the originating primary
+
+ `KEYS` migrations differ only in the slot discovery being omitted.  We still have to determine the migrating namespaces, reserve new ones on the destination primary, and schedule cleanup only once migration is completed.
+
+ > [!NOTE]
+ > This approach prevents the Vector Set from being visible when it is partially migrated, which has the desirable property of not returning weird results during a migration.
 
 # Cleanup
 

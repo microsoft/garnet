@@ -48,6 +48,8 @@ namespace Garnet.cluster
         readonly HashSet<int> _sslots;
         readonly CancellationTokenSource _cts = new();
 
+        HashSet<ulong> _namespaces;
+
         /// <summary>
         /// Get endpoint of target node
         /// </summary>

@@ -55,9 +55,9 @@ namespace Garnet.cluster
             }
         }
 
-        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, ref ArgSlice key, out GarnetStatus status)
+        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, ref SpanByte key, out GarnetStatus status)
         {
-            var keyByteArray = key.ToArray();
+            var keyByteArray = key.AsReadOnlySpan().ToArray();
 
             ObjectInput input = default;
             GarnetObjectStoreOutput value = default;
