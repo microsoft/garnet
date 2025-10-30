@@ -386,10 +386,10 @@ namespace Garnet.server
         CLUSTER_SLOTSTATE,
         CLUSTER_SYNC, // Note: Update IsClusterSubCommand if adding new cluster subcommands after this
 
-        // Etag commands
+        // Meta commands (commands that envelop other commands)
         EXECWITHETAG,
         EXECIFMATCH,
-        EXECIFGREATER, // Note: Update IsEtagCommand if adding new etag commands after this
+        EXECIFGREATER, // Note: Update IsMetaCommand if adding new etag commands after this
 
         // Don't require AUTH (if auth is enabled)
         AUTH, // Note: Update IsNoAuth if adding new no-auth commands before this
@@ -637,7 +637,7 @@ namespace Garnet.server
         /// <summary>
         /// Returns true if <paramref name="cmd"/> is an etag command.
         /// </summary>
-        public static bool IsEtagCommand(this RespCommand cmd)
+        public static bool IsMetaCommand(this RespCommand cmd)
         {
             // If cmd < RespCommand.EXECWITHETAG - underflows, setting high bits
             var test = (uint)((int)cmd - (int)RespCommand.EXECWITHETAG);
@@ -702,23 +702,23 @@ namespace Garnet.server
         /// <param name="count">Outputs the number of arguments stored with the command</param>
         /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand FastParseCommand(ref int count, bool skipCount = false)
+        private RespCommand FastParseCommand(ref int count)
         {
             var ptr = recvBufferPtr + readHead;
             var remainingBytes = bytesRead - readHead;
+            var skipCountParse = count != -1;
 
             // Check if the package starts with "*_\r\n$_\r\n" (_ = masked out),
             // i.e. an array with a single-digit length and single-digit first string length.
-            if ((!skipCount && (remainingBytes >= 8) && (*(ulong*)ptr & 0xFFFF00FFFFFF00FF) == MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8)) ||
-                (skipCount && ((remainingBytes >= 4) && (*(uint*)ptr & 0xFFFF00FF) == MemoryMarshal.Read<uint>("$\0\r\n"u8))))
+            if ((!skipCountParse && (remainingBytes >= 8) && (*(ulong*)ptr & 0xFFFF00FFFFFF00FF) == MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8)) ||
+                (skipCountParse && ((remainingBytes >= 4) && (*(uint*)ptr & 0xFFFF00FF) == MemoryMarshal.Read<uint>("$\0\r\n"u8))))
             {
                 // Extract total element count from the array header.
                 // NOTE: Subtracting one to account for first token being parsed.
-                if (!skipCount)
-                    count = ptr[1] - '1';
+                count = !skipCountParse ? ptr[1] - '1' : count - 1;
 
                 // Extract length of the first string header
-                var lengthIdx = skipCount ? 1 : 5;
+                var lengthIdx = skipCountParse ? 1 : 5;
                 var length = ptr[lengthIdx] - '0';
                 Debug.Assert(length is > 0 and <= 9);
 
@@ -727,7 +727,7 @@ namespace Garnet.server
                 // Ensure that the complete command string is contained in the package. Otherwise exit early.
                 // Include 10 bytes to account for array and command string headers, and terminator
                 // 10 bytes = "*_\r\n$_\r\n" (8 bytes) + "\r\n" (2 bytes) at end of command name
-                var lenWithoutCommand = skipCount ? 6 : 10;
+                var lenWithoutCommand = skipCountParse ? 6 : 10;
                 var totalLen = length + lenWithoutCommand;
                 if (remainingBytes >= totalLen)
                 {
@@ -1732,16 +1732,16 @@ namespace Garnet.server
                                 {
                                     return RespCommand.EXECWITHETAG;
                                 }
-                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nEXECIF"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("GREATER\r\n"u8))
-                                {
-                                    return RespCommand.EXECIFGREATER;
-                                }
                                 break;
 
                             case 13:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZRANGEB"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("YSCORE\r\n"u8))
                                 {
                                     return RespCommand.ZRANGEBYSCORE;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nEXECIFG"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("REATER\r\n"u8))
+                                {
+                                    return RespCommand.EXECIFGREATER;
                                 }
                                 break;
 
@@ -2762,10 +2762,10 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private RespCommand ParseCommand(bool writeErrorOnFailure, out bool success)
         {
-            etagCommand = RespCommand.NONE;
+            metaOp = RespMetaOp.None;
 
             // Initialize count as -1 (i.e., read head has not been advanced)
-            int count = -1;
+            var count = -1;
             success = true;
             endReadHead = readHead;
 
@@ -2779,17 +2779,31 @@ namespace Garnet.server
                 if (!success) return cmd;
             }
 
-            if (cmd.IsEtagCommand())
+            var metaCmdArgCount = 0;
+            if (cmd.IsMetaCommand())
             {
-                var etagCmdArgCount = GetEtagCommandArgumentCount(cmd);
-                count -= (etagCmdArgCount + 1);
+                // Get the meta command argument count (including the command itself)
+                metaCmdArgCount = UpdateMetaOpAndGetArgumentCount(cmd);
+                count -= metaCmdArgCount;
 
-                // Set up etag parse state
-                if (!TryReadParseState(ref etagParseState, etagCmdArgCount))
-                    return RespCommand.INVALID;
+                // Set up meta command parse state (to temporarily hold arguments until setting up the main parse state)
+                if (metaCmdArgCount > 0)
+                {
+                    metaCommandParseState.Initialize(metaCmdArgCount);
+                    var currPtr = recvBufferPtr + readHead;
 
-                // Attempt parsing using fast parse pass for most common operations
-                cmd = FastParseCommand(ref count, skipCount: true);
+                    for (var i = 0; i < metaCmdArgCount; i++)
+                    {
+                        if (!metaCommandParseState.Read(i, ref currPtr, recvBufferPtr + bytesRead))
+                            return RespCommand.INVALID;
+                    }
+
+                    // Move read head to the start of the main command
+                    readHead = (int)(currPtr - recvBufferPtr);
+                }
+
+                // Attempt parsing nested main command
+                cmd = FastParseCommand(ref count);
 
                 // If we have not found a command, continue parsing on slow path
                 if (cmd == RespCommand.NONE)
@@ -2800,8 +2814,21 @@ namespace Garnet.server
             }
 
             // Set up parse state
-            if (!TryReadParseState(ref parseState, count))
-                return RespCommand.INVALID;
+            parseState.Initialize(count + metaCmdArgCount);
+            var ptr = recvBufferPtr + readHead;
+
+            // Set previously-read meta command arguments
+            if (metaCmdArgCount > 0)
+                parseState.SetArguments(0, metaCommandParseState.Parameters);
+
+            // Read main command arguments
+            for (var i = metaCmdArgCount; i < count + metaCmdArgCount; i++)
+            {
+                if (!parseState.Read(i, ref ptr, recvBufferPtr + bytesRead))
+                    return RespCommand.INVALID;
+            }
+
+            endReadHead = (int)(ptr - recvBufferPtr);
 
             if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
                 HandleAofCommitMode(cmd);
@@ -2809,31 +2836,22 @@ namespace Garnet.server
             return cmd;
         }
 
-        private bool TryReadParseState(ref SessionParseState dstParseState, int count)
+        private int UpdateMetaOpAndGetArgumentCount(RespCommand cmd)
         {
-            dstParseState.Initialize(count);
-            var ptr = recvBufferPtr + readHead;
-            for (var i = 0; i < count; i++)
+            switch (cmd)
             {
-                if (!parseState.Read(i, ref ptr, recvBufferPtr + bytesRead))
-                    return false;
+                case RespCommand.EXECWITHETAG:
+                    metaOp = RespMetaOp.ExecWithEtag;
+                    return 0;
+                case RespCommand.EXECIFMATCH:
+                    metaOp = RespMetaOp.ExecIfMatch;
+                    return 1;
+                case RespCommand.EXECIFGREATER:
+                    metaOp = RespMetaOp.ExecIfGreater;
+                    return 1;
+                default:
+                    throw new GarnetException($"Invalid meta command: {cmd}");
             }
-
-            endReadHead = (int)(ptr - recvBufferPtr);
-            return true;
-        }
-
-        private int GetEtagCommandArgumentCount(RespCommand cmd)
-        {
-            etagCommand = cmd;
-
-            return etagCommand switch
-            {
-                RespCommand.EXECWITHETAG => 0,
-                RespCommand.EXECIFMATCH or
-                RespCommand.EXECIFGREATER => 1,
-                _ => throw new GarnetException("Invalid ETAG Command")
-            };
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -2858,7 +2876,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.NoInlining)]
         private RespCommand ArrayParseCommand(bool writeErrorOnFailure, ref int count, ref bool success, bool skipCount = false)
         {
-            RespCommand cmd = RespCommand.INVALID;
+            RespCommand cmd;
             ReadOnlySpan<byte> specificErrorMessage = default;
             endReadHead = readHead;
             var ptr = recvBufferPtr + readHead;
@@ -2866,29 +2884,29 @@ namespace Garnet.server
             // See if input command is all upper-case. If not, convert and try fast parse pass again.
             if (MakeUpperCase(ptr, bytesRead - readHead))
             {
-                cmd = FastParseCommand(ref count, skipCount);
+                cmd = FastParseCommand(ref count);
                 if (cmd != RespCommand.NONE)
                 {
                     return cmd;
                 }
             }
 
-            if (!skipCount)
+            if (count != -1)
             {
                 // Ensure we are attempting to read a RESP array header
-            if (recvBufferPtr[readHead] != '*')
-            {
-                // We might have received an inline command package. Skip until the end of the line in the input package.
-                success = AttemptSkipLine();
-                return RespCommand.INVALID;
-            }
+                if (recvBufferPtr[readHead] != '*')
+                {
+                    // We might have received an inline command package. Skip until the end of the line in the input package.
+                    success = AttemptSkipLine();
+                    return RespCommand.INVALID;
+                }
 
-            // Read the array length
-            if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
-            {
-                success = false;
-                return RespCommand.INVALID;
-            }
+                // Read the array length
+                if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
+                {
+                    success = false;
+                    return RespCommand.INVALID;
+                }
             }
 
             // Move readHead to start of command payload

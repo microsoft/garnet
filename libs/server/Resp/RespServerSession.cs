@@ -74,8 +74,8 @@ namespace Garnet.server
 
         internal SessionParseState parseState;
         internal SessionParseState customCommandParseState;
-        internal SessionParseState etagParseState;
-        internal RespCommand etagCommand;
+        internal SessionParseState metaCommandParseState;
+        internal RespMetaOp metaOp;
 
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;

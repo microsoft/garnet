@@ -34,11 +34,15 @@ namespace Garnet.server
             {
                 if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
-                    var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
-                    if (output.HasWrongType)
-                        return true;
+                    if (srcLogRecord.Info.HasETag)
+                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
-                    return opResult;
+                    var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, srcLogRecord.ETag, out _);
+
+                    if (srcLogRecord.Info.HasETag)
+                        ETagState.ResetState(ref functionsState.etagState);
+
+                    return output.HasWrongType || opResult;
                 }
 
                 if (IncorrectObjectType(ref input, (IGarnetObject)srcLogRecord.ValueObject, ref output.SpanByteAndMemory))
