@@ -140,6 +140,7 @@ namespace Resp.benchmark
                     double throughput = ops / seconds;
 
                     Console.WriteLine($"Benchmark finished: {ops} operations in {seconds:F2} seconds, throughput: {throughput:F2} ops/sec");
+                    Thread.Sleep(2000);
                 }
             }
         }
