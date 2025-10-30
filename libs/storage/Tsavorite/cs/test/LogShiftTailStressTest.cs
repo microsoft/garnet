@@ -4,11 +4,13 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Allure.NUnit;
 using NUnit.Framework;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
     internal class LogShiftTailStressTest : TsavoriteLogTestBase
     {

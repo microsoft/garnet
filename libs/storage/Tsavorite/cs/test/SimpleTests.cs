@@ -2,14 +2,16 @@
 // Licensed under the MIT license.
 
 using System;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class SimpleTests
+    internal class SimpleTests : AllureTestBase
     {
         [Test]
         [Category("TsavoriteKV")]

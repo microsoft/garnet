@@ -10,13 +10,15 @@ using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using Allure.NUnit;
 
 namespace Garnet.test.cluster
 {
 
+    [AllureNUnit]
     [TestFixture]
     [NonParallelizable]
-    class ClusterAadAuthTests
+    class ClusterAadAuthTests : AllureTestBase
     {
         ClusterTestContext context;
 

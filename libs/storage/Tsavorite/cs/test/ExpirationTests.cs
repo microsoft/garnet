@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -12,8 +13,9 @@ namespace Tsavorite.test.Expiration
 {
     using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class ExpirationTests
+    internal class ExpirationTests : AllureTestBase
     {
         const int StackAllocMax = 12;
         const int NumRecs = 5000;

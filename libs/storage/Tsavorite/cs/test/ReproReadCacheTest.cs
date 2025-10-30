@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -17,8 +18,9 @@ namespace Tsavorite.test.ReadCacheTests
 {
     using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class RandomReadCacheTests
+    internal class RandomReadCacheTests : AllureTestBase
     {
         class Functions : SpanByteFunctions<Empty>
         {

@@ -6,6 +6,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using Tsavorite.core;
 
@@ -13,8 +14,9 @@ using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class BasicRecoverReadOnly
+    internal class BasicRecoverReadOnly : AllureTestBase
     {
         private TsavoriteLog log;
         private IDevice device;

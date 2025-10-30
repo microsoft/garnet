@@ -5,6 +5,7 @@ using System.Buffers;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -12,8 +13,9 @@ using Tsavorite.devices;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class DeviceLogTests
+    internal class DeviceLogTests : AllureTestBase
     {
         const int entryLength = 100;
         const int numEntries = 1000;

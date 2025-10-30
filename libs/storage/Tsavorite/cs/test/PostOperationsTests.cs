@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.IO;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -12,8 +13,9 @@ namespace Tsavorite.test
     using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
     using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class PostOperationsTests
+    internal class PostOperationsTests : AllureTestBase
     {
         class PostFunctions : SimpleSimpleFunctions<int, int>
         {

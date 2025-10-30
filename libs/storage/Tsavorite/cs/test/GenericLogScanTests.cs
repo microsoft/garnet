@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -33,8 +34,9 @@ namespace Tsavorite.test
     using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyObjectComparerModulo, DefaultRecordDisposer<MyKey, MyValue>>>;
     using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyObjectComparerModulo, DefaultRecordDisposer<MyKey, MyValue>>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class GenericLogScanTests
+    internal class GenericLogScanTests : AllureTestBase
     {
         private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;

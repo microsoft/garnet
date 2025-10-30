@@ -4,14 +4,16 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class SimpleVersionSchemeTest
+    internal class SimpleVersionSchemeTest : AllureTestBase
     {
         [Test]
         [Category("TsavoriteLog")]

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System.IO;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -13,8 +14,9 @@ namespace Tsavorite.test
     //* For completeness, setting other parameters too where possible
     //* However, the verification is pretty light. Just makes sure log file created and things be added and read from it 
 
+    [AllureNUnit]
     [TestFixture]
-    internal class LogAndDeviceConfigTests
+    internal class LogAndDeviceConfigTests : AllureTestBase
     {
         private TsavoriteLog log;
         private IDevice device;

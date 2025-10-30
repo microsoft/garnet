@@ -7,11 +7,13 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Allure.NUnit;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    class ExpiredKeyDeletionTests
+    class ExpiredKeyDeletionTests : AllureTestBase
     {
         private const int ExpiredKeyDeletionScanFrequencySecs = 10;
 

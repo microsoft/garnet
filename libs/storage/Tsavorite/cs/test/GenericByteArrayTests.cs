@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -13,8 +14,9 @@ namespace Tsavorite.test
     using ClassAllocator = GenericAllocator<byte[], byte[], StoreFunctions<byte[], byte[], ByteArrayEC, DefaultRecordDisposer<byte[], byte[]>>>;
     using ClassStoreFunctions = StoreFunctions<byte[], byte[], ByteArrayEC, DefaultRecordDisposer<byte[], byte[]>>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class GenericByteArrayTests
+    internal class GenericByteArrayTests : AllureTestBase
     {
         private TsavoriteKV<byte[], byte[], ClassStoreFunctions, ClassAllocator> store;
         private ClientSession<byte[], byte[], byte[], byte[], Empty, MyByteArrayFuncs, ClassStoreFunctions, ClassAllocator> session;

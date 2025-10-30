@@ -11,11 +11,13 @@ using System.Threading.Tasks;
 using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using Allure.NUnit;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class GarnetClientTests
+    public class GarnetClientTests : AllureTestBase
     {
 
         readonly string[,] worldcities = new string[,] {

@@ -8,14 +8,16 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
+using Allure.NUnit;
 
 namespace Garnet.test
 {
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
+    [AllureNUnit]
     [TestFixture]
-    public class CacheSizeTrackerTests
+    public class CacheSizeTrackerTests : AllureTestBase
     {
         GarnetServer server;
         TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objStore;

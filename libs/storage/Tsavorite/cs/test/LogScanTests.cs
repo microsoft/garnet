@@ -3,14 +3,16 @@
 
 using System.IO;
 using System.Threading;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class LogScanTests
+    internal class LogScanTests : AllureTestBase
     {
         private TsavoriteLog log;
         private IDevice device;

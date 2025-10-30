@@ -13,11 +13,13 @@ using GarnetJSON;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Allure.NUnit;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    class JsonCommandsTest
+    class JsonCommandsTest : AllureTestBase
     {
         GarnetServer server;
         string binPath;

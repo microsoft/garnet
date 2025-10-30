@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -14,8 +15,9 @@ namespace Tsavorite.test
 {
     using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class BlittableIterationTests
+    internal class BlittableIterationTests : AllureTestBase
     {
         private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, BlittableAllocator<KeyStruct, ValueStruct, StructStoreFunctions>> store;
         private IDevice log;

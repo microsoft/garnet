@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -254,6 +255,7 @@ namespace Tsavorite.test.recovery
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
     public class CheckpointVersionSwitchRmw : StateMachineDriverTestsBase
     {
@@ -309,6 +311,7 @@ namespace Tsavorite.test.recovery
             => await DoGrowIndexVersionSwitchEquivalenceCheck(indexSize, useTimingFuzzing);
     }
 
+    [AllureNUnit]
     [TestFixture]
     public class CheckpointVersionSwitchTxn : StateMachineDriverTestsBase
     {

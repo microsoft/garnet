@@ -30,11 +30,13 @@ using System.Text.Json.Nodes;
 using GarnetJSON.JSONPath;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using Allure.NUnit;
 
 namespace Garnet.test.JSONPath
 {
+    [AllureNUnit]
     [TestFixture]
-    public class QueryExpressionTests
+    public class QueryExpressionTests : AllureTestBase
     {
         [Test]
         public void AndExpressionTest()

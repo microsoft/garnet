@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -140,8 +141,9 @@ namespace Tsavorite.test.LockableUnsafeContext
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
-    class LockableUnsafeContextTests
+    class LockableUnsafeContextTests : AllureTestBase
     {
         const int NumRecords = 1000;
         const int UseNewKey = 1010;

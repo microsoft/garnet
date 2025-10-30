@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.IO;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -47,8 +48,9 @@ namespace Tsavorite.test.StructWithString
     using ClassAllocator = GenericAllocator<StructWithString, StructWithString, StoreFunctions<StructWithString, StructWithString, StructWithString.Comparer, DefaultRecordDisposer<StructWithString, StructWithString>>>;
     using ClassStoreFunctions = StoreFunctions<StructWithString, StructWithString, StructWithString.Comparer, DefaultRecordDisposer<StructWithString, StructWithString>>;
 
+    [AllureNUnit]
     [TestFixture]
-    public class StructWithStringTests
+    public class StructWithStringTests : AllureTestBase
     {
         internal class StructWithStringTestFunctions : SimpleSimpleFunctions<StructWithString, StructWithString>
         {

@@ -8,12 +8,14 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
     internal class TsavoriteLogStandAloneTests
     {
@@ -186,6 +188,7 @@ namespace Tsavorite.test
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
     internal class TsavoriteLogGeneralTests : TsavoriteLogTestBase
     {
@@ -400,6 +403,7 @@ namespace Tsavorite.test
     }
 
 
+    [AllureNUnit]
     [TestFixture]
     internal class TsavoriteLogEnqueueTests : TsavoriteLogTestBase
     {
@@ -537,6 +541,7 @@ namespace Tsavorite.test
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
     internal class TsavoriteLogTruncateTests : TsavoriteLogTestBase
     {
@@ -1040,6 +1045,7 @@ namespace Tsavorite.test
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
     internal class TsavoriteLogCustomCommitTests : TsavoriteLogTestBase
     {

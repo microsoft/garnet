@@ -3,6 +3,7 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -12,8 +13,9 @@ namespace Tsavorite.test.spanbyte
 {
     using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class SpanByteVLVectorTests
+    internal class SpanByteVLVectorTests : AllureTestBase
     {
         const int StackAllocMax = 12;
 

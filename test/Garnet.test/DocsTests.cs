@@ -5,11 +5,13 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
+using Allure.NUnit;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public partial class DocsTests
+    public partial class DocsTests : AllureTestBase
     {
         [GeneratedRegex(@"^\s*\|\s*\|\s*\[(?<cmd>[^\]]+)\]\(.+?\)\s*\|\s*(?<sig>[➖])")]
         private static partial Regex CommandLinkAndMinusRegex();
