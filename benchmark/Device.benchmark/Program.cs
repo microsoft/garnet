@@ -79,6 +79,9 @@ namespace Resp.benchmark
             // Create disk file
             using var device = GetDevice(opts.Device, opts.FileName);
 
+            // Remove IO throttle limit for benchmark
+            device.ThrottleLimit = int.MaxValue;
+
             // Fill device with FileSize bytes of data using a larger temporary buffer
             FillDeviceWithTestData(device, opts);
 
@@ -173,6 +176,7 @@ namespace Resp.benchmark
                 }
             }
 
+            long localTotalOperations = 0;
             try
             {
                 // Wait for the start event to be signaled
@@ -191,12 +195,12 @@ namespace Resp.benchmark
                     }
 
                     semaphore.Wait();
-
-                    Interlocked.Add(ref totalOperations, batchSize);
+                    localTotalOperations += batchSize;
                 }
             }
             finally
             {
+                Interlocked.Add(ref totalOperations, localTotalOperations);
                 doneEvent.Set();
             }
         }

@@ -18,16 +18,16 @@ namespace Resp.benchmark
         [Option("filename", Required = false, Default = "c:/data/test.dat", HelpText = "File name")]
         public string FileName { get; set; }
 
-        [Option("device", Required = false, Default = DeviceType.RandomAccessLocalStorage, HelpText = "Device type (LocalStorage, ManagedLocalStorage, RandomAccessLocalStorage)")]
+        [Option("device", Required = false, Default = DeviceType.LocalStorage, HelpText = "Device type (LocalStorage, ManagedLocalStorage, RandomAccessLocalStorage)")]
         public DeviceType Device { get; set; }
 
-        [Option('b', "batchsize", Separator = ',', Required = false, Default = new[] { 16 }, HelpText = "Batch size, number of requests (comma separated)")]
+        [Option('b', "batchsize", Separator = ',', Required = false, Default = new[] { 1024 }, HelpText = "Batch size, number of requests (comma separated)")]
         public IEnumerable<int> BatchSize { get; set; }
 
-        [Option("runtime", Required = false, Default = 15, HelpText = "Run time (seconds)")]
+        [Option("runtime", Required = false, Default = 15, HelpText = "Run time per benchmark (seconds)")]
         public int RunTime { get; set; }
 
-        [Option('t', "threads", Separator = ',', Default = new[] { 1, 2, 4, 8 }, HelpText = "Number of threads (comma separated)")]
+        [Option('t', "threads", Separator = ',', Default = new[] { 1, 2, 4, 8, 16, 32 }, HelpText = "Number of threads (comma separated)")]
         public IEnumerable<int> NumThreads { get; set; }
 
         [Option("logger-level", Required = false, Default = LogLevel.Information, HelpText = "Logging level")]
