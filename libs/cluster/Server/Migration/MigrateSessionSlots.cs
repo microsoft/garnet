@@ -103,7 +103,7 @@ namespace Garnet.cluster
                     WaitForConfigPropagation();
 
                     // Transmit all keys gathered
-                    migrateOperation.TrasmitSlots(storeType);
+                    migrateOperation.TransmitSlots(storeType);
 
                     // Transition EPSM to DELETING
                     migrateOperation.sketch.SetStatus(SketchStatus.DELETING);

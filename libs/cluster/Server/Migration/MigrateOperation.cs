@@ -72,7 +72,7 @@ namespace Garnet.cluster
             /// </summary>
             /// <param name="storeType"></param>
             /// <returns></returns>
-            public bool TrasmitSlots(StoreType storeType)
+            public bool TransmitSlots(StoreType storeType)
             {
                 var bufferSize = 1 << 10;
                 SectorAlignedMemory buffer = new(bufferSize, 1);
