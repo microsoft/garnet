@@ -79,8 +79,8 @@ namespace Resp.benchmark
             // Create disk file
             using var device = GetDevice(opts.Device, opts.FileName);
 
-            // Remove IO throttle limit for benchmark
-            device.ThrottleLimit = int.MaxValue;
+            // Set IO throttle limit for benchmark
+            device.ThrottleLimit = 120;
 
             // Fill device with FileSize bytes of data using a larger temporary buffer
             FillDeviceWithTestData(device, opts);
@@ -162,6 +162,10 @@ namespace Resp.benchmark
 
             void Callback(uint errorCode, uint numBytes, object ctx)
             {
+                if (errorCode != 0)
+                {
+                    Console.WriteLine($"I/O error: {errorCode}");
+                }
 #if DEBUG
                 int idx = (int)ctx;
                 var readSpan = new Span<byte>(buffer, (int)(alignedAddr - addr) + idx * sectorSize, sectorSize);
@@ -196,6 +200,7 @@ namespace Resp.benchmark
                         ulong sectorCount = (ulong)(opts.FileSize / sectorSize);
                         ulong sector = (ulong)threadRnd.NextInt64(0, (long)sectorCount) * (ulong)sectorSize;
                         IntPtr dest = IntPtr.Add(alignedBufferPtr, b * sectorSize);
+                        while (device.Throttle()) Thread.Yield();
                         device.ReadAsync(sector, dest, (uint)sectorSize, Callback, b);
                     }
 
