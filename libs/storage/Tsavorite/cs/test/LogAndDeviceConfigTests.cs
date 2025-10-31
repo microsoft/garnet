@@ -5,6 +5,7 @@ using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using Garnet.test;
 
 namespace Tsavorite.test
 {

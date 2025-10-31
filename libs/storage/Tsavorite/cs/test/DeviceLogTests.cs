@@ -10,6 +10,7 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
+using Garnet.test;
 
 namespace Tsavorite.test
 {

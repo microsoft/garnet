@@ -15,6 +15,7 @@ using Tsavorite.core;
 using Tsavorite.test.LockTable;
 using Tsavorite.test.ReadCacheTests;
 using static Tsavorite.test.TestUtils;
+using Garnet.test;
 
 namespace Tsavorite.test.LockableUnsafeContext
 {

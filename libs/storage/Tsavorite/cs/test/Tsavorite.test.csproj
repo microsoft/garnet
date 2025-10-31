@@ -11,6 +11,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\..\..\..\test\Garnet.test\AllureUtils.cs" Link="AllureUtils.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Allure.Net.Commons" />
     <PackageReference Include="Allure.NUnit" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />

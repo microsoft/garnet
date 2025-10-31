@@ -9,6 +9,7 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.test.LockTable;
 using static Tsavorite.test.TestUtils;
+using Garnet.test;
 
 namespace Tsavorite.test.ModifiedBit
 {

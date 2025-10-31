@@ -12,6 +12,7 @@ using Tsavorite.core;
 using static Tsavorite.core.Utility;
 using static Tsavorite.test.SpanByteIterationTests;
 using static Tsavorite.test.TestUtils;
+using Garnet.test;
 
 namespace Tsavorite.test.spanbyte
 {

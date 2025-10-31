@@ -9,6 +9,7 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
+using Garnet.test;
 
 #pragma warning disable IDE0060 // Remove unused parameter == Some parameters are just to let [Setup] know what to do
 namespace Tsavorite.test

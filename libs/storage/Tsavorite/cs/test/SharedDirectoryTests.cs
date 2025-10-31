@@ -12,6 +12,7 @@ using Microsoft.Win32.SafeHandles;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using Garnet.test;
 
 namespace Tsavorite.test.recovery.sumstore
 {

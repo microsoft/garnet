@@ -10,6 +10,7 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.core.Utility;
+using Garnet.test;
 
 namespace Tsavorite.test.spanbyte
 {
