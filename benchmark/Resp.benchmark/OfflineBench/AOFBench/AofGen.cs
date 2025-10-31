@@ -25,7 +25,6 @@ namespace Resp.benchmark
 
         readonly Options options;
         readonly GarnetServerOptions aofServerOptions;
-        readonly StringBuilder stats;
 
         /// <summary>
         /// threads x pageNum
@@ -43,9 +42,8 @@ namespace Resp.benchmark
         public Page[] GetPageBuffers(int threadIdx) => pageBuffers[threadIdx];
         public List<(byte[], byte[])> GetKVPairBuffer(int threadIdx) => kvPairBuffers[threadIdx];
 
-        public AofGen(Options options, StringBuilder stats)
+        public AofGen(Options options)
         {
-            this.stats = stats;
             this.options = options;
 
             this.aofServerOptions = new GarnetServerOptions()

@@ -77,8 +77,8 @@ namespace Resp.benchmark
 
             server = new EmbeddedRespServer(serverOptions, Program.loggerFactory, new GarnetServerEmbedded());
             sessions = server.GetRespSessions(options.AofSublogCount);
-            aofGen = new AofGen(options, stats);
-            aofSync = [.. Enumerable.Range(0, options.AofSublogCount).Select(x => new AofSync(this, threadId: x, startAddress: 0, options, aofGen, stats))];
+            aofGen = new AofGen(options);
+            aofSync = [.. Enumerable.Range(0, options.AofSublogCount).Select(x => new AofSync(this, threadId: x, startAddress: 0, options, aofGen))];
         }
 
         public void GenerateData() => aofGen.GenerateData();

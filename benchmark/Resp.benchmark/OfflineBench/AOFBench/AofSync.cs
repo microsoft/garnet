@@ -7,7 +7,6 @@ using StackExchange.Redis;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 using System.Net;
-using System.Text;
 
 namespace Resp.benchmark
 {
@@ -28,14 +27,11 @@ namespace Resp.benchmark
 
         public byte[] buffer;
 
-        readonly StringBuilder info;
-
-        public AofSync(AofBench aofBench, int threadId, long startAddress, Options options, AofGen aofGen, StringBuilder info)
+        public AofSync(AofBench aofBench, int threadId, long startAddress, Options options, AofGen aofGen)
         {
             this.options = options;
             this.aofBench = aofBench;
             this.threadId = threadId;
-            this.info = info;
             primaryId = null;
             garnetClient = null;
             this.startAddress = startAddress;
@@ -91,24 +87,15 @@ namespace Resp.benchmark
             var nodes = primaryServer.ClusterNodes();
             var primaryNodeId = (string)primaryServer.Execute("cluster", "myid");
 
-            _ = info.AppendLine("[Cluster Config]");
             ClusterNode replicaNode = null;
             foreach (var node in nodes.Nodes)
             {
-                _ = info.AppendLine($"{node}");
                 if (node.ParentNodeId != null && node.ParentNodeId.Equals(primaryNodeId))
                     replicaNode = node;
             }
 
             if (replicaNode == null)
-            {
                 throw new Exception($"No replica found for [{endpoint}] to run AOF bench!");
-            }
-            else
-            {
-                _ = info.AppendLine("[Running AOF Bench at]");
-                _ = info.AppendLine($"{replicaNode}");
-            }
             return replicaNode;
         }
 
