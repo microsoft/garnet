@@ -22,13 +22,20 @@ namespace Garnet.cluster
             readonly GarnetClientSession gcs;
             readonly LocalServerSession localServerSession;
 
+            readonly Dictionary<byte[], byte[]> vectorSetsIndexKeysToMigrate;
+
             public GarnetClientSession Client => gcs;
+
+            public IEnumerable<KeyValuePair<byte[], byte[]>> VectorSets => vectorSetsIndexKeysToMigrate;
 
             public void ThrowIfCancelled() => session._cts.Token.ThrowIfCancellationRequested();
 
             public bool Contains(int slot) => session._sslots.Contains(slot);
 
             public bool ContainsNamespace(ulong ns) => session._namespaces?.Contains(ns) ?? false;
+
+            public void EncounteredVectorSet(byte[] key, byte[] value)
+            => vectorSetsIndexKeysToMigrate.TryAdd(key, value);
 
             public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
             {
@@ -39,6 +46,7 @@ namespace Garnet.cluster
                 mss = new MainStoreScan(this);
                 oss = new ObjectStoreScan(this);
                 keysToDelete = [];
+                vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
             }
 
             public bool Initialize()
@@ -195,7 +203,7 @@ namespace Garnet.cluster
                 {
                     foreach (var key in sketch.argSliceVector)
                     {
-                        if(key.MetadataSize == 1)
+                        if (key.MetadataSize == 1)
                         {
                             // Namespace'd keys are not deleted here, but when migration finishes
                             continue;
@@ -216,6 +224,17 @@ namespace Garnet.cluster
                         _ = localServerSession.BasicGarnetApi.DELETE(ref spanByte);
                     }
                 }
+            }
+
+            /// <summary>
+            /// Delete a Vector Set after migration if _copyOption is not set.
+            /// </summary>
+            public void DeleteVectorSet(ref SpanByte key)
+            {
+                if (session._copyOption)
+                    return;
+
+                _ = localServerSession.BasicGarnetApi.DELETE(ref key);
             }
         }
     }

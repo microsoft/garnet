@@ -111,11 +111,6 @@ namespace Garnet.client
 
             bool WriteSerializedSpanByte(ref SpanByte key, ref SpanByte value)
             {
-                if (key.MetadataSize == 1)
-                {
-                    Console.WriteLine();
-                }
-
                 var totalLen = key.TotalSize + value.TotalSize + 2 + 2;
                 if (totalLen > (int)(end - curr))
                     return false;

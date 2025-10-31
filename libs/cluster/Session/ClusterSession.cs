@@ -86,7 +86,7 @@ namespace Garnet.cluster
             this.logger = logger;
         }
 
-        public void ProcessClusterCommands(RespCommand command, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
+        public void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, ref SessionParseState parseState, ref byte* dcurr, ref byte* dend)
         {
             this.dcurr = dcurr;
             this.dend = dend;
@@ -106,7 +106,7 @@ namespace Garnet.cluster
                             return;
                     }
 
-                    ProcessClusterCommands(command, out invalidParameters);
+                    ProcessClusterCommands(command, vectorManager, out invalidParameters);
                 }
                 else
                 {

@@ -761,7 +761,7 @@ namespace Garnet.test.cluster
         }
 
         [Test]
-        public void VectorSetMigrateSlot()
+        public void VectorSetMigrateSingleBySlot()
         {
             // Test migrating a single slot with a vector set of one element in it
 
@@ -796,7 +796,7 @@ namespace Garnet.test.cluster
 
                 while (true)
                 {
-                    primary0Key = $"{nameof(VectorSetMigrateSlot)}_{ix}";
+                    primary0Key = $"{nameof(VectorSetMigrateSingleBySlot)}_{ix}";
                     primary0HashSlot = context.clusterTestUtils.HashSlot(primary0Key);
 
                     if (slots.Any(x => x.nnInfo.Any(y => y.nodeid == primary0Id) && primary0HashSlot >= x.startSlot && primary0HashSlot <= x.endSlot))
@@ -813,43 +813,71 @@ namespace Garnet.test.cluster
             var vectorData = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
             var vectorSimData = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
 
-            var add0Res = (int)context.clusterTestUtils.Execute(primary0, "VADD", [primary0Key, "XB8", vectorData, new byte[] { 0, 0, 0, 0 }, "XPREQ8"], flags: CommandFlags.NoRedirect);
+            var add0Res = (int)context.clusterTestUtils.Execute(primary0, "VADD", [primary0Key, "XB8", vectorData, new byte[] { 0, 0, 0, 0 }, "XPREQ8", "SETATTR", "{\"hello\": \"world\"}"], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual(1, add0Res);
 
-            var sim0Res = (byte[][])context.clusterTestUtils.Execute(primary0, "VSIM", [primary0Key, "XB8", vectorSimData], flags: CommandFlags.NoRedirect);
-            ClassicAssert.IsTrue(sim0Res.Length > 0);
+            var sim0Res = (byte[][])context.clusterTestUtils.Execute(primary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
+            ClassicAssert.AreEqual(3, sim0Res.Length);
+            ClassicAssert.IsTrue(new byte[] { 0, 0, 0, 0 }.SequenceEqual(sim0Res[0]));
+            ClassicAssert.IsFalse(float.IsNaN(float.Parse(Encoding.ASCII.GetString(sim0Res[1]))));
+            ClassicAssert.IsTrue("{\"hello\": \"world\"}"u8.SequenceEqual(sim0Res[2]));
 
             context.clusterTestUtils.WaitForReplicaAofSync(Primary0Index, Secondary0Index);
 
             var readonlyOnReplica0 = (string)context.clusterTestUtils.Execute(secondary0, "READONLY", [], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("OK", readonlyOnReplica0);
 
-            var simOnReplica0 = context.clusterTestUtils.Execute(secondary0, "VSIM", [primary0Key, "XB8", vectorSimData], flags: CommandFlags.NoRedirect);
+            var simOnReplica0 = (byte[][])context.clusterTestUtils.Execute(secondary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
             ClassicAssert.IsTrue(simOnReplica0.Length > 0);
+            for (var i = 0; i < sim0Res.Length; i++)
+            {
+                ClassicAssert.IsTrue(sim0Res[i].AsSpan().SequenceEqual(simOnReplica0[i]));
+            }
 
             // Move to other primary
 
             context.clusterTestUtils.MigrateSlots(primary0, primary1, [primary0HashSlot]);
             context.clusterTestUtils.WaitForMigrationCleanup(Primary0Index);
+            context.clusterTestUtils.WaitForMigrationCleanup(Primary1Index);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(Primary0Index, Secondary0Index);
+            context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index);
+
+            var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
+            var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+
+            ClassicAssert.IsFalse(curPrimary0Slots.Contains(primary0HashSlot));
+            ClassicAssert.IsTrue(curPrimary1Slots.Contains(primary0HashSlot));
+
+            var curSecondary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(secondary0, context.logger);
+            var curSecondary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(secondary1, context.logger);
 
             // Check available on other primary & secondary
 
-            var simRes1 = (byte[][])context.clusterTestUtils.Execute(primary1, "VSIM", [primary0Key, "XB8", vectorSimData], flags: CommandFlags.NoRedirect);
-            ClassicAssert.IsTrue(simRes1.Length > 0);
+            var sim1Res = (byte[][])context.clusterTestUtils.Execute(primary1, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsTrue(sim1Res.Length > 0);
+            for (var i = 0; i < sim0Res.Length; i++)
+            {
+                ClassicAssert.IsTrue(sim0Res[i].AsSpan().SequenceEqual(sim1Res[i]));
+            }
 
             context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index);
 
             var readonlyOnReplica1 = (string)context.clusterTestUtils.Execute(secondary1, "READONLY", [], flags: CommandFlags.NoRedirect);
             ClassicAssert.AreEqual("OK", readonlyOnReplica1);
 
-            var simOnReplica1 = context.clusterTestUtils.Execute(secondary1, "VSIM", [primary0Key, "XB8", vectorSimData], flags: CommandFlags.NoRedirect);
+            var simOnReplica1 = (byte[][])context.clusterTestUtils.Execute(secondary1, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
             ClassicAssert.IsTrue(simOnReplica1.Length > 0);
+            for (var i = 0; i < sim0Res.Length; i++)
+            {
+                ClassicAssert.IsTrue(sim0Res[i].AsSpan().SequenceEqual(simOnReplica0[i]));
+            }
 
             // Check no longer available on old primary or secondary
-            var exc0 = ClassicAssert.Throws<RedisServerException>(() => context.clusterTestUtils.Execute(primary0, "VSIM", [primary0Key, "XB8", vectorSimData], flags: CommandFlags.NoRedirect));
+            var exc0 = ClassicAssert.Throws<RedisServerException>(() => context.clusterTestUtils.Execute(primary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect));
             ClassicAssert.AreEqual("", exc0.Message);
 
-            var exc1 = ClassicAssert.Throws<RedisServerException>(() => context.clusterTestUtils.Execute(secondary0, "VSIM", [primary0Key, "XB8", vectorSimData], flags: CommandFlags.NoRedirect));
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => context.clusterTestUtils.Execute(secondary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect));
             ClassicAssert.AreEqual("", exc1.Message);
         }
     }

@@ -93,6 +93,7 @@ namespace CommandInfoUpdater
                 new("CLUSTER|REPLICAS", RespCommand.CLUSTER_REPLICAS),
                 new("CLUSTER|REPLICATE", RespCommand.CLUSTER_REPLICATE),
                 new("CLUSTER|RESET", RespCommand.CLUSTER_RESET),
+                new("CLUSTER|RESERVE", RespCommand.CLUSTER_RESERVE),
                 new("CLUSTER|SEND_CKPT_FILE_SEGMENT", RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT),
                 new("CLUSTER|SEND_CKPT_METADATA", RespCommand.CLUSTER_SEND_CKPT_METADATA),
                 new("CLUSTER|SET-CONFIG-EPOCH", RespCommand.CLUSTER_SETCONFIGEPOCH),

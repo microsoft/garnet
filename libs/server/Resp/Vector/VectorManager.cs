@@ -21,6 +21,8 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    // TODO: This file really needs to be split up
+
     using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
     using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
@@ -42,6 +44,9 @@ namespace Garnet.server
     /// </summary>
     public sealed class VectorManager : IDisposable
     {
+        // MUST BE A POWER OF 2
+        public const ulong ContextStep = 8;
+
         internal const int IndexSizeBytes = Index.Size;
         internal const long VADDAppendLogArg = long.MinValue;
         internal const long DeleteAfterDropArg = VADDAppendLogArg + 1;
@@ -227,11 +232,8 @@ namespace Garnet.server
             }
 
             internal const int Size =
-                (3 * sizeof(ulong)) +   // Bitmaps
+                (4 * sizeof(ulong)) +   // Bitmaps
                 (64 * sizeof(ushort));  // HashSlots for assigned contexts
-
-            // MUST BE A POWER OF 2
-            internal const ulong ContextStep = 8;
 
             [FieldOffset(0)]
             public ulong Version;
@@ -325,6 +327,31 @@ namespace Garnet.server
                 return ret;
             }
 
+            public bool TryReserveForMigration(int count, out List<ulong> reserved)
+            {
+                var ignoringZero = inUse | 1;
+
+                var available = BitOperations.PopCount(~ignoringZero);
+
+                if (available < count)
+                {
+                    reserved = null;
+                    return false;
+                }
+
+                reserved = new();
+                for (var i = 0; i < count; i++)
+                {
+                    var ctx = NextNotInUse();
+                    reserved.Add(ctx);
+
+                    MarkInUse(ctx, ushort.MaxValue); // HashSlot isn't known yet, so use an invalid value
+                    MarkMigrating(ctx);
+                }
+
+                return true;
+            }
+
             public void MarkInUse(ulong context, ushort hashSlot)
             {
                 Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
@@ -338,6 +365,22 @@ namespace Garnet.server
                 inUse |= mask;
 
                 slots[(int)bitIx] = hashSlot;
+
+                Version++;
+            }
+
+            private void MarkMigrating(ulong context)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / ContextStep;
+                var mask = 1UL << (byte)bitIx;
+
+                Debug.Assert((inUse & mask) != 0, "About to mark migrating a context which is not in use");
+                Debug.Assert((migrating & mask) == 0, "About to mark migrating a context which is already migrating");
+                migrating |= mask;
 
                 Version++;
             }
@@ -681,6 +724,28 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Obtain some number of contexts for migrating Vector Sets.
+        /// 
+        /// The return contexts are unavailable for other use, but are not yet "live" for visibility purposes.
+        /// </summary>
+        public bool TryReserveContextsForMigration<TContext>(ref TContext ctx, int count, out List<ulong> contexts)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            lock (this)
+            {
+                if (!contextMetadata.TryReserveForMigration(count, out contexts))
+                {
+                    contexts = null;
+                    return false;
+                }
+            }
+
+            UpdateContextMetadata(ref ctx);
+
+            return true;
+        }
+
+        /// <summary>
         /// Called when an index creation succeeds to flush <see cref="contextMetadata"/> into the store.
         /// </summary>
         private void UpdateContextMetadata<TContext>(ref TContext ctx)
@@ -961,7 +1026,10 @@ namespace Garnet.server
             Service.DropIndex(context, indexPtr);
         }
 
-        internal static void ReadIndex(
+        /// <summary>
+        /// Deconstruct metadata stored in the value under a Vector Set index key.
+        /// </summary>
+        public static void ReadIndex(
             ReadOnlySpan<byte> indexValue,
             out ulong context,
             out uint dimensions,
@@ -989,7 +1057,24 @@ namespace Garnet.server
             indexPtr = (nint)asIndex.IndexPtr;
             processInstanceId = asIndex.ProcessInstanceId;
 
-            Debug.Assert((context % ContextMetadata.ContextStep) == 0, $"Context ({context}) not as expected (% 4 == {context % 4}), vector set index is probably corrupted");
+            Debug.Assert((context % ContextStep) == 0, $"Context ({context}) not as expected (% 4 == {context % 4}), vector set index is probably corrupted");
+        }
+
+        /// <summary>
+        /// Update the context (which defines a range of namespaces) stored in a given index.
+        /// </summary>
+        public static void SetContext(Span<byte> indexValue, ulong newContext)
+        {
+            Debug.Assert(newContext != 0, "0 is special, should not be assigning to an index");
+
+            if (indexValue.Length != Index.Size)
+            {
+                throw new GarnetException($"Index size is incorrect ({indexValue.Length} != {Index.Size}), implies vector set index is probably corrupted");
+            }
+
+            ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexValue));
+
+            asIndex.Context = newContext;
         }
 
         /// <summary>
@@ -1935,11 +2020,11 @@ namespace Garnet.server
         /// 
         /// These keys are what DiskANN stores, that is they are "element" data.
         /// 
-        /// The index is handled specially.
+        /// The index is handled specially by <see cref="HandleMigratedIndex"/>.
         /// </summary>
         public void HandleMigratedKey(
-            ref BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator> ctx, 
-            ref SpanByte key, 
+            ref BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator> ctx,
+            ref SpanByte key,
             ref SpanByte value
         )
         {
@@ -1950,7 +2035,7 @@ namespace Garnet.server
             lock (this)
             {
                 var ns = key.GetNamespaceInPayload();
-                var context = (ulong)(ns & (ContextMetadata.ContextStep - 1));
+                var context = (ulong)(ns & ~(ContextStep - 1));
                 Debug.Assert(contextMetadata.IsInUse(context), "Shouldn't be migrating to an unused context");
                 Debug.Assert(contextMetadata.IsMigrating(context), "Shouldn't be migrating to context not marked for it");
                 Debug.Assert(!(contextMetadata.GetNeedCleanup()?.Contains(context) ?? false), "Shouldn't be migrating into context being deleted");
@@ -1969,6 +2054,109 @@ namespace Garnet.server
             if (!status.IsCompletedSuccessfully)
             {
                 throw new GarnetException("Failed to migrate key, this should fail migration");
+            }
+        }
+
+        /// <summary>
+        /// Called to handle a Vector Set key being received during a migration.  These are "index" keys.
+        /// 
+        /// This is the metadata stuff Garnet creates, DiskANN is not involved.
+        /// 
+        /// Invoked after all the namespace data is moved via <see cref="HandleMigratedKey"/>.
+        /// </summary>
+        public void HandleMigratedIndex(
+            GarnetDatabase db,
+            StoreWrapper storeWrapper,
+            ref SpanByte key,
+            ref SpanByte value)
+        {
+            Debug.Assert(key.MetadataSize != 1, "Shouldn't have a namespace if we're migrating a Vector Set index");
+
+            // TODO: Maybe DRY this up with delete's exclusive lock acquisition?
+
+            RawStringInput input = default;
+            input.header.cmd = RespCommand.VADD;
+
+            ReadIndex(value.AsReadOnlySpan(), out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out _, out _);
+
+            // Extra validation in DEBUG
+#if DEBUG
+            lock (this)
+            {
+                Debug.Assert(contextMetadata.IsInUse(context), "Context should be assigned if we're migrating");
+                Debug.Assert(contextMetadata.IsMigrating(context), "Context should be marked migrating if we're moving an index key in");
+            }
+#endif
+
+            // TODO: Eventually don't spin up one for each key, they're rare enough now for this to be fine
+            var scratchBuffer = new ScratchBufferBuilder();
+            var storageSession = new StorageSession(storeWrapper, scratchBuffer, null, null, db.Id, this, this.logger);
+
+            ActiveThreadSession = storageSession;
+            try
+            {
+                // Prepare as a psuedo-VADD
+                var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dimensions, 1)));
+                var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
+                ArgSlice valueTypeArg = default;
+                ArgSlice valuesArg = default;
+                ArgSlice elementArg = default;
+                var quantizerArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantType, 1)));
+                var buildExplorationFactorArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
+                ArgSlice attributesArg = default;
+                var numLinksArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
+
+                nint newlyAllocatedIndex;
+                unsafe
+                {
+                    newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                }
+
+                var ctxArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref context, 1)));
+                var indexArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1)));
+
+                input.parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, ctxArg, indexArg]);
+
+                Span<byte> indexSpan = stackalloc byte[Index.Size];
+                var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
+
+                // Exclusive lock to prevent other modification of this key
+
+                Span<TxnKeyEntry> exclusiveLocks = stackalloc TxnKeyEntry[readLockShardCount];
+
+                var keyHash = storageSession.lockableContext.GetKeyHash(key);
+
+                for (var i = 0; i < exclusiveLocks.Length; i++)
+                {
+                    exclusiveLocks[i].isObject = false;
+                    exclusiveLocks[i].lockType = LockType.Exclusive;
+                    exclusiveLocks[i].keyHash = (keyHash & ~readLockShardMask) | (long)i;
+                }
+
+                ref var lockCtx = ref storageSession.objectStoreLockableContext;
+                lockCtx.BeginLockable();
+
+                lockCtx.Lock<TxnKeyEntry>(exclusiveLocks);
+                try
+                {
+                    // Perform the write
+                    var writeRes = storageSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+                    if (writeRes != GarnetStatus.OK)
+                    {
+                        Service.DropIndex(context, newlyAllocatedIndex);
+                        throw new GarnetException("Failed to import migrated Vector Set index, aborting migration");
+                    }
+                }
+                finally
+                {
+                    lockCtx.Unlock<TxnKeyEntry>(exclusiveLocks);
+                    lockCtx.EndLockable();
+                }
+            }
+            finally
+            {
+                ActiveThreadSession = null;
+                storageSession.Dispose();
             }
         }
 

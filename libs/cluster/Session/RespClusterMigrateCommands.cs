@@ -165,6 +165,35 @@ namespace Garnet.cluster
                             i++;
                         }
                     }
+                    else if (storeTypeSpan.Equals("VSTORE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // This is the subset of the main store that holds Vector Set _index_ keys
+                        // 
+                        // Namespace'd keys are handled by the SSTORE path
+
+                        var keyCount = *(int*)payloadPtr;
+                        payloadPtr += 4;
+                        var i = 0;
+
+                        TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
+                        while (i < keyCount)
+                        {
+                            ref var key = ref SpanByte.Reinterpret(payloadPtr);
+                            payloadPtr += key.TotalSize;
+                            ref var value = ref SpanByte.Reinterpret(payloadPtr);
+                            payloadPtr += value.TotalSize;
+
+                            // An error has occurred
+                            if (migrateState > 0)
+                            {
+                                i++;
+                                continue;
+                            }
+
+                            clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedIndex(clusterProvider.storeWrapper.DefaultDatabase, clusterProvider.storeWrapper, ref key, ref value);
+                            i++;
+                        }
+                    }
                     else
                     {
                         throw new Exception("CLUSTER MIGRATE STORE TYPE ERROR!");

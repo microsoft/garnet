@@ -25,6 +25,7 @@ namespace Garnet.client
 
         static ReadOnlySpan<byte> MAIN_STORE => "SSTORE"u8;
         static ReadOnlySpan<byte> OBJECT_STORE => "OSTORE"u8;
+        static ReadOnlySpan<byte> VECTOR_STORE => "VSTORE"u8;
         static ReadOnlySpan<byte> T => "T"u8;
         static ReadOnlySpan<byte> F => "F"u8;
 
@@ -170,14 +171,30 @@ namespace Garnet.client
         /// <param name="sourceNodeId"></param>
         /// <param name="replace"></param>
         /// <param name="isMainStore"></param>
-        public void SetClusterMigrateHeader(string sourceNodeId, bool replace, bool isMainStore)
+        public void SetClusterMigrateHeader(string sourceNodeId, bool replace, bool isMainStore, bool isVectorSets)
         {
             currTcsIterationTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(currTcsIterationTask);
             curr = offset;
             this.isMainStore = isMainStore;
             this.ist = IncrementalSendType.MIGRATE;
-            var storeType = isMainStore ? MAIN_STORE : OBJECT_STORE;
+            ReadOnlySpan<byte> storeType;
+            if (isMainStore)
+            {
+                if (isVectorSets)
+                {
+                    storeType = VECTOR_STORE;
+                }
+                else
+                {
+                    storeType = MAIN_STORE;
+                }
+            }
+            else
+            {
+                storeType = OBJECT_STORE;
+            }
+
             var replaceOption = replace ? T : F;
 
             var arraySize = 6;
@@ -249,7 +266,7 @@ namespace Garnet.client
         /// <returns></returns>
         public Task<string> CompleteMigrate(string sourceNodeId, bool replace, bool isMainStore)
         {
-            SetClusterMigrateHeader(sourceNodeId, replace, isMainStore);
+            SetClusterMigrateHeader(sourceNodeId, replace, isMainStore, isVectorSets: false);
 
             Debug.Assert(end - curr >= 2);
             *curr++ = (byte)'\r';

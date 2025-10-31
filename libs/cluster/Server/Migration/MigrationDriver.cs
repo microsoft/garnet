@@ -81,6 +81,16 @@ namespace Garnet.cluster
                 // Acquire namespaces at this point, after slots have been switch to migration
                 _namespaces = clusterProvider.storeWrapper.DefaultDatabase.VectorManager.GetNamespacesForHashSlots(_sslots);
 
+                // If we have any namespaces, that implies Vector Sets, and if we have any of THOSE
+                // we need to reserve destination sets on the other side
+                if ((_namespaces?.Count ?? 0) > 0 && !await ReserveDestinationVectorSetsAsync())
+                {
+                    logger?.LogError("Failed to reserve destination vector sets, migration failed");
+                    TryRecoverFromFailure();
+                    Status = MigrateState.FAIL;
+                    return;
+                }
+
                 #region migrateData
                 // Migrate actual data
                 if (!await MigrateSlotsDriverInline())
@@ -90,6 +100,7 @@ namespace Garnet.cluster
                     Status = MigrateState.FAIL;
                     return;
                 }
+
                 #endregion
 
                 #region transferSlotOwnnershipToTargetNode

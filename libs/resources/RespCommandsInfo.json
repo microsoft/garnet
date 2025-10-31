@@ -812,6 +812,14 @@
         "AclCategories": "Admin, Dangerous, Slow, Garnet"
       },
       {
+        "Command": "CLUSTER_RESERVE",
+        "Name": "CLUSTER|RESERVE",
+        "IsInternal": true,
+        "Arity": 4,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Garnet"
+      },
+      {
         "Command": "CLUSTER_MTASKS",
         "Name": "CLUSTER|MTASKS",
         "IsInternal": true,

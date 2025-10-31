@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -49,6 +50,7 @@ namespace Garnet.cluster
         readonly CancellationTokenSource _cts = new();
 
         HashSet<ulong> _namespaces;
+        FrozenDictionary<ulong, ulong> _namespaceMap;
 
         /// <summary>
         /// Get endpoint of target node
@@ -339,6 +341,8 @@ namespace Garnet.cluster
             // Set slots at source node to their original state when migrate fails
             // This will execute the equivalent of SETSLOTRANGE STABLE for the slots of the failed migration task
             ResetLocalSlot();
+
+            // TODO: Need to relinquish any migrating Vector Set contexts from target node
 
             // Log explicit migration failure.
             Status = MigrateState.FAIL;

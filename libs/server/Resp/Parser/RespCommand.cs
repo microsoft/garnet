@@ -386,6 +386,7 @@ namespace Garnet.server
         CLUSTER_SPUBLISH,
         CLUSTER_REPLICAS,
         CLUSTER_REPLICATE,
+        CLUSTER_RESERVE,
         CLUSTER_RESET,
         CLUSTER_SEND_CKPT_FILE_SEGMENT,
         CLUSTER_SEND_CKPT_METADATA,
@@ -2275,6 +2276,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.MIGRATE))
                 {
                     return RespCommand.CLUSTER_MIGRATE;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.reserve))
+                {
+                    return RespCommand.CLUSTER_RESERVE;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.mtasks))
                 {
