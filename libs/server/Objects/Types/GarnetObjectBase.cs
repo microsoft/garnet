@@ -86,6 +86,17 @@ namespace Garnet.server
             // since the new version of the object is already created.
             if (!isInNewVersion)
             {
+                // Wait for any concurrent ongoing serialization of oldValue to complete
+                while (true)
+                {
+                    if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZED))
+                        break;
+
+                    if (serializationState >= (int)SerializationPhase.SERIALIZED)
+                        break;
+
+                    _ = Thread.Yield();
+                }
                 oldValue = null;
                 return;
             }
