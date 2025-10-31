@@ -489,7 +489,7 @@ namespace Garnet.server
                 increment = -increment;
             }
 
-            var input = new RawStringInput(cmd, 0, increment);
+            var input = new RawStringInput(cmd, arg1: increment);
 
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
             var outputBuffer = stackalloc byte[outputBufferLength];

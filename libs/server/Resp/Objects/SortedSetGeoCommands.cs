@@ -82,8 +82,8 @@ namespace Garnet.server
             while (currTokenIdx < parseState.Count);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.GEOADD };
-            var input = new ObjectInput(header, ref parseState, startIdx: memberStart, arg1: (int)addOption);
+            var header = new RespInputHeader(GarnetObjectType.SortedSet, metaCommand) { SortedSetOp = SortedSetOperation.GEOADD };
+            var input = new ObjectInput(header, ref parseState, startIdx: memberStart, ref metaCommandParseState, arg1: (int)addOption);
 
             var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
@@ -161,9 +161,9 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
+            var header = new RespInputHeader(GarnetObjectType.SortedSet, metaCommand) { SortedSetOp = op };
 
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
 
             var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
@@ -253,10 +253,10 @@ namespace Garnet.server
             var sourceKey = parseState.GetArgSliceByRef(sourceIdx);
 
             // Prepare input and call the storage layer
-            var input = new ObjectInput(new RespInputHeader(GarnetObjectType.SortedSet)
+            var input = new ObjectInput(new RespInputHeader(GarnetObjectType.SortedSet, metaCommand)
             {
                 SortedSetOp = SortedSetOperation.GEOSEARCH
-            }, ref parseState, startIdx: sourceIdx + 1, arg1: (int)command);
+            }, ref parseState, startIdx: sourceIdx + 1, ref metaCommandParseState, arg1: (int)command);
             var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             if (!input.parseState.TryGetGeoSearchOptions(command, out var searchOpts, out var destIdx, out var errorMessage))

@@ -105,11 +105,11 @@ namespace Garnet.server
             if (expiry > 0)
             {
                 var inputArg = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
-                input = new RawStringInput(RespCommand.SETEXNX, ref parseState, arg1: inputArg);
+                input = new RawStringInput(RespCommand.SETEXNX, ref parseState, metaCommand, ref metaCommandParseState, arg1: inputArg);
             }
             else
             {
-                input = new RawStringInput(RespCommand.SETEXNX, ref parseState);
+                input = new RawStringInput(RespCommand.SETEXNX, ref parseState, metaCommand, ref metaCommandParseState);
             }
 
             var status = storageApi.SET_Conditional(key, ref input);

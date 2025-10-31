@@ -250,7 +250,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(nonExistingData.IsNull);
 
             // insert data
-            var initEtag = db.Execute("EXECWITHETAG", "SET", key, "hkhalid", "WITHETAG");
+            var initEtag = db.Execute("EXECWITHETAG", "SET", key, "hkhalid");
             ClassicAssert.AreEqual(1, long.Parse(initEtag.ToString()));
 
             RedisResult[] res = (RedisResult[])db.Execute("EXECWITHETAG", "GET", key);

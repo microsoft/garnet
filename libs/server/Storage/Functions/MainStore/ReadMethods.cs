@@ -60,7 +60,7 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
-            if (cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH)
+            if (input.header.CheckWithETagFlag())
             {
                 CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
                 ETagState.ResetState(ref functionsState.etagState);

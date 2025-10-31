@@ -42,8 +42,8 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR);
             }
 
-            var header = new RespInputHeader(objectType);
-            var input = new ObjectInput(header, ref parseState, startIdx: 1,
+            var header = new RespInputHeader(objectType, metaCommand);
+            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState,
                 arg2: storeWrapper.serverOptions.ObjectScanCountLimit);
 
             switch (objectType)

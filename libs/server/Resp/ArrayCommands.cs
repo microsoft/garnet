@@ -181,7 +181,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSETNX));
             }
 
-            var input = new RawStringInput(RespCommand.MSETNX, ref parseState);
+            var input = new RawStringInput(RespCommand.MSETNX, ref parseState, metaCommand, ref metaCommandParseState);
             var status = storageApi.MSET_Conditional(ref input);
 
             // For a "set if not exists", NOTFOUND means that the operation succeeded

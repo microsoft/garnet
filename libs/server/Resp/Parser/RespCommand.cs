@@ -2762,7 +2762,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private RespCommand ParseCommand(bool writeErrorOnFailure, out bool success)
         {
-            metaOp = RespMetaOp.None;
+            metaCommand = RespMetaCommand.None;
 
             // Initialize count as -1 (i.e., read head has not been advanced)
             var count = -1;
@@ -2779,11 +2779,10 @@ namespace Garnet.server
                 if (!success) return cmd;
             }
 
-            var metaCmdArgCount = 0;
             if (cmd.IsMetaCommand())
             {
                 // Get the meta command argument count (including the command itself)
-                metaCmdArgCount = UpdateMetaOpAndGetArgumentCount(cmd);
+                var metaCmdArgCount = UpdateMetaOpAndGetArgumentCount(cmd);
                 count -= metaCmdArgCount;
 
                 // Set up meta command parse state (to temporarily hold arguments until setting up the main parse state)
@@ -2804,6 +2803,8 @@ namespace Garnet.server
 
                 // Attempt parsing nested main command
                 cmd = FastParseCommand(ref count);
+                if (cmd == RespCommand.SET) 
+                    cmd = RespCommand.SETEXNX;
 
                 // If we have not found a command, continue parsing on slow path
                 if (cmd == RespCommand.NONE)
@@ -2814,15 +2815,11 @@ namespace Garnet.server
             }
 
             // Set up parse state
-            parseState.Initialize(count + metaCmdArgCount);
+            parseState.Initialize(count);
             var ptr = recvBufferPtr + readHead;
 
-            // Set previously-read meta command arguments
-            if (metaCmdArgCount > 0)
-                parseState.SetArguments(0, metaCommandParseState.Parameters);
-
             // Read main command arguments
-            for (var i = metaCmdArgCount; i < count + metaCmdArgCount; i++)
+            for (var i = 0; i < count; i++)
             {
                 if (!parseState.Read(i, ref ptr, recvBufferPtr + bytesRead))
                     return RespCommand.INVALID;
@@ -2841,13 +2838,13 @@ namespace Garnet.server
             switch (cmd)
             {
                 case RespCommand.EXECWITHETAG:
-                    metaOp = RespMetaOp.ExecWithEtag;
+                    metaCommand = RespMetaCommand.ExecWithEtag;
                     return 0;
                 case RespCommand.EXECIFMATCH:
-                    metaOp = RespMetaOp.ExecIfMatch;
+                    metaCommand = RespMetaCommand.ExecIfMatch;
                     return 1;
                 case RespCommand.EXECIFGREATER:
-                    metaOp = RespMetaOp.ExecIfGreater;
+                    metaCommand = RespMetaCommand.ExecIfGreater;
                     return 1;
                 default:
                     throw new GarnetException($"Invalid meta command: {cmd}");

@@ -37,8 +37,8 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var header = new RespInputHeader(GarnetObjectType.List, metaCommand) { ListOp = lop };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
 
             var status = command == RespCommand.LPUSH || command == RespCommand.LPUSHX
                 ? storageApi.ListLeftPush(key, ref input, out var output)
@@ -137,8 +137,8 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LPOS };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var header = new RespInputHeader(GarnetObjectType.List, metaCommand) { ListOp = ListOperation.LPOS };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
 
             // Prepare GarnetObjectStore output
             var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -608,8 +608,8 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LINSERT };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var header = new RespInputHeader(GarnetObjectType.List, metaCommand) { ListOp = ListOperation.LINSERT };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
 
             var statusOp = storageApi.ListInsert(key, ref input, out var output);
 
@@ -661,8 +661,8 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LREM };
-            var input = new ObjectInput(header, ref parseState, startIdx: 2, arg1: nCount);
+            var header = new RespInputHeader(GarnetObjectType.List, metaCommand) { ListOp = ListOperation.LREM };
+            var input = new ObjectInput(header, ref parseState, startIdx: 2, ref metaCommandParseState, arg1: nCount);
 
             var statusOp = storageApi.ListRemove(key, ref input, out var output);
 
@@ -812,8 +812,8 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LSET };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1);
+            var header = new RespInputHeader(GarnetObjectType.List, metaCommand) { ListOp = ListOperation.LSET };
+            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
 
             // Prepare GarnetObjectStore output
             var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
