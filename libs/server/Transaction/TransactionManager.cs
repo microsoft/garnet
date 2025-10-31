@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -252,16 +253,50 @@ namespace Garnet.server
         {
             Debug.Assert(functionsState.StoredProcMode);
 
-            appendOnlyFile?.EnqueueCustomProc(
-                logAccessMap,
-                new AofHeader
+            if (appendOnlyFile != null)
+            {
+                if (appendOnlyFile.Log.Size == 1)
                 {
-                    opType = AofEntryType.StoredProcedure,
-                    procedureId = id,
-                    storeVersion = txnVersion,
-                    sessionID = basicContext.Session.ID,
-                },
-                ref procInput);
+                    var aofHeader = new AofHeader
+                    {
+                        opType = AofEntryType.StoredProcedure,
+                        procedureId = id,
+                        storeVersion = txnVersion,
+                        sessionID = basicContext.Session.ID,
+                    };
+                    appendOnlyFile.Log.GetSubLog(0).Enqueue(aofHeader, ref procInput, out _);
+                }
+                else
+                {
+                    try
+                    {
+                        appendOnlyFile.Log.LockSublogs(logAccessMap);
+                        var _logAccessBitmap = logAccessMap;
+                        var extendedAofHeader = new AofExtendedHeader
+                        {
+                            header = new AofHeader
+                            {
+                                opType = AofEntryType.StoredProcedure,
+                                procedureId = id,
+                                storeVersion = txnVersion,
+                                sessionID = basicContext.Session.ID,
+                            },
+                            logAccessCount = (byte)BitOperations.PopCount(logAccessMap),
+                            timestamp = Stopwatch.GetTimestamp()
+                        };
+
+                        while (_logAccessBitmap > 0)
+                        {
+                            var sublogIdx = _logAccessBitmap.GetNextOffset();
+                            appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(extendedAofHeader, ref procInput, out _);
+                        }
+                    }
+                    finally
+                    {
+                        appendOnlyFile.Log.UnlockSublogs(logAccessMap);
+                    }
+                }
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -281,14 +316,45 @@ namespace Garnet.server
             {
                 ComputeShardedLogAccess(out var logAccessMap);
 
-                appendOnlyFile.Enqueue(
-                    logAccessMap,
-                    new AofHeader
+                if (appendOnlyFile.Log.Size == 1)
+                {
+                    var aofHeader = new AofHeader
                     {
                         opType = AofEntryType.TxnCommit,
                         storeVersion = txnVersion,
                         txnID = basicContext.Session.ID,
-                    });
+                    };
+                    appendOnlyFile.Log.GetSubLog(0).Enqueue(aofHeader, out _);
+                }
+                else
+                {
+                    try
+                    {
+                        appendOnlyFile.Log.LockSublogs(logAccessMap);
+                        var _logAccessBitmap = logAccessMap;
+                        var extendedAofHeader = new AofExtendedHeader
+                        {
+                            header = new AofHeader
+                            {
+                                opType = AofEntryType.TxnCommit,
+                                storeVersion = txnVersion,
+                                txnID = basicContext.Session.ID,
+                            },
+                            logAccessCount = (byte)BitOperations.PopCount(logAccessMap),
+                            timestamp = Stopwatch.GetTimestamp()
+                        };
+
+                        while (_logAccessBitmap > 0)
+                        {
+                            var sublogIdx = _logAccessBitmap.GetNextOffset();
+                            appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(extendedAofHeader, out _);
+                        }
+                    }
+                    finally
+                    {
+                        appendOnlyFile.Log.UnlockSublogs(logAccessMap);
+                    }
+                }
             }
             if (!internal_txn)
                 watchContainer.Reset();
@@ -409,14 +475,46 @@ namespace Garnet.server
             if (appendOnlyFile != null && !functionsState.StoredProcMode)
             {
                 ComputeShardedLogAccess(out var logAccessMap);
-                appendOnlyFile.Enqueue(
-                    logAccessMap,
-                    new AofHeader
+
+                if (appendOnlyFile.Log.Size == 1)
+                {
+                    var aofHeader = new AofHeader
                     {
                         opType = AofEntryType.TxnStart,
                         storeVersion = txnVersion,
                         txnID = basicContext.Session.ID
-                    });
+                    };
+                    appendOnlyFile.Log.GetSubLog(0).Enqueue(aofHeader, out _);
+                }
+                else
+                {
+                    try
+                    {
+                        appendOnlyFile.Log.LockSublogs(logAccessMap);
+                        var _logAccessBitmap = logAccessMap;
+                        var extendedAofHeader = new AofExtendedHeader
+                        {
+                            header = new AofHeader
+                            {
+                                opType = AofEntryType.TxnStart,
+                                storeVersion = txnVersion,
+                                txnID = basicContext.Session.ID
+                            },
+                            logAccessCount = (byte)BitOperations.PopCount(logAccessMap),
+                            timestamp = Stopwatch.GetTimestamp()
+                        };
+
+                        while (_logAccessBitmap > 0)
+                        {
+                            var sublogIdx = _logAccessBitmap.GetNextOffset();
+                            appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(extendedAofHeader, out _);
+                        }
+                    }
+                    finally
+                    {
+                        appendOnlyFile.Log.UnlockSublogs(logAccessMap);
+                    }
+                }
             }
 
             state = TxnState.Running;

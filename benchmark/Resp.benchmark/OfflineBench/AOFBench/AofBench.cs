@@ -59,6 +59,8 @@ namespace Resp.benchmark
 
         internal readonly string primaryId;
 
+        AofAddress aofTailAddress;
+
         public AofBench(Options options)
         {
             this.options = options;
@@ -88,6 +90,9 @@ namespace Resp.benchmark
             try
             {
                 Console.WriteLine($">>> Running {options.AofBenchType} using {threads} thread(s) >>>");
+
+                if (options.AofBenchType is AofBenchType.EnqueueRandom or AofBenchType.EnqueueSharded)
+                    aofTailAddress = aofGen.appendOnlyFile.Log.TailAddress;
 
                 // Run the experiment.
                 for (var idx = 0; idx < threads; ++idx)
@@ -135,6 +140,7 @@ namespace Resp.benchmark
                 {
                     var bytesPerSecond = (total_bytes_processed / seconds) / (double)1_000_000_000;
                     var recordsEnqueuedPerSecond = total_records_enqueued / seconds;
+                    total_bytes_processed = aofGen.appendOnlyFile.Log.TailAddress.AggregateDiff(aofTailAddress);
                     Console.WriteLine($"[Total time]: {swatch.ElapsedMilliseconds:N2} ms for {total_bytes_processed:N0} AOF bytes");
                     Console.WriteLine($"[Bandwidth]: {bytesPerSecond:N2} GiB/sec");
                     Console.WriteLine($"[Total records enqueued]: {total_records_enqueued:N0}");
@@ -206,27 +212,48 @@ namespace Resp.benchmark
                             var key = SpanByte.FromPinnedPointer(keyPtr, kb.Length);
                             var value = SpanByte.FromPinnedPointer(valPtr, vb.Length);
                             RawStringInput input = default;
-                            aofGen.appendOnlyFile.Enqueue(
-                                new AofHeader
+                            if (aofGen.appendOnlyFile.Log.Size == 1)
+                            {
+                                var aofHeader = new AofHeader
                                 {
                                     opType = AofEntryType.StoreUpsert,
                                     storeVersion = 1,
-                                    sessionID = threadId,
-                                },
-                                ref key,
-                                ref value,
-                                ref input
-                            );
+                                    sessionID = 0,
+                                };
+                                aofGen.appendOnlyFile.Log.SigleLog.Enqueue(
+                                    aofHeader,
+                                    ref key,
+                                    ref value,
+                                    ref input,
+                                    out _);
+                            }
+                            else
+                            {
+                                var extendedAofHeader = new AofExtendedHeader
+                                {
+                                    header = new AofHeader
+                                    {
+                                        opType = AofEntryType.StoreUpsert,
+                                        storeVersion = 1,
+                                        sessionID = 0,
+                                    },
+                                    timestamp = Stopwatch.GetTimestamp()
+                                };
+                                aofGen.appendOnlyFile.Log.GetSubLog(ref key).Enqueue(
+                                    extendedAofHeader,
+                                    ref key,
+                                    ref value,
+                                    ref input,
+                                    out _);
+                            }
                         }
                         recordsEnqueued++;
                     }
 
                     if (done) break;
                 }
-                var aofSize = aofGen.appendOnlyFile.Log.TailAddress[threadId] - aofGen.appendOnlyFile.Log.BeginAddress[threadId];
                 //Console.WriteLine($"[{threadId}] - Enqueued: {recordsEnqueued:N0} records");
                 _ = Interlocked.Add(ref total_records_enqueued, recordsEnqueued);
-                _ = Interlocked.Add(ref total_bytes_processed, aofSize);
             }
         }
     }

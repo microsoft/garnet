@@ -45,7 +45,7 @@ namespace Garnet.cluster
             {
                 cts.Token.ThrowIfCancellationRequested();
                 var entryLength = clusterProvider.storeWrapper.appendOnlyFile.HeaderSize;
-                var payloadLength = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetLength(sublogIdx, ptr);
+                var payloadLength = clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(sublogIdx).UnsafeGetLength(ptr);
                 if (payloadLength > 0)
                 {
                     clusterProvider.replicationManager.AofProcessor.ProcessAofRecordInternal(sublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
@@ -64,7 +64,7 @@ namespace Garnet.cluster
                     }
                     TsavoriteLogRecoveryInfo info = new();
                     info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                    clusterProvider.storeWrapper.appendOnlyFile?.UnsafeCommitMetadataOnly(sublogIdx, info, isProtected);
+                    clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(sublogIdx).UnsafeCommitMetadataOnly(info, isProtected);
                     entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                 }
                 ptr += entryLength;

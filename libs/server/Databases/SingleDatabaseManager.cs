@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
+using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -433,7 +435,35 @@ namespace Garnet.server
                     unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
                     databaseId = (byte)defaultDatabase.Id
                 };
-                AppendOnlyFile?.Enqueue(ulong.MaxValue, header);
+
+                if (AppendOnlyFile?.Log.Size == 1)
+                {
+                    AppendOnlyFile.Log.GetSubLog(0).Enqueue(header, out _);
+                }
+                else if (AppendOnlyFile != null)
+                {
+                    try
+                    {
+                        AppendOnlyFile.Log.LockSublogs(ulong.MaxValue);
+                        var _logAccessBitmap = ulong.MaxValue;
+                        var extendedAofHeader = new AofExtendedHeader
+                        {
+                            header = header,
+                            logAccessCount = (byte)BitOperations.PopCount(ulong.MaxValue),
+                            timestamp = Stopwatch.GetTimestamp()
+                        };
+
+                        while (_logAccessBitmap > 0)
+                        {
+                            var sublogIdx = _logAccessBitmap.GetNextOffset();
+                            AppendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(extendedAofHeader, out _);
+                        }
+                    }
+                    finally
+                    {
+                        AppendOnlyFile.Log.UnlockSublogs(ulong.MaxValue);
+                    }
+                }
             }
         }
 

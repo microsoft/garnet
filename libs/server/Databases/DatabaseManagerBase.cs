@@ -2,8 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
+using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -342,7 +345,34 @@ namespace Garnet.server
                 sessionID = -1
             };
 
-            db.AppendOnlyFile.Enqueue(ulong.MaxValue, header);
+            if (db.AppendOnlyFile.Log.Size == 1)
+            {
+                db.AppendOnlyFile.Log.GetSubLog(0).Enqueue(header, out _);
+            }
+            else
+            {
+                try
+                {
+                    db.AppendOnlyFile.Log.LockSublogs(ulong.MaxValue);
+                    var _logAccessBitmap = ulong.MaxValue;
+                    var extendedAofHeader = new AofExtendedHeader
+                    {
+                        header = header,
+                        logAccessCount = (byte)BitOperations.PopCount(ulong.MaxValue),
+                        timestamp = Stopwatch.GetTimestamp()
+                    };
+
+                    while (_logAccessBitmap > 0)
+                    {
+                        var sublogIdx = _logAccessBitmap.GetNextOffset();
+                        db.AppendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(extendedAofHeader, out _);
+                    }
+                }
+                finally
+                {
+                    db.AppendOnlyFile.Log.UnlockSublogs(ulong.MaxValue);
+                }
+            }
         }
 
         /// <summary>

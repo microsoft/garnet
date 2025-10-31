@@ -734,16 +734,40 @@ namespace Garnet.server
             if (input.SerializedLength > 0)
                 input.header.flags |= RespInputFlags.Deterministic;
 
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader
+            if (functionsState.appendOnlyFile.Log.Size == 1)
+            {
+                var aofHeader = new AofHeader
                 {
                     opType = AofEntryType.StoreUpsert,
                     storeVersion = version,
                     sessionID = sessionId,
-                },
-                ref key,
-                ref value,
-                ref input);
+                };
+                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                    aofHeader,
+                    ref key,
+                    ref value,
+                    ref input,
+                    out _);
+            }
+            else
+            {
+                var extendedAofHeader = new AofExtendedHeader
+                {
+                    header = new AofHeader
+                    {
+                        opType = AofEntryType.StoreUpsert,
+                        storeVersion = version,
+                        sessionID = sessionId,
+                    },
+                    timestamp = Stopwatch.GetTimestamp()
+                };
+                functionsState.appendOnlyFile.Log.GetSubLog(ref key).Enqueue(
+                    extendedAofHeader,
+                    ref key,
+                    ref value,
+                    ref input,
+                    out _);
+            }
         }
 
         /// <summary>
@@ -756,10 +780,29 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
-                ref key,
-                ref input);
+
+            if (functionsState.appendOnlyFile.Log.Size == 1)
+            {
+                var aofHeader = new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId };
+                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                    aofHeader,
+                    ref key,
+                    ref input,
+                    out _);
+            }
+            else
+            {
+                var extendedAofHeader = new AofExtendedHeader
+                {
+                    header = new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
+                    timestamp = Stopwatch.GetTimestamp()
+                };
+                functionsState.appendOnlyFile.Log.GetSubLog(ref key).Enqueue(
+                    extendedAofHeader,
+                    ref key,
+                    ref input,
+                    out _);
+            }
         }
 
         /// <summary>
@@ -771,10 +814,29 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
             SpanByte def = default;
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID },
-                ref key,
-                ref def);
+
+            if (functionsState.appendOnlyFile.Log.Size == 1)
+            {
+                var aofHeader = new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID };
+                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                    aofHeader,
+                    ref key,
+                    ref def,
+                    out _);
+            }
+            else
+            {
+                var extendedAofHeader = new AofExtendedHeader
+                {
+                    header = new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID },
+                    timestamp = Stopwatch.GetTimestamp()
+                };
+                functionsState.appendOnlyFile.Log.GetSubLog(ref key).Enqueue(
+                    extendedAofHeader,
+                    ref key,
+                    ref def,
+                    out _);
+            }
         }
 
         BitFieldCmdArgs GetBitFieldArguments(ref RawStringInput input)

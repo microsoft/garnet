@@ -105,11 +105,11 @@ namespace Garnet.cluster
 
             if (clusterProvider.serverOptions.FastAofTruncate)
             {
-                clusterProvider.storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(sublogIdx, TruncatedUntil, snapToPageStart: true, truncateLog: true);
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.GetSubLog(sublogIdx).UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
             }
             else
             {
-                clusterProvider.storeWrapper.appendOnlyFile?.TruncateUntil(sublogIdx, TruncatedUntil);
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.GetSubLog(sublogIdx).TruncateUntil(TruncatedUntil);
                 clusterProvider.storeWrapper.appendOnlyFile?.Log.Commit();
             }
 

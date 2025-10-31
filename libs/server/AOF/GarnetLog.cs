@@ -19,9 +19,18 @@ namespace Garnet.server
         readonly SingleLog singleLog = serverOptions.AofSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
         readonly ShardedLog shardedLog = serverOptions.AofSublogCount > 1 ? new ShardedLog(serverOptions.AofSublogCount, logSettings, logger) : null;
 
+        public TsavoriteLog SigleLog => singleLog.log;
+
         public long HeaderSize => singleLog != null ? singleLog.HeaderSize : shardedLog.HeaderSize;
 
         public int Size => singleLog != null ? 1 : shardedLog.Length;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public unsafe int HashKey(ref SpanByte key)
+        {
+            var hash = Utility.HashBytes(key.ToPointer(), key.Length);
+            return (int)(((ulong)hash) % (ulong)shardedLog.Length);
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe void Hash(Span<byte> key, out long hash, out int sublogIdx, out int keyOffset)
@@ -183,10 +192,7 @@ namespace Garnet.server
 
         public TsavoriteLog GetSubLog(ref SpanByte key)
         {
-            if (singleLog != null)
-                return singleLog.log;
-
-            HashKey(ref key, out var hash, out var _sublogIdx, out _);
+            int _sublogIdx = HashKey(ref key);
             return shardedLog.sublog[_sublogIdx];
         }
 

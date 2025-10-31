@@ -169,6 +169,7 @@ namespace Garnet.cluster
                 //  2. The sublog does not have any more data to send.
                 // If (1) is false then it is safe to read from that sublog because it will have the highest timestamp
                 // If (2) is false the we still have more data to process hence the timestamp will possible change in the future.
+
                 for (var i = 0; i < maxSublogTimestamps.Length; i++)
                 {
                     if (maxSublogTimestamps[i] < mst && previousAddress[i] == tailAddress[i])
