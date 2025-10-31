@@ -251,12 +251,17 @@ At a high level, migration between the originating primary a destination primary
  4. During the scan of main store in `MigrateOperation` any keys found with namespaces found in step 2 are migrated, but their namespace is updated prior to transmission to the appropriate new namespaces reserved in step 3
     * Unlike with normal keys, we do not _delete_ the keys in namespaces as we enumerate them
  5. Once all namespace keys are migrated, we migrate the Vector Set index keys, but mutate their values to have the appropriate context reserved in step 3
- 6. When the target slots transition back to `STABLE`, we do a (non-replicated) delete of the Vector Set index keys, drop the DiskANN indexes, and schedule the original contexts for cleanup on the originating primary
+ 6. When the target slots transition back to `STABLE`, we do a delete of the Vector Set index keys, drop the DiskANN indexes, and schedule the original contexts for cleanup on the originating primary
 
  `KEYS` migrations differ only in the slot discovery being omitted.  We still have to determine the migrating namespaces, reserve new ones on the destination primary, and schedule cleanup only once migration is completed.
 
- > [!NOTE]
- > This approach prevents the Vector Set from being visible when it is partially migrated, which has the desirable property of not returning weird results during a migration.
+> [!NOTE]
+> This approach prevents the Vector Set from being visible when it is partially migrated, which has the desirable property of not returning weird results during a migration.
+
+> [!IMPORTANT]
+> This does not yet account for REPLICAS of nodes involved in these migrations.
+> Because all of our writes are actually reads, the namespaces keys are not replicated and the final pseudo-VADD behaves weirdly.
+> Fixing this is in progress.
 
 # Cleanup
 

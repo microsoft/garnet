@@ -385,6 +385,26 @@ namespace Garnet.server
                 Version++;
             }
 
+            public void MarkMigrationComplete(ulong context, ushort hashSlot)
+            {
+                Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
+                Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
+                Debug.Assert(context <= byte.MaxValue, "Context larger than expected");
+
+                var bitIx = context / ContextStep;
+                var mask = 1UL << (byte)bitIx;
+
+                Debug.Assert((inUse & mask) != 0, "Should already be in use");
+                Debug.Assert((migrating & mask) != 0, "Should be migrating target");
+                Debug.Assert(slots[(int)bitIx] == ushort.MaxValue, "Hash slot should not be known yet");
+
+                migrating &= ~mask;
+
+                slots[(int)bitIx] = hashSlot;
+
+                Version++;
+            }
+
             public void MarkCleaningUp(ulong context)
             {
                 Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
@@ -2146,6 +2166,15 @@ namespace Garnet.server
                         Service.DropIndex(context, newlyAllocatedIndex);
                         throw new GarnetException("Failed to import migrated Vector Set index, aborting migration");
                     }
+
+                    var hashSlot = HashSlotUtils.HashSlot(ref key);
+
+                    lock (this)
+                    {
+                        contextMetadata.MarkMigrationComplete(context, hashSlot);
+                    }
+
+                    UpdateContextMetadata(ref storageSession.vectorContext);
                 }
                 finally
                 {
