@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using Tsavorite.core;
 
-namespace Resp.benchmark
+namespace Device.benchmark
 {
     class BenchWorker
     {

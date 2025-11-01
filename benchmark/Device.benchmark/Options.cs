@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using CommandLine;
 using Microsoft.Extensions.Logging;
 
-namespace Resp.benchmark
+namespace Device.benchmark
 {
     public class Options
     {
@@ -18,7 +18,7 @@ namespace Resp.benchmark
         [Option("file-name", Required = false, Default = "c:/data/test.dat", HelpText = "File name")]
         public string FileName { get; set; }
 
-        [Option("device-type", Required = false, Default = DeviceType.WindowsNative, HelpText = "Device type (WindowsNative, FileStream, RandomAccess)")]
+        [Option("device-type", Required = false, Default = DeviceType.Native, HelpText = "Device type (Native, FileStream, RandomAccess)")]
         public DeviceType DeviceType { get; set; }
 
         [Option("throttle-limit", Required = false, Default = 0, HelpText = "Throttle limit (0 = no limit)")]

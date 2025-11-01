@@ -1,11 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-namespace Resp.benchmark
+namespace Device.benchmark
 {
     public enum DeviceType
     {
-        WindowsNative,
+        Native,
         FileStream,
         RandomAccess,
     }

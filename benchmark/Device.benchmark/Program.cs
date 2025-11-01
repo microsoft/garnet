@@ -6,13 +6,17 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using CommandLine;
-using Device.benchmark;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using Resp.benchmark;
 using Tsavorite.core;
 
-namespace Resp.benchmark
+namespace Device.benchmark
 {
+    /// <summary>
+    /// Example usage:
+    /// Device.benchmark --file-name d:/data/file.dat --runtime 30 --threads 16 --batch-size 1024 --device-type Native
+    /// </summary>
     class Program
     {
         public static ILoggerFactory loggerFactory;
@@ -180,7 +184,8 @@ namespace Resp.benchmark
 
         static IDevice GetDevice(DeviceType deviceType, string fileName) => deviceType switch
         {
-            DeviceType.WindowsNative when OperatingSystem.IsWindows() => new LocalStorageDevice(fileName, true, true, true, -1, false, false, false),
+            DeviceType.Native when OperatingSystem.IsWindows() => new LocalStorageDevice(fileName, true, true, true, -1, false, false, false),
+            DeviceType.Native when OperatingSystem.IsLinux() => new NativeStorageDevice(fileName, true, true, -1, 1, null),
             DeviceType.FileStream=> new ManagedLocalStorageDevice(fileName, true, false, true, -1, false, false, false),
             DeviceType.RandomAccess => new RandomAccessLocalStorageDevice(fileName, true, true, true, -1, false, false, false),
             _ => throw new ArgumentOutOfRangeException()
