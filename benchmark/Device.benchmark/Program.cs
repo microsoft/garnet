@@ -6,9 +6,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using CommandLine;
-using Garnet.common;
-using Microsoft.Extensions.Logging;
-using Resp.benchmark;
 using Tsavorite.core;
 
 namespace Device.benchmark
@@ -19,22 +16,26 @@ namespace Device.benchmark
     /// </summary>
     class Program
     {
-        public static ILoggerFactory loggerFactory;
+        // Expected data for verification
+        static byte[] ExpectedData;
 
-        static ILoggerFactory CreateLoggerFactory(Options opts)
+        // Signals to coordinate benchmark timing
+        static ManualResetEventSlim timeUpEvent = new ManualResetEventSlim(false);
+
+        // Add a new field to signal start event
+        static ManualResetEventSlim startEvent = new ManualResetEventSlim(false);
+
+        // Add a new field to collect total operations
+        internal static long totalOperations = 0;
+        
+        static void Main(string[] args)
         {
-            return LoggerFactory.Create(builder =>
-            {
-                if (!opts.DisableConsoleLogger)
-                {
-                    builder.AddProvider(new BenchmarkLoggerProvider(Console.Out));
-                }
+            ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
+            if (result.Tag == ParserResultType.NotParsed) return;
+            var opts = result.MapResult(o => o, xs => new Options());
 
-                // Optional: Flush log output to file.
-                if (opts.FileLogger != null)
-                    builder.AddFile(opts.FileLogger);
-                builder.SetMinimumLevel(opts.LogLevel);
-            });
+            PrintBenchMarkSummary(opts);
+            SetupDeviceBenchmark(opts);
         }
 
         static void PrintBenchMarkSummary(Options opts)
@@ -55,30 +56,6 @@ namespace Device.benchmark
             Console.WriteLine($"minCompletionPortThreads: {minCompletionPortThreads}");
             Console.WriteLine("<<<<<<< End Benchmark Configuration >>>>>>>>");
         }
-
-        static void Main(string[] args)
-        {
-            ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
-            if (result.Tag == ParserResultType.NotParsed) return;
-            var opts = result.MapResult(o => o, xs => new Options());
-
-            loggerFactory = CreateLoggerFactory(opts);
-
-            PrintBenchMarkSummary(opts);
-            
-            SetupDeviceBenchmark(opts);
-        }
-
-        static byte[] ExpectedData;
-
-        // Add a new field to signal time completion
-        static ManualResetEventSlim timeUpEvent = new ManualResetEventSlim(false);
-
-        // Add a new field to signal start event
-        static ManualResetEventSlim startEvent = new ManualResetEventSlim(false);
-
-        // Add a new field to collect total operations
-        internal static long totalOperations = 0;
 
         static void SetupDeviceBenchmark(Options opts)
         {
