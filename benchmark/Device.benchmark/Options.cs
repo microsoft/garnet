@@ -9,23 +9,29 @@ namespace Resp.benchmark
 {
     public class Options
     {
-        [Option("filesize", Required = false, Default = 1 << 30, HelpText = "File size")]
+        [Option("file-size", Required = false, Default = 1 << 30, HelpText = "File size")]
         public int FileSize { get; set; }
 
-        [Option("sectorsize", Required = false, Default = 512, HelpText = "Sector size")]
+        [Option("sector-size", Required = false, Default = 512, HelpText = "Sector size")]
         public int SectorSize { get; set; }
 
-        [Option("filename", Required = false, Default = "c:/data/test.dat", HelpText = "File name")]
+        [Option("file-name", Required = false, Default = "c:/data/test.dat", HelpText = "File name")]
         public string FileName { get; set; }
 
-        [Option("device", Required = false, Default = DeviceType.LocalStorage, HelpText = "Device type (LocalStorage, ManagedLocalStorage, RandomAccessLocalStorage)")]
-        public DeviceType Device { get; set; }
+        [Option("device-type", Required = false, Default = DeviceType.WindowsNative, HelpText = "Device type (WindowsNative, FileStream, RandomAccess)")]
+        public DeviceType DeviceType { get; set; }
 
-        [Option('b', "batchsize", Separator = ',', Required = false, Default = new[] { 1024 }, HelpText = "Batch size, number of requests (comma separated)")]
+        [Option("throttle-limit", Required = false, Default = 0, HelpText = "Throttle limit (0 = no limit)")]
+        public int ThrottleLimit { get; set; }
+
+        [Option("segment-size", Required = false, Default = 1L << 30, HelpText = "Segment size (bytes)")]
+        public long SegmentSize { get; set; }
+
+        [Option('b', "batch-size", Separator = ',', Required = false, Default = new[] { 1024 }, HelpText = "Batch size, number of requests (comma separated)")]
         public IEnumerable<int> BatchSize { get; set; }
 
         [Option("runtime", Required = false, Default = 15, HelpText = "Run time per benchmark (seconds)")]
-        public int RunTime { get; set; }
+        public int Runtime { get; set; }
 
         [Option('t', "threads", Separator = ',', Default = new[] { 1, 2, 4, 8, 16, 32 }, HelpText = "Number of threads (comma separated)")]
         public IEnumerable<int> NumThreads { get; set; }

@@ -5,8 +5,8 @@ namespace Resp.benchmark
 {
     public enum DeviceType
     {
-        LocalStorage,
-        ManagedLocalStorage,
-        RandomAccessLocalStorage,
+        WindowsNative,
+        FileStream,
+        RandomAccess,
     }
 }
