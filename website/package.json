@@ -17,7 +17,7 @@
     "@docusaurus/core": "^3.9.1",
     "@docusaurus/preset-classic": "^3.9.1",
 	"@docusaurus/plugin-content-docs": "^3.9.1",
-    "@docusaurus/theme-mermaid": "^3.9.1",
+    "@docusaurus/theme-mermaid": "^3.9.2",
     "@easyops-cn/docusaurus-search-local": "^0.52.1",
     "@mdx-js/react": "^3.1.1",
     "clsx": "^2.1.1",
