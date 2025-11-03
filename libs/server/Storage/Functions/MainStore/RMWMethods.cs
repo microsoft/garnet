@@ -239,7 +239,7 @@ namespace Garnet.server
 
                 case RespCommand.VADD:
                     {
-                        if (input.arg1 == VectorManager.VADDAppendLogArg)
+                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg)
                         {
                             // Synthetic op, do nothing
                             break;
@@ -1389,7 +1389,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.VADD:
-                    Debug.Assert(input.arg1 == VectorManager.VADDAppendLogArg, "Unexpected CopyUpdater call on VADD key");
+                    Debug.Assert(input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg, "Unexpected CopyUpdater call on VADD key");
                     break;
 
                 case RespCommand.VREM:

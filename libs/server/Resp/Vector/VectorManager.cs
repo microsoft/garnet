@@ -52,6 +52,8 @@ namespace Garnet.server
         internal const long DeleteAfterDropArg = VADDAppendLogArg + 1;
         internal const long RecreateIndexArg = DeleteAfterDropArg + 1;
         internal const long VREMAppendLogArg = RecreateIndexArg + 1;
+        internal const long MigrateElementKeyLogArg = VREMAppendLogArg + 1;
+        internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1;
 
         public unsafe struct VectorReadBatch : IReadArgBatch<SpanByte, VectorInput, SpanByte>
         {
@@ -369,7 +371,7 @@ namespace Garnet.server
                 Version++;
             }
 
-            private void MarkMigrating(ulong context)
+            public void MarkMigrating(ulong context)
             {
                 Debug.Assert(context > 0, "Context 0 is reserved, should never queried");
                 Debug.Assert((context % ContextStep) == 0, "Should only consider whole block of context, not a sub-bit");
@@ -955,10 +957,10 @@ namespace Garnet.server
             return keyWithNamespace;
         }
 
-        private static void CompletePending<TContext>(ref Status status, ref SpanByte output, ref TContext objectContext)
+        private static void CompletePending<TContext>(ref Status status, ref SpanByte output, ref TContext ctx)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            objectContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            _ = ctx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
             var more = completedOutputs.Next();
             Debug.Assert(more);
             status = completedOutputs.Current.Status;
@@ -1796,8 +1798,88 @@ namespace Garnet.server
         /// 
         /// Operations that are faked up by <see cref="ReplicateVectorSetAdd"/> running on the Primary get diverted here on a Replica.
         /// </summary>
-        internal void HandleVectorSetAddReplication(Func<RespServerSession> obtainServerSession, ref SpanByte keyWithNamespace, ref RawStringInput input)
+        internal void HandleVectorSetAddReplication(StorageSession currentSession, Func<RespServerSession> obtainServerSession, ref SpanByte keyWithNamespace, ref RawStringInput input)
         {
+            if (input.arg1 == MigrateElementKeyLogArg)
+            {
+                // These are special, injecting by a PRIMARY applying migration operations
+                // These get replayed on REPLICAs typically, though role changes might still cause these
+                // to get replayed on now-primary nodes
+
+                var key = input.parseState.GetArgSliceByRef(0).SpanByte;
+                var value = input.parseState.GetArgSliceByRef(1).SpanByte;
+
+                // TODO: Namespace is present, but not actually transmitted
+                //       This presumably becomes unnecessary in Store v2
+                key.MarkNamespace();
+
+                var ns = key.GetNamespaceInPayload();
+
+                // REPLICAs wouldn't have seen a reservation message, so allocate this on demand
+                var ctx = ns & ~(ContextStep - 1);
+                if (!contextMetadata.IsMigrating(ctx))
+                {
+                    var needsUpdate = false;
+
+                    lock (this)
+                    {
+                        if (!contextMetadata.IsMigrating(ctx))
+                        {
+                            contextMetadata.MarkInUse(ctx, ushort.MaxValue);
+                            contextMetadata.MarkMigrating(ctx);
+
+                            needsUpdate = true;
+                        }
+                    }
+
+                    if (needsUpdate)
+                    {
+                        UpdateContextMetadata(ref currentSession.vectorContext);
+                    }
+                }
+
+                HandleMigratedElementKey(ref currentSession.basicContext, ref currentSession.vectorContext, ref key, ref value);
+                return;
+            }
+            else if (input.arg1 == MigrateIndexKeyLogArg)
+            {
+                // These also injected by a PRIMARY applying migration operations
+
+                var key = input.parseState.GetArgSliceByRef(0).SpanByte;
+                var value = input.parseState.GetArgSliceByRef(1).SpanByte;
+                var context = MemoryMarshal.Cast<byte, ulong>(input.parseState.GetArgSliceByRef(2).Span)[0];
+
+                // Most of the time a replica will have seen an element moving before now
+                // but if you a migrate an EMPTY Vector Set that is not necessarily true
+                //
+                // So force reservation now
+                if (!contextMetadata.IsMigrating(context))
+                {
+                    var needsUpdate = false;
+
+                    lock (this)
+                    {
+                        if (!contextMetadata.IsMigrating(context))
+                        {
+                            contextMetadata.MarkInUse(context, ushort.MaxValue);
+                            contextMetadata.MarkMigrating(context);
+
+                            needsUpdate = true;
+                        }
+                    }
+
+                    if (needsUpdate)
+                    {
+                        UpdateContextMetadata(ref currentSession.vectorContext);
+                    }
+                }
+
+                HandleMigratedIndexKey(currentSession, null, null, ref key, ref value);
+                return;
+            }
+
+            Debug.Assert(input.arg1 == VADDAppendLogArg, "Unexpected operation during replication");
+
             // Undo mangling that got replication going
             var inputCopy = input;
             inputCopy.arg1 = default;
@@ -2040,10 +2122,11 @@ namespace Garnet.server
         /// 
         /// These keys are what DiskANN stores, that is they are "element" data.
         /// 
-        /// The index is handled specially by <see cref="HandleMigratedIndex"/>.
+        /// The index is handled specially by <see cref="HandleMigratedIndexKey"/>.
         /// </summary>
-        public void HandleMigratedKey(
-            ref BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator> ctx,
+        public void HandleMigratedElementKey(
+            ref BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicCtx,
+            ref BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator> vectorCtx,
             ref SpanByte key,
             ref SpanByte value
         )
@@ -2065,15 +2148,57 @@ namespace Garnet.server
             VectorInput input = default;
             SpanByte outputSpan = default;
 
-            var status = ctx.Upsert(ref key, ref input, ref value, ref outputSpan);
+            var status = vectorCtx.Upsert(ref key, ref input, ref value, ref outputSpan);
             if (status.IsPending)
             {
-                CompletePending(ref status, ref outputSpan, ref ctx);
+                CompletePending(ref status, ref outputSpan, ref vectorCtx);
             }
 
             if (!status.IsCompletedSuccessfully)
             {
                 throw new GarnetException("Failed to migrate key, this should fail migration");
+            }
+
+            ReplicateMigratedElementKey(ref basicCtx, ref key, ref value, logger);
+
+            // Fake a write for post-migration replication
+            static void ReplicateMigratedElementKey(ref BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicCtx, ref SpanByte key, ref SpanByte value, ILogger logger)
+            {
+                RawStringInput input = default;
+
+                input.header.cmd = RespCommand.VADD;
+                input.arg1 = MigrateElementKeyLogArg;
+
+                input.parseState.InitializeWithArguments([ArgSlice.FromPinnedSpan(key.AsReadOnlySpanWithMetadata()), ArgSlice.FromPinnedSpan(value.AsReadOnlySpan())]);
+
+                SpanByte dummyKey = default;
+                SpanByteAndMemory dummyOutput = default;
+
+                var res = basicCtx.RMW(ref dummyKey, ref input, ref dummyOutput);
+
+                if (res.IsPending)
+                {
+                    CompletePending(ref res, ref dummyOutput, ref basicCtx);
+                }
+
+                if (!res.IsCompletedSuccessfully)
+                {
+                    logger?.LogCritical("Failed to inject replication write for migrated Vector Set key/value into log, result was {res}", res);
+                    throw new GarnetException("Couldn't synthesize Vector Set write operation for key/value migration, data loss may occur");
+                }
+
+                // Helper to complete read/writes during vector set synthetic op goes async
+                static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicCtx)
+                {
+                    _ = basicCtx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    var more = completedOutputs.Next();
+                    Debug.Assert(more);
+                    status = completedOutputs.Current.Status;
+                    output = completedOutputs.Current.Output;
+                    more = completedOutputs.Next();
+                    Debug.Assert(!more);
+                    completedOutputs.Dispose();
+                }
             }
         }
 
@@ -2082,9 +2207,10 @@ namespace Garnet.server
         /// 
         /// This is the metadata stuff Garnet creates, DiskANN is not involved.
         /// 
-        /// Invoked after all the namespace data is moved via <see cref="HandleMigratedKey"/>.
+        /// Invoked after all the namespace data is moved via <see cref="HandleMigratedElementKey"/>.
         /// </summary>
-        public void HandleMigratedIndex(
+        public void HandleMigratedIndexKey(
+            object existingStorageSession,  // TODO: Oh god, what a hack
             GarnetDatabase db,
             StoreWrapper storeWrapper,
             ref SpanByte key,
@@ -2109,8 +2235,7 @@ namespace Garnet.server
 #endif
 
             // TODO: Eventually don't spin up one for each key, they're rare enough now for this to be fine
-            var scratchBuffer = new ScratchBufferBuilder();
-            var storageSession = new StorageSession(storeWrapper, scratchBuffer, null, null, db.Id, this, this.logger);
+            var storageSession = (existingStorageSession as StorageSession) ?? new StorageSession(storeWrapper, new(), null, null, db.Id, this, this.logger);
 
             ActiveThreadSession = storageSession;
             try
@@ -2181,11 +2306,66 @@ namespace Garnet.server
                     lockCtx.Unlock<TxnKeyEntry>(exclusiveLocks);
                     lockCtx.EndLockable();
                 }
+
+                // For REPLICAs which are following, we need to fake up a write
+                ReplicateMigratedIndexKey(ref storageSession.basicContext, ref key, ref value, context, logger);
             }
             finally
             {
                 ActiveThreadSession = null;
-                storageSession.Dispose();
+
+                if (storageSession != existingStorageSession)
+                {
+                    // Dispose if we allocated on demand
+                    storageSession.Dispose();
+                }
+            }
+
+            // Fake a write for post-migration replication
+            static void ReplicateMigratedIndexKey(
+                ref BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicCtx,
+                ref SpanByte key,
+                ref SpanByte value,
+                ulong context,
+                ILogger logger)
+            {
+                RawStringInput input = default;
+
+                input.header.cmd = RespCommand.VADD;
+                input.arg1 = MigrateIndexKeyLogArg;
+
+                var contextArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref context, 1)));
+
+                input.parseState.InitializeWithArguments([ArgSlice.FromPinnedSpan(key.AsReadOnlySpanWithMetadata()), ArgSlice.FromPinnedSpan(value.AsReadOnlySpan()), contextArg]);
+
+                SpanByte dummyKey = default;
+                SpanByteAndMemory dummyOutput = default;
+
+                var res = basicCtx.RMW(ref dummyKey, ref input, ref dummyOutput);
+
+                if (res.IsPending)
+                {
+                    CompletePending(ref res, ref dummyOutput, ref basicCtx);
+                }
+
+                if (!res.IsCompletedSuccessfully)
+                {
+                    logger?.LogCritical("Failed to inject replication write for migrated Vector Set index into log, result was {res}", res);
+                    throw new GarnetException("Couldn't synthesize Vector Set write operation for index migration, data loss may occur");
+                }
+
+                // Helper to complete read/writes during vector set synthetic op goes async
+                static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicCtx)
+                {
+                    _ = basicCtx.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    var more = completedOutputs.Next();
+                    Debug.Assert(more);
+                    status = completedOutputs.Current.Status;
+                    output = completedOutputs.Current.Output;
+                    more = completedOutputs.Next();
+                    Debug.Assert(!more);
+                    completedOutputs.Dispose();
+                }
             }
         }
 

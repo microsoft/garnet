@@ -4,6 +4,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
@@ -861,24 +862,45 @@ namespace Garnet.test.cluster
                 ClassicAssert.IsTrue(sim0Res[i].AsSpan().SequenceEqual(sim1Res[i]));
             }
 
-            // TODO: Uncomment once replicas see migration activity too
-            //var readonlyOnReplica1 = (string)context.clusterTestUtils.Execute(secondary1, "READONLY", [], flags: CommandFlags.NoRedirect);
-            //ClassicAssert.AreEqual("OK", readonlyOnReplica1);
+            var readonlyOnReplica1 = (string)context.clusterTestUtils.Execute(secondary1, "READONLY", [], flags: CommandFlags.NoRedirect);
+            ClassicAssert.AreEqual("OK", readonlyOnReplica1);
 
-            //var simOnReplica1 = (byte[][])context.clusterTestUtils.Execute(secondary1, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
-            //ClassicAssert.IsTrue(simOnReplica1.Length > 0);
-            //for (var i = 0; i < sim0Res.Length; i++)
-            //{
-            //    ClassicAssert.IsTrue(sim0Res[i].AsSpan().SequenceEqual(simOnReplica0[i]));
-            //}
+            var simOnReplica1 = (byte[][])context.clusterTestUtils.Execute(secondary1, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
+            ClassicAssert.IsTrue(simOnReplica1.Length > 0);
+            for (var i = 0; i < sim0Res.Length; i++)
+            {
+                ClassicAssert.IsTrue(sim0Res[i].AsSpan().SequenceEqual(simOnReplica0[i]));
+            }
 
             // Check no longer available on old primary or secondary
             var exc0 = (string)context.clusterTestUtils.Execute(primary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
             ClassicAssert.IsTrue(exc0.StartsWith("Key has MOVED to "));
 
-            // TODO: Do replicas not enforce slot mappings?  Is that a Garnet thing or a Redis thing?
-            var oldSimOnReplica0Res = (byte[][])context.clusterTestUtils.Execute(secondary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
-            ClassicAssert.AreEqual(0, oldSimOnReplica0Res.Length);
+            var start = Stopwatch.GetTimestamp();
+
+            var success = false;
+            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
+            {
+                try
+                {
+                    var exc1 = (string)context.clusterTestUtils.Execute(secondary0, "VSIM", [primary0Key, "XB8", vectorSimData, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
+                    ClassicAssert.IsTrue(exc1.StartsWith("Key has MOVED to "));
+                    success = true;
+                    break;
+                }
+                catch
+                {
+                    // Secondary can still have the key for a bit
+                    Thread.Sleep(100);
+                }
+            }
+
+            ClassicAssert.IsTrue(success, "Original replica still has Vector Set long after primary has completed");
         }
+
+        // TODO: Migration when a Vector Set already exists
+        // TODO: Recovery post-migration
+        // TODO: Migration while still writing to primary (should fail over once migration completes)
+        // TODO: Stress migration while under load (move back and forth while querying replicas)
     }
 }

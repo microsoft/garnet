@@ -112,7 +112,7 @@ namespace Garnet.cluster
                                 // This is a Vector Set namespace key being migrated - it won't necessarily look like it's "in" a hash slot
                                 // because it's dependent on some other key (the index key) being migrated which itself is in a moving hash slot
 
-                                clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedKey(ref vectorContext, ref key, ref value);
+                                clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedElementKey(ref basicContext, ref vectorContext, ref key, ref value);
                             }
                             else
                             {
@@ -190,7 +190,7 @@ namespace Garnet.cluster
                                 continue;
                             }
 
-                            clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedIndex(clusterProvider.storeWrapper.DefaultDatabase, clusterProvider.storeWrapper, ref key, ref value);
+                            clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedIndexKey(null, clusterProvider.storeWrapper.DefaultDatabase, clusterProvider.storeWrapper, ref key, ref value);
                             i++;
                         }
                     }

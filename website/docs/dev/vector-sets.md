@@ -250,18 +250,21 @@ At a high level, migration between the originating primary a destination primary
     * These Vector Sets are "in use" but also in a migrating state in `ContextMetadata`
  4. During the scan of main store in `MigrateOperation` any keys found with namespaces found in step 2 are migrated, but their namespace is updated prior to transmission to the appropriate new namespaces reserved in step 3
     * Unlike with normal keys, we do not _delete_ the keys in namespaces as we enumerate them
+    * Also unlike with normal keys, we synthesize a write on the _destination_ (using a special arg and `VADD`) so replicas of the destination also get these writes
  5. Once all namespace keys are migrated, we migrate the Vector Set index keys, but mutate their values to have the appropriate context reserved in step 3
+    * As in 4, we synthesize a write on the _destination_ to tell any replicas to also create the index key
  6. When the target slots transition back to `STABLE`, we do a delete of the Vector Set index keys, drop the DiskANN indexes, and schedule the original contexts for cleanup on the originating primary
+    * Unlike in 4 & 5, we do no synthetic writes here.  The normal replication of `DEL` will cleanup replicas of the originating primary.
 
  `KEYS` migrations differ only in the slot discovery being omitted.  We still have to determine the migrating namespaces, reserve new ones on the destination primary, and schedule cleanup only once migration is completed.
 
 > [!NOTE]
 > This approach prevents the Vector Set from being visible when it is partially migrated, which has the desirable property of not returning weird results during a migration.
 
-> [!IMPORTANT]
-> This does not yet account for REPLICAS of nodes involved in these migrations.
-> Because all of our writes are actually reads, the namespaces keys are not replicated and the final pseudo-VADD behaves weirdly.
-> Fixing this is in progress.
+> [!NOTE]
+> While we explicitly reserve contexts on primaries, they are implicit on replicas.  This is because a replica should always come up with the same determination of reserved contexts.
+>
+> To keep that determinism, the synthetic `VADD`s introduced by migration are not executed in parallel.
 
 # Cleanup
 

@@ -23,6 +23,9 @@ namespace Garnet.cluster
             SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>>;
 
     using VectorContext = BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>, SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
+    using BasicContext = BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>;
 
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
@@ -63,6 +66,7 @@ namespace Garnet.cluster
         public IGarnetServer Server { get; set; }
 
         private VectorContext vectorContext;
+        private BasicContext basicContext;
 
         public ClusterSession(
             ClusterProvider clusterProvider,
@@ -71,6 +75,7 @@ namespace Garnet.cluster
             UserHandle userHandle,
             GarnetSessionMetrics sessionMetrics,
             BasicGarnetApi basicGarnetApi,
+            BasicContext basicContext,
             VectorContext vectorContext,
             INetworkSender networkSender,
             ILogger logger = null)
@@ -81,6 +86,7 @@ namespace Garnet.cluster
             this.txnManager = txnManager;
             this.sessionMetrics = sessionMetrics;
             this.basicGarnetApi = basicGarnetApi;
+            this.basicContext = basicContext;
             this.vectorContext = vectorContext;
             this.networkSender = networkSender;
             this.logger = logger;
