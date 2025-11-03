@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup Label="Centralized Package Versions">
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+		<CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.25.1" />
