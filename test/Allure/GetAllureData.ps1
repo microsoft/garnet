@@ -15,7 +15,8 @@ $OFS = "`r`n"
 
 $framework = "net9.0"
 $configuration = "Release"
-$testsuite = "Garnet.test"
+#$testsuite = "Garnet.test"
+$testsuite = "Tsavorite.test"
 
 Write-Host "Framework: $framework"
 Write-Host "Configuration: $configuration"
@@ -37,7 +38,9 @@ Write-Host "Results Directory: $resultsDir"
 
 
 #dotnet test -c Release --no-build --filter "FullyQualifiedName~CanUseHKEYSWithLeftOverBuffer" --logger "trx;LogFileName=results.trx" --results-directory "C:\GarnetGitHub\test\TestResults"
-dotnet test "$basePath/test/Garnet.test/Garnet.test.csproj" -c $configuration --filter "FullyQualifiedName~CanUseHKEYSWithLeftOverBuffer" --logger "trx;LogFileName=results.trx" --results-directory $resultsDir
+#dotnet test "$basePath/test/Garnet.test/Garnet.test.csproj" -c $configuration --filter "FullyQualifiedName~CanUseHKEYSWithLeftOverBuffer" --logger "trx;LogFileName=results.trx" --results-directory $resultsDir
+# DEBUG dotnet test "$basePath/libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj" -c $configuration --filter "FullyQualifiedName~TsavoriteLogTest1" --logger "trx;LogFileName=results.trx" --results-directory $resultsDir
+
 # DEBUG DEBUG - all tests  dotnet test "$basePath/test/Garnet.test/Garnet.test.csproj" -c $configuration --logger "trx;LogFileName=results.trx" --results-directory $resultsDir
 
 # might not be needed as will have combined results dir in artifacts
@@ -50,7 +53,8 @@ if (-not (Test-Path -Path $allureResultsCombinedDir)) {
 }
 
 # Copy all the results from the test directory to the CombinedResults directory
-$sourceAllureResultsDir = "$basePath/test/$testsuite/bin/$configuration/$framework/allure-results"
+# GARNET.TEST DIRECTORY  $sourceAllureResultsDir = "$basePath/test/$testsuite/bin/$configuration/$framework/allure-results"
+$sourceAllureResultsDir = "$basePath/libs/storage/Tsavorite/cs/test/bin/$configuration/$framework/allure-results"
 if (Test-Path -Path $sourceAllureResultsDir) {
     Write-Host "Copying Allure results from $sourceAllureResultsDir to $allureResultsCombinedDir"
     Copy-Item -Path "$sourceAllureResultsDir\*" -Destination $allureResultsCombinedDir -Recurse -Force
