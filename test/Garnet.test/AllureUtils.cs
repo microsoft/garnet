@@ -19,8 +19,8 @@ namespace Garnet.test
         [SetUp]
         public void LabelEnvironment()
         {
-            string os = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "linux" :
-                        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "windows" :
+            string os = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" :
+                        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" :
                         "unknown";
             var frameworkAttr = Assembly.GetExecutingAssembly()
             .GetCustomAttribute<TargetFrameworkAttribute>();
