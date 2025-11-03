@@ -3,7 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.25.1" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.26.0" />
     <PackageVersion Include="Azure.Identity" Version="1.16.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.4" />
     <PackageVersion Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.15.2" />
