@@ -110,7 +110,7 @@ namespace Garnet.cluster
                             if (key.MetadataSize == 1)
                             {
                                 // This is a Vector Set namespace key being migrated - it won't necessarily look like it's "in" a hash slot
-                                // because it's dependent on some other key (the index key) being migrated which is
+                                // because it's dependent on some other key (the index key) being migrated which itself is in a moving hash slot
 
                                 clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedKey(ref vectorContext, ref key, ref value);
                             }
