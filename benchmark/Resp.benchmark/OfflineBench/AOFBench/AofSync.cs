@@ -20,7 +20,7 @@ namespace Resp.benchmark
         GarnetClientSession garnetClient;
         string primaryId;
         readonly long startAddress;
-        public long previousAddress;
+        long previousAddress;
         readonly ILogger logger = null;
 
         public long Size => previousAddress - startAddress;
@@ -39,7 +39,7 @@ namespace Resp.benchmark
 
             if (options.Client == ClientType.InProc)
             {
-                this.buffer = GC.AllocateArray<byte>(maxChunkSize, pinned: true);
+                this.buffer = GC.AllocateArray<byte>(2 << options.AofPageSizeBits(), pinned: true);
                 primaryId = aofBench.primaryId;
                 if (options.EnableCluster)
                     aofBench.sessions[0].clusterSession.UnsafeSetConfig(replicaOf: primaryId);

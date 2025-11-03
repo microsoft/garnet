@@ -78,7 +78,7 @@ namespace Resp.benchmark
             server = new EmbeddedRespServer(serverOptions, Program.loggerFactory, new GarnetServerEmbedded());
             sessions = server.GetRespSessions(options.AofSublogCount);
             aofGen = new AofGen(options);
-            aofSync = [.. Enumerable.Range(0, options.AofSublogCount).Select(x => new AofSync(this, threadId: x, startAddress: 0, options, aofGen))];
+            aofSync = [.. Enumerable.Range(0, options.AofSublogCount).Select(x => new AofSync(this, threadId: x, startAddress: 64, options, aofGen))];
         }
 
         public void GenerateData() => aofGen.GenerateData();
@@ -187,7 +187,7 @@ namespace Resp.benchmark
                     }
                 }
 
-                Console.WriteLine($"[{threadId}] - Pages send: {pagesSend:N0}, Total AOF bytes send: {totalBytes:N0}, Total records replayed:{recordsReplayedCount:N0}");
+                //Console.WriteLine($"[{threadId}] - Pages send: {pagesSend:N0}, Total AOF bytes send: {totalBytes:N0}, Total records replayed:{recordsReplayedCount:N0}");
                 _ = Interlocked.Add(ref total_pages_processed, pagesSend);
                 _ = Interlocked.Add(ref total_bytes_processed, totalBytes);
                 _ = Interlocked.Add(ref total_records_replayed, recordsReplayedCount);

@@ -169,7 +169,7 @@ namespace Resp.benchmark
                     FillPage(threadId, kvPairs, i, pageBuffers[threadId][i]);
                 }
 
-                Console.WriteLine($"[{threadId}] - Generated {number_of_aof_records:N0} AOF records, {number_of_aof_bytes:N0} AOF bytes");
+                //Console.WriteLine($"[{threadId}] - Generated {number_of_aof_records:N0} AOF records, {number_of_aof_bytes:N0} AOF bytes");
                 _ = Interlocked.Add(ref total_number_of_aof_records, number_of_aof_records);
                 _ = Interlocked.Add(ref total_number_of_aof_bytes, number_of_aof_bytes);
 
