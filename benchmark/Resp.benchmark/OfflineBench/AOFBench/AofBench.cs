@@ -198,6 +198,7 @@ namespace Resp.benchmark
                 waiter.Wait();
                 var kvPairs = aofGen.GetKVPairBuffer(threadId);
                 var recordsEnqueued = 0L;
+                var bytesEnqueued = 0L;
                 while (!done)
                 {
                     for (var i = 0; i < kvPairs.Count; i++)
@@ -226,6 +227,7 @@ namespace Resp.benchmark
                                     ref value,
                                     ref input,
                                     out _);
+                                bytesEnqueued += sizeof(AofHeader) + key.TotalSize + value.TotalSize + input.SerializedLength;
                             }
                             else
                             {
@@ -245,6 +247,7 @@ namespace Resp.benchmark
                                     ref value,
                                     ref input,
                                     out _);
+                                bytesEnqueued += sizeof(AofExtendedHeader) + key.TotalSize + value.TotalSize + input.SerializedLength;
                             }
                         }
                         recordsEnqueued++;
@@ -254,6 +257,7 @@ namespace Resp.benchmark
                 }
                 //Console.WriteLine($"[{threadId}] - Enqueued: {recordsEnqueued:N0} records");
                 _ = Interlocked.Add(ref total_records_enqueued, recordsEnqueued);
+                _ = Interlocked.Add(ref total_bytes_processed, bytesEnqueued);
             }
         }
     }
