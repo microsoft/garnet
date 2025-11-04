@@ -13,28 +13,7 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// Used to track the hashes of the keys associated with a given proc in order to update their timestamps in the ReplicaTimestampTracker
-    /// </summary>
-    /// <param name="appendOnlyFile"></param>
-    public class CustomProcKeyHashTracker(GarnetAppendOnlyFile appendOnlyFile)
-    {
-        readonly GarnetAppendOnlyFile appendOnlyFile = appendOnlyFile;
-        readonly List<long> hashes = [];
-
-        public void AddHash(long hash) => hashes.Add(hash);
-
-        public void UpdateTimestamps(long timestamp)
-        {
-            foreach (var hash in hashes)
-            {
-                appendOnlyFile.Log.Hash(hash, out var sublogIdx, out var keyOffset);
-                appendOnlyFile.replayedTimestampProgress.UpdateKeyTimestamp(sublogIdx, keyOffset, timestamp);
-            }
-        }
-    }
-
-    /// <summary>
-    /// This implements the replica timestamp tracker to track the timestamps of keys for all sessions in a given replica.
+    /// This implements the replica timestamp manager to track the timestamps of keys for all sessions in a given replica.
     /// The class maintains a 2D-array of size [SublogCount][KeyOffsetCount + 1] which tracks the timestamps for a set of keys per sublog
     /// Every data replay operation will update this map on per key basis using a hash function to determine the keyOffset.
     /// This is done to mitigate the read delay for the following scenario if we only maintain a maximum timestamp per sublog
@@ -45,12 +24,14 @@ namespace Garnet.server
     ///     read k2 (at t2 have to wait because reading k1 established that we are in t3 though no updates have arrived for k1 by t3)
     /// </summary>
     /// <param name="appendOnlyFile"></param>
-    public class ReplicaTimestampTracker(GarnetAppendOnlyFile appendOnlyFile)
+    /// <param name="nextVersion"></param>
+    public class ReplicaTimestampManager(long nextVersion, GarnetAppendOnlyFile appendOnlyFile)
     {
+        public long CurrentVersion { get; private set; } = nextVersion;
         public const int KeyOffsetCount = (1 << 15) + 1;
         const int MaxSublogTimestampOffset = KeyOffsetCount - 1;
         readonly GarnetAppendOnlyFile appendOnlyFile = appendOnlyFile;
-        static ReplicaTimestampTracker()
+        static ReplicaTimestampManager()
         {
             var size = KeyOffsetCount - 1;
             if ((size & (size - 1)) != 0)
@@ -62,7 +43,7 @@ namespace Garnet.server
         static ConcurrentQueue<ReadSessionWaiter>[] InitializeWaitQs(int aofSublogCount)
             => [.. Enumerable.Range(0, aofSublogCount).Select(_ => new ConcurrentQueue<ReadSessionWaiter>())];
 
-        readonly long[][] timestamps = InitializeTimestamps(appendOnlyFile.Log.Size, KeyOffsetCount);
+        long[][] timestamps = InitializeTimestamps(appendOnlyFile.Log.Size, KeyOffsetCount);
 
         private static long[][] InitializeTimestamps(int aofSublogCount, int size)
             => [.. Enumerable.Range(0, aofSublogCount).Select(_ =>
@@ -115,6 +96,12 @@ namespace Garnet.server
             SignalWaiters(sublogIdx);
         }
 
+        /// <summary>
+        /// Update timestamp for provided sublogIdx and keyOffset
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="keyOffset"></param>
+        /// <param name="timestamp"></param>
         public void UpdateKeyTimestamp(int sublogIdx, int keyOffset, long timestamp)
         {
             _ = Utility.MonotonicUpdate(ref timestamps[sublogIdx][keyOffset], timestamp, out _);
@@ -153,6 +140,15 @@ namespace Garnet.server
         /// <param name="csvi"></param>
         public void EnsureConsistentRead(ref ReplicaReadSessionContext replicaReadSessionContext, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ReadSessionWaiter readSessionWaiter)
         {
+            // If first time calling or version has been bumped reset read context
+            // NOTE: version changes every time replica is reset and a attached to a new primary
+            if(replicaReadSessionContext.sessionVersion == -1 || replicaReadSessionContext.sessionVersion != CurrentVersion)
+            {
+                replicaReadSessionContext.sessionVersion = CurrentVersion;
+                replicaReadSessionContext.lastSublogIdx = -1;
+                replicaReadSessionContext.maximumSessionTimestamp = 0;
+            }
+
             for (var i = csvi.firstKey; i < csvi.lastKey; i += csvi.step)
             {
                 var key = parseState.GetArgSliceByRef(i).SpanByte;

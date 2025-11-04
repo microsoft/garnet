@@ -53,7 +53,7 @@ namespace Garnet.server
             return true;
         }
 
-        public bool RunCustomTxnProcAtReplica(byte id, ref CustomProcedureInput procInput, ref MemoryResult<byte> output, bool isRecovering = false, CustomProcKeyHashTracker customProcTimestampBitmap = null)
+        public bool RunCustomTxnProcAtReplica(byte id, ref CustomProcedureInput procInput, ref MemoryResult<byte> output, bool isRecovering = false, CustomProcedureKeyHashCollection customProcTimestampBitmap = null)
         {
             var proc = customCommandManagerSession
                 .GetCustomTransactionProcedure(id, this, txnManager, scratchBufferAllocator, out _);

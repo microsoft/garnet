@@ -41,6 +41,9 @@ namespace Garnet.cluster
                 if (options.TryAddReplica && !clusterProvider.clusterManager.TryAddReplica(options.NodeId, options.Force, options.UpgradeLock, out errorMessage, logger: logger))
                     return false;
 
+                // Create or update timestamp manager for sharded log if needed
+                storeWrapper.appendOnlyFile.CreateOrUpdateTimestampManager();
+
                 // Wait for threads to agree
                 session?.UnsafeBumpAndWaitForEpochTransition();
 

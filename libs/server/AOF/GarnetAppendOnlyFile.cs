@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -13,7 +14,8 @@ namespace Garnet.server
 
         public long TotalSize() => Log.TailAddress.AggregateDiff(Log.BeginAddress);
 
-        public readonly ReplicaTimestampTracker replayedTimestampProgress;
+        public ReplicaTimestampManager replayTimestampManager = null;
+
         public GarnetLog Log { get; private set; }
         readonly GarnetServerOptions serverOptions;
 
@@ -31,11 +33,25 @@ namespace Garnet.server
             this.serverOptions = serverOptions;
             InvalidAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: -1);
             MaxAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: long.MaxValue);
-            replayedTimestampProgress = new(this);
             this.logger = logger;
         }
 
+        /// <summary>
+        /// Dispose append only file
+        /// </summary>
         public void Dispose() => Log.Dispose();
+
+        /// <summary>
+        /// Create or update existing timestamp manager
+        /// </summary>
+        public void CreateOrUpdateTimestampManager()
+        {
+            // Create manager only if sharded log is enabled
+            if (Log.Size == 0) return;
+            var currentVersion = replayTimestampManager?.CurrentVersion ?? 0L;
+            var _replayTimestampManager = new ReplicaTimestampManager(currentVersion + 1, this);
+            Interlocked.CompareExchange(ref replayTimestampManager, _replayTimestampManager, replayTimestampManager);
+        }
 
         public void SetLogShiftTailCallback(int sublogIdx, Action<long, long> SafeTailShiftCallback)
             => Log.GetSubLog(sublogIdx).SafeTailShiftCallback = SafeTailShiftCallback;

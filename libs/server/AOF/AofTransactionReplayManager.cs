@@ -48,7 +48,7 @@ namespace Garnet.server
                 try
                 {
                     // Initialize custom proc bitmap to keep track of hashes for keys for which their timestamp needs to be updated
-                    CustomProcKeyHashTracker customProcKeyHashTracker = new(storeWrapper.appendOnlyFile);
+                    CustomProcedureKeyHashCollection customProcKeyHashTracker = new(storeWrapper.appendOnlyFile);
 
                     // Replay StoredProc
                     RunStoredProc(sublogIdx, id, customProcInput, ptr, shardedLog: true, customProcKeyHashTracker);
@@ -63,7 +63,7 @@ namespace Garnet.server
                 }
             }
 
-            void RunStoredProc(int sublogIdx, byte id, CustomProcedureInput customProcInput, byte* ptr, bool shardedLog, CustomProcKeyHashTracker customProcKeyHashTracker)
+            void RunStoredProc(int sublogIdx, byte id, CustomProcedureInput customProcInput, byte* ptr, bool shardedLog, CustomProcedureKeyHashCollection customProcKeyHashTracker)
             {
                 var curr = ptr + HeaderSize(shardedLog);
 

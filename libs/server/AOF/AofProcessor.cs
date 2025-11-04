@@ -316,7 +316,7 @@ namespace Garnet.server
                     break;
                 case AofEntryType.RefreshSublogTail:
                     var extendedHeader = *(AofExtendedHeader*)ptr;
-                    storeWrapper.appendOnlyFile.replayedTimestampProgress.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
+                    storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
                     break;
                 default:
                     _ = ReplayOp(sublogIdx, basicContext, objectStoreBasicContext, ptr, length, asReplica);
@@ -371,7 +371,7 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableAOF && shardedLog && updateKeyTimestamp)
             {
                 var extendedHeader = *(AofExtendedHeader*)entryPtr;
-                storeWrapper.appendOnlyFile.replayedTimestampProgress.UpdateKeyTimestamp(sublogIdx, ref key, extendedHeader.timestamp);
+                storeWrapper.appendOnlyFile.replayTimestampManager.UpdateKeyTimestamp(sublogIdx, ref key, extendedHeader.timestamp);
             }
 
             return true;

@@ -2,31 +2,28 @@
 // Licensed under the MIT license.
 
 using System.Runtime.InteropServices;
-using System.Threading;
 
 namespace Garnet.server
 {
-    [StructLayout(LayoutKind.Explicit, Size = 12)]
+    [StructLayout(LayoutKind.Explicit, Size = 20)]
     public struct ReplicaReadSessionContext
     {
         /// <summary>
         /// Last read sublogIdx
         /// </summary>
         [FieldOffset(0)]
-        public long lastSublogIdx;
+        public long sessionVersion;
 
         /// <summary>
         /// Maximum session timestamp
         /// </summary>
-        [FieldOffset(4)]
+        [FieldOffset(8)]
         public long maximumSessionTimestamp;
-    }
 
-    public class ReadSessionWaiter
-    {
-        public ManualResetEventSlim eventSlim;
-        public long waitForTimestamp;
-        public byte sublogIdx;
-        public int keyOffset;
+        /// <summary>
+        /// Last read sublogIdx
+        /// </summary>
+        [FieldOffset(16)]
+        public int lastSublogIdx;        
     }
 }

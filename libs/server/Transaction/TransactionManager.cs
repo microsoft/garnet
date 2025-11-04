@@ -531,15 +531,11 @@ namespace Garnet.server
             if (appendOnlyFile.Log.Size == 1)
                 return;
 
-            appendOnlyFile.Log.HashKey(ref key, out var hash, out var sublogIdx, out var keyOffset);
+            appendOnlyFile.Log.HashKey(ref key, out var hash, out var sublogIdx, out _);
             if (proc.customProcTimestampBitmap == null)
-            {
                 logAccessMap |= 1UL << sublogIdx;
-            }
             else
-            {
                 proc.customProcTimestampBitmap.AddHash(hash);
-            }
         }
 
         void ComputeShardedLogAccess(out ulong logAccessMap)
