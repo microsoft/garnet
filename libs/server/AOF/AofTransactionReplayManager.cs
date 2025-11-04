@@ -41,7 +41,7 @@ namespace Garnet.server
                 var eventBarrier = eventBarriers.GetOrAdd(extendedHeader.header.sessionID, _ => new EventBarrier(participantCount));
 
                 // Wait for leader to replay CustomProc
-                if (!eventBarrier.SignalAndWait())
+                if (!eventBarrier.SignalAndWait(storeWrapper.serverOptions.ReplicaSyncTimeout))
                     return;
 
                 // Only leader will execute this
@@ -347,7 +347,7 @@ namespace Garnet.server
                     // Add coordinator group if does not exist and add to that the txnGroup that needs to be replayed
                     var participantCount = txnGroup.logAccessCount;
                     var eventBarrier = aofProcessor.eventBarriers.GetOrAdd(extendedHeader.header.sessionID, _ => new EventBarrier(participantCount));
-                    if (eventBarrier.SignalAndWait())
+                    if (eventBarrier.SignalAndWait(aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout))
                     {
                         try
                         {

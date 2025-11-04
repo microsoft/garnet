@@ -149,7 +149,6 @@ namespace Garnet.cluster
 
             checkpointStore = new CheckpointStore(storeWrapper, clusterProvider, true, logger);
             aofSyncDriverStore = new(clusterProvider, 1, logger);
-            replicaReplayTasks = new ReplicaReplayTask[clusterProvider.serverOptions.AofSublogCount];
 
             var clusterFolder = "/cluster";
             var clusterDataPath = opts.CheckpointDir + clusterFolder;
@@ -485,7 +484,7 @@ namespace Garnet.cluster
 
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();
-            DisposeReplayTasks();
+            DisposeReplayTaskGroup();
             ctsRepManager.Cancel();
             ctsRepManager.Dispose();
             aofSyncDriverStore.Dispose();

@@ -19,14 +19,16 @@ namespace Garnet.common
         /// <summary>
         /// Decrements participant count but does not set signal.
         /// </summary>
-        /// <returns>True if participant count reaches zero otherwise false</returns>
+        /// <param name="timeout"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public bool SignalAndWait()
+        public bool SignalAndWait(TimeSpan timeout = default, CancellationToken cancellationToken = default)
         {
             var newValue = Interlocked.Decrement(ref count);
             if (newValue > 0)
             {
-                Wait();
+                Wait(timeout, cancellationToken);
                 return false;
             }
             else if (newValue == 0)
@@ -43,6 +45,9 @@ namespace Garnet.common
         /// <summary>
         /// Wait for signal to be set.
         /// </summary>
-        public void Wait() => eventSlim.Wait();
+        /// <param name="timeout"></param>
+        /// <param name="cancellationToken"></param>
+        void Wait(TimeSpan timeout = default, CancellationToken cancellationToken = default)
+            => eventSlim.Wait(timeout == default ? Timeout.InfiniteTimeSpan : timeout, cancellationToken);
     }
 }

@@ -160,6 +160,9 @@ namespace Garnet.cluster
             {
                 IsReplicating = true;
 
+                if (clusterProvider.replicationManager.InitializeReplayTaskGroup(sublogIdx, this.networkSender, out var replicaReplayTaskGroup))
+                    this.replicaReplayTaskGroup = replicaReplayTaskGroup;
+
                 ProcessPrimaryStream(sublogIdx, sbRecord.ToPointer(), sbRecord.Length,
                     previousAddress, currentAddress, nextAddress);
             }

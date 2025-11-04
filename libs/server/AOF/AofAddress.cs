@@ -10,40 +10,6 @@ using System.Text;
 
 namespace Garnet.server
 {
-    public struct LogVector<T> where T : unmanaged
-    {
-        public const int MaxSublogCount = 64;
-        T[] payload;
-
-        internal LogVector(int length)
-        {
-            payload = GC.AllocateArray<T>(MaxSublogCount, pinned: true);
-        }
-
-        /// <summary>
-        /// Indexer
-        /// </summary>
-        /// <param name="i"></param>
-        /// <returns></returns>
-        public T this[int i]
-        {
-            get
-            {
-                return payload[i];
-            }
-            set
-            {
-                payload[i] = value;
-            }
-        }
-
-        public void Reset(T value)
-        {
-            for (var i = 0; i < payload.Length; i++)
-                payload[i] = value;
-        }
-    }
-
     public unsafe struct AofAddress
     {
         readonly byte length;

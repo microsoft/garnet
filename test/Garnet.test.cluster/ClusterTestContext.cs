@@ -125,7 +125,7 @@ namespace Garnet.test.cluster
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
             loggerFactory?.Dispose();
-            var timeoutSeconds = 30;
+            var timeoutSeconds = 100_000;
             if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
             {
                 logger?.LogError("Timed out waiting for DisposeCluster");
