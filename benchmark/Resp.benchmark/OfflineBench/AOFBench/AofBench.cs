@@ -140,7 +140,6 @@ namespace Resp.benchmark
                 {
                     var bytesPerSecond = (total_bytes_processed / seconds) / (double)1_000_000_000;
                     var recordsEnqueuedPerSecond = total_records_enqueued / seconds;
-                    total_bytes_processed = aofGen.appendOnlyFile.Log.TailAddress.AggregateDiff(aofTailAddress);
                     Console.WriteLine($"[Total time]: {swatch.ElapsedMilliseconds:N2} ms for {total_bytes_processed:N0} AOF bytes");
                     Console.WriteLine($"[Bandwidth]: {bytesPerSecond:N2} GiB/sec");
                     Console.WriteLine($"[Total records enqueued]: {total_records_enqueued:N0}");
@@ -219,7 +218,7 @@ namespace Resp.benchmark
                                 {
                                     opType = AofEntryType.StoreUpsert,
                                     storeVersion = 1,
-                                    sessionID = 0,
+                                    sessionID = threadId,
                                 };
                                 aofGen.appendOnlyFile.Log.SigleLog.Enqueue(
                                     aofHeader,
@@ -237,7 +236,7 @@ namespace Resp.benchmark
                                     {
                                         opType = AofEntryType.StoreUpsert,
                                         storeVersion = 1,
-                                        sessionID = 0,
+                                        sessionID = threadId,
                                     },
                                     timestamp = Stopwatch.GetTimestamp()
                                 };
