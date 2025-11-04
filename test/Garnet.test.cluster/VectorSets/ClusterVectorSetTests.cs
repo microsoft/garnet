@@ -898,6 +898,139 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(success, "Original replica still has Vector Set long after primary has completed");
         }
 
+        [Test]
+        public void VectorSetMigrateByKeys()
+        {
+            // Based on : ClusterSimpleMigrateKeys test
+
+            const int ShardCount = 3;
+            const int KeyCount = 10;
+
+            context.CreateInstances(ShardCount, useTLS: true, enableAOF: true);
+            context.CreateConnection(useTLS: true);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            var otherNodeIndex = 0;
+            var sourceNodeIndex = 1;
+            var targetNodeIndex = 2;
+            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
+
+            var key = Encoding.ASCII.GetBytes("{abc}a");
+            List<byte[]> keys = [];
+            List<(byte[] Key, byte[] Data)> vectors = [];
+            List<byte[]> attributes = [];
+
+            var _workingSlot = ClusterTestUtils.HashSlot(key);
+            ClassicAssert.AreEqual(7638, _workingSlot);
+
+            Random rand = new(2025_11_04_00);
+
+            for (var i = 0; i < KeyCount; i++)
+            {
+                var newKey = new byte[key.Length];
+                Array.Copy(key, 0, newKey, 0, key.Length);
+                newKey[^1] = (byte)(newKey[^1] + i);
+                ClassicAssert.AreEqual(_workingSlot, ClusterTestUtils.HashSlot(newKey));
+
+                var elem = new byte[4];
+                rand.NextBytes(elem);
+
+                var data = new byte[75];
+                rand.NextBytes(data);
+
+                var attrs = new byte[16];
+                rand.NextBytes(attrs);
+
+                var addRes = (int)context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), "VADD", [newKey, "XB8", data, elem, "XPREQ8", "SETATTR", attrs]);
+                ClassicAssert.AreEqual(1, addRes);
+
+                keys.Add(newKey);
+                vectors.Add((elem, data));
+                attributes.Add(attrs);
+            }
+
+            // Start migration
+            var respImport = context.clusterTestUtils.SetSlot(targetNodeIndex, _workingSlot, "IMPORTING", sourceNodeId, logger: context.logger);
+            ClassicAssert.AreEqual(respImport, "OK");
+
+            var respMigrate = context.clusterTestUtils.SetSlot(sourceNodeIndex, _workingSlot, "MIGRATING", targetNodeId, logger: context.logger);
+            ClassicAssert.AreEqual(respMigrate, "OK");
+
+            // Check key count
+            var countKeys = context.clusterTestUtils.CountKeysInSlot(sourceNodeIndex, _workingSlot, context.logger);
+            ClassicAssert.AreEqual(countKeys, KeyCount);
+
+            // Enumerate keys in slots
+            var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, _workingSlot, countKeys, context.logger);
+            ClassicAssert.AreEqual(keys, keysInSlot);
+
+            // Migrate keys, but in a random-ish order so context reservation gets stressed
+            var toMigrate = keysInSlot.ToList();
+            while (toMigrate.Count > 0)
+            {
+                var migrateSingleIx = rand.Next(toMigrate.Count);
+                var migrateKey = toMigrate[migrateSingleIx];
+                context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), [migrateKey], context.logger);
+
+                toMigrate.RemoveAt(migrateSingleIx);
+            }
+
+            // Finish migration
+            var respNodeTarget = context.clusterTestUtils.SetSlot(targetNodeIndex, _workingSlot, "NODE", targetNodeId, logger: context.logger);
+            ClassicAssert.AreEqual(respNodeTarget, "OK");
+            context.clusterTestUtils.BumpEpoch(targetNodeIndex, waitForSync: true, logger: context.logger);
+
+            var respNodeSource = context.clusterTestUtils.SetSlot(sourceNodeIndex, _workingSlot, "NODE", targetNodeId, logger: context.logger);
+            ClassicAssert.AreEqual(respNodeSource, "OK");
+            context.clusterTestUtils.BumpEpoch(sourceNodeIndex, waitForSync: true, logger: context.logger);
+            // End Migration
+
+            // Check config
+            var targetConfigEpochFromTarget = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(targetNodeIndex, targetNodeId, context.logger);
+            var targetConfigEpochFromSource = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(sourceNodeIndex, targetNodeId, context.logger);
+            var targetConfigEpochFromOther = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(otherNodeIndex, targetNodeId, context.logger);
+
+            while (targetConfigEpochFromOther != targetConfigEpochFromTarget || targetConfigEpochFromSource != targetConfigEpochFromTarget)
+            {
+                _ = Thread.Yield();
+                targetConfigEpochFromTarget = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(targetNodeIndex, targetNodeId, context.logger);
+                targetConfigEpochFromSource = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(sourceNodeIndex, targetNodeId, context.logger);
+                targetConfigEpochFromOther = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(otherNodeIndex, targetNodeId, context.logger);
+            }
+            ClassicAssert.AreEqual(targetConfigEpochFromTarget, targetConfigEpochFromOther);
+            ClassicAssert.AreEqual(targetConfigEpochFromTarget, targetConfigEpochFromSource);
+
+            // Check migration in progress
+            foreach (var _key in keys)
+            {
+                var resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out var slot, out var endpoint, out var responseState, logger: context.logger);
+                while (endpoint.Port != context.clusterTestUtils.GetEndPoint(targetNodeIndex).Port && responseState != ResponseState.OK)
+                {
+                    resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out slot, out endpoint, out responseState, logger: context.logger);
+                }
+                ClassicAssert.AreEqual(resp, "MOVED");
+                ClassicAssert.AreEqual(_workingSlot, slot);
+                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(targetNodeIndex), endpoint);
+            }
+
+            // Finish migration
+            context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
+
+            // Validate vector sets coherent
+            for (var i = 0; i < keys.Count; i++)
+            {
+                var _key = keys[i];
+                var (elem, data) = vectors[i];
+                var attrs = attributes[i];
+
+                var res = (byte[][])context.clusterTestUtils.Execute(context.clusterTestUtils.GetEndPoint(targetNodeIndex), "VSIM", [_key, "XB8", data, "WITHATTRIBS"]);
+                ClassicAssert.AreEqual(2, res.Length);
+                ClassicAssert.IsTrue(res[0].SequenceEqual(elem));
+                ClassicAssert.IsTrue(res[1].SequenceEqual(attrs));
+            }
+        }
+
         // TODO: Migration when a Vector Set already exists
         // TODO: Recovery post-migration
         // TODO: Migration while still writing to primary (should fail over once migration completes)

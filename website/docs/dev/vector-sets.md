@@ -256,7 +256,7 @@ At a high level, migration between the originating primary a destination primary
  6. When the target slots transition back to `STABLE`, we do a delete of the Vector Set index keys, drop the DiskANN indexes, and schedule the original contexts for cleanup on the originating primary
     * Unlike in 4 & 5, we do no synthetic writes here.  The normal replication of `DEL` will cleanup replicas of the originating primary.
 
- `KEYS` migrations differ only in the slot discovery being omitted.  We still have to determine the migrating namespaces, reserve new ones on the destination primary, and schedule cleanup only once migration is completed.
+ `KEYS` migrations differ only in the slot discovery being omitted.  We still have to determine the migrating namespaces, reserve new ones on the destination primary, and schedule cleanup only once migration is completed.  This does mean that, if any of the keys being migrated is a Vector Set, `MIGRATE ... KEYS` now causes a scan of the main store.
 
 > [!NOTE]
 > This approach prevents the Vector Set from being visible when it is partially migrated, which has the desirable property of not returning weird results during a migration.

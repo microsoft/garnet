@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using Garnet.client;
 using Garnet.server;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.cluster
@@ -18,11 +19,11 @@ namespace Garnet.cluster
             public MainStoreScan mss;
             public ObjectStoreScan oss;
 
+            public readonly Dictionary<byte[], byte[]> vectorSetsIndexKeysToMigrate;
+
             readonly MigrateSession session;
             readonly GarnetClientSession gcs;
             readonly LocalServerSession localServerSession;
-
-            readonly Dictionary<byte[], byte[]> vectorSetsIndexKeysToMigrate;
 
             public GarnetClientSession Client => gcs;
 
@@ -127,7 +128,10 @@ namespace Garnet.cluster
                 return true;
             }
 
-            public bool TransmitKeys(StoreType storeType)
+            /// <summary>
+            /// Move keys in sketch out of the given store, UNLESS they are also in <paramref name="vectorSetKeysToIgnore"/>.
+            /// </summary>
+            public bool TransmitKeys(StoreType storeType, Dictionary<byte[], byte[]> vectorSetKeysToIgnore)
             {
                 var bufferSize = 1 << 10;
                 SectorAlignedMemory buffer = new(bufferSize, 1);
@@ -135,6 +139,10 @@ namespace Garnet.cluster
                 var bufPtrEnd = bufPtr + bufferSize;
                 var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
                 var input = new RawStringInput(RespCommandAccessor.MIGRATE);
+
+#if NET9_0_OR_GREATER
+                var ignoreLookup = vectorSetKeysToIgnore.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
 
                 try
                 {
@@ -147,6 +155,20 @@ namespace Garnet.cluster
                                 continue;
 
                             var spanByte = keys[i].Item1.SpanByte;
+
+                            // Don't transmit if a Vector Set
+                            var isVectorSet =
+                                vectorSetKeysToIgnore.Count > 0 &&
+#if NET9_0_OR_GREATER
+                                ignoreLookup.ContainsKey(spanByte.AsReadOnlySpan());
+#else
+                                vectorSetKeysToIgnore.ContainsKey(spanByte.ToByteArray());
+#endif
+                            if (isVectorSet)
+                            {
+                                continue;
+                            }
+
                             if (!session.WriteOrSendMainStoreKeyValuePair(gcs, localServerSession, ref spanByte, ref input, ref o, out var status))
                                 return false;
 
@@ -189,6 +211,54 @@ namespace Garnet.cluster
                 {
                     buffer.Dispose();
                 }
+                return true;
+            }
+
+            /// <summary>
+            /// Transmit data in namespaces during a MIGRATE ... KEYS operation.
+            /// 
+            /// Doesn't delete anything, just scans and transmits.
+            /// </summary>
+            public bool TransmitKeysNamespaces(ILogger logger)
+            {
+                var migrateOperation = this;
+
+                if (!migrateOperation.Initialize())
+                    return false;
+
+                var workerStartAddress = migrateOperation.session.clusterProvider.storeWrapper.store.Log.BeginAddress;
+                var workerEndAddress = migrateOperation.session.clusterProvider.storeWrapper.store.Log.TailAddress;
+
+                var cursor = workerStartAddress;
+                logger?.LogWarning("<MainStore> migrate keys (namespaces) scan range [{workerStartAddress}, {workerEndAddress}]", workerStartAddress, workerEndAddress);
+                while (true)
+                {
+                    var current = cursor;
+                    // Build Sketch
+                    migrateOperation.sketch.SetStatus(SketchStatus.INITIALIZING);
+                    migrateOperation.Scan(StoreType.Main, ref current, workerEndAddress);
+
+                    // Stop if no keys have been found
+                    if (migrateOperation.sketch.argSliceVector.IsEmpty) break;
+
+                    logger?.LogWarning("Scan from {cursor} to {current} and discovered {count} keys", cursor, current, migrateOperation.sketch.argSliceVector.Count);
+
+                    // Transition EPSM to MIGRATING
+                    migrateOperation.sketch.SetStatus(SketchStatus.TRANSMITTING);
+                    migrateOperation.session.WaitForConfigPropagation();
+
+                    // Transmit all keys gathered
+                    migrateOperation.TransmitSlots(StoreType.Main);
+
+                    // Transition EPSM to DELETING
+                    migrateOperation.sketch.SetStatus(SketchStatus.DELETING);
+                    migrateOperation.session.WaitForConfigPropagation();
+
+                    // Clear keys from buffer
+                    migrateOperation.sketch.Clear();
+                    cursor = current;
+                }
+
                 return true;
             }
 

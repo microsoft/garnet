@@ -31,7 +31,7 @@ namespace Garnet.cluster
 
             try
             {
-                var reservedCtxs = await this.migrateOperation[0].Client.ExecuteForArrayAsync("CLUSTER", "RESERVE", "VECTOR_SET_CONTEXTS", neededContexts.ToString());
+                var reservedCtxs = await migrateOperation[0].Client.ExecuteForArrayAsync("CLUSTER", "RESERVE", "VECTOR_SET_CONTEXTS", neededContexts.ToString());
 
                 var rootNamespacesMigrating = _namespaces.Where(static x => (x % VectorManager.ContextStep) == 0);
 
@@ -59,7 +59,7 @@ namespace Garnet.cluster
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Failed to reserve {count} Vector Set contexts on destination node {node}", neededContexts, this._targetNodeId);
+                logger?.LogError(ex, "Failed to reserve {count} Vector Set contexts on destination node {node}", neededContexts, _targetNodeId);
                 return false;
             }
         }
@@ -125,7 +125,7 @@ namespace Garnet.cluster
                 {
                     var vectorSets = migrateOperation.SelectMany(static mo => mo.VectorSets).GroupBy(static g => g.Key, ByteArrayComparer.Instance).ToDictionary(static g => g.Key, g => g.First().Value);
 
-                    if (vectorSets.Any())
+                    if (vectorSets.Count > 0)
                     {
                         var gcs = migrateOperation[0].Client;
 
