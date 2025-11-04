@@ -73,7 +73,7 @@ namespace Tsavorite.core
         void _callback(uint errorCode, uint numBytes, NativeOverlapped* pOVERLAP)
         {
             Interlocked.Decrement(ref numPending);
-            var result = (SimpleAsyncResult)Overlapped.Unpack(pOVERLAP).AsyncResult;
+            var result = (SimpleAsyncResult)((MyNativeOverlapped*)pOVERLAP)->GcHandle.Target;
             result.callback(errorCode, numBytes, result.context);
             results.Enqueue(result);
         }
@@ -220,7 +220,7 @@ namespace Tsavorite.core
 
             result.context = context;
             result.callback = callback;
-            var ovNative = result.nativeOverlapped;
+            var ovNative = (NativeOverlapped*)result.nativeOverlapped;
 
             ovNative->OffsetLow = unchecked((int)((ulong)sourceAddress & 0xFFFFFFFF));
             ovNative->OffsetHigh = unchecked((int)(((ulong)sourceAddress >> 32) & 0xFFFFFFFF));
@@ -287,7 +287,7 @@ namespace Tsavorite.core
 
             result.context = context;
             result.callback = callback;
-            var ovNative = result.nativeOverlapped;
+            var ovNative = (NativeOverlapped*)result.nativeOverlapped;
 
             ovNative->OffsetLow = unchecked((int)(destinationAddress & 0xFFFFFFFF));
             ovNative->OffsetHigh = unchecked((int)((destinationAddress >> 32) & 0xFFFFFFFF));
@@ -364,7 +364,7 @@ namespace Tsavorite.core
 
             while (results.TryDequeue(out var entry))
             {
-                Overlapped.Free(entry.nativeOverlapped);
+                entry.Dispose();
             }
         }
 
@@ -538,12 +538,38 @@ namespace Tsavorite.core
         }
     }
 
-    sealed unsafe class SimpleAsyncResult : IAsyncResult
+    /// <summary>
+    /// Our custom unmanaged struct for overlapped.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    struct MyNativeOverlapped
+    {
+        public NativeOverlapped Overlapped;
+        public GCHandle GcHandle;
+    }
+
+    sealed unsafe class SimpleAsyncResult : IAsyncResult, IDisposable
     {
         public DeviceIOCompletionCallback callback;
         public object context;
-        public Overlapped overlapped;
-        public NativeOverlapped* nativeOverlapped;
+        public MyNativeOverlapped* nativeOverlapped;
+        public ConcurrentQueue<SimpleAsyncResult> pool;
+
+        [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+        public SimpleAsyncResult()
+        {
+            nativeOverlapped = (MyNativeOverlapped*)NativeMemory.Alloc((nuint)(sizeof(NativeOverlapped) + sizeof(GCHandle)));
+            ((NativeOverlapped*)nativeOverlapped)->InternalLow = default;
+            ((NativeOverlapped*)nativeOverlapped)->InternalHigh = default;
+            ((NativeOverlapped*)nativeOverlapped)->EventHandle = IntPtr.Zero;
+            nativeOverlapped->GcHandle = GCHandle.Alloc(this);
+        }
+
+        public void Dispose()
+        {
+            nativeOverlapped->GcHandle.Free();
+            NativeMemory.Free(nativeOverlapped);
+        }
 
         public object AsyncState => throw new NotImplementedException();
 

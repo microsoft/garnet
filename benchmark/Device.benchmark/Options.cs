@@ -24,6 +24,9 @@ namespace Device.benchmark
         [Option("throttle-limit", Required = false, Default = 0, HelpText = "Throttle limit (0 = no limit)")]
         public int ThrottleLimit { get; set; }
 
+        [Option("completion-threads", Required = false, Default = 0, HelpText = "Completion threads (0 = processor count)")]
+        public int CompletionThreads { get; set; }
+
         [Option("segment-size", Required = false, Default = 1L << 30, HelpText = "Segment size (bytes)")]
         public long SegmentSize { get; set; }
 

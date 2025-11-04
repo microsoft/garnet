@@ -47,6 +47,7 @@ namespace Device.benchmark
             Console.WriteLine($"Sector Size: {opts.SectorSize}");
             Console.WriteLine($"Segment Size: {opts.SegmentSize}");
             Console.WriteLine($"Throttle Limit: {opts.ThrottleLimit}");
+            Console.WriteLine($"Completion Threads: {opts.CompletionThreads}");
             Console.WriteLine($"Runtime: {opts.Runtime}");
             Console.WriteLine($"BatchSize: {string.Join(",", opts.BatchSize.ToList())}");
             Console.WriteLine($"NumThreads: {string.Join(",", opts.NumThreads.ToList())}");
@@ -64,6 +65,13 @@ namespace Device.benchmark
 
             // Set IO throttle limit
             device.ThrottleLimit = opts.ThrottleLimit > 0 ? opts.ThrottleLimit : int.MaxValue;
+
+            // Set completion threads
+            if (device is LocalStorageDevice l && OperatingSystem.IsWindows())
+            {
+                var ct = opts.CompletionThreads > 0 ? opts.CompletionThreads : Environment.ProcessorCount;
+                LocalStorageDevice.NumCompletionThreads = ct;
+            }
 
             // Set segment size
             device.Initialize(opts.SegmentSize);
@@ -161,7 +169,7 @@ namespace Device.benchmark
 
         static IDevice GetDevice(DeviceType deviceType, string fileName) => deviceType switch
         {
-            DeviceType.Native when OperatingSystem.IsWindows() => new LocalStorageDevice(fileName, true, true, true, -1, false, false, false),
+            DeviceType.Native when OperatingSystem.IsWindows() => new LocalStorageDevice(fileName, true, true, true, -1, false, true, false),
             DeviceType.Native when OperatingSystem.IsLinux() => new NativeStorageDevice(fileName, true, true, -1, 1, null),
             DeviceType.FileStream=> new ManagedLocalStorageDevice(fileName, true, false, true, -1, false, false, false),
             DeviceType.RandomAccess => new RandomAccessLocalStorageDevice(fileName, true, true, true, -1, false, false, false),
