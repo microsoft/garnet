@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -204,8 +205,12 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
+        //[Repeat(300)]
         public unsafe void ObjectIterationPushLockTest([Values(1, 4)] int scanThreads, [Values(0, 1, 4)] int updateThreads, [Values] ScanMode scanMode)
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+
             InternalSetup(largeMemory: true);
 
             const int totalRecords = 2000;

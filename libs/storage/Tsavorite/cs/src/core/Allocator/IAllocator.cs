@@ -19,7 +19,7 @@ namespace Tsavorite.core
         /// <summary>Whether this allocator uses a separate object log</summary>
         bool HasObjectLog { get; }
 
-        /// <summary>Initialize the varbyte lengths to key length and a value that spans the address range, and the serialize the key into the record.</summary>
+        /// <summary>Initialize the RecordDataHeader lengths to key length and a value that spans the address range, and the serialize the key into the record.</summary>
         /// <param name="key">The key to be copied into the record</param>
         /// <param name="logicalAddress">The logical address of the new record</param>
         /// <param name="sizeInfo">The record size info, which tells us the value size and whether that is overflow.</param>

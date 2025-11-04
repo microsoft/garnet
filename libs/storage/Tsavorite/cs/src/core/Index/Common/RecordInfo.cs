@@ -15,21 +15,21 @@ namespace Tsavorite.core
     // RecordInfo layout (64 bits total, high to low):
     //   RecordInfo bits:
     //      [Unused1][Modified][InNewVersion][Unused2][Dirty][Unused3][Sealed][Valid][Tombstone]
-    //      [HasExpiration][HasETag][ValueIsObject][ValueIsInline][KeyIsInline][Unused4][Unused5]
+    //      [HasExpiration][HasETag][ValueIsObject][ValueIsInline][KeyIsInline][Unused4][HasFiller]
     //   LogAddress bits (where A = address):
     //      [R][AAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] [AAAAAAAA] 
     [StructLayout(LayoutKind.Explicit, Size = 8)]
     public struct RecordInfo
     {
-        public const int Size = sizeof(long);
+        public const int Size = sizeof(ulong);
 
 #pragma warning disable IDE1006 // Naming Styles: Must begin with uppercase letter
         const int kTotalBits = Size * 8;
 
         // Other marker bits. Unused* means bits not yet assigned
         const int kIsReadCacheBitOffset = kAddressBits - 1;
-        const int kUnused5BitOffset = kIsReadCacheBitOffset + 1;
-        const int kUnused4BitOffset = kUnused5BitOffset + 1;
+        const int kHasFillerBitOffset = kIsReadCacheBitOffset + 1;
+        const int kUnused4BitOffset = kHasFillerBitOffset + 1;
         const int kKeyIsInlineBitOffset = kUnused4BitOffset + 1;
         const int kValueIsInlineBitOffset = kKeyIsInlineBitOffset + 1;
         const int kValueIsObjectBitOffset = kValueIsInlineBitOffset + 1;
@@ -46,7 +46,7 @@ namespace Tsavorite.core
         const int kUnused1BitOffset = kModifiedBitOffset + 1;
 
         internal const long kIsReadCacheBitMask = 1L << kIsReadCacheBitOffset;
-        const long kUnused5BitMask = 1L << kUnused5BitOffset;
+        const long kHasFillerBitMask = 1L << kHasFillerBitOffset;
         const long kUnused4BitMask = 1L << kUnused4BitOffset;
         const long kKeyIsInlineBitMask = 1L << kKeyIsInlineBitOffset;
         const long kValueIsInlineBitMask = 1L << kValueIsInlineBitOffset;
@@ -69,7 +69,21 @@ namespace Tsavorite.core
 
         // Used by routines to initialize a local recordInfo variable to serve as an initial source for srcRecordInfo, before we have 
         // an in-memory address (or even know if the key will be found in-memory).
-        internal static RecordInfo InitialValid = new() { Valid = true, PreviousAddress = kTempInvalidAddress };
+        internal static RecordInfo InitialValid = new();
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public RecordInfo()
+        {
+            Valid = true;
+            SetKeyAndValueInline();
+            PreviousAddress = kTempInvalidAddress;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public RecordInfo(long word)
+        {
+            this.word = word;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteInfo(bool inNewVersion, long previousAddress)
@@ -166,7 +180,7 @@ namespace Tsavorite.core
         public bool TryUpdateAddress(long expectedPrevAddress, long newPrevAddress)
         {
             var expected_word = word;
-            RecordInfo newRI = new() { word = expected_word };
+            RecordInfo newRI = new(expected_word);
             if (newRI.PreviousAddress != expectedPrevAddress)
                 return false;
             newRI.PreviousAddress = newPrevAddress;
@@ -203,7 +217,7 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                var expected_word = word;  // TODO: Interlocked.And is not supported in netstandard2.1
+                var expected_word = word;
                 if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kDirtyBitMask, expected_word))
                     break;
                 _ = Thread.Yield();
@@ -255,7 +269,7 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                var expected_word = word;  // TODO: Interlocked.And is not supported in netstandard2.1
+                var expected_word = word;
                 if (expected_word == Interlocked.CompareExchange(ref word, expected_word & ~kValidBitMask, expected_word))
                     return;
                 _ = Thread.Yield();
@@ -304,6 +318,10 @@ namespace Tsavorite.core
         public readonly bool ValueIsObject => (word & kValueIsObjectBitMask) != 0;
         public void SetValueIsObject() => word = (word & ~kValueIsInlineBitMask) | kValueIsObjectBitMask;
 
+        public readonly bool HasFiller => (word & kHasFillerBitMask) != 0;
+        public void SetHasFiller() => word |= kHasFillerBitMask;
+        public void ClearHasFiller() => word &= ~kHasFillerBitMask;
+
         // Value "Overflow" is determined by lack of Inline and lack of Object
         public readonly bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
         public void SetValueIsOverflow() => word &= ~(kValueIsInlineBitMask | kValueIsObjectBitMask);
@@ -344,10 +362,14 @@ namespace Tsavorite.core
             set => word = value ? word | kUnused4BitMask : word & ~kUnused4BitMask;
         }
 
-        internal bool Unused5
+        internal int GetOptionalSize()
         {
-            readonly get => (word & kUnused5BitMask) != 0;
-            set => word = value ? word | kUnused5BitMask : word & ~kUnused5BitMask;
+            var size = HasETag ? LogRecord.ETagSize : 0;
+            if (HasExpiration)
+                size += LogRecord.ExpirationSize;
+            if (!RecordIsInline)
+                size += LogRecord.ObjectLogPositionSize;
+            return size;
         }
 
         public override readonly string ToString()
@@ -357,7 +379,7 @@ namespace Tsavorite.core
             var valString = ValueIsInline ? "inl" : (ValueIsObject ? "obj" : "ovf");
             return $"prev {AddressString(PreviousAddress)}, valid {bstr(Valid)}, tomb {bstr(Tombstone)}, seal {bstr(IsSealed)}, rc {bstr(IsReadCache)},"
                  + $" mod {bstr(Modified)}, dirty {bstr(Dirty)}, Key::{keyString}, Val::{valString},"
-                 + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}, Un4 {bstr(Unused4)}, Un5 {bstr(Unused5)}";
+                 + $" ETag {bstr(HasETag)}, Expir {bstr(HasExpiration)}, Filler {bstr(HasFiller)}, Un1 {bstr(Unused1)}, Un2 {bstr(Unused2)}, Un3 {bstr(Unused3)}, Un4 {bstr(Unused4)}";
         }
     }
 }

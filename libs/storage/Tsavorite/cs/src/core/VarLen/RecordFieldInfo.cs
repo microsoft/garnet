@@ -9,7 +9,7 @@ namespace Tsavorite.core
     public struct RecordFieldInfo
     {
         /// <summary>
-        /// The data length of the key for the record. Its behavior varies between the String and Object stores:
+        /// The data length of the key for the record. It is immutable unless the record is deleted and revivified. Its behavior varies between the String and Object stores:
         /// <list type="bullet">
         ///     <item>String store: It is the data length of the Span</item>
         ///     <item>Object store: It is the data length of the Span (which may or may not Overflow)</item>
@@ -25,6 +25,11 @@ namespace Tsavorite.core
         /// </list>
         /// </summary>
         public int ValueSize;
+
+        /// <summary>There is one byte reserved for the namespace in the <see cref="RecordDataHeader"/>, limited to integer values from 1-127. If more are desired, the entire length is here
+        /// and the namespace is stored in the record immediately after the <see cref="RecordDataHeader"/>, just before the Key data bytes. This is immutable for the life of the key
+        /// (unless the record is deleted and revivified).</summary>
+        public int ExtendedNamespaceSize;
 
         /// <summary>Whether the value was specified to be an object.</summary>
         public bool ValueIsObject;

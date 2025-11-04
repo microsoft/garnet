@@ -337,10 +337,10 @@ namespace Tsavorite.core
         public RecordFieldInfo GetRecordFieldInfo() => CurrentIter.GetRecordFieldInfo();
 
         /// <inheritdoc/>
-        public (int actualSize, int allocatedSize) GetInlineRecordSizes() => CurrentIter.GetInlineRecordSizes();
+        public int AllocatedSize => CurrentIter.AllocatedSize;
 
         /// <inheritdoc/>
-        public (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects() => CurrentIter.GetInlineRecordSizesWithUnreadObjects();
+        public int ActualSize => CurrentIter.ActualSize;
         #endregion // ISourceLogRecord
     }
 }

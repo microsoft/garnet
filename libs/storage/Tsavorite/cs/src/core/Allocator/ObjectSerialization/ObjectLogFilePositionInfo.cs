@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -14,6 +15,9 @@ namespace Tsavorite.core
     {
         /// <summary>Indicates the word has not been set.</summary>
         internal const ulong NotSet = ulong.MaxValue;
+
+        /// <summary>Maximum number of bytes to use for segment + offset. 7 bytes gives a 72PB Object Log size range.</summary>
+        private const int MaxBytesForSegmentAndOffset = 7;
 
         /// <summary>Object log segment size bits</summary>
         internal int SegmentSizeBits;
@@ -56,6 +60,29 @@ namespace Tsavorite.core
             word = ulong.Parse(value);
         }
 
+        /// <summary>The high byte is combined with the Value object length stored in the Value field when serialized, yielding 40 bits or 1TB max single object size.</summary>
+        public int ObjectSizeHighByte
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get { return (int)((word >> (MaxBytesForSegmentAndOffset * 8)) & 0xFF); }
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            set
+            {
+                if (value > byte.MaxValue)
+                    throw new ArgumentOutOfRangeException(nameof(value), $"Object size high byte must be less than or equal to {byte.MaxValue}.");
+                word = (word & ~(0xFFUL << (MaxBytesForSegmentAndOffset * 8))) | ((ulong)value << (MaxBytesForSegmentAndOffset * 8));
+            }
+        }
+
+        /// <summary>The high byte is combined with the Value object length stored in the Value field when serialized, yielding 40 bits or 1TB max single object size.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe void SetObjectSizeHighByte(ulong* wordPtr, int value)
+        {
+            if (value > byte.MaxValue)
+                throw new ArgumentOutOfRangeException(nameof(value), $"Object size high byte must be less than or equal to {byte.MaxValue}.");
+            *wordPtr = (*wordPtr & ~(0xFFUL << (MaxBytesForSegmentAndOffset * 8))) | ((ulong)value << (MaxBytesForSegmentAndOffset * 8));
+        }
+
         /// <summary>The offset within the current <see cref="SegmentId"/>.</summary>
         public ulong Offset
         {
@@ -70,7 +97,7 @@ namespace Tsavorite.core
             set
             {
                 var mask = (ulong)(1L << SegmentSizeBits) - 1L;
-                Debug.Assert((value & ~mask) <= SegmentSize, $"New Offset ({(value & ~mask)}) exceeds max segment size");
+                Debug.Assert((value & ~mask) <= SegmentSize, $"New Offset ({value & ~mask}) exceeds max segment size");
                 word = (word & ~mask) | (value & mask);
             }
         }
@@ -93,8 +120,18 @@ namespace Tsavorite.core
             }
         }
 
+        private int MaxSegmentId
+        {
+            get
+            {
+                var seg = 1L << ((MaxBytesForSegmentAndOffset * sizeof(long)) - SegmentSizeBits);
+                return seg > int.MaxValue ? int.MaxValue : (int)seg;
+            }
+        }
+
         public void Advance(ulong size)
         {
+            // Does it fit in the current segment?
             var remaining = SegmentSize - Offset;
             if (size < remaining)
             {
@@ -102,15 +139,23 @@ namespace Tsavorite.core
                 return;
             }
 
+            // See if we can move to the next segment(s).
+            long nextSegmentId = SegmentId + (int)(size / SegmentSize) + 1;
+            if (nextSegmentId > MaxSegmentId)
+                throw new InvalidDataException($"Advancing position by {size:N} bytes exceeds maximum object log segment.");
+
             // Note: If size == remaining, we advance to the start of the next segment.
             size -= remaining;
-            SegmentId += (int)(size / SegmentSize) + 1;
+            SegmentId = (int)nextSegmentId;
             Offset += size & (SegmentSize - 1);
         }
 
         public void AdvanceToNextSegment()
         {
-            SegmentId++;
+            long nextSegmentId = SegmentId + 1;
+            if (nextSegmentId > MaxSegmentId)
+                throw new InvalidDataException($"Advancing to next segment exceeds maximum object log segment.");
+            SegmentId = (int)nextSegmentId;
             Offset = 0;
         }
 

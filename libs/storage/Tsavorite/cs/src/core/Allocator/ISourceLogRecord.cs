@@ -86,12 +86,10 @@ namespace Tsavorite.core
         /// <summary>Get the record's field info, for use in calculating required record size</summary>
         RecordFieldInfo GetRecordFieldInfo();
 
-        /// <summary>A tuple of the total size of the main-log (inline) portion of the record, with and without filler length.</summary>
-        (int actualSize, int allocatedSize) GetInlineRecordSizes();
+        /// <summary>The total allocated inline size of the main-log record; includes filler length.</summary>
+        int AllocatedSize { get; }
 
-        /// <summary>A tuple of the total size of the main-log (inline) portion of the record when it has a value object and thus may
-        ///     still have the object-length encoding which leaves the metadata's valueLength incorrect (this method works whether or
-        ///     not the value object has been read). The tuple is with and without filler length.</summary>
-        (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects();
+        /// <summary>The total used inline portion of the size of the main-log portion of the record; does not include filler length.</summary>
+        int ActualSize { get; }
     }
 }

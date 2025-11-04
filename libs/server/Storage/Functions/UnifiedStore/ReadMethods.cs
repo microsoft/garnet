@@ -44,7 +44,7 @@ namespace Garnet.server
         private bool HandleMemoryUsage<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
             ref GarnetUnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
         {
-            var inlineRecordSize = srcLogRecord.GetInlineRecordSizes().allocatedSize;
+            var inlineRecordSize = srcLogRecord.AllocatedSize;
             long heapMemoryUsage = 0;
             if (srcLogRecord.Info.KeyIsOverflow)
                 heapMemoryUsage += srcLogRecord.Key.Length + MemoryUtils.ByteArrayOverhead;
@@ -139,7 +139,7 @@ namespace Garnet.server
             // but rather hand off the object references (remapped to the transient allocator if needed), because RENAME is an in-memory operation.
 
             // network In case of significant shrinkage, calculate this AllocatedSize separately rather than logRecord.GetInlineRecordSizes().allocatedSize.
-            var inlineRecordSize = RoundUp(srcLogRecord.GetInlineRecordSizes().actualSize, 8); // TODO: Constants.kRecordAlignment
+            var inlineRecordSize = RoundUp(srcLogRecord.ActualSize, 8); // TODO: Constants.kRecordAlignment
             DiskLogRecord.DirectCopyInlinePortionOfRecord(in srcLogRecord, inlineRecordSize, estimatedTotalSize: inlineRecordSize, maxHeapAllocationSize: inlineRecordSize,
                 functionsState.memoryPool, ref output.SpanByteAndMemory);
             if (srcLogRecord.Info.RecordHasObjects)

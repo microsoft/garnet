@@ -523,7 +523,7 @@ namespace Tsavorite.test.Revivification
                 }
             }
 
-            void CheckExpectedLengthsBefore(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, long recordAddress, bool isIPU = false)
+            unsafe void CheckExpectedLengthsBefore(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, long recordAddress, bool isIPU = false)
             {
                 var expectedValueLength = expectedValueLengths.Dequeue();
 
@@ -531,7 +531,7 @@ namespace Tsavorite.test.Revivification
                 // and we'll call LogField.ConvertToOverflow later in this ISessionFunctions call to do the actual overflow allocation.
                 if (!logRecord.Info.ValueIsInline || (sizeInfo.IsSet && !sizeInfo.ValueIsInline))
                 {
-                    var (valueLength, valueAddress) = GetValueFieldInfo(logRecord.IndicatorAddress);
+                    var (valueLength, valueAddress) = new RecordDataHeader((byte*)logRecord.DataHeaderAddress).GetValueFieldInfo(logRecord.Info);
                     ClassicAssert.AreEqual(ObjectIdMap.ObjectIdSize, (int)valueLength);
                 }
                 if (sizeInfo.ValueIsInline)
@@ -544,7 +544,8 @@ namespace Tsavorite.test.Revivification
                 // !IsSet means it is from Delete which does not receive a RecordSizeInfo. isIPU is an in-place update and thus the new value may legitimately be larger than the record.
                 if (sizeInfo.IsSet && !isIPU)
                 {
-                    var (actual, allocated) = logRecord.GetInlineRecordSizes();
+                    var allocated = logRecord.AllocatedSize;
+                    var actual = logRecord.ActualSize;
                     ClassicAssert.AreEqual(sizeInfo.ActualInlineRecordSize, actual);
                     ClassicAssert.AreEqual(sizeInfo.AllocatedInlineRecordSize, allocated);
                 }
