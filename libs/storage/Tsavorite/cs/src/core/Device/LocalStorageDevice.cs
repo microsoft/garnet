@@ -214,8 +214,6 @@ namespace Tsavorite.core
             if (!results.TryDequeue(out SimpleAsyncResult result))
             {
                 result = new SimpleAsyncResult();
-                result.overlapped = new Overlapped(0, 0, IntPtr.Zero, result);
-                result.nativeOverlapped = result.overlapped.UnsafePack(_callback, IntPtr.Zero);
             }
 
             result.context = context;
@@ -281,8 +279,6 @@ namespace Tsavorite.core
             if (!results.TryDequeue(out SimpleAsyncResult result))
             {
                 result = new SimpleAsyncResult();
-                result.overlapped = new Overlapped(0, 0, IntPtr.Zero, result);
-                result.nativeOverlapped = result.overlapped.UnsafePack(_callback, IntPtr.Zero);
             }
 
             result.context = context;
