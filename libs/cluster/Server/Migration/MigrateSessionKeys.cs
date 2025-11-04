@@ -133,7 +133,7 @@ namespace Garnet.cluster
             WaitForConfigPropagation();
 
             // Transmit keys from object store
-            if (!migrateTask.TransmitKeys(StoreType.Object, []))
+            if (!migrateTask.TransmitKeys(StoreType.Object, new(ByteArrayComparer.Instance)))
             {
                 logger?.LogError("Failed transmitting keys from object store");
                 return false;

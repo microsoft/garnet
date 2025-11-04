@@ -140,15 +140,15 @@ namespace Garnet.cluster
                 var o = new SpanByteAndMemory(bufPtr, (int)(bufPtrEnd - bufPtr));
                 var input = new RawStringInput(RespCommandAccessor.MIGRATE);
 
-#if NET9_0_OR_GREATER
-                var ignoreLookup = vectorSetKeysToIgnore.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
-
                 try
                 {
                     var keys = sketch.Keys;
                     if (storeType == StoreType.Main)
                     {
+#if NET9_0_OR_GREATER
+                        var ignoreLookup = vectorSetKeysToIgnore.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
+
                         for (var i = 0; i < keys.Count; i++)
                         {
                             if (keys[i].Item2)
