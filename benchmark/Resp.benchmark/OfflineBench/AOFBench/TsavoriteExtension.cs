@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using Tsavorite.core;
 using System.Reflection;
+using Tsavorite.core;
 
 namespace Resp.benchmark
 {

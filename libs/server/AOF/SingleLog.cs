@@ -12,7 +12,7 @@ namespace Garnet.server
         readonly TsavoriteLogSettings logSettings = logSettings;
         public readonly TsavoriteLog log = new(logSettings, logger);
 
-        public long HeaderSize => log.HeaderSize;        
+        public long HeaderSize => log.HeaderSize;
 
         public AofAddress BeginAddress => AofAddress.Create(1, value: log.BeginAddress);
 

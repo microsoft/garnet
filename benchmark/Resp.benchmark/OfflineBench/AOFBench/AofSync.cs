@@ -1,12 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Net;
 using Garnet.client;
 using Garnet.common;
-using StackExchange.Redis;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 using Tsavorite.core;
-using System.Net;
 
 namespace Resp.benchmark
 {

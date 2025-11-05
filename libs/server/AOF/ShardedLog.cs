@@ -31,11 +31,11 @@ namespace Garnet.server
                     break;
             }
         }
-        
+
         public void UnlockSublogs(ulong logAccessBitmap)
         {
             Debug.Assert((lockMap & logAccessBitmap) > 0);
-            logAccessBitmap = ~logAccessBitmap;            
+            logAccessBitmap = ~logAccessBitmap;
             while (true)
             {
                 Thread.Yield();

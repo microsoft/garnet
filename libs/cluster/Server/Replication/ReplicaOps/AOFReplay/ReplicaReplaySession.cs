@@ -3,9 +3,9 @@
 
 using System;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
-using Garnet.server;
 
 namespace Garnet.cluster
 {

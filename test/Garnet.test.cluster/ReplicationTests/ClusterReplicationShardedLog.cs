@@ -1,14 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using NUnit.Framework;
-using NUnit.Framework.Legacy;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using Garnet.server;
+using NUnit.Framework;
+using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test.cluster
@@ -164,10 +164,10 @@ namespace Garnet.test.cluster
                 asyncReplay: asyncReplay,
                 sublogCount: 4);
             context.CreateConnection(useTLS: useTLS);
-            
+
             _ = context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, primaryNodeIndex + 1, logger: context.logger);
-            
+
             var keyLength = 16;
             var kvpairCount = keyCount;
             context.kvPairs = [];

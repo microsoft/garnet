@@ -1,11 +1,11 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
+using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Tsavorite.core;
-using System.Text;
-using System.Diagnostics;
 
 namespace Resp.benchmark
 {
