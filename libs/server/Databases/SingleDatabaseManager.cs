@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -450,7 +449,7 @@ namespace Garnet.server
                         {
                             header = header,
                             logAccessCount = (byte)BitOperations.PopCount(ulong.MaxValue),
-                            timestamp = Stopwatch.GetTimestamp()
+                            sequenceNumber = storeWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber()
                         };
 
                         while (_logAccessBitmap > 0)

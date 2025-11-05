@@ -140,6 +140,7 @@ namespace Garnet.server
             }
             finally
             {
+                storeWrapper.appendOnlyFile.ResetSeqNumberGen();
                 var seconds = swatch.ElapsedMilliseconds / 1000.0;
                 var aofSize = db.AppendOnlyFile.TotalSize();
                 var recordsPerSec = total_number_of_replayed_records / seconds;
@@ -316,7 +317,7 @@ namespace Garnet.server
                     break;
                 case AofEntryType.RefreshSublogTail:
                     var extendedHeader = *(AofExtendedHeader*)ptr;
-                    storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogTimestamp(sublogIdx, extendedHeader.timestamp);
+                    storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
                     break;
                 default:
                     _ = ReplayOp(sublogIdx, basicContext, objectStoreBasicContext, ptr, length, asReplica);
@@ -334,7 +335,7 @@ namespace Garnet.server
             if (SkipRecord(sublogIdx, entryPtr, length, asReplica)) return false;
 
             ref var key = ref Unsafe.NullRef<SpanByte>();
-            var updateKeyTimestamp = true;
+            var updateKeySequenceNumber = true;
             var shardedLog = storeWrapper.serverOptions.AofSublogCount > 1;
             switch (header.opType)
             {
@@ -357,21 +358,21 @@ namespace Garnet.server
                     key = ref ObjectStoreDelete(objectStoreBasicContext, entryPtr, shardedLog);
                     break;
                 case AofEntryType.StoredProcedure:
-                    updateKeyTimestamp = false;
+                    updateKeySequenceNumber = false;
                     ReplayStoredProc(sublogIdx, header.procedureId, customProcInput, entryPtr);
                     break;
                 case AofEntryType.TxnCommit:
-                    updateKeyTimestamp = false;
+                    updateKeySequenceNumber = false;
                     aofTxnReplayManager.ProcessFuzzyRegionTransactionGroup(sublogIdx, entryPtr, asReplica);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
 
-            if (storeWrapper.serverOptions.EnableAOF && shardedLog && updateKeyTimestamp)
+            if (storeWrapper.serverOptions.EnableAOF && shardedLog && updateKeySequenceNumber)
             {
                 var extendedHeader = *(AofExtendedHeader*)entryPtr;
-                storeWrapper.appendOnlyFile.replayTimestampManager.UpdateKeyTimestamp(sublogIdx, ref key, extendedHeader.timestamp);
+                storeWrapper.appendOnlyFile.replayTimestampManager.UpdateKeyTimestamp(sublogIdx, ref key, extendedHeader.sequenceNumber);
             }
 
             return true;
@@ -609,7 +610,7 @@ namespace Garnet.server
             while (ptr < record + recordLength)
             {
                 var header = *(AofExtendedHeader*)ptr;
-                var timestamp = header.timestamp;
+                var timestamp = header.sequenceNumber;
                 maxSendTimestamp = Math.Max(maxSendTimestamp, timestamp);
                 ptr += entryLength;
             }

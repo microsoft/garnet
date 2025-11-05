@@ -13,7 +13,7 @@ using Tsavorite.core;
 namespace Garnet.server
 {
     /// <summary>
-    /// This implements the replica timestamp manager to track the timestamps of keys for all sessions in a given replica.
+    /// This implements the replica sequence manager to track the sequence number of keys for all sessions in a given replica.
     /// The class maintains a 2D-array of size [SublogCount][KeyOffsetCount + 1] which tracks the timestamps for a set of keys per sublog
     /// Every data replay operation will update this map on per key basis using a hash function to determine the keyOffset.
     /// This is done to mitigate the read delay for the following scenario if we only maintain a maximum timestamp per sublog
@@ -25,13 +25,13 @@ namespace Garnet.server
     /// </summary>
     /// <param name="appendOnlyFile"></param>
     /// <param name="nextVersion"></param>
-    public class ReplicaTimestampManager(long nextVersion, GarnetAppendOnlyFile appendOnlyFile)
+    public class ReplicaReadConsistencyManager(long nextVersion, GarnetAppendOnlyFile appendOnlyFile)
     {
         public long CurrentVersion { get; private set; } = nextVersion;
         public const int KeyOffsetCount = (1 << 15) + 1;
         const int MaxSublogTimestampOffset = KeyOffsetCount - 1;
         readonly GarnetAppendOnlyFile appendOnlyFile = appendOnlyFile;
-        static ReplicaTimestampManager()
+        static ReplicaReadConsistencyManager()
         {
             var size = KeyOffsetCount - 1;
             if ((size & (size - 1)) != 0)
@@ -43,7 +43,7 @@ namespace Garnet.server
         static ConcurrentQueue<ReadSessionWaiter>[] InitializeWaitQs(int aofSublogCount)
             => [.. Enumerable.Range(0, aofSublogCount).Select(_ => new ConcurrentQueue<ReadSessionWaiter>())];
 
-        long[][] timestamps = InitializeTimestamps(appendOnlyFile.Log.Size, KeyOffsetCount);
+        long[][] activeSequenceNumbers = InitializeTimestamps(appendOnlyFile.Log.Size, KeyOffsetCount);
 
         private static long[][] InitializeTimestamps(int aofSublogCount, int size)
             => [.. Enumerable.Range(0, aofSublogCount).Select(_ =>
@@ -54,57 +54,67 @@ namespace Garnet.server
             })];
 
         /// <summary>
-        /// Get timestamp frontier which is the maximum between the key timestamp and the sublog maximum timestamp
+        /// Get sequence number frontier which is the maximum between the key sequence number and the sublog maximum sequence number
         /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="keyOffset"></param>
         /// <returns></returns>
-        long GetKeyTimestampFrontier(int sublogIdx, int keyOffset) => Math.Max(timestamps[sublogIdx][keyOffset], timestamps[MaxSublogTimestampOffset][keyOffset]);
+        long GetSequenceNumberFrontier(int sublogIdx, int keyOffset)
+            => Math.Max(activeSequenceNumbers[sublogIdx][keyOffset], activeSequenceNumbers[MaxSublogTimestampOffset][keyOffset]);
 
         /// <summary>
-        /// Get timestamp for actual key
+        /// Get sequence number for provided key offset
         /// </summary>
         /// <param name="sublogIdx"></param>
         /// <param name="keyOffset"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        long GetActualKeyTimestamp(int sublogIdx, int keyOffset) => timestamps[sublogIdx][keyOffset];
+        long GetKeyOffsetSequenceNumber(int sublogIdx, int keyOffset)
+            => activeSequenceNumbers[sublogIdx][keyOffset];
 
         /// <summary>
-        /// Update timestamp for all keys corresponding to sublog.
+        /// Get maximum sequence number
+        /// </summary>
+        /// <returns></returns>
+        public long GetMaximumSequenceNumber() => activeSequenceNumbers.SelectMany(sublogArray => sublogArray).Max();
+
+        /// <summary>
+        /// Update sequence number for all keys corresponding to sublog.
         /// This is triggered by RefreshSublogTail, TxnReplay or CustomProcReplay.
         /// </summary>
         /// <param name="sublogIdx"></param>
-        /// <param name="timestamp"></param>
+        /// <param name="sequenceNumber"></param>
         /// <seealso cref="T:Garnet.cluster.AofSyncDriver.RefreshSublogTail"/>
-        public void UpdateSublogTimestamp(int sublogIdx, long timestamp)
+        public void UpdateSublogSequencenumber(int sublogIdx, long sequenceNumber)
         {
-            _ = Utility.MonotonicUpdate(ref timestamps[sublogIdx][MaxSublogTimestampOffset], timestamp, out _);
+            _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][MaxSublogTimestampOffset], sequenceNumber, out _);
             SignalWaiters(sublogIdx);
         }
 
         /// <summary>
-        /// Update key timestamp when replaying the AOF at replica and release any waiters.
+        /// Update key sequence number when replaying the AOF at replica and release any waiters.
         /// </summary>
         /// <param name="sublogIdx"></param>
         /// <param name="key"></param>
-        /// <param name="timestamp"></param>
-        public void UpdateKeyTimestamp(int sublogIdx, ref SpanByte key, long timestamp)
+        /// <param name="sequenceNumber"></param>
+        public void UpdateKeyTimestamp(int sublogIdx, ref SpanByte key, long sequenceNumber)
         {
             appendOnlyFile.Log.HashKey(ref key, out _, out var _sublogIdx, out var keyOffset);
             if (sublogIdx != _sublogIdx)
                 throw new GarnetException("Sublog index does not match key mapping!");
-            _ = Utility.MonotonicUpdate(ref timestamps[sublogIdx][keyOffset], timestamp, out _);
+            _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][keyOffset], sequenceNumber, out _);
             SignalWaiters(sublogIdx);
         }
 
         /// <summary>
-        /// Update timestamp for provided sublogIdx and keyOffset
+        /// Update sequenceNumber for provided sublogIdx and keyOffset
         /// </summary>
         /// <param name="sublogIdx"></param>
         /// <param name="keyOffset"></param>
-        /// <param name="timestamp"></param>
-        public void UpdateKeyTimestamp(int sublogIdx, int keyOffset, long timestamp)
+        /// <param name="sequenceNumber"></param>
+        public void UpdateKeySequenceNumber(int sublogIdx, int keyOffset, long sequenceNumber)
         {
-            _ = Utility.MonotonicUpdate(ref timestamps[sublogIdx][keyOffset], timestamp, out _);
+            _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][keyOffset], sequenceNumber, out _);
             SignalWaiters(sublogIdx);
         }
 
@@ -118,7 +128,7 @@ namespace Garnet.server
             while (waitQs[sublogIdx].TryDequeue(out var waiter))
             {
                 // If timestamp has not progressed enough will re-add this waiter to the waitQ
-                if (waiter.waitForTimestamp > GetKeyTimestampFrontier(waiter.sublogIdx, waiter.keyOffset))
+                if (waiter.waitForTimestamp > GetSequenceNumberFrontier(waiter.sublogIdx, waiter.keyOffset))
                     waiterList.Add(waiter);
                 else
                     // Signal for waiter to proceed
@@ -142,11 +152,11 @@ namespace Garnet.server
         {
             // If first time calling or version has been bumped reset read context
             // NOTE: version changes every time replica is reset and a attached to a new primary
-            if(replicaReadSessionContext.sessionVersion == -1 || replicaReadSessionContext.sessionVersion != CurrentVersion)
+            if (replicaReadSessionContext.sessionVersion == -1 || replicaReadSessionContext.sessionVersion != CurrentVersion)
             {
                 replicaReadSessionContext.sessionVersion = CurrentVersion;
                 replicaReadSessionContext.lastSublogIdx = -1;
-                replicaReadSessionContext.maximumSessionTimestamp = 0;
+                replicaReadSessionContext.maximumSessionSequenceNumber = 0;
             }
 
             for (var i = csvi.firstKey; i < csvi.lastKey; i += csvi.step)
@@ -158,16 +168,16 @@ namespace Garnet.server
                 if (replicaReadSessionContext.lastSublogIdx == -1)
                 {
                     replicaReadSessionContext.lastSublogIdx = sublogIdx;
-                    replicaReadSessionContext.maximumSessionTimestamp = GetActualKeyTimestamp(sublogIdx, keyOffset);
+                    replicaReadSessionContext.maximumSessionSequenceNumber = GetKeyOffsetSequenceNumber(sublogIdx, keyOffset);
                     continue;
                 }
 
                 // Here we have to wait for replay to catch up
                 // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
-                if (replicaReadSessionContext.lastSublogIdx != sublogIdx && replicaReadSessionContext.maximumSessionTimestamp > GetKeyTimestampFrontier(sublogIdx, keyOffset))
+                if (replicaReadSessionContext.lastSublogIdx != sublogIdx && replicaReadSessionContext.maximumSessionSequenceNumber > GetSequenceNumberFrontier(sublogIdx, keyOffset))
                 {
                     // Before adding to the waitQ set timestamp and reader associated information
-                    readSessionWaiter.waitForTimestamp = replicaReadSessionContext.maximumSessionTimestamp;
+                    readSessionWaiter.waitForTimestamp = replicaReadSessionContext.maximumSessionSequenceNumber;
                     readSessionWaiter.sublogIdx = (byte)sublogIdx;
                     readSessionWaiter.keyOffset = keyOffset;
 
@@ -180,9 +190,9 @@ namespace Garnet.server
                 }
 
                 // If timestamp of current key is after maximum timestamp we can safely read the key
-                Debug.Assert(replicaReadSessionContext.maximumSessionTimestamp <= timestamps[sublogIdx][keyOffset]);
+                Debug.Assert(replicaReadSessionContext.maximumSessionSequenceNumber <= activeSequenceNumbers[sublogIdx][keyOffset]);
                 replicaReadSessionContext.lastSublogIdx = sublogIdx;
-                replicaReadSessionContext.maximumSessionTimestamp = GetActualKeyTimestamp(sublogIdx, keyOffset);
+                replicaReadSessionContext.maximumSessionSequenceNumber = GetKeyOffsetSequenceNumber(sublogIdx, keyOffset);
             }
         }
     }

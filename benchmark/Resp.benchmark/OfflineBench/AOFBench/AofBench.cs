@@ -238,7 +238,7 @@ namespace Resp.benchmark
                                         storeVersion = 1,
                                         sessionID = threadId,
                                     },
-                                    timestamp = Stopwatch.GetTimestamp()
+                                    sequenceNumber = aofGen.appendOnlyFile.seqNumGen.GetSequenceNumber()
                                 };
                                 aofGen.appendOnlyFile.Log.GetSubLog(ref key).Enqueue(
                                     extendedAofHeader,

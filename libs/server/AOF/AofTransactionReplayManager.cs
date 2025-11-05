@@ -54,7 +54,7 @@ namespace Garnet.server
                     RunStoredProc(sublogIdx, id, customProcInput, ptr, shardedLog: true, customProcKeyHashTracker);
 
                     // Update timestamps for associated keys
-                    customProcKeyHashTracker?.UpdateTimestamps(extendedHeader.timestamp);
+                    customProcKeyHashTracker?.UpdateTimestamps(extendedHeader.sequenceNumber);
                 }
                 finally
                 {

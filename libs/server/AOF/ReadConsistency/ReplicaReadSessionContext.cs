@@ -15,15 +15,15 @@ namespace Garnet.server
         public long sessionVersion;
 
         /// <summary>
-        /// Maximum session timestamp
+        /// Maximum session sequence number established from all keys read so far
         /// </summary>
         [FieldOffset(8)]
-        public long maximumSessionTimestamp;
+        public long maximumSessionSequenceNumber;
 
         /// <summary>
         /// Last read sublogIdx
         /// </summary>
         [FieldOffset(16)]
-        public int lastSublogIdx;        
+        public int lastSublogIdx;
     }
 }

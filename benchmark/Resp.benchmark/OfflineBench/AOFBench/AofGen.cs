@@ -114,6 +114,7 @@ namespace Resp.benchmark
 
         public unsafe void GenerateData()
         {
+            var seqNumGen = new SequenceNumberGenerator(0);
             Console.WriteLine($"Generating AoFBench Data!");
             var threads = options.AofBenchType == AofBenchType.Replay ? options.AofSublogCount : options.NumThreads.Max();
             var workers = new Thread[threads];
@@ -209,7 +210,7 @@ namespace Resp.benchmark
                                     var extendedAofHeader = new AofExtendedHeader
                                     {
                                         header = aofHeader,
-                                        timestamp = Stopwatch.GetTimestamp()
+                                        sequenceNumber = seqNumGen.GetSequenceNumber()
                                     };
 
                                     if (!garnetLog.GetSubLog(threadId).DummyEnqueue(

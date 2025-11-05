@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -14,9 +15,12 @@ namespace Garnet.server
 
         public long TotalSize() => Log.TailAddress.AggregateDiff(Log.BeginAddress);
 
-        public ReplicaTimestampManager replayTimestampManager = null;
+        public ReplicaReadConsistencyManager replayTimestampManager = null;
+
+        public SequenceNumberGenerator seqNumGen = null;
 
         public GarnetLog Log { get; private set; }
+
         readonly GarnetServerOptions serverOptions;
 
         public long HeaderSize => Log.HeaderSize;
@@ -33,6 +37,8 @@ namespace Garnet.server
             this.serverOptions = serverOptions;
             InvalidAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: -1);
             MaxAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: long.MaxValue);
+            if (serverOptions.AofSublogCount > 1)
+                seqNumGen = new SequenceNumberGenerator(0);
             this.logger = logger;
         }
 
@@ -49,8 +55,18 @@ namespace Garnet.server
             // Create manager only if sharded log is enabled
             if (Log.Size == 0) return;
             var currentVersion = replayTimestampManager?.CurrentVersion ?? 0L;
-            var _replayTimestampManager = new ReplicaTimestampManager(currentVersion + 1, this);
-            Interlocked.CompareExchange(ref replayTimestampManager, _replayTimestampManager, replayTimestampManager);
+            var _replayTimestampManager = new ReplicaReadConsistencyManager(currentVersion + 1, this);
+            _ = Interlocked.CompareExchange(ref replayTimestampManager, _replayTimestampManager, replayTimestampManager);
+        }
+
+        /// <summary>
+        /// Reset sequence number generator
+        /// </summary>
+        public void ResetSeqNumberGen()
+        {
+            var start = replayTimestampManager.GetMaximumSequenceNumber();
+            var newSeqNumGen = new SequenceNumberGenerator(start);
+            _ = Interlocked.CompareExchange(ref seqNumGen, newSeqNumGen, seqNumGen);
         }
 
         public void SetLogShiftTailCallback(int sublogIdx, Action<long, long> SafeTailShiftCallback)
@@ -68,12 +84,12 @@ namespace Garnet.server
         public void Initialize(in AofAddress beginAddress, in AofAddress committedUntilAddress, long lastCommitNum = 0)
             => Log.Initialize(beginAddress, committedUntilAddress, lastCommitNum);
 
-        public void EnqueueRefreshSublogTail(int sublogIdx, long timestamp)
+        public void EnqueueRefreshSublogTail(int sublogIdx, long sequenceNumber)
         {
             var refreshSublogTailHeader = new AofExtendedHeader
             {
                 header = new AofHeader { opType = AofEntryType.RefreshSublogTail },
-                timestamp = timestamp
+                sequenceNumber = sequenceNumber
             };
             Log.GetSubLog(sublogIdx).Enqueue(refreshSublogTailHeader, out _);
         }

@@ -64,7 +64,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Max send sublog timestamp
         /// </summary>
-        public AofAddress MaxSendSublogTimestamp
+        public AofAddress MaxSendSequenceNumber
         {
             get
             {
@@ -160,20 +160,20 @@ namespace Garnet.cluster
 
                 var tailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
                 var previousAddress = PreviousAddress;
-                var maxSublogTimestamps = MaxSendSublogTimestamp;
-                // Maximum Send Timestamp (MST)
-                var mst = maxSublogTimestamps.Max();
+                var maxSublogSeqNumber = MaxSendSequenceNumber;
+                // Maximum Send Sequence Number (MSSN)
+                var mssn = maxSublogSeqNumber.Max();
 
                 // At least one sublog has stalled if both of the following conditions hold
-                //  1. the maximum timestamp of the sublog is smaller than MST
+                //  1. the maximum sequence number of the sublog is smaller than MSSN
                 //  2. The sublog does not have any more data to send.
-                // If (1) is false then it is safe to read from that sublog because it will have the highest timestamp
-                // If (2) is false the we still have more data to process hence the timestamp will possible change in the future.
+                // If (1) is false then it is safe to read from that sublog because it will have the highest sequence number
+                // If (2) is false the we still have more data to process hence the sequence number will possible change in the future.
 
-                for (var i = 0; i < maxSublogTimestamps.Length; i++)
+                for (var i = 0; i < maxSublogSeqNumber.Length; i++)
                 {
-                    if (maxSublogTimestamps[i] < mst && previousAddress[i] == tailAddress[i])
-                        clusterProvider.storeWrapper.appendOnlyFile.EnqueueRefreshSublogTail(i, mst);
+                    if (maxSublogSeqNumber[i] < mssn && previousAddress[i] == tailAddress[i])
+                        clusterProvider.storeWrapper.appendOnlyFile.EnqueueRefreshSublogTail(i, mssn);
                 }
             }
         }

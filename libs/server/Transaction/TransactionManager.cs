@@ -282,7 +282,7 @@ namespace Garnet.server
                                 sessionID = basicContext.Session.ID,
                             },
                             logAccessCount = (byte)BitOperations.PopCount(logAccessMap),
-                            timestamp = Stopwatch.GetTimestamp()
+                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
                         };
 
                         while (_logAccessBitmap > 0)
@@ -341,7 +341,7 @@ namespace Garnet.server
                                 txnID = basicContext.Session.ID,
                             },
                             logAccessCount = (byte)BitOperations.PopCount(logAccessMap),
-                            timestamp = Stopwatch.GetTimestamp()
+                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
                         };
 
                         while (_logAccessBitmap > 0)
@@ -501,7 +501,7 @@ namespace Garnet.server
                                 txnID = basicContext.Session.ID
                             },
                             logAccessCount = (byte)BitOperations.PopCount(logAccessMap),
-                            timestamp = Stopwatch.GetTimestamp()
+                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
                         };
 
                         while (_logAccessBitmap > 0)

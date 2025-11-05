@@ -35,7 +35,12 @@ namespace Garnet.server
 
                     if (functionsState.appendOnlyFile.Log.Size == 1)
                     {
-                        var aofHeader = new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID };
+                        var aofHeader = new AofHeader
+                        {
+                            opType = AofEntryType.ObjectStoreUpsert,
+                            storeVersion = version,
+                            sessionID = sessionID
+                        };
                         functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
                             aofHeader,
                             ref keySB,
@@ -46,8 +51,13 @@ namespace Garnet.server
                     {
                         var extendedAofHeader = new AofExtendedHeader
                         {
-                            header = new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
-                            timestamp = Stopwatch.GetTimestamp()
+                            header = new AofHeader
+                            {
+                                opType = AofEntryType.ObjectStoreUpsert,
+                                storeVersion = version,
+                                sessionID = sessionID
+                            },
+                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
                         };
                         functionsState.appendOnlyFile.Log.GetSubLog(ref keySB).Enqueue(
                             extendedAofHeader,
@@ -77,7 +87,12 @@ namespace Garnet.server
 
                 if (functionsState.appendOnlyFile.Log.Size == 1)
                 {
-                    var aofHeader = new AofHeader { opType = AofEntryType.ObjectStoreRMW, storeVersion = version, sessionID = sessionID };
+                    var aofHeader = new AofHeader
+                    {
+                        opType = AofEntryType.ObjectStoreRMW,
+                        storeVersion = version,
+                        sessionID = sessionID
+                    };
                     functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
                         aofHeader,
                         ref sbKey,
@@ -88,8 +103,13 @@ namespace Garnet.server
                 {
                     var extendedAofHeader = new AofExtendedHeader
                     {
-                        header = new AofHeader { opType = AofEntryType.ObjectStoreRMW, storeVersion = version, sessionID = sessionID },
-                        timestamp = Stopwatch.GetTimestamp()
+                        header = new AofHeader
+                        {
+                            opType = AofEntryType.ObjectStoreRMW,
+                            storeVersion = version,
+                            sessionID = sessionID
+                        },
+                        sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
                     };
                     functionsState.appendOnlyFile.Log.GetSubLog(ref sbKey).Enqueue(
                         extendedAofHeader,
@@ -115,7 +135,12 @@ namespace Garnet.server
 
                 if (functionsState.appendOnlyFile.Log.Size == 1)
                 {
-                    var aofHeader = new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID };
+                    var aofHeader = new AofHeader
+                    {
+                        opType = AofEntryType.ObjectStoreDelete,
+                        storeVersion = version,
+                        sessionID = sessionID
+                    };
                     functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
                         aofHeader,
                         ref keySB,
@@ -126,8 +151,13 @@ namespace Garnet.server
                 {
                     var extendedAofHeader = new AofExtendedHeader
                     {
-                        header = new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID },
-                        timestamp = Stopwatch.GetTimestamp()
+                        header = new AofHeader
+                        {
+                            opType = AofEntryType.ObjectStoreDelete,
+                            storeVersion = version,
+                            sessionID = sessionID
+                        },
+                        sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
                     };
                     functionsState.appendOnlyFile.Log.GetSubLog(ref keySB).Enqueue(
                         extendedAofHeader,

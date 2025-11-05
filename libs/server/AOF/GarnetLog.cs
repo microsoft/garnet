@@ -40,7 +40,7 @@ namespace Garnet.server
                 hash = Utility.HashBytes(keyPtr, key.Length);
             }
             sublogIdx = (int)(((ulong)hash) % (ulong)shardedLog.Length);
-            keyOffset = (int)(hash & (ReplicaTimestampManager.KeyOffsetCount - 1));
+            keyOffset = (int)(hash & (ReplicaReadConsistencyManager.KeyOffsetCount - 1));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -54,7 +54,7 @@ namespace Garnet.server
         public void Hash(long hash, out int sublogIdx, out int keyOffset)
         {
             sublogIdx = (int)(hash % shardedLog.Length);
-            keyOffset = (int)(hash & (ReplicaTimestampManager.KeyOffsetCount - 1));
+            keyOffset = (int)(hash & (ReplicaReadConsistencyManager.KeyOffsetCount - 1));
         }
 
         public AofAddress BeginAddress

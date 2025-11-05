@@ -21,7 +21,7 @@ namespace Garnet.server
         /// Used for multilog operations
         /// </summary>
         [FieldOffset(16)]
-        public long timestamp;
+        public long sequenceNumber;
         /// <summary>
         /// Used for synchronizing sublog replay
         /// </summary>
@@ -72,7 +72,7 @@ namespace Garnet.server
         /// Transaction ID
         /// </summary>
         [FieldOffset(12)]
-        public int txnID;        
+        public int txnID;
         /// <summary>
         /// Unsafe truncate log (used with FLUSH command)
         /// </summary>

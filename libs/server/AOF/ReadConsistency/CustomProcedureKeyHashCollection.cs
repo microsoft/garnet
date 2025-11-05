@@ -30,7 +30,7 @@ namespace Garnet.server
             foreach (var hash in hashes)
             {
                 appendOnlyFile.Log.Hash(hash, out var sublogIdx, out var keyOffset);
-                appendOnlyFile.replayTimestampManager.UpdateKeyTimestamp(sublogIdx, keyOffset, timestamp);
+                appendOnlyFile.replayTimestampManager.UpdateKeySequenceNumber(sublogIdx, keyOffset, timestamp);
             }
         }
     }
