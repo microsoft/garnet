@@ -1358,12 +1358,22 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(lenPreMigration > 0, "Should have seen some writes pre-migration");
 
             // Move to other primary
-            context.clusterTestUtils.MigrateSlots(primary0, primary1, [primary0HashSlot]);
-            context.clusterTestUtils.WaitForMigrationCleanup(Primary0Index);
-            context.clusterTestUtils.WaitForMigrationCleanup(Primary1Index);
+            using (var migrateToken = new CancellationTokenSource())
+            {
+                migrateToken.CancelAfter(30_000);
 
-            context.clusterTestUtils.WaitForReplicaAofSync(Primary0Index, Secondary0Index);
-            context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index);
+                context.clusterTestUtils.MigrateSlots(primary0, primary1, [primary0HashSlot]);
+                context.clusterTestUtils.WaitForMigrationCleanup(Primary0Index, cancellationToken: migrateToken.Token);
+                context.clusterTestUtils.WaitForMigrationCleanup(Primary1Index, cancellationToken: migrateToken.Token);
+            }
+
+            using (var replicationToken = new CancellationTokenSource())
+            {
+                replicationToken.CancelAfter(30_000);
+
+                context.clusterTestUtils.WaitForReplicaAofSync(Primary0Index, Secondary0Index, cancellation: replicationToken.Token);
+                context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index, cancellation: replicationToken.Token);
+            }
 
             var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
             var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
