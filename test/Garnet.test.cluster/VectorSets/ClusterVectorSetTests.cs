@@ -3,6 +3,8 @@
 
 using System;
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -1168,25 +1170,10 @@ namespace Garnet.test.cluster
                 ClassicAssert.IsTrue(curPrimary1Slots.Contains(hashSlot));
             }
 
-            // Check available on other primary & secondary
+            // Check available on other primary
             foreach (var (key, _, _, data, _) in primary0Keys.Concat(primary1Keys))
             {
                 var migrateSimRes = (byte[][])context.clusterTestUtils.Execute(primary1, "VSIM", [key, "XB8", data, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
-                ClassicAssert.AreEqual(3, migrateSimRes.Length);
-
-                var (elem, attr, score) = expected[(key, data)];
-
-                ClassicAssert.IsTrue(elem.SequenceEqual(migrateSimRes[0]));
-                ClassicAssert.AreEqual(score, float.Parse(Encoding.ASCII.GetString(migrateSimRes[1])));
-                ClassicAssert.IsTrue(attr.SequenceEqual(migrateSimRes[2]));
-            }
-
-            var readonlyOnReplica1 = (string)context.clusterTestUtils.Execute(secondary1, "READONLY", [], flags: CommandFlags.NoRedirect);
-            ClassicAssert.AreEqual("OK", readonlyOnReplica1);
-
-            foreach (var (key, _, _, data, _) in primary0Keys.Concat(primary1Keys))
-            {
-                var migrateSimRes = (byte[][])context.clusterTestUtils.Execute(secondary1, "VSIM", [key, "XB8", data, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
                 ClassicAssert.AreEqual(3, migrateSimRes.Length);
 
                 var (elem, attr, score) = expected[(key, data)];
@@ -1221,7 +1208,6 @@ namespace Garnet.test.cluster
                         }
                     }
 
-
                     if (migrationNotFinished)
                     {
                         continue;
@@ -1238,11 +1224,198 @@ namespace Garnet.test.cluster
             }
 
             ClassicAssert.IsTrue(success, "Original replica still has Vector Set long after primary has completed");
+
+            // Check available on new secondary
+            var readonlyOnReplica1 = (string)context.clusterTestUtils.Execute(secondary1, "READONLY", [], flags: CommandFlags.NoRedirect);
+            ClassicAssert.AreEqual("OK", readonlyOnReplica1);
+
+            start = Stopwatch.GetTimestamp();
+
+            success = false;
+
+            while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
+            {
+                success = true;
+
+                foreach (var (key, _, _, data, _) in primary0Keys.Concat(primary1Keys))
+                {
+                    var migrateSimRes = (byte[][])context.clusterTestUtils.Execute(secondary1, "VSIM", [key, "XB8", data, "WITHSCORES", "WITHATTRIBS"], flags: CommandFlags.NoRedirect);
+
+                    if (migrateSimRes.Length == 1 && Encoding.UTF8.GetString(migrateSimRes[1]).StartsWith("Key has MOVED to "))
+                    {
+                        success = false;
+                        break;
+                    }
+
+                    ClassicAssert.AreEqual(3, migrateSimRes.Length);
+
+                    var (elem, attr, score) = expected[(key, data)];
+
+                    ClassicAssert.IsTrue(elem.SequenceEqual(migrateSimRes[0]));
+                    ClassicAssert.AreEqual(score, float.Parse(Encoding.ASCII.GetString(migrateSimRes[1])));
+                    ClassicAssert.IsTrue(attr.SequenceEqual(migrateSimRes[2]));
+                }
+
+                if (success)
+                {
+                    break;
+                }
+            }
+
+            ClassicAssert.IsTrue(success, "New replica hasn't replicated Vector Set long after primary has received data");
         }
 
-        // TODO: Migration when a Vector Set already exists
-        // TODO: Recovery post-migration
-        // TODO: Migration while still writing to primary (should fail over once migration completes)
+        [Test]
+        public async Task MigrateVectorSetWhileModifyingAsync()
+        {
+            // Test migrating a single slot with a vector set of one element in it
+
+            const int Primary0Index = 0;
+            const int Primary1Index = 1;
+            const int Secondary0Index = 2;
+            const int Secondary1Index = 3;
+
+            context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true);
+            context.CreateConnection(useTLS: true);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1, logger: context.logger);
+
+            var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
+            var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
+            var secondary0 = (IPEndPoint)context.endpoints[Secondary0Index];
+            var secondary1 = (IPEndPoint)context.endpoints[Secondary1Index];
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary0).Value);
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary1).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary0).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary1).Value);
+
+            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
+            var primary1Id = context.clusterTestUtils.ClusterMyId(primary1);
+
+            var slots = context.clusterTestUtils.ClusterSlots(primary0);
+
+            string primary0Key;
+            int primary0HashSlot;
+            {
+                var ix = 0;
+
+                while (true)
+                {
+                    primary0Key = $"{nameof(MigrateVectorSetWhileModifyingAsync)}_{ix}";
+                    primary0HashSlot = context.clusterTestUtils.HashSlot(primary0Key);
+
+                    if (slots.Any(x => x.nnInfo.Any(y => y.nodeid == primary0Id) && primary0HashSlot >= x.startSlot && primary0HashSlot <= x.endSlot))
+                    {
+                        break;
+                    }
+
+                    ix++;
+                }
+            }
+
+            // Start writing to this Vector Set
+            using var cts = new CancellationTokenSource();
+
+            var added = new ConcurrentBag<(byte[] Elem, byte[] Data, byte[] Attr)>();
+
+            var writeTask =
+                Task.Run(
+                    async () =>
+                    {
+                        // Force async
+                        await Task.Yield();
+
+                        var ix = 0;
+
+                        var elem = new byte[4];
+                        var data = new byte[75];
+                        var attr = new byte[100];
+
+                        BinaryPrimitives.WriteInt32LittleEndian(elem, ix);
+                        Random.Shared.NextBytes(data);
+                        Random.Shared.NextBytes(attr);
+
+                        while (!cts.IsCancellationRequested)
+                        {
+                            // This should follow redirects, so migration shouldn't cause any failures
+                            var addRes = (int)context.clusterTestUtils.Execute(primary0, "VADD", [primary0Key, "XB8", data, elem, "XPREQ8", "SETATTR", attr]);
+
+                            ClassicAssert.AreEqual(1, addRes);
+
+                            added.Add((elem.ToArray(), data.ToArray(), attr.ToArray()));
+
+                            ix++;
+                            BinaryPrimitives.WriteInt32LittleEndian(elem, ix);
+                            Random.Shared.NextBytes(data);
+                            Random.Shared.NextBytes(attr);
+                        }
+                    }
+                );
+
+            await Task.Delay(1_000);
+
+            var lenPreMigration = added.Count;
+            ClassicAssert.IsTrue(lenPreMigration > 0, "Should have seen some writes pre-migration");
+
+            // Move to other primary
+            context.clusterTestUtils.MigrateSlots(primary0, primary1, [primary0HashSlot]);
+            context.clusterTestUtils.WaitForMigrationCleanup(Primary0Index);
+            context.clusterTestUtils.WaitForMigrationCleanup(Primary1Index);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(Primary0Index, Secondary0Index);
+            context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index);
+
+            var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
+            var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+
+            ClassicAssert.IsFalse(curPrimary0Slots.Contains(primary0HashSlot));
+            ClassicAssert.IsTrue(curPrimary1Slots.Contains(primary0HashSlot));
+
+            var lenPrePause = added.Count;
+            await Task.Delay(5_000);
+            var lenPostPause = added.Count;
+
+            ClassicAssert.IsTrue(lenPostPause > lenPrePause, "Writes after migration did not resume");
+
+            // Stop Writes and wait for replication to catch up
+            cts.Cancel();
+            await writeTask;
+
+            var addedLookup = added.ToFrozenDictionary(static t => t.Elem, t => t, ByteArrayComparer.Instance);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(Primary0Index, Secondary0Index);
+            context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index);
+
+            // Check available on other primary & secondary
+
+            foreach (var (_, data, _) in added)
+            {
+                var sim1Res = (byte[][])context.clusterTestUtils.Execute(primary1, "VSIM", [primary0Key, "XB8", data, "WITHSCORES", "WITHATTRIBS", "COUNT", "1"], flags: CommandFlags.NoRedirect);
+                ClassicAssert.AreEqual(3, sim1Res.Length);
+
+                // No guarantee we'll get the exact same element, but we should always get _a_ result and the correct associated attribute
+                var resElem = sim1Res[0];
+                var resAttr = sim1Res[2];
+                var expectedAttr = addedLookup[resElem].Attr;
+                ClassicAssert.IsTrue(resAttr.SequenceEqual(expectedAttr));
+            }
+
+            var readonlyOnReplica1 = (string)context.clusterTestUtils.Execute(secondary1, "READONLY", [], flags: CommandFlags.NoRedirect);
+            ClassicAssert.AreEqual("OK", readonlyOnReplica1);
+
+            foreach (var (elem, data, attr) in added)
+            {
+                var simOnReplica1Res = (byte[][])context.clusterTestUtils.Execute(secondary1, "VSIM", [primary0Key, "XB8", data, "WITHSCORES", "WITHATTRIBS", "COUNT", "1"], flags: CommandFlags.NoRedirect);
+
+                // No guarantee we'll get the exact same element, but we should always get _a_ result and the correct associated attribute
+                var resElem = simOnReplica1Res[0];
+                var resAttr = simOnReplica1Res[2];
+                var expectedAttr = addedLookup[resElem].Attr;
+                ClassicAssert.IsTrue(resAttr.SequenceEqual(expectedAttr));
+            }
+        }
+
+
         // TODO: Stress migration while under load (move back and forth while querying replicas)
     }
 }

@@ -42,6 +42,9 @@ namespace Garnet.cluster
             {
                 if (migrateTask.sketch.Probe(key.SpanByte, out state))
                     goto found;
+
+                if (migrateTask.IsMovingVectorSet(key.SpanByte, out state))
+                    goto found;
             }
 
             return true;

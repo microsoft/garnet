@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Garnet.client;
 using Garnet.server;
@@ -19,7 +20,10 @@ namespace Garnet.cluster
             public MainStoreScan mss;
             public ObjectStoreScan oss;
 
-            public readonly Dictionary<byte[], byte[]> vectorSetsIndexKeysToMigrate;
+            public readonly ConcurrentDictionary<byte[], byte[]> vectorSetsIndexKeysToMigrate;
+#if NET9_0_OR_GREATER
+            private readonly ConcurrentDictionary<byte[], byte[]>.AlternateLookup<ReadOnlySpan<byte>> vectorSetsIndexKeysToMigrateLookup;
+#endif
 
             readonly MigrateSession session;
             readonly GarnetClientSession gcs;
@@ -38,6 +42,24 @@ namespace Garnet.cluster
             public void EncounteredVectorSet(byte[] key, byte[] value)
             => vectorSetsIndexKeysToMigrate.TryAdd(key, value);
 
+            /// <summary>
+            /// Returns true if this operation is moving the given Vector Set.
+            /// 
+            /// Does not validate that the key actually is a Vector Set, but that shouldn't matter.
+            /// </summary>
+            public bool IsMovingVectorSet(SpanByte key, out SketchStatus status)
+            {
+                var isPresent =
+#if NET9_0_OR_GREATER
+                    vectorSetsIndexKeysToMigrateLookup.ContainsKey(key.AsReadOnlySpan());
+#else
+                    vectorSetsIndexKeysToMigrate.ContainsKey(key.ToByteArray());
+#endif
+
+                status = isPresent ? sketch.Status : SketchStatus.INITIALIZING;
+                return isPresent;
+            }
+
             public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
             {
                 this.session = session;
@@ -48,6 +70,9 @@ namespace Garnet.cluster
                 oss = new ObjectStoreScan(this);
                 keysToDelete = [];
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
+#if NET9_0_OR_GREATER
+                vectorSetsIndexKeysToMigrateLookup = vectorSetsIndexKeysToMigrate.GetAlternateLookup<ReadOnlySpan<byte>>();
+#endif
             }
 
             public bool Initialize()
