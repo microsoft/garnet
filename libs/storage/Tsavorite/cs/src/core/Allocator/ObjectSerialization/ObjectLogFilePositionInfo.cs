@@ -83,6 +83,10 @@ namespace Tsavorite.core
             *wordPtr = (*wordPtr & ~(0xFFUL << (MaxBytesForSegmentAndOffset * 8))) | ((ulong)value << (MaxBytesForSegmentAndOffset * 8));
         }
 
+        /// <summary>The high byte is combined with the Value object length stored in the Value field when serialized, yielding 40 bits or 1TB max single object size.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static unsafe int GetObjectSizeHighByte(ulong* wordPtr) => (int)((*wordPtr >> (MaxBytesForSegmentAndOffset * 8)) & 0xFFUL);
+
         /// <summary>The offset within the current <see cref="SegmentId"/>.</summary>
         public ulong Offset
         {

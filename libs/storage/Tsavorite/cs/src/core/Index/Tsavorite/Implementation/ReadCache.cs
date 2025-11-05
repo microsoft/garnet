@@ -249,6 +249,11 @@ namespace Tsavorite.core
         internal void ReadCacheEvict(long rcLogicalAddress, long rcToLogicalAddress)
         {
             // Iterate readcache entries in the range rcFrom/ToLogicalAddress, and remove them from the hash chain.
+            // First make sure we're not trying to process a logical address that's in a page header.
+            var offsetOnPage = readcacheBase.GetOffsetOnPage(rcLogicalAddress);
+            if (offsetOnPage < PageHeader.Size)
+                rcLogicalAddress += PageHeader.Size - offsetOnPage;
+
             while (rcLogicalAddress < rcToLogicalAddress)
             {
                 var logRecord = new LogRecord(readcacheBase.GetPhysicalAddress(rcLogicalAddress));
@@ -280,7 +285,7 @@ namespace Tsavorite.core
                 ReadCacheEvictChain(rcToLogicalAddress, ref hei);
 
             NextRecord:
-                if (readcacheBase.GetOffsetOnPage(rcLogicalAddress) + rcAllocatedSize > readcacheBase.PageSize)
+                if (readcacheBase.GetOffsetOnPage(rcLogicalAddress) + rcAllocatedSize >= readcacheBase.PageSize - RecordInfo.Size)
                 {
                     rcLogicalAddress = readcacheBase.GetFirstValidLogicalAddressOnPage(1 + readcacheBase.GetPage(rcLogicalAddress));
                     continue;

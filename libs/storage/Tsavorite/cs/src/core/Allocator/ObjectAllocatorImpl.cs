@@ -545,8 +545,7 @@ namespace Tsavorite.core
             if (diskLogRecord.Info.RecordIsInline)
                 return true;
 
-            var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength),
-                                                              objectLogTail.SegmentSizeBits);
+            var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength), objectLogTail.SegmentSizeBits);
             var totalBytesToRead = (ulong)keyLength + valueLength;
 
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);

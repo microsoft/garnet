@@ -340,24 +340,24 @@ namespace Tsavorite.core
                 output.EnsureHeapMemorySize(allocationSizeToUse, memoryPool);
             }
 
-            // We must clear the LogRecord's filler bit; rounding will handle length alignment to end of record without interpreting it as filler
+            // We must reset the LogRecord's filler size, because we truncated the record down to the (rounded-up) ActualSize if it had been shrunken.
+            var newFillerLength = alignedInlineRecordSize - logRecord.ActualSize;
             if (output.IsSpanByte)
             {
-                // TotalSize includes the length prefix, which is included in the output stream if we can write directly to the SpanByte,
-                // which is a span in the network buffer.
+                // TotalSize includes the length prefix. If there is a SpanByte it is a span in the network buffer, so we include the prefix length in the output stream.
                 var outPtr = output.SpanByte.ToPointer();
                 *(int*)outPtr = alignedInlineRecordSize;
                 outPtr += sizeof(int);
                 Buffer.MemoryCopy((byte*)logRecord.PhysicalAddress, outPtr, alignedInlineRecordSize, alignedInlineRecordSize);
-                new LogRecord((long)outPtr).SetFillerLength(alignedInlineRecordSize, 0);
+                new LogRecord((long)outPtr).SetRecordAndFillerLength(alignedInlineRecordSize, newFillerLength);
             }
             else
             {
-                // Do not include the length prefix in the output stream; this is done by the caller before writing the stream, from a temporary LogRecord created over outPtr.
+                // Do not include the length prefix in the output stream; this is done by the caller before writing the stream to the network buffer.
                 fixed (byte* outPtr = output.MemorySpan)
                 {
                     Buffer.MemoryCopy((byte*)logRecord.PhysicalAddress, outPtr, alignedInlineRecordSize, alignedInlineRecordSize);
-                    new LogRecord((long)outPtr).SetFillerLength(alignedInlineRecordSize, 0);
+                    new LogRecord((long)outPtr).SetRecordAndFillerLength(alignedInlineRecordSize, newFillerLength);
                 }
             }
         }

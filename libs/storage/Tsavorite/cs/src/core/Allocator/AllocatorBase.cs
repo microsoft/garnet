@@ -1941,12 +1941,11 @@ namespace Tsavorite.core
             {
                 var ptr = ctx.record.GetValidPointer();
                 var recordInfo = *(RecordInfo*)ptr;
-                var dataHeaderAddress = ptr + RecordInfo.Size;
-                var dataHeader = new RecordDataHeader(dataHeaderAddress);
+                var dataHeader = new RecordDataHeader(ptr + RecordInfo.Size);
                 var (numKeyLengthBytes, numRecordLengthBytes) = dataHeader.DeconstructKVByteLengths(out var headerLength);
 
                 // GetRecordLength is always safe, because it is in the second sizeof(ulong) and we round up to 8-byte alignment.
-                var recordLength = dataHeader.GetRecordLength(headerLength, numKeyLengthBytes);
+                var recordLength = dataHeader.GetRecordLength(numRecordLengthBytes);
                 if (currentLength <= headerLength)
                 {
                     prevLengthToRead = recordLength;
@@ -1959,14 +1958,13 @@ namespace Tsavorite.core
                 if (recordInfo.Invalid) // includes IsNull
                     return false;
 
-                var optionalLength = LogRecord.GetOptionalLength(recordInfo);
                 var offsetToKeyStart = dataHeader.GetOffsetToKeyStart(headerLength);
 
                 // If the length is up to offsetToKeyStart, we can read the full lengths. If not, we'll fall through to reread the current record.
                 if (currentLength >= offsetToKeyStart)
                 {
                     var keyLength = dataHeader.GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
-                    var keyStartPtr = dataHeaderAddress + offsetToKeyStart;
+                    var keyStartPtr = ptr + offsetToKeyStart;
 
                     // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
                     if (!ctx.request_key.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.request_key, new ReadOnlySpan<byte>(keyStartPtr, keyLength)))
@@ -2112,6 +2110,9 @@ namespace Tsavorite.core
                 {
                     var startAddress = GetLogicalAddressOfStartOfPage(result.page);
                     var endAddress = startAddress + PageSize;
+
+                    // First make sure we're not trying to process a logical address that's in a page header.
+                    startAddress += PageHeader.Size;
 
                     if (result.fromAddress > startAddress)
                         startAddress = result.fromAddress;

@@ -113,7 +113,29 @@ namespace Tsavorite.core
         /// <summary>Pointer to the first byte of the header, which is the length indicator byte.</summary>
         internal byte* HeaderPtr;
 
+        /// <inheritdoc/>
+        public override readonly string ToString() => ToString("na", "na");
+
+        internal readonly string ToString(string keyString, string valueString)
+        {
+            if (HeaderPtr == null)
+                return "<empty>";
+            var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
+            var recordLength = GetRecordLength();
+            var fillerLength = GetFillerLength(recordLength);
+            var (keyLength, keyAddress) = GetKeyFieldInfo();
+            var (valueLength, valueAdress) = GetValueFieldInfo(*RecordInfoPtr, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
+            var fillerLenStr = (*RecordInfoPtr).HasFiller ? fillerLength.ToString() : "na";
+
+            return $"rec b:{numRecordLengthBytes}/o:na/l:{recordLength}"
+                 + $" | key b:{numKeyLengthBytes}/o:{keyAddress - (long)RecordInfoPtr}/l:{keyLength} {keyString}"
+                 + $" | val b:na/o:{valueAdress - (long)RecordInfoPtr}/l:{valueLength}, {valueString}"
+                 + $" | filLen {fillerLenStr} Namespace b:{NamespaceByte}/x:{ExtendedNamespaceLength}, RecordType {RecordType}";
+        }
+
         internal RecordDataHeader(byte* indicatorPtr) => HeaderPtr = indicatorPtr;
+
+        private readonly RecordInfo* RecordInfoPtr => (RecordInfo*)(HeaderPtr - RecordInfo.Size);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static int GetByteCount(long value) => ((sizeof(long) * 8) - BitOperations.LeadingZeroCount((ulong)(value | 1)) + 7) / 8;
@@ -166,13 +188,15 @@ namespace Tsavorite.core
             // TODO: Pass in the actual Span<byte>Namespace to VarLenMethods to set sizeInfo.FieldInfo.ExtendedNamespaceSize. Here we are only concerned
             // with setting the correct length indicators; LogRecord.InitializeRecord will set the actual data for it. sizeInfo.FieldInfo.ExtendedNamespaceSize
             // has been verified by RecordSizeInfo.CalculateSizes to be within byte range.
-            *(HeaderPtr + 1) = (byte)(sizeInfo.FieldInfo.ExtendedNamespaceSize > 0 ? (ExtendedNamespaceFlag | (sizeInfo.FieldInfo.ExtendedNamespaceSize & 0x7f)) : 0);
-            *(HeaderPtr + 2) = recordType;
+            *(HeaderPtr + NamespaceOffsetInHeader) = (byte)(sizeInfo.FieldInfo.ExtendedNamespaceSize > 0 ? (ExtendedNamespaceFlag | (sizeInfo.FieldInfo.ExtendedNamespaceSize & 0x7f)) : 0);
+            *(HeaderPtr + RecordTypeOffsetInHeader) = recordType;
 
             // Calculate and store the filler length, if any. Filler includes any space for optionals that won't have been set this early in the initialization process.
-            // Do this here after we have initialized the nameSpace byte.
+            // If sizeInfo indicates the record is not inline, that won't have been reflected in RecordInfo yet and thus not in optionals, but we need to reserve the
+            // ObjectLogPosition space and not let it be part of FillerLength. Do this here after we have initialized the nameSpace byte.
             var headerLength = NumIndicatorBytes + numKeyLengthBytes + numRecordLengthBytes;
-            SetFillerLength(ref recordInfo, recordLength, fillerLength: recordLength - RecordInfo.Size - headerLength - ExtendedNamespaceLength - keyLength - valueLength);
+            var objectLogPositionLength = sizeInfo.RecordIsInline ? 0 : LogRecord.ObjectLogPositionSize;
+            SetFillerLength(ref recordInfo, recordLength, fillerLength: recordLength - RecordInfo.Size - headerLength - ExtendedNamespaceLength - keyLength - valueLength - objectLogPositionLength);
 
             // Set RecordLength into the header. Header format is (low->high): <Indicator byte><Namespace byte><RecordType byte><RecordLength><KeyLength (may overflow ulong)>.
             // RecordLength will always fit in the header word. Zero out bits before we assign them in case we have non-zeroinitialized space.
@@ -190,7 +214,7 @@ namespace Tsavorite.core
             var keyLengthShiftInHeader = (sizeof(ulong) - numKeyLengthBytes) * 8;
             *keyLenPtr = (*keyLenPtr & ~(keyLengthMask << keyLengthShiftInHeader)) | (((ulong)keyLength & keyLengthMask) << keyLengthShiftInHeader);
 
-            keyAddress = (long)HeaderPtr + GetOffsetToKeyStart(headerLength);
+            keyAddress = (long)RecordInfoPtr + GetOffsetToKeyStart(headerLength);
             valueAddress = keyAddress + keyLength;
             return headerLength;
         }
@@ -208,7 +232,7 @@ namespace Tsavorite.core
             var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
             var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
             Debug.Assert(GetByteCount(sizeInfo.InlineKeySize) <= numKeyLengthBytes, "Cannot exceed previous Key size bytes in InitializeForRevivification");
-            var recordLength = GetRecordLength(numKeyLengthBytes, numRecordLengthBytes);
+            var recordLength = GetRecordLength(numRecordLengthBytes);
             Debug.Assert(sizeInfo.AllocatedInlineRecordSize <= recordLength, "Cannot exceed previous Record size in InitializeForRevivification");
 
             // We have no optionals, so just set up with key length and recordLength; no filler.
@@ -223,6 +247,17 @@ namespace Tsavorite.core
             sizeInfo.AllocatedInlineRecordSize = recordLength;
         }
 
+        /// <summary>Set the record length; this is ONLY to be used for temporary copies (e.g. serialization for Migration and Replication).</summary>
+        /// <param name="newRecordLength"></param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetRecordLength(int newRecordLength)
+        {
+            // This might leave extra bytes in the record length field if the new length uses fewer bytes than the previous length but this is only
+            // temporary so it is acceptable.
+            var recordLengthMask = (1UL << (DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes * 8)) - 1;
+            *(ulong*)HeaderPtr = (*(ulong*)HeaderPtr & ~(recordLengthMask << kRecordLengthShiftInHeader)) | (((ulong)newRecordLength & recordLengthMask) << kRecordLengthShiftInHeader);
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly (int numKeyLengthBytes, int numRecordLengthBytes) DeconstructKVByteLengths(out int headerLength)
         {
@@ -233,8 +268,9 @@ namespace Tsavorite.core
             return (numKeyLengthBytes, numRecordLengthBytes);
         }
 
+        /// <summary>Get the offset of the key, relative to the <see cref="RecordInfo"/> start.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetOffsetToKeyStart(int headerLength) => headerLength + ExtendedNamespaceLength;
+        internal readonly int GetOffsetToKeyStart(int headerLength) => RecordInfo.Size + headerLength + ExtendedNamespaceLength;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetFillerLength(RecordInfo recordInfo, int recordLength)
@@ -242,18 +278,13 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly int GetFillerLength(RecordInfo recordInfo)
-        {
-            if (!recordInfo.HasFiller)
-                return 0;
-            var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out _ /*headerLength*/);
-            return GetFillerLength(GetRecordLength(numKeyLengthBytes, numRecordLengthBytes));
-        }
+            => recordInfo.HasFiller ? GetFillerLength(GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes)) : 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private readonly int GetFillerLength(int recordLength)
         {
             var fillerLen = (*HeaderPtr >> kFillerLengthIndicatorShift) & kFillerLengthIndicatorBitMask;
-            return fillerLen < 3 ? fillerLen + 1: *(int*)(HeaderPtr - RecordInfo.Size + recordLength - LogRecord.FillerLengthSize);
+            return fillerLen < 3 ? fillerLen + 1: *(int*)((long)RecordInfoPtr + recordLength - LogRecord.FillerLengthSize);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -273,7 +304,7 @@ namespace Tsavorite.core
                 {
                     // Store the indicator bits as 3, and the filler length in the int at the end of the record. 3 is "all bits set" in the filler space, so we don't need to mask out previous bits there.
                     *HeaderPtr |= 3 << kFillerLengthIndicatorShift;
-                    *(int*)(HeaderPtr - RecordInfo.Size + recordLength - LogRecord.FillerLengthSize) = fillerLength;
+                    *(int*)((long)RecordInfoPtr + recordLength - LogRecord.FillerLengthSize) = fillerLength;
                 }
             }
             else
@@ -284,14 +315,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetRecordLength()
-        {
-            var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out _ /*headerLength*/);
-            return GetRecordLength(numKeyLengthBytes, numRecordLengthBytes);
-        }
+        internal readonly int GetRecordLength() => GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetRecordLength(int numKeyLengthBytes, int numRecordLengthBytes)
+        internal readonly int GetRecordLength(int numRecordLengthBytes)
         {
             // See notes in Initialize() about layout of RecordLength in header and for the "set" side of this--keep them in sync.
             var recordLengthMask = (1UL << (numRecordLengthBytes * 8)) - 1;
@@ -326,7 +353,7 @@ namespace Tsavorite.core
 
             // See note in Initialize about layout of lengths in header
             var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
-            recordLength = GetRecordLength(numKeyLengthBytes, numRecordLengthBytes);
+            recordLength = GetRecordLength(numRecordLengthBytes);
             fillerLen = GetFillerLength(recordInfo, recordLength);
 
             // The value length is the recordLength minus everything other than the value.
@@ -363,7 +390,7 @@ namespace Tsavorite.core
             (keyLength, var keyAddress) = GetKeyFieldInfo(out numKeyLengthBytes, out numRecordLengthBytes);
             var headerLength = NumIndicatorBytes + numKeyLengthBytes + numRecordLengthBytes;
 
-            var recordLength = GetRecordLength(numKeyLengthBytes, numRecordLengthBytes);
+            var recordLength = GetRecordLength(numRecordLengthBytes);
             var fillerLength = GetFillerLength(recordInfo, recordLength);
 
             // The value length is the recordLength minus everything other than the value.
@@ -373,16 +400,11 @@ namespace Tsavorite.core
             return (valueLength, keyAddress + keyLength);
         }
 
-        internal readonly int GetAllocatedRecordSize()
-        {
-            var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out _);
-            return GetRecordLength(numKeyLengthBytes, numRecordLengthBytes);
-        }
+        internal readonly int GetAllocatedRecordSize() => GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
 
         internal readonly int GetActualRecordSize(RecordInfo recordInfo)
         {
-            var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out _);
-            var recordLength = GetRecordLength(numKeyLengthBytes, numRecordLengthBytes);
+            var recordLength = GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
             return recordLength - GetFillerLength(recordInfo, recordLength);
         }
     }

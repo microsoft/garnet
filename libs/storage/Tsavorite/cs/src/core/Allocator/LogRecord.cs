@@ -317,9 +317,12 @@ namespace Tsavorite.core
 
         #endregion // ISourceLogRecord
 
-        internal void SetFillerLength(int recordLength, int newFillerLen)
+        internal readonly int GetFillerLength() => new RecordDataHeader((byte*)DataHeaderAddress).GetFillerLength(Info);
+
+        internal readonly void SetRecordAndFillerLength(int recordLength, int newFillerLen)
         {
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
+            dataHeader.SetRecordLength(recordLength);
             dataHeader.SetFillerLength(ref InfoRef, recordLength, newFillerLen);
         }
 
@@ -471,7 +474,7 @@ namespace Tsavorite.core
             // new value (including whether it is overflow) and the existing optionals, and success is based on whether that can fit into the allocated
             // record space. We do not change the presence of optionals h ere; we just ensure there is enough for the larger of (current optionals,
             // new optionals) and a later operation will actually read/update the optional(s), including setting/clearing the flag(s).
-            if (oldFillerLen < inlineValueGrowth + optionalGrowth)
+            if (oldFillerLen < inlineValueGrowth + optionalGrowth)  // Optional growth here includes ObjLogPositionSize changes
                 return false;
 
             // Update record part 1: Save the optionals if shifting is needed. We can't just shift now because we may be e.g. converting from inline to
@@ -547,8 +550,8 @@ namespace Tsavorite.core
             // because we are not updating those optionals here, so don't adjust fillerLen for that. However, a change in the presence or absence of the pseudo-optional
             // ObjectLogPosition must be accounted for if we have changed whether the record is inline or has objects.
             var objLogPosGrowth = sizeInfo.ObjectLogPositionSize - oldObjectLogPositionLen;
-            var newFillerLen = oldFillerLen - (inlineValueGrowth + objLogPosGrowth);
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, newFillerLen);
+            var newFillerLen = oldFillerLen - objLogPosGrowth;
+            dataHeader.SetFillerLength(ref InfoRef, recordLength, newFillerLen > 0 ? newFillerLen : 0);
             if (zeroInit)
             {
                 // Zeroinit any extra space we grew the value by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
@@ -633,9 +636,6 @@ namespace Tsavorite.core
         internal readonly long GetExpirationAddress(long optionalStartAddress) => optionalStartAddress + ETagLen;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal readonly long GetObjectLogPositionAddress(long optionalStartAddress) => optionalStartAddress + ETagLen + ExpirationLen;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly int GetFillerLength() => new RecordDataHeader((byte*)DataHeaderAddress).GetFillerLength(Info);
 
         /// <summary>
         /// Called during cleanup of a record allocation, before the key was copied.
@@ -1001,8 +1001,8 @@ namespace Tsavorite.core
 
             var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info);
 
-            // Same As GetObjectLogPositionAddress() but faster
-            var objectLogPositionPtr = (ulong*)(valueAddress + valueLength);
+            // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
+            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
             *objectLogPositionPtr = objectLogFilePosition.word;
 
             if (Info.ValueIsOverflow)
@@ -1045,8 +1045,10 @@ namespace Tsavorite.core
                 valueObjectLength = (ulong)*(int*)valueAddress;
             else if (Info.ValueIsObject)
             {
-                valueObjectLength = *(uint*)valueAddress | (((ulong)valueLength & 0xFF) << 32);
-                valueLength = ObjectIdMap.ObjectIdSize; // locally only, restore this. We will restore it for real later, when we read the objects.
+                // Get the high byte in the ObjectLogPosition (it is combined with the length that is stored in the ObjectId field data of the record).
+                // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
+                var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
+                valueObjectLength = *(uint*)valueAddress | ((uint)ObjectLogFilePositionInfo.GetObjectSizeHighByte(objectLogPositionPtr) << 32);
             }
             else // ValueIsInline is true; valueLength will be ignored
             {
@@ -1104,7 +1106,6 @@ namespace Tsavorite.core
         {
             if (physicalAddress == 0)
                 return "<empty>";
-            static string bstr(bool value) => value ? "T" : "F";
 
             string keyString, valueString;
             try { keyString = SpanByte.ToShortString(Key, 12); }
@@ -1113,14 +1114,9 @@ namespace Tsavorite.core
             catch (Exception ex) { valueString = $"<exception: {ex.Message}>"; }
 
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var (keyLengthBytes, recordLengthBytes) = dataHeader.DeconstructKVByteLengths(out _ /*headerLength*/);
-            var (keyLength, keyAddress) = dataHeader.GetKeyFieldInfo();
-            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
-            var recordLength = dataHeader.GetRecordLength();
-            return $"ri {Info} | rec (b:{recordLengthBytes}/o:-0-/l:{recordLength})"
-                            + $" | key (b:{keyLengthBytes}/o:{keyAddress - physicalAddress}/l:{keyLength}) {keyString}"
-                            + $" | val (b:-0-/o:{valueAddress - physicalAddress}/l:{valueLength}) {valueString}"
-                            + $" | HasETag {bstr(Info.HasETag)}:{ETag} | HasExpir {bstr(Info.HasExpiration)}:{Expiration}";
+            var eTagStr = Info.HasETag ? ETag.ToString() : "na";
+            var expirStr = Info.HasExpiration ? Expiration.ToString() : "na";
+            return $"ri {Info} | hdr: {dataHeader.ToString(keyString, valueString)} | ETag {eTagStr} Expir {expirStr}";
         }
     }
 }
