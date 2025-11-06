@@ -331,7 +331,7 @@ namespace Tsavorite.test
         /// <inheritdoc/>
         public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
         {
-            var ok = dstLogRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
+            var ok = dstLogRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
             if (ok)
                 output = input;
             return ok;
@@ -342,14 +342,14 @@ namespace Tsavorite.test
         {
             ClassicAssert.IsTrue(dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo), "Failed TryCopyRecordValues");
             var result = output = merger(input, srcLogRecord.ValueSpan.AsRef<long>());   // 'result' must be local for SpanByte.From; 'output' may be on the heap
-            return dstLogRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref result), in sizeInfo);
+            return dstLogRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref result), in sizeInfo);
         }
 
         /// <inheritdoc/>
         public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref long input, ref long output, ref RMWInfo rmwInfo)
         {
             var result = output = merger(input, logRecord.ValueSpan.AsRef<long>());   // 'result' must be local for SpanByte.From; 'output' may be on the heap
-            return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref result), in sizeInfo);
+            return logRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref result), in sizeInfo);
         }
 
         /// <inheritdoc/>

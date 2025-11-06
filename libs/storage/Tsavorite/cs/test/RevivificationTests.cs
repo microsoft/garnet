@@ -585,7 +585,7 @@ namespace Tsavorite.test.Revivification
                 ClassicAssert.AreEqual(expectedInputLength, input.Length);
 
                 CheckExpectedLengthsBefore(ref dstLogRecord, in sizeInfo, rmwInfo.Address);
-                return dstLogRecord.TrySetValueSpan(input.ReadOnlySpan, in sizeInfo);
+                return dstLogRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
             }
 
             public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
@@ -606,7 +606,7 @@ namespace Tsavorite.test.Revivification
                 CheckExpectedLengthsBefore(ref logRecord, in sizeInfo, rmwInfo.Address, isIPU: true);
                 VerifyKeyAndValue(logRecord.Key, logRecord.ValueSpan);
 
-                return logRecord.TrySetValueSpan(input.ReadOnlySpan, in sizeInfo);
+                return logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
             }
 
             public override bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
@@ -1790,19 +1790,19 @@ namespace Tsavorite.test.Revivification
             public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 VerifyKey(logRecord.Key);
-                return logRecord.TrySetValueSpan(input.ReadOnlySpan, in sizeInfo);
+                return logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
             }
 
             public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 VerifyKeyAndValue(srcLogRecord.Key, srcLogRecord.ValueSpan);
-                return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, in sizeInfo);
+                return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcLogRecord.ValueSpan, in sizeInfo);
             }
 
             public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 VerifyKeyAndValue(logRecord.Key, logRecord.ValueSpan);
-                return logRecord.TrySetValueSpan(input.ReadOnlySpan, in sizeInfo);
+                return logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo);
             }
 
             public override bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)

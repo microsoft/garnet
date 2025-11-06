@@ -15,8 +15,10 @@ namespace Tsavorite.core
     /// </remarks>
     internal unsafe struct OptionalFieldsShift
     {
-        long eTag;
-        long expiration;
+        long eTag = LogRecord.NoETag;
+        long expiration = LogRecord.NoExpiration;
+
+        public OptionalFieldsShift() { }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void Save(long address, RecordInfo recordInfo)
@@ -34,18 +36,25 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void Restore(long address, RecordInfo recordInfo)
+        internal void Restore(long address, in RecordSizeInfo sizeInfo, ref RecordInfo recordInfo)
         {
-            if (recordInfo.HasETag)
+            if (sizeInfo.FieldInfo.HasETag)
             {
                 *(long*)address = eTag;
                 address += LogRecord.ETagSize;
+                recordInfo.SetHasETag();
             }
-            if (recordInfo.HasExpiration)
+            else
+                recordInfo.ClearHasETag();
+
+            if (sizeInfo.FieldInfo.HasExpiration)
             {
                 *(long*)address = expiration;
                 address += LogRecord.ExpirationSize;
+                recordInfo.SetHasExpiration();
             }
+            else
+                recordInfo.ClearHasExpiration();
         }
     }
 }

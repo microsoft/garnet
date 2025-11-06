@@ -336,15 +336,15 @@ namespace Tsavorite.test.Objects
                 {
                     case TestValueStyle.Inline:
                         ValueStruct valueStruct = new() { vfield1 = srcValue + input.value, vfield2 = (srcValue + input.value) * 100 };
-                        result = logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref valueStruct), in sizeInfo);
+                        result = logRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref valueStruct), in sizeInfo);
                         break;
                     case TestValueStyle.Overflow:
                         Span<byte> overflowValue = GetOverflowValueSpanByte();
                         overflowValue.AsRef<long>() = srcValue + input.value;
-                        result = logRecord.TrySetValueSpan(overflowValue, in sizeInfo);
+                        result = logRecord.TrySetValueSpanAndPrepareOptionals(overflowValue, in sizeInfo);
                         break;
                     case TestValueStyle.Object:
-                        result = logRecord.TrySetValueObject(output.value, in sizeInfo);
+                        result = logRecord.TrySetValueObjectAndPrepareOptionals(output.value, in sizeInfo);
                         break;
                     default:
                         Assert.Fail("Unknown value style");
@@ -396,13 +396,13 @@ namespace Tsavorite.test.Objects
                 {
                     case TestValueStyle.Inline:
                         ValueStruct valueStruct = new() { vfield1 = input.value, vfield2 = input.value * 100 };
-                        return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref valueStruct), in sizeInfo);
+                        return logRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref valueStruct), in sizeInfo);
                     case TestValueStyle.Overflow:
                         Span<byte> overflowValue = GetOverflowValueSpanByte();
                         overflowValue.AsRef<long>() = input.value;
-                        return logRecord.TrySetValueSpan(overflowValue, in sizeInfo);
+                        return logRecord.TrySetValueSpanAndPrepareOptionals(overflowValue, in sizeInfo);
                     case TestValueStyle.Object:
-                        return logRecord.TrySetValueObject(output.value, in sizeInfo);
+                        return logRecord.TrySetValueObjectAndPrepareOptionals(output.value, in sizeInfo);
                     default:
                         Assert.Fail("Unknown value style");
                         return false;

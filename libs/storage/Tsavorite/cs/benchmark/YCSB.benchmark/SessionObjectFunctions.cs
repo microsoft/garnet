@@ -38,7 +38,7 @@ namespace Tsavorite.benchmark
             if (dstLogRecord.Info.ValueIsInline && srcValue.Length <= dstLogRecord.ValueSpan.Length)
                 srcValue.CopyTo(dstLogRecord.ValueSpan);
             else if (!dstLogRecord.Info.ValueIsObject)  // process overflow
-                return dstLogRecord.TrySetValueSpan(srcValue, in sizeInfo);
+                return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
             else                                        // Slice the input because it comes from a larger buffer
                 ((ObjectValue)dstLogRecord.ValueObject).value = srcValue.Slice(0, FixedLengthValue.Size).AsRef<FixedLengthValue>().value;
             return true;
@@ -48,7 +48,7 @@ namespace Tsavorite.benchmark
         public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, IHeapObject srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration. It is called only during Setup.
-            return dstLogRecord.TrySetValueObject(srcValue, in sizeInfo);
+            return dstLogRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
         }
 
         /// <inheritdoc/>

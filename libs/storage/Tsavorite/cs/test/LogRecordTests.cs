@@ -184,7 +184,7 @@ namespace Tsavorite.test.LogRecordTests
             // Shrink
             var offset = 12;
             sizeInfo.FieldInfo.ValueSize = initialValueLen - offset;
-            Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetContentLengths(in sizeInfo), Is.True);
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength + offset));
 
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
@@ -193,7 +193,7 @@ namespace Tsavorite.test.LogRecordTests
             // Grow within range
             offset = 6;
             sizeInfo.FieldInfo.ValueSize = initialValueLen - offset;
-            Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetContentLengths(in sizeInfo), Is.True);
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength + offset));
 
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
@@ -202,11 +202,11 @@ namespace Tsavorite.test.LogRecordTests
             // Grow beyond range
             offset = -10;
             sizeInfo.FieldInfo.ValueSize = initialValueLen - offset;
-            Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.False);
+            Assert.That(logRecord.TrySetContentLengths(in sizeInfo), Is.False);
 
             // Restore to original
             sizeInfo.FieldInfo.ValueSize = initialValueLen;
-            Assert.That(logRecord.TrySetValueLength(in sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetContentLengths(in sizeInfo), Is.True);
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
 
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
@@ -313,7 +313,11 @@ namespace Tsavorite.test.LogRecordTests
             expectedFillerLength = logRecord.AllocatedSize - logRecord.ActualSize;
             Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
 
-            Assert.That(logRecord.TrySetValueSpan(value, in sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetValueSpanAndPrepareOptionals(value, in sizeInfo), Is.True);
+
+            // Now that we have set the ValueSpan it includes optionals, so FillerLength should have been adjusted for them
+            expectedFillerLength -= LogRecord.ETagSize + LogRecord.ExpirationSize;
+            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
 
             Assert.That(logRecord.Info.ValueIsInline, Is.True);
             Assert.That(logRecord.Info.ValueIsOverflow, Is.False);
@@ -321,22 +325,16 @@ namespace Tsavorite.test.LogRecordTests
             Assert.That(logRecord.ValueSpan.Length, Is.EqualTo(value.Length));
             Assert.That(logRecord.ValueSpan.Slice(0, sizeof(int)).AsRef<int>(), Is.EqualTo(0x43434343));
 
-            // These should be the same still.
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
-
             eTag = initialETag;
             Assert.That(logRecord.TrySetETag(eTag), Is.True);
-
-            expectedFillerLength -= LogRecord.ETagSize;
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
+            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength)); // Should not have changed
 
             expiration = initialExpiration;
             Assert.That(logRecord.TrySetExpiration(expiration), Is.True);
+            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength)); // Should not have changed
+
             Assert.That(logRecord.ETag, Is.EqualTo(eTag));
             Assert.That(logRecord.Expiration, Is.EqualTo(expiration));
-
-            expectedFillerLength -= LogRecord.ExpirationSize;
-            Assert.That(logRecord.GetFillerLength(), Is.EqualTo(expectedFillerLength));
         }
 
         private static void ConvertToOverflow(Span<byte> overflowValue, ref RecordSizeInfo sizeInfo, ref LogRecord logRecord, long expectedFillerLength, long eTag, long expiration, int offset)
@@ -345,7 +343,7 @@ namespace Tsavorite.test.LogRecordTests
             sizeInfo.FieldInfo.ValueIsObject = false;
             UpdateRecordSizeInfo(ref sizeInfo);
 
-            Assert.That(logRecord.TrySetValueSpan(overflowValue, in sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetValueSpanAndPrepareOptionals(overflowValue, in sizeInfo), Is.True);
 
             Assert.That(logRecord.Info.ValueIsInline, Is.False);
             Assert.That(logRecord.Info.ValueIsOverflow, Is.True);
@@ -365,7 +363,7 @@ namespace Tsavorite.test.LogRecordTests
             UpdateRecordSizeInfo(ref sizeInfo);
 
             var valueObject = new TestObjectValue() { value = 0x63636363 };
-            Assert.That(logRecord.TrySetValueObject(valueObject, in sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetValueObjectAndPrepareOptionals(valueObject, in sizeInfo), Is.True);
 
             Assert.That(logRecord.Info.ValueIsInline, Is.False);
             Assert.That(logRecord.Info.ValueIsOverflow, Is.False);
@@ -384,7 +382,7 @@ namespace Tsavorite.test.LogRecordTests
             sizeInfo.FieldInfo.ValueIsObject = false;
             UpdateRecordSizeInfo(ref sizeInfo);
 
-            Assert.That(logRecord.TrySetValueSpan(value, in sizeInfo), Is.True);
+            Assert.That(logRecord.TrySetValueSpanAndPrepareOptionals(value, in sizeInfo), Is.True);
 
             Assert.That(logRecord.Info.ValueIsInline, Is.True);
             Assert.That(logRecord.Info.ValueIsOverflow, Is.False);

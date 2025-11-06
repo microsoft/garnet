@@ -57,7 +57,7 @@ namespace Tsavorite.test.recovery.sumstore
 
         // RMW functions
         public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref AdInput input, ref Output output, ref RMWInfo rmwInfo)
-            => dstLogRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref input.numClicks), in sizeInfo);
+            => dstLogRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input.numClicks), in sizeInfo);
 
         public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref AdInput input, ref Output output, ref RMWInfo rmwInfo)
         {

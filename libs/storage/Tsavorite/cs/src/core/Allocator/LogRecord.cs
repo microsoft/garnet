@@ -39,6 +39,8 @@ namespace Tsavorite.core
         public const int NoETag = 0;
         /// <summary>Number of bytes required to store an Expiration</summary>
         public const int ExpirationSize = sizeof(long);
+        /// <summary>Invalid Expiration</summary>
+        public const int NoExpiration = 0;
         /// <summary>Number of bytes required to the object log position</summary>
         public const int ObjectLogPositionSize = sizeof(long);
         /// <summary>Number of bytes required to store the FillerLen</summary>
@@ -333,7 +335,10 @@ namespace Tsavorite.core
         public readonly void InitializeRecord(ReadOnlySpan<byte> key, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             var header = new RecordDataHeader((byte*)DataHeaderAddress);
-            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var valueAddress);   // TODO: Pass in actual and RecordType
+            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var valueAddress);   // TODO: Pass in RecordType and possibly namespace span
+
+            // Note: We do not set ETag and Expiration here, as that may confuse ISessionFunctions into thinking those values have actually been set.
+            // This is deferred to TrySetContentLengths, which should be first in the chain of calls that includes TrySetETag and/or TrySetExpiration.
 
             // Serialize Key
             if (sizeInfo.KeyIsInline)
@@ -388,7 +393,7 @@ namespace Tsavorite.core
         public readonly void InitializeRecord(ReadOnlySpan<byte> key, in RecordSizeInfo sizeInfo)
         {
             var header = new RecordDataHeader((byte*)DataHeaderAddress);
-            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var valueAddress);   // TODO: Pass in actual RecordType
+            _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out _ /*valueAddress*/);   // TODO: Pass in actual RecordType
 
             InfoRef.SetKeyAndValueInline();
 
@@ -423,24 +428,35 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Tries to set the length of the value field, as well as verifying there is also space for the optionals (ETag, Expiration, ObjectLogPosition) as 
+        /// specified by <paramref name="sizeInfo"/>, shifting the optional positions if necessary, and setting or clearing the appropriate optional RecordInfo flags.
         /// Asserts that <paramref name="newValueSize"/> is the same size as the value data size in the <see cref="RecordSizeInfo"/> before setting the length.
         /// </summary>
+        /// <returns>If successful, returns true and the caller can proceed to set the value data.</returns>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueLength(int newValueSize, in RecordSizeInfo sizeInfo, bool zeroInit = false)
+        public readonly bool TrySetContentLengths(int newValueSize, in RecordSizeInfo sizeInfo, bool zeroInit = false)
         {
             Debug.Assert(newValueSize == sizeInfo.FieldInfo.ValueSize, $"Mismatched value size; expected {sizeInfo.FieldInfo.ValueSize}, actual {newValueSize}");
-            return TrySetValueLength(in sizeInfo, zeroInit);
+            return TrySetContentLengthsAndPrepareOptionals(in sizeInfo, zeroInit, out _ /*valueAddress*/);
         }
 
         /// <summary>
-        /// Tries to set the length of the value field, with consideration to whether there is also space for the optionals (ETag, Expiration, ObjectLogPosition).
+        /// Tries to set the length of the value field, as well as verifying there is also space for the optionals (ETag, Expiration, ObjectLogPosition) as 
+        /// specified by <paramref name="sizeInfo"/>, shifting the optional positions if necessary, and setting or clearing the appropriate optional RecordInfo flags.
         /// </summary>
+        /// <returns>If successful, returns true and the caller can proceed to set the value data.</returns>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueLength(in RecordSizeInfo sizeInfo, bool zeroInit = false) => TrySetValueLength(in sizeInfo, zeroInit, out _ /*valueAddress*/);
+        public readonly bool TrySetContentLengths(in RecordSizeInfo sizeInfo, bool zeroInit = false) => TrySetContentLengthsAndPrepareOptionals(in sizeInfo, zeroInit, out _ /*valueAddress*/);
 
-        private readonly bool TrySetValueLength(in RecordSizeInfo sizeInfo, bool zeroInit, out long valueAddress)
+        /// <summary>
+        /// Tries to set the length of the value field, as well as verifying there is also space for the optionals (ETag, Expiration, ObjectLogPosition) as 
+        /// specified by <paramref name="sizeInfo"/>, shifting the optional positions if necessary, and setting or clearing the appropriate optional RecordInfo flags.
+        /// </summary>
+        /// <returns>If successful, returns true and the caller can proceed to set the value data.</returns>
+        /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
+        private readonly bool TrySetContentLengthsAndPrepareOptionals(in RecordSizeInfo sizeInfo, bool zeroInit, out long valueAddress)
         {
             // Get the number of bytes in existing key and value lengths.
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
@@ -452,37 +468,35 @@ namespace Tsavorite.core
             valueAddress = physicalAddress + recordLength - oldFillerLen - oldOptionalSize - oldInlineValueSize;
             var optionalStartAddress = valueAddress + oldInlineValueSize;
 
-            // We don't need to change the size if value size hasn't changed (ignore optionalSize changes; we're not changing the data for that, only shifting them).
-            // For this quick check, just check for inline differences; we'll examine overflow size changes and conversions later.
-            var newInlineValueSize = sizeInfo.InlineValueSize;
-            if (Info.RecordIsInline && sizeInfo.KeyIsInline && sizeInfo.ValueIsInline && oldInlineValueSize == newInlineValueSize)
-                return true;
-
-            // It is OK if the record is shrinking but we cannot grow past the old recordLengthBytes. (If we are converting from inline to overflow that will
+            // It is OK if the record is shrinking but we cannot grow past the old RecordLength. (If we are converting from inline to overflow that will
             // already be accounted for because sizeInfo will be set for the ObjectId length.)
             if (sizeInfo.ActualInlineRecordSize > recordLength)
                 return false;
 
+            // We don't need to change the size if values are both inline and their size hasn't changed and the optional specs are the same,
+            // we can exit early with success.
+            var newInlineValueSize = sizeInfo.InlineValueSize;
+            var inlineValueGrowth = newInlineValueSize - oldInlineValueSize;
+            if (Info.RecordIsInline && sizeInfo.RecordIsInline && inlineValueGrowth == 0
+                    && Info.HasETag == sizeInfo.FieldInfo.HasETag && Info.HasExpiration == sizeInfo.FieldInfo.HasExpiration)
+                return true;
+
             // inlineValueGrowth and fillerLen may be negative if shrinking value or converting to Overflow/Object.
             // ETag and Expiration won't change, but optionalGrowth may be positive or negative if adding or removing ObjectLogPosition.
-            var inlineValueGrowth = newInlineValueSize - oldInlineValueSize;
-            var newOptionalSize = sizeInfo.OptionalSize;
-            var optionalGrowth = newOptionalSize - oldOptionalSize;
+            var optionalGrowth = sizeInfo.OptionalSize - oldOptionalSize;
 
             // See if we have enough room for the change in Value inline data. Note: This includes things like moving inline data that is less than
             // overflow length into overflow, which frees up inline space > ObjectIdMap.ObjectIsSize. We calculate the inline size required for the
             // new value (including whether it is overflow) and the existing optionals, and success is based on whether that can fit into the allocated
-            // record space. We do not change the presence of optionals h ere; we just ensure there is enough for the larger of (current optionals,
-            // new optionals) and a later operation will actually read/update the optional(s), including setting/clearing the flag(s).
+            // record space. We also change the presence of optionals here, shift their positions, and adjust their RecordInfo flags as needed.
+            // Subsequent operations must assign new ETag or Expiration if the flag was set in sizeInfo.
             if (oldFillerLen < inlineValueGrowth + optionalGrowth)  // Optional growth here includes ObjLogPositionSize changes
                 return false;
 
             // Update record part 1: Save the optionals if shifting is needed. We can't just shift now because we may be e.g. converting from inline to
             // overflow and they'd overwrite needed data.
-            var shiftOptionals = inlineValueGrowth != 0 && oldOptionalSize > 0;
             var optionalFields = new OptionalFieldsShift();
-            if (shiftOptionals)
-                optionalFields.Save(optionalStartAddress, Info);
+            optionalFields.Save(optionalStartAddress, Info);
 
             // Update record part 2: Do any necessary conversions between Inline, Overflow, and Object. This may allocate or free Heap Objects.
             // Evaluate in order of most common (i.e. most perf-critical) cases first.
@@ -541,18 +555,19 @@ namespace Tsavorite.core
                 }
             }
 
-            // Update record part 3: Restore optionals to their new location.
+            // Update record part 3: Restore optionals to their new location. If we have some optionals in sizeInfo that weren't in the record previously, they'll get
+            // their default values; subsequently, the caller should set them to the actual values. We have to do this even if not sizeInfo.HasOptionalFields because 
+            // this also sets or clears optional flags.
             optionalStartAddress += inlineValueGrowth;
-            if (shiftOptionals)
-                optionalFields.Restore(optionalStartAddress, Info);
+            optionalFields.Restore(optionalStartAddress, in sizeInfo, ref InfoRef);
 
             // Update record part 4: Update Filler length in the record. Optional data size for ETag/Expiration is unchanged even if newOptionalSize != oldOptionalSize,
             // because we are not updating those optionals here, so don't adjust fillerLen for that. However, a change in the presence or absence of the pseudo-optional
             // ObjectLogPosition must be accounted for if we have changed whether the record is inline or has objects.
-            var objLogPosGrowth = sizeInfo.ObjectLogPositionSize - oldObjectLogPositionLen;
-            var newFillerLen = oldFillerLen - objLogPosGrowth;
-            dataHeader.SetFillerLength(ref InfoRef, recordLength, newFillerLen > 0 ? newFillerLen : 0);
-            if (zeroInit)
+            var newFillerLen = oldFillerLen - inlineValueGrowth - optionalGrowth;
+            if (newFillerLen != oldFillerLen)
+                dataHeader.SetFillerLength(ref InfoRef, recordLength, newFillerLen > 0 ? newFillerLen : 0);
+            if (zeroInit && inlineValueGrowth > 0)
             {
                 // Zeroinit any extra space we grew the value by. For example, if we grew by one byte we might have a stale fillerLength in that byte.
                 new Span<byte>((byte*)(valueAddress + oldInlineValueSize), newInlineValueSize - oldInlineValueSize).Clear();
@@ -564,14 +579,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Set the value span, checking for conversion from inline and for space for optionals (ETag, Expiration).
+        /// Set the value span, checking for conversion to/from inline as well as verifying there is also space for the optionals (ETag, Expiration, ObjectLogPosition) as 
+        /// specified by <paramref name="sizeInfo"/>, shifting the optional positions if necessary, and setting or clearing the appropriate optional RecordInfo flags.
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueSpan(ReadOnlySpan<byte> value, in RecordSizeInfo sizeInfo, bool zeroInit = false)
+        public readonly bool TrySetValueSpanAndPrepareOptionals(ReadOnlySpan<byte> value, in RecordSizeInfo sizeInfo, bool zeroInit = false)
         {
             RecordSizeInfo.AssertValueDataLength(value.Length, in sizeInfo);
-            if (!TrySetValueLength(in sizeInfo, zeroInit, out var valueAddress))
+            if (!TrySetContentLengthsAndPrepareOptionals(in sizeInfo, zeroInit, out var valueAddress))
                 return false;
 
             var valueSpan = sizeInfo.ValueIsInline ? new((byte*)valueAddress, sizeInfo.FieldInfo.ValueSize) : objectIdMap.GetOverflowByteArray(*(int*)valueAddress).Span;
@@ -579,12 +595,28 @@ namespace Tsavorite.core
             return true;
         }
 
+        internal bool TryReinitializeValueLength(in RecordSizeInfo sizeInfo)
+        {
+            // This is called when reinitializing a record for InitialUpdater or InitialWriter; we don't want to them to see initial state with optionals set.
+            // Because it is for (re)initialization, we don't zero-initialize; the caller should assume they have to do that if they only copy partial data in.
+            ClearOptionals();
+            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
+            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info);
+            var recordLength = dataHeader.GetRecordLength();
+            var fillerLength = (int)(physicalAddress + recordLength - (valueAddress + sizeInfo.InlineValueSize));
+            if (fillerLength < 0)
+                return false;
+            dataHeader.SetFillerLength(ref InfoRef, recordLength, fillerLength);
+            return true;
+        }
+
         /// <summary>
-        /// Set the object, checking for conversion from inline and for space for optionals (ETag, Expiration).
+        /// Set the value span, checking for conversion to/from inline as well as verifying there is also space for the optionals (ETag, Expiration, ObjectLogPosition) as 
+        /// specified by <paramref name="sizeInfo"/>, shifting the optional positions if necessary, and setting or clearing the appropriate optional RecordInfo flags.
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool TrySetValueObject(IHeapObject value, in RecordSizeInfo sizeInfo) => TrySetValueLength(in sizeInfo) && TrySetValueObject(value);
+        public readonly bool TrySetValueObjectAndPrepareOptionals(IHeapObject value, in RecordSizeInfo sizeInfo) => TrySetContentLengths(in sizeInfo) && TrySetValueObject(value);
 
         /// <summary>
         /// This overload must be called only when it is known the LogRecord's Value is not inline, and there is no need to check
@@ -768,7 +800,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TrySetExpiration(long expiration)
         {
-            if (expiration == 0)
+            if (expiration == NoExpiration)
                 return RemoveExpiration();
 
             var optionalStartAddress = GetOptionalStartAddress();
@@ -857,7 +889,7 @@ namespace Tsavorite.core
             // For now, this assumes the Key has been set and is not changed
             if (srcLogRecord.Info.ValueIsInline)
             {
-                if (!TrySetValueLength(in sizeInfo))
+                if (!TrySetContentLengths(in sizeInfo))
                     return false;
                 srcLogRecord.ValueSpan.CopyTo(ValueSpan);
             }
@@ -872,7 +904,7 @@ namespace Tsavorite.core
                 {
                     // TODOnow: make sure Object isn't disposed by the source, to avoid use-after-Dispose. Maybe this (and DiskLogRecord remapping to TransientOIDMap) needs Clone()
                     Debug.Assert(srcLogRecord.ValueObject is not null, "Expected srcLogRecord.ValueObject to be set (or deserialized) already");
-                    if (!TrySetValueObject(srcLogRecord.ValueObject, in sizeInfo))
+                    if (!TrySetValueObjectAndPrepareOptionals(srcLogRecord.ValueObject, in sizeInfo))
                         return false;
                 }
             }
@@ -1110,7 +1142,7 @@ namespace Tsavorite.core
             string keyString, valueString;
             try { keyString = SpanByte.ToShortString(Key, 12); }
             catch (Exception ex) { keyString = $"<exception: {ex.Message}>"; }
-            try { valueString = Info.ValueIsObject ? $"obj:{ValueObject}" : ValueSpan.ToShortString(20); }
+            try { valueString = Info.ValueIsObject ? "obj" : ValueSpan.ToShortString(20); }
             catch (Exception ex) { valueString = $"<exception: {ex.Message}>"; }
 
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);

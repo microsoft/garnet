@@ -46,6 +46,9 @@ namespace Tsavorite.core
         /// <summary>Returns the inline length of the value (the amount it will take in the record).</summary>
         public readonly bool RecordIsInline => KeyIsInline && ValueIsInline;
 
+        /// <summary>Returns the whether there are optionals specified for the new record.</summary>
+        public readonly bool HasOptionalFields => FieldInfo.HasETag || FieldInfo.HasExpiration;
+
         /// <summary>The max inline value size if this is a record in the string log.</summary>
         public int MaxInlineValueSize { readonly get; internal set; }
 

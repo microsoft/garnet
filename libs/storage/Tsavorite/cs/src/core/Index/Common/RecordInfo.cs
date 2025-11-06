@@ -362,7 +362,7 @@ namespace Tsavorite.core
             set => word = value ? word | kUnused4BitMask : word & ~kUnused4BitMask;
         }
 
-        internal int GetOptionalSize()
+        internal readonly int GetOptionalSize()
         {
             var size = HasETag ? LogRecord.ETagSize : 0;
             if (HasExpiration)

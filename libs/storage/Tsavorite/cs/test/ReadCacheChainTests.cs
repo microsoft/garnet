@@ -977,7 +977,7 @@ namespace Tsavorite.test.ReadCacheTests
             /// <inheritdoc/>
             public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
-                if (!dstLogRecord.TrySetValueSpan(input, in sizeInfo))
+                if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(input, in sizeInfo))
                     return false;
                 input.CopyTo(ref output, memoryPool);
                 return true;
@@ -986,7 +986,7 @@ namespace Tsavorite.test.ReadCacheTests
             /// <inheritdoc/>
             public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
-                if (!logRecord.TrySetValueSpan(input, in sizeInfo))
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(input, in sizeInfo))
                     return false;
                 input.CopyTo(ref output, memoryPool);
                 return true;

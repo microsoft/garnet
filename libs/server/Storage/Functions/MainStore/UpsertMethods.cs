@@ -16,7 +16,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
-            if (!dstLogRecord.TrySetValueSpan(srcValue, in sizeInfo))
+            if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
@@ -64,7 +64,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
-            if (!logRecord.TrySetValueSpan(srcValue, in sizeInfo))
+            if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
             var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
             if (ok)

@@ -47,7 +47,7 @@ namespace Garnet.server
             {
                 value = GarnetObject.Create(type);
                 _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
-                _ = logRecord.TrySetValueObject(value, in sizeInfo);
+                _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
                 return true;
             }
 
@@ -58,7 +58,7 @@ namespace Garnet.server
             try
             {
                 var result = customObjectCommand.InitialUpdater(logRecord.Key, ref input, value, ref writer, ref rmwInfo);
-                _ = logRecord.TrySetValueObject(value, in sizeInfo);
+                _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
                 if (result)
                     sizeInfo.AssertOptionals(logRecord.Info);
                 return result;

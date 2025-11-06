@@ -45,7 +45,7 @@ namespace Tsavorite.benchmark
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo)
-            => logRecord.TrySetValueObject(srcValue, in sizeInfo);
+            => logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
 
         public readonly bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref Input input, in TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
@@ -60,7 +60,7 @@ namespace Tsavorite.benchmark
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, IHeapObject srcValue, ref Output output, ref UpsertInfo upsertInfo)
-            => logRecord.TrySetValueObject(srcValue, in sizeInfo);
+            => logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool InPlaceWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref Input input, in TSourceLogRecord inputLogRecord, ref Output output, ref UpsertInfo upsertInfo)
