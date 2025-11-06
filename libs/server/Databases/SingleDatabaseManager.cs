@@ -445,12 +445,14 @@ namespace Garnet.server
                     {
                         AppendOnlyFile.Log.LockSublogs(ulong.MaxValue);
                         var _logAccessBitmap = ulong.MaxValue;
-                        var extendedAofHeader = new AofExtendedHeader
+                        var extendedAofHeader = new AofExtendedHeader(new AofHeader
                         {
-                            header = header,
-                            logAccessCount = (byte)BitOperations.PopCount(ulong.MaxValue),
-                            sequenceNumber = storeWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber()
-                        };
+                            opType = header.opType,
+                            storeVersion = header.storeVersion,
+                            sessionID = header.sessionID,
+                            unsafeTruncateLog = header.unsafeTruncateLog,
+                            databaseId = header.databaseId
+                        }, storeWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber(), (byte)BitOperations.PopCount(ulong.MaxValue));
 
                         while (_logAccessBitmap > 0)
                         {

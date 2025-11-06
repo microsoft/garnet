@@ -230,16 +230,12 @@ namespace Resp.benchmark
                             }
                             else
                             {
-                                var extendedAofHeader = new AofExtendedHeader
+                                var extendedAofHeader = new AofExtendedHeader(new AofHeader
                                 {
-                                    header = new AofHeader
-                                    {
-                                        opType = AofEntryType.StoreUpsert,
-                                        storeVersion = 1,
-                                        sessionID = threadId,
-                                    },
-                                    sequenceNumber = aofGen.appendOnlyFile.seqNumGen.GetSequenceNumber()
-                                };
+                                    opType = AofEntryType.StoreUpsert,
+                                    storeVersion = 1,
+                                    sessionID = threadId,
+                                }, aofGen.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
                                 aofGen.appendOnlyFile.Log.GetSubLog(ref key).Enqueue(
                                     extendedAofHeader,
                                     ref key,

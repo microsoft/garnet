@@ -272,18 +272,13 @@ namespace Garnet.server
                     {
                         appendOnlyFile.Log.LockSublogs(logAccessMap);
                         var _logAccessBitmap = logAccessMap;
-                        var extendedAofHeader = new AofExtendedHeader
+                        var extendedAofHeader = new AofExtendedHeader(new AofHeader
                         {
-                            header = new AofHeader
-                            {
-                                opType = AofEntryType.StoredProcedure,
-                                procedureId = id,
-                                storeVersion = txnVersion,
-                                sessionID = basicContext.Session.ID,
-                            },
-                            logAccessCount = (byte)BitOperations.PopCount(logAccessMap),
-                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
-                        };
+                            opType = AofEntryType.StoredProcedure,
+                            procedureId = id,
+                            storeVersion = txnVersion,
+                            sessionID = basicContext.Session.ID,
+                        }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), (byte)BitOperations.PopCount(logAccessMap));
 
                         while (_logAccessBitmap > 0)
                         {
@@ -332,17 +327,12 @@ namespace Garnet.server
                     {
                         appendOnlyFile.Log.LockSublogs(logAccessMap);
                         var _logAccessBitmap = logAccessMap;
-                        var extendedAofHeader = new AofExtendedHeader
+                        var extendedAofHeader = new AofExtendedHeader(new AofHeader
                         {
-                            header = new AofHeader
-                            {
-                                opType = AofEntryType.TxnCommit,
-                                storeVersion = txnVersion,
-                                txnID = basicContext.Session.ID,
-                            },
-                            logAccessCount = (byte)BitOperations.PopCount(logAccessMap),
-                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
-                        };
+                            opType = AofEntryType.TxnCommit,
+                            storeVersion = txnVersion,
+                            txnID = basicContext.Session.ID,
+                        }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), (byte)BitOperations.PopCount(logAccessMap));
 
                         while (_logAccessBitmap > 0)
                         {
@@ -492,17 +482,12 @@ namespace Garnet.server
                     {
                         appendOnlyFile.Log.LockSublogs(logAccessMap);
                         var _logAccessBitmap = logAccessMap;
-                        var extendedAofHeader = new AofExtendedHeader
+                        var extendedAofHeader = new AofExtendedHeader(new AofHeader
                         {
-                            header = new AofHeader
-                            {
-                                opType = AofEntryType.TxnStart,
-                                storeVersion = txnVersion,
-                                txnID = basicContext.Session.ID
-                            },
-                            logAccessCount = (byte)BitOperations.PopCount(logAccessMap),
-                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
-                        };
+                            opType = AofEntryType.TxnStart,
+                            storeVersion = txnVersion,
+                            txnID = basicContext.Session.ID
+                        }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), (byte)BitOperations.PopCount(logAccessMap));
 
                         while (_logAccessBitmap > 0)
                         {

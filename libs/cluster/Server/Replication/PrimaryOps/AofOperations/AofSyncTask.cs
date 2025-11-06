@@ -111,7 +111,7 @@ namespace Garnet.cluster
                         payloadLength);
 
                     // Update timestamp first and then nextAddress
-                    // if (aofSyncDriver.clusterProvider.serverOptions.AofSublogCount > 1 && sublogIdx == 0)
+                    //if (aofSyncDriver.clusterProvider.serverOptions.AofSublogCount > 1 && sublogIdx == 0)
                     //    AofProcessor.UpdateMaxTimestamp(ref MaxSendSublogTimestamp, payloadPtr, payloadLength, aofSyncDriver.clusterProvider.storeWrapper.appendOnlyFile.HeaderSize);
 
                     // Set task address to nextAddress, as the iterator is currently at nextAddress

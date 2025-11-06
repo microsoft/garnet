@@ -751,16 +751,12 @@ namespace Garnet.server
             }
             else
             {
-                var extendedAofHeader = new AofExtendedHeader
+                var extendedAofHeader = new AofExtendedHeader(new AofHeader
                 {
-                    header = new AofHeader
-                    {
-                        opType = AofEntryType.StoreUpsert,
-                        storeVersion = version,
-                        sessionID = sessionId,
-                    },
-                    sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
-                };
+                    opType = AofEntryType.StoreUpsert,
+                    storeVersion = version,
+                    sessionID = sessionId,
+                }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
                 functionsState.appendOnlyFile.Log.GetSubLog(ref key).Enqueue(
                     extendedAofHeader,
                     ref key,
@@ -797,16 +793,12 @@ namespace Garnet.server
             }
             else
             {
-                var extendedAofHeader = new AofExtendedHeader
+                var extendedAofHeader = new AofExtendedHeader(new AofHeader
                 {
-                    header = new AofHeader
-                    {
-                        opType = AofEntryType.StoreRMW,
-                        storeVersion = version,
-                        sessionID = sessionId
-                    },
-                    sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
-                };
+                    opType = AofEntryType.StoreRMW,
+                    storeVersion = version,
+                    sessionID = sessionId
+                }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
                 functionsState.appendOnlyFile.Log.GetSubLog(ref key).Enqueue(
                     extendedAofHeader,
                     ref key,
@@ -841,16 +833,12 @@ namespace Garnet.server
             }
             else
             {
-                var extendedAofHeader = new AofExtendedHeader
+                var extendedAofHeader = new AofExtendedHeader(new AofHeader
                 {
-                    header = new AofHeader
-                    {
-                        opType = AofEntryType.StoreDelete,
-                        storeVersion = version,
-                        sessionID = sessionID
-                    },
-                    sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
-                };
+                    opType = AofEntryType.StoreDelete,
+                    storeVersion = version,
+                    sessionID = sessionID
+                }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
                 functionsState.appendOnlyFile.Log.GetSubLog(ref key).Enqueue(
                     extendedAofHeader,
                     ref key,

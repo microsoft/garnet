@@ -355,12 +355,12 @@ namespace Garnet.server
                 {
                     db.AppendOnlyFile.Log.LockSublogs(bitmapLock);
                     var _logAccessBitmap = bitmapLock;
-                    var extendedAofHeader = new AofExtendedHeader
+                    var extendedAofHeader = new AofExtendedHeader(new AofHeader
                     {
-                        header = header,
-                        logAccessCount = (byte)BitOperations.PopCount(bitmapLock),
-                        sequenceNumber = db.AppendOnlyFile.seqNumGen.GetSequenceNumber()
-                    };
+                        opType = header.opType,
+                        storeVersion = header.storeVersion,
+                        sessionID = header.sessionID
+                    }, db.AppendOnlyFile.seqNumGen.GetSequenceNumber(), (byte)BitOperations.PopCount(bitmapLock));
 
                     while (_logAccessBitmap > 0)
                     {

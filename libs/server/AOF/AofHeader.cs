@@ -27,6 +27,20 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(24)]
         public byte logAccessCount;
+
+        /// <summary>
+        /// AofExtendedHeader constructor
+        /// </summary>
+        /// <param name="aofHeader"></param>
+        /// <param name="sequenceNumber"></param>
+        /// <param name="logAccessCount"></param>
+        public AofExtendedHeader(AofHeader aofHeader, long sequenceNumber, byte logAccessCount)
+        {
+            header = aofHeader;
+            header.padding = AofHeader.ShardedLogFlag;
+            this.sequenceNumber = sequenceNumber;
+            this.logAccessCount = logAccessCount;
+        }
     };
 
     [StructLayout(LayoutKind.Explicit, Size = 16)]
@@ -37,6 +51,11 @@ namespace Garnet.server
         // * Any of the AofEntryType or AofStoreType enums' existing value mappings
         // * SpanByte format or header
         const byte AofHeaderVersion = 2;
+
+        /// <summary>
+        /// 0-bit in padding is used to indicate that the log contains AofExtendedHeader
+        /// </summary>
+        internal const byte ShardedLogFlag = 1;
 
         /// <summary>
         /// Version of AOF
