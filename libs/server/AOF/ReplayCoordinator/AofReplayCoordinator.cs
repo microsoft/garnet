@@ -85,6 +85,7 @@ namespace Garnet.server
             internal unsafe bool AddOrReplayTransactionOperation(int sublogIdx, byte* ptr, int length, bool asReplica)
             {
                 var header = *(AofHeader*)ptr;
+                var replayContext = GetReplayContext(sublogIdx);
                 // First try to process this as an existing transaction
                 if (aofReplayContext[sublogIdx].activeTxns.TryGetValue(header.sessionID, out var group))
                 {
@@ -96,7 +97,7 @@ namespace Garnet.server
                             ClearSessionTxn();
                             break;
                         case AofEntryType.TxnCommit:
-                            if (aofProcessor.inFuzzyRegion)
+                            if (replayContext.inFuzzyRegion)
                             {
                                 // If in fuzzy region we want to record the commit marker and
                                 // buffer the transaction group for later replay

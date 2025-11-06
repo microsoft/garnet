@@ -61,6 +61,22 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Implements read protocol for consistent reads when sharded-log AOF is used
+        /// </summary>
+        /// <param name="replicaReadSessionContext"></param>
+        /// <param name="parseState"></param>
+        /// <param name="csvi"></param>
+        /// <param name="readSessionWaiter"></param>
+        public void EnsureConsistentRead(ref ReplicaReadSessionContext replicaReadSessionContext, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ReadSessionWaiter readSessionWaiter)
+        {
+            if (!serverOptions.EnableAOF || serverOptions.AofSublogCount == 1 || true)
+                return;
+
+            // Validate keys and ensure consistency with sharded-log AOF
+            replayTimestampManager.EnsureConsistentRead(ref replicaReadSessionContext, ref parseState, ref csvi, readSessionWaiter);
+        }
+
+        /// <summary>
         /// Reset sequence number generator
         /// </summary>
         public void ResetSeqNumberGen()

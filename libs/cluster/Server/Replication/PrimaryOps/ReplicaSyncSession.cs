@@ -251,8 +251,6 @@ namespace Garnet.cluster
                     checkpointAofBeginAddress.ToByteArray()).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                 var syncFromAofAddress = AofAddress.FromString(resp);
 
-                logger?.LogError("ReplicaSyncSession: {beginAddress}|{checkpointAofBeginAddress}|{syncFromAddress}", beginAddress, checkpointAofBeginAddress, syncFromAofAddress);
-
                 // Assert that AOF address the replica will be requesting can be served, except in case of:
                 // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
                 var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||

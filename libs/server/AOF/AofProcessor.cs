@@ -201,22 +201,19 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Fuzzy region of AOF is the region between the checkpoint start and end commit markers.
-        /// This regions can contain entries in both (v) and (v+1) versions. The processing logic is:
-        /// 1) Process (v) entries as is.
-        /// 2) Store aware the (v+1) entries in a buffer.
-        /// 3) At the end of the fuzzy region, take a checkpoint
-        /// 4) Finally, replay the buffered (v+1) entries.
+        /// Process AOF record internal
+        /// NOTE: This method is shared between recover replay and replication replay
         /// </summary>
-        bool inFuzzyRegion = false;
-
-        /// <summary>
-        /// Process AOF record
-        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="ptr"></param>
+        /// <param name="length"></param>
+        /// <param name="asReplica"></param>
+        /// <param name="isCheckpointStart"></param>
         public unsafe void ProcessAofRecordInternal(int sublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
         {
             var header = *(AofHeader*)ptr;
             var extendedHeader = default(AofExtendedHeader);
+            var replayContext = aofReplayCoordinator.GetReplayContext(sublogIdx);
             isCheckpointStart = false;
 
             // Handle transactions
@@ -230,12 +227,12 @@ namespace Garnet.server
                     isCheckpointStart = true;
                     if (header.aofHeaderVersion > 1)
                     {
-                        if (inFuzzyRegion)
+                        if (replayContext.inFuzzyRegion)
                         {
                             logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", aofReplayCoordinator.FuzzyRegionBufferCount(sublogIdx));
                             aofReplayCoordinator.ClearFuzzyRegionBuffer(sublogIdx);
                         }
-                        inFuzzyRegion = true;
+                        replayContext.inFuzzyRegion = true;
                     }
                     else
                     {
@@ -252,13 +249,13 @@ namespace Garnet.server
                 case AofEntryType.CheckpointEndCommit:
                     if (header.aofHeaderVersion > 1)
                     {
-                        if (!inFuzzyRegion)
+                        if (!replayContext.inFuzzyRegion)
                         {
                             logger?.LogInformation("Encountered CheckpointEndCommit without a prior CheckpointStartCommit - ignoring");
                         }
                         else
                         {
-                            inFuzzyRegion = false;
+                            replayContext.inFuzzyRegion = false;
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                                 aofReplayCoordinator.ProcessCheckpointMarker(ptr);
@@ -309,15 +306,15 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             var header = *(AofHeader*)entryPtr;
+            var replayContext = aofReplayCoordinator.GetReplayContext(sublogIdx);
 
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
-            if (SkipRecord(sublogIdx, entryPtr, length, asReplica))
+            if (SkipRecord(sublogIdx, replayContext.inFuzzyRegion, entryPtr, length, asReplica))
                 return false;
 
             ref var key = ref Unsafe.NullRef<SpanByte>();
             var updateKeySequenceNumber = true;
             var shardedLog = storeWrapper.serverOptions.AofSublogCount > 1;
-            var replayContext = aofReplayCoordinator.GetReplayContext(sublogIdx);
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
@@ -509,12 +506,13 @@ namespace Garnet.server
         /// On recovery apply records with header.version greater than CurrentVersion.
         /// </summary>
         /// <param name="sublogIdx"></param>
+        /// <param name="inFuzzyRegion"></param>
         /// <param name="entryPtr"></param>
         /// <param name="length"></param>
         /// <param name="asReplica"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        bool SkipRecord(int sublogIdx, byte* entryPtr, int length, bool asReplica)
+        bool SkipRecord(int sublogIdx, bool inFuzzyRegion, byte* entryPtr, int length, bool asReplica)
         {
             var header = *(AofHeader*)entryPtr;
             return (asReplica && inFuzzyRegion) ? // Buffer logic only for AOF version > 1
