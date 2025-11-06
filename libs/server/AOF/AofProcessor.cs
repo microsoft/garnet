@@ -6,11 +6,9 @@ using System.Buffers;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
-using Garnet.networking;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -29,11 +27,7 @@ namespace Garnet.server
     {
         readonly StoreWrapper storeWrapper;
         readonly RespServerSession[] respServerSessions;
-
-        private readonly RawStringInput storeInput;
-        private readonly ObjectInput objectStoreInput;
-        private readonly CustomProcedureInput customProcInput;
-        private readonly SessionParseState parseState;
+        readonly AofReplayCoordinator aofReplayCoordinator;
 
         int activeDbId;
 
@@ -56,13 +50,7 @@ namespace Garnet.server
         /// </summary>
         BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
 
-        readonly byte[] buffer;
-        readonly GCHandle handle;
-        readonly byte* bufferPtr;
-
         readonly ILogger logger;
-
-        MemoryResult<byte> output;
 
         /// <summary>
         /// Create new AOF processor
@@ -91,16 +79,7 @@ namespace Garnet.server
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
 
-            parseState.Initialize();
-            storeInput.parseState = parseState;
-            objectStoreInput.parseState = parseState;
-            customProcInput.parseState = parseState;
-
-            buffer = new byte[BufferSizeUtils.ServerBufferSize(new MaxSizeSettings())];
-            handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-            bufferPtr = (byte*)handle.AddrOfPinnedObject();
-
-            aofTxnReplayManager = new AofTransactionReplayManager(this, logger);
+            aofReplayCoordinator = new AofReplayCoordinator(this, logger);
             this.logger = logger;
         }
 
@@ -118,8 +97,6 @@ namespace Garnet.server
                     dbSession.StorageSession.objectStoreBasicContext.Session?.Dispose();
                 }
             }
-
-            handle.Free();
         }
 
         /// <summary>
@@ -135,6 +112,7 @@ namespace Garnet.server
             var total_number_of_replayed_records = 0L;
             try
             {
+                storeWrapper.appendOnlyFile.CreateOrUpdateTimestampManager();
                 logger?.LogInformation("Begin AOF recovery for DB ID: {id}", db.Id);
                 return RecoverReplay(db, untilAddress);
             }
@@ -204,7 +182,7 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    output.MemoryOwner?.Dispose();
+                    aofReplayCoordinator.Dispose();
                     foreach (var respServerSession in respServerSessions)
                         respServerSession.Dispose();
                 }
@@ -238,10 +216,11 @@ namespace Garnet.server
         public unsafe void ProcessAofRecordInternal(int sublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
         {
             var header = *(AofHeader*)ptr;
+            var extendedHeader = default(AofExtendedHeader);
             isCheckpointStart = false;
 
             // Handle transactions
-            if (aofTxnReplayManager.AddOrReplayTransactionOperation(sublogIdx, ptr, length, asReplica))
+            if (aofReplayCoordinator.AddOrReplayTransactionOperation(sublogIdx, ptr, length, asReplica))
                 return;
 
             switch (header.opType)
@@ -253,8 +232,8 @@ namespace Garnet.server
                     {
                         if (inFuzzyRegion)
                         {
-                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", aofTxnReplayManager.FuzzyRegionBufferCount(sublogIdx));
-                            aofTxnReplayManager.ClearFuzzyRegionBuffer(sublogIdx);
+                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", aofReplayCoordinator.FuzzyRegionBufferCount(sublogIdx));
+                            aofReplayCoordinator.ClearFuzzyRegionBuffer(sublogIdx);
                         }
                         inFuzzyRegion = true;
                     }
@@ -264,7 +243,7 @@ namespace Garnet.server
                         // Note: we will not truncate the AOF as ReplicationCheckpointStartOffset is not set
                         // Once a new checkpoint is transferred, the replica will truncate the AOF.
                         if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
-                            _ = storeWrapper.TakeCheckpoint(false, logger);
+                            aofReplayCoordinator.ProcessCheckpointMarker(ptr);
                     }
                     break;
                 case AofEntryType.ObjectStoreCheckpointStartCommit:
@@ -282,11 +261,11 @@ namespace Garnet.server
                             inFuzzyRegion = false;
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
-                                _ = storeWrapper.TakeCheckpoint(false, logger);
+                                aofReplayCoordinator.ProcessCheckpointMarker(ptr);
 
                             // Process buffered records
-                            aofTxnReplayManager.ProcessFuzzyRegionOperations(sublogIdx, storeWrapper.store.CurrentVersion, asReplica);
-                            aofTxnReplayManager.ClearFuzzyRegionBuffer(sublogIdx);
+                            aofReplayCoordinator.ProcessFuzzyRegionOperations(sublogIdx, storeWrapper.store.CurrentVersion, asReplica);
+                            aofReplayCoordinator.ClearFuzzyRegionBuffer(sublogIdx);
                         }
                     }
                     break;
@@ -316,7 +295,7 @@ namespace Garnet.server
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     break;
                 case AofEntryType.RefreshSublogTail:
-                    var extendedHeader = *(AofExtendedHeader*)ptr;
+                    extendedHeader = *(AofExtendedHeader*)ptr;
                     storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
                     break;
                 default:
@@ -332,38 +311,40 @@ namespace Garnet.server
             var header = *(AofHeader*)entryPtr;
 
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
-            if (SkipRecord(sublogIdx, entryPtr, length, asReplica)) return false;
+            if (SkipRecord(sublogIdx, entryPtr, length, asReplica))
+                return false;
 
             ref var key = ref Unsafe.NullRef<SpanByte>();
             var updateKeySequenceNumber = true;
             var shardedLog = storeWrapper.serverOptions.AofSublogCount > 1;
+            var replayContext = aofReplayCoordinator.GetReplayContext(sublogIdx);
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    key = ref StoreUpsert(storeContext, storeInput, entryPtr, shardedLog);
+                    key = ref StoreUpsert(storeContext, replayContext.storeInput, entryPtr, shardedLog);
                     break;
                 case AofEntryType.StoreRMW:
-                    key = ref StoreRMW(storeContext, storeInput, entryPtr, shardedLog);
+                    key = ref StoreRMW(storeContext, replayContext.storeInput, entryPtr, shardedLog);
                     break;
                 case AofEntryType.StoreDelete:
                     key = ref StoreDelete(storeContext, entryPtr, shardedLog);
                     break;
                 case AofEntryType.ObjectStoreRMW:
-                    key = ref ObjectStoreRMW(objectStoreBasicContext, objectStoreInput, entryPtr, bufferPtr, buffer.Length, shardedLog);
+                    key = ref ObjectStoreRMW(objectStoreContext, replayContext.objectStoreInput, entryPtr, (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]), replayContext.objectOutputBuffer.Length, shardedLog);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
-                    key = ref ObjectStoreUpsert(objectStoreBasicContext, storeWrapper.GarnetObjectSerializer, entryPtr, bufferPtr, buffer.Length, shardedLog);
+                    key = ref ObjectStoreUpsert(objectStoreContext, storeWrapper.GarnetObjectSerializer, entryPtr, (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]), replayContext.objectOutputBuffer.Length, shardedLog);
                     break;
                 case AofEntryType.ObjectStoreDelete:
-                    key = ref ObjectStoreDelete(objectStoreBasicContext, entryPtr, shardedLog);
+                    key = ref ObjectStoreDelete(objectStoreContext, entryPtr, shardedLog);
                     break;
                 case AofEntryType.StoredProcedure:
                     updateKeySequenceNumber = false;
-                    ReplayStoredProc(sublogIdx, header.procedureId, customProcInput, entryPtr);
+                    aofReplayCoordinator.ReplayStoredProc(sublogIdx, header.procedureId, entryPtr);
                     break;
                 case AofEntryType.TxnCommit:
                     updateKeySequenceNumber = false;
-                    aofTxnReplayManager.ProcessFuzzyRegionTransactionGroup(sublogIdx, entryPtr, asReplica);
+                    aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(sublogIdx, entryPtr, asReplica);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
@@ -419,9 +400,7 @@ namespace Garnet.server
             curr += value.TotalSize;
 
             // Reconstructing RawStringInput
-
-            // input
-            storeInput.DeserializeFrom(curr);
+            _ = storeInput.DeserializeFrom(curr);
 
             SpanByteAndMemory output = default;
             basicContext.Upsert(ref key, ref storeInput, ref value, ref output);
@@ -442,9 +421,7 @@ namespace Garnet.server
             curr += key.TotalSize;
 
             // Reconstructing RawStringInput
-
-            // input
-            storeInput.DeserializeFrom(curr);
+            _ = storeInput.DeserializeFrom(curr);
 
             var pbOutput = stackalloc byte[32];
             var output = new SpanByteAndMemory(pbOutput, 32);
@@ -504,9 +481,7 @@ namespace Garnet.server
             var keyB = key.ToByteArray();
 
             // Reconstructing ObjectInput
-
-            // input
-            objectStoreInput.DeserializeFrom(curr);
+            _ = objectStoreInput.DeserializeFrom(curr);
 
             // Call RMW with the reconstructed key & ObjectInput
             var output = new GarnetObjectStoreOutput(new(outputPtr, outputLength));
@@ -550,7 +525,7 @@ namespace Garnet.server
             {
                 if (IsNewVersionRecord(header))
                 {
-                    aofTxnReplayManager.AddFuzzyRegionOperation(sublogIdx, new ReadOnlySpan<byte>(entryPtr, length));
+                    aofReplayCoordinator.AddFuzzyRegionOperation(sublogIdx, new ReadOnlySpan<byte>(entryPtr, length));
                     return true;
                 }
                 return false;

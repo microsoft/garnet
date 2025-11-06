@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -19,144 +19,55 @@ namespace Garnet.server
 
     public sealed unsafe partial class AofProcessor
     {
-        readonly ConcurrentDictionary<int, EventBarrier> eventBarriers = [];
-
-        /// <summary>
-        /// Replay StoredProc wrapper for single and sharded logs
-        /// </summary>
-        /// <param name="sublogIdx"></param>
-        /// <param name="id"></param>
-        /// <param name="customProcInput"></param>
-        /// <param name="ptr"></param>
-        void ReplayStoredProc(int sublogIdx, byte id, CustomProcedureInput customProcInput, byte* ptr)
+        public class AofReplayCoordinator(AofProcessor aofProcessor, ILogger logger = null) : IDisposable
         {
-            if (storeWrapper.serverOptions.AofSublogCount == 1)
-            {
-                RunStoredProc(0, id, customProcInput, ptr, shardedLog: false, null);
-            }
-            else
-            {
-                var extendedHeader = *(AofExtendedHeader*)ptr;
-                var participantCount = extendedHeader.logAccessCount;
-                var eventBarrier = eventBarriers.GetOrAdd(extendedHeader.header.sessionID, _ => new EventBarrier(participantCount));
+            const int CHECKPOINT_BARRIER_ID = -1;
 
-                // Wait for leader to replay CustomProc
-                if (!eventBarrier.SignalAndWait(storeWrapper.serverOptions.ReplicaSyncTimeout))
-                    return;
-
-                // Only leader will execute this
-                try
-                {
-                    // Initialize custom proc bitmap to keep track of hashes for keys for which their timestamp needs to be updated
-                    CustomProcedureKeyHashCollection customProcKeyHashTracker = new(storeWrapper.appendOnlyFile);
-
-                    // Replay StoredProc
-                    RunStoredProc(sublogIdx, id, customProcInput, ptr, shardedLog: true, customProcKeyHashTracker);
-
-                    // Update timestamps for associated keys
-                    customProcKeyHashTracker?.UpdateTimestamps(extendedHeader.sequenceNumber);
-                }
-                finally
-                {
-                    _ = eventBarriers.Remove(extendedHeader.header.sessionID, out _);
-                    eventBarrier.Set();
-                }
-            }
-
-            void RunStoredProc(int sublogIdx, byte id, CustomProcedureInput customProcInput, byte* ptr, bool shardedLog, CustomProcedureKeyHashCollection customProcKeyHashTracker)
-            {
-                var curr = ptr + HeaderSize(shardedLog);
-
-                // Reconstructing CustomProcedureInput
-                _ = customProcInput.DeserializeFrom(curr);
-
-                // Run the stored procedure with the reconstructed input
-                _ = respServerSessions[sublogIdx].RunCustomTxnProcAtReplica(id, ref customProcInput, ref output, isRecovering: true, customProcKeyHashTracker);
-            }
-        }
-
-        /// <summary>
-        /// Transaction group contains logAccessMap and list of operations associated with this Txn
-        /// </summary>
-        /// <param name="sublogIdx"></param>
-        /// <param name="logAccessMap"></param>
-        internal class TransactionGroup(int sublogIdx, byte logAccessMap)
-        {
-            public readonly int sublogIdx = sublogIdx;
-            public readonly byte logAccessCount = logAccessMap;
-
-            public List<byte[]> operations = [];
-
-            public void Clear() => operations.Clear();
-        }
-
-        /// <summary>
-        /// Sublog replay buffer (one for each sublog)
-        /// </summary>
-        internal struct SublogReplayBuffer()
-        {
-            public readonly List<byte[]> fuzzyRegionOps = [];
-            public readonly Queue<TransactionGroup> txnGroupBuffer = [];
-            public readonly Dictionary<int, TransactionGroup> activeTxns = [];
-
-            /// <summary>
-            /// Add transaction group to this replay buffer
-            /// </summary>
-            /// <param name="sessionID"></param>
-            /// <param name="sublogIdx"></param>
-            /// <param name="logAccessBitmap"></param>
-            public void AddTransactionGroup(int sessionID, int sublogIdx, byte logAccessBitmap)
-                => activeTxns[sessionID] = new(sublogIdx, logAccessBitmap);
-
-            /// <summary>
-            /// Add transaction group to fuzzy region buffer
-            /// </summary>
-            /// <param name="group"></param>
-            /// <param name="commitMarker"></param>
-            public void AddToFuzzyRegionBuffer(TransactionGroup group, ReadOnlySpan<byte> commitMarker)
-            {
-                // Add commit marker operation
-                fuzzyRegionOps.Add(commitMarker.ToArray());
-                // Enqueue transaction group
-                txnGroupBuffer.Enqueue(group);
-            }
-        }
-
-        readonly AofTransactionReplayManager aofTxnReplayManager;
-
-        public class AofTransactionReplayManager(AofProcessor aofProcessor, ILogger logger = null)
-        {
+            readonly ConcurrentDictionary<int, EventBarrier> eventBarriers = [];
             readonly AofProcessor aofProcessor = aofProcessor;
-            readonly SublogReplayBuffer[] sublogReplayBuffers = InitializeSublogBuffers(aofProcessor.storeWrapper.serverOptions.AofSublogCount);
+            readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(aofProcessor.storeWrapper.serverOptions.AofSublogCount);
+            public AofReplayContext GetReplayContext(int sublogIdx) => aofReplayContext[sublogIdx];
             readonly ILogger logger = logger;
 
-            internal static SublogReplayBuffer[] InitializeSublogBuffers(int AofSublogCount)
+            internal static AofReplayContext[] InitializeReplayContext(int AofSublogCount)
             {
-                var sublogReplayBuffers = new SublogReplayBuffer[AofSublogCount];
+                var sublogReplayBuffers = new AofReplayContext[AofSublogCount];
                 for (var i = 0; i < sublogReplayBuffers.Length; i++)
                     sublogReplayBuffers[i] = new();
                 return sublogReplayBuffers;
             }
+
+            public void Dispose()
+            {
+                foreach (var replayContext in aofReplayContext)
+                    replayContext.output.MemoryOwner?.Dispose();
+            }
+
+            EventBarrier GetBarrier(int id, int participantCount)
+                => eventBarriers.GetOrAdd(id, _ => new EventBarrier(participantCount));
+
+            bool RemoveBarrier(int id, out EventBarrier eventBarrier)
+                => eventBarriers.TryRemove(id, out eventBarrier);
 
             /// <summary>
             /// Get fuzzy region buffer count
             /// </summary>
             /// <param name="sublogIdx"></param>
             /// <returns></returns>
-            internal int FuzzyRegionBufferCount(int sublogIdx) => sublogReplayBuffers[sublogIdx].fuzzyRegionOps.Count;
+            internal int FuzzyRegionBufferCount(int sublogIdx) => aofReplayContext[sublogIdx].fuzzyRegionOps.Count;
 
             /// <summary>
             /// Clear fuzzy region buffer
             /// </summary>
             /// <param name="sublogIdx"></param>
-            internal void ClearFuzzyRegionBuffer(int sublogIdx) => sublogReplayBuffers[sublogIdx].fuzzyRegionOps.Clear();
+            internal void ClearFuzzyRegionBuffer(int sublogIdx) => aofReplayContext[sublogIdx].fuzzyRegionOps.Clear();
 
             /// <summary>
             /// Add single operation to fuzzy region buffer
             /// </summary>
             /// <param name="sublogIdx"></param>
             /// <param name="entry"></param>
-            internal unsafe void AddFuzzyRegionOperation(int sublogIdx, ReadOnlySpan<byte> entry) => sublogReplayBuffers[sublogIdx].fuzzyRegionOps.Add(entry.ToArray());
+            internal unsafe void AddFuzzyRegionOperation(int sublogIdx, ReadOnlySpan<byte> entry) => aofReplayContext[sublogIdx].fuzzyRegionOps.Add(entry.ToArray());
 
             /// <summary>
             /// This method will perform one of the followin
@@ -175,7 +86,7 @@ namespace Garnet.server
             {
                 var header = *(AofHeader*)ptr;
                 // First try to process this as an existing transaction
-                if (sublogReplayBuffers[sublogIdx].activeTxns.TryGetValue(header.sessionID, out var group))
+                if (aofReplayContext[sublogIdx].activeTxns.TryGetValue(header.sessionID, out var group))
                 {
                     switch (header.opType)
                     {
@@ -190,7 +101,7 @@ namespace Garnet.server
                                 // If in fuzzy region we want to record the commit marker and
                                 // buffer the transaction group for later replay
                                 var commitMarker = new ReadOnlySpan<byte>(ptr, length);
-                                sublogReplayBuffers[sublogIdx].AddToFuzzyRegionBuffer(group, commitMarker);
+                                aofReplayContext[sublogIdx].AddToFuzzyRegionBuffer(group, commitMarker);
                             }
                             else
                             {
@@ -210,8 +121,8 @@ namespace Garnet.server
 
                     void ClearSessionTxn()
                     {
-                        sublogReplayBuffers[sublogIdx].activeTxns[header.sessionID].Clear();
-                        sublogReplayBuffers[sublogIdx].activeTxns.Remove(header.sessionID);
+                        aofReplayContext[sublogIdx].activeTxns[header.sessionID].Clear();
+                        aofReplayContext[sublogIdx].activeTxns.Remove(header.sessionID);
                     }
 
                     return true;
@@ -222,7 +133,7 @@ namespace Garnet.server
                 {
                     case AofEntryType.TxnStart:
                         var logAccessCount = aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1 ? 0 : (*(AofExtendedHeader*)ptr).logAccessCount;
-                        sublogReplayBuffers[sublogIdx].AddTransactionGroup(header.sessionID, sublogIdx, (byte)logAccessCount);
+                        aofReplayContext[sublogIdx].AddTransactionGroup(header.sessionID, sublogIdx, (byte)logAccessCount);
                         break;
                     case AofEntryType.TxnAbort:
                     case AofEntryType.TxnCommit:
@@ -247,7 +158,7 @@ namespace Garnet.server
             /// <param name="asReplica"></param>
             internal void ProcessFuzzyRegionOperations(int sublogIdx, long storeVersion, bool asReplica)
             {
-                var fuzzyRegionOps = sublogReplayBuffers[sublogIdx].fuzzyRegionOps;
+                var fuzzyRegionOps = aofReplayContext[sublogIdx].fuzzyRegionOps;
                 if (fuzzyRegionOps.Count > 0)
                     logger?.LogInformation("Replaying sublogIdx: {sublogIdx} - {fuzzyRegionBufferCount} records from fuzzy region for checkpoint {newVersion}", sublogIdx, fuzzyRegionOps.Count, storeVersion);
                 foreach (var entry in fuzzyRegionOps)
@@ -266,7 +177,7 @@ namespace Garnet.server
             internal void ProcessFuzzyRegionTransactionGroup(int sublogIdx, byte* ptr, bool asReplica)
             {
                 // Process transaction groups in FIFO order
-                var txnGroup = sublogReplayBuffers[sublogIdx].txnGroupBuffer.Dequeue();
+                var txnGroup = aofReplayContext[sublogIdx].txnGroupBuffer.Dequeue();
                 ProcessTransactionGroup(sublogIdx, ptr, asReplica, txnGroup);
             }
 
@@ -341,17 +252,17 @@ namespace Garnet.server
                 }
 
                 // Use eventBarrier to synchronize between replay subtasks
-                static unsafe void Synchronize(AofProcessor aofProcessor, TransactionGroup txnGroup, byte* ptr)
+                unsafe void Synchronize(AofProcessor aofProcessor, TransactionGroup txnGroup, byte* ptr)
                 {
                     var extendedHeader = *(AofExtendedHeader*)ptr;
                     // Add coordinator group if does not exist and add to that the txnGroup that needs to be replayed
                     var participantCount = txnGroup.logAccessCount;
-                    var eventBarrier = aofProcessor.eventBarriers.GetOrAdd(extendedHeader.header.sessionID, _ => new EventBarrier(participantCount));
+                    var eventBarrier = eventBarriers.GetOrAdd(extendedHeader.header.sessionID, _ => new EventBarrier(participantCount));
                     if (eventBarrier.SignalAndWait(aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout))
                     {
                         try
                         {
-                            if (!aofProcessor.eventBarriers.Remove(extendedHeader.header.sessionID, out _))
+                            if (!eventBarriers.Remove(extendedHeader.header.sessionID, out _))
                                 throw new GarnetException("Failed to remove EventBarrier");
                         }
                         finally
@@ -371,6 +282,80 @@ namespace Garnet.server
                         fixed (byte* entryPtr = entry)
                             _ = aofProcessor.ReplayOp(txnGroup.sublogIdx, context, objectContext, entryPtr, entry.Length, asReplica: asReplica);
                     }
+                }
+            }
+
+            /// <summary>
+            /// Replay StoredProc wrapper for single and sharded logs
+            /// </summary>
+            /// <param name="sublogIdx"></param>
+            /// <param name="id"></param>
+            /// <param name="ptr"></param>
+            internal void ReplayStoredProc(int sublogIdx, byte id, byte* ptr)
+            {
+                if (aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1)
+                {
+                    RunStoredProc(0, id, ptr, shardedLog: false, null);
+                }
+                else
+                {
+                    var extendedHeader = *(AofExtendedHeader*)ptr;
+                    var participantCount = extendedHeader.logAccessCount;
+                    var eventBarrier = eventBarriers.GetOrAdd(extendedHeader.header.sessionID, _ => new EventBarrier(participantCount));
+
+                    // Wait for leader to replay CustomProc
+                    if (!eventBarrier.SignalAndWait(aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout))
+                        return;
+
+                    // Only leader will execute this
+                    try
+                    {
+                        // Initialize custom proc bitmap to keep track of hashes for keys for which their timestamp needs to be updated
+                        CustomProcedureKeyHashCollection customProcKeyHashTracker = new(aofProcessor.storeWrapper.appendOnlyFile);
+
+                        // Replay StoredProc
+                        RunStoredProc(sublogIdx, id, ptr, shardedLog: true, customProcKeyHashTracker);
+
+                        // Update timestamps for associated keys
+                        customProcKeyHashTracker?.UpdateTimestamps(extendedHeader.sequenceNumber);
+                    }
+                    finally
+                    {
+                        _ = eventBarriers.Remove(extendedHeader.header.sessionID, out _);
+                        eventBarrier.Set();
+                    }
+                }
+
+                void RunStoredProc(int sublogIdx, byte id, byte* ptr, bool shardedLog, CustomProcedureKeyHashCollection customProcKeyHashTracker)
+                {
+                    var curr = ptr + HeaderSize(shardedLog);
+
+                    // Reconstructing CustomProcedureInput
+                    _ = aofReplayContext[sublogIdx].customProcInput.DeserializeFrom(curr);
+
+                    // Run the stored procedure with the reconstructed input                    
+                    var output = aofReplayContext[sublogIdx].output;
+                    _ = aofProcessor.respServerSessions[sublogIdx].RunCustomTxnProcAtReplica(id, ref aofReplayContext[sublogIdx].customProcInput, ref output, isRecovering: true, customProcKeyHashTracker);
+                }
+            }
+
+            internal void ProcessCheckpointMarker(byte* ptr)
+            {
+                // If single log don't have to synchronize, take checkpoint immediately
+                if (aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1)
+                {
+                    _ = aofProcessor.storeWrapper.TakeCheckpoint(false, logger);
+                    return;
+                }
+
+                // Sychronize checkpoint execution
+                var extendedHeader = *(AofExtendedHeader*)ptr;
+                var eventBarrier = GetBarrier(CHECKPOINT_BARRIER_ID, extendedHeader.logAccessCount);
+                if (eventBarrier.SignalAndWait(aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout))
+                {
+                    _ = aofProcessor.storeWrapper.TakeCheckpoint(false, logger);
+                    RemoveBarrier(CHECKPOINT_BARRIER_ID, out _);
+                    eventBarrier.Set();
                 }
             }
         }

@@ -154,6 +154,12 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Get a bitmap having all bits set according to the total number of sublogs being used
+        /// </summary>
+        /// <returns></returns>
+        public ulong AllLogBitsSet() => (ulong)((1L << Size) - 1);
+
+        /// <summary>
         /// Lock sublogs for enqueue operation (bits indicate sublogIdx)
         /// NOTE: Slow; should be used sparingly 
         /// </summary>

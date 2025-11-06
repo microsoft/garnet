@@ -375,6 +375,8 @@ namespace Garnet.server
             foreach (var dbSession in databaseSessions.Map)
                 dbSession?.Dispose();
 
+            clusterSession?.Dispose();
+
             if (storeWrapper.serverOptions.MetricsSamplingFrequency > 0 || storeWrapper.serverOptions.LatencyMonitor)
                 storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics);
 

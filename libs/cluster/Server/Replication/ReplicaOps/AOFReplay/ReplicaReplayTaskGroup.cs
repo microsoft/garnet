@@ -29,22 +29,22 @@ namespace Garnet.cluster
         /// <summary>
         /// Replay task instances per sublog (used with ShardedLog)
         /// </summary>
-        ReplicaReplayTask[] replicaReplayTasks = null;
+        readonly ReplicaReplayTask[] replicaReplayTasks = new ReplicaReplayTask[clusterProvider.serverOptions.AofSublogCount];
 
         /// <summary>
-        /// Replica replay barrier used to coordinate connection and dispose of replica replay tasks
+        /// Replay barrier used to coordinate connection of replay tasks
         /// </summary>
-        EventBarrier replicaReplayBarrier = null;
+        readonly Barrier barrier = new Barrier(clusterProvider.serverOptions.AofSublogCount);
 
         /// <summary>
-        /// Replica task group lock
+        /// Disposed lock
         /// </summary>
-        SingleWriterMultiReaderLock _lock = new();
+        SingleWriterMultiReaderLock _disposed = new();
 
         /// <summary>
         /// Cancellation token source for replay task group
         /// </summary>
-        CancellationTokenSource cts = null;
+        readonly CancellationTokenSource cts = new();
 
         /// <summary>
         /// Initialized flag
@@ -52,68 +52,44 @@ namespace Garnet.cluster
         public bool IsInitialized { get; private set; } = false;
 
         /// <summary>
+        /// Add replica replay task to this group
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="networkSender"></param>
+        public void AddReplicaReplayTask(int sublogIdx, INetworkSender networkSender)
+        {
+            replicaReplayTasks[sublogIdx] = new ReplicaReplayTask(sublogIdx, clusterProvider, networkSender, cts, logger);
+            _ = barrier.SignalAndWait(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token);
+            if (!_disposed.TryReadLock())
+                throw new GarnetException("Failed to add replica replay task");
+        }
+
+        /// <summary>
+        /// Trigger cancel of replay tasks.
+        /// </summary>
+        /// <param name="isReplicating">Indicates if call is from replicating task</param>
+        public void Cancel(bool isReplicating)
+        {
+            if (isReplicating)
+                _disposed.ReadUnlock();
+            cts.Cancel();
+        }
+
+        /// <summary>
         /// Dispose replica replay task group
         /// </summary>
         public void Dispose()
         {
             cts.Cancel();
+            if (!_disposed.TryWriteLock())
+                return;
             var replicaReplayTasks = this.replicaReplayTasks;
             if (replicaReplayTasks != null)
             {
                 for (var i = 0; i < replicaReplayTasks.Length; i++)
                     replicaReplayTasks[i]?.Dispose();
-                this.replicaReplayTasks = null;
             }
             cts.Dispose();
-        }
-
-
-        /// <summary>
-        /// Create replica replay task
-        /// </summary>
-        /// <param name="sublogIdx"></param>
-        /// <param name="networkSender"></param>
-        public void CreateReplicaReplayTask(int sublogIdx, INetworkSender networkSender)
-        {
-            // Need to synchronize only for sharded log
-            if (clusterProvider.serverOptions.AofSublogCount > 1)
-            {
-                Initialize();
-                // Signal and wait for all tasks to connect
-                var _replicaReplayBarrier = this.replicaReplayBarrier;
-                if (_replicaReplayBarrier.SignalAndWait(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token))
-                {
-                    replicaReplayBarrier = null;
-                    _replicaReplayBarrier.Set();
-                    IsInitialized = true;
-                }
-            }
-            else
-            {
-                Initialize();
-                IsInitialized = true;
-            }
-
-            replicaReplayTasks[sublogIdx] = new ReplicaReplayTask(sublogIdx, clusterProvider, networkSender, cts, logger);
-
-            void Initialize()
-            {
-                var sublogCount = clusterProvider.serverOptions.AofSublogCount;
-                try
-                {
-                    _lock.WriteLock();
-                    if (this.replicaReplayTasks == null)
-                    {
-                        replicaReplayTasks = new ReplicaReplayTask[sublogCount];
-                        replicaReplayBarrier = new EventBarrier(sublogCount);
-                        cts = new();
-                    }
-                }
-                finally
-                {
-                    _lock.WriteUnlock();
-                }
-            }
         }
     }
 }

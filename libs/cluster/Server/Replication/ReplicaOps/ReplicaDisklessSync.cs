@@ -74,7 +74,8 @@ namespace Garnet.cluster
                     }
 
                     // Reset background replay iterator
-                    DisposeReplayTaskGroup();
+                    replicaReplayTaskGroup?.Dispose();
+                    replicaReplayTaskGroup = new ReplicaReplayTaskGroup(clusterProvider, logger);
 
                     // Reset the database in preparation for connecting to primary
                     // only if we expect to have disk checkpoint to recover from,

@@ -140,6 +140,9 @@ namespace Garnet.cluster
                 // Update replicationIds and replicationOffset2
                 clusterProvider.replicationManager.TryUpdateForFailover();
 
+                // Cancel active replication tasks
+                clusterProvider.replicationManager.replicaReplayTaskGroup?.Dispose();
+
                 // Update sequence number generator for sharded log if needed
                 if (clusterProvider.serverOptions.AofSublogCount > 1)
                     clusterProvider.storeWrapper.appendOnlyFile.ResetSeqNumberGen();

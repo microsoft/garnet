@@ -18,7 +18,7 @@ namespace Garnet.server
         /// <summary>
         /// Replication offset lag. 
         /// </summary>
-        public long replication_lag;
+        public AofAddress replication_lag;
 
         /// <summary>
         /// Replication state.

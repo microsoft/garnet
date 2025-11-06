@@ -251,6 +251,8 @@ namespace Garnet.cluster
                     checkpointAofBeginAddress.ToByteArray()).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                 var syncFromAofAddress = AofAddress.FromString(resp);
 
+                logger?.LogError("ReplicaSyncSession: {beginAddress}|{checkpointAofBeginAddress}|{syncFromAddress}", beginAddress, checkpointAofBeginAddress, syncFromAofAddress);
+
                 // Assert that AOF address the replica will be requesting can be served, except in case of:
                 // Possible AOF data loss: { using null AOF device } OR { main memory replication AND no on-demand checkpoints }
                 var possibleAofDataLoss = clusterProvider.serverOptions.UseAofNullDevice ||
@@ -263,7 +265,7 @@ namespace Garnet.cluster
                 // We have already added the iterator for the covered address above but replica might request an address
                 // that is ahead of the covered address so we should start streaming from that address in order not to
                 // introduce duplicate insertions.
-                if (!clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationTask(replicaNodeId, ref syncFromAofAddress, out aofSyncDriver))
+                if (!clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationDriver(replicaNodeId, ref syncFromAofAddress, out aofSyncDriver))
                     throw new GarnetException("Failed trying to try update replication task");
                 if (!clusterProvider.replicationManager.TryConnectToReplica(replicaNodeId, ref syncFromAofAddress, aofSyncDriver, out _))
                     throw new GarnetException("Failed connecting to replica for aofSync");
@@ -361,7 +363,7 @@ namespace Garnet.cluster
 
                 // Enqueue AOF sync task with startAofAddress to prevent future AOF truncations
                 // and check if truncation has happened in between retrieving the latest checkpoint and enqueuing the aofSyncTask
-                if (clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationTask(replicaNodeId, ref startAofAddress, out aofSyncDriver))
+                if (clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationDriver(replicaNodeId, ref startAofAddress, out aofSyncDriver))
                     break;
 
                 // Unlock last checkpoint because associated startAofAddress is no longer available

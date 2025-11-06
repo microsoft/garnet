@@ -67,9 +67,12 @@ namespace Garnet.cluster
             }
         }
 
-        public void SetSublogReplicationOffset(int sublogIdx, long offset) => replicationOffset[sublogIdx] = offset;
-        public void IncrementSublogReplicationOffset(int sublogIdx, long offset) => replicationOffset[sublogIdx] += offset;
-        public long GetSublogReplicationOffset(int sublogIdx) => replicationOffset[sublogIdx];
+        public void SetSublogReplicationOffset(int sublogIdx, long offset)
+            => replicationOffset[sublogIdx] = offset;
+        public void IncrementSublogReplicationOffset(int sublogIdx, long offset)
+            => replicationOffset[sublogIdx] += offset;
+        public long GetSublogReplicationOffset(int sublogIdx)
+            => replicationOffset[sublogIdx];
 
         /// <summary>
         /// Replication offset corresponding to the checkpoint start marker. We will truncate only to this point after taking a checkpoint (the checkpoint
@@ -484,7 +487,7 @@ namespace Garnet.cluster
 
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();
-            DisposeReplayTaskGroup();
+            replicaReplayTaskGroup?.Dispose();
             ctsRepManager.Cancel();
             ctsRepManager.Dispose();
             aofSyncDriverStore.Dispose();
@@ -591,7 +594,7 @@ namespace Garnet.cluster
                 {
                     var aofAddress = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, 0);
                     // TODO: Initiate AOF sync task correctly when restarting primary
-                    if (clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationTask(replicaId, ref aofAddress, out var aofSyncTaskInfo))
+                    if (clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationDriver(replicaId, ref aofAddress, out var aofSyncTaskInfo))
                     {
                         var syncFromAofAddress = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, 0);
                         if (!TryConnectToReplica(replicaId, ref syncFromAofAddress, aofSyncTaskInfo, out var errorMessage))

@@ -108,7 +108,8 @@ namespace Garnet.cluster
                     }
 
                     // Reset background replay iterator
-                    DisposeReplayTaskGroup();
+                    replicaReplayTaskGroup?.Dispose();
+                    replicaReplayTaskGroup = new ReplicaReplayTaskGroup(clusterProvider, logger);
 
                     // Reset replication offset
                     replicationOffset.SetValue(0);

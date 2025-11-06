@@ -109,9 +109,6 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ProcessPrimaryStream");
-                clusterProvider.replicationManager.DisposeReplayTaskGroup();
-                replicaReplayTaskGroup = null;
-                sublog = null;
                 throw new GarnetException(ex.Message, ex, LogLevel.Warning, clientResponse: false);
             }
         }

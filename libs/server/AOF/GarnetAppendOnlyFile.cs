@@ -49,11 +49,12 @@ namespace Garnet.server
 
         /// <summary>
         /// Create or update existing timestamp manager
+        /// NOTE: We need to create a new version for consistency manager in order for running sessions to update their context on the next read
         /// </summary>
         public void CreateOrUpdateTimestampManager()
         {
             // Create manager only if sharded log is enabled
-            if (Log.Size == 0) return;
+            if (Log.Size == 1) return;
             var currentVersion = replayTimestampManager?.CurrentVersion ?? 0L;
             var _replayTimestampManager = new ReplicaReadConsistencyManager(currentVersion + 1, this);
             _ = Interlocked.CompareExchange(ref replayTimestampManager, _replayTimestampManager, replayTimestampManager);

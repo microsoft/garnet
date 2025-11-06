@@ -235,7 +235,7 @@ namespace Garnet.cluster
                     // Lock AOF address for sync streaming
                     // If clusterProvider.allowDataLoss is set the addition never fails,
                     // otherwise failure occurs if AOF has been truncated beyond minServiceableAofAddress
-                    if (ClusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationTasks(GetSessionStore.GetSessions(), ref minServiceableAofAddress))
+                    if (ClusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationDrivers(GetSessionStore.GetSessions(), ref minServiceableAofAddress))
                         break;
 
                     // Retry if failed to lock AOF address because truncation occurred

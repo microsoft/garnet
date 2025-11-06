@@ -193,5 +193,12 @@ namespace Garnet.cluster
             config = config.MakeReplicaOf(replicaOf);
             clusterProvider.clusterManager.UnsafeSetConfig(config);
         }
+
+        public void Dispose()
+        {
+            // Call dispose on ref of this session if this session is a replication task
+            if (IsReplicating)
+                replicaReplayTaskGroup?.Dispose();
+        }
     }
 }

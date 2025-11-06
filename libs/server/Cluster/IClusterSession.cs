@@ -120,5 +120,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="replicaOf"></param>
         void UnsafeSetConfig(string replicaOf);
+
+        /// <summary>
+        /// Dispose
+        /// </summary>
+        void Dispose();
     }
 }

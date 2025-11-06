@@ -16,12 +16,15 @@ namespace Garnet.test.cluster
 
     public class ClusterReplicationShardedLog : ClusterReplicationBaseTests
     {
+        const int TestSublogCount = 2;
+
         public HashSet<string> enabledTests = new()
         {
             {"ClusterSRTest"},
-            //TODO: Enable AOF recovery tests
-            //TODO: Enable diskless recovery tests
-            //
+            {"ClusterSRNoCheckpointRestartSecondary" },
+            {"ClusterSRPrimaryCheckpoint"},
+            {"ClusterCheckpointRetrieveDisableStorageTier" },
+            {"ClusterCheckpointRetrieveDelta"}
         };
 
         [OneTimeSetUp]
@@ -29,7 +32,7 @@ namespace Garnet.test.cluster
         {
             var methods = typeof(ClusterReplicationShardedLog).GetMethods().Where(static mtd => mtd.GetCustomAttribute<TestAttribute>() != null);
             foreach (var method in methods)
-                enabledTests.Add(method.Name);
+                _ = enabledTests.Add(method.Name);
         }
 
         [SetUp]
@@ -41,7 +44,7 @@ namespace Garnet.test.cluster
                 Assert.Ignore($"Skipping {testName} for {nameof(ClusterReplicationShardedLog)}");
             }
             asyncReplay = false;
-            sublogCount = 4;
+            sublogCount = TestSublogCount;
             base.Setup();
         }
 

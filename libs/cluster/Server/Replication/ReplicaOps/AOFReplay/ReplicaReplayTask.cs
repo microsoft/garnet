@@ -17,15 +17,15 @@ namespace Garnet.cluster
     /// </summary>
     /// <param name="sublogIdx"></param>
     /// <param name="clusterProvider"></param>
-    /// <param name="networkSender"></param>
+    /// <param name="respSessionNetworkSender"></param>
     /// <param name="cts"></param>
     /// <param name="logger"></param>
-    internal sealed class ReplicaReplayTask(int sublogIdx, ClusterProvider clusterProvider, INetworkSender networkSender, CancellationTokenSource cts, ILogger logger = null) : IBulkLogEntryConsumer, IDisposable
+    internal sealed class ReplicaReplayTask(int sublogIdx, ClusterProvider clusterProvider, INetworkSender respSessionNetworkSender, CancellationTokenSource cts, ILogger logger = null) : IBulkLogEntryConsumer, IDisposable
     {
         readonly int sublogIdx = sublogIdx;
         readonly ClusterProvider clusterProvider = clusterProvider;
         readonly CancellationTokenSource cts = cts;
-        readonly INetworkSender networkSender = networkSender;
+        readonly INetworkSender respSessionNetworkSender = respSessionNetworkSender;
         readonly ILogger logger = logger;
         TsavoriteLogScanSingleIterator replayIterator = null;
         SingleWriterMultiReaderLock activeReplay;
@@ -34,7 +34,7 @@ namespace Garnet.cluster
         {
             activeReplay.WriteLock();
             replayIterator?.Dispose();
-            networkSender?.Dispose();
+            respSessionNetworkSender?.Dispose();
         }
 
         #region IBulkLogEntryConsumer

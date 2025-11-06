@@ -350,14 +350,15 @@ namespace Garnet.server
             }
             else
             {
+                var bitmapLock = db.AppendOnlyFile.Log.AllLogBitsSet();
                 try
                 {
-                    db.AppendOnlyFile.Log.LockSublogs(ulong.MaxValue);
-                    var _logAccessBitmap = ulong.MaxValue;
+                    db.AppendOnlyFile.Log.LockSublogs(bitmapLock);
+                    var _logAccessBitmap = bitmapLock;
                     var extendedAofHeader = new AofExtendedHeader
                     {
                         header = header,
-                        logAccessCount = (byte)BitOperations.PopCount(ulong.MaxValue),
+                        logAccessCount = (byte)BitOperations.PopCount(bitmapLock),
                         sequenceNumber = db.AppendOnlyFile.seqNumGen.GetSequenceNumber()
                     };
 
@@ -369,7 +370,7 @@ namespace Garnet.server
                 }
                 finally
                 {
-                    db.AppendOnlyFile.Log.UnlockSublogs(ulong.MaxValue);
+                    db.AppendOnlyFile.Log.UnlockSublogs(bitmapLock);
                 }
             }
         }

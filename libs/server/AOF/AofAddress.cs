@@ -269,6 +269,15 @@ namespace Garnet.server
             return true;
         }
 
+        public AofAddress Diff(AofAddress other)
+        {
+            Debug.Assert(other.Length == Length);
+            var aofAddress = new AofAddress(other.Length);
+            for (var i = 0; i < other.Length; i++)
+                aofAddress[i] = this.addresses[i] - other.addresses[i];
+            return aofAddress;
+        }
+
         public long AggregateDiff(AofAddress aofAddress)
         {
             var diff = 0L;

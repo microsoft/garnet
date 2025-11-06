@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
 using Garnet.networking;
 
 namespace Garnet.cluster
@@ -12,36 +11,25 @@ namespace Garnet.cluster
         /// <summary>
         /// Replica replay task group
         /// </summary>
-        ReplicaReplayTaskGroup replicaReplayTaskGroup = null;
-
-        bool IsReplayTaskGroupInitialized => replicaReplayTaskGroup != null && replicaReplayTaskGroup.IsInitialized;
+        public ReplicaReplayTaskGroup replicaReplayTaskGroup;
 
         /// <summary>
-        /// Initialize and return replica replay task
+        /// Initialize replica replay group
         /// </summary>
         /// <param name="sublogIdx"></param>
         /// <param name="networkSender"></param>
-        /// <param name="_replicaReplayTaskGroup"></param>
+        /// <param name="replicaReplayTaskGroup"></param>
         /// <returns></returns>
-        public bool InitializeReplayTaskGroup(int sublogIdx, INetworkSender networkSender, out ReplicaReplayTaskGroup _replicaReplayTaskGroup)
+        public bool InitializeReplicaReplayTask(int sublogIdx, INetworkSender networkSender, out ReplicaReplayTaskGroup replicaReplayTaskGroup)
         {
-            _replicaReplayTaskGroup = null;
-            if (IsReplayTaskGroupInitialized)
+            replicaReplayTaskGroup = null;
+            if (this.replicaReplayTaskGroup[sublogIdx] != null)
                 return false;
 
-            _ = Interlocked.CompareExchange(ref replicaReplayTaskGroup, new ReplicaReplayTaskGroup(clusterProvider, logger), null);
-            replicaReplayTaskGroup.CreateReplicaReplayTask(sublogIdx, networkSender);
-            _replicaReplayTaskGroup = this.replicaReplayTaskGroup;
-            return true;
-        }
+            this.replicaReplayTaskGroup.AddReplicaReplayTask(sublogIdx, networkSender);
+            replicaReplayTaskGroup = this.replicaReplayTaskGroup;
 
-        /// <summary>
-        /// Dispose replica replay tasks
-        /// </summary>
-        public void DisposeReplayTaskGroup()
-        {
-            var currentReplicaReplayTaskGroup = this.replicaReplayTaskGroup;
-            Interlocked.CompareExchange(ref replicaReplayTaskGroup, null, currentReplicaReplayTaskGroup)?.Dispose();
+            return true;
         }
     }
 }

@@ -93,7 +93,7 @@ namespace Garnet.cluster
             var TruncatedUntil = truncateUntil;
             for (var i = 0; i < numTasks; i++)
             {
-                Debug.Assert(syncDrivers[i] != null);
+                Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null at {nameof(SafeTruncateAof)}");
                 if (syncDrivers[i].PreviousAddress[sublogIdx] < TruncatedUntil)
                     TruncatedUntil = syncDrivers[i].PreviousAddress[sublogIdx];
             }
@@ -122,39 +122,40 @@ namespace Garnet.cluster
         /// <param name="truncateUntil"></param>
         public void SafeTruncateAof(AofAddress truncateUntil)
         {
-            try
+            _lock.WriteLock();
+
+            if (_disposed)
             {
-                _lock.WriteLock();
-
-                if (_disposed)
-                    return;
-
-                // Calculate min address of all iterators
-                var TruncatedUntil = truncateUntil;
-                for (var i = 0; i < numTasks; i++)
-                {
-                    Debug.Assert(syncDrivers[i] != null);
-                    TruncatedUntil.MinExchange(syncDrivers[i].PreviousAddress);
-                }
-
-                // Inform that we have logically truncatedUntil
-                this.TruncatedUntil.MonotonicUpdate(ref TruncatedUntil);
-                // Release lock early
                 _lock.WriteUnlock();
+                return;
+            }
 
-                if (clusterProvider.serverOptions.FastAofTruncate)
+            // Calculate min address of all iterators
+            var TruncatedUntil = truncateUntil;
+            for (var i = 0; i < numTasks; i++)
+            {
+                Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null {nameof(SafeTruncateAof)}");
+                var previousAddress = syncDrivers[i].PreviousAddress;
+                for (var sublogIdx = 0; sublogIdx < previousAddress.Length; sublogIdx++)
                 {
-                    clusterProvider.storeWrapper.appendOnlyFile?.Log.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
-                }
-                else
-                {
-                    clusterProvider.storeWrapper.appendOnlyFile?.Log.TruncateUntil(TruncatedUntil);
-                    clusterProvider.storeWrapper.appendOnlyFile?.Log.Commit();
+                    if (previousAddress[sublogIdx] < TruncatedUntil[sublogIdx])
+                        TruncatedUntil[sublogIdx] = previousAddress[sublogIdx];
                 }
             }
-            finally
+
+            // Inform that we have logically truncatedUntil
+            this.TruncatedUntil.MonotonicUpdate(ref TruncatedUntil);
+            // Release lock early
+            _lock.WriteUnlock();
+
+            if (clusterProvider.serverOptions.FastAofTruncate)
             {
-                _lock.WriteUnlock();
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
+            }
+            else
+            {
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.TruncateUntil(TruncatedUntil);
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.Commit();
             }
         }
 
@@ -178,14 +179,13 @@ namespace Garnet.cluster
                 {
                     var cr = syncDrivers[i];
                     var (address, port) = current.GetWorkerAddressFromNodeId(cr.RemoteNodeId);
-
                     replicaInfo.Add(new()
                     {
                         address = address,
                         port = port,
                         replication_state = cr.IsConnected ? "online" : "offline",
                         replication_offset = cr.PreviousAddress,
-                        replication_lag = cr.PreviousAddress.AggregateDiff(PrimaryReplicationOffset),
+                        replication_lag = cr.PreviousAddress.Diff(PrimaryReplicationOffset),
                         maxSendTimestamp = cr.MaxSendSequenceNumber
                     });
                 }
@@ -217,9 +217,9 @@ namespace Garnet.cluster
             }
         }
 
-        public bool TryAddReplicationTask(string remoteNodeId, ref AofAddress startAddress, out AofSyncDriver aofSyncTaskInfo)
+        public bool TryAddReplicationDriver(string remoteNodeId, ref AofAddress startAddress, out AofSyncDriver aofSyncDriver)
         {
-            aofSyncTaskInfo = null;
+            aofSyncDriver = null;
 
             startAddress.SetValueIf(ReplicationManager.kFirstValidAofAddress, 0);
             var success = false;
@@ -233,7 +233,7 @@ namespace Garnet.cluster
             // Create AofSyncTask
             try
             {
-                aofSyncTaskInfo = new AofSyncDriver(
+                aofSyncDriver = new AofSyncDriver(
                     clusterProvider,
                     this,
                     current.LocalNodeId,
@@ -248,7 +248,7 @@ namespace Garnet.cluster
                 return false;
             }
 
-            Debug.Assert(aofSyncTaskInfo != null);
+            Debug.Assert(aofSyncDriver != null, $"aofSyncTaskInfo should not be null {nameof(TryAddReplicationDriver)}");
 
             // Lock to prevent add/remove tasks and truncate operations
             _lock.WriteLock();
@@ -267,10 +267,10 @@ namespace Garnet.cluster
                 for (var i = 0; i < numTasks; i++)
                 {
                     var t = syncDrivers[i];
-                    Debug.Assert(t != null);
+                    Debug.Assert(t != null, "syncDriver should not be null");
                     if (t.RemoteNodeId == remoteNodeId)
                     {
-                        syncDrivers[i] = aofSyncTaskInfo;
+                        syncDrivers[i] = aofSyncDriver;
                         t.Dispose();
                         success = true;
                         break;
@@ -288,7 +288,7 @@ namespace Garnet.cluster
                         syncDrivers = _tasks;
                         Array.Clear(old_tasks);
                     }
-                    syncDrivers[numTasks++] = aofSyncTaskInfo;
+                    syncDrivers[numTasks++] = aofSyncDriver;
                     success = true;
                 }
             }
@@ -301,15 +301,15 @@ namespace Garnet.cluster
                 _lock.WriteUnlock();
                 if (!success)
                 {
-                    aofSyncTaskInfo?.Dispose();
-                    aofSyncTaskInfo = null;
+                    aofSyncDriver?.Dispose();
+                    aofSyncDriver = null;
                 }
             }
 
             return success;
         }
 
-        public bool TryAddReplicationTasks(ReplicaSyncSession[] replicaSyncSessions, ref AofAddress startAddress)
+        public bool TryAddReplicationDrivers(ReplicaSyncSession[] replicaSyncSessions, ref AofAddress startAddress)
         {
             var current = clusterProvider.clusterManager.CurrentConfig;
             var success = true;
@@ -340,7 +340,7 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "{method} creating AOF sync task for {replicaNodeId} failed", nameof(TryAddReplicationTasks), replicaNodeId);
+                    logger?.LogError(ex, "{method} creating AOF sync task for {replicaNodeId} failed", nameof(TryAddReplicationDrivers), replicaNodeId);
                     return false;
                 }
             }
@@ -353,7 +353,7 @@ namespace Garnet.cluster
                 // Fail adding the task if truncation has happened
                 if (startAddress.AnyLesser(TruncatedUntil) && !clusterProvider.AllowDataLoss)
                 {
-                    logger?.LogError("{method} failed to add tasks for AOF sync {startAddress} {truncatedUntil}", nameof(TryAddReplicationTasks), startAddress, TruncatedUntil);
+                    logger?.LogError("{method} failed to add tasks for AOF sync {startAddress} {truncatedUntil}", nameof(TryAddReplicationDrivers), startAddress, TruncatedUntil);
                     return false;
                 }
 
@@ -366,7 +366,7 @@ namespace Garnet.cluster
                     for (var i = 0; i < numTasks; i++)
                     {
                         var t = syncDrivers[i];
-                        Debug.Assert(t != null);
+                        Debug.Assert(t != null, $"syncDrive should not be null {nameof(TryAddReplicationDrivers)}");
                         if (t.RemoteNodeId == rss.replicaNodeId)
                         {
                             syncDrivers[i] = rss.AofSyncDriver;
@@ -424,7 +424,7 @@ namespace Garnet.cluster
                 for (var i = 0; i < numTasks; i++)
                 {
                     var t = syncDrivers[i];
-                    Debug.Assert(t != null);
+                    Debug.Assert(t != null, $"syncDriver should not be null at {nameof(TryRemove)}");
                     if (t == aofSyncTask)
                     {
                         syncDrivers[i] = null;

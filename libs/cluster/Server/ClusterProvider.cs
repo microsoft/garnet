@@ -86,11 +86,11 @@ namespace Garnet.cluster
 
         /// <inheritdoc />
         public bool PreventRoleChange()
-        => replicationManager.BeginRecovery(RecoveryStatus.ReadRole, upgradeLock: false);
+            => replicationManager.BeginRecovery(RecoveryStatus.ReadRole, upgradeLock: false);
 
         /// <inheritdoc />
         public void AllowRoleChange()
-        => replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+            => replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
 
         /// <inheritdoc />
         public void Start()

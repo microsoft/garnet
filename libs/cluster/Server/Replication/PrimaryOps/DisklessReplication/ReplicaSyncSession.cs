@@ -258,7 +258,7 @@ namespace Garnet.cluster
                 // We have already added the iterator for the covered address above but replica might request an address
                 // that is ahead of the covered address so we should start streaming from that address in order not to
                 // introduce duplicate insertions.
-                if (!clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationTask(replicaSyncMetadata.originNodeId, ref syncFromAddress, out aofSyncDriver))
+                if (!clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationDriver(replicaSyncMetadata.originNodeId, ref syncFromAddress, out aofSyncDriver))
                     throw new GarnetException("Failed trying to try update replication task");
                 if (!clusterProvider.replicationManager.TryConnectToReplica(replicaSyncMetadata.originNodeId, ref syncFromAddress, aofSyncDriver, out _))
                     throw new GarnetException("Failed connecting to replica for aofSync");

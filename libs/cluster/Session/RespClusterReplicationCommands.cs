@@ -158,11 +158,10 @@ namespace Garnet.cluster
             }
             else
             {
-                IsReplicating = true;
-
-                if (clusterProvider.replicationManager.InitializeReplayTaskGroup(sublogIdx, this.networkSender, out var replicaReplayTaskGroup))
+                if (clusterProvider.replicationManager.InitializeReplicaReplayTask(sublogIdx, networkSender, out var replicaReplayTaskGroup))
                     this.replicaReplayTaskGroup = replicaReplayTaskGroup;
 
+                IsReplicating = true;
                 ProcessPrimaryStream(sublogIdx, sbRecord.ToPointer(), sbRecord.Length,
                     previousAddress, currentAddress, nextAddress);
             }
