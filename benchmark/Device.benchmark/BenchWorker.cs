@@ -41,7 +41,7 @@ namespace Device.benchmark
         readonly byte[] expectedData;
         readonly IDevice device;
         readonly ManualResetEventSlim startEvent, timeUpEvent, doneEvent;
-        ConcurrentBag<BenchmarkOperation> _benchmarkPool = new();
+        ConcurrentQueue<BenchmarkOperation> _benchmarkPool = new();
 
         public BenchWorker(int batchSize, int threadId, int sectorSize, long fileSize, byte[] expectedData, IDevice device, ManualResetEventSlim startEvent, ManualResetEventSlim timeUpEvent, ManualResetEventSlim doneEvent)
         {
@@ -56,7 +56,7 @@ namespace Device.benchmark
             this.threadRnd = new Random(threadId);
             for (int i = 0; i < batchSize; i++)
             {
-                _benchmarkPool.Add(new BenchmarkOperation(sectorSize));
+                _benchmarkPool.Enqueue(new BenchmarkOperation(sectorSize));
             }
         }
 
@@ -78,7 +78,7 @@ namespace Device.benchmark
             {
                 Console.WriteLine($"I/O error: {errorCode}");
             }
-            _benchmarkPool.Add((BenchmarkOperation)ctx);
+            _benchmarkPool.Enqueue((BenchmarkOperation)ctx);
         }
 
         public unsafe void Run()
@@ -92,7 +92,7 @@ namespace Device.benchmark
                 BenchmarkOperation op;
                 while (!timeUpEvent.IsSet)
                 {
-                    while (!_benchmarkPool.TryTake(out op))
+                    while (!_benchmarkPool.TryDequeue(out op))
                     {
                         Thread.Yield();
                         continue;
