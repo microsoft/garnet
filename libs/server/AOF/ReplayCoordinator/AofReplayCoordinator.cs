@@ -318,7 +318,7 @@ namespace Garnet.server
                         RunStoredProc(sublogIdx, id, ptr, shardedLog: true, customProcKeyHashTracker);
 
                         // Update timestamps for associated keys
-                        customProcKeyHashTracker?.UpdateTimestamps(extendedHeader.sequenceNumber);
+                        customProcKeyHashTracker?.UpdateSequenceNumber(extendedHeader.sequenceNumber);
                     }
                     finally
                     {
@@ -355,7 +355,8 @@ namespace Garnet.server
                 if (eventBarrier.SignalAndWait(aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout))
                 {
                     _ = aofProcessor.storeWrapper.TakeCheckpoint(false, logger);
-                    RemoveBarrier(CHECKPOINT_BARRIER_ID, out _);
+                    if (!RemoveBarrier(CHECKPOINT_BARRIER_ID, out _))
+                        throw new GarnetException("Could not remove checkpoint barrier at checkpoint marker replay");
                     eventBarrier.Set();
                 }
             }

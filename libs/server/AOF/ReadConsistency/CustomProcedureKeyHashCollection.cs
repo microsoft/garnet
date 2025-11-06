@@ -22,15 +22,15 @@ namespace Garnet.server
             => hashes.Add(hash);
 
         /// <summary>
-        /// Update timestamps for all keys in the collection
+        /// Update sequenceNumber for all keys in the collection
         /// </summary>
-        /// <param name="timestamp"></param>
-        public void UpdateTimestamps(long timestamp)
+        /// <param name="sequenceNumber"></param>
+        public void UpdateSequenceNumber(long sequenceNumber)
         {
             foreach (var hash in hashes)
             {
                 appendOnlyFile.Log.Hash(hash, out var sublogIdx, out var keyOffset);
-                appendOnlyFile.replayTimestampManager.UpdateKeySequenceNumber(sublogIdx, keyOffset, timestamp);
+                appendOnlyFile.replayTimestampManager.UpdateKeySequenceNumber(sublogIdx, keyOffset, sequenceNumber);
             }
         }
     }

@@ -350,7 +350,7 @@ namespace Garnet.server
             if (storeWrapper.serverOptions.EnableAOF && shardedLog && updateKeySequenceNumber)
             {
                 var extendedHeader = *(AofExtendedHeader*)entryPtr;
-                storeWrapper.appendOnlyFile.replayTimestampManager.UpdateKeyTimestamp(sublogIdx, ref key, extendedHeader.sequenceNumber);
+                storeWrapper.appendOnlyFile.replayTimestampManager.UpdateKeySequenceNumber(sublogIdx, ref key, extendedHeader.sequenceNumber);
             }
 
             return true;

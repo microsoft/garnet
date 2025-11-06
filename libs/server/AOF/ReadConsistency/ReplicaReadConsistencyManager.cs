@@ -97,7 +97,7 @@ namespace Garnet.server
         /// <param name="sublogIdx"></param>
         /// <param name="key"></param>
         /// <param name="sequenceNumber"></param>
-        public void UpdateKeyTimestamp(int sublogIdx, ref SpanByte key, long sequenceNumber)
+        public void UpdateKeySequenceNumber(int sublogIdx, ref SpanByte key, long sequenceNumber)
         {
             appendOnlyFile.Log.HashKey(ref key, out _, out var _sublogIdx, out var keyOffset);
             if (sublogIdx != _sublogIdx)
