@@ -51,27 +51,23 @@ namespace Device.benchmark
             Console.WriteLine($"Runtime: {opts.Runtime}");
             Console.WriteLine($"BatchSize: {string.Join(",", opts.BatchSize.ToList())}");
             Console.WriteLine($"NumThreads: {string.Join(",", opts.NumThreads.ToList())}");
-            ThreadPool.SetMinThreads(workerThreads: 1000, completionPortThreads: 1000);
-            ThreadPool.GetMinThreads(out var minWorkerThreads, out var minCompletionPortThreads);
-            Console.WriteLine($"minWorkerThreads: {minWorkerThreads}");
-            Console.WriteLine($"minCompletionPortThreads: {minCompletionPortThreads}");
             Console.WriteLine("<<<<<<< End Benchmark Configuration >>>>>>>>");
         }
 
         static void SetupDeviceBenchmark(Options opts)
         {
+            // Set completion threads
+            if (opts.DeviceType == DeviceType.Native && OperatingSystem.IsWindows())
+            {
+                var ct = opts.CompletionThreads > 0 ? opts.CompletionThreads : Environment.ProcessorCount;
+                LocalStorageDevice.NumCompletionThreads = ct;
+            }
+
             // Create disk file
             using var device = GetDevice(opts.DeviceType, opts.FileName);
 
             // Set IO throttle limit
             device.ThrottleLimit = opts.ThrottleLimit > 0 ? opts.ThrottleLimit : int.MaxValue;
-
-            // Set completion threads
-            if (device is LocalStorageDevice l && OperatingSystem.IsWindows())
-            {
-                var ct = opts.CompletionThreads > 0 ? opts.CompletionThreads : Environment.ProcessorCount;
-                LocalStorageDevice.NumCompletionThreads = ct;
-            }
 
             // Set segment size
             device.Initialize(opts.SegmentSize);

@@ -369,12 +369,27 @@ namespace Tsavorite.core
         {
             if (!useIoCompletionPort) return true;
 
-            bool succeeded = Native32.GetQueuedCompletionStatus(ioCompletionPort, out uint num_bytes, out _, out NativeOverlapped* nativeOverlapped, 0);
+            var pEntries = stackalloc Native32.OVERLAPPED_ENTRY[8];
 
-            if (nativeOverlapped != null)
+            bool succeeded = Native32.GetQueuedCompletionStatusEx(
+                ioCompletionPort,
+                pEntries,
+                8,
+                out uint numEntriesRemoved, // The number of entries actually removed
+                0,
+                false // Not alertable
+            );
+
+            if (succeeded)
             {
-                int errorCode = succeeded ? 0 : Marshal.GetLastWin32Error();
-                _callback((uint)errorCode, num_bytes, nativeOverlapped);
+                for (int i = 0; i < numEntriesRemoved; i++)
+                {
+                    var entry = pEntries[i];
+                    if (entry.lpOverlapped == null)
+                        return false;
+                    uint errorCode = entry.Internal == 0 ? 0 : (uint)Marshal.GetLastWin32Error();
+                    _callback(errorCode, (uint)entry.dwNumberOfBytesTransferred, entry.lpOverlapped);
+                }
                 return true;
             }
             return false;
@@ -460,6 +475,8 @@ namespace Tsavorite.core
         /// <returns></returns>
         protected string GetSegmentName(int segmentId) => GetSegmentFilename(FileName, segmentId);
 
+        SafeFileHandle segment0;
+
         /// <summary>
         /// 
         /// </summary>
@@ -468,12 +485,21 @@ namespace Tsavorite.core
         // Can be used to pre-load handles, e.g., after a checkpoint
         protected SafeFileHandle GetOrAddHandle(int _segmentId)
         {
+            if (segment0 != null && _segmentId == 0)
+            {
+                return segment0;
+            }
+
             if (logHandles.TryGetValue(_segmentId, out SafeFileHandle h))
             {
                 return h;
             }
             if (_disposed) return null;
             var result = logHandles.GetOrAdd(_segmentId, CreateHandle);
+            if (_segmentId == 0)
+            {
+                segment0 = result;
+            }
             if (_disposed)
             {
                 foreach (var logHandle in logHandles.Values)
@@ -544,12 +570,11 @@ namespace Tsavorite.core
         public GCHandle GcHandle;
     }
 
-    sealed unsafe class SimpleAsyncResult : IAsyncResult, IDisposable
+    sealed unsafe class SimpleAsyncResult : IDisposable
     {
         public DeviceIOCompletionCallback callback;
         public object context;
         public MyNativeOverlapped* nativeOverlapped;
-        public ConcurrentQueue<SimpleAsyncResult> pool;
 
         [System.Runtime.Versioning.SupportedOSPlatform("windows")]
         public SimpleAsyncResult()
@@ -566,33 +591,47 @@ namespace Tsavorite.core
             nativeOverlapped->GcHandle.Free();
             NativeMemory.Free(nativeOverlapped);
         }
-
-        public object AsyncState => throw new NotImplementedException();
-
-        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
-
-        public bool CompletedSynchronously => throw new NotImplementedException();
-
-        public bool IsCompleted => throw new NotImplementedException();
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     sealed unsafe class LocalStorageDeviceCompletionWorker
     {
+        const int COMPLETION_BATCH_SIZE = 32;
+
         public static void Start(IntPtr ioCompletionPort, IOCompletionCallback _callback)
         {
+            var pEntries = stackalloc Native32.OVERLAPPED_ENTRY[COMPLETION_BATCH_SIZE];
+
             while (true)
             {
                 Thread.Yield();
-                bool succeeded = Native32.GetQueuedCompletionStatus(ioCompletionPort, out uint num_bytes, out _, out NativeOverlapped* nativeOverlapped, uint.MaxValue);
 
-                if (nativeOverlapped != null)
+                // Dequeue a batch of completed I/O operations
+                bool succeeded = Native32.GetQueuedCompletionStatusEx(
+                    ioCompletionPort,
+                    pEntries,
+                    COMPLETION_BATCH_SIZE,
+                    out uint numEntriesRemoved, // The number of entries actually removed
+                    uint.MaxValue,
+                    false // Not alertable
+                );
+
+                if (succeeded)
                 {
-                    int errorCode = succeeded ? 0 : Marshal.GetLastWin32Error();
-                    _callback((uint)errorCode, num_bytes, nativeOverlapped);
+                    for (int i = 0; i < numEntriesRemoved; i++)
+                    {
+                        var entry = pEntries[i];
+                        if (entry.lpOverlapped == null)
+                            return;
+                        uint errorCode = entry.Internal == 0 ? 0 : (uint)Marshal.GetLastWin32Error();
+                        _callback(errorCode, (uint)entry.dwNumberOfBytesTransferred, entry.lpOverlapped);
+                    }
                 }
                 else
-                    break;
+                {
+                    int error = Marshal.GetLastWin32Error();
+                    throw new IOException("Error in GetQueuedCompletionStatusEx", error);
+                }
             }
         }
     }
