@@ -73,7 +73,7 @@ namespace Tsavorite.core
         void _callback(uint errorCode, uint numBytes, NativeOverlapped* pOVERLAP)
         {
             Interlocked.Decrement(ref numPending);
-            var result = (SimpleAsyncResult)((MyNativeOverlapped*)pOVERLAP)->GcHandle.Target;
+            var result = (SimpleAsyncResult)Overlapped.Unpack(pOVERLAP).AsyncResult;
             result.callback(errorCode, numBytes, result.context);
             results.Enqueue(result);
         }
@@ -214,11 +214,13 @@ namespace Tsavorite.core
             if (!results.TryDequeue(out SimpleAsyncResult result))
             {
                 result = new SimpleAsyncResult();
+                result.overlapped = new Overlapped(0, 0, IntPtr.Zero, result);
+                result.nativeOverlapped = result.overlapped.UnsafePack(_callback, IntPtr.Zero);
             }
 
             result.context = context;
             result.callback = callback;
-            var ovNative = (NativeOverlapped*)result.nativeOverlapped;
+            var ovNative = result.nativeOverlapped;
 
             ovNative->OffsetLow = unchecked((int)((ulong)sourceAddress & 0xFFFFFFFF));
             ovNative->OffsetHigh = unchecked((int)(((ulong)sourceAddress >> 32) & 0xFFFFFFFF));
@@ -279,11 +281,13 @@ namespace Tsavorite.core
             if (!results.TryDequeue(out SimpleAsyncResult result))
             {
                 result = new SimpleAsyncResult();
+                result.overlapped = new Overlapped(0, 0, IntPtr.Zero, result);
+                result.nativeOverlapped = result.overlapped.UnsafePack(_callback, IntPtr.Zero);
             }
 
             result.context = context;
             result.callback = callback;
-            var ovNative = (NativeOverlapped*)result.nativeOverlapped;
+            var ovNative = result.nativeOverlapped;
 
             ovNative->OffsetLow = unchecked((int)(destinationAddress & 0xFFFFFFFF));
             ovNative->OffsetHigh = unchecked((int)((destinationAddress >> 32) & 0xFFFFFFFF));
@@ -360,31 +364,21 @@ namespace Tsavorite.core
 
             while (results.TryDequeue(out var entry))
             {
-                entry.Dispose();
+                Overlapped.Free(entry.nativeOverlapped);
             }
         }
 
         /// <inheritdoc/>
         public override bool TryComplete()
         {
-            const int COMPLETION_BATCH_SIZE = 8;
-
             if (!useIoCompletionPort) return true;
 
-            var pEntries = stackalloc Native32.OVERLAPPED_ENTRY[COMPLETION_BATCH_SIZE];
+            bool succeeded = Native32.GetQueuedCompletionStatus(ioCompletionPort, out uint num_bytes, out _, out NativeOverlapped* nativeOverlapped, 0);
 
-            var succeeded = Native32.GetQueuedCompletionStatusEx(ioCompletionPort, pEntries, COMPLETION_BATCH_SIZE, out uint numEntriesRemoved, 0, false);
-
-            if (succeeded)
+            if (nativeOverlapped != null)
             {
-                for (int i = 0; i < numEntriesRemoved; i++)
-                {
-                    var entry = pEntries[i];
-                    if (entry.lpOverlapped == null)
-                        return false;
-                    uint errorCode = entry.Internal == 0 ? 0 : (uint)Marshal.GetLastWin32Error();
-                    _callback(errorCode, (uint)entry.dwNumberOfBytesTransferred, entry.lpOverlapped);
-                }
+                int errorCode = succeeded ? 0 : Marshal.GetLastWin32Error();
+                _callback((uint)errorCode, num_bytes, nativeOverlapped);
                 return true;
             }
             return false;
@@ -470,8 +464,6 @@ namespace Tsavorite.core
         /// <returns></returns>
         protected string GetSegmentName(int segmentId) => GetSegmentFilename(FileName, segmentId);
 
-        SafeFileHandle segment0;
-
         /// <summary>
         /// 
         /// </summary>
@@ -480,21 +472,12 @@ namespace Tsavorite.core
         // Can be used to pre-load handles, e.g., after a checkpoint
         protected SafeFileHandle GetOrAddHandle(int _segmentId)
         {
-            if (segment0 != null && _segmentId == 0)
-            {
-                return segment0;
-            }
-
             if (logHandles.TryGetValue(_segmentId, out SafeFileHandle h))
             {
                 return h;
             }
             if (_disposed) return null;
             var result = logHandles.GetOrAdd(_segmentId, CreateHandle);
-            if (_segmentId == 0)
-            {
-                segment0 = result;
-            }
             if (_disposed)
             {
                 foreach (var logHandle in logHandles.Values)
@@ -555,71 +538,39 @@ namespace Tsavorite.core
         }
     }
 
-    /// <summary>
-    /// Our custom unmanaged struct for overlapped.
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential)]
-    struct MyNativeOverlapped
-    {
-        public NativeOverlapped Overlapped;
-        public GCHandle GcHandle;
-    }
-
-    sealed unsafe class SimpleAsyncResult : IDisposable
+    sealed unsafe class SimpleAsyncResult : IAsyncResult
     {
         public DeviceIOCompletionCallback callback;
         public object context;
-        public MyNativeOverlapped* nativeOverlapped;
+        public Overlapped overlapped;
+        public NativeOverlapped* nativeOverlapped;
 
-        [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-        public SimpleAsyncResult()
-        {
-            nativeOverlapped = (MyNativeOverlapped*)NativeMemory.Alloc((nuint)(sizeof(NativeOverlapped) + sizeof(GCHandle)));
-            ((NativeOverlapped*)nativeOverlapped)->InternalLow = default;
-            ((NativeOverlapped*)nativeOverlapped)->InternalHigh = default;
-            ((NativeOverlapped*)nativeOverlapped)->EventHandle = IntPtr.Zero;
-            nativeOverlapped->GcHandle = GCHandle.Alloc(this);
-        }
+        public object AsyncState => throw new NotImplementedException();
 
-        public void Dispose()
-        {
-            nativeOverlapped->GcHandle.Free();
-            NativeMemory.Free(nativeOverlapped);
-        }
+        public WaitHandle AsyncWaitHandle => throw new NotImplementedException();
+
+        public bool CompletedSynchronously => throw new NotImplementedException();
+
+        public bool IsCompleted => throw new NotImplementedException();
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     sealed unsafe class LocalStorageDeviceCompletionWorker
     {
-        const int COMPLETION_BATCH_SIZE = 32;
-
         public static void Start(IntPtr ioCompletionPort, IOCompletionCallback _callback)
         {
-            var pEntries = stackalloc Native32.OVERLAPPED_ENTRY[COMPLETION_BATCH_SIZE];
-
             while (true)
             {
                 Thread.Yield();
+                bool succeeded = Native32.GetQueuedCompletionStatus(ioCompletionPort, out uint num_bytes, out _, out NativeOverlapped* nativeOverlapped, uint.MaxValue);
 
-                // Dequeue a batch of completed I/O operations
-                var succeeded = Native32.GetQueuedCompletionStatusEx(ioCompletionPort, pEntries, COMPLETION_BATCH_SIZE, out uint numEntriesRemoved, uint.MaxValue, false);
-
-                if (succeeded)
+                if (nativeOverlapped != null)
                 {
-                    for (int i = 0; i < numEntriesRemoved; i++)
-                    {
-                        var entry = pEntries[i];
-                        if (entry.lpOverlapped == null)
-                            return;
-                        uint errorCode = entry.Internal == 0 ? 0 : (uint)Marshal.GetLastWin32Error();
-                        _callback(errorCode, (uint)entry.dwNumberOfBytesTransferred, entry.lpOverlapped);
-                    }
+                    int errorCode = succeeded ? 0 : Marshal.GetLastWin32Error();
+                    _callback((uint)errorCode, num_bytes, nativeOverlapped);
                 }
                 else
-                {
-                    int error = Marshal.GetLastWin32Error();
-                    throw new IOException("Error in GetQueuedCompletionStatusEx", error);
-                }
+                    break;
             }
         }
     }
