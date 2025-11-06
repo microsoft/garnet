@@ -367,18 +367,13 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public override bool TryComplete()
         {
+            const int COMPLETION_BATCH_SIZE = 8;
+
             if (!useIoCompletionPort) return true;
 
-            var pEntries = stackalloc Native32.OVERLAPPED_ENTRY[8];
+            var pEntries = stackalloc Native32.OVERLAPPED_ENTRY[COMPLETION_BATCH_SIZE];
 
-            bool succeeded = Native32.GetQueuedCompletionStatusEx(
-                ioCompletionPort,
-                pEntries,
-                8,
-                out uint numEntriesRemoved, // The number of entries actually removed
-                0,
-                false // Not alertable
-            );
+            var succeeded = Native32.GetQueuedCompletionStatusEx(ioCompletionPort, pEntries, COMPLETION_BATCH_SIZE, out uint numEntriesRemoved, 0, false);
 
             if (succeeded)
             {
@@ -607,14 +602,7 @@ namespace Tsavorite.core
                 Thread.Yield();
 
                 // Dequeue a batch of completed I/O operations
-                bool succeeded = Native32.GetQueuedCompletionStatusEx(
-                    ioCompletionPort,
-                    pEntries,
-                    COMPLETION_BATCH_SIZE,
-                    out uint numEntriesRemoved, // The number of entries actually removed
-                    uint.MaxValue,
-                    false // Not alertable
-                );
+                var succeeded = Native32.GetQueuedCompletionStatusEx(ioCompletionPort, pEntries, COMPLETION_BATCH_SIZE, out uint numEntriesRemoved, uint.MaxValue, false);
 
                 if (succeeded)
                 {

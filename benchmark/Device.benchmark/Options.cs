@@ -3,7 +3,6 @@
 
 using System.Collections.Generic;
 using CommandLine;
-using Microsoft.Extensions.Logging;
 
 namespace Device.benchmark
 {
@@ -38,14 +37,5 @@ namespace Device.benchmark
 
         [Option('t', "threads", Separator = ',', Default = new[] { 1, 2, 4, 8, 16, 32 }, HelpText = "Number of threads (comma separated)")]
         public IEnumerable<int> NumThreads { get; set; }
-
-        [Option("logger-level", Required = false, Default = LogLevel.Information, HelpText = "Logging level")]
-        public LogLevel LogLevel { get; set; }
-
-        [Option("disable-console-logger", Required = false, Default = false, HelpText = "Disable console logger.")]
-        public bool DisableConsoleLogger { get; set; }
-
-        [Option("file-logger", Required = false, Default = null, HelpText = "Enable file logger and write to the specified path.")]
-        public string FileLogger { get; set; }
     }
 }
