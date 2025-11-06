@@ -28,7 +28,8 @@ namespace Garnet.common
             var newValue = Interlocked.Decrement(ref count);
             if (newValue > 0)
             {
-                Wait(timeout, cancellationToken);
+                if (!Wait(timeout, cancellationToken))
+                    throw new TimeoutException();
                 return false;
             }
             else if (newValue == 0)
@@ -47,7 +48,7 @@ namespace Garnet.common
         /// </summary>
         /// <param name="timeout"></param>
         /// <param name="cancellationToken"></param>
-        void Wait(TimeSpan timeout = default, CancellationToken cancellationToken = default)
+        bool Wait(TimeSpan timeout = default, CancellationToken cancellationToken = default)
             => eventSlim.Wait(timeout == default ? Timeout.InfiniteTimeSpan : timeout, cancellationToken);
     }
 }
