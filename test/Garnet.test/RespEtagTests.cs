@@ -55,7 +55,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
-            RedisResult res = db.Execute("SET", ["rizz", "buzz", "WITHETAG"]);
+            RedisResult res = db.Execute("EXECWITHETAG", ["SET", "rizz", "buzz"]);
             long etag = long.Parse(res.ToString());
             ClassicAssert.AreEqual(1, etag);
         }
@@ -67,17 +67,17 @@ namespace Garnet.test
             IDatabase db = redis.GetDatabase(0);
 
             var key = "florida";
-            RedisResult res = db.Execute("SET", [key, "one", "WITHETAG"]);
+            RedisResult res = db.Execute("EXECWITHETAG", ["SET", key, "one"]);
             long initalEtag = long.Parse(res.ToString());
             ClassicAssert.AreEqual(1, initalEtag);
 
             var incorrectEtag = 1738;
-            RedisResult[] etagMismatchMsg = (RedisResult[])db.Execute("SETIFMATCH", [key, "nextone", incorrectEtag]);
+            var etagMismatchMsg = (RedisResult[])db.Execute("EXECIFMATCH", [incorrectEtag, "SET", key, "nextone"]);
             ClassicAssert.AreEqual("1", etagMismatchMsg[0].ToString());
             ClassicAssert.AreEqual("one", etagMismatchMsg[1].ToString());
 
             // set a bigger val
-            RedisResult[] setIfMatchRes = (RedisResult[])db.Execute("SETIFMATCH", [key, "nextone", initalEtag]);
+            RedisResult[] setIfMatchRes = (RedisResult[])db.Execute("EXECIFMATCH", [initalEtag, "SET", key, "nextone"]);
 
             long nextEtag = long.Parse(setIfMatchRes[0].ToString());
             var value = setIfMatchRes[1];
@@ -86,7 +86,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(value.IsNull);
 
             // set a bigger val
-            setIfMatchRes = (RedisResult[])db.Execute("SETIFMATCH", [key, "nextnextone", nextEtag]);
+            setIfMatchRes = (RedisResult[])db.Execute("EXECIFMATCH", [nextEtag, "SET", key, "nextnextone"]);
             nextEtag = long.Parse(setIfMatchRes[0].ToString());
             value = setIfMatchRes[1];
 
@@ -94,12 +94,12 @@ namespace Garnet.test
             ClassicAssert.IsTrue(value.IsNull);
 
             // ETAGMISMATCH again
-            res = db.Execute("SETIFMATCH", [key, "lastOne", incorrectEtag]);
+            res = db.Execute("EXECIFMATCH", [incorrectEtag, "SET", key, "lastOne"]);
             ClassicAssert.AreEqual(nextEtag.ToString(), res[0].ToString());
             ClassicAssert.AreEqual("nextnextone", res[1].ToString());
 
             // set a smaller val
-            setIfMatchRes = (RedisResult[])db.Execute("SETIFMATCH", [key, "lastOne", nextEtag]);
+            setIfMatchRes = (RedisResult[])db.Execute("EXECIFMATCH", [nextEtag, "SET", key, "lastOne"]);
             nextEtag = long.Parse(setIfMatchRes[0].ToString());
             value = setIfMatchRes[1];
 
@@ -109,7 +109,7 @@ namespace Garnet.test
             // ETAGMISMATCH on data that never had an etag
             db.KeyDelete(key);
             db.StringSet(key, "one");
-            res = db.Execute("SETIFMATCH", [key, "lastOne", incorrectEtag]);
+            res = db.Execute("EXECIFMATCH", [incorrectEtag, "SET", key, "lastOne"]);
             ClassicAssert.AreEqual("0", res[0].ToString());
             ClassicAssert.AreEqual("one", res[1].ToString());
         }

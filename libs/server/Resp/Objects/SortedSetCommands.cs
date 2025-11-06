@@ -93,7 +93,7 @@ namespace Garnet.server
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet, metaCommand) { SortedSetOp = SortedSetOperation.ZADD };
             if ((options & (SortedSetAddOption.WITHETAG | SortedSetAddOption.IFETAGGREATER | SortedSetAddOption.IFETAGMATCH)) != 0)
-                header.SetWithETagFlag();
+                header.metaCmd = RespMetaCommand.ExecWithEtag;
             var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
 
             var output = GarnetObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));

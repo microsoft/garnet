@@ -288,7 +288,7 @@ namespace Garnet.server
 
                     // The spec is that Expiration does not change. Set input ETag flag if requested.
                     if (withEtag)
-                        input.header.SetWithETagFlag();
+                        input.header.metaCmd = RespMetaCommand.ExecWithEtag;
 
                     status = SET(newKey, ref input, in logRecord, ref context);
                     if (status == GarnetStatus.OK)

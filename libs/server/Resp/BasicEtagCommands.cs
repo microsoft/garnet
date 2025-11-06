@@ -128,7 +128,7 @@ namespace Garnet.server
             // To achieve this, we use a conditional DEL command to gain RMW (Read-Modify-Write) access, enabling deletion based on conditions.
 
             RawStringInput input = new RawStringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
-            input.header.SetWithETagFlag();
+            input.header.metaCmd = RespMetaCommand.ExecWithEtag;
 
             GarnetStatus status = storageApi.DEL_Conditional(key, ref input);
 

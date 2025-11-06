@@ -28,7 +28,7 @@ namespace Garnet.server
                     return false;
                 case RespCommand.SETEXXX:
                     // when called withetag all output needs to be placed on the buffer
-                    if (input.header.CheckWithETagFlag())
+                    if (input.header.IsWithEtag())
                     {
                         // XX when unsuccesful will write back NIL
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output);
@@ -144,21 +144,44 @@ namespace Garnet.server
                         return false;
                     }
 
-                    // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
-                    if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(LogRecord.NoETag + 1))
-                    {
-                        functionsState.logger?.LogError("Could not set etag in {methodName}.{caseName}", "InitialUpdater", "SETEXNX");
-                        return false;
-                    }
-                    ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
-                    // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX. TODO: Is this condition satisfied here?
-                    functionsState.CopyRespNumber(LogRecord.NoETag + 1, ref output);
-
                     // Set or remove expiration
                     if (sizeInfo.FieldInfo.HasExpiration && !logRecord.TrySetExpiration(input.arg1))
                     {
                         functionsState.logger?.LogError("Could not set expiration in {methodName}.{caseName}", "InitialUpdater", "SETEXNX");
                         return false;
+                    }
+
+                    var metaCmd = input.header.metaCmd;
+                    if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater)
+                    {
+                        Debug.Assert(sizeInfo.FieldInfo.HasETag, "Expected sizeInfo.FieldInfo.HasETag to be true");
+                        _ = logRecord.TrySetETag(input.metaCmdParseState.GetLong(0) + (metaCmd == RespMetaCommand.ExecIfMatch ? 1 : 0));
+                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
+
+                        // write back array of the format [etag, nil]
+                        nilResponse = functionsState.nilResp;
+                        // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
+                        WriteValAndEtagToDst(
+                            4 + 1 + NumUtils.CountDigits(functionsState.etagState.ETag) + 2 + nilResponse.Length,
+                            nilResponse,
+                            functionsState.etagState.ETag,
+                            ref output,
+                            functionsState.memoryPool,
+                            writeDirect: true
+                        );
+                    }
+                    else
+                    {
+                        // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
+                        if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(LogRecord.NoETag + 1))
+                        {
+                            functionsState.logger?.LogError("Could not set etag in {methodName}.{caseName}", "InitialUpdater", "SETEXNX");
+                            return false;
+                        }
+
+                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
+                        // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX. TODO: Is this condition satisfied here?
+                        functionsState.CopyRespNumber(LogRecord.NoETag + 1, ref output);
                     }
 
                     break;
@@ -414,7 +437,7 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(logRecord.ValueSpan, ref output);
                     }
-                    else if (input.header.CheckWithETagFlag())
+                    else if (input.header.IsWithEtag())
                     {
                         // when called withetag all output needs to be placed on the buffer
                         // EXX when unsuccesful will write back NIL
@@ -485,68 +508,124 @@ namespace Garnet.server
                     break;
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
-                    // Check if SetGet flag is set
-                    if (input.header.CheckSetGetFlag())
+                    var metaCmd = input.header.metaCmd;
+                    if (metaCmd is RespMetaCommand.ExecIfGreater or RespMetaCommand.ExecIfMatch)
                     {
-                        // Copy value to output for the GET part of the command.
-                        CopyRespTo(logRecord.ValueSpan, ref output);
-                    }
+                        etagFromClient = input.metaCmdParseState.GetLong(0);
+                        // in IFMATCH we check for equality, in IFGREATER we are checking for sent etag being strictly greater
+                        comparisonResult = etagFromClient.CompareTo(functionsState.etagState.ETag);
+                        expectedResult = metaCmd == RespMetaCommand.ExecIfMatch ? 0 : 1;
 
-                    // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
-                    bool inputHeaderHasEtag = input.header.CheckWithETagFlag();
+                        if (comparisonResult != expectedResult)
+                        {
+                            if (input.header.CheckSetGetFlag())
+                                CopyRespWithEtagData(logRecord.ValueSpan, ref output, shouldUpdateEtag, functionsState.memoryPool);
+                            else
+                            {
+                                // write back array of the format [etag, nil]
+                                var nilResponse = functionsState.nilResp;
+                                // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
+                                WriteValAndEtagToDst(
+                                    4 + 1 + NumUtils.CountDigits(functionsState.etagState.ETag) + 2 + nilResponse.Length,
+                                    nilResponse,
+                                    functionsState.etagState.ETag,
+                                    ref output,
+                                    functionsState.memoryPool,
+                                    writeDirect: true
+                                );
+                            }
+                            // reset etag state after done using
+                            ETagState.ResetState(ref functionsState.etagState);
+                            return true;
+                        }
 
-                    var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!logRecord.TrySetValueSpan(setValue, in sizeInfo))
-                        return false;
-
-                    // If shouldUpdateEtag != inputHeaderHasEtag, then if inputHeaderHasEtag is true there is one that nextUpdate will remove (so we don't want to
-                    // update it), else there isn't one and nextUpdate will add it.
-                    shouldUpdateEtag = inputHeaderHasEtag;
-
-                    // Update expiration
-                    if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
-                        return false;
-
-                    // If withEtag is called we return the etag back in the response
-                    if (inputHeaderHasEtag)
-                    {
-                        var newETag = functionsState.etagState.ETag + 1;
-                        if (!logRecord.TrySetETag(newETag))
+                        // If we're here we know we have a valid ETag for update. Get the value to update. We'll need to return false for CopyUpdate if no space for new value.
+                        inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                        if (!logRecord.TrySetValueSpan(inputValue, in sizeInfo))
                             return false;
-                        functionsState.CopyRespNumber(newETag, ref output);
+                        newEtag = metaCmd == RespMetaCommand.ExecIfMatch ? (functionsState.etagState.ETag + 1) : etagFromClient;
+                        if (!logRecord.TrySetETag(newEtag))
+                            return false;
+
+                        // Need to check for input.arg1 != 0 because GetRMWModifiedFieldInfo shares its logic with CopyUpdater and thus may set sizeInfo.FieldInfo.Expiration true
+                        // due to srcRecordInfo having expiration set; here, that srcRecordInfo is us, so we should do nothing if input.arg1 == 0.
+                        if (sizeInfo.FieldInfo.HasExpiration && input.arg1 != 0 && !logRecord.TrySetExpiration(input.arg1))
+                            return false;
+
+                        // Write Etag and Val back to Client as an array of the format [etag, nil]
+                        nilResp = functionsState.nilResp;
+                        // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
+                        numDigitsInEtag = NumUtils.CountDigits(newEtag);
+                        WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
                         // reset etag state after done using
                         ETagState.ResetState(ref functionsState.etagState);
+                        shouldUpdateEtag = false;   // since we already updated the ETag
                     }
                     else
                     {
-                        if (!logRecord.RemoveETag())
-                            return false;
-                    }
+                        // Check if SetGet flag is set
+                        if (input.header.CheckSetGetFlag())
+                        {
+                            // Copy value to output for the GET part of the command.
+                            CopyRespTo(logRecord.ValueSpan, ref output);
+                        }
 
-                    shouldUpdateEtag = false;   // since we already updated the ETag
+                        // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
+                        bool inputHeaderHasEtag = input.header.IsWithEtag();
+
+                        var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                        if (!logRecord.TrySetValueSpan(setValue, in sizeInfo))
+                            return false;
+
+                        // If shouldUpdateEtag != inputHeaderHasEtag, then if inputHeaderHasEtag is true there is one that nextUpdate will remove (so we don't want to
+                        // update it), else there isn't one and nextUpdate will add it.
+                        shouldUpdateEtag = inputHeaderHasEtag;
+
+                        // Update expiration
+                        if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
+                            return false;
+
+                        // If withEtag is called we return the etag back in the response
+                        if (inputHeaderHasEtag)
+                        {
+                            var newETag = functionsState.etagState.ETag + 1;
+                            if (!logRecord.TrySetETag(newETag))
+                                return false;
+                            functionsState.CopyRespNumber(newETag, ref output);
+                            // reset etag state after done using
+                            ETagState.ResetState(ref functionsState.etagState);
+                        }
+                        else
+                        {
+                            if (!logRecord.RemoveETag())
+                                return false;
+                        }
+
+                        shouldUpdateEtag = false;   // since we already updated the ETag
+                    }
                     break;
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:
                     // If the user calls withetag then we need to either update an existing etag and set the value
                     // or set the value with an initial etag and increment it. If withEtag is called we return the etag back to the user
-                    inputHeaderHasEtag = input.header.CheckWithETagFlag();
+                    var addEtag = input.header.IsWithEtag();
 
                     // If the SetGet flag is set, copy the current value to output for the GET part of the command.
                     if (input.header.CheckSetGetFlag())
                     {
-                        Debug.Assert(!input.header.CheckWithETagFlag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
+                        Debug.Assert(!input.header.IsWithEtag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
 
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(logRecord.ValueSpan, ref output);
                     }
 
-                    setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!logRecord.TrySetValueSpan(setValue, in sizeInfo))
+                    var newSetValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                    if (!logRecord.TrySetValueSpan(newSetValue, in sizeInfo))
                         return false;
 
-                    if (inputHeaderHasEtag != shouldUpdateEtag)
-                        shouldUpdateEtag = inputHeaderHasEtag;
-                    if (inputHeaderHasEtag)
+                    if (addEtag != shouldUpdateEtag)
+                        shouldUpdateEtag = addEtag;
+                    if (addEtag)
                     {
                         var newETag = functionsState.etagState.ETag + 1;
                         logRecord.TrySetETag(newETag);
@@ -939,7 +1018,7 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);
                     }
-                    else if (input.header.CheckWithETagFlag())
+                    else if (input.header.IsWithEtag())
                     {
                         // EXX when unsuccesful will write back NIL
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output);
@@ -958,6 +1037,47 @@ namespace Garnet.server
                         ETagState.ResetState(ref functionsState.etagState);
                         return false;
                     }
+                    return true;
+                case RespCommand.SET:
+                    var metaCmd = input.header.metaCmd;
+                    if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater)
+                    {
+                        if (srcLogRecord.Info.HasETag)
+                            ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
+
+                        etagToCheckWith = input.metaCmdParseState.GetLong(0);
+
+                        // in IFMATCH we check for equality, in IFGREATER we are checking for sent etag being strictly greater
+                        comparisonResult = etagToCheckWith.CompareTo(functionsState.etagState.ETag);
+                        expectedResult = metaCmd == RespMetaCommand.ExecIfMatch ? 0 : 1;
+
+                        if (comparisonResult == expectedResult)
+                            return true;
+
+                        if (input.header.CheckSetGetFlag())
+                        {
+                            // Copy value to output for the GET part of the command.
+                            CopyRespWithEtagData(srcLogRecord.ValueSpan, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
+                        }
+                        else
+                        {
+                            // write back array of the format [etag, nil]
+                            var nilResponse = functionsState.nilResp;
+                            // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
+                            WriteValAndEtagToDst(
+                                4 + 1 + NumUtils.CountDigits(functionsState.etagState.ETag) + 2 + nilResponse.Length,
+                                nilResponse,
+                                functionsState.etagState.ETag,
+                                ref output,
+                                functionsState.memoryPool,
+                                writeDirect: true
+                            );
+                        }
+
+                        ETagState.ResetState(ref functionsState.etagState);
+                        return false;
+                    }
+
                     return true;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
@@ -1042,45 +1162,73 @@ namespace Garnet.server
                     break;
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
-                    bool inputHeaderHasEtag = input.header.CheckWithETagFlag();
-
-                    // Check if SetGet flag is set
-                    if (input.header.CheckSetGetFlag())
+                    var metaCmd = input.header.metaCmd;
+                    if (metaCmd is RespMetaCommand.ExecIfGreater or RespMetaCommand.ExecIfMatch)
                     {
-                        Debug.Assert(!input.header.CheckWithETagFlag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
-                        // Copy value to output for the GET part of the command.
-                        CopyRespTo(srcLogRecord.ValueSpan, ref output);
-                    }
+                        // By now the comparison for etag against existing etag has already been done in NeedCopyUpdate
+                        shouldUpdateEtag = true;
 
-                    var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    Debug.Assert(newInputValue.Length == dstLogRecord.ValueSpan.Length);
-
-                    // Copy input to value, along with optionals from source record including Expiration.
-                    if (!dstLogRecord.TrySetValueSpan(newInputValue, in sizeInfo) || !dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
-                        return false;
-
-                    // Update expiration if it was supplied.
-                    if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
-                        return false;
-
-                    // If shouldUpdateEtag != inputHeaderHasEtag, then if inputHeaderHasEtag is true there is one that nextUpdate will remove (so we don't want to
-                    // update it), else there isn't one and nextUpdate will add it.
-                    shouldUpdateEtag = inputHeaderHasEtag;
-
-                    if (inputHeaderHasEtag)
-                    {
-                        var newETag = functionsState.etagState.ETag + 1;
-                        if (!dstLogRecord.TrySetETag(newETag))
+                        inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                        if (!dstLogRecord.TrySetValueSpan(inputValue, in sizeInfo))
                             return false;
-                        functionsState.CopyRespNumber(newETag, ref output);
-                        ETagState.ResetState(ref functionsState.etagState);
+
+                        // change the current etag to the the etag sent from client since rest remains same
+                        functionsState.etagState.ETag = input.metaCmdParseState.GetLong(0);
+                        if (!dstLogRecord.TrySetETag(functionsState.etagState.ETag + (cmd == RespCommand.SETIFMATCH ? 1 : 0)))
+                            return false;
+
+                        if (sizeInfo.FieldInfo.HasExpiration && !dstLogRecord.TrySetExpiration(input.arg1 != 0 ? input.arg1 : srcLogRecord.Expiration))
+                            return false;
+
+                        // Write Etag and Val back to Client as an array of the format [etag, nil]
+                        eTagForResponse = cmd == RespCommand.SETIFMATCH ? functionsState.etagState.ETag + 1 : functionsState.etagState.ETag;
+                        // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
+                        numDigitsInEtag = NumUtils.CountDigits(eTagForResponse);
+                        WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + functionsState.nilResp.Length, functionsState.nilResp, eTagForResponse, ref output, functionsState.memoryPool, writeDirect: true);
+                        shouldUpdateEtag = false;   // since we already updated the ETag
                     }
                     else
                     {
-                        if (!dstLogRecord.RemoveETag())
+                        var addEtag = input.header.IsWithEtag();
+
+                        // Check if SetGet flag is set
+                        if (input.header.CheckSetGetFlag())
+                        {
+                            Debug.Assert(!input.header.IsWithEtag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
+                            // Copy value to output for the GET part of the command.
+                            CopyRespTo(srcLogRecord.ValueSpan, ref output);
+                        }
+
+                        var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                        Debug.Assert(newInputValue.Length == dstLogRecord.ValueSpan.Length);
+
+                        // Copy input to value, along with optionals from source record including Expiration.
+                        if (!dstLogRecord.TrySetValueSpan(newInputValue, in sizeInfo) || !dstLogRecord.TryCopyOptionals(in srcLogRecord, in sizeInfo))
                             return false;
+
+                        // Update expiration if it was supplied.
+                        if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
+                            return false;
+
+                        // If shouldUpdateEtag != inputHeaderHasEtag, then if inputHeaderHasEtag is true there is one that nextUpdate will remove (so we don't want to
+                        // update it), else there isn't one and nextUpdate will add it.
+                        shouldUpdateEtag = addEtag;
+
+                        if (addEtag)
+                        {
+                            var newETag = functionsState.etagState.ETag + 1;
+                            if (!dstLogRecord.TrySetETag(newETag))
+                                return false;
+                            functionsState.CopyRespNumber(newETag, ref output);
+                            ETagState.ResetState(ref functionsState.etagState);
+                        }
+                        else
+                        {
+                            if (!dstLogRecord.RemoveETag())
+                                return false;
+                        }
+                        shouldUpdateEtag = false;   // since we already updated the ETag
                     }
-                    shouldUpdateEtag = false;   // since we already updated the ETag
 
                     break;
 
@@ -1088,12 +1236,12 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTL:
                     // If the user calls withetag then we need to either update an existing etag and set the value
                     // or set the value with an initial etag and increment it. If withEtag is called we return the etag back to the user
-                    inputHeaderHasEtag = input.header.CheckWithETagFlag();
+                    var isAddEtag = input.header.IsWithEtag();
 
                     // If the SetGet flag is set, copy the current value to output for the GET part of the command.
                     if (input.header.CheckSetGetFlag())
                     {
-                        Debug.Assert(!input.header.CheckWithETagFlag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
+                        Debug.Assert(!input.header.IsWithEtag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
 
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);
@@ -1103,9 +1251,9 @@ namespace Garnet.server
                     if (!dstLogRecord.TrySetValueSpan(inputValue, in sizeInfo))
                         return false;
 
-                    if (inputHeaderHasEtag != shouldUpdateEtag)
-                        shouldUpdateEtag = inputHeaderHasEtag;
-                    if (inputHeaderHasEtag)
+                    if (isAddEtag != shouldUpdateEtag)
+                        shouldUpdateEtag = isAddEtag;
+                    if (isAddEtag)
                     {
                         var newETag = functionsState.etagState.ETag + 1;
                         dstLogRecord.TrySetETag(newETag);
@@ -1473,7 +1621,7 @@ namespace Garnet.server
 
             if (shouldUpdateEtag)
             {
-                if (cmd is not RespCommand.SETIFGREATER)
+                if (cmd is not RespCommand.SETIFGREATER && !(cmd is RespCommand.SET && input.header.metaCmd == RespMetaCommand.ExecIfGreater))
                     functionsState.etagState.ETag++;
                 dstLogRecord.TrySetETag(functionsState.etagState.ETag);
                 ETagState.ResetState(ref functionsState.etagState);

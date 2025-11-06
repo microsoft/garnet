@@ -135,7 +135,7 @@ namespace Garnet.server
             }
 
             // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
-            var inputHeaderHasEtag = input.header.CheckWithETagFlag();
+            var inputHeaderHasEtag = input.header.IsWithEtag();
             var hadETagPreMutation = logRecord.Info.HasETag;
             if (!hadETagPreMutation && inputHeaderHasEtag)
                 return false;
@@ -245,7 +245,7 @@ namespace Garnet.server
             }
 
             // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
-            var inputHeaderHasEtag = input.header.CheckWithETagFlag();
+            var inputHeaderHasEtag = input.header.IsWithEtag();
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {

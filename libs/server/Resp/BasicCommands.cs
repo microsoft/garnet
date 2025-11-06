@@ -658,9 +658,9 @@ namespace Garnet.server
             else
             {
                 if (withEtag)
-                    input.header.SetWithETagFlag();
+                    input.header.metaCmd = RespMetaCommand.ExecWithEtag;
 
-                if (getValue)
+                if (getValue || input.header.metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater)
                     input.header.SetSetGetFlag();
 
                 // anything with getValue or withEtag always writes to the buffer in the happy path

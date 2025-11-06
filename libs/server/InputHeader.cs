@@ -155,15 +155,10 @@ namespace Garnet.server
         internal void SetSetGetFlag() => flags |= RespInputFlags.SetGet;
 
         /// <summary>
-        /// Set "WithEtag" flag for the input header
-        /// </summary>
-        internal void SetWithETagFlag() => flags |= RespInputFlags.WithEtag;
-
-        /// <summary>
-        /// Check if the WithEtag flag is set
+        /// Check if meta command is ExecWithEtag
         /// </summary>
         /// <returns></returns>
-        internal bool CheckWithETagFlag() => metaCmd == RespMetaCommand.ExecWithEtag;
+        internal bool IsWithEtag() => metaCmd == RespMetaCommand.ExecWithEtag;
 
         /// <summary>
         /// Check if record is expired, either deterministically during log replay,
