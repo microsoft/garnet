@@ -446,14 +446,6 @@ namespace Garnet.cluster
             };
         }
 
-        // HACK HACK ACH
-        public bool IsNotStable(int slot)
-        {
-            var config = clusterManager?.CurrentConfig;
-            return config.IsMigratingSlot((ushort)slot) || config.IsImportingSlot((ushort)slot);
-        }
-        // HACK ACK ACH
-
         /// <summary>
         /// Bump Garnet epoch
         /// </summary>

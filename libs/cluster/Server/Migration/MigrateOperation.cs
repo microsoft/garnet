@@ -5,7 +5,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Garnet.client;
-using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -315,24 +314,6 @@ namespace Garnet.cluster
                 var delRes = localServerSession.BasicGarnetApi.DELETE(ref key);
 
                 session.logger?.LogDebug("Deleting Vector Set {key} after migration: {delRes}", System.Text.Encoding.UTF8.GetString(key.AsReadOnlySpan()), delRes);
-            }
-
-            public unsafe bool IsMovingVectorSet(SpanByte key, out SketchStatus status)
-            {
-                var slot = HashSlotUtils.HashSlot(ref key);
-
-                if (session.clusterProvider.storeWrapper.DefaultDatabase.VectorManager.AnyVectorSetExistsInHashSlot(slot))
-                {
-                    // TODO: Actually check that this thing is a Vector Set... somehow
-                    
-                    // Because we move _piecemeal_ as soon as we start migrating, we are always migrating
-                    // there's no legal transition back to "initializing" where we could allow a Vector Set write through
-                    status = SketchStatus.TRANSMITTING;
-                    return true;
-                }
-
-                status = SketchStatus.INITIALIZING;
-                return false;
             }
         }
     }

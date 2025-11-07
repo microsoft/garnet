@@ -6,7 +6,6 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Garnet.server;
-using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
@@ -30,11 +29,6 @@ namespace Garnet.cluster
             Debug.Assert(!isVectorSetWriteCommand || (isVectorSetWriteCommand && !readOnly), "Shouldn't see Vector Set writes and readonly at same time");
 
             var ret = readOnly ? SingleKeyReadSlotVerify(ref config, ref keySlice) : SingleKeyReadWriteSlotVerify(isVectorSetWriteCommand, ref config, ref keySlice);
-
-            if (!readOnly)
-            {
-                logger?.LogDebug("Serve key {key}: {state}x{slot}", System.Text.Encoding.UTF8.GetString(keySlice.ReadOnlySpan), ret.state, ret.slot);
-            }
 
             return ret;
 
@@ -87,8 +81,6 @@ namespace Garnet.cluster
             tryAgain:
                 var IsLocal = config.IsLocal(_slot, readWriteSession: readWriteSession);
                 var state = config.GetState(_slot);
-
-                logger?.LogDebug("{pid}: Read/Write key {key} (asking={asking}): {slot}, {IsLocal}, {state}", clusterProvider.storeWrapper.DefaultDatabase.VectorManager.processInstanceId, System.Text.Encoding.UTF8.GetString(keySlice.ReadOnlySpan), SessionAsking, _slot, IsLocal, state);
 
                 if (isVectorSetWriteCommand && state is SlotState.IMPORTING or SlotState.MIGRATING)
                 {
@@ -147,9 +139,10 @@ namespace Garnet.cluster
 
             void WaitForSlotToStabalize(ushort slot, ref ArgSlice keySlice, ref ClusterConfig config)
             {
-                logger?.LogDebug("{pid}: Pausing operation on {key} (asking={asking}): {slot}", clusterProvider.storeWrapper.DefaultDatabase.VectorManager.processInstanceId, System.Text.Encoding.UTF8.GetString(keySlice.ReadOnlySpan), SessionAsking, slot);
+                // For Vector Set ops specifically, we need a slot to be stable (or faulted, but not migrating) before writes can proceed
+                //
+                // This isn't key specific because we can't know the Vector Sets being migrated in advance, only that the slot is moving
 
-                // TODO: a timeout?
                 do
                 {
                     ReleaseCurrentEpoch();
@@ -159,8 +152,6 @@ namespace Garnet.cluster
                     config = clusterProvider.clusterManager.CurrentConfig;
                 }
                 while (config.GetState(slot) is SlotState.IMPORTING or SlotState.MIGRATING);
-
-                logger?.LogDebug("{pid}: Resuming operation on {key} (asking={asking}): {slot}", clusterProvider.storeWrapper.DefaultDatabase.VectorManager.processInstanceId, System.Text.Encoding.UTF8.GetString(keySlice.ReadOnlySpan), SessionAsking, slot);
             }
         }
 

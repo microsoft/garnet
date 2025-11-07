@@ -50,8 +50,6 @@ namespace Garnet.test.cluster
 
         private static readonly Dictionary<string, LogLevel> MonitorTests = new()
         {
-            [nameof(MigrateVectorStressAsync)] = LogLevel.Debug,
-            [nameof(MigrateVectorSetWhileModifyingAsync)] = LogLevel.Debug,
         };
 
 

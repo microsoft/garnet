@@ -85,8 +85,6 @@ namespace Garnet.server
     /// </summary>
     sealed partial class StorageSession : IDisposable
     {
-        delegate void HackHackDelegate(nint ctx, nint dataPtr, nuint dataLen);
-
         /// <summary>
         /// Implement Vector Set Add - this may also create a Vector Set if one does not already exist.
         /// </summary>

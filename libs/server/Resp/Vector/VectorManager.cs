@@ -204,7 +204,7 @@ namespace Garnet.server
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         private struct Index
         {
-            internal const int Size = 60;
+            internal const int Size = 52;
 
             [FieldOffset(0)]
             public ulong Context;
@@ -222,8 +222,6 @@ namespace Garnet.server
             public VectorQuantType QuantType;
             [FieldOffset(36)]
             public Guid ProcessInstanceId;
-            [FieldOffset(52)]
-            public long Creation;
         }
 
         /// <summary>
@@ -666,6 +664,8 @@ namespace Garnet.server
         public VectorManager(int dbId, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
         {
             this.dbId = dbId;
+
+            // Include DB and id so we correlate to what's actually stored in the log
             logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}:{processInstanceId}");
 
             replicationBlockEvent = new(true);
@@ -687,7 +687,7 @@ namespace Garnet.server
             cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             cleanupTask = RunCleanupTaskAsync();
 
-            this.logger?.LogInformation("Created VectorManager for DB={dbId}, process identifier={processInstanceId}", dbId, processInstanceId);
+            logger?.LogInformation("Created VectorManager");
         }
 
         /// <summary>
@@ -769,8 +769,6 @@ namespace Garnet.server
 
                         contextMetadata.MarkInUse(nextFree, hashSlot);
                     }
-
-                    logger?.LogDebug("Allocated vector set with context {nextFree}", nextFree);
                     return nextFree;
                 }
                 catch (Exception e)
@@ -805,24 +803,6 @@ namespace Garnet.server
             return true;
         }
 
-        public bool AnyVectorSetExistsInHashSlot(int slot)
-        {
-            // Fast and loose, false positives are fine here
-            var copy = contextMetadata;
-
-            // TODO: we don't know the slots that are mapped up... this will block all writes while migrations are happening
-            for (var i = ContextStep; i <= byte.MaxValue; i += ContextStep)
-            {
-                if (copy.IsMigrating(i))
-                {
-                    // SOME migraiton is inbound
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
         /// <summary>
         /// Called when an index creation succeeds to flush <see cref="contextMetadata"/> into the store.
         /// </summary>
@@ -835,8 +815,6 @@ namespace Garnet.server
             lock (this)
             {
                 MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0] = contextMetadata;
-
-                logger?.LogDebug("Copied context for saving: {contextMetadata}", contextMetadata);
             }
 
             var key = SpanByte.FromPinnedSpan(keySpan);
@@ -1074,8 +1052,6 @@ namespace Garnet.server
             completedOutputs.Dispose();
         }
 
-        private static long HackHack = 0;
-
         /// <summary>
         /// Construct a new index, and stash enough data to recover it with <see cref="ReadIndex"/>.
         /// </summary>
@@ -1098,7 +1074,7 @@ namespace Garnet.server
 
             if (indexSpan.Length != Index.Size)
             {
-                logger?.LogCritical("Acquired space for vector set index does not match expectations, {0} != {1}", indexSpan.Length, Index.Size);
+                logger?.LogCritical("Acquired space for vector set index does not match expectations, {Length} != {Size}", indexSpan.Length, Index.Size);
                 throw new GarnetException($"Acquired space for vector set index does not match expectations, {indexSpan.Length} != {Index.Size}");
             }
 
@@ -1111,7 +1087,6 @@ namespace Garnet.server
             asIndex.NumLinks = numLinks;
             asIndex.IndexPtr = (ulong)newIndexPtr;
             asIndex.ProcessInstanceId = processInstanceId;
-            asIndex.Creation = Interlocked.Increment(ref HackHack);
         }
 
         /// <summary>
@@ -1127,7 +1102,7 @@ namespace Garnet.server
 
             if (indexSpan.Length != Index.Size)
             {
-                logger?.LogCritical("Acquired space for vector set index does not match expectations, {0} != {1}", indexSpan.Length, Index.Size);
+                logger?.LogCritical("Acquired space for vector set index does not match expectations, {Length} != {Size}", indexSpan.Length, Index.Size);
                 throw new GarnetException($"Acquired space for vector set index does not match expectations, {indexSpan.Length} != {Index.Size}");
             }
 
@@ -1442,7 +1417,7 @@ namespace Garnet.server
 
             if (found < 0)
             {
-                logger?.LogWarning("Error indicating response from vector service {0}", found);
+                logger?.LogWarning("Error indicating response from vector service {found}", found);
                 outputIdFormat = VectorIdFormat.Invalid;
                 return VectorManagerResult.BadParams;
             }
@@ -1544,7 +1519,7 @@ namespace Garnet.server
 
             if (found < 0)
             {
-                logger?.LogWarning("Error indicating response from vector service {0}", found);
+                logger?.LogWarning("Error indicating response from vector service {found}", found);
                 outputIdFormat = VectorIdFormat.Invalid;
                 return VectorManagerResult.BadParams;
             }
@@ -1762,7 +1737,7 @@ namespace Garnet.server
 
             if (!res.IsCompletedSuccessfully)
             {
-                logger?.LogCritical("Failed to inject replication write for VADD into log, result was {0}", res);
+                logger?.LogCritical("Failed to inject replication write for VADD into log, result was {res}", res);
                 throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
             }
 
@@ -2394,8 +2369,6 @@ namespace Garnet.server
                     exclusiveLocks[i].keyHash = (keyHash & ~readLockShardMask) | (long)i;
                 }
 
-                logger?.LogDebug("{pid}: Incoming migration of Vector Set index {key}, context {context}", this.processInstanceId, Encoding.UTF8.GetString(key.AsReadOnlySpan()), context);
-
                 ref var lockCtx = ref storageSession.objectStoreLockableContext;
                 lockCtx.BeginLockable();
 
@@ -2709,8 +2682,6 @@ namespace Garnet.server
                         continue;
                     }
 
-
-                    logger?.LogDebug("Creating (or recreating={needsRecreate}) Vector Set under key {key}", needsRecreate, Encoding.UTF8.GetString(key.AsReadOnlySpan()));
 
                     ulong indexContext;
                     nint newlyAllocatedIndex;

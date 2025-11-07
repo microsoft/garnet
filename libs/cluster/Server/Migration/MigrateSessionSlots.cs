@@ -145,8 +145,6 @@ namespace Garnet.cluster
                                     var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
                                     var valSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
 
-                                    logger?.LogDebug("Migrating Vector Set {key}, local context = {oldContext}, new context = {newContext}", System.Text.Encoding.UTF8.GetString(keySpan.AsReadOnlySpan()), oldContext, newContext);
-
                                     if (gcs.NeedsInitialization)
                                         gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
 

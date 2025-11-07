@@ -40,21 +40,6 @@ namespace Garnet.server
             if (commandInfo == null)
                 return true;
 
-            // HACK AHCK
-            if (cmd == RespCommand.VADD)
-            {
-                var key = parseState.GetArgSliceByRef(0).SpanByte;
-                var slot = (int)common.HashSlotUtils.HashSlot(ref key);
-                dynamic dyn = storeWrapper.clusterProvider;
-                var x = (bool)dyn.IsNotStable(slot);
-                if (x && SessionAsking > 0)
-                {
-                    Console.WriteLine();
-                }
-            }
-
-            //HACK AHK
-
             csvi.keyNumOffset = -1;
             storeWrapper.clusterProvider.ExtractKeySpecs(commandInfo, cmd, ref parseState, ref csvi);
             csvi.readOnly = cmd.IsReadOnly();
