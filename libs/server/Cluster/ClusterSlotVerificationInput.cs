@@ -34,5 +34,12 @@ namespace Garnet.server
         /// Offset of key num if any
         /// </summary>
         public int keyNumOffset;
+
+        /// <summary>
+        /// If the command being executed modifes a Vector Set.
+        /// 
+        /// This requires special handling during migrations.
+        /// </summary>
+        public bool isVectorSetWriteCommand;
     }
 }

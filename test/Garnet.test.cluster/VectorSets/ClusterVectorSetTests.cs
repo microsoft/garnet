@@ -48,7 +48,10 @@ namespace Garnet.test.cluster
         private const int HighReplicationShards = 6;
         private const int DefaultMultiPrimaryShards = 4;
 
-        private static readonly Dictionary<string, LogLevel> MonitorTests = [];
+        private static readonly Dictionary<string, LogLevel> MonitorTests = new()
+        {
+            [nameof(MigrateVectorStressAsync)] = LogLevel.Debug,
+        };
 
 
         private ClusterTestContext context;
@@ -1425,7 +1428,497 @@ namespace Garnet.test.cluster
             }
         }
 
+        [Test]
+        public void MigrateVectorSetBack()
+        {
+            const int Primary0Index = 0;
+            const int Primary1Index = 1;
 
-        // TODO: Stress migration while under load (move back and forth while querying replicas)
+            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
+            context.CreateConnection(useTLS: true);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultShards, replica_count: 0, logger: context.logger);
+
+            var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
+            var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary0).Value);
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary1).Value);
+
+            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
+            var primary1Id = context.clusterTestUtils.ClusterMyId(primary1);
+
+            var slots = context.clusterTestUtils.ClusterSlots(primary0);
+
+            string vectorSetKey;
+            int vectorSetKeySlot;
+            {
+                var ix = 0;
+
+                while (true)
+                {
+                    vectorSetKey = $"{nameof(MigrateVectorSetBack)}_{ix}";
+                    vectorSetKeySlot = context.clusterTestUtils.HashSlot(vectorSetKey);
+
+                    var isPrimary0Slot = slots.Any(x => x.nnInfo.Any(y => y.nodeid == primary0Id) && vectorSetKeySlot >= x.startSlot && vectorSetKeySlot <= x.endSlot);
+                    if (isPrimary0Slot)
+                    {
+                        break;
+                    }
+
+                    ix++;
+                }
+            }
+
+            using var readWriteCon = ConnectionMultiplexer.Connect(context.clusterTestUtils.GetRedisConfig(context.endpoints));
+            var readWriteDB = readWriteCon.GetDatabase();
+
+            var data0 = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
+            byte[] elem0 = [1, 2, 3, 0];
+            var attr0 = "hello world"u8.ToArray();
+
+            var add0Res = (int)readWriteDB.Execute("VADD", [new RedisKey(vectorSetKey), "XB8", data0, elem0, "XPREQ8", "SETATTR", attr0]);
+            ClassicAssert.AreEqual(1, add0Res);
+
+            // Migrate 0 -> 1
+            context.logger?.LogInformation("Starting 0 -> 1 migration of {slot}", vectorSetKeySlot);
+            {
+                using (var migrateToken = new CancellationTokenSource())
+                {
+                    migrateToken.CancelAfter(30_000);
+
+                    context.clusterTestUtils.MigrateSlots(primary0, primary1, [vectorSetKeySlot]);
+                    context.clusterTestUtils.WaitForMigrationCleanup(Primary0Index, cancellationToken: migrateToken.Token);
+                    context.clusterTestUtils.WaitForMigrationCleanup(Primary1Index, cancellationToken: migrateToken.Token);
+                }
+
+                var nodePropSuccess = false;
+                var start = Stopwatch.GetTimestamp();
+                while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
+                {
+                    var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
+                    var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+
+                    var movedOffPrimary0 = !curPrimary0Slots.Contains(vectorSetKeySlot);
+                    var movedOntoPrimary1 = curPrimary1Slots.Contains(vectorSetKeySlot);
+
+                    if (movedOffPrimary0 && movedOntoPrimary1)
+                    {
+                        nodePropSuccess = true;
+                        break;
+                    }
+                }
+
+                ClassicAssert.IsTrue(nodePropSuccess, "Node propagation after 0 -> 1 migration took too long");
+            }
+
+            // Confirm still valid to add, with client side routing
+            var data1 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
+            byte[] elem1 = [4, 5, 6, 7];
+            var attr1 = "fizz buzz"u8.ToArray();
+
+            var add1Res = (int)readWriteDB.Execute("VADD", [new RedisKey(vectorSetKey), "XB8", data1, elem1, "XPREQ8", "SETATTR", attr1]);
+            ClassicAssert.AreEqual(1, add1Res);
+
+            // Migrate 1 -> 0
+            context.logger?.LogInformation("Starting 1 -> 0 migration of {slot}", vectorSetKeySlot);
+            {
+                using (var migrateToken = new CancellationTokenSource())
+                {
+                    migrateToken.CancelAfter(30_000);
+
+                    context.clusterTestUtils.MigrateSlots(primary1, primary0, [vectorSetKeySlot]);
+                    context.clusterTestUtils.WaitForMigrationCleanup(Primary0Index, cancellationToken: migrateToken.Token);
+                    context.clusterTestUtils.WaitForMigrationCleanup(Primary1Index, cancellationToken: migrateToken.Token);
+                }
+
+                var nodePropSuccess = false;
+                var start = Stopwatch.GetTimestamp();
+                while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
+                {
+                    var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
+                    var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+
+                    var movedOntoPrimary0 = curPrimary0Slots.Contains(vectorSetKeySlot);
+                    var movedOffPrimary1 = !curPrimary1Slots.Contains(vectorSetKeySlot);
+
+                    if (movedOntoPrimary0 && movedOffPrimary1)
+                    {
+                        nodePropSuccess = true;
+                        break;
+                    }
+                }
+
+                ClassicAssert.IsTrue(nodePropSuccess, "Node propagation after 1 -> 0 migration took too long");
+            }
+
+            // Confirm still valid to add, with client side routing
+            var data2 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 3)).ToArray();
+            byte[] elem2 = [8, 9, 10, 11];
+            var attr2 = "foo bar"u8.ToArray();
+
+            var add2Res = (int)readWriteDB.Execute("VADD", [new RedisKey(vectorSetKey), "XB8", data2, elem2, "XPREQ8", "SETATTR", attr2]);
+            ClassicAssert.AreEqual(1, add2Res);
+
+            // Confirm no data loss
+            var emb0 = ((string[])readWriteDB.Execute("VEMB", [new RedisKey(vectorSetKey), elem0])).Select(static x => (byte)float.Parse(x)).ToArray();
+            var emb1 = ((string[])readWriteDB.Execute("VEMB", [new RedisKey(vectorSetKey), elem1])).Select(static x => (byte)float.Parse(x)).ToArray();
+            var emb2 = ((string[])readWriteDB.Execute("VEMB", [new RedisKey(vectorSetKey), elem2])).Select(static x => (byte)float.Parse(x)).ToArray();
+            ClassicAssert.IsTrue(data0.SequenceEqual(emb0));
+            ClassicAssert.IsTrue(data1.SequenceEqual(emb1));
+            ClassicAssert.IsTrue(data2.SequenceEqual(emb2));
+        }
+
+        [Test]
+        public async Task MigrateVectorStressAsync()
+        {
+            // Move vector sets back and forth between replicas, making sure we don't drop data
+            // Keeps reads and writes going continuously
+
+            const int Primary0Index = 0;
+            const int Primary1Index = 1;
+            const int Secondary0Index = 2;
+            const int Secondary1Index = 3;
+
+            //const int VectorSetsPerPrimary = 2;
+
+            context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true);
+            context.CreateConnection(useTLS: true);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1, logger: context.logger);
+
+            var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
+            var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
+            var secondary0 = (IPEndPoint)context.endpoints[Secondary0Index];
+            var secondary1 = (IPEndPoint)context.endpoints[Secondary1Index];
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary0).Value);
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary1).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary0).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary1).Value);
+
+            var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
+            var primary1Id = context.clusterTestUtils.ClusterMyId(primary1);
+
+            var slots = context.clusterTestUtils.ClusterSlots(primary0);
+
+            var vectorSetKeys = new List<(string Key, ushort HashSlot)>();
+
+            {
+                var ix = 0;
+
+                var numP0 = 0;
+                var numP1 = 0;
+
+                //while (numP0 < VectorSetsPerPrimary || numP1 < VectorSetsPerPrimary)
+                {
+                    var key = $"{nameof(MigrateVectorStressAsync)}_{ix}";
+                    var slot = context.clusterTestUtils.HashSlot(key);
+
+                    var isPrimary0Slot = slots.Any(x => x.nnInfo.Any(y => y.nodeid == primary0Id) && slot >= x.startSlot && slot <= x.endSlot);
+
+                    if (isPrimary0Slot)
+                    {
+                        //if (numP0 < VectorSetsPerPrimary)
+                        {
+                            vectorSetKeys.Add((key, (ushort)slot));
+                            numP0++;
+                        }
+                    }
+                    else
+                    {
+                        //if (numP1 < VectorSetsPerPrimary)
+                        {
+                            vectorSetKeys.Add((key, (ushort)slot));
+                            numP1++;
+                        }
+                    }
+
+                    ix++;
+                }
+            }
+
+            // Start writing to this Vector Set
+            using var writeCancel = new CancellationTokenSource();
+
+            using var readWriteCon = ConnectionMultiplexer.Connect(context.clusterTestUtils.GetRedisConfig(context.endpoints));
+            var readWriteDB = readWriteCon.GetDatabase();
+
+            var writeTasks = new Task[vectorSetKeys.Count];
+            var writeResults = new ConcurrentBag<(byte[] Elem, byte[] Data, byte[] Attr, DateTime InsertionTime)>[vectorSetKeys.Count];
+
+            var mostRecentWrite = 0L;
+
+            for (var i = 0; i < vectorSetKeys.Count; i++)
+            {
+                var (key, _) = vectorSetKeys[i];
+                var written = writeResults[i] = new();
+
+                writeTasks[i] =
+                    Task.Run(
+                        async () =>
+                        {
+                            // Force async
+                            await Task.Yield();
+
+                            var ix = 0;
+
+                            while (!writeCancel.IsCancellationRequested)
+                            {
+                                var elem = new byte[4];
+                                BinaryPrimitives.WriteInt32LittleEndian(elem, ix);
+
+                                var data = new byte[75];
+                                Random.Shared.NextBytes(data);
+
+                                var attr = new byte[100];
+                                Random.Shared.NextBytes(attr);
+
+                                while (true)
+                                {
+                                    try
+                                    {
+                                        var addRes = (int)readWriteDB.Execute("VADD", [new RedisKey(key), "XB8", data, elem, "XPREQ8", "SETATTR", attr]);
+                                        ClassicAssert.AreEqual(1, addRes);
+                                        break;
+                                    }
+                                    catch (RedisServerException exc)
+                                    {
+                                        if (exc.Message.StartsWith("MOVED "))
+                                        {
+                                            // This is fine, just try again if we're not cancelled
+                                            if (writeCancel.IsCancellationRequested)
+                                            {
+                                                return;
+                                            }
+
+                                            continue;
+                                        }
+                                    }
+                                }
+
+                                var now = DateTime.UtcNow;
+                                written.Add((elem, data, attr, now));
+
+                                var mostRecentCopy = mostRecentWrite;
+                                while (mostRecentCopy < now.Ticks)
+                                {
+                                    var currentMostRecent = Interlocked.CompareExchange(ref mostRecentWrite, now.Ticks, mostRecentCopy);
+                                    if (currentMostRecent == mostRecentCopy)
+                                    {
+                                        break;
+                                    }
+                                    mostRecentCopy = currentMostRecent;
+                                }
+
+                                ix++;
+                            }
+                        }
+                    );
+            }
+
+            using var readCancel = new CancellationTokenSource();
+
+            var readTasks = new Task<int>[vectorSetKeys.Count];
+            for (var i = 0; i < vectorSetKeys.Count; i++)
+            {
+                var (key, _) = vectorSetKeys[i];
+                var written = writeResults[i];
+                readTasks[i] =
+                    Task.Run(
+                        async () =>
+                        {
+                            await Task.Yield();
+
+                            var successfulReads = 0;
+
+                            while (!readCancel.IsCancellationRequested)
+                            {
+                                var r = written.Count;
+                                if (r == 0)
+                                {
+                                    await Task.Delay(10);
+                                    continue;
+                                }
+
+                                var (elem, data, _, _) = written.ToList()[Random.Shared.Next(r)];
+
+                                var emb = (string[])readWriteDB.Execute("VEMB", [new RedisKey(key), elem]);
+
+                                if (emb.Length == 0)
+                                {
+                                    // This can happen if the VEMB lands just as a migrate is completing, between when slot validation happens and when data is cleaned up
+                                    continue;
+                                }
+
+                                // If we got data, make sure it's coherent
+                                ClassicAssert.AreEqual(data.Length, emb.Length);
+
+                                for (var i = 0; i < data.Length; i++)
+                                {
+                                    ClassicAssert.AreEqual(data[i], (byte)float.Parse(emb[i]));
+                                }
+
+                                successfulReads++;
+                            }
+
+                            return successfulReads;
+                        }
+                    );
+            }
+
+            await Task.Delay(1_000);
+
+            ClassicAssert.IsTrue(writeResults.All(static r => !r.IsEmpty), "Should have seen some writes pre-migration");
+
+            // Task to flip back and forth between primaries
+            using var migrateCancel = new CancellationTokenSource();
+
+            var migrateTask =
+                Task.Run(
+                    async () =>
+                    {
+                        var hashSlotsOnP0 = new List<int>();
+                        var hashSlotsOnP1 = new List<int>();
+                        foreach (var (_, slot) in vectorSetKeys)
+                        {
+                            var isPrimary0Slot = slots.Any(x => x.nnInfo.Any(y => y.nodeid == primary0Id) && slot >= x.startSlot && slot <= x.endSlot);
+                            if (isPrimary0Slot)
+                            {
+                                if (!hashSlotsOnP0.Contains(slot))
+                                {
+                                    hashSlotsOnP0.Add(slot);
+                                }
+                            }
+                            else
+                            {
+                                if (!hashSlotsOnP1.Contains(slot))
+                                {
+                                    hashSlotsOnP1.Add(slot);
+                                }
+                            }
+                        }
+
+                        var migrationTimes = new List<DateTime>();
+
+                        var mostRecentMigration = 0L;
+
+                        while (!migrateCancel.IsCancellationRequested)
+                        {
+                            await Task.Delay(100);
+
+                            // Don't start another migration until we get at least one successful write
+                            if (Interlocked.CompareExchange(ref mostRecentWrite, 0, 0) < mostRecentMigration)
+                            {
+                                continue;
+                            }
+
+                            // Move 0 -> 1
+                            if (hashSlotsOnP0.Count > 0)
+                            {
+                                context.logger?.LogInformation("Starting 0 -> 1 migration of {slots}", string.Join(", ", hashSlotsOnP0));
+                                using (var migrateToken = new CancellationTokenSource())
+                                {
+                                    migrateToken.CancelAfter(30_000);
+
+                                    context.clusterTestUtils.MigrateSlots(primary0, primary1, hashSlotsOnP0);
+                                    context.clusterTestUtils.WaitForMigrationCleanup(Primary0Index, cancellationToken: migrateToken.Token);
+                                    context.clusterTestUtils.WaitForMigrationCleanup(Primary1Index, cancellationToken: migrateToken.Token);
+                                }
+
+                                var nodePropSuccess = false;
+                                var start = Stopwatch.GetTimestamp();
+                                while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
+                                {
+                                    var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
+                                    var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+
+                                    var movedOffPrimary0 = !curPrimary0Slots.Any(h => hashSlotsOnP0.Contains(h));
+                                    var movedOntoPrimary1 = hashSlotsOnP0.All(h => curPrimary1Slots.Contains(h));
+
+                                    if (movedOffPrimary0 && movedOntoPrimary1)
+                                    {
+                                        nodePropSuccess = true;
+                                        break;
+                                    }
+                                }
+
+                                ClassicAssert.IsTrue(nodePropSuccess, "Node propagation after 0 -> 1 migration took too long");
+                            }
+
+                            // Move 1 -> 0
+                            if (hashSlotsOnP1.Count > 0)
+                            {
+                                context.logger?.LogInformation("Starting 1 -> 0 migration of {slots}", string.Join(", ", hashSlotsOnP1));
+                                using (var migrateToken = new CancellationTokenSource())
+                                {
+                                    migrateToken.CancelAfter(30_000);
+
+                                    context.clusterTestUtils.MigrateSlots(primary1, primary0, hashSlotsOnP1);
+                                    context.clusterTestUtils.WaitForMigrationCleanup(Primary1Index, cancellationToken: migrateToken.Token);
+                                    context.clusterTestUtils.WaitForMigrationCleanup(Primary0Index, cancellationToken: migrateToken.Token);
+                                }
+
+                                var nodePropSuccess = false;
+                                var start = Stopwatch.GetTimestamp();
+                                while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
+                                {
+                                    var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
+                                    var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+
+                                    var movedOffPrimary1 = !curPrimary1Slots.Any(h => hashSlotsOnP1.Contains(h));
+                                    var movedOntoPrimary0 = hashSlotsOnP1.All(h => curPrimary0Slots.Contains(h));
+
+                                    if (movedOffPrimary1 && movedOntoPrimary0)
+                                    {
+                                        nodePropSuccess = true;
+                                        break;
+                                    }
+                                }
+
+                                ClassicAssert.IsTrue(nodePropSuccess, "Node propagation after 1 -> 0 migration took too long");
+                            }
+
+                            // Remember for next iteration
+                            var now = DateTime.UtcNow;
+                            mostRecentMigration = now.Ticks;
+                            migrationTimes.Add(now);
+
+                            // Flip around assignment for next pass
+                            (hashSlotsOnP0, hashSlotsOnP1) = (hashSlotsOnP1, hashSlotsOnP0);
+                        }
+
+                        return migrationTimes;
+                    }
+                );
+
+            await Task.Delay(10_000);
+
+            migrateCancel.Cancel();
+            var migrationTimes = await migrateTask;
+
+            ClassicAssert.IsTrue(migrationTimes.Count > 2, "Should have moved back and forth at least twice");
+
+            writeCancel.Cancel();
+            await Task.WhenAll(writeTasks);
+
+            readCancel.Cancel();
+            var readResults = await Task.WhenAll(readTasks);
+            ClassicAssert.IsTrue(readResults.All(static r => r > 0), "Should have successful reads on all Vector Sets");
+
+            // Check that everything written survived all the migrations
+            for (var i = 0; i < vectorSetKeys.Count; i++)
+            {
+                var (key, _) = vectorSetKeys[i];
+
+                foreach (var (elem, data, attr, _) in writeResults[i])
+                {
+                    var actualData = (string[])await readWriteDB.ExecuteAsync("VEMB", [new RedisKey(key), elem]);
+
+                    for (var j = 0; j < data.Length; j++)
+                    {
+                        ClassicAssert.AreEqual(data[j], (byte)float.Parse(actualData[j]));
+                    }
+                }
+            }
+        }
     }
 }

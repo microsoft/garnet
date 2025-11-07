@@ -307,7 +307,7 @@ namespace Garnet
             var vectorManager = new VectorManager(
                 dbId,
                 () => Provider.GetSession(WireFormat.ASCII, null),
-                loggerFactory?.CreateLogger<VectorManager>()
+                loggerFactory
             );
 
             return new GarnetDatabase(dbId, store, objectStore, epoch, stateMachineDriver, objectStoreSizeTracker,

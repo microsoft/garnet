@@ -48,7 +48,7 @@ namespace Garnet.server
             if (!clusterEnabled) return;
 
             var readOnly = type == LockType.Shared;
-            if (!respSession.clusterSession.NetworkIterativeSlotVerify(key, readOnly, respSession.SessionAsking))
+            if (!respSession.clusterSession.NetworkIterativeSlotVerify(key, readOnly, respSession.SessionAsking, isVectorSetWriteCommand: false)) // TODO: Is it ok to ignore Vector Set-y-ness of the key?
             {
                 this.state = TxnState.Aborted;
             }

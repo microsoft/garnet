@@ -40,10 +40,10 @@ namespace Garnet.cluster
             var state = SketchStatus.INITIALIZING;
             foreach (var migrateTask in migrateOperation)
             {
-                if (migrateTask.sketch.Probe(key.SpanByte, out state))
+                if (migrateTask.IsMovingVectorSet(key.SpanByte, out state))
                     goto found;
 
-                if (migrateTask.IsMovingVectorSet(key.SpanByte, out state))
+                if (migrateTask.sketch.Probe(key.SpanByte, out state))
                     goto found;
             }
 

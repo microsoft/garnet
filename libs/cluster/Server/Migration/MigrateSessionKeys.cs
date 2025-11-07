@@ -71,7 +71,9 @@ namespace Garnet.cluster
                         // Update the index context as we move it, so it arrives on the destination node pointed at the appropriate
                         // namespaces for element data
                         VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _);
-                        VectorManager.SetContext(value, _namespaceMap[oldContext]);
+
+                        var newContext = _namespaceMap[oldContext];
+                        VectorManager.SetContextForMigration(value, newContext);
 
                         unsafe
                         {
@@ -79,6 +81,8 @@ namespace Garnet.cluster
                             {
                                 var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
                                 var valSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
+
+                                logger?.LogDebug("Migrating Vector Set {key}, local context = {oldContext}, new context = {newContext}", System.Text.Encoding.UTF8.GetString(keySpan.AsReadOnlySpan()), oldContext, newContext);
 
                                 if (gcs.NeedsInitialization)
                                     gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);

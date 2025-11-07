@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Garnet.client;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -41,24 +42,6 @@ namespace Garnet.cluster
 
             public void EncounteredVectorSet(byte[] key, byte[] value)
             => vectorSetsIndexKeysToMigrate.TryAdd(key, value);
-
-            /// <summary>
-            /// Returns true if this operation is moving the given Vector Set.
-            /// 
-            /// Does not validate that the key actually is a Vector Set, but that shouldn't matter.
-            /// </summary>
-            public bool IsMovingVectorSet(SpanByte key, out SketchStatus status)
-            {
-                var isPresent =
-#if NET9_0_OR_GREATER
-                    vectorSetsIndexKeysToMigrateLookup.ContainsKey(key.AsReadOnlySpan());
-#else
-                    vectorSetsIndexKeysToMigrate.ContainsKey(key.ToByteArray());
-#endif
-
-                status = isPresent ? sketch.Status : SketchStatus.INITIALIZING;
-                return isPresent;
-            }
 
             public MigrateOperation(MigrateSession session, Sketch sketch = null, int batchSize = 1 << 18)
             {
@@ -329,7 +312,27 @@ namespace Garnet.cluster
                 if (session._copyOption)
                     return;
 
-                _ = localServerSession.BasicGarnetApi.DELETE(ref key);
+                var delRes = localServerSession.BasicGarnetApi.DELETE(ref key);
+
+                session.logger?.LogDebug("Deleting Vector Set {key} after migration: {delRes}", System.Text.Encoding.UTF8.GetString(key.AsReadOnlySpan()), delRes);
+            }
+
+            public unsafe bool IsMovingVectorSet(SpanByte key, out SketchStatus status)
+            {
+                var slot = HashSlotUtils.HashSlot(ref key);
+
+                if (session.clusterProvider.storeWrapper.DefaultDatabase.VectorManager.AnyVectorSetExistsInHashSlot(slot))
+                {
+                    // TODO: Actually check that this thing is a Vector Set... somehow
+                    
+                    // Because we move _piecemeal_ as soon as we start migrating, we are always migrating
+                    // there's no legal transition back to "initializing" where we could allow a Vector Set write through
+                    status = SketchStatus.TRANSMITTING;
+                    return true;
+                }
+
+                status = SketchStatus.INITIALIZING;
+                return false;
             }
         }
     }

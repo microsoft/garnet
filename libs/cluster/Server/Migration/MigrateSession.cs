@@ -280,9 +280,10 @@ namespace Garnet.cluster
                         Status = MigrateState.FAIL;
                         return false;
                     }
-                    logger?.LogTrace("[Completed] SETSLOT {slots} {state} {nodeid}", ClusterManager.GetRange([.. _sslots]), state, nodeid == null ? "" : nodeid);
+                    logger?.LogTrace("[Completed] SETSLOT {slots} {state} {nodeid}", ClusterManager.GetRange([.. _sslots]), state, nodeid ?? "");
                     return true;
-                }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(_timeout, _cts.Token).Result;
+                }, TaskContinuationOptions.OnlyOnRanToCompletion)
+                .WaitAsync(_timeout, _cts.Token).Result;
             }
             catch (Exception ex)
             {

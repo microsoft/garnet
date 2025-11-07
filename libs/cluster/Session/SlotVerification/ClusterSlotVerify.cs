@@ -2,9 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Garnet.server;
+using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
@@ -23,9 +25,18 @@ namespace Garnet.cluster
             }
         }
 
-        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref ArgSlice keySlice, bool readOnly, byte SessionAsking, int slot = -1)
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref ArgSlice keySlice, bool readOnly, byte SessionAsking, bool isVectorSetWriteCommand, int slot = -1)
         {
-            return readOnly ? SingleKeyReadSlotVerify(ref config, ref keySlice) : SingleKeyReadWriteSlotVerify(ref config, ref keySlice);
+            Debug.Assert(!isVectorSetWriteCommand || (isVectorSetWriteCommand && !readOnly), "Shouldn't see Vector Set writes and readonly at same time");
+
+            var ret = readOnly ? SingleKeyReadSlotVerify(ref config, ref keySlice) : SingleKeyReadWriteSlotVerify(isVectorSetWriteCommand, ref config, ref keySlice);
+
+            if (!readOnly)
+            {
+                logger?.LogDebug("Serve key {key}: {state}x{slot}", System.Text.Encoding.UTF8.GetString(keySlice.ReadOnlySpan), ret.state, ret.slot);
+            }
+
+            return ret;
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             ClusterSlotVerificationResult SingleKeyReadSlotVerify(ref ClusterConfig config, ref ArgSlice keySlice)
@@ -69,11 +80,21 @@ namespace Garnet.cluster
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(ref ClusterConfig config, ref ArgSlice keySlice)
+            ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(bool isVectorSetWriteCommand, ref ClusterConfig config, ref ArgSlice keySlice)
             {
                 var _slot = slot == -1 ? ArgSliceUtils.HashSlot(ref keySlice) : (ushort)slot;
+
+            tryAgain:
                 var IsLocal = config.IsLocal(_slot, readWriteSession: readWriteSession);
                 var state = config.GetState(_slot);
+
+                logger?.LogDebug("{pid}: Read/Write key {key} (asking={asking}): {slot}, {IsLocal}, {state}", clusterProvider.storeWrapper.DefaultDatabase.VectorManager.processInstanceId, System.Text.Encoding.UTF8.GetString(keySlice.ReadOnlySpan), SessionAsking, _slot, IsLocal, state);
+
+                if (isVectorSetWriteCommand && state is SlotState.IMPORTING or SlotState.MIGRATING)
+                {
+                    WaitForSlotToStabalize(_slot, ref keySlice, ref config);
+                    goto tryAgain;
+                }
 
                 // Redirect r/w requests towards primary
                 if (config.LocalNodeRole == NodeRole.REPLICA && !readWriteSession)
@@ -123,18 +144,36 @@ namespace Garnet.cluster
                 }
                 return Exists(ref key);
             }
+
+            void WaitForSlotToStabalize(ushort slot, ref ArgSlice keySlice, ref ClusterConfig config)
+            {
+                logger?.LogDebug("{pid}: Pausing operation on {key} (asking={asking}): {slot}", clusterProvider.storeWrapper.DefaultDatabase.VectorManager.processInstanceId, System.Text.Encoding.UTF8.GetString(keySlice.ReadOnlySpan), SessionAsking, slot);
+
+                // TODO: a timeout?
+                do
+                {
+                    ReleaseCurrentEpoch();
+                    _ = Thread.Yield();
+                    AcquireCurrentEpoch();
+
+                    config = clusterProvider.clusterManager.CurrentConfig;
+                }
+                while (config.GetState(slot) is SlotState.IMPORTING or SlotState.MIGRATING);
+
+                logger?.LogDebug("{pid}: Resuming operation on {key} (asking={asking}): {slot}", clusterProvider.storeWrapper.DefaultDatabase.VectorManager.processInstanceId, System.Text.Encoding.UTF8.GetString(keySlice.ReadOnlySpan), SessionAsking, slot);
+            }
         }
 
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref Span<ArgSlice> keys, bool readOnly, byte sessionAsking, int count)
+        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref Span<ArgSlice> keys, bool readOnly, byte sessionAsking, bool isVectorSetWriteCommand, int count)
         {
             var _end = count < 0 ? keys.Length : count;
             var slot = ArgSliceUtils.HashSlot(ref keys[0]);
-            var verifyResult = SingleKeySlotVerify(ref config, ref keys[0], readOnly, sessionAsking, slot);
+            var verifyResult = SingleKeySlotVerify(ref config, ref keys[0], readOnly, sessionAsking, isVectorSetWriteCommand, slot);
 
             for (var i = 1; i < _end; i++)
             {
                 var _slot = ArgSliceUtils.HashSlot(ref keys[i]);
-                var _verifyResult = SingleKeySlotVerify(ref config, ref keys[i], readOnly, sessionAsking, _slot);
+                var _verifyResult = SingleKeySlotVerify(ref config, ref keys[i], readOnly, sessionAsking, isVectorSetWriteCommand, _slot);
 
                 // Check if slot changes between keys
                 if (_slot != slot)
@@ -152,7 +191,7 @@ namespace Garnet.cluster
         {
             ref var key = ref parseState.GetArgSliceByRef(csvi.firstKey);
             var slot = ArgSliceUtils.HashSlot(ref key);
-            var verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, slot);
+            var verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, csvi.isVectorSetWriteCommand, slot);
             var secondKey = csvi.firstKey + csvi.step;
 
             for (var i = secondKey; i < csvi.lastKey; i += csvi.step)
@@ -161,7 +200,7 @@ namespace Garnet.cluster
                     continue;
                 key = ref parseState.GetArgSliceByRef(i);
                 var _slot = ArgSliceUtils.HashSlot(ref key);
-                var _verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, _slot);
+                var _verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, csvi.isVectorSetWriteCommand, _slot);
 
                 // Check if slot changes between keys
                 if (_slot != slot)

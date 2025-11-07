@@ -124,7 +124,7 @@ namespace Garnet.cluster
         /// </summary>
         private bool NetworkClusterReserve(VectorManager vectorManager, out bool invalidParameters)
         {
-            if (parseState.Count != 2)
+            if (parseState.Count < 2)
             {
                 invalidParameters = true;
                 return true;

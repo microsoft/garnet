@@ -55,6 +55,9 @@ namespace Garnet.server
         internal const long MigrateElementKeyLogArg = VREMAppendLogArg + 1;
         internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1;
 
+        // This is a V8 GUID based on 'GARNET MIGRATION' ASCII string
+        private static readonly Guid MigratedInstanceId = new("4e524147-5445-8d20-8947-524154494f4e");
+
         public unsafe struct VectorReadBatch : IReadArgBatch<SpanByte, VectorInput, SpanByte>
         {
             public int Count { get; }
@@ -201,7 +204,7 @@ namespace Garnet.server
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         private struct Index
         {
-            internal const int Size = 52;
+            internal const int Size = 60;
 
             [FieldOffset(0)]
             public ulong Context;
@@ -219,6 +222,8 @@ namespace Garnet.server
             public VectorQuantType QuantType;
             [FieldOffset(36)]
             public Guid ProcessInstanceId;
+            [FieldOffset(52)]
+            public long Creation;
         }
 
         /// <summary>
@@ -468,6 +473,39 @@ namespace Garnet.server
 
                 return ret;
             }
+
+            /// <inheritdoc/>
+            public override readonly string ToString()
+            {
+                // Just for debugging purposes
+
+                var sb = new StringBuilder();
+                sb.AppendLine();
+                _ = sb.AppendLine($"Version: {Version}");
+                var mask = 1UL;
+                var ix = 0;
+                while (mask != 0)
+                {
+                    var isInUse = (inUse & mask) != 0;
+                    var isMigrating = (migrating & mask) != 0;
+                    var cleanup = (cleaningUp & mask) != 0;
+
+                    var hashSlot = this.slots[ix];
+
+                    if (isInUse || isMigrating || cleanup)
+                    {
+                        var ctxStart = (ulong)ix * ContextStep;
+                        var ctxEnd = ctxStart + ContextStep - 1;
+
+                        sb.AppendLine($"[{ctxStart:00}-{ctxEnd:00}): {(isInUse ? "in-use " : "")}{(isMigrating ? "migrating " : "")}{(cleanup ? "cleanup" : "")}");
+                    }
+
+                    mask <<= 1;
+                    ix++;
+                }
+
+                return sb.ToString();
+            }
         }
 
         private readonly record struct VADDReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks)
@@ -602,7 +640,7 @@ namespace Garnet.server
 
         private DiskANNService Service { get; } = new DiskANNService();
 
-        private readonly Guid processInstanceId = Guid.NewGuid();
+        public readonly Guid processInstanceId = Guid.NewGuid();
 
         private ContextMetadata contextMetadata;
 
@@ -625,10 +663,10 @@ namespace Garnet.server
         private readonly Task cleanupTask;
         private readonly Func<IMessageConsumer> getCleanupSession;
 
-        public VectorManager(int dbId, Func<IMessageConsumer> getCleanupSession, ILogger logger)
+        public VectorManager(int dbId, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
         {
             this.dbId = dbId;
-            this.logger = logger;
+            logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}:{processInstanceId}");
 
             replicationBlockEvent = new(true);
             replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
@@ -649,7 +687,7 @@ namespace Garnet.server
             cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
             cleanupTask = RunCleanupTaskAsync();
 
-            this.logger?.LogInformation("Created VectorManager for DB={dbId}", dbId);
+            this.logger?.LogInformation("Created VectorManager for DB={dbId}, process identifier={processInstanceId}", dbId, processInstanceId);
         }
 
         /// <summary>
@@ -767,6 +805,24 @@ namespace Garnet.server
             return true;
         }
 
+        public bool AnyVectorSetExistsInHashSlot(int slot)
+        {
+            // Fast and loose, false positives are fine here
+            var copy = contextMetadata;
+
+            // TODO: we don't know the slots that are mapped up... this will block all writes while migrations are happening
+            for (var i = ContextStep; i <= byte.MaxValue; i += ContextStep)
+            {
+                if (copy.IsMigrating(i))
+                {
+                    // SOME migraiton is inbound
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         /// <summary>
         /// Called when an index creation succeeds to flush <see cref="contextMetadata"/> into the store.
         /// </summary>
@@ -779,6 +835,8 @@ namespace Garnet.server
             lock (this)
             {
                 MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0] = contextMetadata;
+
+                logger?.LogDebug("Copied context for saving: {contextMetadata}", contextMetadata);
             }
 
             var key = SpanByte.FromPinnedSpan(keySpan);
@@ -1016,6 +1074,8 @@ namespace Garnet.server
             completedOutputs.Dispose();
         }
 
+        private static long HackHack = 0;
+
         /// <summary>
         /// Construct a new index, and stash enough data to recover it with <see cref="ReadIndex"/>.
         /// </summary>
@@ -1034,6 +1094,7 @@ namespace Garnet.server
             var indexSpan = indexValue.AsSpan();
 
             Debug.Assert((newContext % 8) == 0 && newContext != 0, "Illegal context provided");
+            Debug.Assert(Unsafe.SizeOf<Index>() == Index.Size, "Constant index size is incorrect");
 
             if (indexSpan.Length != Index.Size)
             {
@@ -1050,6 +1111,7 @@ namespace Garnet.server
             asIndex.NumLinks = numLinks;
             asIndex.IndexPtr = (ulong)newIndexPtr;
             asIndex.ProcessInstanceId = processInstanceId;
+            asIndex.Creation = Interlocked.Increment(ref HackHack);
         }
 
         /// <summary>
@@ -1131,8 +1193,11 @@ namespace Garnet.server
 
         /// <summary>
         /// Update the context (which defines a range of namespaces) stored in a given index.
+        /// 
+        /// Doing this also smashes the ProcessInstanceId, so the destination node won't
+        /// think it's already creating this index.
         /// </summary>
-        public static void SetContext(Span<byte> indexValue, ulong newContext)
+        public static void SetContextForMigration(Span<byte> indexValue, ulong newContext)
         {
             Debug.Assert(newContext != 0, "0 is special, should not be assigning to an index");
 
@@ -1144,6 +1209,7 @@ namespace Garnet.server
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexValue));
 
             asIndex.Context = newContext;
+            asIndex.ProcessInstanceId = MigratedInstanceId;
         }
 
         /// <summary>
@@ -2271,7 +2337,9 @@ namespace Garnet.server
             input.header.cmd = RespCommand.VADD;
             input.arg1 = RecreateIndexArg;
 
-            ReadIndex(value.AsReadOnlySpan(), out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out _, out _);
+            ReadIndex(value.AsReadOnlySpan(), out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out _, out var processInstanceId);
+
+            Debug.Assert(processInstanceId == MigratedInstanceId, "Shouldn't receive a real process instance id during a migration");
 
             // Extra validation in DEBUG
 #if DEBUG
@@ -2325,6 +2393,8 @@ namespace Garnet.server
                     exclusiveLocks[i].lockType = LockType.Exclusive;
                     exclusiveLocks[i].keyHash = (keyHash & ~readLockShardMask) | (long)i;
                 }
+
+                logger?.LogDebug("{pid}: Incoming migration of Vector Set index {key}, context {context}", this.processInstanceId, Encoding.UTF8.GetString(key.AsReadOnlySpan()), context);
 
                 ref var lockCtx = ref storageSession.objectStoreLockableContext;
                 lockCtx.BeginLockable();
@@ -2639,6 +2709,9 @@ namespace Garnet.server
                         continue;
                     }
 
+
+                    logger?.LogDebug("Creating (or recreating={needsRecreate}) Vector Set under key {key}", needsRecreate, Encoding.UTF8.GetString(key.AsReadOnlySpan()));
+
                     ulong indexContext;
                     nint newlyAllocatedIndex;
                     if (needsRecreate)
@@ -2667,6 +2740,13 @@ namespace Garnet.server
                         var slot = HashSlotUtils.HashSlot(ref key);
 
                         indexContext = NextVectorSetContext(slot);
+
+                        // HACK HAC KACH
+                        if (indexContext == 16)
+                        {
+                            Console.WriteLine();
+                        }
+                        // HCAK HACK
 
                         var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
                         var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);

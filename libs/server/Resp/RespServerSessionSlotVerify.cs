@@ -17,9 +17,10 @@ namespace Garnet.server
         /// <param name="keys">Array of key ArgSlice</param>
         /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
         /// <param name="count">Key count if different than keys array length</param>
+        /// <param name="isVectorSetWriteCommand">Whether the executing command performs a write against a Vector Set.</param>
         /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, int count = -1)
-            => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
+        bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, bool isVectorSetWriteCommand, int count = -1)
+            => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking, isVectorSetWriteCommand, ref dcurr, ref dend, count);
 
         bool CanServeSlot(RespCommand cmd)
         {
@@ -39,10 +40,26 @@ namespace Garnet.server
             if (commandInfo == null)
                 return true;
 
+            // HACK AHCK
+            if (cmd == RespCommand.VADD)
+            {
+                var key = parseState.GetArgSliceByRef(0).SpanByte;
+                var slot = (int)common.HashSlotUtils.HashSlot(ref key);
+                dynamic dyn = storeWrapper.clusterProvider;
+                var x = (bool)dyn.IsNotStable(slot);
+                if (x && SessionAsking > 0)
+                {
+                    Console.WriteLine();
+                }
+            }
+
+            //HACK AHK
+
             csvi.keyNumOffset = -1;
             storeWrapper.clusterProvider.ExtractKeySpecs(commandInfo, cmd, ref parseState, ref csvi);
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
+            csvi.isVectorSetWriteCommand = cmd is RespCommand.VADD or RespCommand.VREM or RespCommand.VSETATTR;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
     }

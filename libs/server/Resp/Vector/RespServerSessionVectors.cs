@@ -5,6 +5,7 @@ using System.Buffers;
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -291,6 +292,19 @@ namespace Garnet.server
                 buildExplorationFactor ??= 200;
                 attributes ??= default;
                 numLinks ??= 16;
+
+
+                // Hack hack hack
+                var q = key.SpanByte;
+                var slot = (int)HashSlotUtils.HashSlot(ref q);
+                dynamic dyn = storeWrapper.clusterProvider;
+                var x = (bool)dyn.IsNotStable(slot);
+                if (x)
+                {
+                    logger?.LogDebug("{pid} detected unstable write on {key}", storeWrapper.DefaultDatabase.VectorManager.processInstanceId, System.Text.Encoding.UTF8.GetString(q.AsReadOnlySpan()));
+                    Console.WriteLine();
+                }
+                // hack hack hack
 
                 // We need to reject these HERE because validation during create_index is very awkward
                 GarnetStatus res;
@@ -991,7 +1005,7 @@ namespace Garnet.server
         private bool NetworkVREM<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if(parseState.Count != 2)
+            if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments("VREM");
 
             var key = parseState.GetArgSliceByRef(0);
