@@ -171,6 +171,15 @@ namespace Garnet.server
                         _ = Interlocked.Add(ref total_number_of_replayed_records, count);
                     }
 
+                    unsafe void ProcessAofRecord(int sublogIdx, IMemoryOwner<byte> entry, int length)
+                    {
+                        fixed (byte* ptr = entry.Memory.Span)
+                        {
+                            ProcessAofRecordInternal(sublogIdx, ptr, length, asReplica: false, out _);
+                        }
+                        entry.Dispose();
+                    }
+
                     return untilAddress;
                 }
                 catch (Exception ex)
@@ -189,15 +198,6 @@ namespace Garnet.server
 
                 return AofAddress.Create(storeWrapper.serverOptions.AofSublogCount, -1);
             }
-        }
-
-        internal unsafe void ProcessAofRecord(int sublogIdx, IMemoryOwner<byte> entry, int length)
-        {
-            fixed (byte* ptr = entry.Memory.Span)
-            {
-                ProcessAofRecordInternal(sublogIdx, ptr, length, asReplica: false, out _);
-            }
-            entry.Dispose();
         }
 
         /// <summary>

@@ -2554,75 +2554,75 @@ namespace Garnet.test.cluster
             }
         }
 
-        public long GetStoreCurrentAofAddress(int nodeIndex, ILogger logger = null)
+        public AofAddress GetStoreCurrentAofAddress(int nodeIndex, ILogger logger = null)
             => GetStoreCurrentAofAddress((IPEndPoint)endpoints[nodeIndex], logger);
 
-        public long GetStoreCurrentAofAddress(IPEndPoint endPoint, ILogger logger = null)
+        public AofAddress GetStoreCurrentAofAddress(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
                 var storeCurrentSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.STORE_CURRENT_SAFE_AOF_ADDRESS], logger)[0].Item2;
-                return long.Parse(storeCurrentSafeAofAddress);
+                return AofAddress.FromString(storeCurrentSafeAofAddress);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occurred; GetStoreCurrentAofAddress");
                 Assert.Fail(ex.Message);
-                return 0;
+                return default;
             }
         }
 
-        public long GetStoreRecoveredAofAddress(int nodeIndex, ILogger logger = null)
+        public AofAddress GetStoreRecoveredAofAddress(int nodeIndex, ILogger logger = null)
             => GetStoreRecoveredAofAddress((IPEndPoint)endpoints[nodeIndex], logger);
 
-        public long GetStoreRecoveredAofAddress(IPEndPoint endPoint, ILogger logger = null)
+        public AofAddress GetStoreRecoveredAofAddress(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
                 var storeRecoveredSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.STORE_RECOVERED_SAFE_AOF_ADDRESS], logger)[0].Item2;
-                return long.Parse(storeRecoveredSafeAofAddress);
+                return AofAddress.FromString(storeRecoveredSafeAofAddress);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occured; GetStoreRecoveredAofAddress");
                 Assert.Fail(ex.Message);
-                return 0;
+                return default;
             }
         }
 
-        public long GetObjectStoreCurrentAofAddress(int nodeIndex, ILogger logger = null)
+        public AofAddress GetObjectStoreCurrentAofAddress(int nodeIndex, ILogger logger = null)
             => GetObjectStoreCurrentAofAddress((IPEndPoint)endpoints[nodeIndex], logger);
 
-        public long GetObjectStoreCurrentAofAddress(IPEndPoint endPoint, ILogger logger = null)
+        public AofAddress GetObjectStoreCurrentAofAddress(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
                 var objectStoreCurrentSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.OBJECT_STORE_CURRENT_SAFE_AOF_ADDRESS], logger)[0].Item2;
-                return long.Parse(objectStoreCurrentSafeAofAddress);
+                return AofAddress.FromString(objectStoreCurrentSafeAofAddress);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occured; GetObjectStoreCurrentAofAddress");
                 Assert.Fail(ex.Message);
-                return 0;
+                return default;
             }
         }
 
-        public long GetObjectStoreRecoveredAofAddress(int nodeIndex, ILogger logger = null)
+        public AofAddress GetObjectStoreRecoveredAofAddress(int nodeIndex, ILogger logger = null)
             => GetObjectStoreRecoveredAofAddress((IPEndPoint)endpoints[nodeIndex], logger);
 
-        public long GetObjectStoreRecoveredAofAddress(IPEndPoint endPoint, ILogger logger = null)
+        public AofAddress GetObjectStoreRecoveredAofAddress(IPEndPoint endPoint, ILogger logger = null)
         {
             try
             {
                 var objectStoreRecoveredSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.OBJECT_STORE_RECOVERED_SAFE_AOF_ADDRESS], logger)[0].Item2;
-                return long.Parse(objectStoreRecoveredSafeAofAddress);
+                return AofAddress.FromString(objectStoreRecoveredSafeAofAddress);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "An error has occurred; GetObjectStoreRecoveredAofAddress");
                 Assert.Fail(ex.Message);
-                return 0;
+                return default;
             }
         }
 

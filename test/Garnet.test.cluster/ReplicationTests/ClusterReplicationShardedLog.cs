@@ -18,13 +18,37 @@ namespace Garnet.test.cluster
     {
         const int TestSublogCount = 2;
 
-        public HashSet<string> enabledTests = new()
+        public Dictionary<string, bool> enabledTests = new()
         {
-            {"ClusterSRTest"},
-            {"ClusterSRNoCheckpointRestartSecondary" },
-            {"ClusterSRPrimaryCheckpoint"},
-            {"ClusterCheckpointRetrieveDisableStorageTier" },
-            {"ClusterCheckpointRetrieveDelta"}
+            // Originally enabled tests
+            {"ClusterSRTest", true},
+            {"ClusterSRNoCheckpointRestartSecondary", true},
+            {"ClusterSRPrimaryCheckpoint", true},
+            {"ClusterCheckpointRetrieveDisableStorageTier", true},
+            {"ClusterCheckpointRetrieveDelta", true},
+            {"ClusterSRPrimaryCheckpointRetrieve", true},
+            {"ClusterSRAddReplicaAfterPrimaryCheckpoint", true},
+            {"ClusterSRPrimaryRestart", true},
+            {"ClusterSRRedirectWrites", true},
+            {"ClusterSRReplicaOfTest", true},
+            {"ClusterReplicationSimpleFailover", false},
+            {"ClusterFailoverAttachReplicas", true},
+            {"ClusterReplicationCheckpointCleanupTest", true},
+            {"ClusterMainMemoryReplicationAttachReplicas", true},
+            {"ClusterDivergentReplicasTest", true},
+            {"ClusterDivergentCheckpointTest", true},
+            {"ClusterDivergentReplicasMMTest", true},
+            {"ClusterDivergentCheckpointMMTest", true},
+            {"ClusterDivergentCheckpointMMFastCommitTest", true},
+            {"ClusterReplicationCheckpointAlignmentTest", true},
+            {"ClusterReplicationLua", true},
+            {"ClusterReplicationStoredProc", true},
+            {"ClusterReplicationManualCheckpointing", true},
+            {"ReplicaSyncTaskFaultsRecoverAsync", false},
+            {"ClusterReplicationMultiRestartRecover", false},
+            {"ReplicasRestartAsReplicasAsync", true},
+            {"PrimaryUnavailableRecoveryAsync", true},
+            {"ClusterReplicationDivergentHistoryWithoutCheckpoint", false}
         };
 
         [OneTimeSetUp]
@@ -32,14 +56,14 @@ namespace Garnet.test.cluster
         {
             var methods = typeof(ClusterReplicationShardedLog).GetMethods().Where(static mtd => mtd.GetCustomAttribute<TestAttribute>() != null);
             foreach (var method in methods)
-                _ = enabledTests.Add(method.Name);
+                enabledTests.TryAdd(method.Name, true);
         }
 
         [SetUp]
         public override void Setup()
         {
             var testName = TestContext.CurrentContext.Test.MethodName;
-            if (!enabledTests.Contains(testName))
+            if (!enabledTests.TryGetValue(testName, out var isEnabled) || !isEnabled)
             {
                 Assert.Ignore($"Skipping {testName} for {nameof(ClusterReplicationShardedLog)}");
             }
@@ -51,6 +75,11 @@ namespace Garnet.test.cluster
         [TearDown]
         public override void TearDown()
         {
+            var testName = TestContext.CurrentContext.Test.MethodName;
+            if (!enabledTests.TryGetValue(testName, out var isEnabled) || !isEnabled)
+            {
+                Assert.Ignore($"Skipping {testName} for {nameof(ClusterReplicationShardedLog)}");
+            }
             base.TearDown();
         }
 

@@ -133,10 +133,7 @@ namespace Garnet.cluster
             {
                 var tasks = new List<Task>();
                 for (var i = 0; i < aofSyncTasks.Length; i++)
-                {
-                    logger?.LogError(">>> Starting aofSyncTask({i})", i);
                     tasks.Add(aofSyncTasks[i].RunAofSyncTask(this));
-                }
 
                 // Only add RefreshSublogTail task when using ShardedLog
                 if (aofSyncTasks.Length > 1)
@@ -154,9 +151,7 @@ namespace Garnet.cluster
                 logger?.LogWarning("AofSync task terminated; client disposed {remoteNodeId} {address} {port} {currentAddress}", remoteNodeId, address, port, PreviousAddress);
 
                 if (!aofSyncDriverStore.TryRemove(this))
-                {
-                    logger?.LogInformation("Did not remove {remoteNodeId} from aofTaskStore at end of ReplicaSyncTask", remoteNodeId);
-                }
+                    logger?.LogError("Did not remove {remoteNodeId} from aofTaskStore at end of ReplicaSyncTask", remoteNodeId);
             }
         }
 

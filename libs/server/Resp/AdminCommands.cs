@@ -826,7 +826,7 @@ namespace Garnet.server
                             SendAndReset();
                         while (!RespWriteUtils.TryWriteInt32(replica.port, ref dcurr, dend))
                             SendAndReset();
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(replica.replication_offset.ToString(), ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(replica.replication_offset[0].ToString(), ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -849,7 +849,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteAsciiBulkString(role.replication_state, ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(role.replication_offset.ToString(), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteAsciiBulkString(role.replication_offset[0].ToString(), ref dcurr, dend))
                         SendAndReset();
                 }
             }
