@@ -245,6 +245,7 @@ Namespaces (intentionally) do not participate in hash slots or clustering, and a
 
 At a high level, migration between the originating primary a destination primary behaves as follows:
  1. Once target slots transition to `MIGRATING`...
+    * An addition to `ClusterSession.SingleKeySlotVerify` causes all WRITE Vector Set commands to pause once a slot is `MIGRATING` or `IMPORTING` - this is necessary because we cannot block based on the key as Vector Sets are composed of many keys
  2. `VectorManager` on the originating primary enumerates all _namespaces_ and Vector Sets that are covered by those slots
  3. The originating primary contacts the destination primary and reserves enough new Vector Set contexts to handled those found in step 2
     * These Vector Sets are "in use" but also in a migrating state in `ContextMetadata`
