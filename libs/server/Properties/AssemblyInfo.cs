@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("Embedded.perftest" + AssemblyRef.GarnetPublicKey)]
 [assembly: InternalsVisibleTo("BDN.benchmark" + AssemblyRef.GarnetPublicKey)]
 [assembly: InternalsVisibleTo("Resp.benchmark" + AssemblyRef.GarnetPublicKey)]
+[assembly: InternalsVisibleTo("AofExplorer" + AssemblyRef.GarnetPublicKey)]
 
 /// <summary>
 /// Sets public key string for friend assemblies.
