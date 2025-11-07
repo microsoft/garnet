@@ -51,6 +51,7 @@ namespace Garnet.test.cluster
         private static readonly Dictionary<string, LogLevel> MonitorTests = new()
         {
             [nameof(MigrateVectorStressAsync)] = LogLevel.Debug,
+            [nameof(MigrateVectorSetWhileModifyingAsync)] = LogLevel.Debug,
         };
 
 
@@ -1271,7 +1272,7 @@ namespace Garnet.test.cluster
         [Test]
         public async Task MigrateVectorSetWhileModifyingAsync()
         {
-            // Test migrating a single slot with a vector set of one element in it
+            // Test migrating a single slot with a vector set while moving it
 
             const int Primary0Index = 0;
             const int Primary1Index = 1;
@@ -1328,6 +1329,9 @@ namespace Garnet.test.cluster
                         // Force async
                         await Task.Yield();
 
+                        using var readWriteCon = ConnectionMultiplexer.Connect(context.clusterTestUtils.GetRedisConfig(context.endpoints));
+                        var readWriteDb = readWriteCon.GetDatabase();
+
                         var ix = 0;
 
                         var elem = new byte[4];
@@ -1341,9 +1345,20 @@ namespace Garnet.test.cluster
                         while (!cts.IsCancellationRequested)
                         {
                             // This should follow redirects, so migration shouldn't cause any failures
-                            var addRes = (int)context.clusterTestUtils.Execute(primary0, "VADD", [primary0Key, "XB8", data, elem, "XPREQ8", "SETATTR", attr]);
+                            try
+                            {
+                                var addRes = (int)readWriteDb.Execute("VADD", [new RedisKey(primary0Key), "XB8", data, elem, "XPREQ8", "SETATTR", attr]);
+                                ClassicAssert.AreEqual(1, addRes);
+                            }
+                            catch (RedisServerException exc)
+                            {
+                                if (exc.Message.StartsWith("MOVED "))
+                                {
+                                    continue;
+                                }
 
-                            ClassicAssert.AreEqual(1, addRes);
+                                throw;
+                            }
 
                             added.Add((elem.ToArray(), data.ToArray(), attr.ToArray()));
 
@@ -1579,7 +1594,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            //const int VectorSetsPerPrimary = 2;
+            const int VectorSetsPerPrimary = 2;
 
             context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);
@@ -1608,7 +1623,7 @@ namespace Garnet.test.cluster
                 var numP0 = 0;
                 var numP1 = 0;
 
-                //while (numP0 < VectorSetsPerPrimary || numP1 < VectorSetsPerPrimary)
+                while (numP0 < VectorSetsPerPrimary || numP1 < VectorSetsPerPrimary)
                 {
                     var key = $"{nameof(MigrateVectorStressAsync)}_{ix}";
                     var slot = context.clusterTestUtils.HashSlot(key);
@@ -1617,7 +1632,7 @@ namespace Garnet.test.cluster
 
                     if (isPrimary0Slot)
                     {
-                        //if (numP0 < VectorSetsPerPrimary)
+                        if (numP0 < VectorSetsPerPrimary)
                         {
                             vectorSetKeys.Add((key, (ushort)slot));
                             numP0++;
@@ -1625,7 +1640,7 @@ namespace Garnet.test.cluster
                     }
                     else
                     {
-                        //if (numP1 < VectorSetsPerPrimary)
+                        if (numP1 < VectorSetsPerPrimary)
                         {
                             vectorSetKeys.Add((key, (ushort)slot));
                             numP1++;
@@ -1692,6 +1707,8 @@ namespace Garnet.test.cluster
 
                                             continue;
                                         }
+
+                                        throw;
                                     }
                                 }
 

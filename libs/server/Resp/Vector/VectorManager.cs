@@ -2741,13 +2741,6 @@ namespace Garnet.server
 
                         indexContext = NextVectorSetContext(slot);
 
-                        // HACK HAC KACH
-                        if (indexContext == 16)
-                        {
-                            Console.WriteLine();
-                        }
-                        // HCAK HACK
-
                         var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
                         var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
                         // ValueType is here, skipping during index creation
