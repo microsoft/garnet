@@ -16,9 +16,11 @@ namespace Garnet.cluster
     {
         public class AofSyncTask : IBulkLogEntryConsumer, IDisposable
         {
-            readonly AofSyncDriver aofSyncDriver;
+            readonly ClusterProvider clusterProvider;
             readonly int sublogIdx;
             public readonly GarnetClientSession garnetClient;
+            readonly string localNodeId;
+            readonly string remoteNodeId;
             readonly CancellationTokenSource cts;
             readonly long startAddress;
             TsavoriteLogScanSingleIterator iter;
@@ -45,38 +47,53 @@ namespace Garnet.cluster
             public long MaxSendSublogTimestamp;
 
             /// <summary>
+            /// Logger instance
+            /// </summary>
+            readonly ILogger logger;
+
+            /// <summary>
             /// AofSyncTask constructor
             /// </summary>
-            /// <param name="aofSyncDriver"></param>
+            /// <param name="clusterProvider"></param>
             /// <param name="sublogIdx"></param>
             /// <param name="endPoint"></param>
             /// <param name="startAddress"></param>
+            /// <param name="localNodeId"></param>
+            /// <param name="remoteNodeId"></param>
             /// <param name="cts"></param>
+            /// <param name="logger"></param>
             public AofSyncTask(
-                AofSyncDriver aofSyncDriver,
+                ClusterProvider clusterProvider,
                 int sublogIdx,
                 IPEndPoint endPoint,
                 long startAddress,
-                CancellationTokenSource cts)
+                string localNodeId,
+                string remoteNodeId,
+                CancellationTokenSource cts,
+                ILogger logger)
             {
-                this.aofSyncDriver = aofSyncDriver;
+                this.clusterProvider = clusterProvider;
                 this.sublogIdx = sublogIdx;
                 this.startAddress = startAddress;
                 previousAddress = startAddress;
+                this.localNodeId = localNodeId;
+                this.remoteNodeId = remoteNodeId;
                 this.cts = cts;
                 garnetClient = new GarnetClientSession(
                             endPoint,
-                            aofSyncDriver.clusterProvider.replicationManager.GetAofSyncNetworkBufferSettings,
-                            aofSyncDriver.clusterProvider.replicationManager.GetNetworkPool,
-                            tlsOptions: aofSyncDriver.clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
-                            authUsername: aofSyncDriver.clusterProvider.ClusterUsername,
-                            authPassword: aofSyncDriver.clusterProvider.ClusterPassword,
-                            logger: aofSyncDriver.logger);
+                            this.clusterProvider.replicationManager.GetAofSyncNetworkBufferSettings,
+                            this.clusterProvider.replicationManager.GetNetworkPool,
+                            tlsOptions: this.clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
+                            authUsername: this.clusterProvider.ClusterUsername,
+                            authPassword: this.clusterProvider.ClusterPassword,
+                            logger: logger);
+                this.logger = logger;
             }
 
             public void Dispose()
             {
-                // Then, dispose the iterator. This will also signal the iterator so that it can observe the canceled token
+                // This forces the background sync task to stop,
+                // unless the cancelled cts already signaled it to stop
                 iter?.Dispose();
                 iter = null;
 
@@ -102,7 +119,7 @@ namespace Garnet.cluster
 
                     // This is called under epoch protection, so we have to wait for appending to complete
                     garnetClient.ExecuteClusterAppendLog(
-                        aofSyncDriver.localNodeId,
+                        localNodeId,
                         sublogIdx,
                         previousAddress,
                         currentAddress,
@@ -111,8 +128,8 @@ namespace Garnet.cluster
                         payloadLength);
 
                     // Update timestamp first and then nextAddress
-                    //if (aofSyncDriver.clusterProvider.serverOptions.AofSublogCount > 1 && sublogIdx == 0)
-                    //    AofProcessor.UpdateMaxTimestamp(ref MaxSendSublogTimestamp, payloadPtr, payloadLength, aofSyncDriver.clusterProvider.storeWrapper.appendOnlyFile.HeaderSize);
+                    if (clusterProvider.serverOptions.AofSublogCount > 1 && sublogIdx == 0)
+                        server.AofProcessor.UpdateMaxTimestamp(ref MaxSendSublogTimestamp, payloadPtr, payloadLength, clusterProvider.storeWrapper.appendOnlyFile.HeaderSize);
 
                     // Set task address to nextAddress, as the iterator is currently at nextAddress
                     // (records at currentAddress are already sent above)
@@ -120,12 +137,12 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    aofSyncDriver.logger?.LogWarning(
+                    logger?.LogWarning(
                         ex,
                         "{Consume}[{taskId}]: exception consuming AOF payload to sync {remoteNodeId} ({currenAddress}, {nextAddress})",
                         nameof(AofSyncTask.Consume),
                         sublogIdx,
-                        aofSyncDriver.remoteNodeId,
+                        remoteNodeId,
                         currentAddress,
                         nextAddress);
                     throw;
@@ -139,24 +156,41 @@ namespace Garnet.cluster
                 garnetClient.Throttle();
             }
 
-            public async Task RunAofSyncTask()
+            public async Task RunAofSyncTask(AofSyncDriver aofSyncDriver)
             {
-                aofSyncDriver.logger?.LogInformation(
-                    "{RunAofSyncTask}[{taskId}]: syncing {remoteNodeId} starting from address {address}",
-                    nameof(AofSyncTask.RunAofSyncTask),
-                    sublogIdx,
-                    aofSyncDriver.remoteNodeId,
-                    startAddress);
-
-                if (!IsConnected)
-                    garnetClient.Connect();
-
-                iter = aofSyncDriver.clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(sublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: aofSyncDriver.logger);
-
-                while (true)
+                var acquireReadLock = false;
+                try
                 {
-                    if (cts.Token.IsCancellationRequested) break;
-                    await iter.BulkConsumeAllAsync(this, aofSyncDriver.clusterProvider.serverOptions.ReplicaSyncDelayMs, maxChunkSize: 1 << 20, cts.Token);
+                    acquireReadLock = aofSyncDriver.dispose.TryReadLock();
+                    if (!acquireReadLock)
+                        throw new GarnetException($"[{sublogIdx}] Failed to acquire lock at {nameof(RunAofSyncTask)}");
+
+                    logger?.LogInformation(
+                        "{RunAofSyncTask}[{taskId}]: syncing {remoteNodeId} starting from address {address}",
+                        nameof(AofSyncTask.RunAofSyncTask),
+                        sublogIdx,
+                        aofSyncDriver.remoteNodeId,
+                        startAddress);
+
+                    if (!IsConnected)
+                        garnetClient.Connect();
+
+
+                    iter = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(sublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
+                    // Send ping to initialize replication stream
+                    garnetClient.ExecuteClusterAppendLog(aofSyncDriver.localNodeId, sublogIdx, -1, -1, -1, (long)-1, 0);
+                    garnetClient.CompletePending();
+
+                    while (true)
+                    {
+                        if (cts.Token.IsCancellationRequested) break;
+                        await iter.BulkConsumeAllAsync(this, aofSyncDriver.clusterProvider.serverOptions.ReplicaSyncDelayMs, maxChunkSize: 1 << 20, cts.Token);
+                    }
+                }
+                finally
+                {
+                    if (acquireReadLock)
+                        aofSyncDriver.dispose.ReadUnlock();
                 }
             }
         }

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -15,7 +16,7 @@ namespace Garnet.cluster
     internal sealed partial class AofSyncDriver : IDisposable
     {
         readonly ClusterProvider clusterProvider;
-        readonly AofSyncDriverStore aofTaskStore;
+        readonly AofSyncDriverStore aofSyncDriverStore;
         readonly string localNodeId;
         readonly string remoteNodeId;
         readonly ILogger logger;
@@ -32,6 +33,8 @@ namespace Garnet.cluster
         /// Node-id associated with this AofSyncTask
         /// </summary>
         public string RemoteNodeId => remoteNodeId;
+
+        public SingleWriterMultiReaderLock dispose = new();
 
         /// <summary>
         /// Return start address for underlying AofSyncTask
@@ -77,7 +80,7 @@ namespace Garnet.cluster
 
         public AofSyncDriver(
             ClusterProvider clusterProvider,
-            AofSyncDriverStore aofSyncDriver,
+            AofSyncDriverStore aofSyncDriverStore,
             string localNodeId,
             string remoteNodeId,
             IPEndPoint endPoint,
@@ -85,15 +88,15 @@ namespace Garnet.cluster
             ILogger logger)
         {
             this.clusterProvider = clusterProvider;
-            this.aofTaskStore = aofSyncDriver;
+            this.aofSyncDriverStore = aofSyncDriverStore;
             this.localNodeId = localNodeId;
             this.remoteNodeId = remoteNodeId;
-            this.cts = new CancellationTokenSource();
+            cts = new();
             this.logger = logger;
 
             aofSyncTasks = new AofSyncTask[clusterProvider.serverOptions.AofSublogCount];
-            for (var i = 0; i < aofSyncTasks.Length; i++)
-                aofSyncTasks[i] = new AofSyncTask(this, i, endPoint, startAddress[i], cts);
+            for (var sublogIdx = 0; sublogIdx < aofSyncTasks.Length; sublogIdx++)
+                aofSyncTasks[sublogIdx] = new AofSyncTask(clusterProvider, sublogIdx, endPoint, startAddress[sublogIdx], localNodeId, remoteNodeId, cts, logger);
         }
 
         public void Dispose()
@@ -104,6 +107,10 @@ namespace Garnet.cluster
             // Then, dispose the iterator. This will also signal the iterator so that it can observe the canceled token
             foreach (var aofSyncTask in aofSyncTasks)
                 aofSyncTask?.Dispose();
+
+            // Signal dispose
+            // NOTE: wait for tasks to complete
+            dispose.WriteLock();
 
             // Finally, dispose the cts
             cts?.Dispose();
@@ -126,11 +133,14 @@ namespace Garnet.cluster
             {
                 var tasks = new List<Task>();
                 for (var i = 0; i < aofSyncTasks.Length; i++)
-                    tasks.Add(aofSyncTasks[i].RunAofSyncTask());
+                {
+                    logger?.LogError(">>> Starting aofSyncTask({i})", i);
+                    tasks.Add(aofSyncTasks[i].RunAofSyncTask(this));
+                }
 
                 // Only add RefreshSublogTail task when using ShardedLog
-                //if (aofSyncTasks.Length > 1)
-                //    tasks.Add(RefreshSublogTail());
+                if (aofSyncTasks.Length > 1)
+                    tasks.Add(RefreshSublogTail());
 
                 await Task.WhenAll([.. tasks]);
             }
@@ -140,12 +150,10 @@ namespace Garnet.cluster
             }
             finally
             {
-                foreach (var aofSyncTask in aofSyncTasks)
-                    aofSyncTask.Dispose();
                 var (address, port) = clusterProvider.clusterManager.CurrentConfig.GetWorkerAddressFromNodeId(remoteNodeId);
                 logger?.LogWarning("AofSync task terminated; client disposed {remoteNodeId} {address} {port} {currentAddress}", remoteNodeId, address, port, PreviousAddress);
 
-                if (!aofTaskStore.TryRemove(this))
+                if (!aofSyncDriverStore.TryRemove(this))
                 {
                     logger?.LogInformation("Did not remove {remoteNodeId} from aofTaskStore at end of ReplicaSyncTask", remoteNodeId);
                 }
@@ -154,27 +162,39 @@ namespace Garnet.cluster
 
         async Task RefreshSublogTail()
         {
-            while (true)
+            var acquireReadLock = false;
+            try
             {
-                await Task.Delay(clusterProvider.serverOptions.AofRefreshSublogTailFrequencyMs, cts.Token);
+                acquireReadLock = dispose.TryReadLock();
+                if (!acquireReadLock)
+                    throw new GarnetException($"Failed to acquire read lock at {nameof(RefreshSublogTail)}");
 
-                var tailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
-                var previousAddress = PreviousAddress;
-                var maxSublogSeqNumber = MaxSendSequenceNumber;
-                // Maximum Send Sequence Number (MSSN)
-                var mssn = maxSublogSeqNumber.Max();
-
-                // At least one sublog has stalled if both of the following conditions hold
-                //  1. the maximum sequence number of the sublog is smaller than MSSN
-                //  2. The sublog does not have any more data to send.
-                // If (1) is false then it is safe to read from that sublog because it will have the highest sequence number
-                // If (2) is false the we still have more data to process hence the sequence number will possible change in the future.
-
-                for (var i = 0; i < maxSublogSeqNumber.Length; i++)
+                while (true)
                 {
-                    if (maxSublogSeqNumber[i] < mssn && previousAddress[i] == tailAddress[i])
-                        clusterProvider.storeWrapper.appendOnlyFile.EnqueueRefreshSublogTail(i, mssn);
+                    await Task.Delay(clusterProvider.serverOptions.AofRefreshSublogTailFrequencyMs, cts.Token);
+
+                    var tailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
+                    var previousAddress = PreviousAddress;
+                    var maxSublogSeqNumber = MaxSendSequenceNumber;
+                    // Maximum Send Sequence Number (MSSN)
+                    var mssn = maxSublogSeqNumber.Max();
+
+                    // At least one sublog has stalled if both of the following conditions hold
+                    //  1. the maximum sequence number of the sublog is smaller than MSSN
+                    //  2. The sublog does not have any more data to send.
+                    // If (1) is false then it is safe to read from that sublog because it will have the highest sequence number
+                    // If (2) is false the we still have more data to process hence the sequence number will possible change in the future.
+                    for (var i = 0; i < maxSublogSeqNumber.Length; i++)
+                    {
+                        if (maxSublogSeqNumber[i] < mssn && previousAddress[i] == tailAddress[i])
+                            clusterProvider.storeWrapper.appendOnlyFile.EnqueueRefreshSublogTail(i, mssn);
+                    }
                 }
+            }
+            finally
+            {
+                if (acquireReadLock)
+                    dispose.ReadUnlock();
             }
         }
 

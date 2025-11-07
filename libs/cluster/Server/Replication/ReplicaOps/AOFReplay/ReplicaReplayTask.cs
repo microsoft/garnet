@@ -43,6 +43,7 @@ namespace Garnet.cluster
             ValidateSublogIndex(sublogIdx);
             clusterProvider.replicationManager.SetSublogReplicationOffset(sublogIdx, currentAddress);
             var ptr = record;
+            logger?.LogError("[{sublogIdx}] = {currentAddress} -> {nextAddress}", sublogIdx, currentAddress, nextAddress);
             while (ptr < record + recordLength)
             {
                 cts.Token.ThrowIfCancellationRequested();
@@ -55,7 +56,10 @@ namespace Garnet.cluster
                     // point when we take a checkpoint at the checkpoint end marker
                     // FIXME: Do we need to coordinate between sublogs when updating this?
                     if (isCheckpointStart)
-                        clusterProvider.replicationManager.ReplicationCheckpointStartOffset[sublogIdx] = clusterProvider.replicationManager.ReplicationOffset[sublogIdx];
+                    {
+                        logger?.LogError("[{sublogIdx}] CheckpointStart {address}", sublogIdx, clusterProvider.replicationManager.GetSublogReplicationOffset(sublogIdx));
+                        clusterProvider.replicationManager.ReplicationCheckpointStartOffset[sublogIdx] = clusterProvider.replicationManager.GetSublogReplicationOffset(sublogIdx);
+                    }
                     entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                 }
                 else if (payloadLength < 0)
@@ -72,6 +76,8 @@ namespace Garnet.cluster
                 ptr += entryLength;
                 clusterProvider.replicationManager.IncrementSublogReplicationOffset(sublogIdx, entryLength);
             }
+
+            logger?.LogError("[{sublogIdx}] = {currentAddress} -> {nextAddress}", sublogIdx, currentAddress, nextAddress);
 
             if (clusterProvider.replicationManager.GetSublogReplicationOffset(sublogIdx) != nextAddress)
             {

@@ -143,6 +143,18 @@ namespace Garnet.cluster
                 return true;
             }
 
+            // This is an initialization message
+            if (previousAddress == -1 && currentAddress == -1 && nextAddress == -1)
+            {
+                if (clusterProvider.replicationManager.InitializeReplicaReplayTask(sublogIdx, networkSender, out var replicaReplayTaskGroup))
+                    this.replicaReplayTaskGroup = replicaReplayTaskGroup;
+                else
+                {
+                    throw new Exception("Received all negative addresses with initialized ReplayTaskGroup");
+                }
+                return true;
+            }
+
             var sbRecord = parseState.GetArgSliceByRef(5).SpanByte;
 
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
@@ -158,8 +170,6 @@ namespace Garnet.cluster
             }
             else
             {
-                if (clusterProvider.replicationManager.InitializeReplicaReplayTask(sublogIdx, networkSender, out var replicaReplayTaskGroup))
-                    this.replicaReplayTaskGroup = replicaReplayTaskGroup;
 
                 IsReplicating = true;
                 ProcessPrimaryStream(sublogIdx, sbRecord.ToPointer(), sbRecord.Length,

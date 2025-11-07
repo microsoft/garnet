@@ -143,6 +143,8 @@ namespace Garnet.cluster
                 }
             }
 
+            logger?.LogError("{truncateUntil} > {TruncatedUntil}", truncateUntil, TruncatedUntil);
+
             // Inform that we have logically truncatedUntil
             this.TruncatedUntil.MonotonicUpdate(ref TruncatedUntil);
             // Release lock early
