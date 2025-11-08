@@ -391,7 +391,7 @@ namespace Garnet.test.cluster
         {
             if (nodes != null)
             {
-                _ = Parallel.For(0, nodes.Length, i =>
+                for (var i = 0; i < nodes.Length; i++)
                 {
                     if (nodes[i] != null)
                     {
@@ -401,7 +401,7 @@ namespace Garnet.test.cluster
                         node.Dispose(true);
                         logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
                     }
-                });
+                }
             }
         }
 

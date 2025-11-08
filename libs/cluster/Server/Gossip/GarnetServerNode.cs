@@ -178,7 +178,7 @@ namespace Garnet.cluster
         /// <returns></returns>
         private Task Gossip(byte[] configByteArray)
         {
-            return gc.Gossip(configByteArray).ContinueWith(t =>
+            return gc.Gossip(configByteArray, internalCts.Token).ContinueWith(t =>
             {
                 try
                 {
@@ -212,7 +212,7 @@ namespace Garnet.cluster
         public async Task<MemoryResult<byte>> TryMeetAsync(byte[] configByteArray)
         {
             UpdateGossipSend();
-            var resp = await gc.GossipWithMeet(configByteArray).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
+            var resp = await gc.GossipWithMeet(configByteArray, internalCts.Token).WaitAsync(clusterProvider.clusterManager.clusterTimeout, cts.Token);
             return resp;
         }
 
