@@ -366,7 +366,7 @@ namespace Garnet.server
             FlushDatabase(defaultDatabase, unsafeTruncateLog, !safeTruncateAof);
 
             if (safeTruncateAof)
-                SafeTruncateAOF(AofEntryType.FlushDb, unsafeTruncateLog);
+                SafeFlushAOF(AofEntryType.FlushDb, unsafeTruncateLog);
         }
 
         /// <inheritdoc/>
@@ -376,8 +376,10 @@ namespace Garnet.server
 
             FlushDatabase(defaultDatabase, unsafeTruncateLog, !safeTruncateAof);
 
+            // We truncate AOF safely only in the cluster case.
+            // For standalone FlushDatabase will take care of the AOF truncation
             if (safeTruncateAof)
-                SafeTruncateAOF(AofEntryType.FlushAll, unsafeTruncateLog);
+                SafeFlushAOF(AofEntryType.FlushAll, unsafeTruncateLog);
         }
 
         /// <inheritdoc/>
@@ -421,37 +423,40 @@ namespace Garnet.server
 
         public override (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];
 
-        private void SafeTruncateAOF(AofEntryType entryType, bool unsafeTruncateLog)
+        private void SafeFlushAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {
+            // Safe truncate up to tail for botth primary and replica
             StoreWrapper.clusterProvider.SafeTruncateAOF(AppendOnlyFile.Log.TailAddress);
+
+            // Only enqueue operation if this is a primary
             if (StoreWrapper.clusterProvider.IsPrimary())
             {
-                AofHeader header = new()
-                {
-                    opType = entryType,
-                    storeVersion = 0,
-                    sessionID = -1,
-                    unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
-                    databaseId = (byte)defaultDatabase.Id
-                };
-
                 if (AppendOnlyFile?.Log.Size == 1)
                 {
-                    AppendOnlyFile.Log.GetSubLog(0).Enqueue(header, out _);
+                    AofHeader header = new()
+                    {
+                        opType = entryType,
+                        storeVersion = 0,
+                        sessionID = -1,
+                        unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
+                        databaseId = (byte)defaultDatabase.Id
+                    };
+                    AppendOnlyFile.Log.SigleLog.Enqueue(header, out _);
                 }
                 else if (AppendOnlyFile != null)
                 {
+                    var logAccessBitmap = AppendOnlyFile.Log.AllLogBitsSet();
                     try
                     {
-                        AppendOnlyFile.Log.LockSublogs(ulong.MaxValue);
-                        var _logAccessBitmap = ulong.MaxValue;
+                        AppendOnlyFile.Log.LockSublogs(logAccessBitmap);
+                        var _logAccessBitmap = logAccessBitmap;
                         var extendedAofHeader = new AofExtendedHeader(new AofHeader
                         {
-                            opType = header.opType,
-                            storeVersion = header.storeVersion,
-                            sessionID = header.sessionID,
-                            unsafeTruncateLog = header.unsafeTruncateLog,
-                            databaseId = header.databaseId
+                            opType = entryType,
+                            storeVersion = 0,
+                            sessionID = -1,
+                            unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
+                            databaseId = (byte)defaultDatabase.Id
                         }, storeWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber(), (byte)BitOperations.PopCount(ulong.MaxValue));
 
                         while (_logAccessBitmap > 0)
@@ -462,7 +467,7 @@ namespace Garnet.server
                     }
                     finally
                     {
-                        AppendOnlyFile.Log.UnlockSublogs(ulong.MaxValue);
+                        AppendOnlyFile.Log.UnlockSublogs(logAccessBitmap);
                     }
                 }
             }

@@ -17,12 +17,22 @@ namespace Garnet.server
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
+    /// <summary>
+    /// Used to index barriers for coordinated replay operations in the AofReplayCoordinator
+    /// NOTE: Use only negative numbers because sessionIDs will be positive values
+    /// </summary>
+    internal enum EventBarrierType : int
+    {
+        CHECKPOINT = -1,
+        STREAMING_CHECKPOINT = -2,
+        FLUSH_DB = -3,
+        FLUSH_DB_ALL = -4
+    }
+
     public sealed unsafe partial class AofProcessor
     {
         public class AofReplayCoordinator(AofProcessor aofProcessor, ILogger logger = null) : IDisposable
         {
-            const int CHECKPOINT_BARRIER_ID = -1;
-
             readonly ConcurrentDictionary<int, EventBarrier> eventBarriers = [];
             readonly AofProcessor aofProcessor = aofProcessor;
             readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(aofProcessor.storeWrapper.serverOptions.AofSublogCount);
@@ -256,6 +266,8 @@ namespace Garnet.server
                 unsafe void Synchronize(AofProcessor aofProcessor, TransactionGroup txnGroup, byte* ptr)
                 {
                     var extendedHeader = *(AofExtendedHeader*)ptr;
+                    extendedHeader.ThrowIfNotExtendedHeader();
+
                     // Add coordinator group if does not exist and add to that the txnGroup that needs to be replayed
                     var participantCount = txnGroup.logAccessCount;
                     var eventBarrier = eventBarriers.GetOrAdd(extendedHeader.header.sessionID, _ => new EventBarrier(participantCount));
@@ -340,23 +352,34 @@ namespace Garnet.server
                 }
             }
 
-            internal void ProcessCheckpointMarker(byte* ptr)
+            /// <summary>
+            /// Unified method to process operations that require synchronization across sublogs
+            /// </summary>
+            /// <param name="ptr">Pointer to the AOF entry</param>
+            /// <param name="barrierId">Unique barrier ID for this operation type</param>
+            /// <param name="operation">The operation to execute</param>
+            internal void ProcessSynchronizedOperation(byte* ptr, EventBarrierType barrierId, Action operation)
             {
-                // If single log don't have to synchronize, take checkpoint immediately
+                // If single log don't have to synchronize, execute immediately
                 if (aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1)
                 {
-                    _ = aofProcessor.storeWrapper.TakeCheckpoint(false, logger);
+                    operation();
                     return;
                 }
 
-                // Sychronize checkpoint execution
+                // Extract extended header info and validate header
                 var extendedHeader = *(AofExtendedHeader*)ptr;
-                var eventBarrier = GetBarrier(CHECKPOINT_BARRIER_ID, extendedHeader.logAccessCount);
+                extendedHeader.ThrowIfNotExtendedHeader();
+
+                // Synchronize execution across sublogs
+                var eventBarrier = GetBarrier((int)barrierId, extendedHeader.logAccessCount);
                 if (eventBarrier.SignalAndWait(aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout))
                 {
-                    _ = aofProcessor.storeWrapper.TakeCheckpoint(false, logger);
-                    if (!RemoveBarrier(CHECKPOINT_BARRIER_ID, out _))
-                        throw new GarnetException("Could not remove checkpoint barrier at checkpoint marker replay");
+                    // Only one replay task will win and execute the following operation
+                    operation();
+
+                    if (!RemoveBarrier((int)barrierId, out _))
+                        throw new GarnetException($"RemoveBarrier failed when processing {barrierId}");
                     eventBarrier.Set();
                 }
             }

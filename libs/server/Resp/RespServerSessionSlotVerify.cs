@@ -29,7 +29,7 @@ namespace Garnet.server
         /// <param name="count">Key count if different than keys array length</param>
         /// <returns>True when ownership is verified, false otherwise</returns>
         bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, int count = -1)
-            => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
+            => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking > 0, ref dcurr, ref dend, count);
 
         bool CanServeSlot(RespCommand cmd)
         {

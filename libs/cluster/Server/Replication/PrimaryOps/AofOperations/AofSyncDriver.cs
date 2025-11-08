@@ -187,6 +187,7 @@ namespace Garnet.cluster
                     // If (2) is false the we still have more data to process hence the sequence number will possible change in the future.
                     for (var i = 0; i < maxSublogSeqNumber.Length; i++)
                     {
+                        cts.Token.ThrowIfCancellationRequested();
                         if (maxSublogSeqNumber[i] < mssn && previousAddress[i] == tailAddress[i])
                             clusterProvider.storeWrapper.appendOnlyFile.EnqueueRefreshSublogTail(i, mssn);
                     }

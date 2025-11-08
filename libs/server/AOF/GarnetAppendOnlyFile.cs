@@ -69,6 +69,10 @@ namespace Garnet.server
         /// <param name="readSessionWaiter"></param>
         public void EnsureConsistentRead(ref ReplicaReadSessionContext replicaReadSessionContext, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ReadSessionWaiter readSessionWaiter)
         {
+            // Return immediately if
+            // 1. No AOF
+            // 2. SingleLog AOF
+            // 3. Force incosistent read through ASKING
             if (!serverOptions.EnableAOF || serverOptions.AofSublogCount == 1 || true)
                 return;
 

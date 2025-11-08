@@ -232,19 +232,9 @@ namespace Garnet.server
                             logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", aofReplayCoordinator.FuzzyRegionBufferCount(sublogIdx));
                             aofReplayCoordinator.ClearFuzzyRegionBuffer(sublogIdx);
                         }
+                        Debug.Assert(!replayContext.inFuzzyRegion);
                         replayContext.inFuzzyRegion = true;
                     }
-                    else
-                    {
-                        // We are parsing the old AOF format: take checkpoint immediately as we do not have a fuzzy region
-                        // Note: we will not truncate the AOF as ReplicationCheckpointStartOffset is not set
-                        // Once a new checkpoint is transferred, the replica will truncate the AOF.
-                        if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
-                            aofReplayCoordinator.ProcessCheckpointMarker(ptr);
-                    }
-                    break;
-                case AofEntryType.ObjectStoreCheckpointStartCommit:
-                    // With unified checkpoint, we do not need to handle object store checkpoint separately
                     break;
                 case AofEntryType.CheckpointEndCommit:
                     if (header.aofHeaderVersion > 1)
@@ -255,10 +245,16 @@ namespace Garnet.server
                         }
                         else
                         {
+                            Debug.Assert(replayContext.inFuzzyRegion);
                             replayContext.inFuzzyRegion = false;
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
-                                aofReplayCoordinator.ProcessCheckpointMarker(ptr);
+                            {
+                                aofReplayCoordinator.ProcessSynchronizedOperation(
+                                    ptr,
+                                    EventBarrierType.CHECKPOINT,
+                                    () => storeWrapper.TakeCheckpoint(background: false, logger));
+                            }
 
                             // Process buffered records
                             aofReplayCoordinator.ProcessFuzzyRegionOperations(sublogIdx, storeWrapper.store.CurrentVersion, asReplica);
@@ -266,30 +262,41 @@ namespace Garnet.server
                         }
                     }
                     break;
-                case AofEntryType.ObjectStoreCheckpointEndCommit:
-                    // With unified checkpoint, we do not need to handle object store checkpoint separately
-                    break;
                 case AofEntryType.MainStoreStreamingCheckpointStartCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
-                        storeWrapper.store.SetVersion(header.storeVersion);
-                    break;
-                case AofEntryType.MainStoreStreamingCheckpointEndCommit:
-                    Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
+                    {
+                        aofReplayCoordinator.ProcessSynchronizedOperation(
+                            ptr,
+                            EventBarrierType.STREAMING_CHECKPOINT,
+                            () => storeWrapper.store.SetVersion(header.storeVersion));
+                    }
                     break;
                 case AofEntryType.ObjectStoreStreamingCheckpointStartCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
-                        storeWrapper.objectStore.SetVersion(header.storeVersion);
+                    {
+                        aofReplayCoordinator.ProcessSynchronizedOperation(
+                            ptr,
+                            EventBarrierType.STREAMING_CHECKPOINT,
+                            () => storeWrapper.objectStore.SetVersion(header.storeVersion));
+                    }
                     break;
-                case AofEntryType.FlushAll:
-                    storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1);
-                    break;
-                case AofEntryType.FlushDb:
-                    storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId);
-                    break;
+                case AofEntryType.MainStoreStreamingCheckpointEndCommit:
                 case AofEntryType.ObjectStoreStreamingCheckpointEndCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
+                    break;
+                case AofEntryType.FlushAll:
+                    aofReplayCoordinator.ProcessSynchronizedOperation(
+                        ptr,
+                        EventBarrierType.FLUSH_DB_ALL,
+                        () => storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1));
+                    break;
+                case AofEntryType.FlushDb:
+                    aofReplayCoordinator.ProcessSynchronizedOperation(
+                        ptr,
+                        EventBarrierType.FLUSH_DB,
+                        () => storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId));
                     break;
                 case AofEntryType.RefreshSublogTail:
                     extendedHeader = *(AofExtendedHeader*)ptr;
@@ -561,8 +568,8 @@ namespace Garnet.server
                     AofEntryType.StoreUpsert or AofEntryType.StoreRMW or AofEntryType.StoreDelete => AofStoreType.MainStoreType,
                     AofEntryType.ObjectStoreUpsert or AofEntryType.ObjectStoreRMW or AofEntryType.ObjectStoreDelete => AofStoreType.ObjectStoreType,
                     AofEntryType.TxnStart or AofEntryType.TxnCommit or AofEntryType.TxnAbort or AofEntryType.StoredProcedure => AofStoreType.TxnType,
-                    AofEntryType.CheckpointStartCommit or AofEntryType.ObjectStoreCheckpointStartCommit or AofEntryType.MainStoreStreamingCheckpointStartCommit or AofEntryType.ObjectStoreStreamingCheckpointStartCommit => AofStoreType.CheckpointType,
-                    AofEntryType.CheckpointEndCommit or AofEntryType.ObjectStoreCheckpointEndCommit or AofEntryType.MainStoreStreamingCheckpointEndCommit or AofEntryType.ObjectStoreStreamingCheckpointEndCommit => AofStoreType.CheckpointType,
+                    AofEntryType.CheckpointStartCommit or AofEntryType.ObjectStoreStreamingCheckpointStartCommit => AofStoreType.CheckpointType,
+                    AofEntryType.CheckpointEndCommit or AofEntryType.MainStoreStreamingCheckpointEndCommit or AofEntryType.ObjectStoreStreamingCheckpointEndCommit => AofStoreType.CheckpointType,
                     AofEntryType.FlushAll or AofEntryType.FlushDb => AofStoreType.FlushDbType,
                     _ => throw new GarnetException($"Conversion to AofStoreType not possible for {type}"),
                 };

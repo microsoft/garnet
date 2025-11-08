@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Runtime.InteropServices;
+using Garnet.common;
 
 namespace Garnet.server
 {
@@ -40,6 +41,21 @@ namespace Garnet.server
             header.padding = AofHeader.ShardedLogFlag;
             this.sequenceNumber = sequenceNumber;
             this.logAccessCount = logAccessCount;
+        }
+
+        /// <summary>
+        /// Tests whether this is an extended header by looking at the padding first bit
+        /// </summary>
+        public readonly bool IsExtendedHeader => (header.padding & 0x1) == 0x1;
+
+        /// <summary>
+        /// Throws exception if AofHeader is not of AofExtendedType
+        /// </summary>
+        /// <exception cref="GarnetException"></exception>
+        public void ThrowIfNotExtendedHeader()
+        {
+            if (!IsExtendedHeader)
+                throw new GarnetException("AofHeader not of AofExtendedHeader type!");
         }
     };
 

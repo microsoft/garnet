@@ -7,7 +7,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -100,8 +99,7 @@ namespace Garnet.server
         public void UpdateKeySequenceNumber(int sublogIdx, ref SpanByte key, long sequenceNumber)
         {
             appendOnlyFile.Log.HashKey(ref key, out _, out var _sublogIdx, out var keyOffset);
-            if (sublogIdx != _sublogIdx)
-                throw new GarnetException("Sublog index does not match key mapping!");
+            Debug.Assert(sublogIdx == _sublogIdx);
             _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][keyOffset], sequenceNumber, out _);
             SignalWaiters(sublogIdx);
         }

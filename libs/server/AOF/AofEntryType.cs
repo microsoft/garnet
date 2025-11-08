@@ -82,17 +82,6 @@ namespace Garnet.server
         /// Refresh sublog tail (used only with ShardedLog)
         /// </summary>
         RefreshSublogTail = 0x70,
-
-        #region Deprecated markers
-        /// <summary>
-        /// Deprecated with unified checkpointing: Checkpoint for object store start
-        /// </summary>
-        ObjectStoreCheckpointStartCommit = 0x31,
-        /// <summary>
-        /// Deprecated with unified checkpointing: Checkpoint for object store end
-        /// </summary>
-        ObjectStoreCheckpointEndCommit = 0x33,
-        #endregion
     }
 
     internal enum AofStoreType : byte

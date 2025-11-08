@@ -77,7 +77,7 @@ namespace Garnet.server
         /// <param name="readOnly"></param>
         /// <param name="SessionAsking"></param>
         /// <returns></returns>
-        bool NetworkIterativeSlotVerify(ArgSlice keySlice, bool readOnly, byte SessionAsking);
+        bool NetworkIterativeSlotVerify(ArgSlice keySlice, bool readOnly, bool SessionAsking);
 
         /// <summary>
         /// Write cached slot verification message to output
@@ -88,7 +88,14 @@ namespace Garnet.server
         /// <summary>
         /// Key array slot verify (write result to network)
         /// </summary>
-        unsafe bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, byte SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1);
+        /// <param name="keys"></param>
+        /// <param name="readOnly"></param>
+        /// <param name="SessionAsking"></param>
+        /// <param name="dcurr"></param>
+        /// <param name="dend"></param>
+        /// <param name="count"></param>
+        /// <returns></returns>
+        unsafe bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, bool SessionAsking, ref byte* dcurr, ref byte* dend, int count = -1);
 
         /// <summary>
         /// Array slot verify (write result to network)
