@@ -434,6 +434,9 @@ namespace Tsavorite.core
         {
             return unchecked(((int)0x80070000) | errorCode);
         }
+
+        [DllImport("ntdll.dll")]
+        internal static extern uint RtlNtStatusToDosError(uint NtStatus);
         #endregion
     }
 }

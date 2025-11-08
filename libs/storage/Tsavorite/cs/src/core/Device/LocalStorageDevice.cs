@@ -386,7 +386,7 @@ namespace Tsavorite.core
                     var entry = pEntries[i];
                     if (entry.lpOverlapped == null)
                         return false;
-                    uint errorCode = entry.Internal == 0 ? 0 : (uint)Marshal.GetLastWin32Error();
+                    uint errorCode = entry.Internal == 0 ? 0 : (uint)Native32.RtlNtStatusToDosError(entry.Internal);
                     _callback(errorCode, (uint)entry.dwNumberOfBytesTransferred, entry.lpOverlapped);
                 }
                 return true;
@@ -586,7 +586,7 @@ namespace Tsavorite.core
                         var entry = pEntries[i];
                         if (entry.lpOverlapped == null)
                             return;
-                        uint errorCode = entry.Internal == 0 ? 0 : (uint)Marshal.GetLastWin32Error();
+                        uint errorCode = entry.Internal == 0 ? 0 : Native32.RtlNtStatusToDosError(entry.Internal);
                         _callback(errorCode, (uint)entry.dwNumberOfBytesTransferred, entry.lpOverlapped);
                     }
                 }
