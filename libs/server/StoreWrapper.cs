@@ -925,6 +925,7 @@ namespace Garnet.server
             if (disposed) return;
             disposed = true;
 
+            clusterProvider?.Dispose();
             itemBroker?.Dispose();
             monitor?.Dispose();
             luaTimeoutManager?.Dispose();
@@ -932,7 +933,6 @@ namespace Garnet.server
             databaseManager.Dispose();
 
             ctsCommit?.Dispose();
-            clusterProvider?.Dispose();
         }
     }
 }

@@ -589,18 +589,8 @@ namespace Garnet.cluster
             }
             else if (localNodeRole == NodeRole.PRIMARY && replicaOfNodeId == null)
             {
-                var replicaIds = current.GetLocalNodeReplicaIds();
-                foreach (var replicaId in replicaIds)
-                {
-                    var aofAddress = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, 0);
-                    // TODO: Initiate AOF sync task correctly when restarting primary
-                    if (clusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationDriver(replicaId, ref aofAddress, out var aofSyncTaskInfo))
-                    {
-                        var syncFromAofAddress = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, 0);
-                        if (!TryConnectToReplica(replicaId, ref syncFromAofAddress, aofSyncTaskInfo, out var errorMessage))
-                            logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
-                    }
-                }
+                // Restarting as a primary we do nothing.
+                // The replica will have to initiate the recovery process.
             }
             else
             {

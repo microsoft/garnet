@@ -199,11 +199,15 @@ namespace Garnet.cluster
             return replicaInfo;
         }
 
+        /// <summary>
+        /// Dispose the AofSyncDriverStore
+        /// </summary>
         public void Dispose()
         {
             try
             {
                 _lock.WriteLock();
+                if (_disposed) return;
                 _disposed = true;
                 for (var i = 0; i < numTasks; i++)
                 {
@@ -219,6 +223,14 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// Add a new AofSyncDriver
+        /// </summary>
+        /// <param name="remoteNodeId"></param>
+        /// <param name="startAddress"></param>
+        /// <param name="aofSyncDriver"></param>
+        /// <returns></returns>
+        /// <exception cref="GarnetException"></exception>
         public bool TryAddReplicationDriver(string remoteNodeId, ref AofAddress startAddress, out AofSyncDriver aofSyncDriver)
         {
             aofSyncDriver = null;
@@ -311,6 +323,13 @@ namespace Garnet.cluster
             return success;
         }
 
+        /// <summary>
+        /// Add AofSyncDrivers collection
+        /// </summary>
+        /// <param name="replicaSyncSessions"></param>
+        /// <param name="startAddress"></param>
+        /// <returns></returns>
+        /// <exception cref="GarnetException"></exception>
         public bool TryAddReplicationDrivers(ReplicaSyncSession[] replicaSyncSessions, ref AofAddress startAddress)
         {
             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -413,7 +432,12 @@ namespace Garnet.cluster
             return true;
         }
 
-        public bool TryRemove(AofSyncDriver aofSyncTask)
+        /// <summary>
+        /// Remove provided AofSyncDriver
+        /// </summary>
+        /// <param name="aofSyncDriver"></param>
+        /// <returns></returns>
+        public bool TryRemove(AofSyncDriver aofSyncDriver)
         {
             // Lock addition of new tasks
             _lock.WriteLock();
@@ -427,7 +451,7 @@ namespace Garnet.cluster
                 {
                     var t = syncDrivers[i];
                     Debug.Assert(t != null, $"syncDriver should not be null at {nameof(TryRemove)}");
-                    if (t == aofSyncTask)
+                    if (t == aofSyncDriver)
                     {
                         syncDrivers[i] = null;
                         if (i < numTasks - 1)
@@ -453,6 +477,10 @@ namespace Garnet.cluster
             return success;
         }
 
+        /// <summary>
+        /// Count the number of AofSyncDriver connections
+        /// </summary>
+        /// <returns></returns>
         public int CountConnectedReplicas()
         {
             var count = 0;
@@ -474,11 +502,38 @@ namespace Garnet.cluster
             return count;
         }
 
+        /// <summary>
+        /// Update TruncatedUntil address
+        /// </summary>
+        /// <param name="truncatedUntil"></param>
         public void UpdateTruncatedUntil(AofAddress truncatedUntil)
         {
             _lock.WriteLock();
             this.TruncatedUntil.MonotonicUpdate(ref truncatedUntil);
             _lock.WriteUnlock();
+        }
+
+        /// <summary>
+        /// Remove and dispose all active aof sync drivers
+        /// </summary>
+        public void RemoveAll()
+        {
+            try
+            {
+                _lock.WriteLock();
+                if (_disposed) return;
+                for (var i = 0; i < numTasks; i++)
+                {
+                    var task = syncDrivers[i];
+                    task.Dispose();
+                }
+                numTasks = 0;
+                Array.Clear(syncDrivers);
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
         }
     }
 }

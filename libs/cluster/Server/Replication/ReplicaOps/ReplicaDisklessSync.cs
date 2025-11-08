@@ -73,9 +73,12 @@ namespace Garnet.cluster
                         storeWrapper.appendOnlyFile?.Log.WaitForCommit();
                     }
 
-                    // Reset background replay iterator
+                    // Reset background replay tasks if this node was a replica
                     replicaReplayTaskGroup?.Dispose();
                     replicaReplayTaskGroup = new ReplicaReplayTaskGroup(clusterProvider, logger);
+
+                    // Remove aofSync tasks if this node was a primary
+                    aofSyncDriverStore.RemoveAll();
 
                     // Reset the database in preparation for connecting to primary
                     // only if we expect to have disk checkpoint to recover from,

@@ -31,7 +31,7 @@ namespace Garnet.test.cluster
             {"ClusterSRPrimaryRestart", true},
             {"ClusterSRRedirectWrites", true},
             {"ClusterSRReplicaOfTest", true},
-            {"ClusterReplicationSimpleFailover", false},
+            {"ClusterReplicationSimpleFailover", true},
             {"ClusterFailoverAttachReplicas", true},
             {"ClusterReplicationCheckpointCleanupTest", true},
             {"ClusterMainMemoryReplicationAttachReplicas", true},
@@ -44,11 +44,11 @@ namespace Garnet.test.cluster
             {"ClusterReplicationLua", true},
             {"ClusterReplicationStoredProc", true},
             {"ClusterReplicationManualCheckpointing", true},
-            {"ReplicaSyncTaskFaultsRecoverAsync", false},
-            {"ClusterReplicationMultiRestartRecover", false},
+            {"ReplicaSyncTaskFaultsRecoverAsync", true},
+            {"ClusterReplicationMultiRestartRecover", true},
             {"ReplicasRestartAsReplicasAsync", true},
             {"PrimaryUnavailableRecoveryAsync", true},
-            {"ClusterReplicationDivergentHistoryWithoutCheckpoint", false}
+            {"ClusterReplicationDivergentHistoryWithoutCheckpoint", true}
         };
 
         [OneTimeSetUp]

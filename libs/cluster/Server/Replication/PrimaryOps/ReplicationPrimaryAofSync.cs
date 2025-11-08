@@ -27,15 +27,15 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="nodeid"></param>
         /// <param name="startAddress"></param>
-        /// <param name="aofSyncTaskInfo"></param>
+        /// <param name="aofSyncDriver"></param>
         /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns></returns>
-        public bool TryConnectToReplica(string nodeid, ref AofAddress startAddress, AofSyncDriver aofSyncTaskInfo, out ReadOnlySpan<byte> errorMessage)
+        public bool TryConnectToReplica(string nodeid, ref AofAddress startAddress, AofSyncDriver aofSyncDriver, out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = default;
             if (_disposed)
             {
-                aofSyncDriverStore.TryRemove(aofSyncTaskInfo);
+                aofSyncDriverStore.TryRemove(aofSyncDriver);
 
                 errorMessage = "ERR Replication Manager Disposed"u8;
                 logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
@@ -47,7 +47,7 @@ namespace Garnet.cluster
             var (address, port) = clusterProvider.clusterManager.CurrentConfig.GetWorkerAddressFromNodeId(nodeid);
             if (address == null)
             {
-                aofSyncDriverStore.TryRemove(aofSyncTaskInfo);
+                aofSyncDriverStore.TryRemove(aofSyncDriver);
                 errorMessage = Encoding.ASCII.GetBytes($"ERR unknown endpoint for {nodeid}");
                 logger?.LogError("{errorMessage}", Encoding.ASCII.GetString(errorMessage));
                 return false;
@@ -63,14 +63,14 @@ namespace Garnet.cluster
                 }
                 else
                 {
-                    aofSyncDriverStore.TryRemove(aofSyncTaskInfo);
+                    aofSyncDriverStore.TryRemove(aofSyncDriver);
                     logger?.LogError("AOF sync task failed to start. Requested address {startAddress} unavailable. Local primary tail address {tailAddress}", startAddress, tailAddress);
                     errorMessage = Encoding.ASCII.GetBytes($"ERR requested AOF address: {startAddress} goes beyond, primary tail address: {tailAddress}");
                     return false;
                 }
             }
 
-            Task.Run(aofSyncTaskInfo.Run);
+            Task.Run(aofSyncDriver.Run);
             return true;
         }
     }

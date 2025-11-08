@@ -1463,11 +1463,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
 
             // Validate that replica has the same keys as primary
-            var resp = primaryServer.Execute("KEYS", ["*"]);
-            var resp2 = replicaServer.Execute("KEYS", ["*"]);
-            ClassicAssert.AreEqual(resp.Length, resp2.Length);
-            for (var i = 0; i < resp.Length; i++)
-                ClassicAssert.AreEqual((string)resp[i], (string)resp2[i]);
+            ValidateKeys();
 
             // Run write workload at primary
             void RunWorkload(int start, int count)
@@ -1501,6 +1497,17 @@ namespace Garnet.test.cluster
                         sublogCount: sublogCount);
                     context.nodes[replicaNodeIndex].Start();
                 }
+            }
+
+            void ValidateKeys()
+            {
+                var resp = (string[])primaryServer.Execute("KEYS", ["*"]);
+                var resp2 = (string[])replicaServer.Execute("KEYS", ["*"]);
+                ClassicAssert.AreEqual(resp.Length, resp2.Length);
+                Array.Sort(resp);
+                Array.Sort(resp2);
+                for (var i = 0; i < resp.Length; i++)
+                    ClassicAssert.AreEqual(resp[i], resp2[i]);
             }
         }
 

@@ -107,9 +107,12 @@ namespace Garnet.cluster
                         storeWrapper.appendOnlyFile?.Log.WaitForCommit();
                     }
 
-                    // Reset background replay iterator
+                    // Reset background replay iterator if this node was a replica
                     replicaReplayTaskGroup?.Dispose();
                     replicaReplayTaskGroup = new ReplicaReplayTaskGroup(clusterProvider, logger);
+
+                    // Remove aofSync tasks if this node was a primary
+                    aofSyncDriverStore.RemoveAll();
 
                     // Reset replication offset
                     replicationOffset.SetValue(0);
@@ -321,7 +324,7 @@ namespace Garnet.cluster
 
                 if (replayAOFMap > 0)
                 {
-                    logger?.LogInformation("ReplicaRecover: replay local AOF from {beginAddress} until {recoveredReplicationOffset}", beginAddress, recoveredReplicationOffset);
+                    logger?.LogError("ReplicaRecover: replay local AOF from {beginAddress} until {recoveredReplicationOffset}", beginAddress, recoveredReplicationOffset);
                     var replayUntil = recoveredReplicationOffset;
                     for (var sublogIdx = 0; sublogIdx < recoveredReplicationOffset.Length; sublogIdx++)
                         replayUntil[sublogIdx] = (((1UL) << sublogIdx) > 0) ? recoveredReplicationOffset[sublogIdx] : beginAddress[sublogIdx];
@@ -332,7 +335,7 @@ namespace Garnet.cluster
                 storeWrapper.appendOnlyFile.Initialize(beginAddress, recoveredReplicationOffset);
 
                 // Finally, advertise that we are caught up to the replication offset
-                this.replicationOffset = recoveredReplicationOffset;
+                replicationOffset = recoveredReplicationOffset;
                 logger?.LogInformation("ReplicaRecover: ReplicaReplicationOffset = {ReplicaReplicationOffset}", replicationOffset);
 
                 // If checkpoint for main store was send add its token here in preparation for purge later on

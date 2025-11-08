@@ -49,6 +49,7 @@ namespace Garnet.cluster
 
         bool sameMainStoreCheckpointHistory = false;
         bool sameObjectStoreCheckpointHistory = false;
+
         public void Dispose()
         {
             AofSyncDriver?.DisposeClient();

@@ -178,7 +178,7 @@ namespace Garnet.cluster
 
                     iter = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(sublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
                     // Send ping to initialize replication stream
-                    garnetClient.ExecuteClusterAppendLog(aofSyncDriver.localNodeId, sublogIdx, -1, -1, -1, (long)-1, 0);
+                    garnetClient.ExecuteClusterAppendLog(aofSyncDriver.localNodeId, sublogIdx, -1, -1, -1, -1, 0);
                     garnetClient.CompletePending();
 
                     while (true)
@@ -186,6 +186,10 @@ namespace Garnet.cluster
                         if (cts.Token.IsCancellationRequested) break;
                         await iter.BulkConsumeAllAsync(this, aofSyncDriver.clusterProvider.serverOptions.ReplicaSyncDelayMs, maxChunkSize: 1 << 20, cts.Token);
                     }
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "[{sublogIdx}]({method})", sublogIdx, nameof(RunAofSyncTask));
                 }
                 finally
                 {

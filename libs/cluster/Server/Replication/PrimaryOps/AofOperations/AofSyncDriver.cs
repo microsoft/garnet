@@ -99,6 +99,9 @@ namespace Garnet.cluster
                 aofSyncTasks[sublogIdx] = new AofSyncTask(clusterProvider, sublogIdx, endPoint, startAddress[sublogIdx], localNodeId, remoteNodeId, cts, logger);
         }
 
+        /// <summary>
+        /// Dispose AofSyncDriver
+        /// </summary>
         public void Dispose()
         {
             // First cancel the token
@@ -116,6 +119,9 @@ namespace Garnet.cluster
             cts?.Dispose();
         }
 
+        /// <summary>
+        /// Dispose alls clients associated with this aof sync driver
+        /// </summary>
         public void DisposeClient()
         {
             foreach (var aofSyncTask in aofSyncTasks)
@@ -139,7 +145,7 @@ namespace Garnet.cluster
                 if (aofSyncTasks.Length > 1)
                     tasks.Add(RefreshSublogTail());
 
-                await Task.WhenAll([.. tasks]);
+                _ = await Task.WhenAny([.. tasks]);
             }
             catch (Exception ex)
             {
