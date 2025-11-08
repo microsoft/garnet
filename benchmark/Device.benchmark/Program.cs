@@ -167,7 +167,7 @@ namespace Device.benchmark
         {
             DeviceType.Native when OperatingSystem.IsWindows() => new LocalStorageDevice(fileName, true, true, true, -1, false, true, false),
             DeviceType.Native when OperatingSystem.IsLinux() => new NativeStorageDevice(fileName, true, true, -1, 1, null),
-            DeviceType.FileStream=> new ManagedLocalStorageDevice(fileName, true, false, true, -1, false, false, false),
+            DeviceType.FileStream => new ManagedLocalStorageDevice(fileName, true, false, true, -1, false, false, false),
             DeviceType.RandomAccess => new RandomAccessLocalStorageDevice(fileName, true, true, true, -1, false, false, false),
             _ => throw new ArgumentOutOfRangeException()
         };
