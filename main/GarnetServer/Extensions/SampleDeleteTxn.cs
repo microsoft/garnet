@@ -36,17 +36,13 @@ namespace Garnet
 
             var sortedSet1Key = GetNextArg(ref procInput, ref offset);
             if (sortedSet1Key.Length > 0)
-            {
                 AddKey(sortedSet1Key, LockType.Exclusive, StoreType.Object);
-            }
-
-            GetNextArg(ref procInput, ref offset); // sortedSet1Entry
+            GetNextArg(ref procInput, ref offset); // sortedSet1Entry must be retrieved but is not used
 
             var sortedSet2Key = GetNextArg(ref procInput, ref offset);
             if (sortedSet2Key.Length > 0)
-            {
                 AddKey(sortedSet2Key, LockType.Exclusive, StoreType.Object);
-            }
+            // sortedSet2Entry is not used
 
             return true;
         }
@@ -55,25 +51,18 @@ namespace Garnet
         {
             var offset = 0;
 
-            var mainStoreKey = GetNextArg(ref procInput, ref offset);
-
-            api.DELETE(mainStoreKey);
+            var stringKey = GetNextArg(ref procInput, ref offset);
+            api.DELETE(stringKey);
 
             var sortedSet1Key = GetNextArg(ref procInput, ref offset);
             var sortedSet1Entry = GetNextArg(ref procInput, ref offset);
-
             if (sortedSet1Key.Length > 0)
-            {
                 api.SortedSetRemove(sortedSet1Key, sortedSet1Entry, out _);
-            }
 
             var sortedSet2Key = GetNextArg(ref procInput, ref offset);
             var sortedSet2Entry = GetNextArg(ref procInput, ref offset);
-
             if (sortedSet2Key.Length > 0)
-            {
                 api.SortedSetRemove(sortedSet2Key, sortedSet2Entry, out _);
-            }
 
             WriteSimpleString(ref output, "SUCCESS");
         }

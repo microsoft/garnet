@@ -36,7 +36,8 @@ namespace Tsavorite.core
     {
         internal TElement[][] book;
 
-        internal int tail = -1;         // Start at -1 so its Allocate() sets it to 0
+        private const int InitialTail = -1;     // Start at -1 so Allocate() sets it to 0
+        internal int tail = InitialTail;
 
         public bool IsInitialized => book is not null;
 
@@ -44,8 +45,13 @@ namespace Tsavorite.core
 
         public int Allocate()
         {
-            while (tail == -1)
+            while (tail == InitialTail)
             {
+                // The book may be non-null due to Clear(), e.g. when we wrap around in the log to page 0.
+                // Return the 0 here; other threads seeing this set to non-InitialTail and breaking will return an incremented tail.
+                if (book is not null && Interlocked.CompareExchange(ref tail, 0, InitialTail) == InitialTail)
+                    return 0;
+
                 // Two-step process in case the element allocation throws; book will still be null.
                 var newBook = new TElement[MultiLevelPageArray.InitialBookSize][];
                 newBook[0] = new TElement[MultiLevelPageArray.ChapterSize];
@@ -170,7 +176,7 @@ namespace Tsavorite.core
             var lastChapterIndex = tail >> MultiLevelPageArray.ChapterSizeBits;
             for (int chapter = 0; chapter <= lastChapterIndex; chapter++)
                 Array.Clear(book[chapter], 0, MultiLevelPageArray.ChapterSize);
-            tail = 0;
+            tail = InitialTail;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -190,7 +196,7 @@ namespace Tsavorite.core
                     book[chapter][page] = default;
                 }
             }
-            tail = 0;
+            tail = InitialTail;
         }
 
         /// <inheritdoc/>
