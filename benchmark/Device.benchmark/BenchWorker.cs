@@ -63,14 +63,14 @@ namespace Device.benchmark
         unsafe void Callback(uint errorCode, uint numBytes, object ctx)
         {
 #if DEBUG
-                var readSpan = new Span<byte>((void*)((BenchmarkOperation)ctx).Buffer, sectorSize);
-                var expectedSpan = new Span<byte>(expectedData, 0, sectorSize);
-                bool valid = readSpan.SequenceEqual(expectedSpan);
+            var readSpan = new Span<byte>((void*)((BenchmarkOperation)ctx).Buffer, sectorSize);
+            var expectedSpan = new Span<byte>(expectedData, 0, sectorSize);
+            bool valid = readSpan.SequenceEqual(expectedSpan);
 
-                if (!valid)
-                {
-                    Console.WriteLine($"Data mismatch");
-                }
+            if (!valid)
+            {
+                Console.WriteLine($"Data mismatch");
+            }
 #else
             // In Release builds, skip data validation for performance
 #endif

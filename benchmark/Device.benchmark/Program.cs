@@ -27,7 +27,7 @@ namespace Device.benchmark
 
         // Add a new field to collect total operations
         internal static long totalOperations = 0;
-        
+
         static void Main(string[] args)
         {
             ParserResult<Options> result = Parser.Default.ParseArguments<Options>(args);
