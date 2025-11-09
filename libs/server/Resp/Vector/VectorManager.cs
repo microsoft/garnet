@@ -1979,7 +1979,15 @@ namespace Garnet.server
                     }
                 }
 
-                HandleMigratedIndexKey(currentSession, null, null, ref key, ref value);
+                ActiveThreadSession = currentSession;
+                try
+                {
+                    HandleMigratedIndexKey(null, null, ref key, ref value);
+                }
+                finally
+                {
+                    ActiveThreadSession = null;
+                }
                 return;
             }
 
@@ -2315,7 +2323,6 @@ namespace Garnet.server
         /// Invoked after all the namespace data is moved via <see cref="HandleMigratedElementKey"/>.
         /// </summary>
         public void HandleMigratedIndexKey(
-            object existingStorageSession,  // TODO: Oh god, what a hack
             GarnetDatabase db,
             StoreWrapper storeWrapper,
             ref SpanByte key,
@@ -2342,10 +2349,20 @@ namespace Garnet.server
             }
 #endif
 
-            // TODO: Eventually don't spin up one for each key, they're rare enough now for this to be fine
-            var storageSession = (existingStorageSession as StorageSession) ?? new StorageSession(storeWrapper, new(), null, null, db.Id, this, this.logger);
+            // Spin up a new Storage Session is we don't have one
+            StorageSession newStorageSession;
+            if (ActiveThreadSession == null)
+            {
+                Debug.Assert(db != null, "Must have DB if session is not already set");
+                Debug.Assert(storeWrapper != null, "Must have StoreWrapper if session is not already set");
 
-            ActiveThreadSession = storageSession;
+                ActiveThreadSession = newStorageSession = new StorageSession(storeWrapper, new(), null, null, db.Id, this, this.logger);
+            }
+            else
+            {
+                newStorageSession = null;
+            }
+
             try
             {
                 // Prepare as a psuedo-VADD
@@ -2377,7 +2394,7 @@ namespace Garnet.server
 
                 Span<TxnKeyEntry> exclusiveLocks = stackalloc TxnKeyEntry[readLockShardCount];
 
-                var keyHash = storageSession.lockableContext.GetKeyHash(key);
+                var keyHash = ActiveThreadSession.lockableContext.GetKeyHash(key);
 
                 for (var i = 0; i < exclusiveLocks.Length; i++)
                 {
@@ -2386,14 +2403,14 @@ namespace Garnet.server
                     exclusiveLocks[i].keyHash = (keyHash & ~readLockShardMask) | (long)i;
                 }
 
-                ref var lockCtx = ref storageSession.objectStoreLockableContext;
+                ref var lockCtx = ref ActiveThreadSession.objectStoreLockableContext;
                 lockCtx.BeginLockable();
 
                 lockCtx.Lock<TxnKeyEntry>(exclusiveLocks);
                 try
                 {
                     // Perform the write
-                    var writeRes = storageSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
+                    var writeRes = ActiveThreadSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref ActiveThreadSession.basicContext);
                     if (writeRes != GarnetStatus.OK)
                     {
                         Service.DropIndex(context, newlyAllocatedIndex);
@@ -2407,7 +2424,7 @@ namespace Garnet.server
                         contextMetadata.MarkMigrationComplete(context, hashSlot);
                     }
 
-                    UpdateContextMetadata(ref storageSession.vectorContext);
+                    UpdateContextMetadata(ref ActiveThreadSession.vectorContext);
                 }
                 finally
                 {
@@ -2416,17 +2433,14 @@ namespace Garnet.server
                 }
 
                 // For REPLICAs which are following, we need to fake up a write
-                ReplicateMigratedIndexKey(ref storageSession.basicContext, ref key, ref value, context, logger);
+                ReplicateMigratedIndexKey(ref ActiveThreadSession.basicContext, ref key, ref value, context, logger);
             }
             finally
             {
                 ActiveThreadSession = null;
 
-                if (storageSession != existingStorageSession)
-                {
-                    // Dispose if we allocated on demand
-                    storageSession.Dispose();
-                }
+                // If we spun up a new storage session, dispose it
+                newStorageSession?.Dispose();
             }
 
             // Fake a write for post-migration replication

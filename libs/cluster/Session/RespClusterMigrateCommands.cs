@@ -169,7 +169,7 @@ namespace Garnet.cluster
                     {
                         // This is the subset of the main store that holds Vector Set _index_ keys
                         // 
-                        // Namespace'd keys are handled by the SSTORE path
+                        // Namespace'd element keys are handled by the SSTORE path
 
                         var keyCount = *(int*)payloadPtr;
                         payloadPtr += 4;
@@ -190,7 +190,7 @@ namespace Garnet.cluster
                                 continue;
                             }
 
-                            clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedIndexKey(null, clusterProvider.storeWrapper.DefaultDatabase, clusterProvider.storeWrapper, ref key, ref value);
+                            clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedIndexKey(clusterProvider.storeWrapper.DefaultDatabase, clusterProvider.storeWrapper, ref key, ref value);
                             i++;
                         }
                     }
