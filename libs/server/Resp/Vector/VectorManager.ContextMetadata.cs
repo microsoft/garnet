@@ -274,6 +274,28 @@ namespace Garnet.server
                 return ret;
             }
 
+            public readonly HashSet<ulong> GetMigrating()
+            {
+                if (migrating == 0)
+                {
+                    return null;
+                }
+
+                var ret = new HashSet<ulong>();
+
+                var remaining = migrating;
+                while (remaining != 0UL)
+                {
+                    var ix = BitOperations.TrailingZeroCount(remaining);
+
+                    _ = ret.Add((ulong)ix * ContextStep);
+
+                    remaining &= ~(1UL << (byte)ix);
+                }
+
+                return ret;
+            }
+
             /// <inheritdoc/>
             public override readonly string ToString()
             {

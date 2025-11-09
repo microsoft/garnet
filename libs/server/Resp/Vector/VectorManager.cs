@@ -141,7 +141,28 @@ namespace Garnet.server
             // Can be not found if we've never spun up a Vector Set
             if (status.Found)
             {
-                contextMetadata = MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0];
+                lock (this)
+                {
+                    contextMetadata = MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0];
+                }
+            }
+
+            // If we come up and contexts are marked for migration, that means the migration FAILED
+            // and we'd like those contexts back ASAP
+            lock (this)
+            {
+                var abandonedMigrations = contextMetadata.GetMigrating();
+
+                if (abandonedMigrations != null)
+                {
+                    foreach (var abandoned in abandonedMigrations)
+                    {
+                        contextMetadata.MarkMigrationComplete(abandoned, ushort.MaxValue);
+                        contextMetadata.MarkCleaningUp(abandoned);
+                    }
+
+                    UpdateContextMetadata(ref ctx);
+                }
             }
 
             // Resume any cleanups we didn't complete before recovery
