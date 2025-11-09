@@ -392,7 +392,7 @@ namespace Garnet.server
 
             var curIx = 2;
 
-            ReadOnlySpan<byte> element;
+            ArgSlice? element;
 
             VectorValueType valueType = VectorValueType.Invalid;
             byte[] rentedValues = null;
@@ -401,7 +401,7 @@ namespace Garnet.server
                 Span<byte> values = stackalloc byte[64 * sizeof(float)];
                 if (kind.Span.EqualsUpperCaseSpanIgnoringCase("ELE"u8))
                 {
-                    element = parseState.GetArgSliceByRef(curIx).ReadOnlySpan;
+                    element = parseState.GetArgSliceByRef(curIx);
                     values = default;
                     curIx++;
                 }
@@ -692,13 +692,13 @@ namespace Garnet.server
                     GarnetStatus res;
                     VectorManagerResult vectorRes;
                     VectorIdFormat idFormat;
-                    if (element.IsEmpty)
+                    if (!element.HasValue)
                     {
-                        res = storageApi.VectorSetValueSimilarity(key, valueType, ArgSlice.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes);
+                        res = storageApi.VectorSetValueSimilarity(key, valueType, ArgSlice.FromPinnedSpan(values), count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes);
                     }
                     else
                     {
-                        res = storageApi.VectorSetElementSimilarity(key, element, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value.ReadOnlySpan, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes);
+                        res = storageApi.VectorSetElementSimilarity(key, element.Value, count.Value, delta.Value, searchExplorationFactor.Value, filter.Value, maxFilteringEffort.Value, withAttributes.Value, ref idResult, out idFormat, ref distanceResult, ref attributeResult, out vectorRes);
                     }
 
                     if (res == GarnetStatus.NOTFOUND)
@@ -851,7 +851,7 @@ namespace Garnet.server
             }
 
             ref var key = ref parseState.GetArgSliceByRef(0);
-            var elem = parseState.GetArgSliceByRef(1).ReadOnlySpan;
+            var elem = parseState.GetArgSliceByRef(1);
 
             var raw = false;
             if (parseState.Count == 3)

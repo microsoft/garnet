@@ -21,6 +21,8 @@ namespace Garnet.server
     /// </summary>
     public sealed partial class VectorManager
     {
+        // TODO: Object store is going away, need to move this to some other locking scheme
+
         /// <summary>
         /// Used to scope a shared lock and context related to a Vector Set operation.
         /// 
@@ -441,8 +443,13 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Acquire exclusive lock over a given key.
+        /// </summary>
         private ExclusiveVectorLock AcquireExclusiveLocks(StorageSession storageSession, ref SpanByte key, Span<TxnKeyEntry> exclusiveLocks)
         {
+            Debug.Assert(exclusiveLocks.Length == readLockShardCount, "Incorrect number of locks");
+
             var keyHash = storageSession.lockableContext.GetKeyHash(key);
 
             for (var i = 0; i < exclusiveLocks.Length; i++)
@@ -497,6 +504,13 @@ namespace Garnet.server
             return acquiredLock;
         }
 
+        /// <summary>
+        /// Prepare a hash based on the given key and the currently active processor.
+        /// 
+        /// This can only be used for read locking, as it will block exclusive lock acquisition but not other readers.
+        /// 
+        /// Sharded for performance reasons.
+        /// </summary>
         private void PrepareReadLockHash(StorageSession storageSession, ref SpanByte key, out long keyHash, out long readLockHash)
         {
             var id = Thread.GetCurrentProcessorId() & readLockShardMask;
@@ -505,6 +519,11 @@ namespace Garnet.server
             readLockHash = (keyHash & ~readLockShardMask) | id;
         }
 
+        /// <summary>
+        /// Used to upgrade from one SHARED lock to all EXCLUSIVE locks.
+        /// 
+        /// Can fail, unlike <see cref="AcquireExclusiveLocks(StorageSession, ref SpanByte, Span{TxnKeyEntry})"/>.
+        /// </summary>
         private bool TryAcquireExclusiveLocks(StorageSession storageSession, Span<TxnKeyEntry> exclusiveLocks, long keyHash, long readLockHash)
         {
             Debug.Assert(exclusiveLocks.Length == readLockShardCount, "Insufficient space for exclusive locks");

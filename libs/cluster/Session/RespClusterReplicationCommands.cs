@@ -523,8 +523,6 @@ namespace Garnet.cluster
                 TrackImportProgress(keyValuePairCount, isMainStore: true, keyValuePairCount == 0);
                 while (i < keyValuePairCount)
                 {
-                    // TODO: need VectorManager mangling space
-
                     ref var key = ref SpanByte.Reinterpret(payloadPtr);
                     payloadPtr += key.TotalSize;
                     ref var value = ref SpanByte.Reinterpret(payloadPtr);
