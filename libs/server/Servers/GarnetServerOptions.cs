@@ -533,6 +533,13 @@ namespace Garnet.server
         public bool ClusterReplicaResumeWithData = false;
 
         /// <summary>
+        /// If true, enable Vector Set commands.
+        /// 
+        /// This is a preview feature, subject to substantial change, and should not be relied upon.
+        /// </summary>
+        public bool EnableVectorSetPreview = false;
+
+        /// <summary>
         /// Get the directory name for database checkpoints
         /// </summary>
         /// <param name="dbId">Database Id</param>

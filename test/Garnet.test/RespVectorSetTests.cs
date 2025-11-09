@@ -36,6 +36,30 @@ namespace Garnet.test
         }
 
         [Test]
+        public void DisabledWithFeatureFlag()
+        {
+            // Restart with Vector Sets disabled
+            TearDown();
+
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, enableVectorSetPreview: false);
+
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            ReadOnlySpan<RespCommand> vectorSetCommands = [RespCommand.VADD, RespCommand.VCARD, RespCommand.VDIM, RespCommand.VEMB, RespCommand.VGETATTR, RespCommand.VINFO, RespCommand.VISMEMBER, RespCommand.VLINKS, RespCommand.VRANDMEMBER, RespCommand.VREM, RespCommand.VSETATTR, RespCommand.VSIM];
+            foreach (var cmd in vectorSetCommands)
+            {
+                // Should all fault before any validation
+                var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmd.ToString()));
+                ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", exc.Message);
+            }
+
+        }
+
+        [Test]
         public void VADD()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

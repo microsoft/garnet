@@ -661,9 +661,13 @@ namespace Garnet.server
         private readonly Task cleanupTask;
         private readonly Func<IMessageConsumer> getCleanupSession;
 
-        public VectorManager(int dbId, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
+        public bool IsEnabled { get; }
+
+        public VectorManager(bool enabled, int dbId, Func<IMessageConsumer> getCleanupSession, ILoggerFactory loggerFactory)
         {
             this.dbId = dbId;
+
+            IsEnabled = enabled;
 
             // Include DB and id so we correlate to what's actually stored in the log
             logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}:{processInstanceId}");
