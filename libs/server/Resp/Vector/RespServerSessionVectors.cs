@@ -257,7 +257,7 @@ namespace Garnet.server
                         attributes = parseState.GetArgSliceByRef(curIx);
                         curIx++;
 
-                        // TODO: Validate attributes
+                        // You might think we need to validate attributes, but Redis actually lets anything through
 
                         continue;
                     }
