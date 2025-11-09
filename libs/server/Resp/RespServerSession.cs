@@ -364,7 +364,7 @@ namespace Garnet.server
 
         public override void Dispose()
         {
-            logger?.LogDebug("Disposing RespServerSession Id={0}", this.Id);
+            logger?.LogDebug("Disposing RespServerSession Id={id}", this.Id);
 
             if (recvBufferPtr != null)
             {

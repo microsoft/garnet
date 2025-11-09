@@ -92,13 +92,21 @@ namespace Garnet.cluster
 
             public void Dispose()
             {
-                // This forces the background sync task to stop,
-                // unless the cancelled cts already signaled it to stop
-                iter?.Dispose();
-                iter = null;
+                try
+                {
+                    // Dispose GarnetClient
+                    garnetClient?.Dispose();
+                }
+                catch { }
 
-                // Dispose GarnetClient
-                garnetClient?.Dispose();
+                try
+                {
+                    // This forces the background sync task to stop,
+                    // unless the cancelled cts already signaled it to stop
+                    iter?.Dispose();
+                    iter = null;
+                }
+                catch { }
             }
 
             /// <summary>

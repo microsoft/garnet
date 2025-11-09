@@ -34,12 +34,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Replay barrier used to coordinate connection of replay tasks
         /// </summary>
-        readonly Barrier barrier = new Barrier(clusterProvider.serverOptions.AofSublogCount);
+        readonly Barrier barrier = new(clusterProvider.serverOptions.AofSublogCount);
 
         /// <summary>
         /// Disposed lock
         /// </summary>
-        SingleWriterMultiReaderLock _disposed = new();
+        public SingleWriterMultiReaderLock _disposed = new();
 
         /// <summary>
         /// Cancellation token source for replay task group
@@ -60,19 +60,6 @@ namespace Garnet.cluster
         {
             replicaReplayTasks[sublogIdx] = new ReplicaReplayTask(sublogIdx, clusterProvider, networkSender, cts, logger);
             _ = barrier.SignalAndWait(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token);
-            if (!_disposed.TryReadLock())
-                throw new GarnetException("Failed to add replica replay task");
-        }
-
-        /// <summary>
-        /// Trigger cancel of replay tasks.
-        /// </summary>
-        /// <param name="isReplicating">Indicates if call is from replicating task</param>
-        public void Cancel(bool isReplicating)
-        {
-            if (isReplicating)
-                _disposed.ReadUnlock();
-            cts.Cancel();
         }
 
         /// <summary>
@@ -80,9 +67,9 @@ namespace Garnet.cluster
         /// </summary>
         public void Dispose()
         {
-            cts.Cancel();
             if (!_disposed.TryWriteLock())
                 return;
+            cts.Cancel();
             var replicaReplayTasks = this.replicaReplayTasks;
             if (replicaReplayTasks != null)
             {

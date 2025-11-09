@@ -105,6 +105,7 @@ namespace Garnet.cluster
                         return errorMsg;
                     }
 
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
                     gcs = new(
                         new IPEndPoint(IPAddress.Parse(address), port),
                         networkBufferSettings: clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
@@ -116,7 +117,7 @@ namespace Garnet.cluster
                     // Used only for disk-based replication
                     if (!disklessSync)
                         recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
-                    gcs.Connect();
+                    gcs.Connect((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, linkedCts.Token);
 
                     SyncMetadata syncMetadata = new(
                         fullSync: false,
@@ -130,7 +131,8 @@ namespace Garnet.cluster
                         currentReplicationOffset: ReplicationOffset,
                         checkpointEntry: checkpointEntry);
 
-                    var resp = await gcs.ExecuteClusterAttachSync(syncMetadata.ToByteArray()).ConfigureAwait(false);
+                    var resp = await gcs.ExecuteClusterAttachSync(syncMetadata.ToByteArray()).
+                        WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {

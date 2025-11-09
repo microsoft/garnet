@@ -170,8 +170,8 @@ namespace Garnet.cluster
             }
             else
             {
-
                 IsReplicating = true;
+
                 ProcessPrimaryStream(sublogIdx, sbRecord.ToPointer(), sbRecord.Length,
                     previousAddress, currentAddress, nextAddress);
             }

@@ -90,6 +90,8 @@ namespace Garnet.cluster
                         logger?.LogError("{msg}", errorMsg);
                         return errorMsg;
                     }
+
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
                     gcs = new(
                         new IPEndPoint(IPAddress.Parse(address), port),
                         clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
@@ -97,7 +99,7 @@ namespace Garnet.cluster
                         tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
                         authUsername: clusterProvider.ClusterUsername,
                         authPassword: clusterProvider.ClusterPassword);
-                    gcs.Connect();
+                    gcs.Connect((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, linkedCts.Token);
 
                     // Wait for Commit of AOF (data received from old primary) if FastCommit is not enabled
                     // If FastCommit is enabled, we commit during AOF stream processing
@@ -140,7 +142,6 @@ namespace Garnet.cluster
                     // 4. Replica responds with aofStartAddress sync
                     // 5. Primary will initiate aof sync task
                     // 6. Primary releases checkpoint
-                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
 
                     var resp = await gcs.ExecuteClusterInitiateReplicaSync(
                         nodeId,

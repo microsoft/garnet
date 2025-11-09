@@ -44,7 +44,7 @@ namespace Garnet.cluster
         /// Connect client
         /// </summary>
         public void Connect()
-            => AofSyncDriver.ConnectClient();
+            => AofSyncDriver.ConnectClients();
 
         /// <summary>
         /// Issue FlushAll

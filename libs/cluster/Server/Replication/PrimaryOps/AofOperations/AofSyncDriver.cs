@@ -201,11 +201,11 @@ namespace Garnet.cluster
         }
 
         #region DisklesSyncInterface
-        public void ConnectClient()
+        public void ConnectClients()
         {
             if (!IsConnected)
                 foreach (var aofSyncTask in aofSyncTasks)
-                    aofSyncTask.garnetClient.Connect();
+                    aofSyncTask.garnetClient.Connect((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token);
         }
 
         public Task<string> IssuesFlushAll()

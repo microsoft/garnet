@@ -28,7 +28,7 @@ namespace Garnet.cluster
         readonly INetworkSender respSessionNetworkSender = respSessionNetworkSender;
         readonly ILogger logger = logger;
         TsavoriteLogScanSingleIterator replayIterator = null;
-        SingleWriterMultiReaderLock activeReplay;
+        public SingleWriterMultiReaderLock activeReplay;
 
         public void Dispose()
         {

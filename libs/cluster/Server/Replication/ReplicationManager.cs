@@ -479,7 +479,7 @@ namespace Garnet.cluster
         public void Dispose()
         {
             _disposed = true;
-
+            ctsRepManager.Cancel();
             replicationConfigDevice?.Dispose();
             replicationConfigDevicePool?.Free();
 
@@ -488,7 +488,6 @@ namespace Garnet.cluster
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();
             replicaReplayTaskGroup?.Dispose();
-            ctsRepManager.Cancel();
             ctsRepManager.Dispose();
             aofSyncDriverStore.Dispose();
             aofProcessor?.Dispose();

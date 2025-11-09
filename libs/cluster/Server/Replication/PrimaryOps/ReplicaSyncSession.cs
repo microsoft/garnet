@@ -136,7 +136,7 @@ namespace Garnet.cluster
                 (localEntry, aofSyncDriver) = await AcquireCheckpointEntry();
                 logger?.LogInformation("Checkpoint search completed");
 
-                gcs.Connect((int)storeWrapper.serverOptions.ReplicaSyncTimeout.TotalMilliseconds);
+                gcs.Connect((int)storeWrapper.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token);
 
                 long index_size = -1;
                 long obj_index_size = -1;
@@ -439,7 +439,8 @@ namespace Garnet.cluster
                         (int)(endAddress - startAddress);
                     var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes).ConfigureAwait(false);
 
-                    resp = await gcs.ExecuteClusterSendCheckpointFileSegment(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                    resp = await gcs.ExecuteClusterSendCheckpointFileSegment(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).
+                        WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                     if (!resp.Equals("OK"))
                     {
                         logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
@@ -450,7 +451,8 @@ namespace Garnet.cluster
                 }
 
                 // Send last empty package to indicate end of transmission and let replica dispose IDevice
-                resp = await gcs.ExecuteClusterSendCheckpointFileSegment(fileTokenBytes, (int)type, startAddress, []).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
+                resp = await gcs.ExecuteClusterSendCheckpointFileSegment(fileTokenBytes, (int)type, startAddress, []).
+                    WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
                 if (!resp.Equals("OK"))
                 {
                     logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
