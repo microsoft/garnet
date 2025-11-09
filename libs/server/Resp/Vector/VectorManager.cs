@@ -543,16 +543,16 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Used to scope exclusive locks and a context related to a Vector Set delete operation.
+        /// Used to scope exclusive locks and a context related to exclusive Vector Set operation (delete, migrate, etc.).
         /// 
         /// Disposing this ends the lockable context, releases the locks, and exits the storage session context on the current thread.
         /// </summary>
-        internal readonly ref struct DeleteVectorLock : IDisposable
+        internal readonly ref struct ExclusiveVectorLock : IDisposable
         {
             private readonly ref LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> lockableCtx;
             private readonly ReadOnlySpan<TxnKeyEntry> entries;
 
-            internal DeleteVectorLock(ref LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> lockableCtx, ReadOnlySpan<TxnKeyEntry> entries)
+            internal ExclusiveVectorLock(ref LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> lockableCtx, ReadOnlySpan<TxnKeyEntry> entries)
             {
                 this.entries = entries;
                 this.lockableCtx = ref lockableCtx;
@@ -2334,8 +2334,6 @@ namespace Garnet.server
         {
             Debug.Assert(key.MetadataSize != 1, "Shouldn't have a namespace if we're migrating a Vector Set index");
 
-            // TODO: Maybe DRY this up with delete's exclusive lock acquisition?
-
             RawStringInput input = default;
             input.header.cmd = RespCommand.VADD;
             input.arg1 = RecreateIndexArg;
@@ -2398,20 +2396,7 @@ namespace Garnet.server
 
                 Span<TxnKeyEntry> exclusiveLocks = stackalloc TxnKeyEntry[readLockShardCount];
 
-                var keyHash = ActiveThreadSession.lockableContext.GetKeyHash(key);
-
-                for (var i = 0; i < exclusiveLocks.Length; i++)
-                {
-                    exclusiveLocks[i].isObject = false;
-                    exclusiveLocks[i].lockType = LockType.Exclusive;
-                    exclusiveLocks[i].keyHash = (keyHash & ~readLockShardMask) | (long)i;
-                }
-
-                ref var lockCtx = ref ActiveThreadSession.objectStoreLockableContext;
-                lockCtx.BeginLockable();
-
-                lockCtx.Lock<TxnKeyEntry>(exclusiveLocks);
-                try
+                using (AcquireExclusiveLocks(ActiveThreadSession, ref key, exclusiveLocks))
                 {
                     // Perform the write
                     var writeRes = ActiveThreadSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref ActiveThreadSession.basicContext);
@@ -2429,15 +2414,10 @@ namespace Garnet.server
                     }
 
                     UpdateContextMetadata(ref ActiveThreadSession.vectorContext);
-                }
-                finally
-                {
-                    lockCtx.Unlock<TxnKeyEntry>(exclusiveLocks);
-                    lockCtx.EndLockable();
-                }
 
-                // For REPLICAs which are following, we need to fake up a write
-                ReplicateMigratedIndexKey(ref ActiveThreadSession.basicContext, ref key, ref value, context, logger);
+                    // For REPLICAs which are following, we need to fake up a write
+                    ReplicateMigratedIndexKey(ref ActiveThreadSession.basicContext, ref key, ref value, context, logger);
+                }
             }
             finally
             {
@@ -2848,17 +2828,8 @@ namespace Garnet.server
             }
         }
 
-        /// <summary>
-        /// Utility method that will read vector set index out, and acquire exclusive locks to allow it to be deleted.
-        /// </summary>
-        internal DeleteVectorLock ReadForDeleteVectorIndex(StorageSession storageSession, ref SpanByte key, ref RawStringInput input, scoped Span<byte> indexSpan, Span<TxnKeyEntry> exclusiveLocks, out GarnetStatus status)
+        private ExclusiveVectorLock AcquireExclusiveLocks(StorageSession storageSession, ref SpanByte key, Span<TxnKeyEntry> exclusiveLocks)
         {
-            Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
-            Debug.Assert(exclusiveLocks.Length == readLockShardCount, "Insufficient space for exclusive locks");
-
-            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
-            ActiveThreadSession = storageSession;
-
             var keyHash = storageSession.lockableContext.GetKeyHash(key);
 
             for (var i = 0; i < exclusiveLocks.Length; i++)
@@ -2868,22 +2839,36 @@ namespace Garnet.server
                 exclusiveLocks[i].keyHash = (keyHash & ~readLockShardMask) | (long)i;
             }
 
-            var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
-
             ref var lockCtx = ref storageSession.objectStoreLockableContext;
             lockCtx.BeginLockable();
 
             lockCtx.Lock<TxnKeyEntry>(exclusiveLocks);
 
+            return new(ref lockCtx, exclusiveLocks);
+        }
+
+        /// <summary>
+        /// Utility method that will read vector set index out, and acquire exclusive locks to allow it to be deleted.
+        /// </summary>
+        internal ExclusiveVectorLock ReadForDeleteVectorIndex(StorageSession storageSession, ref SpanByte key, ref RawStringInput input, scoped Span<byte> indexSpan, Span<TxnKeyEntry> exclusiveLocks, out GarnetStatus status)
+        {
+            Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
+            Debug.Assert(exclusiveLocks.Length == readLockShardCount, "Insufficient space for exclusive locks");
+
+            Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
+            ActiveThreadSession = storageSession;
+
+            var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
+
             // Get the index
+            var acquiredLock = AcquireExclusiveLocks(storageSession, ref key, exclusiveLocks);
             try
             {
                 status = storageSession.Read_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
             }
             catch
             {
-                lockCtx.Unlock<TxnKeyEntry>(exclusiveLocks);
-                lockCtx.EndLockable();
+                acquiredLock.Dispose();
 
                 throw;
             }
@@ -2892,12 +2877,11 @@ namespace Garnet.server
             {
                 // This can happen is something else successfully deleted before we acquired the lock
 
-                lockCtx.Unlock<TxnKeyEntry>(exclusiveLocks);
-                lockCtx.EndLockable();
+                acquiredLock.Dispose();
                 return default;
             }
 
-            return new(ref lockCtx, exclusiveLocks);
+            return acquiredLock;
         }
 
         /// <summary>
