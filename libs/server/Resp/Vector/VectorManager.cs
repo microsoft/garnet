@@ -755,6 +755,8 @@ namespace Garnet.server
         /// </summary>
         private ulong NextVectorSetContext(ushort hashSlot)
         {
+            var start = Stopwatch.GetTimestamp();
+
             // TODO: This retry is no good, but will go away when namespaces >= 256 are possible
             while (true)
             {
@@ -776,8 +778,23 @@ namespace Garnet.server
                     logger?.LogError(e, "NextContext not available, delaying and retrying");
                 }
 
-                // HACK HACK HACK
-                Thread.Sleep(1_000);
+                if (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(30))
+                {
+                    lock (this)
+                    {
+                        if (contextMetadata.GetNeedCleanup() == null)
+                        {
+                            throw new GarnetException("No available Vector Sets contexts to allocate, none scheduled for cleanup");
+                        }
+                    }
+
+                    // Wait a little bit for cleanup to make progress
+                    Thread.Sleep(1_000);
+                }
+                else
+                {
+                    throw new GarnetException("No available Vector Sets contexts to allocate, timeout reached");
+                }
             }
         }
 

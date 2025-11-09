@@ -287,19 +287,14 @@ namespace Garnet.test.cluster
                                     var id = readRes[i];
                                     var attr = readRes[i + 1];
 
-                                    // TODO: Null is possible because of attributes are hacked up today
-                                    //       when they are NOT hacky we can make null illegal
-                                    if ((attr?.Length ?? 0) > 0)
-                                    {
-                                        var asInt = BinaryPrimitives.ReadInt32LittleEndian(id);
+                                    var asInt = BinaryPrimitives.ReadInt32LittleEndian(id);
 
-                                        var actualAttr = Encoding.UTF8.GetString(attr);
-                                        var expectedAttr = $"{{ \"id\": {asInt} }}";
+                                    var actualAttr = Encoding.UTF8.GetString(attr);
+                                    var expectedAttr = $"{{ \"id\": {asInt} }}";
 
-                                        ClassicAssert.AreEqual(expectedAttr, actualAttr);
+                                    ClassicAssert.AreEqual(expectedAttr, actualAttr);
 
-                                        gotAttrs++;
-                                    }
+                                    gotAttrs++;
                                 }
                             }
                             else
