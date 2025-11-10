@@ -158,9 +158,6 @@ namespace Device.benchmark
             int totalBuffers = opts.FileSize / tempBufferSize;
             for (int i = 0; i < totalBuffers; i++)
                 DeviceUtils.WriteInto(device, (ulong)(i * tempBufferSize), tempBuffer);
-
-            GC.Collect();
-            GC.WaitForFullGCComplete();
         }
 
         static IDevice GetDevice(DeviceType deviceType, string fileName) => deviceType switch
