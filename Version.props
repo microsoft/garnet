@@ -1,6 +1,0 @@
-<Project>
-	<!-- VersionPrefix property for builds and packages -->
-	<PropertyGroup>
-		<VersionPrefix>1.0.87</VersionPrefix>
-	</PropertyGroup>
-</Project>

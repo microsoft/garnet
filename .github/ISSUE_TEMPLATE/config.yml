@@ -1,8 +1,0 @@
-blank_issues_enabled: false
-contact_links:
-    - name: Ask a Question
-      url: https://github.com/microsoft/garnet/discussions/new/choose
-      about: Please ask and answer questions for garnet here.
-    - name: Read the Docs
-      url: https://microsoft.github.io/garnet/
-      about: Be sure you've read the docs!
