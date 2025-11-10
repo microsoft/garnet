@@ -37,6 +37,7 @@ namespace Garnet.server
             this.serverOptions = serverOptions;
             InvalidAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: -1);
             MaxAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: long.MaxValue);
+            CreateOrUpdateTimestampManager();
             if (serverOptions.AofSublogCount > 1)
                 seqNumGen = new SequenceNumberGenerator(0);
             this.logger = logger;
@@ -73,7 +74,7 @@ namespace Garnet.server
             // 1. No AOF
             // 2. SingleLog AOF
             // 3. Force incosistent read through ASKING
-            if (!serverOptions.EnableAOF || serverOptions.AofSublogCount == 1 || true)
+            if (!serverOptions.EnableAOF || serverOptions.AofSublogCount == 1 || csvi.Asking)
                 return;
 
             // Validate keys and ensure consistency with sharded-log AOF
