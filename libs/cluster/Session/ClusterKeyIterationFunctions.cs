@@ -96,7 +96,7 @@ namespace Garnet.cluster
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
                     // TODO: better way to detect namespace
-                    if(key.MetadataSize == 1)
+                    if (key.MetadataSize == 1)
                     {
                         // Namespace means not visible
                         cursorRecordResult = CursorRecordResult.Skip;

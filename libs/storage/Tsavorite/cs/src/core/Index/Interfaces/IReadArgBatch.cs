@@ -15,7 +15,7 @@ namespace Tsavorite.core
         /// Count of keys/args/outputs.
         /// </summary>
         int Count { get; }
-        
+
         /// <summary>
         /// Get <paramref name="i"/>th key.
         /// </summary>

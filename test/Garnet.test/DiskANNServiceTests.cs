@@ -317,13 +317,13 @@ namespace Garnet.test
             unsafe
             {
                 Span<byte> id2 = [4, 5, 6, 7];
-                Span<byte> elem2 = Enumerable.Range(0, 75).Select(static x => (byte)(x*2)).ToArray();
+                Span<byte> elem2 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
                 ReadOnlySpan<byte> attr2 = "{\"foo\": \"bar\"}"u8;
 
                 var insertRes = NativeDiskANNMethods.insert(
-                    Context, rawIndex, 
-                    (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id2)), (nuint)id2.Length, 
-                    VectorValueType.XB8, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem2)), (nuint)elem2.Length, 
+                    Context, rawIndex,
+                    (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(id2)), (nuint)id2.Length,
+                    VectorValueType.XB8, (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(elem2)), (nuint)elem2.Length,
                     (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(attr2)), (nuint)attr2.Length
                 );
                 ClassicAssert.AreEqual(1, insertRes);

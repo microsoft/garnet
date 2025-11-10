@@ -259,7 +259,7 @@ namespace Garnet.server
                         // and thus we can't call into it from session functions
                         var context = MemoryMarshal.Read<ulong>(input.parseState.GetArgSliceByRef(9).Span);
                         var index = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(10).Span);
-                        
+
                         recordInfo.VectorSet = true;
 
                         functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, context, index, ref value);
