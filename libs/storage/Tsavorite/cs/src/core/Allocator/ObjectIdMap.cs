@@ -41,7 +41,7 @@ namespace Tsavorite.core
         {
             if (freeSlots.TryPop(out var objectId))
             {
-                Debug.Assert(objectId <= objectArray.tail, $"objectId {objectId} retrieved from freelist is out of range of tail {objectArray.tail}");
+                Debug.Assert(objectId < objectArray.tail, $"objectId {objectId} retrieved from freelist must be less than tail {objectArray.tail}");
                 return objectId;
             }
             return objectArray.Allocate();
@@ -117,6 +117,6 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override string ToString() => $"tail: {(objectArray is not null ? objectArray.tail.ToString() : "<null>")}";
+        public override string ToString() => $"objectArray: {(objectArray is not null ? objectArray.ToString() : "<null>")}; freeSlots: {(freeSlots is not null ? freeSlots.ToString() : "<null>")}";
     }
 }

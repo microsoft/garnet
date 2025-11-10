@@ -266,7 +266,7 @@ namespace Tsavorite.core
             {
                 var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
                 if (!Info.ValueIsOverflow || length != ObjectIdMap.ObjectIdSize)
-                    throw new TsavoriteException("SetValueObject should only be called when trnasferring into a new record with ValueIsOverflow == true and value.Length==ObjectIdSize");
+                    throw new TsavoriteException("set_ValueOverflow should only be called when trnasferring into a new record with ValueIsOverflow == true and value.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
             }
         }
@@ -628,9 +628,9 @@ namespace Tsavorite.core
         {
             Debug.Assert(Info.ValueIsObject, $"Cannot call this overload of {GetCurrentMethodName()} for non-object Value");
 
-            if (Info.ValueIsInline)
+            if (!Info.ValueIsObject)
             {
-                Debug.Fail($"Cannot call {GetCurrentMethodName()} with no {nameof(RecordSizeInfo)} when the value is inline");
+                Debug.Fail($"Cannot call {GetCurrentMethodName()} with no {nameof(RecordSizeInfo)} when !ValueIsObject");
                 return false;
             }
 
@@ -1146,9 +1146,12 @@ namespace Tsavorite.core
             catch (Exception ex) { valueString = $"<exception: {ex.Message}>"; }
 
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
+            var keyOid = Info.KeyIsInline ? "na" : (*(int*)dataHeader.GetKeyFieldInfo().keyAddress).ToString();
+            var valOid = Info.ValueIsInline ? "na" : (*(int*)dataHeader.GetValueFieldInfo(Info).valueAddress).ToString();
+
             var eTagStr = Info.HasETag ? ETag.ToString() : "na";
             var expirStr = Info.HasExpiration ? Expiration.ToString() : "na";
-            return $"ri {Info} | hdr: {dataHeader.ToString(keyString, valueString)} | ETag {eTagStr} Expir {expirStr}";
+            return $"ri {Info} | hdr: {dataHeader.ToString(keyString, valueString)} | OIDs k:{keyOid} v:{valOid} | ETag {eTagStr} Expir {expirStr}";
         }
     }
 }

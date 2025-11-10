@@ -76,10 +76,10 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// This is not "Count" because our <see cref="stack"/> and <see cref="freeNodes"/> do not adjust <see cref="elementArray"/>'s Tail.
+        /// This is not named "Count" because our <see cref="stack"/> and <see cref="freeNodes"/> do not adjust <see cref="elementArray"/>'s Tail.
         /// So we support just the high-water mark (mostly for test).
         /// </summary>
-        public int MaxCount => elementArray.tail + 1;  // +1 because we start at -1 and increment before pushing
+        public int MaxCount => elementArray.Count;
 
         public bool IsEmpty => stack.IsNil;
 
