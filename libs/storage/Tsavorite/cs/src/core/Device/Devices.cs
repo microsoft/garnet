@@ -30,17 +30,27 @@ namespace Tsavorite.core
         /// <param name="readOnly">Open file in readOnly mode</param>
         /// <param name="logger"></param>
         /// <returns>Device instance</returns>
-        public static IDevice CreateLogDevice(string logPath, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = false, bool disableFileBuffering = true, bool useNativeDeviceLinux = false, bool readOnly = false, ILogger logger = null)
+        public static IDevice CreateLogDevice(string logPath, bool preallocateFile = false, bool deleteOnClose = false, long capacity = CAPACITY_UNSPECIFIED, bool recoverDevice = false, bool useIoCompletionPort = false, bool disableFileBuffering = true, bool useNativeDeviceLinux = false, bool useRandomAccessDevice = false, bool readOnly = false, ILogger logger = null)
         {
+            if (useNativeDeviceLinux && useRandomAccessDevice)
+                throw new TsavoriteException("Cannot set both useNativeDeviceLinux and useRandomAccessDevice");
+
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && useNativeDeviceLinux)
                     return new NativeStorageDevice(logPath, deleteOnClose, disableFileBuffering, capacity, logger: logger);
+                else if (useRandomAccessDevice)
+                    return new RandomAccessLocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, readOnly: readOnly);
                 else
                     return new ManagedLocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, readOnly: readOnly);
             }
             else
-                return new LocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort, readOnly: readOnly);
+            {
+                if (useRandomAccessDevice)
+                    return new RandomAccessLocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, readOnly: readOnly);
+                else
+                    return new LocalStorageDevice(logPath, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort, readOnly: readOnly);
+            }
         }
     }
 }

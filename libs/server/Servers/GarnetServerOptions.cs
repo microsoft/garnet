@@ -389,6 +389,11 @@ namespace Garnet.server
         /// </summary>
         public bool UseNativeDeviceLinux = false;
 
+        // <summary>
+        // Use .NET RandomAccess device for local storage
+        // </summary>
+        public bool UseRandomAccessDevice = false;
+
         /// <summary>
         /// Limit of items to return in one iteration of *SCAN command
         /// </summary>
@@ -651,7 +656,7 @@ namespace Garnet.server
             }
             logger?.LogInformation("[Store] Using log mutable percentage of {MutablePercent}%", MutablePercent);
 
-            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux, logger: logger);
+            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux, useRandomAccessDevice: UseRandomAccessDevice, logger: logger);
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");

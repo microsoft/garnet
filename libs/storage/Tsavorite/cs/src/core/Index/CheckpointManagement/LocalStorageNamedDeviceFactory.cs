@@ -21,6 +21,7 @@ namespace Tsavorite.core
         readonly bool preallocateFile;
         readonly bool disableFileBuffering;
         readonly bool useNativeDeviceLinux;
+        readonly bool useRandomAccessDevice;
         readonly bool readOnly;
         readonly ILogger logger;
 
@@ -35,13 +36,14 @@ namespace Tsavorite.core
         /// <param name="readOnly">Whether files are opened as readonly</param>
         /// <param name="baseName">Base name</param>
         /// <param name="logger">Logger</param>
-        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, bool useNativeDeviceLinux = false, bool readOnly = false, string baseName = null, ILogger logger = null)
+        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, bool useNativeDeviceLinux = false, bool useRandomAccessDevice = false, bool readOnly = false, string baseName = null, ILogger logger = null)
         {
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.throttleLimit = throttleLimit;
             this.useNativeDeviceLinux = useNativeDeviceLinux;
+            this.useRandomAccessDevice = useRandomAccessDevice;
             this.readOnly = readOnly;
             this.baseName = baseName;
             this.logger = logger;
@@ -56,6 +58,7 @@ namespace Tsavorite.core
                 deleteOnClose: deleteOnClose,
                 disableFileBuffering: disableFileBuffering,
                 useNativeDeviceLinux: useNativeDeviceLinux,
+                useRandomAccessDevice: useRandomAccessDevice,
                 readOnly: readOnly,
                 logger: logger);
             if (throttleLimit.HasValue)

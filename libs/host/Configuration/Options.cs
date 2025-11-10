@@ -507,6 +507,10 @@ namespace Garnet
         [Option("use-native-device-linux", Required = false, HelpText = "Use native device on Linux for local storage")]
         public bool? UseNativeDeviceLinux { get; set; }
 
+        [OptionValidation]
+        [Option("use-random-access-device", Required = false, HelpText = "Use device based on .NET RandomAccess for local storage")]
+        public bool? UseRandomAccessDevice { get; set; }
+
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
             HelpText = "#,#,...,#: For the main store, the sizes of records in each revivification bin, in order of increasing size." +
                        "           Supersedes the default --reviv; cannot be used with --reviv-in-chain-only")]
@@ -901,7 +905,7 @@ namespace Garnet
                 NetworkConnectionLimit = NetworkConnectionLimit,
                 DeviceFactoryCreator = useAzureStorage
                     ? azureFactoryCreator()
-                    : new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
+                    : new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), useRandomAccessDevice: UseRandomAccessDevice.GetValueOrDefault(), logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
@@ -917,6 +921,7 @@ namespace Garnet
                 ClusterUsername = ClusterUsername,
                 ClusterPassword = ClusterPassword,
                 UseNativeDeviceLinux = UseNativeDeviceLinux.GetValueOrDefault(),
+                UseRandomAccessDevice = UseRandomAccessDevice.GetValueOrDefault(),
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
                 RevivBinRecordCounts = revivBinRecordCounts,
