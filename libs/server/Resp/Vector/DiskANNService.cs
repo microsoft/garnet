@@ -27,8 +27,7 @@ namespace Garnet.server
         {
             unsafe
             {
-                //return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
-                return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback);
+                return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
             }
         }
 
@@ -221,8 +220,8 @@ namespace Garnet.server
             uint numLinks,
             nint readCallback,
             nint writeCallback,
-            nint deleteCallback/*,
-            nint readModifyWriteCallback*/
+            nint deleteCallback,
+            nint readModifyWriteCallback
         );
 
         [LibraryImport(DISKANN_GARNET)]
