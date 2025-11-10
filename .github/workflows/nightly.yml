@@ -77,9 +77,8 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
 
-#  DEBUG- ENABLE THIS STYLE CHECKING LATER
-#      - name: Check style format
-#        run: dotnet format --verify-no-changes --verbosity diagnostic
+      - name: Check style format
+        run: dotnet format --verify-no-changes --verbosity diagnostic
 
       - name: Build Tsavorite.test
         if: ${{ matrix.test == 'Tsavorite.test' }}

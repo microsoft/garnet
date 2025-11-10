@@ -32,6 +32,11 @@ if (-not (Test-Path -Path $allureResultsCombinedDir)) {
 Write-Host "Copying categories.json to $allureResultsCombinedDir"
 Copy-Item -Path "$basePath/test/Allure/categories.json" -Destination "$allureResultsCombinedDir/categories.json"
 
+# Load history from previous run (stored in another branch)
+#$historyBranch = "refs/heads/history"   
+#Write-Host "Fetching history branch: $historyBranch"
+#git fetch origin $historyBranch:$historyBranch      
+
 # Copy the history folder to CombinedResults - this is where history of tests all store
 Write-Host "Copying history to $allureResultsCombinedDir"
 $historySourceDir = "$basePath/test/Allure/history"
