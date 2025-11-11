@@ -20,7 +20,7 @@ namespace Garnet.cluster
         /// <param name="networkSender"></param>
         /// <param name="replicaReplayTaskGroup"></param>
         /// <returns></returns>
-        public bool InitializeReplicaReplayTask(int sublogIdx, INetworkSender networkSender, out ReplicaReplayTaskGroup replicaReplayTaskGroup)
+        public bool InitializeReplicaReplayGroup(int sublogIdx, INetworkSender networkSender, out ReplicaReplayTaskGroup replicaReplayTaskGroup)
         {
             replicaReplayTaskGroup = null;
             if (this.replicaReplayTaskGroup[sublogIdx] != null)
@@ -30,6 +30,15 @@ namespace Garnet.cluster
             replicaReplayTaskGroup = this.replicaReplayTaskGroup;
 
             return true;
+        }
+
+        /// <summary>
+        /// Resets the state of the replica replay group
+        /// </summary>
+        public void ResetReplicaReplayGroup()
+        {
+            replicaReplayTaskGroup?.Dispose();
+            replicaReplayTaskGroup = new ReplicaReplayTaskGroup(clusterProvider, logger);
         }
     }
 }

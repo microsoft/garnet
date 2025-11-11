@@ -110,8 +110,7 @@ namespace Garnet.cluster
                     }
 
                     // Reset background replay iterator if this node was a replica
-                    replicaReplayTaskGroup?.Dispose();
-                    replicaReplayTaskGroup = new ReplicaReplayTaskGroup(clusterProvider, logger);
+                    clusterProvider.replicationManager.ResetReplicaReplayGroup();
 
                     // Remove aofSync tasks if this node was a primary
                     aofSyncDriverStore.RemoveAll();

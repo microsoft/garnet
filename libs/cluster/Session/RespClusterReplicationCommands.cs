@@ -146,7 +146,7 @@ namespace Garnet.cluster
             // This is an initialization message
             if (previousAddress == -1 && currentAddress == -1 && nextAddress == -1)
             {
-                if (clusterProvider.replicationManager.InitializeReplicaReplayTask(sublogIdx, networkSender, out var replicaReplayTaskGroup))
+                if (clusterProvider.replicationManager.InitializeReplicaReplayGroup(sublogIdx, networkSender, out var replicaReplayTaskGroup))
                     this.replicaReplayTaskGroup = replicaReplayTaskGroup;
                 else
                 {

@@ -43,7 +43,7 @@ namespace Garnet.cluster
 
                     clusterProvider.clusterManager.TryResetReplica();
                     clusterProvider.replicationManager.TryUpdateForFailover();
-                    replicaReplayTaskGroup?.Dispose();
+                    clusterProvider.replicationManager.ResetReplicaReplayGroup();
                     UnsafeBumpAndWaitForEpochTransition();
                 }
                 finally

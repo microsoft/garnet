@@ -36,7 +36,7 @@ namespace Garnet.cluster
             try
             {
                 if (failReplay)
-                    throw new GarnetException($"[{sublogIdx}] Failed to acquire activeReplay lock!");
+                    throw new GarnetException($"[{sublogIdx}] Failed to acquire activeReplay lock!", LogLevel.Warning, clientResponse: false);
 
                 if (clusterProvider.replicationManager.CannotStreamAOF)
                 {
