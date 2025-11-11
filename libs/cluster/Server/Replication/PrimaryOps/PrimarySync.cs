@@ -87,7 +87,8 @@ namespace Garnet.cluster
                 }
                 finally
                 {
-                    replicaSyncSessionTaskStore.TryRemove(replicaId);
+                    if (!replicaSyncSessionTaskStore.TryRemove(replicaId))
+                        logger?.LogError("Unable to remove replica sync session for remote node {replicaId}", replicaId);
                 }
             }
         }

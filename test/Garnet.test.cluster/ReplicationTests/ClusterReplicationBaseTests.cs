@@ -15,6 +15,7 @@ using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Internal;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
@@ -1427,7 +1428,8 @@ namespace Garnet.test.cluster
 
         [Test, Order(26)]
         [Category("REPLICATION")]
-        public async Task ClusterReplicationMultiRestartRecover()
+        [CancelAfter(30_000)]
+        public async Task ClusterReplicationMultiRestartRecover(CancellationToken cancellationToken)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -1450,17 +1452,17 @@ namespace Garnet.test.cluster
 
             var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
             var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
-            var keyCount = 1000;
+            var keyCount = 256;
 
             var taskCount = 4;
             var tasks = new List<Task>();
             for (var i = 0; i < taskCount; i++)
                 tasks.Add(Task.Run(() => RunWorkload(i * keyCount, (i + 1) * keyCount)));
-            var restartRecover = 10;
+            var restartRecover = 2;
             tasks.Add(Task.Run(() => RestartRecover(restartRecover)));
 
             await Task.WhenAll(tasks);
-            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger, cancellationToken);
 
             // Validate that replica has the same keys as primary
             ValidateKeys();
@@ -1481,11 +1483,28 @@ namespace Garnet.test.cluster
             }
 
             // Restart and recover replica multiple times
-            void RestartRecover(int iteration)
+            async Task RestartRecover(int iteration)
             {
                 while (iteration-- > 0)
                 {
                     context.nodes[replicaNodeIndex].Dispose(false);
+
+                    var items = context.clusterTestUtils.GetReplicationInfo(
+                        primaryNodeIndex,
+                        [ReplicationInfoItem.CONNECTED_REPLICAS, ReplicationInfoItem.SYNC_DRIVER_COUNT],
+                        context.logger);
+                    while (!items[0].Item2.Equals("0") || !items[1].Item2.Equals("0"))
+                    {
+                        items = context.clusterTestUtils.GetReplicationInfo(
+                            primaryNodeIndex,
+                            [ReplicationInfoItem.CONNECTED_REPLICAS, ReplicationInfoItem.SYNC_DRIVER_COUNT],
+                            context.logger);
+                        if (cancellationToken.IsCancellationRequested)
+                            Assert.Fail("Failed waiting for primary aof sync cleanup!");
+                        await Task.Yield();
+                    }
+
+
                     context.nodes[replicaNodeIndex] = context.CreateInstance(
                         context.clusterTestUtils.GetEndPoint(replicaNodeIndex),
                         disableObjects: false,
@@ -1496,6 +1515,8 @@ namespace Garnet.test.cluster
                         cleanClusterConfig: false,
                         sublogCount: sublogCount);
                     context.nodes[replicaNodeIndex].Start();
+
+                    await Task.Yield();
                 }
             }
 

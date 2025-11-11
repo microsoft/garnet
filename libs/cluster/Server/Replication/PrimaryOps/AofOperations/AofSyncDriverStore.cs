@@ -44,17 +44,19 @@ namespace Garnet.cluster
         readonly long TruncateLagAddress;
 
         AofSyncDriver[] syncDrivers;
-        int numTasks;
+        int numDrivers;
         SingleWriterMultiReaderLock _lock;
         bool _disposed;
         internal AofAddress TruncatedUntil;
+
+        public int AofSyncDriverCount => numDrivers;
 
         public AofSyncDriverStore(ClusterProvider clusterProvider, int initialSize = 1, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
             this.logger = logger;
             syncDrivers = new AofSyncDriver[initialSize];
-            numTasks = 0;
+            numDrivers = 0;
             if (clusterProvider.storeWrapper.appendOnlyFile != null)
             {
                 logPageSizeBits = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
@@ -91,7 +93,7 @@ namespace Garnet.cluster
 
             // Calculate min address of all iterators
             var TruncatedUntil = truncateUntil;
-            for (var i = 0; i < numTasks; i++)
+            for (var i = 0; i < numDrivers; i++)
             {
                 Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null at {nameof(SafeTruncateAof)}");
                 if (syncDrivers[i].PreviousAddress[sublogIdx] < TruncatedUntil)
@@ -132,7 +134,7 @@ namespace Garnet.cluster
 
             // Calculate min address of all iterators
             var TruncatedUntil = truncateUntil;
-            for (var i = 0; i < numTasks; i++)
+            for (var i = 0; i < numDrivers; i++)
             {
                 Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null {nameof(SafeTruncateAof)}");
                 var previousAddress = syncDrivers[i].PreviousAddress;
@@ -169,7 +171,7 @@ namespace Garnet.cluster
         public List<RoleInfo> GetReplicaInfo(AofAddress PrimaryReplicationOffset)
         {
             // secondary0: ip=127.0.0.1,port=7001,state=online,offset=56,lag=0
-            List<RoleInfo> replicaInfo = new(numTasks);
+            List<RoleInfo> replicaInfo = new(numDrivers);
 
             _lock.ReadLock();
             var current = clusterProvider.clusterManager.CurrentConfig;
@@ -177,7 +179,7 @@ namespace Garnet.cluster
             {
                 if (_disposed) return replicaInfo;
 
-                for (var i = 0; i < numTasks; ++i)
+                for (var i = 0; i < numDrivers; ++i)
                 {
                     var cr = syncDrivers[i];
                     var (address, port) = current.GetWorkerAddressFromNodeId(cr.RemoteNodeId);
@@ -209,12 +211,12 @@ namespace Garnet.cluster
                 _lock.WriteLock();
                 if (_disposed) return;
                 _disposed = true;
-                for (var i = 0; i < numTasks; i++)
+                for (var i = 0; i < numDrivers; i++)
                 {
                     var task = syncDrivers[i];
                     task.Dispose();
                 }
-                numTasks = 0;
+                numDrivers = 0;
                 Array.Clear(syncDrivers);
             }
             finally
@@ -278,7 +280,7 @@ namespace Garnet.cluster
                 }
 
                 // Iterate array of existing tasks and update associated task if it already exists
-                for (var i = 0; i < numTasks; i++)
+                for (var i = 0; i < numDrivers; i++)
                 {
                     var t = syncDrivers[i];
                     Debug.Assert(t != null, "syncDriver should not be null");
@@ -294,7 +296,7 @@ namespace Garnet.cluster
                 // If task did not exist we add it here
                 if (!success)
                 {
-                    if (numTasks == syncDrivers.Length)
+                    if (numDrivers == syncDrivers.Length)
                     {
                         var old_tasks = syncDrivers;
                         var _tasks = new AofSyncDriver[syncDrivers.Length * 2];
@@ -302,7 +304,7 @@ namespace Garnet.cluster
                         syncDrivers = _tasks;
                         Array.Clear(old_tasks);
                     }
-                    syncDrivers[numTasks++] = aofSyncDriver;
+                    syncDrivers[numDrivers++] = aofSyncDriver;
                     success = true;
                 }
             }
@@ -384,7 +386,7 @@ namespace Garnet.cluster
 
                     var added = false;
                     // Find if AOF sync task already exists
-                    for (var i = 0; i < numTasks; i++)
+                    for (var i = 0; i < numDrivers; i++)
                     {
                         var t = syncDrivers[i];
                         Debug.Assert(t != null, $"syncDrive should not be null {nameof(TryAddReplicationDrivers)}");
@@ -401,7 +403,7 @@ namespace Garnet.cluster
 
                     // If AOF sync task did not exist and was not added we added below
                     // Check if array can hold a new AOF sync task
-                    if (numTasks == syncDrivers.Length)
+                    if (numDrivers == syncDrivers.Length)
                     {
                         var old_tasks = syncDrivers;
                         var _tasks = new AofSyncDriver[syncDrivers.Length * 2];
@@ -410,7 +412,7 @@ namespace Garnet.cluster
                         Array.Clear(old_tasks);
                     }
                     // Add new AOF sync task
-                    syncDrivers[numTasks++] = rss.AofSyncDriver;
+                    syncDrivers[numDrivers++] = rss.AofSyncDriver;
                 }
 
                 success = true;
@@ -447,21 +449,21 @@ namespace Garnet.cluster
             {
                 if (_disposed) return success;
 
-                for (var i = 0; i < numTasks; i++)
+                for (var i = 0; i < numDrivers; i++)
                 {
                     var t = syncDrivers[i];
                     Debug.Assert(t != null, $"syncDriver should not be null at {nameof(TryRemove)}");
                     if (t == aofSyncDriver)
                     {
                         syncDrivers[i] = null;
-                        if (i < numTasks - 1)
+                        if (i < numDrivers - 1)
                         {
                             // Swap the last task into the free slot
-                            syncDrivers[i] = syncDrivers[numTasks - 1];
-                            syncDrivers[numTasks - 1] = null;
+                            syncDrivers[i] = syncDrivers[numDrivers - 1];
+                            syncDrivers[numDrivers - 1] = null;
                         }
                         // Reduce the number of tasks
-                        numTasks--;
+                        numDrivers--;
 
                         // Kill the task
                         t.Dispose();
@@ -489,7 +491,7 @@ namespace Garnet.cluster
             {
                 if (_disposed) return 0;
 
-                for (var i = 0; i < numTasks; i++)
+                for (var i = 0; i < numDrivers; i++)
                 {
                     var t = syncDrivers[i];
                     count += t.IsConnected ? 1 : 0;
@@ -522,12 +524,12 @@ namespace Garnet.cluster
             {
                 _lock.WriteLock();
                 if (_disposed) return;
-                for (var i = 0; i < numTasks; i++)
+                for (var i = 0; i < numDrivers; i++)
                 {
                     var task = syncDrivers[i];
                     task.Dispose();
                 }
-                numTasks = 0;
+                numDrivers = 0;
                 Array.Clear(syncDrivers);
             }
             finally

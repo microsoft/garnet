@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,7 +28,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Check if client connection is healthy
         /// </summary>
-        public bool IsConnected => aofSyncTasks[0].IsConnected;
+        public bool IsConnected => aofSyncTasks.Select(x => x.IsConnected ? 1 : 0).Sum() > 0;
 
         /// <summary>
         /// Node-id associated with this AofSyncTask
@@ -157,7 +158,7 @@ namespace Garnet.cluster
                 logger?.LogWarning("AofSync task terminated; client disposed {remoteNodeId} {address} {port} {currentAddress}", remoteNodeId, address, port, PreviousAddress);
 
                 if (!aofSyncDriverStore.TryRemove(this))
-                    logger?.LogError("Did not remove {remoteNodeId} from aofTaskStore at end of ReplicaSyncTask", remoteNodeId);
+                    logger?.LogError("Unable to remove {remoteNodeId} from aofTaskStore at end of ReplicaSyncTask", remoteNodeId);
             }
         }
 

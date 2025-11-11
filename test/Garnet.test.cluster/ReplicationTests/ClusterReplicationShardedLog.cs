@@ -45,7 +45,7 @@ namespace Garnet.test.cluster
             {"ClusterReplicationStoredProc", true},
             {"ClusterReplicationManualCheckpointing", true},
             {"ReplicaSyncTaskFaultsRecoverAsync", true},
-            {"ClusterReplicationMultiRestartRecover", false},
+            {"ClusterReplicationMultiRestartRecover", true},
             {"ReplicasRestartAsReplicasAsync", true},
             {"PrimaryUnavailableRecoveryAsync", true},
             {"ClusterReplicationDivergentHistoryWithoutCheckpoint", true}

@@ -160,7 +160,7 @@ namespace Garnet.cluster
             {
                 _lock.WriteLock();
                 if (_disposed) return true;
-                for (int i = 0; i < numSessions; i++)
+                for (var i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
                     if (s.replicaNodeId == remoteNodeId)

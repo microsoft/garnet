@@ -102,6 +102,7 @@ namespace Garnet.test.cluster
         PRIMARY_FAILOVER_STATE,
         RECOVER_STATUS,
         LAST_FAILOVER_STATE,
+        SYNC_DRIVER_COUNT
     }
 
     public enum StoreInfoItem
@@ -2769,6 +2770,10 @@ namespace Garnet.test.cluster
                             continue;
                         case ReplicationInfoItem.CONNECTED_REPLICAS:
                             startsWith = "connected_slaves:";
+                            if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
+                            continue;
+                        case ReplicationInfoItem.SYNC_DRIVER_COUNT:
+                            startsWith = "sync_driver_count:";
                             if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
                             continue;
                         case ReplicationInfoItem.PRIMARY_REPLID:

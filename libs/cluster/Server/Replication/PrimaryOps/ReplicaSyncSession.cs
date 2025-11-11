@@ -291,7 +291,7 @@ namespace Garnet.cluster
             return true;
         }
 
-        public async Task<(CheckpointEntry, AofSyncDriver)> AcquireCheckpointEntry()
+        private async Task<(CheckpointEntry, AofSyncDriver)> AcquireCheckpointEntry()
         {
             AofSyncDriver aofSyncDriver;
             CheckpointEntry cEntry;

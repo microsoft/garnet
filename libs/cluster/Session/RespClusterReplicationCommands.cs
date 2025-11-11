@@ -150,7 +150,7 @@ namespace Garnet.cluster
                     this.replicaReplayTaskGroup = replicaReplayTaskGroup;
                 else
                 {
-                    throw new Exception("Received all negative addresses with initialized ReplayTaskGroup");
+                    throw new GarnetException($"[{sublogIdx}] Received all negative addresses with initialized ReplayTaskGroup", LogLevel.Warning, clientResponse: false);
                 }
                 return true;
             }

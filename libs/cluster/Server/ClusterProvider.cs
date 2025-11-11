@@ -245,7 +245,8 @@ namespace Garnet.cluster
                 new("object_store_current_safe_aof_address", clusterEnabled && !serverOptions.DisableObjects ? replicationManager.ObjectStoreCurrentSafeAofAddress.ToString() : "N/A"),
                 new("object_store_recovered_safe_aof_address", clusterEnabled && !serverOptions.DisableObjects ? replicationManager.ObjectStoreRecoveredSafeAofTailAddress.ToString() : "N/A"),
                 new("recover_status", replicationManager.currentRecoveryStatus.ToString()),
-                new("last_failover_state", !clusterEnabled ? FailoverUtils.GetFailoverStatus(FailoverStatus.NO_FAILOVER) : failoverManager.GetLastFailoverStatus())
+                new("last_failover_state", !clusterEnabled ? FailoverUtils.GetFailoverStatus(FailoverStatus.NO_FAILOVER) : failoverManager.GetLastFailoverStatus()),
+                new("sync_driver_count", !clusterEnabled ? "0" : replicationManager.AofSyncDriverStore.AofSyncDriverCount.ToString())
             };
 
             if (clusterEnabled)
