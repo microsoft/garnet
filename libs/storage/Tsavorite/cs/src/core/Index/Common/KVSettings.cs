@@ -138,7 +138,7 @@ namespace Tsavorite.core
         public int MaxInlineKeySize = 1 << LogSettings.kDefaultMaxInlineKeySizeBits;
 
         /// <summary>
-        /// Maximum size of a valuie stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
+        /// Maximum size of a value stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
         /// </summary>
         public int MaxInlineValueSize = 1 << LogSettings.kDefaultMaxInlineValueSizeBits;
 
