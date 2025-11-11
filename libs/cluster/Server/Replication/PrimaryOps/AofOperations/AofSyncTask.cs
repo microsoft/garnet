@@ -42,9 +42,9 @@ namespace Garnet.cluster
             public bool IsConnected => garnetClient != null && garnetClient.IsConnected;
 
             /// <summary>
-            /// Maximum timestamp send over to replica from this aof sync task
+            /// Maximum sequence number send over to replica from this aof sync task
             /// </summary>
-            public long MaxSendSublogTimestamp;
+            public long MaxSendSequenceNumbder;
 
             /// <summary>
             /// Logger instance
@@ -135,9 +135,13 @@ namespace Garnet.cluster
                         (long)payloadPtr,
                         payloadLength);
 
-                    // Update timestamp first and then nextAddress
-                    if (clusterProvider.serverOptions.AofSublogCount > 1 && sublogIdx == 0)
-                        server.AofProcessor.UpdateMaxTimestamp(ref MaxSendSublogTimestamp, payloadPtr, payloadLength, clusterProvider.storeWrapper.appendOnlyFile.HeaderSize);
+                    // Update sequence number first and then nextAddress
+                    if (clusterProvider.serverOptions.AofSublogCount > 1)
+                        server.AofProcessor.UpdateMaxSequenceNumber(
+                            ref MaxSendSequenceNumbder,
+                            payloadPtr,
+                            payloadLength,
+                            clusterProvider.storeWrapper);
 
                     // Set task address to nextAddress, as the iterator is currently at nextAddress
                     // (records at currentAddress are already sent above)

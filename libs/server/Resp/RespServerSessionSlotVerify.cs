@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace Garnet.server
@@ -54,10 +55,41 @@ namespace Garnet.server
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
             var canServeRead = !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
-            if (storeWrapper.clusterProvider.IsReplica())
-                storeWrapper.appendOnlyFile.EnsureConsistentRead(ref replicaReadContext, ref parseState, ref csvi, readSessionWaiter);
+
+            if (SkipConsistentRead)
+                return canServeRead;
+
+            // Enforce consistent read protocol
+            storeWrapper.appendOnlyFile.MultiKeyConsistentRead(ref replicaReadContext, ref parseState, ref csvi, readSessionWaiter);
 
             return canServeRead;
         }
+
+        /// <summary>
+        /// Multi key consistent read protocol implementation for list of keys
+        /// </summary>
+        /// <param name="keys"></param>
+        public void MultiKeyConsistentRead(List<byte[]> keys)
+        {
+            if (SkipConsistentRead)
+                return;
+
+            storeWrapper.appendOnlyFile.MultiKeyConsistentRead(keys, ref replicaReadContext, readSessionWaiter);
+        }
+
+        /// <summary>
+        /// When to skip evaluation of the consistent read protocol
+        /// 1. No cluster or AOF enabled
+        /// 2. SingleLog AOF is used
+        /// 3. Node is not a REPLICA
+        /// 4. Optional: use ASKING to force skip (for performance reasons)
+        /// </summary>
+        /// <returns></returns>
+        public bool SkipConsistentRead
+            => !storeWrapper.serverOptions.EnableCluster ||
+            !storeWrapper.serverOptions.EnableAOF ||
+            storeWrapper.serverOptions.AofSublogCount == 1 ||
+            !storeWrapper.clusterProvider.IsReplica() ||
+            csvi.Asking;
     }
 }

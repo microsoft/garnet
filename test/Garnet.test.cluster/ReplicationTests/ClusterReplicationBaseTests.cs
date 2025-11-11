@@ -1458,7 +1458,7 @@ namespace Garnet.test.cluster
             var tasks = new List<Task>();
             for (var i = 0; i < taskCount; i++)
                 tasks.Add(Task.Run(() => RunWorkload(i * keyCount, (i + 1) * keyCount)));
-            var restartRecover = 2;
+            var restartRecover = 4;
             tasks.Add(Task.Run(() => RestartRecover(restartRecover)));
 
             await Task.WhenAll(tasks);

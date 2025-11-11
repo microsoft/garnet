@@ -618,15 +618,25 @@ namespace Garnet.server
         /// <param name="maxSendTimestamp"></param>
         /// <param name="record"></param>
         /// <param name="recordLength"></param>
-        /// <param name="entryLength"></param>
-        public static void UpdateMaxTimestamp(ref long maxSendTimestamp, byte* record, int recordLength, long entryLength)
+        /// <param name="storeWrapper"></param>
+        public static void UpdateMaxSequenceNumber(ref long maxSendTimestamp, byte* record, int recordLength, StoreWrapper storeWrapper)
         {
             var ptr = record;
             while (ptr < record + recordLength)
             {
-                var header = *(AofExtendedHeader*)ptr;
-                var timestamp = header.sequenceNumber;
-                maxSendTimestamp = Math.Max(maxSendTimestamp, timestamp);
+                var entryLength = storeWrapper.appendOnlyFile.HeaderSize;
+                var payloadLength = storeWrapper.appendOnlyFile.Log.GetSubLog(0).UnsafeGetLength(ptr);
+                if (payloadLength > 0)
+                {
+                    var header = *(AofExtendedHeader*)(ptr + entryLength);
+                    var timestamp = header.sequenceNumber;
+                    maxSendTimestamp = Math.Max(maxSendTimestamp, timestamp);
+                    entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
+                }
+                else
+                {
+                    entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
+                }
                 ptr += entryLength;
             }
         }

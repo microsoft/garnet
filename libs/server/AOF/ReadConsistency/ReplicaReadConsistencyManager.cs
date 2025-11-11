@@ -22,14 +22,17 @@ namespace Garnet.server
     ///     read k1 (at t3 because s1 has replayed until k3)
     ///     read k2 (at t2 have to wait because reading k1 established that we are in t3 though no updates have arrived for k1 by t3)
     /// </summary>
-    /// <param name="appendOnlyFile"></param>
     /// <param name="nextVersion"></param>
-    public class ReplicaReadConsistencyManager(long nextVersion, GarnetAppendOnlyFile appendOnlyFile)
+    /// <param name="appendOnlyFile"></param>
+    /// <param name="serverOptions"></param>
+    public class ReplicaReadConsistencyManager(long nextVersion, GarnetAppendOnlyFile appendOnlyFile, GarnetServerOptions serverOptions)
     {
         public long CurrentVersion { get; private set; } = nextVersion;
         public const int KeyOffsetCount = (1 << 15) + 1;
         const int MaxSublogTimestampOffset = KeyOffsetCount - 1;
         readonly GarnetAppendOnlyFile appendOnlyFile = appendOnlyFile;
+        readonly GarnetServerOptions serverOptions = serverOptions;
+
         static ReplicaReadConsistencyManager()
         {
             var size = KeyOffsetCount - 1;
@@ -59,7 +62,7 @@ namespace Garnet.server
         /// <param name="keyOffset"></param>
         /// <returns></returns>
         long GetSequenceNumberFrontier(int sublogIdx, int keyOffset)
-            => Math.Max(activeSequenceNumbers[sublogIdx][keyOffset], activeSequenceNumbers[MaxSublogTimestampOffset][keyOffset]);
+            => Math.Max(activeSequenceNumbers[sublogIdx][keyOffset], activeSequenceNumbers[sublogIdx][MaxSublogTimestampOffset]);
 
         /// <summary>
         /// Get sequence number for provided key offset
@@ -130,7 +133,7 @@ namespace Garnet.server
                     waiterList.Add(waiter);
                 else
                     // Signal for waiter to proceed
-                    waiter.eventSlim.Set();
+                    waiter.Set();
             }
 
             // Re-insert any waiters that have not been released yet
@@ -139,14 +142,14 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Ensure read consistency when using a sharded log
+        /// Ensure consistent read protocol for network command
         /// NOTE: Reading and validating one key at a time is not transactional
         /// but it is ok since it is no worse than what we currently support (i.e. MGET)
         /// </summary>
         /// <param name="replicaReadSessionContext"></param>
         /// <param name="parseState"></param>
         /// <param name="csvi"></param>
-        public void EnsureConsistentRead(ref ReplicaReadSessionContext replicaReadSessionContext, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ReadSessionWaiter readSessionWaiter)
+        public void MultiKeyConsistentRead(ref ReplicaReadSessionContext replicaReadSessionContext, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ReadSessionWaiter readSessionWaiter)
         {
             // If first time calling or version has been bumped reset read context
             // NOTE: version changes every time replica is reset and a attached to a new primary
@@ -159,39 +162,63 @@ namespace Garnet.server
 
             for (var i = csvi.firstKey; i < csvi.lastKey; i += csvi.step)
             {
-                var key = parseState.GetArgSliceByRef(i).SpanByte;
-                appendOnlyFile.Log.HashKey(ref key, out _, out var sublogIdx, out var keyOffset);
+                var key = parseState.GetArgSliceByRef(i).Span;
+                ConsistentReadInternal(key, ref replicaReadSessionContext, readSessionWaiter);
+            }
+        }
 
-                // If first read initialize context
-                if (replicaReadSessionContext.lastSublogIdx == -1)
-                {
-                    replicaReadSessionContext.lastSublogIdx = sublogIdx;
-                    replicaReadSessionContext.maximumSessionSequenceNumber = GetKeyOffsetSequenceNumber(sublogIdx, keyOffset);
-                    continue;
-                }
+        /// <summary>
+        /// Enforce consistent read protocol for key batch
+        /// NOTE: Reading and validating one key at a time is not transactional
+        /// but it is ok since it is no worse than what we currently support (i.e. MGET)
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="replicaReadSessionContext"></param>
+        /// <param name="readSessionWaiter"></param>
+        public void MultiKeyConsistentRead(List<byte[]> keys, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
+        {
+            for (var i = 0; i < keys.Count; i++)
+                ConsistentReadInternal(keys[i].AsSpan(), ref replicaReadSessionContext, readSessionWaiter);
+        }
 
-                // Here we have to wait for replay to catch up
-                // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
-                if (replicaReadSessionContext.lastSublogIdx != sublogIdx && replicaReadSessionContext.maximumSessionSequenceNumber > GetSequenceNumberFrontier(sublogIdx, keyOffset))
-                {
-                    // Before adding to the waitQ set timestamp and reader associated information
-                    readSessionWaiter.waitForTimestamp = replicaReadSessionContext.maximumSessionSequenceNumber;
-                    readSessionWaiter.sublogIdx = (byte)sublogIdx;
-                    readSessionWaiter.keyOffset = keyOffset;
+        /// <summary>
+        /// Consistent read protocol implementation
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="replicaReadSessionContext"></param>
+        /// <param name="readSessionWaiter"></param>
+        internal void ConsistentReadInternal(Span<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
+        {
+            appendOnlyFile.Log.Hash(key, out _, out var sublogIdx, out var keyOffset);
 
-                    // Enqueue waiter and wait
-                    waitQs[sublogIdx].Enqueue(readSessionWaiter);
-                    readSessionWaiter.eventSlim.Wait();
-
-                    // Reset waiter for next iteration
-                    readSessionWaiter.eventSlim.Reset();
-                }
-
-                // If timestamp of current key is after maximum timestamp we can safely read the key
-                Debug.Assert(replicaReadSessionContext.maximumSessionSequenceNumber <= activeSequenceNumbers[sublogIdx][keyOffset]);
+            // If first read initialize context
+            if (replicaReadSessionContext.lastSublogIdx == -1)
+            {
                 replicaReadSessionContext.lastSublogIdx = sublogIdx;
                 replicaReadSessionContext.maximumSessionSequenceNumber = GetKeyOffsetSequenceNumber(sublogIdx, keyOffset);
+                return;
             }
+
+            // Here we have to wait for replay to catch up
+            // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
+            if (replicaReadSessionContext.lastSublogIdx != sublogIdx && replicaReadSessionContext.maximumSessionSequenceNumber > GetSequenceNumberFrontier(sublogIdx, keyOffset))
+            {
+                // Before adding to the waitQ set timestamp and reader associated information
+                readSessionWaiter.waitForTimestamp = replicaReadSessionContext.maximumSessionSequenceNumber;
+                readSessionWaiter.sublogIdx = (byte)sublogIdx;
+                readSessionWaiter.keyOffset = keyOffset;
+
+                // Enqueue waiter and wait
+                waitQs[sublogIdx].Enqueue(readSessionWaiter);
+                readSessionWaiter.Wait(serverOptions.ReplicaSyncTimeout);
+
+                // Reset waiter for next iteration
+                readSessionWaiter.Reset();
+            }
+
+            // If timestamp of current key is after maximum timestamp we can safely read the key
+            replicaReadSessionContext.lastSublogIdx = sublogIdx;
+            replicaReadSessionContext.maximumSessionSequenceNumber = Math.Max(replicaReadSessionContext.maximumSessionSequenceNumber, GetKeyOffsetSequenceNumber(sublogIdx, keyOffset));
         }
     }
 }

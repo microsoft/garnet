@@ -332,6 +332,8 @@ namespace Garnet.server
 
             if (keys.Count > 0)
             {
+                MultiKeyConsistentRead(keys);
+
                 // Write size of the array
                 while (!RespWriteUtils.TryWriteArrayLength(keys.Count, ref dcurr, dend))
                     SendAndReset();
@@ -405,6 +407,8 @@ namespace Garnet.server
             // Prepare values for output
             if (keys.Count == 0)
             {
+                MultiKeyConsistentRead(keys);
+
                 while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
                     SendAndReset();
 

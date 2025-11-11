@@ -26,9 +26,13 @@ namespace Garnet.server
         public int Size => singleLog != null ? 1 : shardedLog.Length;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static unsafe long HASH(byte* keyPtr, int length)
+            => Utility.HashBytes(keyPtr, length);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public unsafe int HashKey(ref SpanByte key)
         {
-            var hash = Utility.HashBytes(key.ToPointer(), key.Length);
+            var hash = HASH(key.ToPointer(), key.Length);
             return (int)(((ulong)hash) % (ulong)shardedLog.Length);
         }
 
@@ -37,7 +41,7 @@ namespace Garnet.server
         {
             fixed (byte* keyPtr = key)
             {
-                hash = Utility.HashBytes(keyPtr, key.Length);
+                hash = HASH(keyPtr, key.Length);
             }
             sublogIdx = (int)(((ulong)hash) % (ulong)shardedLog.Length);
             keyOffset = (int)(hash & (ReplicaReadConsistencyManager.KeyOffsetCount - 1));

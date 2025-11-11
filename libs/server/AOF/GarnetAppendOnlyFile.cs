@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -57,7 +58,7 @@ namespace Garnet.server
             // Create manager only if sharded log is enabled
             if (Log.Size == 1) return;
             var currentVersion = replayTimestampManager?.CurrentVersion ?? 0L;
-            var _replayTimestampManager = new ReplicaReadConsistencyManager(currentVersion + 1, this);
+            var _replayTimestampManager = new ReplicaReadConsistencyManager(currentVersion + 1, this, serverOptions);
             _ = Interlocked.CompareExchange(ref replayTimestampManager, _replayTimestampManager, replayTimestampManager);
         }
 
@@ -68,19 +69,17 @@ namespace Garnet.server
         /// <param name="parseState"></param>
         /// <param name="csvi"></param>
         /// <param name="readSessionWaiter"></param>
-        public void EnsureConsistentRead(ref ReplicaReadSessionContext replicaReadSessionContext, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ReadSessionWaiter readSessionWaiter)
-        {
-            // Return immediately if
-            // 1. No AOF
-            // 2. SingleLog
-            // 3. 
-            // 3. Force incosistent read through ASKING
-            if (!serverOptions.EnableAOF || serverOptions.AofSublogCount == 1 || csvi.Asking)
-                return;
+        public void MultiKeyConsistentRead(ref ReplicaReadSessionContext replicaReadSessionContext, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ReadSessionWaiter readSessionWaiter)
+            => replayTimestampManager.MultiKeyConsistentRead(ref replicaReadSessionContext, ref parseState, ref csvi, readSessionWaiter);
 
-            // Validate keys and ensure consistency with sharded-log AOF
-            replayTimestampManager.EnsureConsistentRead(ref replicaReadSessionContext, ref parseState, ref csvi, readSessionWaiter);
-        }
+        /// <summary>
+        /// Implements read protocol for consistent reads when sharded-log AOF is used
+        /// </summary>
+        /// <param name="keys"></param>
+        /// <param name="replicaReadSessionContext"></param>
+        /// <param name="readSessionWaiter"></param>
+        public void MultiKeyConsistentRead(List<byte[]> keys, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
+            => replayTimestampManager.MultiKeyConsistentRead(keys, ref replicaReadSessionContext, readSessionWaiter);
 
         /// <summary>
         /// Reset sequence number generator

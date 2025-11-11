@@ -74,7 +74,7 @@ namespace Garnet.cluster
             {
                 var maxSendSublogTimestamp = AofAddress.Create(aofSyncTasks.Length, 0);
                 for (var i = 0; i < aofSyncTasks.Length; i++)
-                    maxSendSublogTimestamp[i] = aofSyncTasks[i].MaxSendSublogTimestamp;
+                    maxSendSublogTimestamp[i] = aofSyncTasks[i].MaxSendSequenceNumbder;
                 return maxSendSublogTimestamp;
             }
         }
