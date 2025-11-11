@@ -3,7 +3,6 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
@@ -224,7 +223,14 @@ namespace Garnet.server
 
                     // Wait for all participating subtasks to complete replay unless singleLog
                     if (usingShardedLog)
-                        Synchronize(aofProcessor, txnGroup, ptr);
+                    {
+                        var extendedHeader = *(AofExtendedHeader*)ptr;
+                        // Synchronize replay of txn
+                        ProcessSynchronizedOperation(
+                            ptr,
+                            extendedHeader.header.sessionID,
+                            () => { });
+                    }
 
                     // Commit (NOTE: need to ensure that we do not write to log here)
                     txnManager.Commit(true);
@@ -260,29 +266,6 @@ namespace Garnet.server
 
                             // Add key to the lockset
                             txnManager.SaveKeyEntryToLock(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()), isObject: isObject, LockType.Exclusive);
-                        }
-                    }
-                }
-
-                // Use eventBarrier to synchronize between replay subtasks
-                unsafe void Synchronize(AofProcessor aofProcessor, TransactionGroup txnGroup, byte* ptr)
-                {
-                    var extendedHeader = *(AofExtendedHeader*)ptr;
-                    extendedHeader.ThrowIfNotExtendedHeader();
-
-                    // Add coordinator group if does not exist and add to that the txnGroup that needs to be replayed
-                    var participantCount = txnGroup.logAccessCount;
-                    var eventBarrier = eventBarriers.GetOrAdd(extendedHeader.header.sessionID, _ => new EventBarrier(participantCount));
-                    if (eventBarrier.SignalAndWait(aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout))
-                    {
-                        try
-                        {
-                            if (!eventBarriers.Remove(extendedHeader.header.sessionID, out _))
-                                throw new GarnetException("Failed to remove EventBarrier");
-                        }
-                        finally
-                        {
-                            eventBarrier.Set();
                         }
                     }
                 }
