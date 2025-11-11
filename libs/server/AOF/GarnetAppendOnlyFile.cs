@@ -72,7 +72,8 @@ namespace Garnet.server
         {
             // Return immediately if
             // 1. No AOF
-            // 2. SingleLog AOF
+            // 2. SingleLog
+            // 3. 
             // 3. Force incosistent read through ASKING
             if (!serverOptions.EnableAOF || serverOptions.AofSublogCount == 1 || csvi.Asking)
                 return;

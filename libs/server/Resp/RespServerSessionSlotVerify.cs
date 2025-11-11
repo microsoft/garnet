@@ -54,7 +54,8 @@ namespace Garnet.server
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
             var canServeRead = !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
-            storeWrapper.appendOnlyFile.EnsureConsistentRead(ref replicaReadContext, ref parseState, ref csvi, readSessionWaiter);
+            if (storeWrapper.clusterProvider.IsReplica())
+                storeWrapper.appendOnlyFile.EnsureConsistentRead(ref replicaReadContext, ref parseState, ref csvi, readSessionWaiter);
 
             return canServeRead;
         }

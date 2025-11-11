@@ -250,10 +250,17 @@ namespace Garnet.server
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                             {
-                                aofReplayCoordinator.ProcessSynchronizedOperation(
-                                    ptr,
-                                    EventBarrierType.CHECKPOINT,
-                                    () => storeWrapper.TakeCheckpoint(background: false, logger));
+                                if (storeWrapper.serverOptions.AofSublogCount == 1)
+                                {
+                                    _ = storeWrapper.TakeCheckpoint(background: false, logger);
+                                }
+                                else
+                                {
+                                    aofReplayCoordinator.ProcessSynchronizedOperation(
+                                        ptr,
+                                        (int)EventBarrierType.CHECKPOINT,
+                                        () => storeWrapper.TakeCheckpoint(background: false, logger));
+                                }
                             }
 
                             // Process buffered records
@@ -266,20 +273,34 @@ namespace Garnet.server
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                     {
-                        aofReplayCoordinator.ProcessSynchronizedOperation(
-                            ptr,
-                            EventBarrierType.STREAMING_CHECKPOINT,
-                            () => storeWrapper.store.SetVersion(header.storeVersion));
+                        if (storeWrapper.serverOptions.AofSublogCount == 1)
+                        {
+                            storeWrapper.store.SetVersion(header.storeVersion);
+                        }
+                        else
+                        {
+                            aofReplayCoordinator.ProcessSynchronizedOperation(
+                                ptr,
+                                (int)EventBarrierType.STREAMING_CHECKPOINT,
+                                () => storeWrapper.store.SetVersion(header.storeVersion));
+                        }
                     }
                     break;
                 case AofEntryType.ObjectStoreStreamingCheckpointStartCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                     {
-                        aofReplayCoordinator.ProcessSynchronizedOperation(
-                            ptr,
-                            EventBarrierType.STREAMING_CHECKPOINT,
-                            () => storeWrapper.objectStore.SetVersion(header.storeVersion));
+                        if (storeWrapper.serverOptions.AofSublogCount == 1)
+                        {
+                            storeWrapper.objectStore.SetVersion(header.storeVersion);
+                        }
+                        else
+                        {
+                            aofReplayCoordinator.ProcessSynchronizedOperation(
+                                ptr,
+                                (int)EventBarrierType.STREAMING_CHECKPOINT,
+                                () => storeWrapper.objectStore.SetVersion(header.storeVersion));
+                        }
                     }
                     break;
                 case AofEntryType.MainStoreStreamingCheckpointEndCommit:
@@ -287,16 +308,30 @@ namespace Garnet.server
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     break;
                 case AofEntryType.FlushAll:
-                    aofReplayCoordinator.ProcessSynchronizedOperation(
-                        ptr,
-                        EventBarrierType.FLUSH_DB_ALL,
-                        () => storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1));
+                    if (storeWrapper.serverOptions.AofSublogCount == 1)
+                    {
+                        storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1);
+                    }
+                    else
+                    {
+                        aofReplayCoordinator.ProcessSynchronizedOperation(
+                            ptr,
+                            (int)EventBarrierType.FLUSH_DB_ALL,
+                            () => storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1));
+                    }
                     break;
                 case AofEntryType.FlushDb:
-                    aofReplayCoordinator.ProcessSynchronizedOperation(
-                        ptr,
-                        EventBarrierType.FLUSH_DB,
-                        () => storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId));
+                    if (storeWrapper.serverOptions.AofSublogCount == 1)
+                    {
+                        storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId);
+                    }
+                    else
+                    {
+                        aofReplayCoordinator.ProcessSynchronizedOperation(
+                            ptr,
+                            (int)EventBarrierType.FLUSH_DB,
+                            () => storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId));
+                    }
                     break;
                 case AofEntryType.RefreshSublogTail:
                     extendedHeader = *(AofExtendedHeader*)ptr;

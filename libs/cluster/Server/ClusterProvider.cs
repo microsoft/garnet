@@ -76,7 +76,7 @@ namespace Garnet.cluster
 
         /// <inheritdoc />
         public bool AllowDataLoss
-            => serverOptions.UseAofNullDevice || (serverOptions.FastAofTruncate && !serverOptions.OnDemandCheckpoint);
+            => serverOptions.AllowDataLoss;
 
         /// <inheritdoc />
         public void Recover()

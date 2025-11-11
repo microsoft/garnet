@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -26,7 +27,8 @@ namespace Garnet.server
         CHECKPOINT = -1,
         STREAMING_CHECKPOINT = -2,
         FLUSH_DB = -3,
-        FLUSH_DB_ALL = -4
+        FLUSH_DB_ALL = -4,
+        CUSTOM_STORED_PROC = -5,
     }
 
     public sealed unsafe partial class AofProcessor
@@ -308,38 +310,36 @@ namespace Garnet.server
             {
                 if (aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1)
                 {
-                    RunStoredProc(0, id, ptr, shardedLog: false, null);
+                    StoredProcRunnerBase(0, id, ptr, shardedLog: false, null);
                 }
                 else
                 {
                     var extendedHeader = *(AofExtendedHeader*)ptr;
-                    var participantCount = extendedHeader.logAccessCount;
-                    var eventBarrier = eventBarriers.GetOrAdd(extendedHeader.header.sessionID, _ => new EventBarrier(participantCount));
+                    // Initialize custom proc collection to keep track of hashes for keys for which their timestamp needs to be updated
+                    CustomProcedureKeyHashCollection customProcKeyHashTracker = new(aofProcessor.storeWrapper.appendOnlyFile);
 
-                    // Wait for leader to replay CustomProc
-                    if (!eventBarrier.SignalAndWait(aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout))
-                        return;
+                    // Synchronized processing of stored proc operation
+                    ProcessSynchronizedOperation(
+                        ptr,
+                        extendedHeader.header.sessionID,
+                        () => StoredProcRunnerWrapper(sublogIdx, id, ptr));
 
-                    // Only leader will execute this
-                    try
+                    // Wrapper for store proc runner used for multi-log synchronization
+                    void StoredProcRunnerWrapper(int sublogIdx, byte id, byte* ptr)
                     {
-                        // Initialize custom proc bitmap to keep track of hashes for keys for which their timestamp needs to be updated
+                        // Initialize custom proc collection to keep track of hashes for keys for which their timestamp needs to be updated
                         CustomProcedureKeyHashCollection customProcKeyHashTracker = new(aofProcessor.storeWrapper.appendOnlyFile);
 
                         // Replay StoredProc
-                        RunStoredProc(sublogIdx, id, ptr, shardedLog: true, customProcKeyHashTracker);
+                        StoredProcRunnerBase(sublogIdx, id, ptr, shardedLog: true, customProcKeyHashTracker);
 
                         // Update timestamps for associated keys
                         customProcKeyHashTracker?.UpdateSequenceNumber(extendedHeader.sequenceNumber);
                     }
-                    finally
-                    {
-                        _ = eventBarriers.Remove(extendedHeader.header.sessionID, out _);
-                        eventBarrier.Set();
-                    }
                 }
 
-                void RunStoredProc(int sublogIdx, byte id, byte* ptr, bool shardedLog, CustomProcedureKeyHashCollection customProcKeyHashTracker)
+                // Based run stored proc method used of legacy single log implementation
+                void StoredProcRunnerBase(int sublogIdx, byte id, byte* ptr, bool shardedLog, CustomProcedureKeyHashCollection customProcKeyHashTracker)
                 {
                     var curr = ptr + HeaderSize(shardedLog);
 
@@ -358,30 +358,57 @@ namespace Garnet.server
             /// <param name="ptr">Pointer to the AOF entry</param>
             /// <param name="barrierId">Unique barrier ID for this operation type</param>
             /// <param name="operation">The operation to execute</param>
-            internal void ProcessSynchronizedOperation(byte* ptr, EventBarrierType barrierId, Action operation)
+            internal void ProcessSynchronizedOperation(byte* ptr, int barrierId, Action operation)
             {
-                // If single log don't have to synchronize, execute immediately
-                if (aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1)
-                {
-                    operation();
-                    return;
-                }
+                Debug.Assert(aofProcessor.storeWrapper.serverOptions.AofSublogCount > 1);
 
                 // Extract extended header info and validate header
                 var extendedHeader = *(AofExtendedHeader*)ptr;
                 extendedHeader.ThrowIfNotExtendedHeader();
 
                 // Synchronize execution across sublogs
-                var eventBarrier = GetBarrier((int)barrierId, extendedHeader.logAccessCount);
-                if (eventBarrier.SignalAndWait(aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout))
-                {
-                    // Only one replay task will win and execute the following operation
-                    operation();
+                var eventBarrier = GetBarrier(barrierId, extendedHeader.logAccessCount);
+                var isLeader = eventBarrier.TrySignalAndWait(out var signalException, aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout);
+                Exception removeBarrierException = null;
 
-                    if (!RemoveBarrier((int)barrierId, out _))
-                        throw new GarnetException($"RemoveBarrier failed when processing {barrierId}");
-                    eventBarrier.Set();
+                // We execute the synchronized operation iff
+                // 1. Task is the first that joined and
+                // 2. No exception was triggered or we allow data loss (see cref serverOptions.AllowDataLoss).
+                // In the event of an exception with the possibility of data loss we follow a best effort approach to guarantee
+                // the integrity of the replication stream
+                var execute = isLeader && (signalException == null || aofProcessor.storeWrapper.serverOptions.AllowDataLoss);
+                // Here either all participants joined or timeout exception happened
+                // We can guarantee only one leader since at least one replay task has entered this method.
+
+                try
+                {
+                    if (execute)
+                    {
+                        // Only one replay task will win and execute the following operation
+                        operation();
+                    }
                 }
+                finally
+                {
+                    // The leader will always perform a cleanup
+                    if (isLeader)
+                    {
+                        if (!RemoveBarrier(barrierId, out _))
+                            removeBarrierException = new GarnetException($"RemoveBarrier failed when processing {barrierId}");
+
+                        // Release participants if any
+                        eventBarrier.Release();
+                    }
+                }
+
+                // Throw exception if data loss is not allowed and replay failed due to exception (possibly timeout)
+                if (signalException != null && aofProcessor.storeWrapper.serverOptions.AllowDataLoss)
+                    throw signalException;
+
+                // Need to always fail here otherwise next operations could not create a barrier if the last operation was not
+                // able to remove it.
+                if (removeBarrierException != null)
+                    throw removeBarrierException;
             }
         }
     }

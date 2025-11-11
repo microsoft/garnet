@@ -543,6 +543,14 @@ namespace Garnet.server
         public bool ClusterReplicaResumeWithData = false;
 
         /// <summary>
+        /// Check if the startup configuration allows the possibility of data loss during replication
+        /// NOTE: null device cannot guarantee or FastAofTruncate without OnDemandCheckpoint cannot guarantee the integrity of the AOF
+        /// since it is being truncated aggresively.
+        /// </summary>
+        public bool AllowDataLoss
+            => UseAofNullDevice || (FastAofTruncate && !OnDemandCheckpoint);
+
+        /// <summary>
         /// Get the directory name for database checkpoints
         /// </summary>
         /// <param name="dbId">Database Id</param>
