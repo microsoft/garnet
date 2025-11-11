@@ -70,12 +70,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Size of a segment (group of pages) in the main log, in bits
         /// </summary>
-        public int SegmentSizeBits = 30;
+        public int SegmentSizeBits = 30;    // 1GB
 
         /// <summary>
         /// Size of a segment (group of pages) in the object log, in bits
         /// </summary>
-        public int ObjectLogSegmentSizeBits = 40;
+        public int ObjectLogSegmentSizeBits = 33;   // 8GB
 
         /// <summary>
         /// Total size of in-memory part of log, in bits

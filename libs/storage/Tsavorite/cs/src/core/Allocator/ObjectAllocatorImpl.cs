@@ -349,6 +349,9 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override void SetObjectLogTail(ObjectLogFilePositionInfo tail) => objectLogTail = tail;
 
+        /// <summary>Object log segment size</summary>
+        public override long GetObjectLogSegmentSize() => ObjectLogSegmentSize;
+
         private void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress = long.MaxValue)

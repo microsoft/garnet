@@ -48,7 +48,8 @@ namespace Tsavorite.core
 
         public int Allocate()
         {
-            // The first loop ensures the book is initialized. It may be repeated twice; if either of the CompareExchanges fails, tail will != InitialTail.
+            // The first loop ensures the book is initialized. It may be repeated up to three times; if either of the CompareExchanges fails,
+            // it will be because the desired condition was already set by another thread.
             while (tail == InitialTail)
             {
                 // The book may be non-null due to Clear() (e.g. when we wrap around in the log to page 0) or to the newBook allocation below.
