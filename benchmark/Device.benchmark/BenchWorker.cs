@@ -41,7 +41,7 @@ namespace Device.benchmark
         readonly byte[] expectedData;
         readonly IDevice device;
         readonly ManualResetEventSlim startEvent, timeUpEvent, doneEvent;
-        ConcurrentQueue<BenchmarkOperation> _benchmarkPool = new();
+        readonly ConcurrentQueue<BenchmarkOperation> _benchmarkPool = new();
 
         public BenchWorker(int batchSize, int threadId, int sectorSize, long fileSize, byte[] expectedData, IDevice device, ManualResetEventSlim startEvent, ManualResetEventSlim timeUpEvent, ManualResetEventSlim doneEvent)
         {

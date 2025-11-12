@@ -646,7 +646,7 @@ namespace Garnet.networking
 
         static void LogSecurityInfo(SslStream stream, string remoteEndpointName, ILogger logger = null)
         {
-            logger.LogTrace("[{remoteEndpointName}] Cipher Suite: {NegotiatedCipherSuite}", remoteEndpointName, stream.NegotiatedCipherSuite);
+            logger?.LogTrace("[{remoteEndpointName}] Cipher Suite: {NegotiatedCipherSuite}", remoteEndpointName, stream.NegotiatedCipherSuite);
             logger?.LogTrace("[{remoteEndpointName}] Protocol: {SslProtocol}", remoteEndpointName, stream.SslProtocol);
 
             logger?.LogTrace("[{remoteEndpointName}] Is authenticated: {IsAuthenticated} as server? {IsServer}", remoteEndpointName, stream.IsAuthenticated, stream.IsServer);

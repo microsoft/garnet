@@ -20,10 +20,10 @@ namespace Device.benchmark
         static byte[] ExpectedData;
 
         // Signals to coordinate benchmark timing
-        static ManualResetEventSlim timeUpEvent = new ManualResetEventSlim(false);
+        static readonly ManualResetEventSlim timeUpEvent = new ManualResetEventSlim(false);
 
         // Add a new field to signal start event
-        static ManualResetEventSlim startEvent = new ManualResetEventSlim(false);
+        static readonly ManualResetEventSlim startEvent = new ManualResetEventSlim(false);
 
         // Add a new field to collect total operations
         internal static long totalOperations = 0;
