@@ -589,7 +589,7 @@ namespace Garnet.server
 
                     // reset etag state that may have been initialized earlier
                     EtagState.ResetState(ref functionsState.etagState);
-                    
+
                     return EvaluateExpireInPlace(expirationWithOption.ExpireOption, expiryExists, expirationWithOption.ExpirationTimeInTicks, ref value, ref output);
 
                 case RespCommand.PERSIST:
