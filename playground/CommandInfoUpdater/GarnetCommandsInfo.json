@@ -1064,32 +1064,6 @@
     "AclCategories": "Admin, Dangerous, Slow"
   },
   {
-    "Command": "SETIFMATCH",
-    "Name": "SETIFMATCH",
-    "IsInternal": false,
-    "Arity": -4,
-    "Flags": "NONE",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RW, Access, Update, VariableFlags"
-      }
-    ]
-  },
-  {
     "Command": "SPUBLISH",
     "Name": "SPUBLISH",
     "Arity": 3,
@@ -1136,32 +1110,6 @@
           "Limit": 0
         },
         "Flags": "RO"
-      }
-    ]
-  },
-  {
-    "Command": "SETIFGREATER",
-    "Name": "SETIFGREATER",
-    "IsInternal": false,
-    "Arity": -4,
-    "Flags": "NONE",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RW, Access, Update, VariableFlags"
       }
     ]
   },

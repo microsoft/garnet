@@ -124,16 +124,10 @@ namespace Garnet.server
                     fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                     return fieldInfo;
 
-                case RespCommand.SETIFGREATER:
-                case RespCommand.SETIFMATCH:
-                    fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
-                    fieldInfo.HasETag = true;
-                    fieldInfo.HasExpiration = input.arg1 != 0;
-                    return fieldInfo;
-
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                     fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                    fieldInfo.HasETag = input.header.metaCmd.IsEtagMetaCommand();
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
 
@@ -292,19 +286,15 @@ namespace Garnet.server
                     case RespCommand.SETEXXX:
                     case RespCommand.SETEXNX:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
-                        fieldInfo.HasExpiration = input.arg1 != 0;
+                        fieldInfo.HasETag = input.header.metaCmd.IsEtagMetaCommand();
+                        fieldInfo.HasExpiration = input.arg1 != 0 ||
+                                                  (input.header.metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater &&
+                                                   srcLogRecord.Info.HasExpiration);
                         return fieldInfo;
 
                     case RespCommand.PERSIST:
                         fieldInfo.HasExpiration = false;
                         fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
-                        return fieldInfo;
-
-                    case RespCommand.SETIFGREATER:
-                    case RespCommand.SETIFMATCH:
-                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
-                        fieldInfo.HasETag = true;
-                        fieldInfo.HasExpiration = input.arg1 != 0 || srcLogRecord.Info.HasExpiration;
                         return fieldInfo;
 
                     case RespCommand.EXPIRE:

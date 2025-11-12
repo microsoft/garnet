@@ -184,8 +184,6 @@ namespace Garnet.server
         SETEXNX,
         SETEXXX,
         SETNX,
-        SETIFMATCH,
-        SETIFGREATER,
         SETKEEPTTL,
         SETKEEPTTLXX,
         SETRANGE,
@@ -2611,14 +2609,6 @@ namespace Garnet.server
                 return RespCommand.ZCOLLECT;
             }
             // Note: The commands below are not slow path commands, so they should probably move to earlier.
-            else if (command.SequenceEqual(CmdStrings.SETIFMATCH))
-            {
-                return RespCommand.SETIFMATCH;
-            }
-            else if (command.SequenceEqual(CmdStrings.SETIFGREATER))
-            {
-                return RespCommand.SETIFGREATER;
-            }
             else if (command.SequenceEqual(CmdStrings.GETETAG))
             {
                 return RespCommand.GETETAG;

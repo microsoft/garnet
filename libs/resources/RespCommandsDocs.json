@@ -6233,14 +6233,6 @@
         "DisplayText": "newkey",
         "Type": "Key",
         "KeySpecIndex": 1
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "WITHETAG",
-        "DisplayText": "WITHETAG",
-        "Type": "PureToken",
-        "Token": "WITHETAG",
-        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -6264,14 +6256,6 @@
         "DisplayText": "newkey",
         "Type": "Key",
         "KeySpecIndex": 1
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "WITHETAG",
-        "DisplayText": "WITHETAG",
-        "Type": "PureToken",
-        "Token": "WITHETAG",
-        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -6844,14 +6828,6 @@
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "WITHETAG",
-        "DisplayText": "WITHETAG",
-        "Type": "PureToken",
-        "Token": "WITHETAG",
-        "ArgumentFlags": "Optional"
-      },
-      {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "EXPIRATION",
         "Type": "OneOf",
@@ -6951,122 +6927,6 @@
         "Name": "VALUE",
         "DisplayText": "value",
         "Type": "String"
-      }
-    ]
-  },
-  {
-    "Command": "SETIFGREATER",
-    "Name": "SETIFGREATER",
-    "Summary": "Sets a key value pair with the given etag only if (1) the etag given in the request is greater than the already existing etag ; or (2) there was no existing value; or (3) the existing value was not associated with any etag and the sent etag was greater than 0.",
-    "Group": "String",
-    "Complexity": "O(1)",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "VALUE",
-        "DisplayText": "value",
-        "Type": "String"
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "ETAG",
-        "DisplayText": "etag",
-        "Type": "Integer"
-      },
-      {
-        "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "EXPIRATION",
-        "Type": "OneOf",
-        "ArgumentFlags": "Optional",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "SECONDS",
-            "DisplayText": "seconds",
-            "Type": "Integer",
-            "Token": "EX"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "MILLISECONDS",
-            "DisplayText": "milliseconds",
-            "Type": "Integer",
-            "Token": "PX"
-          }
-        ]
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "NOGET",
-        "DisplayText": "noget",
-        "Type": "PureToken",
-        "Token": "NOGET",
-        "ArgumentFlags": "Optional"
-      }
-    ]
-  },
-  {
-    "Command": "SETIFMATCH",
-    "Name": "SETIFMATCH",
-    "Summary": "Sets a key value pair with the given etag only if (1) the etag given in the request matches the already existing etag ; or (2) there was no existing value; or (3) the existing value was not associated with any etag and the sent etag was 0.",
-    "Group": "String",
-    "Complexity": "O(1)",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "VALUE",
-        "DisplayText": "value",
-        "Type": "String"
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "ETAG",
-        "DisplayText": "etag",
-        "Type": "Integer"
-      },
-      {
-        "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "EXPIRATION",
-        "Type": "OneOf",
-        "ArgumentFlags": "Optional",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "SECONDS",
-            "DisplayText": "seconds",
-            "Type": "Integer",
-            "Token": "EX"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "MILLISECONDS",
-            "DisplayText": "milliseconds",
-            "Type": "Integer",
-            "Token": "PX"
-          }
-        ]
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "NOGET",
-        "DisplayText": "noget",
-        "Type": "PureToken",
-        "Token": "NOGET",
-        "ArgumentFlags": "Optional"
       }
     ]
   },

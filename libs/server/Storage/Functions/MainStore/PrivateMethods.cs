@@ -749,6 +749,31 @@ namespace Garnet.server
             WriteValAndEtagToDst(desiredLength, value, etag, ref dst, memoryPool);
         }
 
+        void WriteValueAndEtagToDst(ReadOnlySpan<byte> result, long etag, ref SpanByteAndMemory dst, bool writeDirect = false)
+        {
+            // *2\r\n + : + <numDigitsInEtag> + \r\n + <result.Length>
+            var desiredLength = 4 + 1 + NumUtils.CountDigits(etag) + 2 + result.Length;
+            
+            if (desiredLength <= dst.Length)
+            {
+                dst.Length = desiredLength;
+                var curr = dst.SpanByte.ToPointer();
+                var end = curr + dst.SpanByte.Length;
+                RespWriteUtils.WriteEtagValArray(etag, ref result, ref curr, end, writeDirect);
+                return;
+            }
+
+            dst.ConvertToHeap();
+            dst.Length = desiredLength;
+            dst.Memory = functionsState.memoryPool.Rent(desiredLength);
+            fixed (byte* ptr = dst.MemorySpan)
+            {
+                var curr = ptr;
+                var end = ptr + desiredLength;
+                RespWriteUtils.WriteEtagValArray(etag, ref result, ref curr, end, writeDirect);
+            }
+        }
+
         static void WriteValAndEtagToDst(int desiredLength, ReadOnlySpan<byte> value, long etag, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool, bool writeDirect = false)
         {
             if (desiredLength <= dst.Length)

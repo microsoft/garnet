@@ -1017,8 +1017,6 @@ namespace Garnet.server
                 RespCommand.GETETAG => NetworkGETETAG(ref storageApi),
                 RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
                 RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
-                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
-                RespCommand.SETIFGREATER => NetworkSETIFGREATER(ref storageApi),
                 RespCommand.DELIFGREATER => NetworkDELIFGREATER(ref storageApi),
 
                 _ => Process(command, ref storageApi)

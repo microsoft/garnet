@@ -53,6 +53,9 @@ namespace Garnet.server
         /// No meta command specified
         /// </summary>
         None = 0,
+
+        // Beginning of etag-related meta-commands (if adding new etag meta-commands before this, update IsEtagMetaCommand)
+
         /// <summary>
         /// Execute the main command and add the current etag to the output
         /// </summary>
@@ -65,6 +68,19 @@ namespace Garnet.server
         /// Execute the main command if a specified etag is greater than the current etag
         /// </summary>
         ExecIfGreater,
+
+        // End of etag-related meta-commands (if adding new etag meta-commands after this, update IsEtagMetaCommand)
+    }
+
+    static class RespMetaCommandExtensions
+    {
+        /// <summary>
+        /// Check if meta command is an etag-related meta-command
+        /// </summary>
+        /// <param name="metaCmd">Meta command</param>
+        /// <returns>True if etag meta-command</returns>
+        public static bool IsEtagMetaCommand(this RespMetaCommand metaCmd)
+            => metaCmd is >= RespMetaCommand.ExecWithEtag and <= RespMetaCommand.ExecIfGreater;
     }
 
     /// <summary>

@@ -96,7 +96,7 @@ public static class ETagAbstractions
     private static async Task<(bool updated, long etag, T)> _updateItemIfMatch<T>(IDatabase db, long etag, string key, T value)
     {
         string serializedItem = JsonSerializer.Serialize<T>(value);
-        RedisResult[] res = (RedisResult[])(await db.ExecuteAsync("SETIFMATCH", key, serializedItem, etag))!;
+        RedisResult[] res = (RedisResult[])(await db.ExecuteAsync("EXECIFMATCH", etag, "SET", key, serializedItem))!;
         // successful update does not return updated value so we can just return what was passed for value. 
         if (res[1].IsNull)
             return (true, (long)res[0], value);
