@@ -12,7 +12,6 @@ namespace Garnet.cluster
     internal sealed unsafe class SnapshotIteratorManager
     {
         public readonly ReplicationSyncManager replicationSyncManager;
-        public readonly TimeSpan timeout;
         public readonly CancellationToken cancellationToken;
         public readonly ILogger logger;
 
