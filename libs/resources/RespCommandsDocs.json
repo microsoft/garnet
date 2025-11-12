@@ -3702,28 +3702,6 @@
     ]
   },
   {
-    "Command": "GETIFNOTMATCH",
-    "Name": "GETIFNOTMATCH",
-    "Summary": "Gets the ETag and value if the key\u0027s current etag does not match the given etag.",
-    "Group": "String",
-    "Complexity": "O(1)",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "ETAG",
-        "DisplayText": "etag",
-        "Type": "Integer"
-      }
-    ]
-  },
-  {
     "Command": "GETRANGE",
     "Name": "GETRANGE",
     "Summary": "Returns a substring of the string stored at a key.",
@@ -3772,22 +3750,6 @@
         "Name": "VALUE",
         "DisplayText": "value",
         "Type": "String"
-      }
-    ]
-  },
-  {
-    "Command": "GETWITHETAG",
-    "Name": "GETWITHETAG",
-    "Summary": "Gets the ETag and value for the key",
-    "Group": "String",
-    "Complexity": "O(1)",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
       }
     ]
   },

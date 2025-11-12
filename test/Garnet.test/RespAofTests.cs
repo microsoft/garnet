@@ -889,7 +889,7 @@ namespace Garnet.test
 
         private static void ExpectedEtagTest(IDatabase db, string key, string expectedValue, long expected)
         {
-            RedisResult res = db.Execute("GETWITHETAG", key);
+            RedisResult res = db.Execute("EXECWITHETAG", "GET", key);
             if (expectedValue == null)
             {
                 ClassicAssert.IsTrue(res.IsNull);

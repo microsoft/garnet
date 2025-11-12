@@ -37,9 +37,7 @@ namespace Garnet.server
         GET,
         GETBIT,
         GETETAG,
-        GETIFNOTMATCH,
         GETRANGE,
-        GETWITHETAG,
         HEXISTS,
         HGET,
         HGETALL,
@@ -387,6 +385,7 @@ namespace Garnet.server
         // Meta commands (commands that envelop other commands)
         EXECWITHETAG,
         EXECIFMATCH,
+        EXECIFNOTMATCH,
         EXECIFGREATER, // Note: Update IsMetaCommand if adding new etag commands after this
 
         // Don't require AUTH (if auth is enabled)
@@ -1756,6 +1755,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.ZREVRANGEBYLEX;
                                 }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nEXECIF"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NOTMATCH"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.EXECIFNOTMATCH;
+                                }
                                 break;
 
                             case 15:
@@ -2613,14 +2616,6 @@ namespace Garnet.server
             {
                 return RespCommand.GETETAG;
             }
-            else if (command.SequenceEqual(CmdStrings.GETWITHETAG))
-            {
-                return RespCommand.GETWITHETAG;
-            }
-            else if (command.SequenceEqual(CmdStrings.GETIFNOTMATCH))
-            {
-                return RespCommand.GETIFNOTMATCH;
-            }
             else if (command.SequenceEqual(CmdStrings.DELIFGREATER))
             {
                 return RespCommand.DELIFGREATER;
@@ -2832,6 +2827,9 @@ namespace Garnet.server
                     return 0;
                 case RespCommand.EXECIFMATCH:
                     metaCommand = RespMetaCommand.ExecIfMatch;
+                    return 1;
+                case RespCommand.EXECIFNOTMATCH:
+                    metaCommand = RespMetaCommand.ExecIfNotMatch;
                     return 1;
                 case RespCommand.EXECIFGREATER:
                     metaCommand = RespMetaCommand.ExecIfGreater;

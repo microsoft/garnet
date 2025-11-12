@@ -1959,31 +1959,6 @@
     "StoreType": "Main"
   },
   {
-    "Command": "GETIFNOTMATCH",
-    "Name": "GETIFNOTMATCH",
-    "Arity": 3,
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Fast, Read, String",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RO, Access"
-      }
-    ],
-    "StoreType": "Main"
-  },
-  {
     "Command": "GETRANGE",
     "Name": "GETRANGE",
     "Arity": 4,
@@ -2031,31 +2006,6 @@
           "Limit": 0
         },
         "Flags": "RW, Access, Update"
-      }
-    ],
-    "StoreType": "Main"
-  },
-  {
-    "Command": "GETWITHETAG",
-    "Name": "GETWITHETAG",
-    "Arity": 2,
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Fast, Read, String",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RO, Access"
       }
     ],
     "StoreType": "Main"

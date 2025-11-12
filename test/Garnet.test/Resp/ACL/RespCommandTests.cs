@@ -5604,36 +5604,6 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task SetIfMatchACLsAsync()
-        {
-            await CheckCommandsAsync(
-               "SETIFMATCH",
-               [DoSetIfMatchAsync]
-           );
-
-            static async Task DoSetIfMatchAsync(GarnetClient client)
-            {
-                var res = await client.ExecuteForStringArrayResultAsync("SETIFMATCH", ["foo", "rizz", "0"]);
-                ClassicAssert.IsNotNull(res);
-            }
-        }
-
-        [Test]
-        public async Task SetIfGreaterACLsAsync()
-        {
-            await CheckCommandsAsync(
-               "SETIFGREATER",
-               [DoSetIfGreaterAsync]
-           );
-
-            static async Task DoSetIfGreaterAsync(GarnetClient client)
-            {
-                var res = await client.ExecuteForStringArrayResultAsync("SETIFGREATER", ["foo", "rizz", "0"]);
-                ClassicAssert.IsNotNull(res);
-            }
-        }
-
-        [Test]
         public async Task DelIfGreaterACLsAsync()
         {
             await CheckCommandsAsync(
@@ -5649,21 +5619,6 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task GetIfNotMatchACLsAsync()
-        {
-            await CheckCommandsAsync(
-               "GETIFNOTMATCH",
-               [DoGetIfNotMatchAsync]
-           );
-
-            static async Task DoGetIfNotMatchAsync(GarnetClient client)
-            {
-                var res = await client.ExecuteForStringResultAsync("GETIFNOTMATCH", ["foo", "0"]);
-                ClassicAssert.IsNull(res);
-            }
-        }
-
-        [Test]
         public async Task GetEtagACLsAsync()
         {
             await CheckCommandsAsync(
@@ -5674,21 +5629,6 @@ namespace Garnet.test.Resp.ACL
             static async Task DoGetEtagAsync(GarnetClient client)
             {
                 var res = await client.ExecuteForStringResultAsync("GETETAG", ["foo"]);
-                ClassicAssert.IsNull(res);
-            }
-        }
-
-        [Test]
-        public async Task GetWithEtagACLsAsync()
-        {
-            await CheckCommandsAsync(
-               "GETWITHETAG",
-               [DoGetWithEtagAsync]
-           );
-
-            static async Task DoGetWithEtagAsync(GarnetClient client)
-            {
-                var res = await client.ExecuteForStringResultAsync("GETWITHETAG", ["foo"]);
                 ClassicAssert.IsNull(res);
             }
         }

@@ -154,8 +154,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> MINMATCHLEN => "MINMATCHLEN"u8;
         public static ReadOnlySpan<byte> WITHMATCHLEN => "WITHMATCHLEN"u8;
         public static ReadOnlySpan<byte> GETETAG => "GETETAG"u8;
-        public static ReadOnlySpan<byte> GETWITHETAG => "GETWITHETAG"u8;
-        public static ReadOnlySpan<byte> GETIFNOTMATCH => "GETIFNOTMATCH"u8;
         public static ReadOnlySpan<byte> DELIFGREATER => "DELIFGREATER"u8;
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
         public static ReadOnlySpan<byte> MEMBERS => "MEMBERS"u8;

@@ -476,11 +476,11 @@ namespace Garnet.test
             lightClientRequest.SendCommand("GET key1");
             lightClientRequest.SendCommand("SET key2 value2");
             // check that all the etag commands can be called inside a transaction
-            lightClientRequest.SendCommand("SET key3 value2 WITHETAG");
-            lightClientRequest.SendCommand("GETWITHETAG key3");
-            lightClientRequest.SendCommand("GETIFNOTMATCH key3 1");
-            lightClientRequest.SendCommand("SETIFMATCH key3 anotherVal 1");
-            lightClientRequest.SendCommand("SET key3 arandomval WITHETAG");
+            lightClientRequest.SendCommand("EXECWITHETAG SET key3 value2");
+            lightClientRequest.SendCommand("EXECWITHETAG GET key3");
+            lightClientRequest.SendCommand("EXECIFNOTMATCH 1 GET key3");
+            lightClientRequest.SendCommand("EXECIFMATCH 1 SET key3 anotherVal");
+            lightClientRequest.SendCommand("EXECWITHETAG SET key3 arandomval");
 
             response = lightClientRequest.SendCommand("EXEC");
 
@@ -489,7 +489,7 @@ namespace Garnet.test
 
             // check if we still have the appropriate etag on the key we had set
             var otherLighClientRequest = TestUtils.CreateRequest();
-            response = otherLighClientRequest.SendCommand("GETWITHETAG key1");
+            response = otherLighClientRequest.SendCommand("EXECWITHETAG GET key1");
             expectedResponse = "*2\r\n:2\r\n$14\r\nvalue1_updated\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }

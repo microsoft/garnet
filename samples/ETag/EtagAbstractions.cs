@@ -82,7 +82,7 @@ public static class ETagAbstractions
     /// </returns>
     public static async Task<(long, T?)> GetWithEtag<T>(IDatabase db, string key)
     {
-        var executeResult = await db.ExecuteAsync("GETWITHETAG", key);
+        var executeResult = await db.ExecuteAsync("EXECWITHETAG", "GET", key);
         // If key is not found we get null
         if (executeResult.IsNull)
             return (-1, default(T));

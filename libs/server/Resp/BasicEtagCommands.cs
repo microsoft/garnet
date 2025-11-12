@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -38,68 +37,6 @@ namespace Garnet.server
             else
             {
                 WriteNull();
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// GETWITHETAG key 
-        /// Given a key get the value and it's ETag
-        /// </summary>
-        private bool NetworkGETWITHETAG<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            Debug.Assert(parseState.Count == 1);
-
-            var key = parseState.GetArgSliceByRef(0);
-            var input = new RawStringInput(RespCommand.GETWITHETAG);
-            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            var status = storageApi.GET(key, ref input, ref output);
-
-            switch (status)
-            {
-                case GarnetStatus.NOTFOUND:
-                    Debug.Assert(output.IsSpanByte);
-                    WriteNull();
-                    break;
-                default:
-                    if (!output.IsSpanByte)
-                        SendAndReset(output.Memory, output.Length);
-                    else
-                        dcurr += output.Length;
-                    break;
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// GETIFNOTMATCH key etag
-        /// Given a key and an etag, return the value and it's etag.
-        /// </summary>
-        private bool NetworkGETIFNOTMATCH<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            Debug.Assert(parseState.Count == 2);
-
-            var key = parseState.GetArgSliceByRef(0);
-            var input = new RawStringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
-            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-            var status = storageApi.GET(key, ref input, ref output);
-
-            switch (status)
-            {
-                case GarnetStatus.NOTFOUND:
-                    Debug.Assert(output.IsSpanByte);
-                    WriteNull();
-                    break;
-                default:
-                    if (!output.IsSpanByte)
-                        SendAndReset(output.Memory, output.Length);
-                    else
-                        dcurr += output.Length;
-                    break;
             }
 
             return true;

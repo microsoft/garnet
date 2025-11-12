@@ -1465,11 +1465,11 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("OK", result.ToString());
 
                 // check GETWITHETAG shows updated etag and expected values for both
-                RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", key1);
+                RedisResult[] res = (RedisResult[])db.Execute("EXECWITHETAG", "GET", key1);
                 ClassicAssert.AreEqual("2", res[0].ToString());
                 ClassicAssert.IsTrue(res[1].ToString().All(c => c - 'a' >= 0 && c - 'a' < 26));
 
-                res = (RedisResult[])db.Execute("GETWITHETAG", key2);
+                res = (RedisResult[])db.Execute("EXECWITHETAG", "GET", key2);
                 ClassicAssert.AreEqual("2", res[0].ToString());
                 ClassicAssert.AreEqual("18", res[1].ToString());
             }
@@ -1504,12 +1504,12 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(value1, result.ToString());
 
                 // check GETWITHETAG shows updated etag and expected values for both
-                RedisResult[] res = (RedisResult[])db.Execute("GETWITHETAG", key1);
+                RedisResult[] res = (RedisResult[])db.Execute("EXECWITHETAG", "GET", key1);
                 // etag not updated for this
                 ClassicAssert.AreEqual("1", res[0].ToString());
                 ClassicAssert.AreEqual(value1, res[1].ToString());
 
-                res = (RedisResult[])db.Execute("GETWITHETAG", key2);
+                res = (RedisResult[])db.Execute("EXECWITHETAG", "GET", key2);
                 // etag updated for this
                 ClassicAssert.AreEqual("2", res[0].ToString());
                 ClassicAssert.AreEqual("257", res[1].ToString());

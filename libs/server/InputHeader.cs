@@ -65,6 +65,10 @@ namespace Garnet.server
         /// </summary>
         ExecIfMatch,
         /// <summary>
+        /// Execute the main command if the current etag does not match a specified etag
+        /// </summary>
+        ExecIfNotMatch,
+        /// <summary>
         /// Execute the main command if a specified etag is greater than the current etag
         /// </summary>
         ExecIfGreater,

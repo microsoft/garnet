@@ -26,8 +26,9 @@ namespace Garnet.server
                 return false;
 
             var cmd = input.header.cmd;
+            var metaCmd = input.header.metaCmd;
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
-            if (cmd == RespCommand.GETIFNOTMATCH)
+            if (metaCmd == RespMetaCommand.ExecIfNotMatch)
             {
                 if (handleGetIfNotMatch(in srcLogRecord, ref input, ref output, ref readInfo))
                     return true;
@@ -60,7 +61,7 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
-            if (input.header.IsWithEtag())
+            if (input.header.IsWithEtag() || input.header.metaCmd.IsEtagMetaCommand())
             {
                 CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
                 ETagState.ResetState(ref functionsState.etagState);
@@ -82,7 +83,7 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord
         {
             // Any value without an etag is treated the same as a value with an etag
-            long etagToMatchAgainst = input.parseState.GetLong(0);
+            long etagToMatchAgainst = input.metaCmdParseState.GetLong(0);
 
             long existingEtag = srcLogRecord.ETag;
 
