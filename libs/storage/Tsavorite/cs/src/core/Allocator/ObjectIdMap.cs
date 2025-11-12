@@ -112,8 +112,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void Clear()
         {
-            objectArray?.Clear();    // TODO reduce allocated chapter count also?
-            freeSlots.Clear();
+            objectArray?.Clear(1 << MultiLevelPageArray.PrimaryClearRetainedChapterSizeBits);
+            freeSlots.Clear(1 << MultiLevelPageArray.FreeListClearRetainedChapterSizeBits);
         }
 
         /// <inheritdoc/>
