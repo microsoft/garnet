@@ -220,6 +220,16 @@ namespace Tsavorite.core
         Status ReadAtAddress(long address, ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default);
 
         /// <summary>
+        /// Read batch operation, which attempts to prefetch as an optimization.
+        /// </summary>
+        void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext = default)
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
+
+        /// <summary>
         /// Upsert operation
         /// </summary>
         /// <param name="key"></param>

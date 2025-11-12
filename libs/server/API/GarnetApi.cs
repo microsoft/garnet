@@ -351,6 +351,13 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus Read_ObjectStore(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
             => storageSession.Read_ObjectStore(ref key, ref input, ref output, ref objectContext);
+
+        public void ReadWithPrefetch<TBatch>(ref TBatch batch, long userContext = default)
+            where TBatch : IReadArgBatch<SpanByte, RawStringInput, SpanByteAndMemory>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => storageSession.ReadWithPrefetch(ref batch, ref context, userContext);
         #endregion
 
         #region Bitmap Methods

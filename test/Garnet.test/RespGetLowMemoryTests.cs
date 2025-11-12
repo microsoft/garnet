@@ -65,23 +65,61 @@ namespace Garnet.test
         }
 
         [Test]
-        public void ScatterGatherMGet()
+        [TestCase(30)]      // Probably completes sync
+        [TestCase(300)]     // May be a mix
+        [TestCase(3_000)]   // Definitely completes async
+        public void ScatterGatherMGet(int length)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            const int length = 30;
-            KeyValuePair<RedisKey, RedisValue>[] input = new KeyValuePair<RedisKey, RedisValue>[length];
-            for (int i = 0; i < length; i++)
+            var input = new KeyValuePair<RedisKey, RedisValue>[length];
+            for (var i = 0; i < input.Length; i++)
                 input[i] = new KeyValuePair<RedisKey, RedisValue>(i.ToString(), i.ToString());
 
             // MSET
             var result = db.StringSet(input);
             ClassicAssert.IsTrue(result);
 
-            var results = db.StringGet([.. input.Select(r => (RedisKey)r.Key)]);
-            for (int i = 0; i < length; i++)
-                ClassicAssert.AreEqual(input[i].Value, results[i]);
+            // All hits
+            {
+                // Single gets
+                var single = input.Select(t => (t.Key, Expected: t.Value, Actual: db.StringGet(t.Key))).ToArray();
+
+                // MGET
+                var results = db.StringGet([.. input.Select(r => (RedisKey)r.Key)]);
+                for (var i = 0; i < input.Length; i++)
+                {
+                    var expected = input[i].Value;
+                    var singleActual = single[i].Actual;
+                    var multiActual = results[i];
+
+                    ClassicAssert.AreEqual(expected, singleActual);
+                    ClassicAssert.AreEqual(expected, multiActual);
+                }
+            }
+
+            // Some misses
+            {
+                var inputsWithMisses = input.Concat(Enumerable.Range(2 * input.Length, input.Length).Select(static i => new KeyValuePair<RedisKey, RedisValue>(i.ToString(), RedisValue.Null))).ToArray();
+
+                new Random(2025_11_12_00).Shuffle(inputsWithMisses);
+
+                // Single gets
+                var single = inputsWithMisses.Select(t => (t.Key, Expected: t.Value, Actual: db.StringGet(t.Key))).ToArray();
+
+                // MGET
+                var results = db.StringGet([.. inputsWithMisses.Select(r => (RedisKey)r.Key)]);
+                for (var i = 0; i < inputsWithMisses.Length; i++)
+                {
+                    var expected = inputsWithMisses[i].Value;
+                    var singleActual = single[i].Actual;
+                    var multiActual = results[i];
+
+                    ClassicAssert.AreEqual(expected, singleActual);
+                    ClassicAssert.AreEqual(expected, multiActual);
+                }
+            }
         }
     }
 }

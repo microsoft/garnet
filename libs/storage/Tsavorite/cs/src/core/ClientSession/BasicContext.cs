@@ -86,6 +86,9 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext = default)
             where TBatch : IReadArgBatch<TKey, TInput, TOutput>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             UnsafeResumeThread();
             try
