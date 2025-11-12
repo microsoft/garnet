@@ -291,26 +291,26 @@ namespace Garnet.server
                         break;
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
-                        var replace = newExpiry < value.ExtraMetadata;
-                        value.ExtraMetadata = replace ? value.ExtraMetadata : newExpiry;
+                        var replace = newExpiry > value.ExtraMetadata;
+                        if (replace) value.ExtraMetadata = newExpiry;
                         if (replace)
-                            o->result1 = 0;
-                        else
                             o->result1 = 1;
+                        else
+                            o->result1 = 0;
                         break;
                     case ExpireOption.LT:
                     case ExpireOption.XXLT:
-                        replace = newExpiry > value.ExtraMetadata;
-                        value.ExtraMetadata = replace ? value.ExtraMetadata : newExpiry;
+                        replace = newExpiry < value.ExtraMetadata;
+                        if (replace) value.ExtraMetadata = newExpiry;
                         if (replace)
-                            o->result1 = 0;
-                        else
                             o->result1 = 1;
+                        else
+                            o->result1 = 0;
                         break;
                     default:
                         throw new GarnetException($"EvaluateExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
                 }
-                return IPUResult.Succeeded;
+                return o->result1 == 1 ? IPUResult.Succeeded : IPUResult.NotUpdated;
             }
             else
             {
@@ -325,7 +325,7 @@ namespace Garnet.server
                     case ExpireOption.XXGT:
                     case ExpireOption.XXLT:
                         o->result1 = 0;
-                        return IPUResult.Succeeded;
+                        return IPUResult.NotUpdated;
                     default:
                         throw new GarnetException($"EvaluateExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
                 }
