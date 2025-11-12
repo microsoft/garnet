@@ -1015,7 +1015,6 @@ namespace Garnet.server
 
                 // Etag related commands
                 RespCommand.GETETAG => NetworkGETETAG(ref storageApi),
-                RespCommand.DELIFGREATER => NetworkDELIFGREATER(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };

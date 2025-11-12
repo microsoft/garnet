@@ -24,7 +24,7 @@ namespace Garnet.server
                 case RespCommand.EXPIRE:
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
-                case RespCommand.DELIFGREATER:
+                case RespCommand.DEL:
                     return false;
                 case RespCommand.SETEXXX:
                     // when called withetag all output needs to be placed on the buffer
@@ -434,9 +434,8 @@ namespace Garnet.server
                     ETagState.ResetState(ref functionsState.etagState);
                     // Nothing is set because being in this block means NX was already violated
                     return true;
-                case RespCommand.DELIFGREATER:
-                    long etagFromClient = input.parseState.GetLong(0);
-                    rmwInfo.Action = etagFromClient > functionsState.etagState.ETag ? RMWAction.ExpireAndStop : RMWAction.CancelOperation;
+                case RespCommand.DEL:
+                    rmwInfo.Action = execCmd ? RMWAction.ExpireAndStop : RMWAction.CancelOperation;
                     ETagState.ResetState(ref functionsState.etagState);
                     return false;
 
@@ -875,11 +874,8 @@ namespace Garnet.server
 
             switch (input.header.cmd)
             {
-                case RespCommand.DELIFGREATER:
-                    if (srcLogRecord.Info.HasETag)
-                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
-                    long etagFromClient = input.parseState.GetLong(0);
-                    if (etagFromClient > functionsState.etagState.ETag)
+                case RespCommand.DEL:
+                    if (execCmd)
                         rmwInfo.Action = RMWAction.ExpireAndStop;
 
                     ETagState.ResetState(ref functionsState.etagState);

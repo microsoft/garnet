@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
-using Garnet.common;
 
 namespace Garnet.server
 {
@@ -38,40 +37,6 @@ namespace Garnet.server
             {
                 WriteNull();
             }
-
-            return true;
-        }
-
-        /// <summary>
-        /// DELIFGREATER key etag
-        /// </summary>
-        /// <typeparam name="TGarnetApi"></typeparam>
-        /// <param name="storageApi"></param>
-        /// <returns></returns>
-        private bool NetworkDELIFGREATER<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            if (parseState.Count != 2)
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.DELIFGREATER));
-
-            var key = parseState.GetArgSliceByRef(0);
-            if (!parseState.TryGetLong(1, out long givenEtag) || givenEtag < 0)
-            {
-                return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_ETAG);
-            }
-
-            // Conditional delete is not natively supported for records in the stable region.
-            // To achieve this, we use a conditional DEL command to gain RMW (Read-Modify-Write) access, enabling deletion based on conditions.
-
-            RawStringInput input = new RawStringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
-            input.header.metaCmd = RespMetaCommand.ExecWithEtag;
-
-            GarnetStatus status = storageApi.DEL_Conditional(key, ref input);
-
-            int keysDeleted = status == GarnetStatus.OK ? 1 : 0;
-
-            while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))
-                SendAndReset();
 
             return true;
         }

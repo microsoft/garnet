@@ -127,7 +127,7 @@ namespace Garnet.server
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                     fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
-                    fieldInfo.HasETag = input.header.metaCmd.IsEtagMetaCommand();
+                    fieldInfo.HasETag = input.header.metaCmd.IsEtagCommand();
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
 
@@ -286,7 +286,7 @@ namespace Garnet.server
                     case RespCommand.SETEXXX:
                     case RespCommand.SETEXNX:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
-                        fieldInfo.HasETag = input.header.metaCmd.IsEtagMetaCommand();
+                        fieldInfo.HasETag = input.header.metaCmd.IsEtagCommand();
                         fieldInfo.HasExpiration = input.arg1 != 0 ||
                                                   (input.header.metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater &&
                                                    srcLogRecord.Info.HasExpiration);
@@ -365,7 +365,7 @@ namespace Garnet.server
                         return fieldInfo;
 
                     case RespCommand.GETDEL:
-                    case RespCommand.DELIFGREATER:
+                    case RespCommand.DEL:
                         // Min allocation (only metadata) needed since this is going to be used for tombstoning anyway.
                         return fieldInfo;
 

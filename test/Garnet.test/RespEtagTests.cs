@@ -331,7 +331,7 @@ namespace Garnet.test
 
             // Scenario: set with etag with expiration on existing data without etag
             var key6 = "key6";
-            db.Execute("EXECWITHETAG", "SET", key6, "value9");
+            db.StringSet(key6, "value9");
             var res6 = db.Execute("EXECWITHETAG", "SET", key6, "value10", "EX", 10);
             long etag6 = (long)res6;
             ClassicAssert.AreEqual(1, etag6);
@@ -422,14 +422,14 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, (long)res);
 
             // does not delete when called with lesser or equal etag
-            res = db.Execute("DELIFGREATER", key, 0);
+            res = db.Execute("EXECIFGREATER", 0, "DEL", key);
             ClassicAssert.AreEqual(0, (long)res);
 
             RedisValue returnedval = db.StringGet(key);
             ClassicAssert.AreEqual(value, returnedval.ToString());
 
             // Deletes when called with higher etag
-            res = db.Execute("DELIFGREATER", key, 2);
+            res = db.Execute("EXECIFGREATER", 2, "DEL", key);
             ClassicAssert.AreEqual(1, (long)res);
 
             returnedval = db.StringGet(key);
@@ -449,14 +449,14 @@ namespace Garnet.test
             ClassicAssert.IsTrue(result);
 
             // does not delete when called with lesser or equal etag
-            RedisResult res = db.Execute("DELIFGREATER", key, 0);
+            RedisResult res = db.Execute("EXECIFGREATER", 0, "DEL", key);
             ClassicAssert.AreEqual(0, (long)res);
 
             RedisValue returnedval = db.StringGet(key);
             ClassicAssert.AreEqual(value, returnedval.ToString());
 
             // Deletes when called with higher etag
-            res = db.Execute("DELIFGREATER", key, 2);
+            res = db.Execute("EXECIFGREATER", 2, "DEL", key);
             ClassicAssert.AreEqual(1, (long)res);
 
             returnedval = db.StringGet(key);
@@ -496,7 +496,7 @@ namespace Garnet.test
 
             long tailAddressBeforeNonDeletingReq = info.TailAddress;
             // does not delete when called with lesser or equal etag
-            res = db.Execute("DELIFGREATER", key, 0);
+            res = db.Execute("EXECIFGREATER", 0, "DEL", key);
             ClassicAssert.AreEqual(0, (long)res);
 
             RedisValue returnedval = db.StringGet(key);
@@ -510,7 +510,7 @@ namespace Garnet.test
 
             // Deletes when called with higher etag
             // Moved by 32 bytes...
-            res = db.Execute("DELIFGREATER", key, 2);
+            res = db.Execute("EXECIFGREATER", 2, "DEL", key);
             ClassicAssert.AreEqual(1, (long)res);
 
             info = TestUtils.GetStoreAddressInfo(garnetServer);
@@ -558,7 +558,7 @@ namespace Garnet.test
             long nonDeletingReqTailAddr = info.TailAddress;
 
             // does not delete when called with lesser or equal etag
-            RedisResult res = db.Execute("DELIFGREATER", key, 0);
+            RedisResult res = db.Execute("EXECIFGREATER", 0, "DEL", key);
             ClassicAssert.AreEqual(0, (long)res);
 
             RedisValue returnedval = db.StringGet(key);
@@ -571,7 +571,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(nonDeletingReqTailAddr, lastTailAddr);
 
             // Deletes when called with higher etag
-            res = db.Execute("DELIFGREATER", key, 2);
+            res = db.Execute("EXECIFGREATER", 2, "DEL", key);
             ClassicAssert.AreEqual(1, (long)res);
 
             info = TestUtils.GetStoreAddressInfo(garnetServer);
@@ -781,7 +781,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
 
-            RedisResult res = db.Execute("DELIFGREATER", "nonexistingkey", 10);
+            RedisResult res = db.Execute("EXECIFGREATER", 10, "DEL", "nonexistingkey");
             ClassicAssert.AreEqual(0, (long)res);
         }
 
@@ -825,24 +825,6 @@ namespace Garnet.test
             var _ = db.StringSet("h", "k");
 
             var res = (RedisResult[])db.Execute("EXECIFMATCH", 0, "SET", "h", "t");
-            ClassicAssert.AreEqual("1", res[0].ToString());
-            ClassicAssert.IsTrue(res[1].IsNull);
-        }
-        
-        [Test]
-        public void SetIfMatchReturnsNewEtagButNoValueWhenUsingNoGet()
-        {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            IDatabase db = redis.GetDatabase(0);
-
-            var _ = db.StringSet("h", "k");
-
-            var res = (RedisResult[])db.Execute("EXECIFMATCH", 0, "SET", "h", "t");
-            ClassicAssert.AreEqual("1", res[0].ToString());
-            ClassicAssert.IsTrue(res[1].IsNull);
-
-            // ETag mismatch
-            res = (RedisResult[])db.Execute("EXECIFMATCH", 2, "SET", "h", "t");
             ClassicAssert.AreEqual("1", res[0].ToString());
             ClassicAssert.IsTrue(res[1].IsNull);
         }
@@ -1583,7 +1565,7 @@ namespace Garnet.test
             etag = long.Parse(db.Execute("EXECWITHETAG", "SET", newKey, origValue + "delta").ToString());
             ClassicAssert.AreEqual(1, etag);
 
-            db.Execute("SETIFMATCH", newKey, origValue, 1); // updates etag to 2
+            db.Execute("EXECIFMATCH", 1, "SET", newKey, origValue); // updates etag to 2
             ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 2, origValue));
 
             // old key with etag
@@ -1597,7 +1579,7 @@ namespace Garnet.test
             // at this point new key exists with etag, old key does not exist at all
 
             // Scenario: old key not have etag => new key made with updated etag when made withetag (new key did exist withetag)
-            db.Execute("SET", oldKey, origValue);
+            db.StringSet(oldKey, origValue);
 
             db.Execute("EXECWITHETAG", "RENAME", oldKey, newKey);
 
@@ -1615,7 +1597,7 @@ namespace Garnet.test
             db.KeyDelete(newKey);
 
             // Scenario: old key not have etag => new key made with initial etag when made withetag (new key did not exist)
-            db.Execute("SET", oldKey, origValue);
+            db.StringSet(oldKey, origValue);
 
             db.Execute("EXECWITHETAG", "RENAME", oldKey, newKey);
 

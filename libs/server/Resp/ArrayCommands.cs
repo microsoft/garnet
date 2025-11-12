@@ -193,16 +193,32 @@ namespace Garnet.server
         private bool NetworkDEL<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            int keysDeleted = 0;
+            var keysDeleted = 0;
 
-            for (int c = 0; c < parseState.Count; c++)
+            if (metaCommand.IsEtagCondExecCommand())
             {
-                var key = parseState.GetArgSliceByRef(c);
-                var status = storageApi.DELETE(key);
+                // todo: support more than one key with etag conditional delete
+                if (parseState.Count != 1)
+                    return AbortWithWrongNumberOfArguments(nameof(RespCommand.DEL));
 
-                // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
+                var input = new RawStringInput(RespCommand.DEL, metaCommand, ref metaCommandParseState);
+                var key = parseState.GetArgSliceByRef(0);
+                var status = storageApi.DEL_Conditional(key, ref input);
+
                 if (status == GarnetStatus.OK)
                     keysDeleted++;
+            }
+            else
+            {
+                for (var c = 0; c < parseState.Count; c++)
+                {
+                    var key = parseState.GetArgSliceByRef(c);
+                    var status = storageApi.DELETE(key);
+
+                    // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
+                    if (status == GarnetStatus.OK)
+                        keysDeleted++;
+                }
             }
 
             while (!RespWriteUtils.TryWriteInt32(keysDeleted, ref dcurr, dend))

@@ -54,12 +54,15 @@ namespace Garnet.server
         /// </summary>
         None = 0,
 
-        // Beginning of etag-related meta-commands (if adding new etag meta-commands before this, update IsEtagMetaCommand)
+        // Beginning of etag-related meta-commands (if adding new etag meta-commands before this, update IsEtagCommand)
 
         /// <summary>
         /// Execute the main command and add the current etag to the output
         /// </summary>
         ExecWithEtag,
+
+        // Beginning of etag conditional-execution meta-commands (if adding new etag conditional-execution meta-commands before this, update IsEtagCondExecCommand)
+
         /// <summary>
         /// Execute the main command if the current etag matches a specified etag
         /// </summary>
@@ -73,7 +76,9 @@ namespace Garnet.server
         /// </summary>
         ExecIfGreater,
 
-        // End of etag-related meta-commands (if adding new etag meta-commands after this, update IsEtagMetaCommand)
+        // End of etag conditional-execution meta-commands (if adding new etag conditional-execution meta-commands after this, update IsEtagCondExecCommand)
+
+        // End of etag-related meta-commands (if adding new etag meta-commands after this, update IsEtagCommand)
     }
 
     static class RespMetaCommandExtensions
@@ -83,8 +88,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="metaCmd">Meta command</param>
         /// <returns>True if etag meta-command</returns>
-        public static bool IsEtagMetaCommand(this RespMetaCommand metaCmd)
+        public static bool IsEtagCommand(this RespMetaCommand metaCmd)
             => metaCmd is >= RespMetaCommand.ExecWithEtag and <= RespMetaCommand.ExecIfGreater;
+
+        public static bool IsEtagCondExecCommand(this RespMetaCommand metaCmd)
+        => metaCmd is >= RespMetaCommand.ExecIfMatch and <= RespMetaCommand.ExecIfGreater;
     }
 
     /// <summary>
