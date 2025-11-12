@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
@@ -37,7 +38,14 @@ namespace Tsavorite.core
         /// <summary>Reserve a slot and return its ID.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int Allocate()
-            => freeSlots.TryPop(out var objectId) ? objectId : objectArray.Allocate();
+        {
+            if (freeSlots.TryPop(out var objectId))
+            {
+                Debug.Assert(objectId < objectArray.tail, $"objectId {objectId} retrieved from freelist must be less than tail {objectArray.tail}");
+                return objectId;
+            }
+            return objectArray.Allocate();
+        }
 
         /// <summary>Reserve a slot, place the Overflow into it, and return the slot's ID.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -109,6 +117,6 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override string ToString() => $"tail: {(objectArray is not null ? objectArray.tail.ToString() : "<null>")}";
+        public override string ToString() => $"objectArray: {(objectArray is not null ? objectArray.ToString() : "<null>")}; freeSlots: {(freeSlots is not null ? freeSlots.ToString() : "<null>")}";
     }
 }

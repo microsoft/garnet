@@ -142,8 +142,7 @@ namespace Tsavorite.core
                     _ = sb.Append(' ');
                 _ = sb.Append(span[ii].ToString("x2"));
             }
-            if (span.Length > len)
-                _ = sb.Append("...");
+            _ = sb.Append(span.Length > maxLen ? '+' : '~');
             return sb.ToString();
         }
 

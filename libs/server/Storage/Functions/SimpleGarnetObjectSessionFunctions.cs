@@ -40,7 +40,7 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref IGarnetObject input, ref IGarnetObject output, ref RMWInfo rmwInfo)
         {
-            var result = dstLogRecord.TrySetValueObject(input, in sizeInfo);
+            var result = dstLogRecord.TrySetValueObjectAndPrepareOptionals(input, in sizeInfo);
             if (result)
                 output = input;
             return result;

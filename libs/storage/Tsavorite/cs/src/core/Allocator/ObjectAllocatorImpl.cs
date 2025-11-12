@@ -36,8 +36,8 @@ namespace Tsavorite.core
         ObjectLogFilePositionInfo objectLogTail;
 
         // Default to max sizes so testing a size as "greater than" will always be false
-        readonly int maxInlineKeySize = LogSettings.kMaxInlineKeySize;
-        readonly int maxInlineValueSize = int.MaxValue;
+        readonly int maxInlineKeySize;
+        readonly int maxInlineValueSize;
 
         readonly int numberOfFlushBuffers;
         readonly int numberOfDeserializationBuffers;
@@ -349,6 +349,9 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         internal override void SetObjectLogTail(ObjectLogFilePositionInfo tail) => objectLogTail = tail;
 
+        /// <summary>Object log segment size</summary>
+        public override long GetObjectLogSegmentSize() => ObjectLogSegmentSize;
+
         private void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress = long.MaxValue)
@@ -416,6 +419,9 @@ namespace Tsavorite.core
             // means the actual log page, inluding ObjectIdMap, will remain valid until we complete this partial flush.
             var epochWasProtected = epoch.SuspendIfProtected();
 
+            // Overflow Keys and Values are written to, and Object values are serialized to, this Stream, if we have flushBuffers.
+            ObjectLogWriter<TStoreFunctions> logWriter = null;
+
             // Do everything below here in the try{} to be sure the epoch is Resumed()d if we Suspended it.
             SectorAlignedMemory srcBuffer = default;
             try
@@ -445,8 +451,6 @@ namespace Tsavorite.core
                 allocatorPageSpan.CopyTo(srcBuffer.TotalValidSpan.Slice(startPadding));
                 srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
 
-                // Overflow Keys and Values are written to, and Object values are serialized to, this Stream.
-                ObjectLogWriter<TStoreFunctions> logWriter = null;
                 if (flushBuffers is not null)
                 {
                     logWriter = new(device, flushBuffers, storeFunctions);
@@ -462,7 +466,7 @@ namespace Tsavorite.core
                     var logRecord = new LogRecord(physicalAddress, objectIdMap);
 
                     // Use allocatedSize here because that is what LogicalAddress is based on.
-                    var logRecordSize = logRecord.GetInlineRecordSizes().allocatedSize;
+                    var logRecordSize = logRecord.AllocatedSize;
 
                     // Do not write Invalid records. This includes IsNull records.
                     if (!logRecord.Info.Invalid)
@@ -516,6 +520,7 @@ namespace Tsavorite.core
             {
                 if (epochWasProtected)
                     epoch.Resume();
+                logWriter?.Dispose();
             }
         }
 
@@ -543,8 +548,7 @@ namespace Tsavorite.core
             if (diskLogRecord.Info.RecordIsInline)
                 return true;
 
-            var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength),
-                                                              objectLogTail.SegmentSizeBits);
+            var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength), objectLogTail.SegmentSizeBits);
             var totalBytesToRead = (ulong)keyLength + valueLength;
 
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
@@ -604,11 +608,11 @@ namespace Tsavorite.core
                 // Use allocatedSize here because that is what LogicalAddress is based on.
                 if (logRecord.Info.RecordIsInline)
                 {
-                    recordAddress += logRecord.GetInlineRecordSizes().allocatedSize;
+                    recordAddress += logRecord.AllocatedSize;
                     continue;
                 }
 
-                recordAddress += logRecord.GetInlineRecordSizesWithUnreadObjects().allocatedSize;
+                recordAddress += logRecord.AllocatedSize;
                 if (logRecord.Info.Valid)
                 {
                     if (!startPosition.IsSet)
@@ -644,11 +648,11 @@ namespace Tsavorite.core
                     // Use allocatedSize here because that is what LogicalAddress is based on.
                     if (logRecord.Info.RecordIsInline)
                     {
-                        recordAddress += logRecord.GetInlineRecordSizes().allocatedSize;
+                        recordAddress += logRecord.AllocatedSize;
                         continue;
                     }
 
-                    recordAddress += logRecord.GetInlineRecordSizesWithUnreadObjects().allocatedSize;
+                    recordAddress += logRecord.AllocatedSize;
                     if (logRecord.Info.Valid)
                     {
                         // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering

@@ -2,13 +2,11 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
 #pragma warning disable IDE0065 // Misplaced using directive
     using static Utility;
-    using static VarbyteLengthUtility;
 
     /// <summary>
     /// Struct for information about the key and the fields and their sizes in a record.
@@ -24,14 +22,11 @@ namespace Tsavorite.core
         /// <summary>Whether the value was within the inline max value length.</summary>
         public bool ValueIsInline;
 
-        /// <summary>Varbyte indicator word, containing the Indicator Byte as well as the key and value lengths; see <see cref="VarbyteLengthUtility"/>.</summary>
-        public long IndicatorWord;
-
-        /// <summary>Number of bytes in key length; see <see cref="VarbyteLengthUtility"/>.</summary>
+        /// <summary>Number of bytes in key length; see <see cref="RecordDataHeader"/>.</summary>
         public int KeyLengthBytes;
 
-        /// <summary>Number of bytes in value length; see <see cref="VarbyteLengthUtility"/>.</summary>
-        public int ValueLengthBytes;
+        /// <summary>Number of bytes in entire record length; see <see cref="RecordDataHeader"/>.</summary>
+        public int RecordLengthBytes;
 
         /// <summary>Whether the value was specified to be an object.</summary>
         public readonly bool ValueIsObject => FieldInfo.ValueIsObject;
@@ -47,6 +42,12 @@ namespace Tsavorite.core
 
         /// <summary>Returns the inline length of the value (the amount it will take in the record).</summary>
         public readonly int InlineValueSize => ValueIsInline ? FieldInfo.ValueSize : ObjectIdMap.ObjectIdSize;
+
+        /// <summary>Returns the inline length of the value (the amount it will take in the record).</summary>
+        public readonly bool RecordIsInline => KeyIsInline && ValueIsInline;
+
+        /// <summary>Returns the whether there are optionals specified for the new record.</summary>
+        public readonly bool HasOptionalFields => FieldInfo.HasETag || FieldInfo.HasExpiration;
 
         /// <summary>The max inline value size if this is a record in the string log.</summary>
         public int MaxInlineValueSize { readonly get; internal set; }
@@ -64,11 +65,8 @@ namespace Tsavorite.core
         /// <summary>Size to allocate for Expiration if it will be included, else 0.</summary>
         public readonly int ExpirationSize => FieldInfo.HasExpiration ? LogRecord.ExpirationSize : 0;
 
-        /// <summary>If true, this record specification has non-inline Key or Value or both, so will require the object log.</summary>
-        public readonly bool RecordHasObjects => !KeyIsInline || !ValueIsInline;
-
         /// <summary>Size to allocate for Expiration if it will be included, else 0.</summary>
-        public readonly int ObjectLogPositionSize => RecordHasObjects ? LogRecord.ObjectLogPositionSize : 0;
+        public readonly int ObjectLogPositionSize => (KeyIsInline && ValueIsInline) ? 0 : LogRecord.ObjectLogPositionSize;
 
         /// <summary>Size to allocate for all optional fields that will be included; possibly 0.</summary>
         public readonly int OptionalSize => ETagSize + ExpirationSize + ObjectLogPositionSize;
@@ -76,32 +74,29 @@ namespace Tsavorite.core
         /// <summary>Whether these values are set (default instances are used for Delete internally, for example).</summary>
         public readonly bool IsSet => AllocatedInlineRecordSize != 0;
 
+        /// <summary>
+        /// Calculate the Record sizes based on the given <paramref name="keySize"/> and <paramref name="valueSize"/> sizes, which are adjusted for inline vs. overflow/object.
+        /// </summary>
         internal void CalculateSizes(int keySize, int valueSize)
         {
-            // Varbyte lengths. Add optionalSize to the effective value size when calculating valueLengthBytes so the value can grow if optionals are removed
-            // (otherwise the filler-related calculations would require additional logic to constrain value size to the # of bytes we calculate here).
-            IndicatorWord = ConstructInlineVarbyteLengthWord(keySize, valueSize, flagBits: 0, out KeyLengthBytes, out ValueLengthBytes);
+            if (FieldInfo.ExtendedNamespaceSize > sbyte.MaxValue)
+                throw new TsavoriteException($"FieldInfo.ExtendedNamespaceSize ({FieldInfo.ExtendedNamespaceSize}) exceeds max allowable ({sbyte.MaxValue})");
 
-            // Record
-            var numVarbytes = NumIndicatorBytes + KeyLengthBytes + ValueLengthBytes;
-            ActualInlineRecordSize = RecordInfo.Size + numVarbytes + keySize + valueSize + OptionalSize;
+            // Calculate full used record size. Use the full possible RecordLengthBytes initially to reserve space in the record for it;
+            // later we'll replace it with the exact size needed.
+            KeyLengthBytes = RecordDataHeader.GetByteCount(keySize);
+            RecordLengthBytes = sizeof(int);
+            var headerLength = RecordDataHeader.NumIndicatorBytes + KeyLengthBytes + RecordLengthBytes;
+            ActualInlineRecordSize = RecordInfo.Size + headerLength + FieldInfo.ExtendedNamespaceSize + keySize + valueSize + OptionalSize;
+
+            // Adjust to the actual record length bytes needed.
+            var actualRecordLengthBytes = RecordDataHeader.GetByteCount(ActualInlineRecordSize);
+            ActualInlineRecordSize -= RecordLengthBytes - actualRecordLengthBytes;
+            RecordLengthBytes = actualRecordLengthBytes;
+
+            // Finally, calculate allocated size (record-aligned).
             AllocatedInlineRecordSize = RoundUp(ActualInlineRecordSize, Constants.kRecordAlignment);
         }
-
-        /// <summary>Gets the value length currently in the record (e.g. before being updated with FieldInfo.ValueSize).</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly unsafe int GetValueInlineLength(long recordPhysicalAddress)
-            => (int)ReadVarbyteLength(ValueLengthBytes, (byte*)(recordPhysicalAddress + RecordInfo.Size + NumIndicatorBytes + KeyLengthBytes));
-
-        /// <summary>Gets the Key address in the record.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly unsafe long GetKeyAddress(long recordPhysicalAddress)
-            => recordPhysicalAddress + RecordInfo.Size + NumIndicatorBytes + KeyLengthBytes + ValueLengthBytes;
-
-        /// <summary>Gets the Value address in the record.</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal readonly unsafe long GetValueAddress(long recordPhysicalAddress)
-            => recordPhysicalAddress + RecordInfo.Size + NumIndicatorBytes + KeyLengthBytes + ValueLengthBytes + InlineKeySize;
 
         /// <summary>
         /// Called from Upsert or RMW methods for Span Values with the actual data size of the update value; ensures consistency between the Get*FieldInfo methods and the actual update methods.

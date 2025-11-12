@@ -21,14 +21,14 @@ namespace Tsavorite.core
         public virtual bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
-            return logRecord.TrySetValueSpan(srcValue, in sizeInfo);
+            return logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
         }
 
         /// <inheritdoc/>
         public virtual bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
-            return logRecord.TrySetValueObject(srcValue, in sizeInfo);
+            return logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
         }
 
         public virtual bool InPlaceWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
@@ -42,14 +42,14 @@ namespace Tsavorite.core
         public virtual bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, ReadOnlySpan<byte> srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
-            return dstLogRecord.TrySetValueSpan(srcValue, in sizeInfo);
+            return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
         }
 
         /// <inheritdoc/>
         public virtual bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TInput input, IHeapObject srcValue, ref TOutput output, ref UpsertInfo upsertInfo)
         {
             // This does not try to set ETag or Expiration, which will come from TInput in fuller implementations.
-            return dstLogRecord.TrySetValueObject(srcValue, in sizeInfo);
+            return dstLogRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
         }
 
         /// <inheritdoc/>

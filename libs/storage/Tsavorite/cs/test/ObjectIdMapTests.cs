@@ -51,8 +51,8 @@ namespace Tsavorite.test.Objects
                     {
                         // Assert.That() does reflection and allocates a ConstraintResult class instance, so use a bare test to filter for it in inner loops.
                         var objectId = map.Allocate();
-                        if (objectId > map.Count)
-                            Assert.Fail("objectId should be <= map.Count");
+                        if (objectId >= map.Count)
+                            Assert.Fail("objectId should be < map.Count");
                         map.Set(objectId, valueObject);
                     }
                 }

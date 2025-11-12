@@ -72,7 +72,7 @@ namespace Tsavorite.test
     public class TestObjectFunctions : SessionFunctionsBase<TestObjectInput, TestObjectOutput, Empty>
     {
         public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            => logRecord.TrySetValueObject(new TestObjectValue { value = input.value }, in sizeInfo);
+            => logRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue { value = input.value }, in sizeInfo);
 
         public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
         {
@@ -83,11 +83,11 @@ namespace Tsavorite.test
         public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo) => true;
 
         public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            => dstLogRecord.TrySetValueObject(new TestObjectValue { value = ((TestObjectValue)srcLogRecord.ValueObject).value + input.value }, in sizeInfo);
+            => dstLogRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue { value = ((TestObjectValue)srcLogRecord.ValueObject).value + input.value }, in sizeInfo);
 
         public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!logRecord.TrySetValueObject(srcValue, in sizeInfo))
+            if (!logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
             output.value = (TestObjectValue)logRecord.ValueObject;
             return true;
@@ -112,7 +112,7 @@ namespace Tsavorite.test
         }
 
         public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
-            => logRecord.TrySetValueObject(srcValue, in sizeInfo);
+            => logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
 
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
@@ -125,7 +125,7 @@ namespace Tsavorite.test
     public class TestObjectFunctionsDelete : SessionFunctionsBase<TestObjectInput, TestObjectOutput, int>
     {
         public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            => logRecord.TrySetValueObject(new TestObjectValue { value = input.value }, in sizeInfo);
+            => logRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue { value = input.value }, in sizeInfo);
 
         public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
         {
@@ -136,10 +136,10 @@ namespace Tsavorite.test
         public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo) => true;
 
         public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
-            => dstLogRecord.TrySetValueObject(new TestObjectValue { value = ((TestObjectValue)srcLogRecord.ValueObject).value + input.value }, in sizeInfo);
+            => dstLogRecord.TrySetValueObjectAndPrepareOptionals(new TestObjectValue { value = ((TestObjectValue)srcLogRecord.ValueObject).value + input.value }, in sizeInfo);
 
         public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
-            => logRecord.TrySetValueObject(srcValue, in sizeInfo);
+            => logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
 
         public override void ReadCompletionCallback(ref DiskLogRecord srcLogRecord, ref TestObjectInput input, ref TestObjectOutput output, int ctx, Status status, RecordMetadata recordMetadata)
         {
@@ -172,7 +172,7 @@ namespace Tsavorite.test
         }
 
         public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, IHeapObject srcValue, ref TestObjectOutput output, ref UpsertInfo upsertInfo)
-            => logRecord.TrySetValueObject(srcValue, in sizeInfo);
+            => logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
 
         public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TestObjectInput input)
             => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };

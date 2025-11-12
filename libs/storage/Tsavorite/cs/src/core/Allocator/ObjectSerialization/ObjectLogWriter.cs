@@ -272,8 +272,13 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
-            pinnedMemoryStream?.Dispose();
-            valueObjectSerializer?.EndSerialize();
+            var localMemoryStream = Interlocked.Exchange(ref pinnedMemoryStream, null);
+            if (localMemoryStream is not null)
+            {
+                // End serialization before disposing the pinned memory stream as it may try to flush final data which would use the pinnedMemoryStream.
+                valueObjectSerializer?.EndSerialize();
+                localMemoryStream.Dispose();
+            }
         }
     }
 }

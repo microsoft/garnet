@@ -14,7 +14,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!dstLogRecord.TrySetValueSpan(srcValue, in sizeInfo))
+            if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
@@ -25,7 +25,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, IHeapObject srcValue, ref GarnetObjectStoreOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!dstLogRecord.TrySetValueObject(srcValue, in sizeInfo))
+            if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
@@ -93,7 +93,7 @@ namespace Garnet.server
                 ? 0
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
-            _ = logRecord.TrySetValueSpan(srcValue, in sizeInfo);
+            _ = logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 
@@ -123,7 +123,7 @@ namespace Garnet.server
                 ? 0
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
-            _ = logRecord.TrySetValueObject(srcValue, in sizeInfo);
+            _ = logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 

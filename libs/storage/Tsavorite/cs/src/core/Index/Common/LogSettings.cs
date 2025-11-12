@@ -11,9 +11,9 @@ namespace Tsavorite.core
     internal class LogSettings
     {
         /// <summary>Minimum number of bits for a page size</summary>
-        public const int kMinPageSizeBits = 6;
+        public const int kMinPageSizeBits = 6;  // 64B
         /// <summary>Maximum number of bits for a page size</summary>
-        public const int kMaxPageSizeBits = 30;
+        public const int kMaxPageSizeBits = 30; // 1TB
 
         /// <summary>Minimum number of bits for a main-log segment (segments consist of one or more pages)</summary>
         public const int kMinMainLogSegmentSizeBits = kMinPageSizeBits;
@@ -40,23 +40,17 @@ namespace Tsavorite.core
         /// <summary>Maximum <see cref="NumberOfFlushBuffers"/> per flush operation. Must be a power of 2</summary>
         public const int kMaxDeserializationBuffers = 64;
 
-        /// <summary>Default number of bits for the size of an inline (not overflow) key</summary>
-        public const int kDefaultMaxInlineKeySizeBits = kLowestMaxInlineSizeBits + 1;
+        /// <summary>Maximum size of a string (key or value) is 512MB</summary>
+        public const int kMaxStringSizeBits = 29;                                       // 512MB
 
-        /// <summary>Max inline key size is 1 byte for the length (0 or 1, with 1 added to make a range of 1-2), so that the in-memory varbyte indicator word is &lt;= sizeof(long) for atomic assignment.</summary>
-        public const int kMaxInlineKeySize = 1 << 16;           // 64KB
+        /// <summary>Default number of bits for the size of an inline (not overflow) key</summary>
+        public const int kDefaultMaxInlineKeySizeBits = kLowestMaxInlineSizeBits + 1;   // 128B
 
         /// <summary>Default number of bits for the size of an inline (not overflow) value, for <see cref="SpanByteAllocator{TStoreFunctions}"/></summary>
-        public const int kDefaultMaxInlineValueSizeBits = 12;   // 4KB
-
-        /// <summary>Max inline value size is 2 bytes for the length (0 to 3, with 1 added to make a range of 1-4, and we max at 3), so that the in-memory varbyte indicator word is &lt;= sizeof(long) for atomic assignment.</summary>
-        public const int kMaxInlineValueSize = 1 << 24;         // 16MB
+        public const int kDefaultMaxInlineValueSizeBits = kMinPageSizeBits + 6;         // 4KB
 
         /// <summary>Minimum number of bits for the size of an overflow (int inline) key or value</summary>
-        public const int kLowestMaxInlineSizeBits = kMinPageSizeBits;
-
-        /// <summary>Maximum size of a string is 512MB</summary>
-        public const int kMaxStringSizeBits = 29;
+        public const int kLowestMaxInlineSizeBits = kMinPageSizeBits;                   // 64B
 
         /// <summary>
         /// Device used for main hybrid log
@@ -76,12 +70,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Size of a segment (group of pages) in the main log, in bits
         /// </summary>
-        public int SegmentSizeBits = 30;
+        public int SegmentSizeBits = 30;    // 1GB
 
         /// <summary>
         /// Size of a segment (group of pages) in the object log, in bits
         /// </summary>
-        public int ObjectLogSegmentSizeBits = 40;
+        public int ObjectLogSegmentSizeBits = 33;   // 8GB
 
         /// <summary>
         /// Total size of in-memory part of log, in bits

@@ -83,7 +83,7 @@ namespace Garnet.server
             {
                 case RespCommand.PFADD:
                     RecordSizeInfo.AssertValueDataLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input), in sizeInfo);
-                    if (!logRecord.TrySetValueLength(in sizeInfo))
+                    if (!logRecord.TrySetContentLengths(in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "PFADD");
                         return false;
@@ -103,7 +103,7 @@ namespace Garnet.server
                     //srcHLL offset: [hll allocated size = 4 byte] + [hll data structure] //memcpy + 4 (skip len size)
                     var sbSrcHLL = input.parseState.GetArgSliceByRef(0);
 
-                    if (!logRecord.TrySetValueLength(sbSrcHLL.Length, in sizeInfo))
+                    if (!logRecord.TrySetContentLengths(sbSrcHLL.Length, in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "PFMERGE");
                         return false;
@@ -120,8 +120,8 @@ namespace Garnet.server
                     break;
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
-                    var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!logRecord.TrySetValueSpan(newInputValue, in sizeInfo))
+                    var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                    if (!logRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "SETEXNX");
                         return false;
@@ -148,7 +148,7 @@ namespace Garnet.server
                     break;
                 case RespCommand.SETKEEPTTL:
                     // Copy input to value; do not change expiration
-                    _ = logRecord.TrySetValueSpan(input.parseState.GetArgSliceByRef(0).ReadOnlySpan, in sizeInfo);
+                    _ = logRecord.TrySetValueSpanAndPrepareOptionals(input.parseState.GetArgSliceByRef(0).ReadOnlySpan, in sizeInfo);
 
                     // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
                     if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(LogRecord.NoETag + 1))
@@ -173,7 +173,7 @@ namespace Garnet.server
                     var bOffset = input.arg1;
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
-                    if (!logRecord.TrySetValueLength(BitmapManager.Length(bOffset), in sizeInfo, zeroInit: true))
+                    if (!logRecord.TrySetContentLengths(BitmapManager.Length(bOffset), in sizeInfo, zeroInit: true))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "SETBIT");
                         return false;
@@ -194,7 +194,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
 
-                    if (!logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo, zeroInit: true))
+                    if (!logRecord.TrySetContentLengths(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo, zeroInit: true))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "BitField");
                         return false;
@@ -243,7 +243,7 @@ namespace Garnet.server
                     break;
                 case RespCommand.INCR:
                     // This is InitialUpdater so set the value to 1 and the length to the # of digits in "1"
-                    if (!logRecord.TrySetValueLength(1, in sizeInfo))
+                    if (!logRecord.TrySetContentLengths(1, in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "INCR");
                         return false;
@@ -256,7 +256,7 @@ namespace Garnet.server
                     var incrBy = input.arg1;
 
                     var ndigits = NumUtils.CountDigits(incrBy, out var isNegative);
-                    if (!logRecord.TrySetValueLength(ndigits + (isNegative ? 1 : 0), in sizeInfo))
+                    if (!logRecord.TrySetContentLengths(ndigits + (isNegative ? 1 : 0), in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "INCRBY");
                         return false;
@@ -266,7 +266,7 @@ namespace Garnet.server
                     break;
                 case RespCommand.DECR:
                     // This is InitialUpdater so set the value to -1 and the length to the # of digits in "-1"
-                    if (!logRecord.TrySetValueLength(2, in sizeInfo))
+                    if (!logRecord.TrySetContentLengths(2, in sizeInfo))
                     {
                         Debug.Assert(logRecord.ValueSpan.Length >= 2, "Length overflow in DECR");
                         return false;
@@ -278,7 +278,7 @@ namespace Garnet.server
                     var decrBy = -input.arg1;
 
                     ndigits = NumUtils.CountDigits(decrBy, out isNegative);
-                    if (!logRecord.TrySetValueLength(ndigits + (isNegative ? 1 : 0), in sizeInfo))
+                    if (!logRecord.TrySetContentLengths(ndigits + (isNegative ? 1 : 0), in sizeInfo))
                     {
                         functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "DECRBY");
                         return false;
@@ -295,7 +295,7 @@ namespace Garnet.server
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
-                        if (!logRecord.TrySetValueLength(functions.GetInitialLength(ref input), in sizeInfo, zeroInit: true))   // ZeroInit to be safe
+                        if (!logRecord.TrySetContentLengths(functions.GetInitialLength(ref input), in sizeInfo, zeroInit: true))   // ZeroInit to be safe
                         {
                             functionsState.logger?.LogError("Length overflow in 'default' > StartOffset: {methodName}.{caseName}", "InitialUpdater", "default");
                             return false;
@@ -320,7 +320,7 @@ namespace Garnet.server
                     }
 
                     // Copy input to value
-                    if (!logRecord.TrySetValueSpan(input.parseState.GetArgSliceByRef(0).ReadOnlySpan, in sizeInfo))
+                    if (!logRecord.TrySetValueSpanAndPrepareOptionals(input.parseState.GetArgSliceByRef(0).ReadOnlySpan, in sizeInfo))
                     {
                         functionsState.logger?.LogError("Failed to set value in {methodName}.{caseName}", "InitialUpdater", "default");
                         return false;
@@ -451,7 +451,7 @@ namespace Garnet.server
                     }
 
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!logRecord.TrySetValueSpan(inputValue, in sizeInfo))
+                    if (!logRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                         return false;
 
                     // Need to check for input.arg1 != 0 because GetRMWModifiedFieldInfo shares its logic with CopyUpdater and thus may set sizeInfo.FieldInfo.Expiration true
@@ -516,8 +516,8 @@ namespace Garnet.server
                         CopyRespTo(logRecord.ValueSpan, ref output);
                     }
 
-                    var newSetValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!logRecord.TrySetValueSpan(newSetValue, in sizeInfo))
+                    var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
+                    if (!logRecord.TrySetValueSpanAndPrepareOptionals(setValue, in sizeInfo))
                         return false;
 
                     if (addEtag != shouldUpdateEtag)
@@ -582,7 +582,7 @@ namespace Garnet.server
                     var bSetVal = (byte)(input.parseState.GetArgSliceByRef(1).ReadOnlySpan[0] - '0');
 
                     if (!BitmapManager.IsLargeEnough(logRecord.ValueSpan.Length, bOffset)
-                            && !logRecord.TrySetValueLength(BitmapManager.Length(bOffset), in sizeInfo, zeroInit: true))
+                            && !logRecord.TrySetContentLengths(BitmapManager.Length(bOffset), in sizeInfo, zeroInit: true))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
@@ -602,7 +602,7 @@ namespace Garnet.server
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs, logRecord.ValueSpan.Length)
-                            && !logRecord.TrySetValueLength(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo, zeroInit: true))
+                            && !logRecord.TrySetContentLengths(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo, zeroInit: true))
                         return false;
 
                     _ = logRecord.RemoveExpiration();
@@ -716,7 +716,7 @@ namespace Garnet.server
                     var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
                     if (newValue.Length + offset > logRecord.ValueSpan.Length
-                            && !logRecord.TrySetValueLength(newValue.Length + offset, in sizeInfo))
+                            && !logRecord.TrySetContentLengths(newValue.Length + offset, in sizeInfo))
                         return false;
 
                     newValue.CopyTo(logRecord.ValueSpan.Slice(offset));
@@ -763,7 +763,7 @@ namespace Garnet.server
                     {
                         // Try to grow in place.
                         var originalLength = logRecord.ValueSpan.Length;
-                        if (!logRecord.TrySetValueLength(originalLength + appendLength, in sizeInfo))
+                        if (!logRecord.TrySetContentLengths(originalLength + appendLength, in sizeInfo))
                             return false;
 
                         // Append the new value with the client input at the end of the old data
@@ -813,7 +813,7 @@ namespace Garnet.server
 
                             // Adjust value length if user shrinks it
                             if (valueLength < logRecord.ValueSpan.Length)
-                                _ = logRecord.TrySetValueLength(valueLength, in sizeInfo);
+                                _ = logRecord.TrySetContentLengths(valueLength, in sizeInfo);
                             return ret;
                         }
                         finally
@@ -1018,7 +1018,7 @@ namespace Garnet.server
                     shouldUpdateEtag = true;
 
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!dstLogRecord.TrySetValueSpan(inputValue, in sizeInfo))
+                    if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                         return false;
 
                     if (updatedEtag != LogRecord.NoETag)
@@ -1070,7 +1070,7 @@ namespace Garnet.server
                     }
 
                     inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                    if (!dstLogRecord.TrySetValueSpan(inputValue, in sizeInfo))
+                    if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                         return false;
 
                     if (isAddEtag != shouldUpdateEtag)

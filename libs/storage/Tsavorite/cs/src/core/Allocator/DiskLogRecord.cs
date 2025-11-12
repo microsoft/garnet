@@ -139,7 +139,7 @@ namespace Tsavorite.core
 
         private static SectorAlignedMemory AllocateBuffer(in LogRecord logRecord, SectorAlignedBufferPool bufferPool)
         {
-            var allocatedSize = RoundUp(logRecord.GetInlineRecordSizes().actualSize, Constants.kRecordAlignment);
+            var allocatedSize = RoundUp(logRecord.ActualSize, Constants.kRecordAlignment);
             var recordBuffer = bufferPool.Get(allocatedSize);
             logRecord.RecordSpan.CopyTo(recordBuffer.RequiredValidSpan);
             return recordBuffer;
@@ -234,10 +234,10 @@ namespace Tsavorite.core
         public readonly RecordFieldInfo GetRecordFieldInfo() => logRecord.GetRecordFieldInfo();
 
         /// <inheritdoc/>
-        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes() => logRecord.GetInlineRecordSizes();
+        public readonly int AllocatedSize => logRecord.AllocatedSize;
 
         /// <inheritdoc/>
-        public readonly (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects() => logRecord.GetInlineRecordSizesWithUnreadObjects();
+        public readonly int ActualSize => logRecord.ActualSize;
         #endregion //ISourceLogRecord
 
         #region Serialization to and from expanded record format
@@ -291,14 +291,14 @@ namespace Tsavorite.core
         {
             // TotalSize includes the length prefix, which is included in the output stream if we can write directly to the SpanByte, which is a span in the
             // network buffer. In case of significant shrinkage, calculate this AllocatedSize separately rather than logRecord.GetInlineRecordSizes().allocatedSize.
-            var inlineRecordSize = RoundUp(logRecord.ActualRecordSize, Constants.kRecordAlignment);
-            var estimatedTotalSize = inlineRecordSize + sizeof(int); // Include the record-size prefix in case we can use the SpanByte directly (see DirectCopyInlinePortionOfRecord)
+            var alignedInlineRecordSize = RoundUp(logRecord.ActualSize, Constants.kRecordAlignment);
+            var estimatedTotalSize = alignedInlineRecordSize + sizeof(int); // Include the record-size prefix in case we can use the SpanByte directly (see DirectCopyInlinePortionOfRecord)
 
             var heapSize = 0;
             if (logRecord.Info.RecordIsInline)
             {
                 // estimatedTotalSize is accurate here.
-                DirectCopyInlinePortionOfRecord(in logRecord, inlineRecordSize, estimatedTotalSize, maxHeapAllocationSize, memoryPool, ref output);
+                DirectCopyInlinePortionOfRecord(in logRecord, alignedInlineRecordSize, estimatedTotalSize, maxHeapAllocationSize, memoryPool, ref output);
             }
             else
             {
@@ -314,18 +314,18 @@ namespace Tsavorite.core
 
                 estimatedTotalSize += estimatedRecordHeapSize;
 
-                DirectCopyInlinePortionOfRecord(in logRecord, inlineRecordSize, estimatedTotalSize, maxHeapAllocationSize, memoryPool, ref output);
-                heapSize = SerializeHeapObjects(in logRecord, inlineRecordSize, estimatedRecordHeapSize, valueObjectSerializer, ref output);
+                DirectCopyInlinePortionOfRecord(in logRecord, alignedInlineRecordSize, estimatedTotalSize, maxHeapAllocationSize, memoryPool, ref output);
+                heapSize = SerializeHeapObjects(in logRecord, alignedInlineRecordSize, estimatedRecordHeapSize, valueObjectSerializer, ref output);
             }
-            return inlineRecordSize + heapSize;
+            return alignedInlineRecordSize + heapSize;
         }
 
         /// <summary>
-        /// Directly copies a record in inline varbyte format to the SpanByteAndMemory. Allocates <see cref="SpanByteAndMemory.Memory"/> if needed.
+        /// Directly copies a record in inline format to the SpanByteAndMemory. Allocates <see cref="SpanByteAndMemory.Memory"/> if needed.
         /// </summary>
         /// <remarks>If <paramref name="output"/>.<see cref="SpanByteAndMemory.IsSpanByte"/>, it points directly to the network buffer so we include the length prefix in the output.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void DirectCopyInlinePortionOfRecord<TSourceLogRecord>(in TSourceLogRecord logRecord, int inlineRecordSize, int estimatedTotalSize, int maxHeapAllocationSize,
+        public static void DirectCopyInlinePortionOfRecord<TSourceLogRecord>(in TSourceLogRecord logRecord, int alignedInlineRecordSize, int estimatedTotalSize, int maxHeapAllocationSize,
             MemoryPool<byte> memoryPool, ref SpanByteAndMemory output)
             where TSourceLogRecord : ISourceLogRecord
         {
@@ -340,24 +340,24 @@ namespace Tsavorite.core
                 output.EnsureHeapMemorySize(allocationSizeToUse, memoryPool);
             }
 
-            // We must clear the LogRecord's filler bit; rounding will handle length alignment to end of record without interpreting it as filler
+            // We must reset the LogRecord's filler size, because we truncated the record down to the (rounded-up) ActualSize if it had been shrunken.
+            var newFillerLength = alignedInlineRecordSize - logRecord.ActualSize;
             if (output.IsSpanByte)
             {
-                // TotalSize includes the length prefix, which is included in the output stream if we can write directly to the SpanByte,
-                // which is a span in the network buffer.
+                // TotalSize includes the length prefix. If there is a SpanByte it is a span in the network buffer, so we include the prefix length in the output stream.
                 var outPtr = output.SpanByte.ToPointer();
-                *(int*)outPtr = inlineRecordSize;
+                *(int*)outPtr = alignedInlineRecordSize;
                 outPtr += sizeof(int);
-                Buffer.MemoryCopy((byte*)logRecord.PhysicalAddress, outPtr, inlineRecordSize, inlineRecordSize);
-                VarbyteLengthUtility.ClearHasFiller(new LogRecord((long)outPtr).IndicatorAddress);
+                Buffer.MemoryCopy((byte*)logRecord.PhysicalAddress, outPtr, alignedInlineRecordSize, alignedInlineRecordSize);
+                new LogRecord((long)outPtr).SetRecordAndFillerLength(alignedInlineRecordSize, newFillerLength);
             }
             else
             {
-                // Do not include the length prefix in the output stream; this is done by the caller before writing the stream, from a temporary LogRecord created over outPtr.
+                // Do not include the length prefix in the output stream; this is done by the caller before writing the stream to the network buffer.
                 fixed (byte* outPtr = output.MemorySpan)
                 {
-                    Buffer.MemoryCopy((byte*)logRecord.PhysicalAddress, outPtr, inlineRecordSize, inlineRecordSize);
-                    VarbyteLengthUtility.ClearHasFiller(new LogRecord((long)outPtr).IndicatorAddress);
+                    Buffer.MemoryCopy((byte*)logRecord.PhysicalAddress, outPtr, alignedInlineRecordSize, alignedInlineRecordSize);
+                    new LogRecord((long)outPtr).SetRecordAndFillerLength(alignedInlineRecordSize, newFillerLength);
                 }
             }
         }
@@ -448,7 +448,7 @@ namespace Tsavorite.core
             {
                 if (serializedLogRecord.Info.KeyIsOverflow)
                 {
-                    // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
+                    // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
                     serializedLogRecord.KeyOverflow = new OverflowByteArray(keyLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     recordSpan.ReadOnlySpan.Slice((int)offset, keyLength).CopyTo(serializedLogRecord.KeyOverflow.Span);
                     offset += (uint)keyLength;
@@ -457,7 +457,7 @@ namespace Tsavorite.core
 
                 if (serializedLogRecord.Info.ValueIsOverflow)
                 {
-                    // This assignment also allocates the slot in ObjectIdMap. The varbyte length info should be unchanged from ObjectIdSize.
+                    // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
                     serializedLogRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
                     recordSpan.ReadOnlySpan.Slice((int)offset, (int)valueLength).CopyTo(serializedLogRecord.KeyOverflow.Span);
                 }

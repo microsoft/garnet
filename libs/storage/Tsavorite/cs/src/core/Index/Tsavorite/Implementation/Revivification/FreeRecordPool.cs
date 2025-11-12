@@ -57,7 +57,7 @@ namespace Tsavorite.core
             if (oldRecord.IsSet && oldRecord.Address >= minAddress)
                 return false;
 
-            long newWord = (recordSize << kSizeShiftInWord) | (address & kAddressBitMask);
+            var newWord = (recordSize << kSizeShiftInWord) | (address & kAddressBitMask);
             return Interlocked.CompareExchange(ref word, newWord, oldRecord.word) == oldRecord.word;
         }
 
@@ -65,7 +65,7 @@ namespace Tsavorite.core
         void SetEmptyAtomic(long oldWord)
         {
             // Ignore the result; this is just to clear an obsolete value, so if another thread already updated it, that's by design.
-            Interlocked.CompareExchange(ref word, emptyWord, oldWord);
+            _ = Interlocked.CompareExchange(ref word, emptyWord, oldWord);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -127,12 +127,12 @@ namespace Tsavorite.core
                 takeResult.isEmpty = false;
                 if (oldRecord.Address < minAddress)
                     return false;
-                else
-                    takeResult.addressOk = true;
+
+                takeResult.addressOk = true;
                 if (oldRecord.Size < sizeInfo.ActualInlineRecordSize)
                     return false;
-                else
-                    takeResult.recordSizeOk = true;
+
+                takeResult.recordSizeOk = true;
 
                 // If we're here, the record was set and size and address were adequate.
                 if (Interlocked.CompareExchange(ref word, emptyWord, oldRecord.word) == oldRecord.word)
@@ -151,9 +151,8 @@ namespace Tsavorite.core
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
-            // This is called for oversize, so we need hlog to get the length out of the record's value (it won't fit in FreeRecord.kSizeBits)
-            var logRecord = store.hlog.CreateLogRecord(logicalAddress);
-            return logRecord.GetInlineRecordSizes().allocatedSize;
+            // This is called for oversize, so we need hlog to get the length out of the record (it won't fit in FreeRecord.kSizeBits)
+            return LogRecord.GetAllocatedSize(logicalAddress);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -516,7 +515,7 @@ namespace Tsavorite.core
         private bool TryAddToBin(long logicalAddress, ref LogRecord logRecord, ref RevivificationStats revivStats)
         {
             var minAddress = store.GetMinRevivifiableAddress();
-            var recordSize = logRecord.GetInlineRecordSizes().allocatedSize;
+            var recordSize = logRecord.AllocatedSize;
             if (logicalAddress < minAddress || (!GetBinIndex(recordSize, out var binIndex)))
                 return false;
             if (!bins[binIndex].TryAdd(logicalAddress, recordSize, store, minAddress, ref revivStats))

@@ -15,7 +15,7 @@ namespace Garnet.server
         public bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
             ReadOnlySpan<byte> srcValue, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!logRecord.TrySetValueSpan(srcValue, in sizeInfo))
+            if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
             if (input.arg1 != 0 && !logRecord.TrySetExpiration(input.arg1))
                 return false;
@@ -26,7 +26,7 @@ namespace Garnet.server
         public bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
             IHeapObject srcValue, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!logRecord.TrySetValueObject(srcValue, in sizeInfo))
+            if (!logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
             // TODO ETag
             if (input.arg1 != 0 && !logRecord.TrySetExpiration(input.arg1))
@@ -121,7 +121,7 @@ namespace Garnet.server
                     ? 0
                     : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
-                _ = logRecord.TrySetValueSpan(newValue, in sizeInfo);
+                _ = logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo);
                 if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                     return false;
                 sizeInfo.AssertOptionals(logRecord.Info);
@@ -137,7 +137,7 @@ namespace Garnet.server
                 return true;
             }
 
-            if (!logRecord.TrySetValueSpan(newValue, in sizeInfo))
+            if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
                 return false;
             var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
             if (ok)
@@ -175,7 +175,7 @@ namespace Garnet.server
                 ? 0
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
 
-            _ = logRecord.TrySetValueObject(newValue, in sizeInfo);
+            _ = logRecord.TrySetValueObjectAndPrepareOptionals(newValue, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
             sizeInfo.AssertOptionals(logRecord.Info);

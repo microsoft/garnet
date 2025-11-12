@@ -1077,7 +1077,7 @@ namespace Tsavorite.core
                 var logRecord = new LogRecord(physicalAddress + recordOffset);
                 logRecord.InfoRef.ClearBitsForDiskImages();
 
-                long size = logRecord.GetInlineRecordSizesWithUnreadObjects().allocatedSize;
+                long size = logRecord.AllocatedSize;
                 Debug.Assert(size <= hlogBase.GetPageSize());
                 recordOffset += size;
             }
@@ -1132,7 +1132,7 @@ namespace Tsavorite.core
                         }
                     }
                 }
-                recordOffset += logRecord.GetInlineRecordSizesWithUnreadObjects().allocatedSize;
+                recordOffset += logRecord.AllocatedSize;
             }
 
             return touched;

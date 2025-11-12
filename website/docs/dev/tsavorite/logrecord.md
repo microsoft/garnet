@@ -10,7 +10,7 @@ The `LogRecord` struct is a major revision in the Tsavorite `ISessionFunctions` 
 
 Much of the record-related logic of the allocators (e.g. `SpanByteAllocator`) has been moved into the `LogRecord` structs.
 
-See LogRecord.cs for details of the layout, including `RecordType`, `Namespace`, and the ObjectLogPosition ulong if the record is not inline (has an Overflow Key and/or an Overflow or Object value).
+See [RecordDataHeader](#recorddataheader)for details of the layout, including `RecordType`, `Namespace`, and the ObjectLogPosition ulong if the record is not inline (has an Overflow Key and/or an Overflow or Object value).
 
 ## `SpanByte` and `ArgSlice` are now `PinnedSpanByte` or `ReadOnlySpan<byte>`
 
@@ -28,19 +28,19 @@ This has simplified the signature and internal implementation of TsavoriteKV its
 
 ## Removal of `BlittableAllocator`
 
-As part of the migration to `SpanByte`-only keys, `BlittableAllocator` has been removed. Tsavorite Unit Tests such as `BasicTests` and the YCSB benchmark's fixed-length test illustrate simple ways to use stack-based 'long' keys and values with `SpanByte`. This does incur some log record space overhead for the key's or value's length prefix.
+As part of the migration to `SpanByte`-only keys, `BlittableAllocator` has been removed. Tsavorite Unit Tests such as `BasicTests` and the YCSB benchmark's fixed-length test illustrate simple ways to use stack-based 'long' keys and values with `SpanByte`. This does incur some log record space overhead for the key's or value's length bytes, described below under `LogRecord`.
+
+A reduced form of `BlittableAllocator`, renamed `TsavoriteLogAllocator`, is still used by `TsavoriteLog`.
 
 ## Replace `GenericAllocator` with `ObjectAllocator`
 
-With the move to `SpanByte`-only keys we also created a new `ObjectAllocator` for a store that uses an object value type. `GenericAllocator` is not able to take SpanByte keys, and it also uses a separate object log file. `ObjectAllocator` uses a single log file; see the separate `ObjectAllocator` documentation for more details.
+With the move to `SpanByte`-only keys we also created a new `ObjectAllocator` for a store that uses an object value type. `GenericAllocator` is not able to take SpanByte keys, and stored both key and value in a separate managed array; `ObjectAllocator` uses native allocations, the same as `SpanByteAllocator`.
 
 ### IHeapObject
 
 An object field's object must inherit from `IHeapObject`. The Garnet processing layer uses `IGarnetObject`, which inherits from `IHeapObject`). The Tsavorite Unit Tests use object types that implement `IHeapObject`.
 
-`IHeapObject` provides two basic properties for size tracking:
-- MemorySize: The size the object takes in memory. This includes .NET object overhead as well as the size of the actual data. It is used in object size tracking.
-- DiskSize: The size the object will take when serialized to disk. This usually includes a length prefix followed by the actual data. JsonObject cannot efficiently track this on a per-modification basis, so there is also a "SerializedSizeIsExact" field that lets us know we can serialize the object with a known length. For other objects, Garnet ensures that each operation on an object (such as a `SortedSet`) keeps these fields up to date.
+`IHeapObject` provides methods for object management by core Tsavorite and Garnet processing. One significant property is `MemorySize`, the size the object takes in memory. This includes .NET object overhead as well as the size of the actual data. It is used in object size tracking.
 
 There are a number of other methods on IHeapObject, mostly to handle serialization.
 
@@ -104,16 +104,37 @@ For operations that take an input log record, such as `ISessionFunctions.CopyUpd
 
 This is the primary implementation which wraps a log record. It carries the log record's physical address and, if this is an `ObjectAllocator` record, an `ObjectIdMap` for that log record's log page. See `LogRecord.cs` for more details, including the record layout and comments.
 
-In the `ObjectAllocator`, `TrySetValueLength` also manages conversion between the three Value "styles". Both Keys and Values may be inline or overflow, and values additionally may be object. Keys are not mutable, so there is no `LogRecord` method to change them. Values, however, may move between any of the three:
-  - Initially, a Value in the `ObjectAllocator` may be a small inline value, such as the first couple strings of a list. This is stored as a length-prefixed byte stream "inline" in the record.
-  - Depending on the inline size limit, such a value may overflow, and become a pointer to an `OverflowAllocator` allocation. In this case, `TrySetValueLength` will handle converting the inline field value to an overflow pointer, shrinking the record, moving the optionals, and adjusting the `FillerLength` as needed. The record has no length prefix for this; its inline size cost is simply an 8-byte pointer (`SpanField.OverflowInlineSize` is the constant used).
-  - Finally, the value may be "promoted" to an actual object; e.g., allocating a `ListObject` and populating it from the `ValueSpan`. Again, `TrySetValueLength` will handle this conversion, resizing the Value, moving the optionals, and adjusting the `FillerLength` as needed. The record has no length prefix for this; its inline size cost is simply a 4-byte int containing the `ObjectId` for the `ObjectIdMap`(`ObjectIdMap.ObjectIdSize` is the constant used).
+For `ObjectAllocator` records, `TrySetContentLengthsAndPrepareOptionals` also manages conversion between the three Value "styles". Both Keys and Values may be inline or overflow, and values additionally may be object. Keys are not mutable, so there is no `LogRecord` method to change them. Values, however, may move between any of the three:
+  - Initially, a Value in the `ObjectAllocator` may be a small inline value, such as the first couple strings of a list. This is stored as a byte stream "inline" in the record.
+  - Depending on the inline size limit, such a value may overflow, and become a pointer to an `OverflowAllocator` allocation. In this case, `TrySetContentLengthsAndPrepareOptionals` will handle converting the inline field value to an overflow pointer, shrinking the record, moving the optionals, and adjusting the `FillerLength` as needed. The value length becomes `ObjectIdMap.ObjectIdSize`.
+  - Finally, the value may be "promoted" to an actual object; e.g., allocating a `ListObject` and populating it from the `ValueSpan`. Again, `TrySetContentLengthsAndPrepareOptionals` will handle this conversion, resizing the Value, moving the optionals, and adjusting the `FillerLength` as needed. The value becomes a 4-byte int containing the `ObjectId` for the `ObjectIdMap` and its length becomes `ObjectIdMap.ObjectIdSize`.
 
-  `TrySetValueLength` handles this switching between inline, overflow, and object values automatically, based upon settings in the `RecordSizeInfo` that is also passed to `ISessionFunctions` methods and then to the `LogRecord`. When `LogRecord` converts between these styles, it handles all the necessary freeing and allocations. For example, when growing a Value causes allows it to move from inline to overflow, the `byte[]` slot is allocated in `ObjectIdMap`; if it shrinks enough to return to inline, the `ObjectIdMap` slot element is nulled and the slot is added to the freelist, and the record is resized to inline.
+  `TrySetContentLengthsAndPrepareOptionals` handles this switching between inline, overflow, and object values automatically, based upon settings in the `RecordSizeInfo` that is also passed to `ISessionFunctions` methods and then to the `LogRecord`. When `LogRecord` converts between these styles, it handles all the necessary freeing and allocations. For example, when growing a Value causes allows it to move from inline to overflow, the `byte[]` slot is allocated in `ObjectIdMap`; if it shrinks enough to return to inline, the `ObjectIdMap` slot element is nulled and the slot is added to the freelist, and the record is resized to inline.
 
-  Although `TrySetValueLength` allocates the `ObjectId` slot, it does not know the actual object, so the `ISessionFunctions` implementation must create the object and call `TrySetValueObject`.
+  Although `TrySetContentLengthsAndPrepareOptionals` allocates the `ObjectId` slot, it does not know the actual object, so the `ISessionFunctions` implementation must create the object and call `TrySetValueObject`.
 
-  Performance note: `TrySetValueLength` handles all conversions. It should be beneficial to provide some leaner versions, for example string-only when lengths are unlikely to change.
+  Performance note: `TrySetContentLengthsAndPrepareOptionals` handles all conversions. It should be beneficial to provide some leaner versions, for example string-only when lengths are unlikely to change.
+
+#### RecordDataHeader
+
+This is a struct wrapper to manage the variable-length record lengths. At a high level, it manages an indicator byte for lengths, as well as fixed information such as Namespace and RecordType.
+For details of the layout, see RecordDataHeader.cs; in summary, the bytes of this header are laid out in sequence as:
+- Indicator byte: flags, number of bytes in record length (immutable), number of bytes in key length (also immutable)
+- Namespace byte (immutable): indicates the namespace value (if 127 or less) or the number of bytes in the ExtendedNamespace field
+- RecordType byte (immutable): indicates the type of the record
+- RecordLength (variable # of bytes; immutable): The allocated size of the record
+- KeyLength: (variable # of bytes; immutable until revivification): The size of the key
+- ExtendedNamespace (variable # of bytes; immutable until revivification): The bytes of the namespace if it is longer than 127 bytes
+- Key bytes (immutable until revivification)
+- Value bytes, or Overflow or Object id for the `ObjectIdMap`
+- Optionals, if present, in this order:
+  - ETag
+  - Expiration
+  - ObjectLogPosition (pseudo-optional; always present if the record Key or Value is Overflow, or the Value is an Object; used only for serialization)
+- Filler (the amount of extra space in the record, e.g. if the initial length was less than the "rounded to record alignment" or if the value shrank)
+
+Note that we do not store Value length directly. Because we must ensure that the Record length is available for Scan even when the record is actively being edited,
+we store the complete record length; for space efficiency, we then calculate the Value length from the immutable other fields rather than storing it explicitly.
 
 #### RecordSizeInfo
 
@@ -126,16 +147,16 @@ This structure is populated prior to record allocation (it is necessary to know 
   - The allocator's `PopulateRecordSizeInfo` method is called to fill in the `RecordSizeInfo` fields based upon the `RecordFieldInfo` fields and other information such as maximum inline size and so on:
     - Whether the Key or Value are inline or overflow
     - Utility methods to make it easy for the Tsavorite allocators to calculate the allocation size
-    - Other utility methods to allow `LogRecord.TrySetValueLength` to operate efficiently.
+    - Other utility methods to allow `LogRecord.TrySetContentLengthsAndPrepareOptionals` to operate efficiently.
 
 #### LogField
 
 This is a static class that provides utility functions for `LogRecord` to operate on a Key or Value field at a certain address.
 
-As a terminology note, `LogField` (and `RecordSizeInfo` and `LogRecord`) use the following terms for field layout:
-- Inline: The field is stored inline in the record, with a length prefix followed by the byte stream of the actual data. The "Inline size" is the TotalSize; the size of the length prefix plus the length of the data. The "Data size" is the length of the byte stream.
-- Overflow: The field is a byte stream that exceeds the limit to remain inline, so is stored in an overflow `byte[]`. The "Inline size" is `sizeof(ObjectId)`, which is an int; there is no field length prefix. The "Data size" is the length of the byte stream.
-- Object: The field is an object. As with overflow, the "Inline size" is `sizeof(ObjectId)`, which is an int; there is no field length prefix. The "Data size" is only relevant during serialization; it is the `IHeapObject.DataSize` field.
+As a terminology note, `LogField` (and `RecordSizeInfo` and `LogRecord`) use the following terms for field layout. In all cases, the field length is stored separately from the data, in the [RecordDataHeader](#recorddataheader):
+- Inline: The field is stored inline in the record.
+- Overflow: The field is a byte stream that exceeds the limit to remain inline, so is stored in as an `OverflowByteArray` wrapping a `byte[]`. The "Inline size" is `sizeof(ObjectId)`, which is an int. The "Data size" is the length of the byte stream.
+- Object: The field is an object implementing `IHeapObject`. As with overflow, the "Inline size" is `sizeof(ObjectId)`, which is an int. The "Data size" is only relevant during serialization; however, the `HeapMemorySize` property of the `IHeapObject` is used in object size tracking.
 
 ### DiskLogRecord struct
 
@@ -149,9 +170,9 @@ Previously `PendingContext` had separate `HeapContainers` for keys and values. H
 
 For Compaction or other operations that must carry an in-memory record's data through the pending process, `PendingContext` serializes that in-memory `LogRecord` to its `DiskLogRecord`.
 
-### RecordScanIterator
+### ObjectScanIterator
 
-`RecordScanIterator` must copy in-memory source records for Pull iterations, so it implements `ISourceLogRecord` by delegating to a `DiskLogRecord` that is instantiated over its copy buffer.
+`ObjectScanIterator` must copy in-memory source records for Pull iterations, so it implements `ISourceLogRecord` by delegating to a `DiskLogRecord` that is instantiated over its copy buffer.
 
 ### TsavoriteKVIterator
 

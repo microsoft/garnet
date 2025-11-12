@@ -15,7 +15,6 @@ namespace Tsavorite.core
 {
 #pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
-    using static VarbyteLengthUtility;
 
     /// <summary>
     /// Type-free base class for hybrid log memory allocator. Contains utility methods that do not need type args and are not performance-critical
@@ -303,7 +302,7 @@ namespace Tsavorite.core
                         {
                             var logRecord = _wrapper.CreateLogRecord(logicalAddress);
                             ref var info = ref logRecord.InfoRef;
-                            var (_, alignedRecordSize) = logRecord.GetInlineRecordSizes();
+                            var alignedRecordSize = logRecord.AllocatedSize;
                             if (info.Dirty)
                             {
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
@@ -461,7 +460,7 @@ namespace Tsavorite.core
                                 var destination = logRecord.physicalAddress;
 
                                 // Clear extra space (if any) in old record
-                                var oldSize = logRecord.GetInlineRecordSizes().allocatedSize;
+                                var oldSize = logRecord.AllocatedSize;
                                 if (oldSize > size)
                                     new Span<byte>((byte*)(destination + size), oldSize - size).Clear();
 
@@ -1938,47 +1937,49 @@ namespace Tsavorite.core
 
             // See if we have a complete record.
             var currentLength = ctx.record.available_bytes;
-            if (currentLength >= RecordInfo.Size + MinLengthMetadataBytes)
+            if (currentLength >= RecordInfo.Size + RecordDataHeader.MinHeaderBytes)
             {
                 var ptr = ctx.record.GetValidPointer();
-                var (keyLengthBytes, valueLengthBytes, _ /*usesChainedChunks*/) = DeconstructIndicatorByte(*(ptr + RecordInfo.Size));
                 var recordInfo = *(RecordInfo*)ptr;
+                var dataHeader = new RecordDataHeader(ptr + RecordInfo.Size);
+                var (numKeyLengthBytes, numRecordLengthBytes) = dataHeader.DeconstructKVByteLengths(out var headerLength);
 
-                // Initialize to "key does not match so get previous record" address to read
+                // GetRecordLength is always safe, because it is in the second sizeof(ulong) and we round up to 8-byte alignment.
+                var recordLength = dataHeader.GetRecordLength(numRecordLengthBytes);
+                if (currentLength <= headerLength)
+                {
+                    prevLengthToRead = recordLength;
+                    goto RereadCurrent;
+                }
+
+                // Initialize to "invalid record or key does not match so get previous record" address to read
                 prevAddressToRead = recordInfo.PreviousAddress;
 
                 if (recordInfo.Invalid) // includes IsNull
                     return false;
 
-                var optionalLength = LogRecord.GetOptionalLength(recordInfo);
-                var offsetToKeyStart = RecordInfo.Size + NumIndicatorBytes + keyLengthBytes + valueLengthBytes;
+                var offsetToKeyStart = dataHeader.GetOffsetToKeyStart(headerLength);
 
-                // If the length is up to offsetToKeyStart, we can read the full lengths.
+                // If the length is up to offsetToKeyStart, we can read the full lengths. If not, we'll fall through to reread the current record.
                 if (currentLength >= offsetToKeyStart)
                 {
-                    var keyLengthPtr = ptr + RecordInfo.Size + NumIndicatorBytes;
-                    var keyLength = GetKeyLength(keyLengthBytes, keyLengthPtr);
+                    var keyLength = dataHeader.GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
+                    var keyStartPtr = ptr + offsetToKeyStart;
 
                     // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
-                    if (!ctx.request_key.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.request_key, new ReadOnlySpan<byte>(ptr + offsetToKeyStart, keyLength)))
+                    if (!ctx.request_key.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.request_key, new ReadOnlySpan<byte>(keyStartPtr, keyLength)))
                         return false;
 
-                    // Values in SpanByteAllocator will always be string, thus limited to 512MB, so cast to int is OK.
-                    var valueLength = (int)GetValueLength(valueLengthBytes, keyLengthPtr + keyLengthBytes);
-                    var recordLength = offsetToKeyStart + keyLength + valueLength + optionalLength;
-
-                    // If we have the full record and the keys match, success.
+                    // Keys match. If we have the full record, return success; otherwise we'll drop through to read the full record with the length we now know.
                     if (currentLength >= recordLength)
                     {
                         ctx.diskLogRecord = DiskLogRecord.TransferFrom(ref ctx.record, transientObjectIdMap);
                         return true;
                     }
-
-                    // We need to read the same address, but with the full record length we now know.
-                    prevLengthToRead = recordLength;
                 }
             }
 
+        RereadCurrent:
             // Either we didn't have the full record size, or we didn't have enough bytes to even read the full record size. Either way, prevLengthToRead
             // is set for a re-read of the same record.
             prevAddressToRead = ctx.logicalAddress;
@@ -2110,6 +2111,9 @@ namespace Tsavorite.core
                     var startAddress = GetLogicalAddressOfStartOfPage(result.page);
                     var endAddress = startAddress + PageSize;
 
+                    // First make sure we're not trying to process a logical address that's in a page header.
+                    startAddress += PageHeader.Size;
+
                     if (result.fromAddress > startAddress)
                         startAddress = result.fromAddress;
                     if (result.untilAddress < endAddress)
@@ -2132,7 +2136,7 @@ namespace Tsavorite.core
                         {
                             var logRecord = _wrapper.CreateLogRecord(startAddress);
                             ref var info = ref logRecord.InfoRef;
-                            var (_, alignedRecordSize) = logRecord.GetInlineRecordSizes();
+                            var alignedRecordSize = logRecord.AllocatedSize;
                             if (info.Dirty)
                                 info.ClearDirtyAtomic(); // there may be read locks being taken, hence atomic
                             physicalAddress += alignedRecordSize;

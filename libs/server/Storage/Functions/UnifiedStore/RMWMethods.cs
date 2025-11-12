@@ -148,9 +148,10 @@ namespace Garnet.server
                 var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
                 var oldValueSize = srcLogRecord.ValueObject.HeapMemorySize;
 
-                // First copy the new Value and optionals to the new record. This will also ensure space for expiration if it's present.
+                // First copy the new Value and optionals to the new record. This will also ensure space and set the flag for expiration if it's present.
                 // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
-                if (!dstLogRecord.TrySetValueObject(value, in sizeInfo))
+                var expiryExisted = dstLogRecord.Info.HasExpiration;
+                if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo))
                     return false;
 
                 var cmd = input.header.cmd;
@@ -159,11 +160,7 @@ namespace Garnet.server
                     case RespCommand.EXPIRE:
                         var expirationWithOption = new ExpirationWithOption(input.arg1);
 
-                        // Expire will have allocated space for the expiration, so copy it over and do the "in-place" logic to replace it in the new record
-                        if (srcLogRecord.Info.HasExpiration)
-                            dstLogRecord.TrySetExpiration(srcLogRecord.Expiration);
-                        if (!EvaluateExpireInPlace(ref dstLogRecord, expirationWithOption.ExpireOption,
-                                expirationWithOption.ExpirationTimeInTicks, ref output))
+                        if (!EvaluateExpireInPlace(ref dstLogRecord, expirationWithOption.ExpireOption, expiryExisted, expirationWithOption.ExpirationTimeInTicks, ref output))
                             return false;
                         break;
 
@@ -252,7 +249,7 @@ namespace Garnet.server
                         ETagState.ResetState(ref functionsState.etagState);
                     }
 
-                    return EvaluateExpireInPlace(ref logRecord, expirationWithOption.ExpireOption,
+                    return EvaluateExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expiryExisted: logRecord.Info.HasExpiration,
                         expirationWithOption.ExpirationTimeInTicks, ref output);
                 case RespCommand.PERSIST:
                     if (logRecord.Info.HasExpiration)
@@ -311,10 +308,11 @@ namespace Garnet.server
             var expirationWithOption = new ExpirationWithOption(input.arg1);
 
             // First copy the old Value and non-Expiration optionals to the new record. This will also ensure space for expiration.
+            var expiryExisted = dstLogRecord.Info.HasExpiration;
             if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                 return false;
 
-            return EvaluateExpireCopyUpdate(ref dstLogRecord, in sizeInfo, expirationWithOption.ExpireOption,
+            return EvaluateExpireCopyUpdate(ref dstLogRecord, in sizeInfo, expirationWithOption.ExpireOption, expiryExisted,
                 expirationWithOption.ExpirationTimeInTicks, dstLogRecord.ValueSpan, ref output);
         }
 

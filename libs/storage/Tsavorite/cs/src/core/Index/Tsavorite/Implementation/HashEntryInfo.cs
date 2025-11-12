@@ -102,7 +102,8 @@ namespace Tsavorite.core
             return true;
         }
 
-        public override string ToString()
+        /// <inheritdoc/>
+        public override readonly string ToString()
         {
             var hashStr = GetHashString(hash);
 

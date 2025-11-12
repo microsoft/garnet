@@ -79,7 +79,7 @@ namespace Tsavorite.test.Cancellation
                     rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
-                return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
+                return logRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
             }
 
             public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
@@ -90,7 +90,7 @@ namespace Tsavorite.test.Cancellation
                     rmwInfo.Action = RMWAction.CancelOperation;
                     return false;
                 }
-                return logRecord.TrySetValueSpan(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
+                return logRecord.TrySetValueSpanAndPrepareOptionals(SpanByte.FromPinnedVariable(ref input), in sizeInfo);
             }
 
             // Upsert functions
@@ -102,7 +102,7 @@ namespace Tsavorite.test.Cancellation
                     upsertInfo.Action = UpsertAction.CancelOperation;
                     return false;
                 }
-                return logRecord.TrySetValueSpan(srcValue, in sizeInfo);
+                return logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
             }
 
             public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> srcValue, ref int output, ref UpsertInfo upsertInfo)
@@ -113,7 +113,7 @@ namespace Tsavorite.test.Cancellation
                     upsertInfo.Action = UpsertAction.CancelOperation;
                     return false;
                 }
-                return logRecord.TrySetValueSpan(srcValue, in sizeInfo);
+                return logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
             }
 
             /// <inheritdoc/>

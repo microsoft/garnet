@@ -274,10 +274,10 @@ namespace Tsavorite.core
             };
 
             /// <inheritdoc/>
-            public readonly (int actualSize, int allocatedSize) GetInlineRecordSizes() => diskLogRecord.GetInlineRecordSizes();
+            public readonly int AllocatedSize => diskLogRecord.AllocatedSize;
 
             /// <inheritdoc/>
-            public readonly (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects() => diskLogRecord.GetInlineRecordSizesWithUnreadObjects();
+            public readonly int ActualSize => diskLogRecord.ActualSize;
             #endregion // ISourceLogRecord
         }
     }

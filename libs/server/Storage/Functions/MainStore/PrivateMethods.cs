@@ -360,7 +360,7 @@ namespace Garnet.server
             o->result1 = 0;
 
             // TODO ETag?
-            if (!logRecord.TrySetValueSpan(newValue, in sizeInfo))
+            if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
             {
                 functionsState.logger?.LogError("Failed to set value in {methodName}", "EvaluateExpireCopyUpdate");
                 return false;
@@ -455,7 +455,7 @@ namespace Garnet.server
             var ndigits = NumUtils.CountDigits(val, out var isNegative);
             ndigits += isNegative ? 1 : 0;
 
-            if (!logRecord.TrySetValueLength(ndigits, in sizeInfo))
+            if (!logRecord.TrySetContentLengths(ndigits, in sizeInfo))
                 return false;
 
             var value = logRecord.ValueSpan;    // To eliminate redundant length calculations getting to Value
@@ -471,7 +471,7 @@ namespace Garnet.server
         {
             var ndigits = NumUtils.CountCharsInDouble(val, out var _, out var _, out var _);
 
-            if (!logRecord.TrySetValueLength(ndigits, in sizeInfo))
+            if (!logRecord.TrySetContentLengths(ndigits, in sizeInfo))
                 return false;
 
             var value = logRecord.ValueSpan;    // To reduce redundant length calculations getting to Value
@@ -589,7 +589,7 @@ namespace Garnet.server
                     // Move to tail of the log even when oldValue is alphanumeric
                     // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
                     output.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
-                    return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, in sizeInfo);
+                    return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcLogRecord.ValueSpan, in sizeInfo);
                 }
             }
             else
@@ -601,7 +601,7 @@ namespace Garnet.server
                         // Move to tail of the log even when oldValue is alphanumeric
                         // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
                         output.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
-                        return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, in sizeInfo);
+                        return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcLogRecord.ValueSpan, in sizeInfo);
                     }
                 }
             }
@@ -645,7 +645,7 @@ namespace Garnet.server
                     // Move to tail of the log even when oldValue is alphanumeric
                     // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
                     output.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
-                    return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, in sizeInfo);
+                    return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcLogRecord.ValueSpan, in sizeInfo);
                 }
             }
             else
@@ -657,7 +657,7 @@ namespace Garnet.server
                         // Move to tail of the log even when oldValue is alphanumeric
                         // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
                         output.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
-                        return dstLogRecord.TrySetValueSpan(srcLogRecord.ValueSpan, in sizeInfo);
+                        return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcLogRecord.ValueSpan, in sizeInfo);
                     }
                 }
             }

@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// Static class providing functions to operate on a Log field (Key Span, or Value Span or Object) at a certain address. Since (small) Objects can be represented
     /// as inline spans, this applies to those forms as well as the inline component of the Object, which is the ObjectId. The layout is:
     /// <list type="bullet">
-    ///     <item>Varbyte indicator byte and lengths; see <see cref="VarbyteLengthUtility"/> header comments for details</item>
+    ///     <item>RecordDataHeader indicator byte and lengths; see <see cref="VarbyteLengthUtility"/> header comments for details</item>
     ///     <item>Key data: either the inline data or an int ObjectId for a byte[] that is held in <see cref="ObjectIdMap"/></item>
     ///     <item>Value data: either the inline data or an int ObjectId for a byte[] that is held in <see cref="ObjectIdMap"/></item>
     /// </list>

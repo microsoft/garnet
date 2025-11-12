@@ -44,7 +44,7 @@ namespace Tsavorite.core
         OverflowByteArray KeyOverflow { get; set; }
 
         /// <summary>The value <see cref="Span{_byte_}"/>, if this is a String LogRecord; an assertion is raised if it is an Object LogRecord.</summary>
-        /// <remarks>Not a ref return as it cannot be changed directly; use <see cref="LogRecord.TrySetValueSpan(ReadOnlySpan{byte}, in RecordSizeInfo, bool)"/> instead.</remarks>
+        /// <remarks>Not a ref return as it cannot be changed directly; use <see cref="LogRecord.TrySetValueSpanAndPrepareOptionals(ReadOnlySpan{byte}, in RecordSizeInfo, bool)"/> instead.</remarks>
         Span<byte> ValueSpan { get; }
 
         /// <summary>The value object, if the value in this record is an IHeapObject; an exception is thrown if it is a Span, either inline or overflow byte[].</summary>
@@ -86,12 +86,10 @@ namespace Tsavorite.core
         /// <summary>Get the record's field info, for use in calculating required record size</summary>
         RecordFieldInfo GetRecordFieldInfo();
 
-        /// <summary>A tuple of the total size of the main-log (inline) portion of the record, with and without filler length.</summary>
-        (int actualSize, int allocatedSize) GetInlineRecordSizes();
+        /// <summary>The total allocated inline size of the main-log record; includes filler length.</summary>
+        int AllocatedSize { get; }
 
-        /// <summary>A tuple of the total size of the main-log (inline) portion of the record when it has a value object and thus may
-        ///     still have the object-length encoding which leaves the metadata's valueLength incorrect (this method works whether or
-        ///     not the value object has been read). The tuple is with and without filler length.</summary>
-        (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects();
+        /// <summary>The total used inline portion of the size of the main-log portion of the record; does not include filler length.</summary>
+        int ActualSize { get; }
     }
 }

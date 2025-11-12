@@ -17,12 +17,6 @@ namespace Tsavorite.core
         /// <summary>Indicates that the value is completed in the current chunk (there is no next chunk).</summary>
         internal const int NoValueChunkContinuationBit = 0;
 
-        /// <summary>
-        /// The size after which a key (should be rare) or value is handled as an out-of-line allocation when reading from disk.
-        /// Must be less than DiskReadBufferSize / 2 and a sector multiple, so it is separate from (and less than) <see cref="LogSettings.kMaxInlineKeySize"/>.
-        /// </summary>
-        internal const int DiskReadForceOverflowSize = 1 * 1024 * 1024;
-
         /// <summary>The size of the buffer used for writing data to and reading it from the disk. Must be a sector multiple.</summary>
         internal const int BufferSize = 1 << LogSettings.kMinObjectLogSegmentSizeBits;
 

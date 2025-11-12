@@ -12,12 +12,14 @@ namespace Tsavorite.core
     /// This is a simple stream over a pinned memory buffer, such as a SectorAlignedMemory or network buffer.
     /// </summary>
     internal class PinnedMemoryStream<TStreamBuffer> : Stream
-        where TStreamBuffer : IStreamBuffer
+        where TStreamBuffer : class, IStreamBuffer
     {
         TStreamBuffer streamBuffer;
 
         public PinnedMemoryStream(TStreamBuffer streamBuffer)
         {
+            if (streamBuffer is null)
+                throw new ArgumentNullException(nameof(streamBuffer));
             this.streamBuffer = streamBuffer;
         }
 
@@ -33,8 +35,13 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         protected override void Dispose(bool disposing)
         {
-            streamBuffer.Dispose();
-            base.Dispose(disposing);
+            // Note: this may be called from the localStreamBuffer's Dispose, so we have to be sure not to double-Dispose anything.
+            var localStreamBuffer = Interlocked.Exchange(ref streamBuffer, null);
+            if (localStreamBuffer is not null)
+            {
+                localStreamBuffer.Dispose();
+                base.Dispose(disposing);
+            }
         }
 
         /// <summary>Flush the internal buffer</summary>

@@ -140,6 +140,8 @@ namespace Tsavorite.test.Objects
                 var key1Struct = new TestObjectKey { key = i };
                 var key = SpanByte.FromPinnedVariable(ref key1Struct);
                 var value = new TestObjectValue { value = i };
+                if (i == 120)
+                    i += 0;
                 _ = bContext.Upsert(key, value, Empty.Default);
             }
 

@@ -98,7 +98,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
             /// <inheritdoc/>
             public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                if (!logRecord.TrySetValueSpan(srcValue, in sizeInfo))
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                     return false;
                 srcValue.CopyTo(ref output, memoryPool);
                 return true;
@@ -107,7 +107,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
             /// <inheritdoc/>
             public override bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
             {
-                if (!logRecord.TrySetValueSpan(srcValue, in sizeInfo))
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                     return false;
                 srcValue.CopyTo(ref output, memoryPool);
                 return true;
@@ -126,7 +126,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
             public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             {
                 // The default implementation of IPU simply writes input to destination, if there is space
-                if (!logRecord.TrySetValueSpan(input.ReadOnlySpan, in sizeInfo))
+                if (!logRecord.TrySetValueSpanAndPrepareOptionals(input.ReadOnlySpan, in sizeInfo))
                     return false;
                 input.CopyTo(ref output, memoryPool);
                 return true;

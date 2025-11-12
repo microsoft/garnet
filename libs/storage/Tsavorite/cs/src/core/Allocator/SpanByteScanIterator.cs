@@ -152,7 +152,7 @@ namespace Tsavorite.core
 
             while (totalSizes <= offset)
             {
-                var allocatedSize = new LogRecord(physicalAddress).GetInlineRecordSizes().allocatedSize;
+                var allocatedSize = new LogRecord(physicalAddress).AllocatedSize;
                 if (totalSizes + allocatedSize > offset)
                     break;
                 totalSizes += allocatedSize;
@@ -175,7 +175,7 @@ namespace Tsavorite.core
 
             // We are just getting sizes so no need for ObjectIdMap
             var logRecord = new LogRecord(physicalAddress);
-            (var _, allocatedSize) = logRecord.GetInlineRecordSizes();
+            allocatedSize = logRecord.AllocatedSize;
             return logRecord.physicalAddress;
         }
         #endregion TODO Unify with ObjectScanIterator
@@ -384,10 +384,10 @@ namespace Tsavorite.core
         public RecordFieldInfo GetRecordFieldInfo() => diskLogRecord.GetRecordFieldInfo();
 
         /// <inheritdoc/>
-        public (int actualSize, int allocatedSize) GetInlineRecordSizes() => diskLogRecord.GetInlineRecordSizes();
+        public int AllocatedSize => diskLogRecord.AllocatedSize;
 
         /// <inheritdoc/>
-        public (int actualSize, int allocatedSize) GetInlineRecordSizesWithUnreadObjects() => diskLogRecord.GetInlineRecordSizesWithUnreadObjects();
+        public int ActualSize => diskLogRecord.ActualSize;
         #endregion // ISourceLogRecord
 
         /// <summary>

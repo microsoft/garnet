@@ -48,7 +48,7 @@ namespace Garnet.server
             {
                 value = GarnetObject.Create(type);
                 _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, logRecord.ETag, out _);
-                _ = logRecord.TrySetValueObject(value, in sizeInfo);
+                _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
 
                 // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
                 if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(LogRecord.NoETag + 1))
@@ -68,7 +68,7 @@ namespace Garnet.server
             try
             {
                 var result = customObjectCommand.InitialUpdater(logRecord.Key, ref input, value, ref writer, ref rmwInfo);
-                _ = logRecord.TrySetValueObject(value, in sizeInfo);
+                _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
                 if (result)
                     sizeInfo.AssertOptionals(logRecord.Info);
                 return result;

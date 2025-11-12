@@ -81,32 +81,31 @@ namespace Garnet.server
                 key, ref input, out _);
         }
 
-        bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, ReadOnlySpan<byte> newValue, ref GarnetUnifiedStoreOutput output)
+        bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, bool expiryExisted, long newExpiry, ReadOnlySpan<byte> newValue, ref GarnetUnifiedStoreOutput output)
         {
             // TODO ETag?
-            if (!logRecord.TrySetValueSpan(newValue, in sizeInfo))
+            if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
             {
                 functionsState.logger?.LogError("Failed to set value in {methodName}", "EvaluateExpireCopyUpdate");
                 return false;
             }
 
-            return TrySetRecordExpiration(ref logRecord, optionType, newExpiry, ref output);
+            return TrySetRecordExpiration(ref logRecord, optionType, expiryExisted, newExpiry, ref output);
         }
 
-        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref GarnetUnifiedStoreOutput output)
+        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, bool expiryExisted, long newExpiry, ref GarnetUnifiedStoreOutput output)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 
-            return TrySetRecordExpiration(ref logRecord, optionType, newExpiry, ref output);
+            return TrySetRecordExpiration(ref logRecord, optionType, expiryExisted, newExpiry, ref output);
         }
 
-        bool TrySetRecordExpiration(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref GarnetUnifiedStoreOutput output)
+        bool TrySetRecordExpiration(ref LogRecord logRecord, ExpireOption optionType, bool expiryExisted, long newExpiry, ref GarnetUnifiedStoreOutput output)
         {
             var o = (OutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
             o->result1 = 0;
-            var expiryExists = logRecord.Info.HasExpiration;
 
-            if (expiryExists)
+            if (expiryExisted)
             {
                 // Expiration already exists so there is no need to check for space (i.e. failure of TrySetExpiration)
                 switch (optionType)
@@ -139,7 +138,7 @@ namespace Garnet.server
                 }
             }
 
-            // No expiration yet. Because this is CopyUpdate we should already have verified the space, but check anyway
+            // No expiration yet.
             switch (optionType)
             {
                 case ExpireOption.NX:

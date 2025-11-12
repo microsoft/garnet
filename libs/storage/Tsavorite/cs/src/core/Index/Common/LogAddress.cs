@@ -30,7 +30,7 @@ namespace Tsavorite.core
         public const long MaxValidAddress = kAbsoluteAddressBitMask;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool IsReadCache(long address) => (address & RecordInfo.kIsReadCacheBitMask) == RecordInfo.kIsReadCacheBitMask;
+        internal static bool IsReadCache(long address) => ((ulong)address & RecordInfo.kIsReadCacheBitMask) == RecordInfo.kIsReadCacheBitMask;
 
         /// <summary>Get the absolute address (no readcache bit)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

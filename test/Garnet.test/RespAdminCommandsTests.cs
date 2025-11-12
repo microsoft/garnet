@@ -393,9 +393,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 for (int i = 0; i < 1000; i++)
-                {
                     db.StringSet($"SeSaveRecoverTestKey{i:0000}", $"SeSaveRecoverTestValue");
-                }
 
                 for (int i = 0; i < 1000; i++)
                 {
@@ -411,9 +409,7 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
 
                 for (int i = 1000; i < 2000; i++)
-                {
                     db.StringSet($"SeSaveRecoverTestKey{i:0000}", $"SeSaveRecoverTestValue");
-                }
 
                 for (int i = 1000; i < 2000; i++)
                 {

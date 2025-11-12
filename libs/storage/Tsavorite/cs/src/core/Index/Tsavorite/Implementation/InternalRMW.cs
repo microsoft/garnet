@@ -266,7 +266,7 @@ namespace Tsavorite.core
             {
                 var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
                 ref RevivificationStats stats = ref sessionFunctions.Ctx.RevivificationStats;
-                if (logRecord.TrySetValueLength(in sizeInfo))
+                if (logRecord.TrySetContentLengths(in sizeInfo))
                 {
                     logRecord.InfoRef.ClearTombstone();
                     logRecord.ClearOptionals();
@@ -636,8 +636,7 @@ namespace Tsavorite.core
             // Try to reinitialize in place
             var sizeInfo = hlog.GetRMWInitialRecordSize(logRecord.Key, ref input, sessionFunctions);
 
-            logRecord.ClearOptionals();
-            if (logRecord.TrySetValueLength(in sizeInfo))
+            if (logRecord.TryReinitializeValueLength(in sizeInfo))
             {
                 if (sessionFunctions.InitialUpdater(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
                 {

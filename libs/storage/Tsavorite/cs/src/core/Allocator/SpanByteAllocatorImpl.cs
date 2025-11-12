@@ -144,12 +144,12 @@ namespace Tsavorite.core
 
         public void PopulateRecordSizeInfo(ref RecordSizeInfo sizeInfo)
         {
-            // For SpanByteAllocator, we are always inline. Keys are limited to 3 bytes though, to make the Varbyte indicator word assignment atomic.
+            // For SpanByteAllocator, we are always inline.
             // Key
             sizeInfo.KeyIsInline = true;
             var keySize = sizeInfo.FieldInfo.KeySize;
-            if (keySize > LogSettings.kMaxInlineKeySize)
-                throw new TsavoriteException($"Max inline key size is {LogSettings.kMaxInlineKeySize}");
+            if (keySize > 1 << LogSettings.kMaxStringSizeBits)
+                throw new TsavoriteException($"Max inline key size is {LogSettings.kMaxStringSizeBits}");
 
             // Value
             sizeInfo.MaxInlineValueSize = int.MaxValue; // Not currently doing out-of-line for SpanByteAllocator

@@ -10,7 +10,7 @@ using System.Text;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Represents contiguous region of arbitrary _pinned_ memory.
+    /// Represents contiguous region of arbitrary pinned memory.
     /// </summary>
     /// <remarks>
     /// SAFETY: This type is used to represent arguments that are assumed to point to pinned memory.
