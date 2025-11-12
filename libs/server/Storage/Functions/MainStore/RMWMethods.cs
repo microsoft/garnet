@@ -601,11 +601,14 @@ namespace Garnet.server
                         value.UnmarkExtraMetadata();
                         rmwInfo.SetUsedValueLength(ref recordInfo, ref value, value.TotalSize);
                         output.SpanByte.AsSpan()[0] = 1;
+                        EtagState.ResetState(ref functionsState.etagState);
+                        return IPUResult.Succeeded;
                     }
-                    // does not update etag
-                    // reset etag state that may have been initialized earlier
-                    EtagState.ResetState(ref functionsState.etagState);
-                    return IPUResult.Succeeded;
+                    else
+                    {
+                        EtagState.ResetState(ref functionsState.etagState);
+                        return IPUResult.NotUpdated;
+                    }
 
                 case RespCommand.INCR:
                     if (!TryInPlaceUpdateNumber(ref value, ref output, ref rmwInfo, ref recordInfo, input: 1, functionsState.etagState.etagSkippedStart))
