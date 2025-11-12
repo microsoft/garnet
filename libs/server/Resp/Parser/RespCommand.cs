@@ -2802,7 +2802,10 @@ namespace Garnet.server
             for (var i = 0; i < count; i++)
             {
                 if (!parseState.Read(i, ref ptr, recvBufferPtr + bytesRead))
+                {
+                    success = false;
                     return RespCommand.INVALID;
+                }
             }
 
             endReadHead = (int)(ptr - recvBufferPtr);

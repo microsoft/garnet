@@ -2170,7 +2170,7 @@ namespace Garnet.test
             var key = "myKey";
             var val = "myKeyValue";
             var val2 = "myKeyValue2";
-
+             
             db.Execute("EXECWITHETAG", "SET", key, val);
 
             var len = db.StringAppend(key, val2);
@@ -2209,6 +2209,7 @@ namespace Garnet.test
 
             // Test appending to a key with a large value
             var largeVal = new string('a', 1000000);
+            db.StringSet(key, largeVal);
             db.Execute("EXECWITHETAG", "SET", key, largeVal);
             var len3 = db.StringAppend(key, val2);
             ClassicAssert.AreEqual(largeVal.Length + val2.Length, len3);
