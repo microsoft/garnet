@@ -522,10 +522,10 @@ namespace Garnet.test.cluster
         }
 
 
-        [Test, CancelAfter(1000)]
-        public void ClusterMeetAfterFailover(CancellationToken cancellationToken)
+        [Test, CancelAfter(60_000)]
+        public void ClusterMeetFromReplica(CancellationToken cancellationToken)
         {
-            var nodes_count = 4;
+            var nodes_count = 3;
             context.CreateInstances(
                 nodes_count,
                 disableObjects: false,
@@ -537,22 +537,25 @@ namespace Garnet.test.cluster
                 useAofNullDevice: true);
             context.CreateConnection();
 
+            context.clusterTestUtils.SetConfigEpoch(0, 1);
+            context.clusterTestUtils.SetConfigEpoch(1, 2);
+            context.clusterTestUtils.SetConfigEpoch(2, 3);
             context.clusterTestUtils.Meet(0, 1, logger: context.logger);
             context.clusterTestUtils.WaitForConfigPropagation(1, [0, 1], null);
+
             context.clusterTestUtils.ClusterReplicate(1, 0, logger: context.logger);
             context.clusterTestUtils.WaitForConfigPropagation(1, [0, 1], null);
 
             context.clusterTestUtils.AddSlotsRange(0, [(0, 16383)], logger: context.logger);
             context.clusterTestUtils.WaitForConfigPropagation(0, [0, 1], null);
 
-            context.clusterTestUtils.ClusterFailover(1);
-            context.clusterTestUtils.WaitForFailoverCompleted(1);
+            context.clusterTestUtils.Meet(2, 1, logger: context.logger);
+            context.clusterTestUtils.WaitForConfigPropagation(2, [0, 1, 2], null);
 
-
-            context.clusterTestUtils.Meet(2, 0, logger: context.logger);
-            context.clusterTestUtils.Meet(3, 0, logger: context.logger);
-
-            var nodes = context.clusterTestUtils.ClusterNodes(3);
+            for (int i = 0; i < nodes_count; i++)
+            {
+                Assert.That(nodes_count, Is.EqualTo(context.clusterTestUtils.ClusterNodes(i).Nodes.Count));
+            }
         }
     }
 }
