@@ -138,6 +138,9 @@ namespace Garnet.server
         /// <summary>
         /// RENAME
         /// </summary>
+        /// <param name="oldKey">The old key to be renamed.</param>
+        /// <param name="newKey">The new key name.</param>
+        /// <param name="withEtag">Whether to include the ETag in the operation</param>
         /// <returns></returns>
         GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false);
 

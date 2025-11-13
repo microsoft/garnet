@@ -20,7 +20,7 @@ namespace Garnet.cluster
         {
             var storeBeginAddress = clusterProvider.storeWrapper.store.Log.BeginAddress;
             var storeTailAddress = clusterProvider.storeWrapper.store.Log.TailAddress;
-            var mainStorePageSize = 1 << clusterProvider.serverOptions.PageSizeBits();
+            var storePageSize = 1 << clusterProvider.serverOptions.PageSizeBits();
 
 #if DEBUG
             // Only on Debug mode
@@ -29,7 +29,7 @@ namespace Garnet.cluster
 
             // Send store
             logger?.LogWarning("Store migrate scan range [{storeBeginAddress}, {storeTailAddress}]", storeBeginAddress, storeTailAddress);
-            var success = await CreateAndRunMigrateTasks(storeBeginAddress, storeTailAddress, mainStorePageSize);
+            var success = await CreateAndRunMigrateTasks(storeBeginAddress, storeTailAddress, storePageSize);
             if (!success) return false;
 
             return true;

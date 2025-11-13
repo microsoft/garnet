@@ -14,8 +14,7 @@ namespace Garnet.cluster
         {
             public readonly Sketch sketch;
             public readonly List<byte[]> keysToDelete;
-            public MainStoreScan mss;
-            public ObjectStoreScan oss;
+            public StoreScan storeScan;
 
             readonly MigrateSession session;
             readonly GarnetClientSession gcs;
@@ -33,8 +32,7 @@ namespace Garnet.cluster
                 gcs = session.GetGarnetClient();
                 localServerSession = session.GetLocalSession();
                 this.sketch = sketch ?? new(keyCount: batchSize << 2);
-                mss = new MainStoreScan(this);
-                oss = new ObjectStoreScan(this);
+                storeScan = new StoreScan(this);
                 keysToDelete = [];
             }
 
@@ -58,7 +56,7 @@ namespace Garnet.cluster
             /// <param name="currentAddress"></param>
             /// <param name="endAddress"></param>
             public void Scan(ref long currentAddress, long endAddress)
-                => localServerSession.BasicGarnetApi.IterateStore(ref mss, ref currentAddress, endAddress, endAddress,
+                => localServerSession.BasicGarnetApi.IterateStore(ref storeScan, ref currentAddress, endAddress, endAddress,
                     includeTombstones: true);
 
             /// <summary>

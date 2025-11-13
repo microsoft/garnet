@@ -284,7 +284,7 @@ namespace Tsavorite.core
         private readonly int GetFillerLength(int recordLength)
         {
             var fillerLen = (*HeaderPtr >> kFillerLengthIndicatorShift) & kFillerLengthIndicatorBitMask;
-            return fillerLen < 3 ? fillerLen + 1: *(int*)((long)RecordInfoPtr + recordLength - LogRecord.FillerLengthSize);
+            return fillerLen < 3 ? fillerLen + 1 : *(int*)((long)RecordInfoPtr + recordLength - LogRecord.FillerLengthSize);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

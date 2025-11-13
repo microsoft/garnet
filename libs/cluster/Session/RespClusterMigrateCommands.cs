@@ -121,7 +121,7 @@ namespace Garnet.cluster
                             var keySlice = PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key);
                             if (replaceOption || !Exists(keySlice))
                                 _ = basicGarnetApi.SET(in diskLogRecord);
-                            
+
                             diskLogRecord.Dispose();
                             i++;
                         }

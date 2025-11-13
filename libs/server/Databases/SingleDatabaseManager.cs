@@ -81,15 +81,11 @@ namespace Garnet.server
             catch (TsavoriteNoHybridLogException ex)
             {
                 // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
-                Logger?.LogInformation(ex,
-                    "No Hybrid Log found for recovery; storeVersion = {storeVersion};",
-                    storeVersion);
+                Logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion};", storeVersion);
             }
             catch (Exception ex)
             {
-                Logger?.LogInformation(ex,
-                    "Error during recovery of store; storeVersion = {storeVersion};",
-                    storeVersion);
+                Logger?.LogInformation(ex, "Error during recovery of store; storeVersion = {storeVersion};", storeVersion);
 
                 if (StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw;

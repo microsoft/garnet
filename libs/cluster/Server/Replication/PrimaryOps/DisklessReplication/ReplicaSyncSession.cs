@@ -188,7 +188,7 @@ namespace Garnet.cluster
         {
             var localPrimaryReplId = clusterProvider.replicationManager.PrimaryReplId;
             var sameHistory = localPrimaryReplId.Equals(replicaSyncMetadata.currentPrimaryReplId, StringComparison.Ordinal);
-            var sendMainStore = !sameHistory || replicaSyncMetadata.currentStoreVersion != currentStoreVersion;
+            var sendStore = !sameHistory || replicaSyncMetadata.currentStoreVersion != currentStoreVersion;
 
             var aofBeginAddress = clusterProvider.storeWrapper.appendOnlyFile.BeginAddress;
             var aofTailAddress = clusterProvider.storeWrapper.appendOnlyFile.TailAddress;
@@ -201,7 +201,7 @@ namespace Garnet.cluster
             // 2. Replica has different store version than primary
             // 3. Replica has truncated AOF
             // 4. The AOF to be replayed in case of a partial sync is larger than the specified threshold
-            fullSync = sendMainStore || outOfRangeAof || aofTooLarge;
+            fullSync = sendStore || outOfRangeAof || aofTooLarge;
             return fullSync;
         }
 

@@ -22,7 +22,7 @@ namespace Garnet.cluster
                 internal KeyIterationInfo(int slot) => this.slot = slot;
             }
 
-            internal sealed class MainStoreCountKeys : IScanIteratorFunctions
+            internal sealed class CountKeys : IScanIteratorFunctions
             {
                 private readonly KeyIterationInfo info;
                 // This must be a class as it is passed through pending IO operations
@@ -30,7 +30,7 @@ namespace Garnet.cluster
                 internal int KeyCount { get => info.keyCount; set => info.keyCount = value; }
                 internal int Slot => info.slot;
 
-                internal MainStoreCountKeys(int slot) => info = new(slot);
+                internal CountKeys(int slot) => info = new(slot);
 
                 public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                     where TSourceLogRecord : ISourceLogRecord
@@ -46,36 +46,12 @@ namespace Garnet.cluster
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal sealed class ObjectStoreCountKeys : IScanIteratorFunctions
-            {
-                private readonly KeyIterationInfo info;
-                // This must be a class as it is passed through pending IO operations
-
-                internal int KeyCount { get => info.keyCount; set => info.keyCount = value; }
-                internal int Slot => info.slot;
-
-                internal ObjectStoreCountKeys(int slot) => info = new(slot);
-
-                public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    where TSourceLogRecord : ISourceLogRecord
-                {
-                    cursorRecordResult = CursorRecordResult.Accept; // default; not used here , out CursorRecordResult cursorRecordResult
-                    if (HashSlotUtils.HashSlot(srcLogRecord.Key) == Slot && !Expired(in srcLogRecord))
-                        KeyCount++;
-                    return true;
-                }
-
-                public bool OnStart(long beginAddress, long endAddress) => true;
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
-            }
-
-            internal readonly struct MainStoreGetKeysInSlot : IScanIteratorFunctions
+            internal readonly struct GetKeysInSlot : IScanIteratorFunctions
             {
                 readonly List<byte[]> keys;
                 readonly int slot, maxKeyCount;
 
-                internal MainStoreGetKeysInSlot(List<byte[]> keys, int slot, int maxKeyCount)
+                internal GetKeysInSlot(List<byte[]> keys, int slot, int maxKeyCount)
                 {
                     this.keys = keys;
                     this.slot = slot;
@@ -90,32 +66,6 @@ namespace Garnet.cluster
                     if (HashSlotUtils.HashSlot(key) == slot && !Expired(in srcLogRecord))
                         keys.Add(key.ToArray());
                     return keys.Count < maxKeyCount;
-                }
-
-                public bool OnStart(long beginAddress, long endAddress) => true;
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
-            }
-
-            internal readonly struct ObjectStoreGetKeysInSlot : IScanIteratorFunctions
-            {
-                readonly List<byte[]> keys;
-                readonly int slot;
-
-                internal ObjectStoreGetKeysInSlot(List<byte[]> keys, int slot)
-                {
-                    this.keys = keys;
-                    this.slot = slot;
-                }
-
-                public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    where TSourceLogRecord : ISourceLogRecord
-                {
-                    cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    var key = srcLogRecord.Key;
-                    if (HashSlotUtils.HashSlot(key) == slot && !Expired(in srcLogRecord))
-                        keys.Add(key.ToArray());
-                    return true;
                 }
 
                 public bool OnStart(long beginAddress, long endAddress) => true;

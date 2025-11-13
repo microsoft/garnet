@@ -259,7 +259,7 @@ namespace Garnet.cluster
                     var logFactory = opts.GetInitializedDeviceFactory(LogDir);
 
                     // These must match GarnetServerOptions.GetSettings, EnableStorageTier
-                    return isObj 
+                    return isObj
                         ? logFactory.Get(new FileDescriptor("Store", "hlog_objs"))
                         : logFactory.Get(new FileDescriptor("Store", "hlog"));
                 }

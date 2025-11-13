@@ -191,7 +191,7 @@ namespace Tsavorite.core
             logCommitManager = logSettings.LogCommitManager ??
                 new DeviceLogCommitCheckpointManager
                     (new LocalStorageNamedDeviceFactoryCreator(),
-                    new DefaultCheckpointNamingScheme( logSettings.LogCommitDir ?? new FileInfo(logSettings.LogDevice.FileName).Directory.FullName),
+                    new DefaultCheckpointNamingScheme(logSettings.LogCommitDir ?? new FileInfo(logSettings.LogDevice.FileName).Directory.FullName),
                     !logSettings.ReadOnlyMode && logSettings.RemoveOutdatedCommits);
 
             if (logSettings.LogCommitManager == null)

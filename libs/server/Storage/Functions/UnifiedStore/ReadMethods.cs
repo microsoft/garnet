@@ -8,8 +8,8 @@ using Tsavorite.core;
 namespace Garnet.server
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using static Utility;
     using static LogRecordUtils;
+    using static Utility;
 
     /// <summary>
     /// Unified store functions

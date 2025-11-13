@@ -40,7 +40,7 @@ namespace Tsavorite.core
 
         /// <summary>Value of the tail before initialization; start at -1 so Allocate() sets it to 0</summary>
         private const int InitialTail = -1;
-        
+
         /// <summary>The next index to be returned; <see cref="InitialTail"/> if we are not yet initialized.</summary>
         internal int tail = InitialTail;
 

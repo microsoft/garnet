@@ -333,9 +333,9 @@ namespace Garnet.server
 
             if (!DefaultDatabase.StoreIndexMaxedOut)
             {
-                var dbMainStore = DefaultDatabase.Store;
-                if (GrowIndexIfNeeded(StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, dbMainStore.OverflowBucketAllocations,
-                        () => dbMainStore.IndexSize, async () => await dbMainStore.GrowIndexAsync()))
+                var store = DefaultDatabase.Store;
+                if (GrowIndexIfNeeded(StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
+                        () => store.IndexSize, async () => await store.GrowIndexAsync()))
                 {
                     db.StoreIndexMaxedOut = true;
                 }
@@ -565,12 +565,12 @@ namespace Garnet.server
             using var iter1 = db.Store.Log.Scan(db.Store.Log.ReadOnlyAddress, db.Store.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering, includeClosedRecords: true);
             while (iter1.GetNext())
             {
-                if (iter1.Info.ValueIsObject)
-                {
-                    var valueObject = iter1.ValueObject;
-                    if (valueObject != null)
-                        ((GarnetObjectBase)iter1.ValueObject).ClearSerializedObjectData();
-                }
+                if (!iter1.Info.ValueIsObject)
+                    continue;
+
+                var valueObject = iter1.ValueObject;
+                if (valueObject != null)
+                    ((GarnetObjectBase)iter1.ValueObject).ClearSerializedObjectData();
             }
 
             logger?.LogInformation("Completed checkpoint for DB ID: {id}", db.Id);

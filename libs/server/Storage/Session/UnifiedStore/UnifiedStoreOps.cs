@@ -272,7 +272,7 @@ namespace Garnet.server
                         if (logRecord.Info.HasETag)
                             functionsState.etagState.ETag = logRecord.ETag;
                     }
-                }                
+                }
 
                 status = GET(oldKey, ref input, ref output, ref context);
                 if (status != GarnetStatus.OK)

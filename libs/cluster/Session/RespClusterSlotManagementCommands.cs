@@ -288,7 +288,7 @@ namespace Garnet.cluster
 
             var slots = new HashSet<int> { slot };
             ClusterManager.DeleteKeysInSlots(basicGarnetApi, slots);
-            
+
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
 
