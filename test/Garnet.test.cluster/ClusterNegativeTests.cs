@@ -520,5 +520,39 @@ namespace Garnet.test.cluster
                 }
             }
         }
+
+
+        [Test, CancelAfter(1000)]
+        public void ClusterMeetAfterFailover(CancellationToken cancellationToken)
+        {
+            var nodes_count = 4;
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                timeout: timeout,
+                OnDemandCheckpoint: true,
+                FastAofTruncate: true,
+                CommitFrequencyMs: -1,
+                useAofNullDevice: true);
+            context.CreateConnection();
+
+            context.clusterTestUtils.Meet(0, 1, logger: context.logger);
+            context.clusterTestUtils.WaitForConfigPropagation(1, [0, 1], null);
+            context.clusterTestUtils.ClusterReplicate(1, 0, logger: context.logger);
+            context.clusterTestUtils.WaitForConfigPropagation(1, [0, 1], null);
+
+            context.clusterTestUtils.AddSlotsRange(0, [(0, 16383)], logger: context.logger);
+            context.clusterTestUtils.WaitForConfigPropagation(0, [0, 1], null);
+
+            context.clusterTestUtils.ClusterFailover(1);
+            context.clusterTestUtils.WaitForFailoverCompleted(1);
+
+
+            context.clusterTestUtils.Meet(2, 0, logger: context.logger);
+            context.clusterTestUtils.Meet(3, 0, logger: context.logger);
+
+            var nodes = context.clusterTestUtils.ClusterNodes(3);
+        }
     }
 }

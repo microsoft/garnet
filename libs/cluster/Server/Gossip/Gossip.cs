@@ -206,6 +206,7 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Meet terminated with error");
+                Console.WriteLine($"Meet terminated with error {ex}");
                 if (created) gsn?.Dispose();
                 gossipStats.UpdateMeetRequestsFailed();
             }
