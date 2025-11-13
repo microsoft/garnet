@@ -1541,12 +1541,12 @@ namespace Tsavorite.core
             ClearPage(pageIndex, (int)GetOffsetOnPage(tailAddress));
 
             // Printing debug info
-            logger?.LogInformation("******* Recovered HybridLog Stats *******");
-            logger?.LogInformation("Head Address: {HeadAddress}", HeadAddress);
-            logger?.LogInformation("Safe Head Address: {SafeHeadAddress}", SafeHeadAddress);
-            logger?.LogInformation("ReadOnly Address: {ReadOnlyAddress}", ReadOnlyAddress);
-            logger?.LogInformation("Safe ReadOnly Address: {SafeReadOnlyAddress}", SafeReadOnlyAddress);
-            logger?.LogInformation("Tail Address: {tailAddress}", tailAddress);
+            logger?.LogTrace("******* Recovered HybridLog Stats *******");
+            logger?.LogTrace("Head Address: {HeadAddress}", HeadAddress);
+            logger?.LogTrace("Safe Head Address: {SafeHeadAddress}", SafeHeadAddress);
+            logger?.LogTrace("ReadOnly Address: {ReadOnlyAddress}", ReadOnlyAddress);
+            logger?.LogTrace("Safe ReadOnly Address: {SafeReadOnlyAddress}", SafeReadOnlyAddress);
+            logger?.LogTrace("Tail Address: {tailAddress}", tailAddress);
         }
 
         /// <summary>Read a main log record to <see cref="SectorAlignedMemory"/> - used for RUMD operations.</summary>

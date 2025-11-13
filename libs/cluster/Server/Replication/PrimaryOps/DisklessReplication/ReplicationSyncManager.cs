@@ -92,7 +92,14 @@ namespace Garnet.cluster
         /// <returns></returns>
         public bool AddReplicaSyncSession(SyncMetadata replicaSyncMetadata, out ReplicaSyncSession replicaSyncSession)
         {
-            replicaSyncSession = new ReplicaSyncSession(ClusterProvider.storeWrapper, ClusterProvider, replicaSyncMetadata, cts.Token, logger: logger);
+            replicaSyncSession = new ReplicaSyncSession(
+                ClusterProvider.storeWrapper,
+                ClusterProvider,
+                replicaAofBeginAddress: default,
+                replicaAofTailAddress: default,
+                replicaSyncMetadata,
+                cts.Token,
+                logger: logger);
             replicaSyncSession.SetStatus(SyncStatus.INITIALIZING);
             try
             {
@@ -221,12 +228,12 @@ namespace Garnet.cluster
                 while (true)
                 {
                     // Minimum address that we can serve assuming aof-locking and no aof-null-device
-                    var minServiceableAofAddress = ClusterProvider.storeWrapper.appendOnlyFile.BeginAddress;
+                    var minServiceableAofAddress = ClusterProvider.storeWrapper.appendOnlyFile.Log.BeginAddress;
 
                     // Lock AOF address for sync streaming
                     // If clusterProvider.allowDataLoss is set the addition never fails,
                     // otherwise failure occurs if AOF has been truncated beyond minServiceableAofAddress
-                    if (ClusterProvider.replicationManager.TryAddReplicationTasks(GetSessionStore.GetSessions(), minServiceableAofAddress))
+                    if (ClusterProvider.replicationManager.AofSyncDriverStore.TryAddReplicationDrivers(GetSessionStore.GetSessions(), ref minServiceableAofAddress))
                         break;
 
                     // Retry if failed to lock AOF address because truncation occurred
@@ -256,7 +263,7 @@ namespace Garnet.cluster
                         else
                         {
                             // Reset replica database in preparation for full sync
-                            Sessions[i].SetFlushTask(Sessions[i].ExecuteAsync(["CLUSTER", "FLUSHALL"]));
+                            Sessions[i].SetFlushTask(Sessions[i].IssueFlushAllAsync());
                             fullSync = true;
                         }
                     }

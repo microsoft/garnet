@@ -118,9 +118,9 @@ namespace Garnet.cluster
         /// <param name="replicaAofBeginAddress"></param>
         /// <param name="replicaAofTailAddress"></param>
         /// <returns></returns>
-        public bool TryAddReplicaSyncSession(string replicaNodeId, string replicaAssignedPrimaryId, CheckpointEntry replicaCheckpointEntry, long replicaAofBeginAddress, long replicaAofTailAddress)
+        public bool TryAddReplicaSyncSession(string replicaNodeId, string replicaAssignedPrimaryId, CheckpointEntry replicaCheckpointEntry, AofAddress replicaAofBeginAddress, AofAddress replicaAofTailAddress)
         {
-            var retSession = new ReplicaSyncSession(storeWrapper, clusterProvider, replicaSyncMetadata: null, token: default, replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, replicaAofBeginAddress, replicaAofTailAddress, logger);
+            var retSession = new ReplicaSyncSession(storeWrapper, clusterProvider, replicaAofBeginAddress, replicaAofTailAddress, replicaSyncMetadata: null, token: default, replicaNodeId, replicaAssignedPrimaryId, replicaCheckpointEntry, logger);
             var success = false;
             try
             {
@@ -160,7 +160,7 @@ namespace Garnet.cluster
             {
                 _lock.WriteLock();
                 if (_disposed) return true;
-                for (int i = 0; i < numSessions; i++)
+                for (var i = 0; i < numSessions; i++)
                 {
                     var s = sessions[i];
                     if (s.replicaNodeId == remoteNodeId)

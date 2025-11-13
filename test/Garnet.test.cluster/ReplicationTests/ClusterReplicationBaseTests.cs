@@ -15,6 +15,7 @@ using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using NUnit.Framework.Internal;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
@@ -77,14 +78,15 @@ namespace Garnet.test.cluster
             return testList.ToArray();
         }
 
-        ClusterTestContext context;
+        protected ClusterTestContext context;
 
         public TextWriter LogTextWriter { get; set; }
 
         protected bool useTLS = false;
         protected bool asyncReplay = false;
         readonly int timeout = 60;
-        readonly int keyCount = 256;
+        protected int keyCount = 256;
+        protected int sublogCount = 1;
 
         public Dictionary<string, LogLevel> monitorTests = new()
         {
@@ -110,11 +112,13 @@ namespace Garnet.test.cluster
         [Category("REPLICATION")]
         public void ClusterSRTest([Values] bool disableObjects)
         {
-            var replica_count = 1;// Per primary
+            var replica_count = 1;
             var primary_count = 1;
-            var nodes_count = primary_count + primary_count * replica_count;
+            var nodes_count = 2;
+            var primaryIndex = 0;
+            var replicaIndex = 1;
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -136,11 +140,11 @@ namespace Garnet.test.cluster
             //Populate Primary
             context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
 
-            // Wait for replica sync
-            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex: 0, secondaryIndex: 1);
+            // Wait for replica to sync
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex);
 
-            // Validate data
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
+            // Validate database
+            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
         }
 
         [Test, Order(2)]
@@ -151,7 +155,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -200,7 +204,8 @@ namespace Garnet.test.cluster
                 enableAOF: true,
                 timeout: timeout,
                 useTLS: useTLS,
-                cleanClusterConfig: false);
+                cleanClusterConfig: false,
+                sublogCount: sublogCount);
             context.nodes[1].Start();
             context.CreateConnection(useTLS: useTLS);
 
@@ -217,7 +222,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -274,11 +279,12 @@ namespace Garnet.test.cluster
                 timeout: timeout,
                 useTLS: useTLS,
                 cleanClusterConfig: false,
-                asyncReplay: asyncReplay);
+                asyncReplay: asyncReplay,
+                sublogCount: sublogCount);
             context.nodes[1].Start();
             context.CreateConnection(useTLS: useTLS);
 
-            for (int i = 1; i < replica_count; i++) context.clusterTestUtils.WaitForReplicaRecovery(i, context.logger);
+            for (var i = 1; i < replica_count; i++) context.clusterTestUtils.WaitForReplicaRecovery(i, context.logger);
             context.clusterTestUtils.WaitForConnectedReplicaCount(0, replica_count, context.logger);
 
             // Validate synchronization was success
@@ -316,7 +322,17 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + primary_count * replica_count;
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, lowMemory: lowMemory, segmentSize: manySegments ? "4k" : "1g", DisableStorageTier: disableStorageTier, EnableIncrementalSnapshots: incrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: disableObjects,
+                lowMemory: lowMemory,
+                segmentSize: manySegments ? "4k" : "1g",
+                DisableStorageTier: disableStorageTier,
+                EnableIncrementalSnapshots: incrementalSnapshots,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -373,7 +389,8 @@ namespace Garnet.test.cluster
                 lowMemory: lowMemory,
                 SegmentSize: manySegments ? "4k" : "1g",
                 DisableStorageTier: disableStorageTier,
-                asyncReplay: asyncReplay);
+                asyncReplay: asyncReplay,
+                sublogCount: sublogCount);
             context.nodes[replicaIndex].Start();
             context.CreateConnection(useTLS: useTLS);
 
@@ -392,7 +409,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: lowMemory, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: lowMemory, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
@@ -451,7 +468,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
@@ -493,12 +510,12 @@ namespace Garnet.test.cluster
                 timeout: timeout,
                 useTLS: useTLS,
                 cleanClusterConfig: false,
-                asyncReplay: asyncReplay);
+                asyncReplay: asyncReplay,
+                sublogCount: sublogCount);
             context.nodes[0].Start();
             context.CreateConnection(useTLS: useTLS);
 
             var storeRecoveredAofAddress = context.clusterTestUtils.GetStoreRecoveredAofAddress(0, context.logger);
-
             ClassicAssert.AreEqual(storeCurrentAofAddress, storeRecoveredAofAddress);
         }
 
@@ -510,7 +527,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(nodes_count, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -535,7 +552,7 @@ namespace Garnet.test.cluster
         public void ClusterSRReplicaOfTest([Values] bool performRMW)
         {
             var nodes_count = 2;
-            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: true, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: true, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
@@ -562,7 +579,8 @@ namespace Garnet.test.cluster
             else
                 context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, 0, addCount);
 
-            context.clusterTestUtils.ReplicaOf(replicaNodeIndex: 1, primaryNodeIndex: 0, logger: context.logger);
+            var resp = context.clusterTestUtils.ReplicaOf(replicaNodeIndex: 1, primaryNodeIndex: 0, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1);
         }
 
@@ -574,7 +592,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(nodes_count, disableObjects: true, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -637,6 +655,8 @@ namespace Garnet.test.cluster
                 context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, replicaIndex, slotMap: slotMap);
             else
                 context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, replicaIndex, addCount, slotMap: slotMap);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(replicaIndex, primaryIndex, context.logger);
         }
 
         [Test, Order(12)]
@@ -647,7 +667,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: true, EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(nodes_count, disableObjects: true, EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -728,7 +748,18 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, tryRecover: true, disableObjects: disableObjects, lowMemory: true, segmentSize: "4k", EnableIncrementalSnapshots: enableIncrementalSnapshots, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, useNativeDeviceLinux: true);
+            context.CreateInstances(
+                nodes_count,
+                tryRecover: true,
+                disableObjects: disableObjects,
+                lowMemory: true,
+                segmentSize: "4k",
+                EnableIncrementalSnapshots: enableIncrementalSnapshots,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                useNativeDeviceLinux: true,
+                sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
             context.clusterTestUtils.BumpEpoch(0, logger: context.logger);
@@ -766,7 +797,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: true, FastAofTruncate: true, OnDemandCheckpoint: true, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(nodes_count, disableObjects: true, FastAofTruncate: true, OnDemandCheckpoint: true, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true));
@@ -800,59 +831,6 @@ namespace Garnet.test.cluster
 
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 2);
-        }
-
-        [Test, Order(15)]
-        [Category("REPLICATION")]
-        public void ClusterDontKnowReplicaFailTest([Values] bool performRMW, [Values] bool MainMemoryReplication, [Values] bool onDemandCheckpoint, [Values] bool useReplicaOf)
-        {
-            var replica_count = 1;// Per primary
-            var primary_count = 1;
-            var nodes_count = primary_count + (primary_count * replica_count);
-            ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: true, FastAofTruncate: MainMemoryReplication, OnDemandCheckpoint: onDemandCheckpoint, CommitFrequencyMs: -1, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
-            context.CreateConnection(useTLS: useTLS);
-
-            var primaryNodeIndex = 0;
-            var replicaNodeIndex = 1;
-            ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, new List<(int, int)>() { (0, 16383) }, true, context.logger));
-            context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, 1, logger: context.logger);
-            context.clusterTestUtils.SetConfigEpoch(replicaNodeIndex, 2, logger: context.logger);
-            context.clusterTestUtils.Meet(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
-            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
-
-            var replicaId = context.clusterTestUtils.ClusterMyId(replicaNodeIndex, logger: context.logger);
-            _ = context.clusterTestUtils.ClusterForget(primaryNodeIndex, replicaId, 5, logger: context.logger);
-
-            var primaryId = context.clusterTestUtils.ClusterMyId(primaryNodeIndex, logger: context.logger);
-            string resp;
-            if (!useReplicaOf)
-                resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryId, failEx: false, logger: context.logger);
-            else
-                resp = context.clusterTestUtils.ReplicaOf(replicaNodeIndex, primaryNodeIndex, failEx: false, logger: context.logger);
-            ClassicAssert.IsTrue(resp.StartsWith("PRIMARY-ERR"));
-
-            while (true)
-            {
-                context.clusterTestUtils.Meet(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
-                context.clusterTestUtils.BumpEpoch(replicaNodeIndex, logger: context.logger);
-                var config = context.clusterTestUtils.ClusterNodes(primaryNodeIndex, logger: context.logger);
-                if (config.Nodes.Count == 2) break;
-                ClusterTestUtils.BackOff(cancellationToken: context.cts.Token);
-            }
-
-            _ = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryId, logger: context.logger);
-
-            context.kvPairs = [];
-            var keyLength = 32;
-            var kvpairCount = keyCount;
-            var addCount = 5;
-            if (!performRMW)
-                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, primaryNodeIndex);
-            else
-                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, primaryNodeIndex, addCount);
-
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaNodeIndex);
         }
 
         [Test, Order(16)]
@@ -911,7 +889,17 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: disableObjects, FastAofTruncate: mainMemoryReplication, CommitFrequencyMs: mainMemoryReplication ? -1 : 0, OnDemandCheckpoint: mainMemoryReplication, FastCommit: fastCommit, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: disableObjects,
+                FastAofTruncate: mainMemoryReplication,
+                CommitFrequencyMs: mainMemoryReplication ? -1 : 0,
+                OnDemandCheckpoint: mainMemoryReplication,
+                FastCommit: fastCommit,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -1030,41 +1018,6 @@ namespace Garnet.test.cluster
                 context.ValidateNodeObjects(ref context.kvPairsObj, replicaIndex: newPrimaryIndex, set: set);
         }
 
-        [Test, Order(21)]
-        [Category("REPLICATION")]
-        public void ClusterReplicateFails()
-        {
-            const string UserName = "temp-user";
-            const string Password = "temp-password";
-
-            const string ClusterUserName = "cluster-user";
-            const string ClusterPassword = "cluster-password";
-
-            // Setup a cluster (mimicking the style in which this bug was first found)
-            ServerCredential clusterCreds = new(ClusterUserName, ClusterPassword, IsAdmin: true, UsedForClusterAuth: true, IsClearText: true);
-            ServerCredential userCreds = new(UserName, Password, IsAdmin: true, UsedForClusterAuth: false, IsClearText: true);
-
-            context.GenerateCredentials([userCreds, clusterCreds]);
-            context.CreateInstances(2, disableObjects: true, disablePubSub: true, enableAOF: true, clusterCreds: clusterCreds, useAcl: true, FastAofTruncate: true, CommitFrequencyMs: -1, asyncReplay: asyncReplay);
-            var primaryEndpoint = (IPEndPoint)context.endpoints.First();
-            var replicaEndpoint = (IPEndPoint)context.endpoints.Last();
-
-            ClassicAssert.AreNotEqual(primaryEndpoint, replicaEndpoint, "Should have different endpoints for nodes");
-
-            using var primaryConnection = ConnectionMultiplexer.Connect($"{primaryEndpoint.Address}:{primaryEndpoint.Port},user={UserName},password={Password}");
-            var primaryServer = primaryConnection.GetServer(primaryEndpoint);
-
-            ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["ADDSLOTSRANGE", "0", "16383"], flags: CommandFlags.NoRedirect));
-            ClassicAssert.AreEqual("OK", (string)primaryServer.Execute("CLUSTER", ["MEET", replicaEndpoint.Address.ToString(), replicaEndpoint.Port.ToString()], flags: CommandFlags.NoRedirect));
-
-            using var replicaConnection = ConnectionMultiplexer.Connect($"{replicaEndpoint.Address}:{replicaEndpoint.Port},user={UserName},password={Password}");
-            var replicaServer = replicaConnection.GetServer(replicaEndpoint);
-
-            // Try to replicate from a server that doesn't exist
-            var exc = Assert.Throws<RedisServerException>(() => replicaServer.Execute("CLUSTER", ["REPLICATE", Guid.NewGuid().ToString()], flags: CommandFlags.NoRedirect));
-            ClassicAssert.IsTrue(exc.Message.StartsWith("ERR I don't know about node "));
-        }
-
         [Test, Order(22)]
         [Category("REPLICATION")]
         public void ClusterReplicationCheckpointAlignmentTest([Values] bool performRMW)
@@ -1075,7 +1028,16 @@ namespace Garnet.test.cluster
             var primaryNodeIndex = 0;
             var replicaNodeIndex = 1;
             ClassicAssert.IsTrue(primary_count > 0);
-            context.CreateInstances(nodes_count, disableObjects: false, FastAofTruncate: true, CommitFrequencyMs: -1, OnDemandCheckpoint: true, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay);
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                FastAofTruncate: true,
+                CommitFrequencyMs: -1,
+                OnDemandCheckpoint: true,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -1125,7 +1087,8 @@ namespace Garnet.test.cluster
                 timeout: timeout,
                 useTLS: useTLS,
                 cleanClusterConfig: true,
-                asyncReplay: asyncReplay);
+                asyncReplay: asyncReplay,
+                sublogCount: sublogCount);
             context.nodes[primaryNodeIndex].Start();
 
             // Restart secondary and recover
@@ -1140,7 +1103,8 @@ namespace Garnet.test.cluster
                 timeout: timeout,
                 useTLS: useTLS,
                 cleanClusterConfig: true,
-                asyncReplay: asyncReplay);
+                asyncReplay: asyncReplay,
+                sublogCount: sublogCount);
             context.nodes[replicaNodeIndex].Start();
             context.CreateConnection(useTLS: useTLS);
 
@@ -1186,7 +1150,15 @@ namespace Garnet.test.cluster
             var replicaNodeIndex = 1;
             ClassicAssert.IsTrue(primary_count > 0);
 
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, enableLua: true, luaTransactionMode: luaTransactionMode);
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                enableLua: true,
+                luaTransactionMode: luaTransactionMode,
+                sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -1217,7 +1189,14 @@ namespace Garnet.test.cluster
             var expectedKeys = new[] { "X", "Y" };
             ClassicAssert.IsTrue(primary_count > 0);
 
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, enableDisklessSync: enableDisklessSync);
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                enableDisklessSync: enableDisklessSync,
+                sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
 
             var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
@@ -1282,7 +1261,15 @@ namespace Garnet.test.cluster
             var nodes_count = primary_count + primary_count * replica_count;
             ClassicAssert.IsTrue(primary_count > 0);
 
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: true, tryRecover: false, FastAofTruncate: true, CommitFrequencyMs: -1);
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: true,
+                tryRecover: false,
+                FastAofTruncate: true,
+                CommitFrequencyMs: -1,
+                sublogCount: sublogCount);
             context.CreateConnection(useTLS: true);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -1355,7 +1342,16 @@ namespace Garnet.test.cluster
             var nodes_count = primary_count + primary_count * replica_count;
             ClassicAssert.IsTrue(primary_count > 0);
 
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: true, tryRecover: false, FastAofTruncate: true, CommitFrequencyMs: -1, clusterReplicationReestablishmentTimeout: 1);
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: true,
+                tryRecover: false,
+                FastAofTruncate: true,
+                CommitFrequencyMs: -1,
+                clusterReplicationReestablishmentTimeout: 1,
+                sublogCount: sublogCount);
             context.CreateConnection(useTLS: true);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -1423,7 +1419,8 @@ namespace Garnet.test.cluster
 
         [Test, Order(26)]
         [Category("REPLICATION")]
-        public async Task ClusterReplicationMultiRestartRecover()
+        [CancelAfter(30_000)]
+        public async Task ClusterReplicationMultiRestartRecover(CancellationToken cancellationToken)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -1433,30 +1430,33 @@ namespace Garnet.test.cluster
 
             ClassicAssert.IsTrue(primary_count > 0);
 
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, cleanClusterConfig: false);
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                cleanClusterConfig: false,
+                sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
             var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
             var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
-            var keyCount = 1000;
+            var keyCount = 256;
 
             var taskCount = 4;
             var tasks = new List<Task>();
             for (var i = 0; i < taskCount; i++)
                 tasks.Add(Task.Run(() => RunWorkload(i * keyCount, (i + 1) * keyCount)));
-            var restartRecover = 10;
+            var restartRecover = 4;
             tasks.Add(Task.Run(() => RestartRecover(restartRecover)));
 
             await Task.WhenAll(tasks);
-            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger, cancellationToken);
 
             // Validate that replica has the same keys as primary
-            var resp = primaryServer.Execute("KEYS", ["*"]);
-            var resp2 = replicaServer.Execute("KEYS", ["*"]);
-            ClassicAssert.AreEqual(resp.Length, resp2.Length);
-            for (var i = 0; i < resp.Length; i++)
-                ClassicAssert.AreEqual((string)resp[i], (string)resp2[i]);
+            ValidateKeys();
 
             // Run write workload at primary
             void RunWorkload(int start, int count)
@@ -1474,11 +1474,28 @@ namespace Garnet.test.cluster
             }
 
             // Restart and recover replica multiple times
-            void RestartRecover(int iteration)
+            async Task RestartRecover(int iteration)
             {
                 while (iteration-- > 0)
                 {
                     context.nodes[replicaNodeIndex].Dispose(false);
+
+                    var items = context.clusterTestUtils.GetReplicationInfo(
+                        primaryNodeIndex,
+                        [ReplicationInfoItem.CONNECTED_REPLICAS, ReplicationInfoItem.SYNC_DRIVER_COUNT],
+                        context.logger);
+                    while (!items[0].Item2.Equals("0") || !items[1].Item2.Equals("0"))
+                    {
+                        items = context.clusterTestUtils.GetReplicationInfo(
+                            primaryNodeIndex,
+                            [ReplicationInfoItem.CONNECTED_REPLICAS, ReplicationInfoItem.SYNC_DRIVER_COUNT],
+                            context.logger);
+                        if (cancellationToken.IsCancellationRequested)
+                            Assert.Fail("Failed waiting for primary aof sync cleanup!");
+                        await Task.Yield();
+                    }
+
+
                     context.nodes[replicaNodeIndex] = context.CreateInstance(
                         context.clusterTestUtils.GetEndPoint(replicaNodeIndex),
                         disableObjects: false,
@@ -1486,9 +1503,23 @@ namespace Garnet.test.cluster
                         useTLS: useTLS,
                         asyncReplay: asyncReplay,
                         tryRecover: true,
-                        cleanClusterConfig: false);
+                        cleanClusterConfig: false,
+                        sublogCount: sublogCount);
                     context.nodes[replicaNodeIndex].Start();
+
+                    await Task.Yield();
                 }
+            }
+
+            void ValidateKeys()
+            {
+                var resp = (string[])primaryServer.Execute("KEYS", ["*"]);
+                var resp2 = (string[])replicaServer.Execute("KEYS", ["*"]);
+                ClassicAssert.AreEqual(resp.Length, resp2.Length);
+                Array.Sort(resp);
+                Array.Sort(resp2);
+                for (var i = 0; i < resp.Length; i++)
+                    ClassicAssert.AreEqual(resp[i], resp2[i]);
             }
         }
 
@@ -1502,10 +1533,20 @@ namespace Garnet.test.cluster
             var nodes_count = primary_count + primary_count * replica_count;
             ClassicAssert.IsTrue(primary_count > 0);
 
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: true, tryRecover: false, FastAofTruncate: true, CommitFrequencyMs: -1, clusterReplicationReestablishmentTimeout: 1);
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: true,
+                tryRecover: false,
+                FastAofTruncate: true,
+                CommitFrequencyMs: -1,
+                clusterReplicationReestablishmentTimeout: 1,
+                sublogCount: sublogCount);
             context.CreateConnection(useTLS: true);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
+            //while (sublogCount > 0) { }
             IPEndPoint primary = (IPEndPoint)context.endpoints[0];
             IPEndPoint replica = (IPEndPoint)context.endpoints[1];
 
@@ -1582,7 +1623,8 @@ namespace Garnet.test.cluster
                 luaTransactionMode: true,
                 luaMemoryLimit: "2M",
                 clusterReplicationReestablishmentTimeout: 1,
-                clusterReplicaResumeWithData: true
+                clusterReplicaResumeWithData: true,
+                sublogCount: sublogCount
             );
             context.CreateConnection(useTLS: true);
             var (shards, _) = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
@@ -1880,7 +1922,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(27)]
+        [Test, Order(29)]
         [Category("CLUSTER")]
         [Category("REPLICATION")]
         public void ClusterReplicationDivergentHistoryWithoutCheckpoint()
@@ -1892,7 +1934,14 @@ namespace Garnet.test.cluster
             var replicaNodeIndex = 1;
             ClassicAssert.IsTrue(primary_count > 0);
 
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, cleanClusterConfig: false);
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                cleanClusterConfig: false,
+                sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count, replica_count, logger: context.logger);
 
@@ -1903,12 +1952,9 @@ namespace Garnet.test.cluster
 
             RunWorkload(primaryServer, offset, keyCount);
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+
             // Validate that replica has the same keys as primary
-            var resp = primaryServer.Execute("KEYS", ["*"]);
-            var resp2 = replicaServer.Execute("KEYS", ["*"]);
-            ClassicAssert.AreEqual(resp.Length, resp2.Length);
-            for (var i = 0; i < resp.Length; i++)
-                ClassicAssert.AreEqual((string)resp[i], (string)resp2[i]);
+            ValidateKeys();
 
             // Kill primary
             context.nodes[primaryNodeIndex].Dispose(false);
@@ -1923,7 +1969,8 @@ namespace Garnet.test.cluster
                 useTLS: useTLS,
                 asyncReplay: asyncReplay,
                 tryRecover: false,
-                cleanClusterConfig: false);
+                cleanClusterConfig: false,
+                sublogCount: sublogCount);
             context.nodes[primaryNodeIndex].Start();
             context.clusterTestUtils.Reconnect([primaryNodeIndex]);
             primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
@@ -1940,7 +1987,8 @@ namespace Garnet.test.cluster
                 useTLS: useTLS,
                 asyncReplay: asyncReplay,
                 tryRecover: true,
-                cleanClusterConfig: false);
+                cleanClusterConfig: false,
+                sublogCount: sublogCount);
             context.nodes[replicaNodeIndex].Start();
             context.clusterTestUtils.Reconnect([primaryNodeIndex, replicaNodeIndex]);
             primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
@@ -1949,11 +1997,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
 
             // Validate that replica has the same keys as primary
-            resp = primaryServer.Execute("KEYS", ["*"]);
-            resp2 = replicaServer.Execute("KEYS", ["*"]);
-            ClassicAssert.AreEqual(resp.Length, resp2.Length);
-            for (var i = 0; i < resp.Length; i++)
-                ClassicAssert.AreEqual((string)resp[i], (string)resp2[i]);
+            ValidateKeys();
 
             // Run write workload at primary
             void RunWorkload(IServer server, int start, int count)
@@ -1967,6 +2011,17 @@ namespace Garnet.test.cluster
                     resp = server.Execute("GET", key);
                     ClassicAssert.AreEqual(key, (string)resp);
                 }
+            }
+
+            void ValidateKeys()
+            {
+                var resp = (string[])primaryServer.Execute("KEYS", ["*"]);
+                var resp2 = (string[])replicaServer.Execute("KEYS", ["*"]);
+                ClassicAssert.AreEqual(resp.Length, resp2.Length);
+                Array.Sort(resp);
+                Array.Sort(resp2);
+                for (var i = 0; i < resp.Length; i++)
+                    ClassicAssert.AreEqual(resp[i], resp2[i]);
             }
         }
     }

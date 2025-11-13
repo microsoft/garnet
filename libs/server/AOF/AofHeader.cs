@@ -2,9 +2,63 @@
 // Licensed under the MIT license.
 
 using System.Runtime.InteropServices;
+using Garnet.common;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Used for sharded log to add a timestamp and logAccessCounter
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = 25)]
+    struct AofExtendedHeader
+    {
+        /// <summary>
+        /// AofHeader used with singleLog
+        /// </summary>
+        [FieldOffset(0)]
+        public AofHeader header;
+
+        /// <summary>
+        /// Used for multilog operations
+        /// </summary>
+        [FieldOffset(16)]
+        public long sequenceNumber;
+        /// <summary>
+        /// Used for synchronizing sublog replay
+        /// </summary>
+        [FieldOffset(24)]
+        public byte logAccessCount;
+
+        /// <summary>
+        /// AofExtendedHeader constructor
+        /// </summary>
+        /// <param name="aofHeader"></param>
+        /// <param name="sequenceNumber"></param>
+        /// <param name="logAccessCount"></param>
+        public AofExtendedHeader(AofHeader aofHeader, long sequenceNumber, byte logAccessCount)
+        {
+            header = aofHeader;
+            header.padding = AofHeader.ShardedLogFlag;
+            this.sequenceNumber = sequenceNumber;
+            this.logAccessCount = logAccessCount;
+        }
+
+        /// <summary>
+        /// Tests whether this is an extended header by looking at the padding first bit
+        /// </summary>
+        public readonly bool IsExtendedHeader => (header.padding & 0x1) == 0x1;
+
+        /// <summary>
+        /// Throws exception if AofHeader is not of AofExtendedType
+        /// </summary>
+        /// <exception cref="GarnetException"></exception>
+        public void ThrowIfNotExtendedHeader()
+        {
+            if (!IsExtendedHeader)
+                throw new GarnetException("AofHeader not of AofExtendedHeader type!");
+        }
+    };
+
     [StructLayout(LayoutKind.Explicit, Size = 16)]
     struct AofHeader
     {
@@ -13,6 +67,11 @@ namespace Garnet.server
         // * Any of the AofEntryType or AofStoreType enums' existing value mappings
         // * SpanByte format or header
         const byte AofHeaderVersion = 2;
+
+        /// <summary>
+        /// 0-bit in padding is used to indicate that the log contains AofExtendedHeader
+        /// </summary>
+        internal const byte ShardedLogFlag = 1;
 
         /// <summary>
         /// Version of AOF
@@ -44,6 +103,11 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(12)]
         public int sessionID;
+        /// <summary>
+        /// Transaction ID
+        /// </summary>
+        [FieldOffset(12)]
+        public int txnID;
         /// <summary>
         /// Unsafe truncate log (used with FLUSH command)
         /// </summary>

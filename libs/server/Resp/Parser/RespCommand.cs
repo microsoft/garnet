@@ -2205,10 +2205,6 @@ namespace Garnet.server
                 {
                     return RespCommand.CLUSTER_MTASKS;
                 }
-                else if (subCommand.SequenceEqual(CmdStrings.aofsync))
-                {
-                    return RespCommand.CLUSTER_AOFSYNC;
-                }
                 else if (subCommand.SequenceEqual(CmdStrings.appendlog))
                 {
                     return RespCommand.CLUSTER_APPENDLOG;

@@ -23,6 +23,11 @@ namespace Garnet.server
         internal RespServerSession respServerSession;
 
         /// <summary>
+        /// Keep track which keys have been updated to update ReplicaTimestampTracker after CustomProc completes
+        /// </summary>
+        internal CustomProcedureKeyHashCollection customProcTimestampBitmap;
+
+        /// <summary>
         /// Create output as simple string, from given string
         /// </summary>
         protected static unsafe void WriteSimpleString(ref (IMemoryOwner<byte>, int) output, ReadOnlySpan<char> simpleString)

@@ -121,6 +121,9 @@ namespace Garnet.client
         /// <summary>
         /// Try to write the span for the entire record directly to the client buffer
         /// </summary>
+        /// <param name="recordSpan"></param>
+        /// <param name="task"></param>
+        /// <returns></returns>
         public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, out Task<string> task)
         {
             // We include space for newline at the end, to be added before sending

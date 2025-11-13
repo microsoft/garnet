@@ -78,6 +78,16 @@ namespace Garnet.server
         public int AofReplicationRefreshFrequencyMs = 10;
 
         /// <summary>
+        /// Number of AOF sublogs (=1 default single log, >1: multi-log)
+        /// </summary>
+        public int AofSublogCount = 1;
+
+        /// <summary>
+        /// Delay for background task used to refresh tail timestamp for stalled sublogs when SharedLog is used.
+        /// </summary>
+        public int AofRefreshSublogTailFrequencyMs = 100;
+
+        /// <summary>
         /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.
         /// </summary>
         public int SubscriberRefreshFrequencyMs = 0;
@@ -481,6 +491,14 @@ namespace Garnet.server
         public bool ClusterReplicaResumeWithData = false;
 
         /// <summary>
+        /// Check if the startup configuration allows the possibility of data loss during replication
+        /// NOTE: null device cannot guarantee or FastAofTruncate without OnDemandCheckpoint cannot guarantee the integrity of the AOF
+        /// since it is being truncated aggresively.
+        /// </summary>
+        public bool AllowDataLoss
+            => UseAofNullDevice || (FastAofTruncate && !OnDemandCheckpoint);
+
+        /// <summary>
         /// Get the directory name for database checkpoints
         /// </summary>
         /// <param name="dbId">Database Id</param>
@@ -716,32 +734,39 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId">DB ID</param>
         /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
-        public void GetAofSettings(int dbId, out TsavoriteLogSettings tsavoriteLogSettings)
+        public void GetAofSettings(int dbId, out TsavoriteLogSettings[] tsavoriteLogSettings)
         {
-            tsavoriteLogSettings = new TsavoriteLogSettings
-            {
-                MemorySizeBits = AofMemorySizeBits(),
-                PageSizeBits = AofPageSizeBits(),
-                LogDevice = GetAofDevice(dbId),
-                TryRecoverLatest = false,
-                SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
-                FastCommitMode = EnableFastCommit,
-                AutoCommit = CommitFrequencyMs == 0,
-                MutableFraction = 0.9,
-            };
-            if (tsavoriteLogSettings.PageSize > tsavoriteLogSettings.MemorySize)
-            {
-                logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
-                throw new Exception("AOF Page size cannot be more than the AOF memory size.");
-            }
+            tsavoriteLogSettings = new TsavoriteLogSettings[AofSublogCount];
 
-            var aofDir = GetAppendOnlyFileDirectory(dbId);
-            // We use Tsavorite's default checkpoint manager for AOF, since cookie is not needed for AOF commits
-            tsavoriteLogSettings.LogCommitManager = new DeviceLogCommitCheckpointManager(
-                FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
-                    new DefaultCheckpointNamingScheme(aofDir),
-                    removeOutdated: true,
-                    fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
+            for (var i = 0; i < AofSublogCount; i++)
+            {
+
+                tsavoriteLogSettings[i] = new TsavoriteLogSettings
+                {
+                    MemorySizeBits = AofMemorySizeBits(),
+                    PageSizeBits = AofPageSizeBits(),
+                    LogDevice = GetAofDevice(dbId, subLogIdx: i),
+                    TryRecoverLatest = false,
+                    SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
+                    FastCommitMode = EnableFastCommit,
+                    AutoCommit = CommitFrequencyMs == 0,
+                    MutableFraction = 0.9,
+                };
+
+                if (tsavoriteLogSettings[i].PageSize > tsavoriteLogSettings[i].MemorySize)
+                {
+                    logger?.LogError("AOF Page size cannot be more than the AOF memory size.");
+                    throw new Exception("AOF Page size cannot be more than the AOF memory size.");
+                }
+
+                var aofDir = GetAppendOnlyFileDirectory(dbId);
+                // We use Tsavorite's default checkpoint manager for AOF, since cookie is not needed for AOF commits
+                tsavoriteLogSettings[i].LogCommitManager = new DeviceLogCommitCheckpointManager(
+                    FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
+                        new DefaultCheckpointNamingScheme(aofDir, i),
+                        removeOutdated: true,
+                        fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
+            }
         }
 
         /// <summary>
@@ -804,14 +829,22 @@ namespace Garnet.server
         /// Get device for AOF
         /// </summary>
         /// <returns></returns>
-        IDevice GetAofDevice(int dbId)
+        IDevice GetAofDevice(int dbId, int subLogIdx = -1)
         {
             if (UseAofNullDevice && EnableCluster && !FastAofTruncate)
                 throw new Exception("Cannot use null device for AOF when cluster is enabled and you are not using main memory replication");
             if (UseAofNullDevice) return new NullDevice();
 
-            return GetInitializedDeviceFactory(AppendOnlyFileBaseDirectory)
-                .Get(new FileDescriptor(GetAppendOnlyFileDirectoryName(dbId), "aof.log"));
+            if (subLogIdx == -1)
+            {
+                return GetInitializedDeviceFactory(AppendOnlyFileBaseDirectory)
+                    .Get(new FileDescriptor(GetAppendOnlyFileDirectoryName(dbId), "aof.log"));
+            }
+            else
+            {
+                return GetInitializedDeviceFactory(AppendOnlyFileBaseDirectory)
+                    .Get(new FileDescriptor(GetAppendOnlyFileDirectoryName(dbId), $"aof.{subLogIdx}.log"));
+            }
         }
     }
 }

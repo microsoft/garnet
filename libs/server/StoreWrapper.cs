@@ -45,7 +45,23 @@ namespace Garnet.server
         /// <summary>
         /// AOF (of DB 0)
         /// </summary>
-        public TsavoriteLog appendOnlyFile => databaseManager.AppendOnlyFile;
+        public GarnetAppendOnlyFile appendOnlyFile => databaseManager.AppendOnlyFile;
+
+        /// <summary>
+        /// Get total AOF size (i.e. diff TailAddres - BeginAddress)
+        /// </summary>
+        /// <returns></returns>
+        public long AofSize() => appendOnlyFile.Log.TailAddress.AggregateDiff(appendOnlyFile.Log.BeginAddress);
+
+        /// <summary>
+        /// AOF BeginAddress
+        /// </summary>
+        public AofAddress BeginAddress => appendOnlyFile.Log.BeginAddress;
+
+        /// <summary>
+        /// AOF TailAddress
+        /// </summary>
+        public AofAddress TailAddress => appendOnlyFile.Log.TailAddress;
 
         /// <summary>
         /// Last save time (of DB 0)
@@ -339,7 +355,7 @@ namespace Garnet.server
                 {
                     RecoverCheckpoint();
                     RecoverAOF();
-                    ReplayAOF();
+                    ReplayAOF(appendOnlyFile.Log.TailAddress);
                 }
             }
         }
@@ -428,7 +444,7 @@ namespace Garnet.server
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public long ReplayAOF(long untilAddress = -1) => this.databaseManager.ReplayAOF(untilAddress);
+        public AofAddress ReplayAOF(AofAddress untilAddress) => this.databaseManager.ReplayAOF(untilAddress);
 
         /// <summary>
         /// Append a checkpoint commit to the AOF
@@ -887,6 +903,7 @@ namespace Garnet.server
             if (disposed) return;
             disposed = true;
 
+            clusterProvider?.Dispose();
             itemBroker?.Dispose();
             monitor?.Dispose();
             luaTimeoutManager?.Dispose();
@@ -894,7 +911,6 @@ namespace Garnet.server
             databaseManager.Dispose();
 
             ctsCommit?.Dispose();
-            clusterProvider?.Dispose();
         }
     }
 }

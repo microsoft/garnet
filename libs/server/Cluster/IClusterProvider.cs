@@ -114,7 +114,7 @@ namespace Garnet.server
         /// On checkpoint initiated
         /// </summary>
         /// <param name="CheckpointCoveredAofAddress"></param>
-        void OnCheckpointInitiated(out long CheckpointCoveredAofAddress);
+        void OnCheckpointInitiated(ref AofAddress CheckpointCoveredAofAddress);
 
         /// <summary>
         /// Recover the cluster
@@ -129,13 +129,13 @@ namespace Garnet.server
         /// <summary>
         /// Safe truncate AOF
         /// </summary>
-        void SafeTruncateAOF(bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken);
+        void AddNewCheckpointEntry(bool full, AofAddress CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken);
 
         /// <summary>
         /// Safe truncate AOF until address
         /// </summary>
         /// <param name="truncateUntil"></param>
-        void SafeTruncateAOF(long truncateUntil);
+        void SafeTruncateAOF(AofAddress truncateUntil);
 
         /// <summary>
         /// Start cluster operations

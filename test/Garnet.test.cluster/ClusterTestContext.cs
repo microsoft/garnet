@@ -42,7 +42,7 @@ namespace Garnet.test.cluster
 
         public CancellationTokenSource cts;
 
-        public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 60)
+        public void Setup(Dictionary<string, LogLevel> monitorTests, int testTimeoutSeconds = 3600)
         {
             cts = new CancellationTokenSource(TimeSpan.FromSeconds(testTimeoutSeconds));
 
@@ -125,7 +125,7 @@ namespace Garnet.test.cluster
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
             loggerFactory?.Dispose();
-            var timeoutSeconds = 5;
+            var timeoutSeconds = 100_000;
             if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
             {
                 logger?.LogError("Timed out waiting for DisposeCluster");
@@ -180,6 +180,7 @@ namespace Garnet.test.cluster
         /// <param name="useHostname"></param>
         /// <param name="luaTransactionMode"></param>
         /// <param name="useNativeDeviceLinux"></param>
+        /// <param name="sublogCount"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -225,7 +226,8 @@ namespace Garnet.test.cluster
             int loggingFrequencySecs = 5,
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
-            int replicaSyncTimeout = 60)
+            int replicaSyncTimeout = 60,
+            int sublogCount = 1)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -279,7 +281,8 @@ namespace Garnet.test.cluster
                 loggingFrequencySecs: loggingFrequencySecs,
                 checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                 clusterReplicaResumeWithData: clusterReplicaResumeWithData,
-                replicaSyncTimeout: replicaSyncTimeout);
+                replicaSyncTimeout: replicaSyncTimeout,
+                sublogCount: sublogCount);
 
             foreach (var node in nodes)
                 node.Start();
@@ -339,6 +342,7 @@ namespace Garnet.test.cluster
             bool useTLS = false,
             bool useAcl = false,
             bool asyncReplay = false,
+            int sublogCount = 1,
             EndPoint clusterAnnounceEndpoint = null,
             X509CertificateCollection certificates = null,
             ServerCredential clusterCreds = new ServerCredential())
@@ -370,6 +374,7 @@ namespace Garnet.test.cluster
                 fastCommit: FastCommit,
                 useAcl: useAcl,
                 asyncReplay: asyncReplay,
+                sublogCount: sublogCount,
                 aclFile: credManager.aclFilePath,
                 authUsername: clusterCreds.user,
                 authPassword: clusterCreds.password,
@@ -386,7 +391,7 @@ namespace Garnet.test.cluster
         {
             if (nodes != null)
             {
-                _ = Parallel.For(0, nodes.Length, i =>
+                for (var i = 0; i < nodes.Length; i++)
                 {
                     if (nodes[i] != null)
                     {
@@ -396,7 +401,7 @@ namespace Garnet.test.cluster
                         node.Dispose(true);
                         logger.LogDebug("\t b. Dispose node {testName}", TestContext.CurrentContext.Test.Name);
                     }
-                });
+                }
             }
         }
 

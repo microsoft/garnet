@@ -2,9 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -25,10 +23,38 @@ namespace Garnet.server
                 return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
-                key, value, out _);
+            if (functionsState.appendOnlyFile.Log.Size == 1)
+            {
+                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                    new AofHeader
+                    {
+                        opType = AofEntryType.ObjectStoreUpsert,
+                        storeVersion = version,
+                        sessionID = sessionID
+                    },
+                    key,
+                    value,
+                    out _);
+            }
+            else
+            {
+                var extendedAofHeader = new AofExtendedHeader(
+                    new AofHeader
+                    {
+                        opType = AofEntryType.ObjectStoreUpsert,
+                        storeVersion = version,
+                        sessionID = sessionID
+                    },
+                    functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
+
+                functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(
+                    extendedAofHeader,
+                    key,
+                    value,
+                    out _);
+            }
         }
+
 
         /// <summary>
         /// Logging upsert from
@@ -44,9 +70,38 @@ namespace Garnet.server
             GarnetObjectSerializer.Serialize(value, out var valueBytes);
             fixed (byte* valPtr = valueBytes)
             {
-                functionsState.appendOnlyFile.Enqueue(
-                    new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
-                    key, new ReadOnlySpan<byte>(valPtr, valueBytes.Length), out _);
+                //                functionsState.appendOnlyFile.Enqueue(
+                //                    new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
+                //                    key, new ReadOnlySpan<byte>(valPtr, valueBytes.Length), out _);
+                //=======
+                if (functionsState.appendOnlyFile.Log.Size == 1)
+                {
+                    var aofHeader = new AofHeader
+                    {
+                        opType = AofEntryType.ObjectStoreUpsert,
+                        storeVersion = version,
+                        sessionID = sessionID
+                    };
+                    functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                        aofHeader,
+                        key,
+                        new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
+                        out _);
+                }
+                else
+                {
+                    var extendedAofHeader = new AofExtendedHeader(new AofHeader
+                    {
+                        opType = AofEntryType.ObjectStoreUpsert,
+                        storeVersion = version,
+                        sessionID = sessionID
+                    }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
+                    functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(
+                        extendedAofHeader,
+                        key,
+                        new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
+                        out _);
+                }
             }
         }
 
@@ -61,9 +116,41 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.ObjectStoreRMW, storeVersion = version, sessionID = sessionID },
-                key, ref input, out _);
+            // Serializing key & ObjectInput to RMW log
+            fixed (byte* keyPtr = key)
+            {
+                var sbKey = SpanByte.FromPinnedPointer(keyPtr, key.Length);
+
+                if (functionsState.appendOnlyFile.Log.Size == 1)
+                {
+                    var aofHeader = new AofHeader
+                    {
+                        opType = AofEntryType.ObjectStoreRMW,
+                        storeVersion = version,
+                        sessionID = sessionID
+                    };
+                    functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                        aofHeader,
+                        sbKey,
+                        ref input,
+                        out _);
+                }
+                else
+                {
+                    var extendedAofHeader = new AofExtendedHeader(
+                        new AofHeader
+                        {
+                            opType = AofEntryType.ObjectStoreRMW,
+                            storeVersion = version,
+                            sessionID = sessionID
+                        }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
+                    functionsState.appendOnlyFile.Log.GetSubLog(sbKey).Enqueue(
+                        extendedAofHeader,
+                        sbKey,
+                        ref input,
+                        out _);
+                }
+            }
         }
 
         /// <summary>
@@ -73,66 +160,37 @@ namespace Garnet.server
         /// </summary>
         void WriteLogDelete(ReadOnlySpan<byte> key, long version, int sessionID)
         {
+
             if (functionsState.StoredProcMode)
                 return;
 
-            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID }, key, item2: default, out _);
-        }
-
-        static bool EvaluateObjectExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref GarnetObjectStoreOutput output)
-        {
-            Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
-            var o = (OutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
-            o->result1 = 0;
-            if (logRecord.Info.HasExpiration)
+            if (functionsState.appendOnlyFile.Log.Size == 1)
             {
-                switch (optionType)
+                var aofHeader = new AofHeader
                 {
-                    case ExpireOption.NX:
-                        return true;
-                    case ExpireOption.XX:
-                    case ExpireOption.None:
-                        _ = logRecord.TrySetExpiration(newExpiry);
-                        o->result1 = 1;
-                        return true;
-                    case ExpireOption.GT:
-                    case ExpireOption.XXGT:
-                        if (newExpiry > logRecord.Expiration)
-                        {
-                            _ = logRecord.TrySetExpiration(newExpiry);
-                            o->result1 = 1;
-                        }
-                        return true;
-                    case ExpireOption.LT:
-                    case ExpireOption.XXLT:
-                        if (newExpiry < logRecord.Expiration)
-                        {
-                            _ = logRecord.TrySetExpiration(newExpiry);
-                            o->result1 = 1;
-                        }
-                        return true;
-                    default:
-                        throw new GarnetException($"EvaluateObjectExpireInPlace exception expiryExists: True, optionType {optionType}");
-                }
+                    opType = AofEntryType.ObjectStoreDelete,
+                    storeVersion = version,
+                    sessionID = sessionID
+                };
+                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                    aofHeader,
+                    key,
+                    item2: default,
+                    out _);
             }
             else
             {
-                switch (optionType)
+                var extendedAofHeader = new AofExtendedHeader(new AofHeader
                 {
-                    case ExpireOption.NX:
-                    case ExpireOption.None:
-                    case ExpireOption.LT:  // If expiry doesn't exist, LT should treat the current expiration as infinite, so the new value must be less
-                        var ok = logRecord.TrySetExpiration(newExpiry);
-                        o->result1 = 1;
-                        return ok;
-                    case ExpireOption.XX:
-                    case ExpireOption.GT:  // If expiry doesn't exist, GT should treat the current expiration as infinite, so the new value cannot be greater
-                    case ExpireOption.XXGT:
-                    case ExpireOption.XXLT:
-                        return true;
-                    default:
-                        throw new GarnetException($"EvaluateObjectExpireInPlace exception expiryExists: False, optionType {optionType}");
-                }
+                    opType = AofEntryType.ObjectStoreDelete,
+                    storeVersion = version,
+                    sessionID = sessionID
+                }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
+                functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(
+                    extendedAofHeader,
+                    key,
+                    item2: default,
+                    out _);
             }
         }
 

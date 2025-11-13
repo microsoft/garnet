@@ -78,7 +78,6 @@ namespace Garnet.server
         /// Flush db
         /// </summary>
         FlushDb = 0x61,
-
         /// <summary>
         /// Unified store upsert sting
         /// </summary>
@@ -95,17 +94,10 @@ namespace Garnet.server
         /// Unified store delete
         /// </summary>
         UnifiedStoreDelete = 0x73,
-
-        #region Deprecated markers
         /// <summary>
-        /// Deprecated with unified checkpointing: Checkpoint for object store start
+        /// Refresh sublog tail (used only with ShardedLog)
         /// </summary>
-        ObjectStoreCheckpointStartCommit = 0x31,
-        /// <summary>
-        /// Deprecated with unified checkpointing: Checkpoint for object store end
-        /// </summary>
-        ObjectStoreCheckpointEndCommit = 0x33,
-        #endregion
+        RefreshSublogTail = 0x80,
     }
 
     internal enum AofStoreType : byte

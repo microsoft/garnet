@@ -26,9 +26,28 @@ namespace Garnet.server
 
             input.header.flags |= RespInputFlags.Deterministic;
 
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.UnifiedStoreStringUpsert, storeVersion = version, sessionID = sessionID },
+            if (functionsState.appendOnlyFile.Log.Size == 1)
+            {
+                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                    new AofHeader
+                    {
+                        opType = AofEntryType.UnifiedStoreStringUpsert,
+                        storeVersion = version,
+                        sessionID = sessionID
+                    },
                 key, value, out _);
+            }
+            else
+            {
+                var extendedAofHeader = new AofExtendedHeader(new AofHeader
+                {
+                    opType = AofEntryType.UnifiedStoreStringUpsert,
+                    storeVersion = version,
+                    sessionID = sessionID
+                }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
+
+                functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(extendedAofHeader, key, value, out _);
+            }
         }
 
         /// <summary>
@@ -46,9 +65,27 @@ namespace Garnet.server
             GarnetObjectSerializer.Serialize(value, out var valueBytes);
             fixed (byte* valPtr = valueBytes)
             {
-                functionsState.appendOnlyFile.Enqueue(
-                    new AofHeader { opType = AofEntryType.UnifiedStoreObjectUpsert, storeVersion = version, sessionID = sessionID },
+                if (functionsState.appendOnlyFile.Log.Size == 1)
+                {
+                    functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                        new AofHeader
+                        {
+                            opType = AofEntryType.UnifiedStoreObjectUpsert,
+                            storeVersion = version,
+                            sessionID = sessionID
+                        },
                     key, new ReadOnlySpan<byte>(valPtr, valueBytes.Length), out _);
+                }
+                else
+                {
+                    var extendedAofHeader = new AofExtendedHeader(new AofHeader
+                    {
+                        opType = AofEntryType.UnifiedStoreObjectUpsert,
+                        storeVersion = version,
+                        sessionID = sessionID
+                    }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
+                    functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(extendedAofHeader, key, new ReadOnlySpan<byte>(valPtr, valueBytes.Length), out _);
+                }
             }
         }
 
@@ -62,7 +99,26 @@ namespace Garnet.server
             if (functionsState.StoredProcMode)
                 return;
 
-            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.UnifiedStoreDelete, storeVersion = version, sessionID = sessionID }, key, item2: default, out _);
+            if (functionsState.appendOnlyFile.Log.Size == 1)
+            {
+                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                    new AofHeader
+                    {
+                        opType = AofEntryType.UnifiedStoreDelete,
+                        storeVersion = version,
+                        sessionID = sessionID
+                    }, key, item2: default, out _);
+            }
+            else
+            {
+                var extendedAofHeader = new AofExtendedHeader(new AofHeader
+                {
+                    opType = AofEntryType.UnifiedStoreDelete,
+                    storeVersion = version,
+                    sessionID = sessionID
+                }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
+                functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(extendedAofHeader, key, item2: default, out _);
+            }
         }
 
         /// <summary>
@@ -76,9 +132,28 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            functionsState.appendOnlyFile.Enqueue(
-                new AofHeader { opType = AofEntryType.UnifiedStoreRMW, storeVersion = version, sessionID = sessionId },
+            if (functionsState.appendOnlyFile.Log.Size == 1)
+            {
+                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                    new AofHeader
+                    {
+                        opType = AofEntryType.UnifiedStoreRMW,
+                        storeVersion = version,
+                        sessionID = sessionId
+                    },
                 key, ref input, out _);
+            }
+            else
+            {
+                var extendedAofHeader = new AofExtendedHeader(
+                    new AofHeader
+                    {
+                        opType = AofEntryType.UnifiedStoreRMW,
+                        storeVersion = version,
+                        sessionID = sessionId
+                    }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
+                functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(extendedAofHeader, key, ref input, out _);
+            }
         }
 
         bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, bool expiryExisted, long newExpiry, ReadOnlySpan<byte> newValue, ref GarnetUnifiedStoreOutput output)

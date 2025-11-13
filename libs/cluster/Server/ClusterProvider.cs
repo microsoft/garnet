@@ -28,7 +28,7 @@ namespace Garnet.cluster
     /// <summary>
     /// Cluster provider
     /// </summary>
-    public class ClusterProvider : IClusterProvider
+    public sealed partial class ClusterProvider : IClusterProvider
     {
         internal readonly ClusterManager clusterManager;
         internal readonly ReplicationManager replicationManager;
@@ -79,7 +79,7 @@ namespace Garnet.cluster
 
         /// <inheritdoc />
         public bool AllowDataLoss
-            => serverOptions.UseAofNullDevice || (serverOptions.FastAofTruncate && !serverOptions.OnDemandCheckpoint);
+            => serverOptions.AllowDataLoss;
 
         /// <inheritdoc />
         public void Recover()
@@ -89,11 +89,11 @@ namespace Garnet.cluster
 
         /// <inheritdoc />
         public bool PreventRoleChange()
-        => replicationManager.BeginRecovery(RecoveryStatus.ReadRole, upgradeLock: false);
+            => replicationManager.BeginRecovery(RecoveryStatus.ReadRole, upgradeLock: false);
 
         /// <inheritdoc />
         public void AllowRoleChange()
-        => replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+            => replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
 
         /// <inheritdoc />
         public void Start()
@@ -163,7 +163,7 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
-        public void SafeTruncateAOF(bool full, long CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken)
+        public void AddNewCheckpointEntry(bool full, AofAddress CheckpointCoveredAofAddress, Guid storeCheckpointToken, Guid objectStoreCheckpointToken)
         {
             var entry = new CheckpointEntry();
 
@@ -182,24 +182,24 @@ namespace Garnet.cluster
         }
 
         /// <inheritdoc />
-        public void SafeTruncateAOF(long truncateUntil)
+        public void SafeTruncateAOF(AofAddress truncateUntil)
         {
             if (clusterManager.CurrentConfig.LocalNodeRole == NodeRole.PRIMARY)
-                _ = replicationManager.SafeTruncateAof(truncateUntil);
+                replicationManager.AofSyncDriverStore.SafeTruncateAof(truncateUntil);
             else
             {
                 if (serverOptions.FastAofTruncate)
-                    storeWrapper.appendOnlyFile?.UnsafeShiftBeginAddress(truncateUntil, truncateLog: true);
+                    storeWrapper.appendOnlyFile?.Log.UnsafeShiftBeginAddress(truncateUntil, truncateLog: true);
                 else
                 {
-                    storeWrapper.appendOnlyFile?.TruncateUntil(truncateUntil);
-                    if (!serverOptions.EnableFastCommit) storeWrapper.appendOnlyFile?.Commit();
+                    storeWrapper.appendOnlyFile?.Log.TruncateUntil(truncateUntil);
+                    if (!serverOptions.EnableFastCommit) storeWrapper.appendOnlyFile?.Log.Commit();
                 }
             }
         }
 
         /// <inheritdoc />
-        public void OnCheckpointInitiated(out long CheckpointCoveredAofAddress)
+        public void OnCheckpointInitiated(ref AofAddress CheckpointCoveredAofAddress)
         {
             Debug.Assert(serverOptions.EnableCluster);
             if (serverOptions.EnableAOF && clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA)
@@ -208,12 +208,13 @@ namespace Garnet.cluster
                 // until the checkpoint start marker. Otherwise, we will be left with an AOF that starts at the checkpoint end marker.
                 // ReplicationCheckpointStartOffset is set by { ReplicaReplayTask.Consume -> AofProcessor.ProcessAofRecordInternal } when
                 // it encounters the checkpoint start marker.
+
                 CheckpointCoveredAofAddress = replicationManager.ReplicationCheckpointStartOffset;
             }
             else
-                CheckpointCoveredAofAddress = storeWrapper.appendOnlyFile.TailAddress;
+                CheckpointCoveredAofAddress = storeWrapper.appendOnlyFile.Log.TailAddress;
 
-            replicationManager?.UpdateCommitSafeAofAddress(CheckpointCoveredAofAddress);
+            replicationManager?.UpdateCommitSafeAofAddress(ref CheckpointCoveredAofAddress);
         }
 
         /// <inheritdoc />
@@ -238,7 +239,8 @@ namespace Garnet.cluster
                 new("store_current_safe_aof_address", clusterEnabled ? replicationManager.StoreCurrentSafeAofAddress.ToString() : "N/A"),
                 new("store_recovered_safe_aof_address", clusterEnabled ? replicationManager.StoreRecoveredSafeAofTailAddress.ToString() : "N/A"),
                 new("recover_status", replicationManager.currentRecoveryStatus.ToString()),
-                new("last_failover_state", !clusterEnabled ? FailoverUtils.GetFailoverStatus(FailoverStatus.NO_FAILOVER) : failoverManager.GetLastFailoverStatus())
+                new("last_failover_state", !clusterEnabled ? FailoverUtils.GetFailoverStatus(FailoverStatus.NO_FAILOVER) : failoverManager.GetLastFailoverStatus()),
+                new("sync_driver_count", !clusterEnabled ? "0" : replicationManager.AofSyncDriverStore.AofSyncDriverCount.ToString())
             };
 
             if (clusterEnabled)
@@ -247,7 +249,7 @@ namespace Garnet.cluster
                 {
                     var (address, port) = config.GetLocalNodePrimaryAddress();
                     var primaryLinkStatus = clusterManager.GetPrimaryLinkStatus(config);
-                    var replicationOffsetLag = storeWrapper.appendOnlyFile.TailAddress - replicationManager.ReplicationOffset;
+                    var replicationOffsetLag = storeWrapper.appendOnlyFile.Log.TailAddress.AggregateDiff(replicationManager.ReplicationOffset);
                     replicationInfo.Add(new("master_host", address));
                     replicationInfo.Add(new("master_port", port.ToString()));
                     replicationInfo.Add(primaryLinkStatus[0]);
@@ -280,10 +282,11 @@ namespace Garnet.cluster
         {
             if (!serverOptions.EnableCluster)
             {
-                return (replicationManager.ReplicationOffset, default);
+                // TODO: populate replicationOffset information correctly instead of default zero-index
+                return (replicationManager.ReplicationOffset[0], default);
             }
-
-            return (replicationManager.ReplicationOffset, replicationManager.GetReplicaInfo());
+            // TODO: populate replicationOffset information correctly instead of default zero-index
+            return (replicationManager.ReplicationOffset[0], replicationManager.GetReplicaInfo());
         }
 
         /// <inheritdoc />
@@ -310,12 +313,6 @@ namespace Garnet.cluster
             };
 
             return info;
-        }
-
-        /// <inheritdoc />
-        public long GetReplicationOffset()
-        {
-            return replicationManager.ReplicationOffset;
         }
 
         /// <inheritdoc />

@@ -48,6 +48,8 @@ namespace Garnet.server
 
         public GarnetLatencyMetricsSession LatencyMetrics { get; }
 
+        public StoreWrapper StoreWrapper => this.storeWrapper;
+
         /// <summary>
         /// Get a copy of sessionMetrics
         /// </summary>
@@ -368,7 +370,9 @@ namespace Garnet.server
 
         public override void Dispose()
         {
-            logger?.LogDebug("Disposing RespServerSession Id={0}", this.Id);
+            logger?.LogDebug("Disposing RespServerSession Id={id}", this.Id);
+
+            readSessionWaiter?.Dispose();
 
             if (recvBufferPtr != null)
             {
@@ -378,6 +382,8 @@ namespace Garnet.server
             // Dispose all database sessions
             foreach (var dbSession in databaseSessions.Map)
                 dbSession?.Dispose();
+
+            clusterSession?.Dispose();
 
             if (storeWrapper.serverOptions.MetricsSamplingFrequency > 0 || storeWrapper.serverOptions.LatencyMonitor)
                 storeWrapper.monitor.AddMetricsHistorySessionDispose(sessionMetrics, LatencyMetrics);

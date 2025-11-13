@@ -34,5 +34,10 @@ namespace Garnet.server
         /// Offset of key num if any
         /// </summary>
         public int keyNumOffset;
+
+        /// <summary>
+        /// Check if asking is set
+        /// </summary>
+        public readonly bool Asking => sessionAsking > 0;
     }
 }

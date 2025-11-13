@@ -4,6 +4,7 @@
 using System;
 using System.Buffers.Text;
 using System.Diagnostics;
+using System.Numerics;
 
 namespace Garnet.common
 {
@@ -522,6 +523,18 @@ namespace Garnet.common
                 return true;
 
             return RespReadUtils.TryReadInfinity(source, out value);
+        }
+
+        /// <summary>
+        /// Get the leftmost bit set offset and clear the associated bit
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        public static int GetNextOffset(this ref ulong value)
+        {
+            var offset = BitOperations.TrailingZeroCount(value);
+            value &= ~((1UL) << offset);
+            return offset;
         }
     }
 }

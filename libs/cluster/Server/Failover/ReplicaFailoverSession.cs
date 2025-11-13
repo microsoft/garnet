@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
@@ -84,11 +85,12 @@ namespace Garnet.cluster
                 // Issue stop writes to the primary
                 status = FailoverStatus.ISSUING_PAUSE_WRITES;
                 var localIdBytes = Encoding.ASCII.GetBytes(oldConfig.LocalNodeId);
-                var primaryReplicationOffset = await client.failstopwrites(localIdBytes).WaitAsync(failoverTimeout, cts.Token);
+                var resp = await client.ExecuteClusterFailStopWrites(localIdBytes).WaitAsync(failoverTimeout, cts.Token);
+                var primaryReplicationOffset = AofAddress.FromString(resp);
 
                 // Wait for replica to catch up
                 status = FailoverStatus.WAITING_FOR_SYNC;
-                while (primaryReplicationOffset > clusterProvider.replicationManager.ReplicationOffset)
+                while (primaryReplicationOffset.AnyGreater(clusterProvider.replicationManager.ReplicationOffset))
                 {
                     // Fail if upper bound time for failover has been reached
                     if (FailoverTimeout)
@@ -137,6 +139,13 @@ namespace Garnet.cluster
 
                 // Update replicationIds and replicationOffset2
                 clusterProvider.replicationManager.TryUpdateForFailover();
+
+                // Cancel active replication tasks
+                clusterProvider.replicationManager.ResetReplicaReplayGroup();
+
+                // Update sequence number generator for sharded log if needed
+                if (clusterProvider.serverOptions.AofSublogCount > 1)
+                    clusterProvider.storeWrapper.appendOnlyFile.ResetSeqNumberGen();
 
                 // Initialize checkpoint history
                 if (!clusterProvider.replicationManager.InitializeCheckpointStore())
@@ -294,7 +303,7 @@ namespace Garnet.cluster
                 {
                     // Request primary to be reset to original state only if DEFAULT option was used
                     if (primaryClient != null)
-                        _ = await primaryClient?.failstopwrites(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
+                        _ = await primaryClient?.ExecuteClusterFailStopWrites(Array.Empty<byte>()).WaitAsync(failoverTimeout, cts.Token);
                     return false;
                 }
 
