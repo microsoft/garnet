@@ -207,14 +207,7 @@ namespace Garnet.server
             if (!HasGoneAsync)
             {
                 // If we missed, AND we're not pending, we can write a null directly when we get the result
-                if (status.NotFound)
-                {
-                    pendingNullWrite = true;
-                }
-                else
-                {
-                    pendingNullWrite = false;
-                }
+                pendingNullWrite = status.NotFound;
             }
             else
             {
@@ -305,7 +298,7 @@ namespace Garnet.server
             }
             finally
             {
-                if (!MemoryMarshal.TryGetArray<(Status, SpanByteAndMemory)>(runningStatus, out var arrSeg))
+                if (MemoryMarshal.TryGetArray<(Status, SpanByteAndMemory)>(runningStatus, out var arrSeg))
                 {
                     ArrayPool<(Status, SpanByteAndMemory)>.Shared.Return(arrSeg.Array);
                 }

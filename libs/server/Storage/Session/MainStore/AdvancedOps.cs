@@ -106,6 +106,6 @@ namespace Garnet.server
             , allows ref struct
 #endif
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-        => basicContext.ReadWithPrefetch(ref batch, userContext);
+        => context.ReadWithPrefetch(ref batch, userContext);
     }
 }
