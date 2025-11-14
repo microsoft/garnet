@@ -477,6 +477,35 @@ namespace Garnet.test.cluster
             }
         }
 
+        public void SimplePopulateDB(bool disableObjects, int keyLength, int kvpairCount, int primaryIndex, int addCount = 0, bool perforRMW = false)
+        {
+            //Populate Primary
+            if (disableObjects)
+            {
+                PopulatePrimary(ref kvPairs, keyLength, kvpairCount, primaryIndex);
+            }
+            else
+            {
+                if (!perforRMW)
+                    PopulatePrimaryWithObjects(ref kvPairsObj, keyLength, kvpairCount, primaryIndex);
+                else
+                    PopulatePrimaryRMW(ref kvPairs, keyLength, kvpairCount, primaryIndex, addCount);
+            }
+        }
+
+        public void SimpleValidateDB(bool disableObjects, int replicaIndex)
+        {
+            // Validate database
+            if (disableObjects)
+            {
+                ValidateKVCollectionAgainstReplica(ref kvPairs, replicaIndex);
+            }
+            else
+            {
+                ValidateNodeObjects(ref kvPairsObj, replicaIndex);
+            }
+        }
+
         public void PopulatePrimaryRMW(ref Dictionary<string, int> kvPairs, int keyLength, int kvpairCount, int primaryIndex, int addCount, int[] slotMap = null, bool incrementalSnapshots = false, int ckptNode = 0, int randomSeed = -1)
         {
             if (randomSeed != -1) clusterTestUtils.InitRandom(randomSeed);
