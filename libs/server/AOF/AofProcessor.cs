@@ -453,7 +453,7 @@ namespace Garnet.server
             Debug.Assert(storeWrapper.serverOptions.AofSublogCount > 1);
             var extendedHeader = *(AofExtendedHeader*)ptr;
             var curr = ptr + sizeof(AofExtendedHeader);
-            var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(ptr);
+            var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
             storeWrapper.appendOnlyFile.replayTimestampManager.UpdateKeySequenceNumber(sublogIdx, ref key, extendedHeader.sequenceNumber);
         }
 
@@ -549,7 +549,6 @@ namespace Garnet.server
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Memory.Dispose();
         }
-
 
         static void ObjectStoreDelete<TContext>(
             TContext context,
