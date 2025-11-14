@@ -376,6 +376,7 @@ namespace Garnet.server
             var bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
             var bufferLength = replayContext.objectOutputBuffer.Length;
             var isSharded = storeWrapper.serverOptions.AofSublogCount > 1;
+            var updateKey = true;
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
@@ -409,15 +410,17 @@ namespace Garnet.server
                     UnifiedStoreDelete(unifiedStoreContext, entryPtr + HeaderSize(isSharded));
                     break;
                 case AofEntryType.StoredProcedure:
+                    updateKey = false;
                     aofReplayCoordinator.ReplayStoredProc(sublogIdx, header.procedureId, entryPtr);
                     break;
                 case AofEntryType.TxnCommit:
+                    updateKey = false;
                     aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(sublogIdx, entryPtr, asReplica);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
-            if (isSharded)
+            if (isSharded && updateKey)
                 UpdateKeySequenceNumber(sublogIdx, entryPtr);
             return true;
         }

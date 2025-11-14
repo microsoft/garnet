@@ -115,7 +115,6 @@ namespace Garnet.server
         public ulong ComputeAofSyncReplayAddress(
             bool recoverFromRemote,
             bool sameMainStoreCheckpointHistory,
-            bool sameObjectStoreCheckpointHistory,
             bool sameHistory2,
             in AofAddress replicationOffset2,
             in AofAddress replicaAofBeginAddress,
@@ -125,7 +124,7 @@ namespace Garnet.server
         {
             var replayAOFMap = 0UL;
             for (var sublogIdx = 0; sublogIdx < serverOptions.AofSublogCount; sublogIdx++)
-                ComputeAofSubloSyncReplayAddress(sublogIdx, ref replayAOFMap, recoverFromRemote, sameMainStoreCheckpointHistory, sameObjectStoreCheckpointHistory, sameHistory2, replicationOffset2, replicaAofBeginAddress, replicaAofTailAddress, beginAddress, ref checkpointAofBeginAddress);
+                ComputeAofSubloSyncReplayAddress(sublogIdx, ref replayAOFMap, recoverFromRemote, sameMainStoreCheckpointHistory, sameHistory2, replicationOffset2, replicaAofBeginAddress, replicaAofTailAddress, beginAddress, ref checkpointAofBeginAddress);
 
             return replayAOFMap;
 
@@ -134,7 +133,6 @@ namespace Garnet.server
                 ref ulong replayAOFMap,
                 bool recoverFromRemote,
                 bool sameMainStoreCheckpointHistory,
-                bool sameObjectStoreCheckpointHistory,
                 bool sameHistory2,
                 in AofAddress replicationOffset2,
                 in AofAddress replicaAofBeginAddress,
@@ -178,7 +176,7 @@ namespace Garnet.server
                             checkpointAofBeginAddress = replayUntilAddress;
                         }
 
-                        if (!sameMainStoreCheckpointHistory || !sameObjectStoreCheckpointHistory)
+                        if (!sameMainStoreCheckpointHistory)
                         {
                             // If we are not in the same checkpoint history, we need to stream the AOF from the primary's beginning address
                             checkpointAofBeginAddress[sublogIdx] = beginAddress[sublogIdx];

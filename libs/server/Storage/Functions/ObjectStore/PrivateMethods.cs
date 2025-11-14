@@ -55,7 +55,6 @@ namespace Garnet.server
             }
         }
 
-
         /// <summary>
         /// Logging upsert from
         /// a. InPlaceWriter
@@ -70,10 +69,6 @@ namespace Garnet.server
             GarnetObjectSerializer.Serialize(value, out var valueBytes);
             fixed (byte* valPtr = valueBytes)
             {
-                //                functionsState.appendOnlyFile.Enqueue(
-                //                    new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
-                //                    key, new ReadOnlySpan<byte>(valPtr, valueBytes.Length), out _);
-                //=======
                 if (functionsState.appendOnlyFile.Log.Size == 1)
                 {
                     var aofHeader = new AofHeader
