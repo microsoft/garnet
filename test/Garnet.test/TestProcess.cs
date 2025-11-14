@@ -40,7 +40,7 @@ namespace Garnet.test
             {
                 if (cts.IsCancellationRequested)
                 {
-                    throw new GarnetException($"Port {port} is not available, and di not become available before timeout");
+                    throw new GarnetException($"Port {port} is not available, and did not become available before timeout");
                 }
 
                 // Wait for port to be available
