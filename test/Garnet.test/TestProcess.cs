@@ -76,20 +76,21 @@ namespace Garnet.test
             process = Process.Start(psi);
             ClassicAssert.NotNull(process);
 
-            // Block until the startup message to ensure process is up.
-            while (true)
-            {
-                var line = process.StandardOutput.ReadLineAsync(cts.Token).AsTask().GetAwaiter().GetResult();
+            using var waitFor = new SemaphoreSlim(0, 1);
 
-                if (line == null)
+            process.OutputDataReceived +=
+                (obj, lineArgs) =>
                 {
-                    throw new GarnetException("StandardOutput completed before GarnetServer was ready for connections");
-                }
-                else if (line.Equals("* Ready to accept connections", StringComparison.Ordinal))
-                {
-                    break;
-                }
-            }
+                    if (lineArgs.Data.Equals("* Ready to accept connections", StringComparison.Ordinal))
+                    {
+                        _ = waitFor.Release();
+                        process.CancelOutputRead();
+                    }
+                };
+            process.BeginOutputReadLine();
+
+            // Block until the startup message to ensure process is up.
+            waitFor.Wait(cts.Token);
 
             lightClientRequest = new LightClientRequest(endPoint, 0);
         }
@@ -139,6 +140,11 @@ namespace Garnet.test
                             process.Kill();
                         }
                         catch { }
+
+                        if (!process.WaitForExit(10_000))
+                        {
+                            Console.WriteLine($"PID: {process.Id} did not exit when expected");
+                        }
 
                         process.Close();
                     }
