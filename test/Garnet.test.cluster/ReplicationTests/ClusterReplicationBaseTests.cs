@@ -134,15 +134,30 @@ namespace Garnet.test.cluster
             var keyLength = 16;
             var kvpairCount = keyCount;
             context.kvPairs = [];
+            context.kvPairsObj = [];
 
             //Populate Primary
-            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
+            if (disableObjects)
+            {
+                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
+            }
+            else
+            {
+                context.PopulatePrimaryWithObjects(ref context.kvPairsObj, keyLength, kvpairCount, primaryIndex);
+            }
 
             // Wait for replica to sync
             context.clusterTestUtils.WaitForReplicaAofSync(primaryIndex, replicaIndex);
 
             // Validate database
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
+            if (disableObjects)
+            {
+                context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, replicaIndex);
+            }
+            else
+            {
+                context.ValidateNodeObjects(ref context.kvPairsObj, replicaIndex);
+            }
         }
 
         [Test, Order(2)]
