@@ -381,6 +381,8 @@ byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLeng
 
 `writeLength` is the desired number of bytes, this is only used used if we must allocate a new block.
 
+As with the write and delete callbacks, DiskANN guarantees an extra 4-bytes BEFORE `keyData` that we use to store a namespace, and thus avoid copying the key value before invoking Tsavorite's `RMW`.
+
 After we allocate a new block or find an existing one, `dataCallback(nint dataCallbackContext, nint dataPointer, nuint dataLength)`.  Changes made to data in this callback are persisted.  This needs to be _fast_ to prevent gumming up Tsavorite, as we are under epoch protection.
 
 Newly allocated blocks are guaranteed to be all zeros.
