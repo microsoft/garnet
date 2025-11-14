@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Garnet.common;
@@ -265,6 +266,53 @@ namespace Garnet.server
                     completedOutputs.Dispose();
                 }
             }
+        }
+
+        /// <summary>
+        /// Find namespaces used by the given keys, IFF they are Vector Sets.  They may (and often will) not be.
+        /// 
+        /// Meant for use during migration.
+        /// </summary>
+        public unsafe HashSet<ulong> GetNamespacesForKeys(StoreWrapper storeWrapper, IEnumerable<byte[]> keys, Dictionary<byte[], byte[]> vectorSetKeys)
+        {
+            // TODO: Ideally we wouldn't make a new session for this, but it's fine for now
+            using var storageSession = new StorageSession(storeWrapper, new(), null, null, storeWrapper.DefaultDatabase.Id, this, logger);
+
+            HashSet<ulong> namespaces = null;
+
+            Span<byte> indexSpan = stackalloc byte[Index.Size];
+
+            foreach (var key in keys)
+            {
+                fixed (byte* keyPtr = key)
+                {
+                    var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
+
+                    // Dummy command, we just need something Vector Set-y
+                    RawStringInput input = default;
+                    input.header.cmd = RespCommand.VSIM;
+
+                    using (ReadVectorIndex(storageSession, ref keySpan, ref input, indexSpan, out var status))
+                    {
+                        if (status != GarnetStatus.OK)
+                        {
+                            continue;
+                        }
+
+                        namespaces ??= [];
+
+                        ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
+                        for (var i = 0UL; i < ContextStep; i++)
+                        {
+                            _ = namespaces.Add(context + i);
+                        }
+
+                        vectorSetKeys[key] = indexSpan.ToArray();
+                    }
+                }
+            }
+
+            return namespaces;
         }
     }
 }
