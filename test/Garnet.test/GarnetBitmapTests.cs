@@ -47,18 +47,9 @@ namespace Garnet.test
 
         private GarnetServerTestProcess CreateServerWithEnvironmentVariables(string environment)
         {
-            var parts = environment.Split('=', 2);
-            if (parts.Length == 2)
-            {
-                Dictionary<string, string> envVars = [];
-                envVars.Add(parts[0], parts[1]);
+            var envVars = new[] { environment.Split('=', 2, StringSplitOptions.RemoveEmptyEntries) }.ToDictionary(static t => t[0], static t => t[1]);
 
-                return new GarnetServerTestProcess(envVars);
-            }
-            else
-            {
-                return new GarnetServerTestProcess();
-            }
+            return new GarnetServerTestProcess(envVars);
         }
 
         private long LongRandom() => r.NextInt64(long.MinValue, long.MaxValue);

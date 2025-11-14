@@ -13,17 +13,39 @@ namespace Garnet.test
 {
     internal class GarnetServerTestProcess : IDisposable
     {
-        private readonly Process process = default;
-        private readonly Stopwatch stopWatch = default;
-        private readonly LightClientRequest lightClientRequest = default;
+        private Process process;
+        private readonly LightClientRequest lightClientRequest;
 
         public ConfigurationOptions Options { get; }
 
-        internal GarnetServerTestProcess(Dictionary<string, string> env = default, int port = 7000)
+        internal GarnetServerTestProcess(Dictionary<string, string> env, int port = 7000)
         {
-            var a = Assembly.GetAssembly(typeof(Garnet.Program));
+            var a = Assembly.GetAssembly(typeof(Program));
             var name = a.Location;
             var pos = name.LastIndexOf('.');
+
+            using var cts = new CancellationTokenSource();
+
+            if (Debugger.IsAttached)
+            {
+                // If debugging, give us a bit longer before timeouts start happening
+                cts.CancelAfter(300_000);
+            }
+            else
+            {
+                cts.CancelAfter(30_000);
+            }
+
+            while (!TestUtils.IsPortAvailable(port))
+            {
+                if (cts.IsCancellationRequested)
+                {
+                    throw new GarnetException($"Port {port} is not available, and di not become available before timeout");
+                }
+
+                // Wait for port to be available
+                Thread.Sleep(1_000);
+            }
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -45,7 +67,7 @@ namespace Garnet.test
                 RedirectStandardOutput = true
             };
 
-            if (env != default)
+            if (env != null)
             {
                 foreach (var e in env)
                     psi.Environment.Add(e.Key, e.Value);
@@ -55,40 +77,73 @@ namespace Garnet.test
             ClassicAssert.NotNull(process);
 
             // Block until the startup message to ensure process is up.
-            var dummy = new char[1];
-            _ = process.StandardOutput.ReadBlock(dummy, 0, 1);
+            while (true)
+            {
+                var line = process.StandardOutput.ReadLineAsync(cts.Token).AsTask().GetAwaiter().GetResult();
 
-            // Give it a bit more time
-            Thread.Sleep(100);
+                if (line == null)
+                {
+                    throw new GarnetException("StandardOutput completed before GarnetServer was ready for connections");
+                }
+                else if (line.Equals("* Ready to accept connections", StringComparison.Ordinal))
+                {
+                    break;
+                }
+            }
+
             lightClientRequest = new LightClientRequest(endPoint, 0);
+        }
 
-            stopWatch = Stopwatch.StartNew();
+        ~GarnetServerTestProcess()
+        {
+            // If somehow we leak this, still try and kill the process
+            KillProcess(process, lightClientRequest);
+            process = null;
         }
 
         public void Dispose()
         {
-            if (stopWatch != default)
-            {
-                stopWatch.Stop();
-                Console.WriteLine(stopWatch.ElapsedMilliseconds);
-            }
+            GC.SuppressFinalize(this);
 
-            if (process != default)
+            KillProcess(process, lightClientRequest);
+            process = null;
+        }
+
+        private static void KillProcess(Process process, LightClientRequest lightClientRequest)
+        {
+            if (process != null)
             {
-                // We want to be sure the process is down, otherwise it may conflict
-                // with a future run. First, we'll ask nicely and then kill it.
                 try
                 {
-                    // More reliable than QUIT.
-                    _ = lightClientRequest.SendCommand("DEBUG PANIC");
-                    lightClientRequest.Dispose();
+                    if (process.HasExited)
+                    {
+                        return;
+                    }
+
+                    using (process)
+                    {
+                        // We want to be sure the process is down, otherwise it may conflict
+                        // with a future run. First, we'll ask nicely and then kill it.
+                        using (lightClientRequest)
+                        {
+                            try
+                            {
+                                // More reliable than QUIT.
+                                _ = lightClientRequest.SendCommand("DEBUG PANIC");
+                            }
+                            catch { }
+                        }
+
+                        try
+                        {
+                            process.Kill();
+                        }
+                        catch { }
+
+                        process.Close();
+                    }
                 }
                 catch { }
-
-                try { process.Kill(); }
-                catch { }
-
-                process.Close();
             }
         }
     }
