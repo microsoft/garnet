@@ -64,6 +64,8 @@ namespace Garnet.server
             var finalStatus = currentStatus;
             if (finalStatus.IsPending)
             {
+                session.storageSession.incr_session_pending();
+
                 // Have to block, unlike with ScatterGather we cannot proceed to next result
                 var res = storageApi.GET_CompletePending(out var completedOutputs, wait: true);
                 Debug.Assert(res, "Should have completed");
@@ -83,6 +85,8 @@ namespace Garnet.server
 
             if (finalStatus.Found)
             {
+                session.storageSession.incr_session_found();
+
                 // Got a result, write it out
 
                 if (output.IsSpanByte)
@@ -98,6 +102,8 @@ namespace Garnet.server
             }
             else
             {
+                session.storageSession.incr_session_notfound();
+
                 // Not found, write a null out
                 while (!RespWriteUtils.TryWriteNull(ref session.dcurr, session.dend))
                     session.SendAndReset();
@@ -190,18 +196,36 @@ namespace Garnet.server
         /// <inheritdoc/>
         public void SetStatus(int i, Status status)
         {
-            if (status.IsPending && !HasGoneAsync)
+            if (status.IsPending)
             {
-                var bufferSize = session.parseState.Count - i;
-                var arr = ArrayPool<(Status, SpanByteAndMemory)>.Shared.Rent(bufferSize);
-                runningStatus = arr.AsMemory()[..bufferSize];
+                session.storageSession.incr_session_pending();
+
+                if (!HasGoneAsync)
+                {
+
+                    var bufferSize = session.parseState.Count - i;
+                    var arr = ArrayPool<(Status, SpanByteAndMemory)>.Shared.Rent(bufferSize);
+                    runningStatus = arr.AsMemory()[..bufferSize];
 
 #if DEBUG
-                // Fill with garbage to make easier to debug
-                Status garbage = default;
-                Unsafe.As<Status, byte>(ref garbage) = 255;
-                runningStatus.Span.Fill((garbage, default));
+                    // Fill with garbage to make easier to debug
+                    Status garbage = default;
+                    Unsafe.As<Status, byte>(ref garbage) = 255;
+                    runningStatus.Span.Fill((garbage, default));
 #endif
+                }
+            }
+            else
+            {
+                // Record synchronous metrics right now
+                if (status.Found)
+                {
+                    session.storageSession.incr_session_found();
+                }
+                else
+                {
+                    session.storageSession.incr_session_notfound();
+                }
             }
 
             if (!HasGoneAsync)
@@ -258,6 +282,16 @@ namespace Garnet.server
 
                                 var asyncStatus = iter.Current.Status;
                                 var asyncOutput = iter.Current.Output;
+
+                                // Update metrics for async operations - sync operations were already handle in SetStatus
+                                if (asyncStatus.Found)
+                                {
+                                    session.storageSession.incr_session_found();
+                                }
+                                else
+                                {
+                                    session.storageSession.incr_session_notfound();
+                                }
 
                                 runningStatusSpan[shiftedIndex] = (asyncStatus, asyncOutput);
 
