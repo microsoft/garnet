@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -127,7 +128,7 @@ namespace Garnet.server
                         return false;
                 }
 
-                // Processed this record succesfully
+                // Processed this record successfully
                 return true;
             }
 
@@ -140,7 +141,7 @@ namespace Garnet.server
             {
                 var fuzzyRegionOps = aofReplayContext.fuzzyRegionOps;
                 if (fuzzyRegionOps.Count > 0)
-                    logger?.LogInformation("Replaying sublogIdx: {fuzzyRegionBufferCount} records from fuzzy region for checkpoint {newVersion}", fuzzyRegionOps.Count, storeVersion);
+                    logger?.LogInformation("Replaying {fuzzyRegionBufferCount} records from fuzzy region for checkpoint {newVersion}", fuzzyRegionOps.Count, storeVersion);
                 foreach (var entry in fuzzyRegionOps)
                 {
                     fixed (byte* entryPtr = entry)
@@ -155,9 +156,13 @@ namespace Garnet.server
             /// <param name="asReplica"></param>
             internal void ProcessFuzzyRegionTransactionGroup(byte* ptr, bool asReplica)
             {
+                Debug.Assert(aofReplayContext.txnGroupBuffer != null);
                 // Process transaction groups in FIFO order
-                var txnGroup = aofReplayContext.txnGroupBuffer.Dequeue();
-                ProcessTransactionGroup(ptr, asReplica, txnGroup);
+                if (aofReplayContext.txnGroupBuffer.Count > 0)
+                {
+                    var txnGroup = aofReplayContext.txnGroupBuffer.Dequeue();
+                    ProcessTransactionGroup(ptr, asReplica, txnGroup);
+                }
             }
 
             /// <summary>

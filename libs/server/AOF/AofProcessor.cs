@@ -90,6 +90,9 @@ namespace Garnet.server
                 dbSession.StorageSession.basicContext.Session?.Dispose();
                 dbSession.StorageSession.objectStoreBasicContext.Session?.Dispose();
             }
+
+            aofReplayCoordinator.Dispose();
+            respServerSession.Dispose();
         }
 
         /// <summary>
@@ -98,7 +101,7 @@ namespace Garnet.server
         /// <param name="db">Database to recover</param>
         /// <param name="untilAddress">Tail address for recovery</param>
         /// <returns>Tail address</returns>
-        public long Recover(GarnetDatabase db, long untilAddress)
+        public long Recover(GarnetDatabase db, long untilAddress = -1)
         {
             Stopwatch swatch = new();
             swatch.Start();
@@ -153,7 +156,7 @@ namespace Garnet.server
                                 logger?.LogTrace("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", count, nextAofAddress, db.Id);
                         }
 
-                        logger?.LogInformation("Completed full AOF sublog replay of {count:N0} records (DB ID: {id})", count, db.Id);
+                        logger?.LogInformation("Completed full AOF log replay of {count:N0} records (DB ID: {id})", count, db.Id);
                         _ = Interlocked.Add(ref total_number_of_replayed_records, count);
                     }
 
@@ -228,7 +231,6 @@ namespace Garnet.server
                         }
                         else
                         {
-                            Debug.Assert(replayContext.inFuzzyRegion);
                             replayContext.inFuzzyRegion = false;
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)

@@ -477,7 +477,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void SimplePopulateDB(bool disableObjects, int keyLength, int kvpairCount, int primaryIndex, int addCount = 0, bool perforRMW = false)
+        public void SimplePopulateDB(bool disableObjects, int keyLength, int kvpairCount, int primaryIndex, int addCount = 0, bool performRMW = false)
         {
             //Populate Primary
             if (disableObjects)
@@ -486,7 +486,7 @@ namespace Garnet.test.cluster
             }
             else
             {
-                if (!perforRMW)
+                if (!performRMW)
                     PopulatePrimaryWithObjects(ref kvPairsObj, keyLength, kvpairCount, primaryIndex);
                 else
                     PopulatePrimaryRMW(ref kvPairs, keyLength, kvpairCount, primaryIndex, addCount);
