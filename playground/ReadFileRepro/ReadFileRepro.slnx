@@ -1,4 +1,0 @@
-<Solution>
-  <Project Path="ReadFileClient/ReadFileClient.csproj" />
-  <Project Path="ReadFileServer/ReadFileServer.csproj" />
-</Solution>
