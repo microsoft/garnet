@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using CommandLine;
+using Tsavorite.core;
 
 namespace Device.benchmark
 {
