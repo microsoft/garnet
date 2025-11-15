@@ -723,7 +723,7 @@ namespace Garnet
             var enableRevivification = EnableRevivification.GetValueOrDefault();
 
             var deviceType = GetDeviceType(logger);
-                        
+
             var useAzureStorage = deviceType == DeviceType.AzureStorage;
             if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString) && string.IsNullOrEmpty(AzureStorageServiceUri))
             {
