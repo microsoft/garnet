@@ -189,7 +189,7 @@ namespace Garnet.common
         public LocalFileStreamProvider(bool readOnly = false)
         {
             this.readOnly = readOnly;
-            this.localDeviceFactoryCreator = new LocalStorageNamedDeviceFactoryCreator(disableFileBuffering: false, readOnly: readOnly);
+            this.localDeviceFactoryCreator = new LocalStorageNamedDeviceFactoryCreator(disableFileBuffering: false, deviceType: DeviceType.FileStream, readOnly: readOnly);
         }
 
         protected override IDevice GetDevice(string path)

@@ -20,8 +20,7 @@ namespace Tsavorite.core
         readonly int? throttleLimit;
         readonly bool preallocateFile;
         readonly bool disableFileBuffering;
-        readonly bool useNativeDeviceLinux;
-        readonly bool useRandomAccessDevice;
+        readonly DeviceType deviceType;
         readonly bool readOnly;
         readonly ILogger logger;
 
@@ -32,18 +31,17 @@ namespace Tsavorite.core
         /// <param name="deleteOnClose">Whether file should be deleted on close</param>
         /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
         /// <param name="throttleLimit">Throttle limit (max number of pending I/Os) for this device instance</param>
-        /// <param name="useNativeDeviceLinux">Use native device on Linux</param>
+        /// <param name="deviceType">Device type to use</param>
         /// <param name="readOnly">Whether files are opened as readonly</param>
         /// <param name="baseName">Base name</param>
         /// <param name="logger">Logger</param>
-        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, bool useNativeDeviceLinux = false, bool useRandomAccessDevice = false, bool readOnly = false, string baseName = null, ILogger logger = null)
+        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Native, bool readOnly = false, string baseName = null, ILogger logger = null)
         {
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.throttleLimit = throttleLimit;
-            this.useNativeDeviceLinux = useNativeDeviceLinux;
-            this.useRandomAccessDevice = useRandomAccessDevice;
+            this.deviceType = deviceType;
             this.readOnly = readOnly;
             this.baseName = baseName;
             this.logger = logger;
@@ -52,13 +50,12 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public IDevice Get(FileDescriptor fileInfo)
         {
-            var device = Devices.CreateLogDevice(
+            var device = Devices.CreateDevice(
                 Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName),
                 preallocateFile: preallocateFile,
                 deleteOnClose: deleteOnClose,
                 disableFileBuffering: disableFileBuffering,
-                useNativeDeviceLinux: useNativeDeviceLinux,
-                useRandomAccessDevice: useRandomAccessDevice,
+                deviceType: deviceType,
                 readOnly: readOnly,
                 logger: logger);
             if (throttleLimit.HasValue)
