@@ -204,7 +204,8 @@ namespace Garnet.server
             if (status.IsPending)
                 CompletePendingForUnifiedStoreSession(ref status, ref unifiedOutput, ref unifiedContext);
 
-            timeoutSet = status.Found && ((OutputHeader*)unifiedOutput.SpanByteAndMemory.SpanByte.ToPointer())->result1 == 1;
+            timeoutSet = status.Found &&
+                         unifiedOutput.SpanByteAndMemory.ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.RESP_RETURN_VAL_1);
 
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }

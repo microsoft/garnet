@@ -90,20 +90,33 @@ namespace Garnet.server
                 return false;
             }
 
-            return TrySetRecordExpiration(ref logRecord, optionType, expiryExisted, newExpiry, ref output);
+            var isSuccessful = TrySetRecordExpiration(ref logRecord, optionType, expiryExisted, newExpiry, out var result);
+            if (isSuccessful)
+            {
+                functionsState.CopyDefaultResp(
+                    result == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
+            }
+
+            return isSuccessful;
         }
 
         bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, bool expiryExisted, long newExpiry, ref UnifiedStoreOutput output)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 
-            return TrySetRecordExpiration(ref logRecord, optionType, expiryExisted, newExpiry, ref output);
+            var isSuccessful = TrySetRecordExpiration(ref logRecord, optionType, expiryExisted, newExpiry, out var result);
+            if (isSuccessful)
+            {
+                functionsState.CopyDefaultResp(
+                    result == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
+            }
+
+            return isSuccessful;
         }
 
-        bool TrySetRecordExpiration(ref LogRecord logRecord, ExpireOption optionType, bool expiryExisted, long newExpiry, ref UnifiedStoreOutput output)
+        bool TrySetRecordExpiration(ref LogRecord logRecord, ExpireOption optionType, bool expiryExisted, long newExpiry, out int result)
         {
-            var o = (OutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
-            o->result1 = 0;
+            result = 0;
 
             if (expiryExisted)
             {
@@ -115,14 +128,14 @@ namespace Garnet.server
                     case ExpireOption.XX:
                     case ExpireOption.None:
                         _ = logRecord.TrySetExpiration(newExpiry);
-                        o->result1 = 1;
+                        result = 1;
                         return true;
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
                         if (newExpiry > logRecord.Expiration)
                         {
                             _ = logRecord.TrySetExpiration(newExpiry);
-                            o->result1 = 1;
+                            result = 1;
                         }
                         return true;
                     case ExpireOption.LT:
@@ -130,7 +143,7 @@ namespace Garnet.server
                         if (newExpiry < logRecord.Expiration)
                         {
                             _ = logRecord.TrySetExpiration(newExpiry);
-                            o->result1 = 1;
+                            result = 1;
                         }
                         return true;
                     default:
@@ -149,7 +162,7 @@ namespace Garnet.server
                         functionsState.logger?.LogError("Failed to add expiration in {methodName}.{caseName}", "EvaluateExpireCopyUpdate", "LT");
                         return false;
                     }
-                    o->result1 = 1;
+                    result = 1;
                     return true;
                 case ExpireOption.XX:
                 case ExpireOption.GT:

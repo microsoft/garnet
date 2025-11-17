@@ -456,10 +456,9 @@ namespace Garnet.server
 
             var status = storageApi.EXPIRE(key, ref input, ref output);
 
-            if (status == GarnetStatus.OK && ((OutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer())->result1 == 1)
+            if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_1, ref dcurr, dend))
-                    SendAndReset();
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {

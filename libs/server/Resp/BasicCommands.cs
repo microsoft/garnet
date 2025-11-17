@@ -292,7 +292,8 @@ namespace Garnet.server
             Debug.Assert(parseState.Count == 2);
             var key = parseState.GetArgSliceByRef(0);
 
-            return NetworkSET_Conditional(RespCommand.SET, 0, key, true, false, false, ref storageApi);
+            return NetworkSET_Conditional(RespCommand.SET, 0, key, getValue: true, highPrecision: false,
+                withEtag: false, ref storageApi);
         }
 
         /// <summary>
