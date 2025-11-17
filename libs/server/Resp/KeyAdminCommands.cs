@@ -351,7 +351,7 @@ namespace Garnet.server
             // Prepare input
             var input = new UnifiedStoreInput(RespCommand.EXISTS);
 
-            var output = new GarnetUnifiedStoreOutput();
+            var output = new UnifiedStoreOutput();
 
             for (var i = 0; i < parseState.Count; i++)
             {
@@ -451,8 +451,8 @@ namespace Garnet.server
 
             var input = new UnifiedStoreInput(RespCommand.EXPIRE, arg1: expirationWithOption.Word);
 
-            // Prepare GarnetUnifiedStoreOutput output
-            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            // Prepare UnifiedStoreOutput output
+            var output = UnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.EXPIRE(key, ref input, ref output);
 
@@ -489,8 +489,8 @@ namespace Garnet.server
             // Prepare input
             var input = new UnifiedStoreInput(RespCommand.PERSIST);
 
-            // Prepare GarnetUnifiedStoreOutput output
-            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            // Prepare UnifiedStoreOutput output
+            var output = UnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.PERSIST(key, ref input, ref output);
 
@@ -526,8 +526,8 @@ namespace Garnet.server
             // Prepare input
             var input = new UnifiedStoreInput(command);
 
-            // Prepare GarnetUnifiedStoreOutput output
-            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            // Prepare UnifiedStoreOutput output
+            var output = UnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.TTL(key, ref input, ref output);
 
@@ -563,8 +563,8 @@ namespace Garnet.server
             // Prepare input
             var input = new UnifiedStoreInput(command);
 
-            // Prepare GarnetUnifiedStoreOutput output
-            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            // Prepare UnifiedStoreOutput output
+            var output = UnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.EXPIRETIME(key, ref input, ref output);
 

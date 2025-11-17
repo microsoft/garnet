@@ -26,7 +26,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus ListPush<TObjectContext>(PinnedSpanByte key, PinnedSpanByte[] elements, ListOperation lop, out int itemsDoneCount, ref TObjectContext objectStoreContext)
-          where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+          where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             itemsDoneCount = 0;
 
@@ -61,7 +61,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus ListPush<TObjectContext>(PinnedSpanByte key, PinnedSpanByte element, ListOperation lop, out int itemsDoneCount, ref TObjectContext objectStoreContext)
-           where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+           where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             itemsDoneCount = 0;
 
@@ -90,7 +90,7 @@ namespace Garnet.server
         /// <param name="element"></param>
         /// <returns>The popped element</returns>
         public GarnetStatus ListPop<TObjectContext>(PinnedSpanByte key, ListOperation lop, ref TObjectContext objectStoreContext, out PinnedSpanByte element)
-           where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+           where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = ListPop(key, 1, lop, ref objectStoreContext, out var elements);
             element = status == GarnetStatus.OK ? elements.FirstOrDefault() : default;
@@ -109,13 +109,13 @@ namespace Garnet.server
         /// <param name="elements"></param>
         /// <returns>The count elements popped from the list</returns>
         public unsafe GarnetStatus ListPop<TObjectContext>(PinnedSpanByte key, int count, ListOperation lop, ref TObjectContext objectStoreContext, out PinnedSpanByte[] elements)
-                 where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+                 where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
             var input = new ObjectInput(header, count);
 
-            var output = new GarnetObjectStoreOutput();
+            var output = new ObjectStoreOutput();
 
             var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext, ref output);
 
@@ -140,7 +140,7 @@ namespace Garnet.server
         /// <param name="elements"></param>
         /// <returns>The count elements popped from the list</returns>
         public unsafe GarnetStatus ListPopMultiple<TObjectContext>(PinnedSpanByte[] keys, OperationDirection direction, int count, ref TObjectContext objectContext, out PinnedSpanByte key, out PinnedSpanByte[] elements)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             foreach (var k in keys)
             {
@@ -175,7 +175,7 @@ namespace Garnet.server
         /// <param name="count"></param>
         /// <returns></returns>
         public unsafe GarnetStatus ListLength<TObjectContext>(PinnedSpanByte key, ref TObjectContext objectStoreContext, out int count)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             count = 0;
 
@@ -336,7 +336,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns>true when successful</returns>
         public unsafe bool ListTrim<TObjectContext>(PinnedSpanByte key, int start, int stop, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             // Prepare the input
             var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LTRIM };
@@ -357,7 +357,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public GarnetStatus ListPush<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectStoreContext);
             itemBroker.HandleCollectionUpdate(key.ToArray());
@@ -374,8 +374,8 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListPosition<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        public GarnetStatus ListPosition<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectStoreOutput output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             return ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext, ref output);
         }
@@ -389,7 +389,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public GarnetStatus ListTrim<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out _, ref objectStoreContext);
 
         /// <summary>
@@ -401,8 +401,8 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListRange<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        public GarnetStatus ListRange<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectStoreOutput output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext, ref output);
 
         /// <summary>
@@ -415,7 +415,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public GarnetStatus ListInsert<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectStoreContext);
             itemBroker.HandleCollectionUpdate(key.ToArray());
@@ -431,8 +431,8 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListIndex<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        public GarnetStatus ListIndex<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectStoreOutput output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext, ref output);
 
         /// <summary>
@@ -446,7 +446,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public GarnetStatus ListRemove<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectStoreContext);
 
         /// <summary>
@@ -459,8 +459,8 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus ListPop<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        public unsafe GarnetStatus ListPop<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectStoreOutput output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext, ref output);
 
         /// <summary>
@@ -474,7 +474,7 @@ namespace Garnet.server
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
         public unsafe GarnetStatus ListLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectStoreContext)
-             where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
              => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectStoreContext);
 
         /// <summary>
@@ -486,8 +486,8 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectStoreContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus ListSet<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output, ref TObjectContext objectStoreContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        public unsafe GarnetStatus ListSet<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectStoreOutput output, ref TObjectContext objectStoreContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
             => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext, ref output);
     }
 }

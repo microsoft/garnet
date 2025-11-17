@@ -18,8 +18,8 @@ namespace Garnet.server
     /// </summary>
     public partial struct GarnetApi<TContext, TObjectContext, TUnifiedContext> : IGarnetApi, IGarnetWatchApi
         where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-        where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-        where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+        where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
     {
         readonly StorageSession storageSession;
         TContext context;
@@ -65,7 +65,7 @@ namespace Garnet.server
             => storageSession.GET(key, out value, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus GET(PinnedSpanByte key, out GarnetObjectStoreOutput value)
+        public GarnetStatus GET(PinnedSpanByte key, out ObjectStoreOutput value)
             => storageSession.GET(key, out value, ref objectContext);
 
         /// <inheritdoc />
@@ -250,19 +250,19 @@ namespace Garnet.server
             => storageSession.Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus RMW_ObjectStore(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        public GarnetStatus RMW_ObjectStore(PinnedSpanByte key, ref ObjectInput input, ref ObjectStoreOutput output)
             => storageSession.RMW_ObjectStore(key.ReadOnlySpan, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus Read_ObjectStore(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        public GarnetStatus Read_ObjectStore(PinnedSpanByte key, ref ObjectInput input, ref ObjectStoreOutput output)
             => storageSession.Read_ObjectStore(key.ReadOnlySpan, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus RMW_UnifiedStore(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+        public GarnetStatus RMW_UnifiedStore(PinnedSpanByte key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output)
             => storageSession.RMW_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
 
         /// <inheritdoc />
-        public GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+        public GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output)
             => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
         #endregion
 
@@ -368,7 +368,7 @@ namespace Garnet.server
         #region Common Methods
 
         /// <inheritdoc />
-        public GarnetStatus ObjectScan(PinnedSpanByte key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        public GarnetStatus ObjectScan(PinnedSpanByte key, ref ObjectInput input, ref ObjectStoreOutput output)
          => storageSession.ObjectScan(key.ReadOnlySpan, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />

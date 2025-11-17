@@ -13,10 +13,10 @@ namespace Garnet.server
     using BasicGarnetApi = GarnetApi<BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+        BasicContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
+        BasicContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions,
             /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
     using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
@@ -24,10 +24,10 @@ namespace Garnet.server
     using TransactionalGarnetApi = GarnetApi<TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+        TransactionalContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
+        TransactionalContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions,
             /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
@@ -58,22 +58,22 @@ namespace Garnet.server
         /// <summary>
         /// Basic context for object store
         /// </summary>
-        readonly BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreBasicContext;
+        readonly BasicContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreBasicContext;
 
         /// <summary>
         /// Transactional context for object store
         /// </summary>
-        readonly TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext;
+        readonly TransactionalContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext;
 
         /// <summary>
         /// Basic context for unified store
         /// </summary>
-        readonly BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreBasicContext;
+        readonly BasicContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreBasicContext;
 
         /// <summary>
         /// Transactional context for unified store
         /// </summary>
-        readonly TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext;
+        readonly TransactionalContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext;
 
         // Not readonly to avoid defensive copy
         GarnetWatchApi<BasicGarnetApi> garnetTxPrepareApi;
@@ -107,9 +107,9 @@ namespace Garnet.server
             => transactionalContext;
         internal TransactionalUnsafeContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalUnsafeContext
             => basicContext.Session.TransactionalUnsafeContext;
-        internal TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> ObjectStoreTransactionalContext
+        internal TransactionalContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> ObjectStoreTransactionalContext
             => objectStoreTransactionalContext;
-        internal TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedStoreTransactionalContext
+        internal TransactionalContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedStoreTransactionalContext
             => unifiedStoreTransactionalContext;
 
         /// <summary>

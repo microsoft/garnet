@@ -36,14 +36,14 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for object store
         /// </summary>
-        public BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreBasicContext;
-        public TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext;
+        public BasicContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreBasicContext;
+        public TransactionalContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext;
 
         /// <summary>
         /// Session Contexts for unified store
         /// </summary>
-        public BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreBasicContext;
-        public TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext;
+        public BasicContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreBasicContext;
+        public TransactionalContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext;
 
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
@@ -84,10 +84,10 @@ namespace Garnet.server
             var session = db.Store.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
 
             var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
-            var objectStoreSession = db.Store.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
+            var objectStoreSession = db.Store.NewSession<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
 
             var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState);
-            var unifiedStoreSession = db.Store.NewSession<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions);
+            var unifiedStoreSession = db.Store.NewSession<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions);
 
             basicContext = session.BasicContext;
             transactionalContext = session.TransactionalContext;

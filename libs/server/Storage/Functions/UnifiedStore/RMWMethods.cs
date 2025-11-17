@@ -11,9 +11,9 @@ namespace Garnet.server
     /// <summary>
     /// Unified store functions
     /// </summary>
-    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedStoreInput, GarnetUnifiedStoreOutput, long>
+    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedStoreInput, UnifiedStoreOutput, long>
     {
-        public bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output,
+        public bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output,
             ref RMWInfo rmwInfo)
         {
             return input.header.cmd switch
@@ -29,7 +29,7 @@ namespace Garnet.server
         }
 
         public bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref RMWInfo rmwInfo)
+            ref UnifiedStoreOutput output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(logRecord.Info.ValueIsObject || (!logRecord.Info.HasETag && !logRecord.Info.HasExpiration),
                 "Should not have Expiration or ETag on InitialUpdater log records");
@@ -47,7 +47,7 @@ namespace Garnet.server
         }
 
         public void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref RMWInfo rmwInfo)
+            ref UnifiedStoreOutput output, ref RMWInfo rmwInfo)
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
@@ -61,7 +61,7 @@ namespace Garnet.server
         }
 
         public bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
+            ref UnifiedStoreOutput output, ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
         {
             var cmd = input.header.cmd;
             if (cmd == RespCommand.DELIFEXPIM && srcLogRecord.Info.HasExpiration && input.header.CheckExpiry(srcLogRecord.Expiration))
@@ -74,7 +74,7 @@ namespace Garnet.server
         }
 
         public bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,
-            in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output,
+            in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref UnifiedStoreOutput output,
             ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
         {
 
@@ -136,7 +136,7 @@ namespace Garnet.server
         }
 
         public bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,
-            in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output,
+            in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref UnifiedStoreOutput output,
             ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
@@ -192,7 +192,7 @@ namespace Garnet.server
         }
 
         public bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref RMWInfo rmwInfo)
+            ref UnifiedStoreOutput output, ref RMWInfo rmwInfo)
         {
             if (InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out var sizeChange))
             {
@@ -208,7 +208,7 @@ namespace Garnet.server
             return false;
         }
 
-        bool InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        bool InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref UnifiedStoreOutput output, ref RMWInfo rmwInfo, out long sizeChange)
         {
             sizeChange = 0;
             var cmd = input.header.cmd;
@@ -302,7 +302,7 @@ namespace Garnet.server
         }
 
         private bool HandleExpire<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,
-            in RecordSizeInfo sizeInfo, ref bool shouldUpdateEtag, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
+            in RecordSizeInfo sizeInfo, ref bool shouldUpdateEtag, ref UnifiedStoreInput input, ref UnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
         {
             shouldUpdateEtag = false;
             var expirationWithOption = new ExpirationWithOption(input.arg1);
@@ -317,7 +317,7 @@ namespace Garnet.server
         }
 
         private bool HandlePersist<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,
-            in RecordSizeInfo sizeInfo, ref bool shouldUpdateEtag, ref GarnetUnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
+            in RecordSizeInfo sizeInfo, ref bool shouldUpdateEtag, ref UnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
         {
             shouldUpdateEtag = false;
             if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))

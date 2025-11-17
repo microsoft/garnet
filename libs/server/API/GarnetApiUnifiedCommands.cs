@@ -14,13 +14,13 @@ namespace Garnet.server
     /// </summary>
     public partial struct GarnetApi<TContext, TObjectContext, TUnifiedContext> : IGarnetApi, IGarnetWatchApi
         where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-        where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-        where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+        where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
     {
         #region MEMORY
 
         /// <inheritdoc />
-        public GarnetStatus MEMORYUSAGE(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+        public GarnetStatus MEMORYUSAGE(PinnedSpanByte key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output)
             => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
 
         #endregion
@@ -28,7 +28,7 @@ namespace Garnet.server
         #region TYPE
 
         /// <inheritdoc />
-        public GarnetStatus TYPE(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+        public GarnetStatus TYPE(PinnedSpanByte key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output)
             => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
 
         #endregion
@@ -36,7 +36,7 @@ namespace Garnet.server
         #region TTL
 
         /// <inheritdoc />
-        public GarnetStatus TTL(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+        public GarnetStatus TTL(PinnedSpanByte key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output)
             => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
 
         #endregion
@@ -44,7 +44,7 @@ namespace Garnet.server
         #region EXPIRETIME
 
         /// <inheritdoc />
-        public GarnetStatus EXPIRETIME(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+        public GarnetStatus EXPIRETIME(PinnedSpanByte key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output)
             => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
 
         #endregion
@@ -52,7 +52,7 @@ namespace Garnet.server
         #region EXISTS
 
         /// <inheritdoc />
-        public GarnetStatus EXISTS(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+        public GarnetStatus EXISTS(PinnedSpanByte key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output)
             => storageSession.Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
 
         /// <inheritdoc />
@@ -76,7 +76,7 @@ namespace Garnet.server
         #region EXPIRE
 
         /// <inheritdoc />
-        public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+        public unsafe GarnetStatus EXPIRE(PinnedSpanByte key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output)
             => storageSession.RMW_UnifiedStore(key, ref input, ref output, ref unifiedContext);
 
         /// <inheritdoc />
@@ -104,7 +104,7 @@ namespace Garnet.server
         #region PERSIST
 
         /// <inheritdoc />
-        public unsafe GarnetStatus PERSIST(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+        public unsafe GarnetStatus PERSIST(PinnedSpanByte key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output)
             => storageSession.RMW_UnifiedStore(key, ref input, ref output, ref unifiedContext);
 
         #endregion

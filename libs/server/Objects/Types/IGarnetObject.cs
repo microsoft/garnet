@@ -23,7 +23,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="sizeChange"></param>
         /// <returns></returns>
-        bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion, out long sizeChange);
+        bool Operate(ref ObjectInput input, ref ObjectStoreOutput output, byte respProtocolVersion, out long sizeChange);
 
         /// <summary>
         /// Scan the items of the collection

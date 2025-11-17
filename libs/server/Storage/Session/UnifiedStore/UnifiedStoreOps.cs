@@ -14,8 +14,8 @@ namespace Garnet.server
 
     sealed partial class StorageSession : IDisposable
     {
-        public GarnetStatus GET<TContext>(PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output, ref TContext context)
-            where TContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+        public GarnetStatus GET<TContext>(PinnedSpanByte key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output, ref TContext context)
+            where TContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             long ctx = default;
             var status = context.Read(key.ReadOnlySpan, ref input, ref output, ctx);
@@ -45,7 +45,7 @@ namespace Garnet.server
         /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
         /// <returns></returns>
         public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
-            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
             _ = unifiedContext.Upsert(in srcLogRecord);
@@ -63,7 +63,7 @@ namespace Garnet.server
         /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
         /// <returns></returns>
         public GarnetStatus SET<TUnifiedContext, TSourceLogRecord>(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, in TSourceLogRecord srcLogRecord, ref TUnifiedContext unifiedContext)
-            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
             _ = unifiedContext.Upsert(key, ref input, in srcLogRecord);
@@ -78,13 +78,13 @@ namespace Garnet.server
         /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
         /// <returns></returns>
         public GarnetStatus EXISTS<TUnifiedContext>(PinnedSpanByte key, ref TUnifiedContext unifiedContext)
-            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             // Prepare input
             var input = new UnifiedStoreInput(RespCommand.EXISTS);
 
-            // Prepare GarnetUnifiedStoreOutput output
-            var output = new GarnetUnifiedStoreOutput();
+            // Prepare UnifiedStoreOutput output
+            var output = new UnifiedStoreOutput();
 
             // TODO: The output is unused so optimize ReadMethods to not copy it.
             var status = Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
@@ -99,7 +99,7 @@ namespace Garnet.server
         /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
         /// <returns></returns>
         public GarnetStatus DELETE<TUnifiedContext>(PinnedSpanByte key, ref TUnifiedContext unifiedContext)
-            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = unifiedContext.Delete(key.ReadOnlySpan);
             Debug.Assert(!status.IsPending);
@@ -113,7 +113,7 @@ namespace Garnet.server
         /// <param name="unifiedContext">Basic unifiedContext for the unified store.</param>
         /// <returns></returns>
         public GarnetStatus DELIFEXPIM<TUnifiedContext>(PinnedSpanByte key, ref TUnifiedContext unifiedContext)
-            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long,
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long,
                 UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var input = new UnifiedStoreInput(RespCommand.DELIFEXPIM);
@@ -132,7 +132,7 @@ namespace Garnet.server
         /// <param name="unifiedContext">Basic context for the unified store.</param>
         /// <returns></returns>
         public unsafe GarnetStatus EXPIRE<TUnifiedContext>(PinnedSpanByte key, PinnedSpanByte expiryMs, out bool timeoutSet, ExpireOption expireOption, ref TUnifiedContext unifiedContext)
-            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
             => EXPIRE(key, TimeSpan.FromMilliseconds(NumUtils.ReadInt64(expiryMs.Length, expiryMs.ToPointer())), out timeoutSet, expireOption, ref unifiedContext);
 
         /// <summary>
@@ -147,7 +147,7 @@ namespace Garnet.server
         /// <param name="milliseconds">When true, <paramref name="expiryTimestamp"/> is treated as milliseconds else seconds</param>
         /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
         public unsafe GarnetStatus EXPIREAT<TUnifiedContext>(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption, ref TUnifiedContext unifiedContext, bool milliseconds = false)
-            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             return EXPIRE(key, expiryTimestamp, out timeoutSet, expireOption, ref unifiedContext, milliseconds ? RespCommand.PEXPIREAT : RespCommand.EXPIREAT);
         }
@@ -164,7 +164,7 @@ namespace Garnet.server
         /// <param name="milliseconds">When true the command executed is PEXPIRE, expire by default.</param>
         /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
         public unsafe GarnetStatus EXPIRE<TUnifiedContext>(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, ExpireOption expireOption, ref TUnifiedContext unifiedContext, bool milliseconds = false)
-            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             return EXPIRE(key, (long)(milliseconds ? expiry.TotalMilliseconds : expiry.TotalSeconds), out timeoutSet, expireOption,
                 ref unifiedContext, milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE);
@@ -182,10 +182,10 @@ namespace Garnet.server
         /// <param name="respCommand">The current RESP command</param>
         /// <returns></returns>
         public unsafe GarnetStatus EXPIRE<TUnifiedContext>(PinnedSpanByte key, long expiration, out bool timeoutSet, ExpireOption expireOption, ref TUnifiedContext unifiedContext, RespCommand respCommand)
-            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+            where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
             Span<byte> rmwOutput = stackalloc byte[OutputHeader.Size];
-            var unifiedOutput = new GarnetUnifiedStoreOutput(SpanByteAndMemory.FromPinnedSpan(rmwOutput));
+            var unifiedOutput = new UnifiedStoreOutput(SpanByteAndMemory.FromPinnedSpan(rmwOutput));
 
             // Convert to expiration time in ticks
             var expirationTimeInTicks = respCommand switch
@@ -247,7 +247,7 @@ namespace Garnet.server
             var returnStatus = GarnetStatus.NOTFOUND;
             var abortTransaction = false;
 
-            var output = new GarnetUnifiedStoreOutput();
+            var output = new UnifiedStoreOutput();
             try
             {
                 // Check if new key exists. This extra query isn't ideal, but it should be a rare operation and there's nowhere in Input to 

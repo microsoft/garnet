@@ -442,9 +442,8 @@ namespace Garnet.server
             // Prepare input
             var input = new UnifiedStoreInput(RespCommand.TYPE);
 
-            // Prepare GarnetUnifiedStoreOutput output
-            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-
+            // Prepare UnifiedStoreOutput output
+            var output = UnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.TYPE(keySlice, ref input, ref output);
 

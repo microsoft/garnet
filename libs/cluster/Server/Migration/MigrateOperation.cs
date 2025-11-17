@@ -65,7 +65,7 @@ namespace Garnet.cluster
             /// <returns></returns>
             public bool TransmitSlots()
             {
-                var output = new GarnetUnifiedStoreOutput();    // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
+                var output = new UnifiedStoreOutput();    // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
 
                 try
                 {
@@ -93,7 +93,7 @@ namespace Garnet.cluster
             {
                 // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
                 // so we can reuse the SpanByteAndMemory.Memory across iterations.
-                var output = new GarnetUnifiedStoreOutput();    // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
+                var output = new UnifiedStoreOutput();    // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
 
                 try
                 {

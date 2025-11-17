@@ -12,7 +12,7 @@ namespace Garnet.server
     /// <summary>
     /// Unified store functions
     /// </summary>
-    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedStoreInput, GarnetUnifiedStoreOutput, long>
+    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedStoreInput, UnifiedStoreOutput, long>
     {
         /// <summary>
         /// Logging upsert from
@@ -81,7 +81,7 @@ namespace Garnet.server
                 key, ref input, out _);
         }
 
-        bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, bool expiryExisted, long newExpiry, ReadOnlySpan<byte> newValue, ref GarnetUnifiedStoreOutput output)
+        bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, bool expiryExisted, long newExpiry, ReadOnlySpan<byte> newValue, ref UnifiedStoreOutput output)
         {
             // TODO ETag?
             if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
@@ -93,14 +93,14 @@ namespace Garnet.server
             return TrySetRecordExpiration(ref logRecord, optionType, expiryExisted, newExpiry, ref output);
         }
 
-        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, bool expiryExisted, long newExpiry, ref GarnetUnifiedStoreOutput output)
+        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, bool expiryExisted, long newExpiry, ref UnifiedStoreOutput output)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 
             return TrySetRecordExpiration(ref logRecord, optionType, expiryExisted, newExpiry, ref output);
         }
 
-        bool TrySetRecordExpiration(ref LogRecord logRecord, ExpireOption optionType, bool expiryExisted, long newExpiry, ref GarnetUnifiedStoreOutput output)
+        bool TrySetRecordExpiration(ref LogRecord logRecord, ExpireOption optionType, bool expiryExisted, long newExpiry, ref UnifiedStoreOutput output)
         {
             var o = (OutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
             o->result1 = 0;

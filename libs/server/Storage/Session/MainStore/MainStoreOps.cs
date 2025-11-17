@@ -109,8 +109,8 @@ namespace Garnet.server
             return ret;
         }
 
-        public GarnetStatus GET<TObjectContext>(PinnedSpanByte key, out GarnetObjectStoreOutput output, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        public GarnetStatus GET<TObjectContext>(PinnedSpanByte key, out ObjectStoreOutput output, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             ObjectInput input = default;
             output = default;
@@ -354,7 +354,7 @@ namespace Garnet.server
         }
 
         public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, IGarnetObject value, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             objectContext.Upsert(key.ReadOnlySpan, value);
             return GarnetStatus.OK;

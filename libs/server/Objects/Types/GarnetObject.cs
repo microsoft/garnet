@@ -15,7 +15,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="garnetObjectType"></param>
         /// <returns></returns>
-        internal static IGarnetObject Create(GarnetObjectType garnetObjectType, long expiration = 0)
+        internal static IGarnetObject Create(GarnetObjectType garnetObjectType)
         {
             return garnetObjectType switch
             {
