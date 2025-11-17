@@ -1269,7 +1269,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SendAndReset(IMemoryOwner<byte> memory, int length)
+        internal void SendAndReset(IMemoryOwner<byte> memory, int length)
         {
             // Copy allocated memory to main buffer and send
             fixed (byte* _src = memory.Memory.Span)
@@ -1353,7 +1353,7 @@ namespace Garnet.server
 
             if ((int)(dcurr - d) > 0)
             {
-                // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
+                //Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
                 if (waitForAofBlocking)
                 {
                     var task = storeWrapper.WaitForCommitAsync();

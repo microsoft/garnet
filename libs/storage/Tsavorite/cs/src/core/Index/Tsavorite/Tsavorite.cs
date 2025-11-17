@@ -494,6 +494,9 @@ namespace Tsavorite.core
         internal unsafe void ContextReadWithPrefetch<TBatch, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TBatch batch, TContext context, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TBatch : IReadArgBatch<TKey, TInput, TOutput>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
         {
             if (batch.Count == 1)
             {
