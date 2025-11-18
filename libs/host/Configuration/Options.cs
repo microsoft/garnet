@@ -504,7 +504,7 @@ namespace Garnet
         public bool? UseAzureStorageForConfigExport { get; set; }
 
         [OptionValidation]
-        [Option("use-native-device-linux", Required = false, HelpText = "DEPRECATED: use --device-type Native instead.")]
+        [Option("use-native-device-linux", Required = false, HelpText = "DEPRECATED: use DeviceType (--device-type) of Native instead.")]
         public bool? UseNativeDeviceLinux { get; set; }
 
         [Option("device-type", Required = false, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
