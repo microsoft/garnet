@@ -507,7 +507,7 @@ namespace Garnet
         [Option("use-native-device-linux", Required = false, HelpText = "DEPRECATED: use --device-type Native instead.")]
         public bool? UseNativeDeviceLinux { get; set; }
 
-        [Option("device-type", Required = false, Default = DeviceType.Default, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
+        [Option("device-type", Required = false, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
         public DeviceType DeviceType { get; set; }
 
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
