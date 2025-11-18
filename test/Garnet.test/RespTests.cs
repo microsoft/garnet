@@ -1526,9 +1526,8 @@ namespace Garnet.test
             var mykey = "mykey";
             for (var i = 0; i < iter; i++)
             {
-                //var exception = Assert.Throws<StackExchange.Redis.RedisServerException>(() => _ = db.ListLength(mykey));
-                //ClassicAssert.AreEqual("ERR Garnet Exception: Object store is disabled", exception.Message);
-                Assert.That(db.ListLength(mykey), Is.EqualTo(0));   // We do not actually disable object with UnifiedStore, just the commands that expose them
+                var exception = Assert.Throws<RedisServerException>(() => _ = db.ListLength(mykey));
+                ClassicAssert.AreEqual("ERR Garnet Exception: Object store is disabled", exception.Message);
             }
 
             // Ensure connection is still healthy

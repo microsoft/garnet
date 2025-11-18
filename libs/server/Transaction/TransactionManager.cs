@@ -131,9 +131,12 @@ namespace Garnet.server
             basicContext = session.BasicContext;
             transactionalContext = session.TransactionalContext;
 
-            var objectStoreSession = storageSession.objectStoreBasicContext.Session;
-            objectStoreBasicContext = objectStoreSession.BasicContext;
-            objectStoreTransactionalContext = objectStoreSession.TransactionalContext;
+            if (!storeWrapper.serverOptions.DisableObjects)
+            {
+                var objectStoreSession = storageSession.objectStoreBasicContext.Session;
+                objectStoreBasicContext = objectStoreSession.BasicContext;
+                objectStoreTransactionalContext = objectStoreSession.TransactionalContext;
+            }
 
             var unifiedStoreSession = storageSession.unifiedStoreBasicContext.Session;
             unifiedStoreBasicContext = unifiedStoreSession.BasicContext;

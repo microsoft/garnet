@@ -46,7 +46,7 @@ namespace Garnet.server
             var output = new ObjectStoreOutput();
 
             var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext, ref output);
-            itemBroker.HandleCollectionUpdate(key.ToArray());
+            itemBroker?.HandleCollectionUpdate(key.ToArray());
 
             if (status == GarnetStatus.OK)
                 zaddCount = TryProcessRespSimple64IntOutput(output, out var value) ? (int)value : default;
@@ -86,7 +86,7 @@ namespace Garnet.server
             var output = new ObjectStoreOutput();
 
             var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext, ref output);
-            itemBroker.HandleCollectionUpdate(key.ToArray());
+            itemBroker?.HandleCollectionUpdate(key.ToArray());
 
             if (status == GarnetStatus.OK)
             {
@@ -608,7 +608,7 @@ namespace Garnet.server
                     }
 
                     _ = SET(destinationKey, newSetObject, ref objectContext);
-                    itemBroker.HandleCollectionUpdate(destinationKey.ToArray());
+                    itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                 }
                 else
                 {
@@ -683,7 +683,7 @@ namespace Garnet.server
         where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectStoreContext, ref output);
-            itemBroker.HandleCollectionUpdate(key.ToArray());
+            itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
         }
 
@@ -777,7 +777,7 @@ namespace Garnet.server
 
                         var zAddOutput = new ObjectStoreOutput();
                         RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref ssObjectStoreTransactionalContext, ref zAddOutput);
-                        itemBroker.HandleCollectionUpdate(destinationKey.ToArray());
+                        itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                     }
                 }
                 finally
@@ -1113,7 +1113,7 @@ namespace Garnet.server
                     }
 
                     _ = SET(destinationKey, newSortedSetObject, ref objectContext);
-                    itemBroker.HandleCollectionUpdate(destinationKey.ToArray());
+                    itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                 }
                 else
                 {
@@ -1371,7 +1371,7 @@ namespace Garnet.server
                     }
 
                     _ = SET(destinationKey, newSortedSetObject, ref objectContext);
-                    itemBroker.HandleCollectionUpdate(destinationKey.ToArray());
+                    itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                 }
                 else
                 {

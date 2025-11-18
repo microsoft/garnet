@@ -83,16 +83,21 @@ namespace Garnet.server
             this.stateMachineDriver = db.StateMachineDriver;
             var session = db.Store.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
 
-            var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
-            var objectStoreSession = db.Store.NewSession<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
+            if (!storeWrapper.serverOptions.DisableObjects)
+            {
+                var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
+                var objectStoreSession = db.Store.NewSession<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
+
+                objectStoreBasicContext = objectStoreSession.BasicContext;
+                objectStoreTransactionalContext = objectStoreSession.TransactionalContext;
+            }
 
             var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState);
             var unifiedStoreSession = db.Store.NewSession<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions);
 
             basicContext = session.BasicContext;
             transactionalContext = session.TransactionalContext;
-            objectStoreBasicContext = objectStoreSession.BasicContext;
-            objectStoreTransactionalContext = objectStoreSession.TransactionalContext;
+            
             unifiedStoreBasicContext = unifiedStoreSession.BasicContext;
             unifiedStoreTransactionalContext = unifiedStoreSession.TransactionalContext;
 

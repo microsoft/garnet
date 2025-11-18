@@ -43,7 +43,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectStoreContext);
 
             itemsDoneCount = output.result1;
-            itemBroker.HandleCollectionUpdate(key.ToArray());
+            itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
         }
 
@@ -75,7 +75,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectStoreContext);
             itemsDoneCount = output.result1;
 
-            itemBroker.HandleCollectionUpdate(key.Span.ToArray());
+            itemBroker?.HandleCollectionUpdate(key.Span.ToArray());
             return status;
         }
 
@@ -322,7 +322,7 @@ namespace Garnet.server
                     txnManager.Commit(true);
             }
 
-            itemBroker.HandleCollectionUpdate(destinationKey.Span.ToArray());
+            itemBroker?.HandleCollectionUpdate(destinationKey.Span.ToArray());
             return GarnetStatus.OK;
         }
 
@@ -360,7 +360,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectStoreContext);
-            itemBroker.HandleCollectionUpdate(key.ToArray());
+            itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
         }
 
@@ -418,7 +418,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectStoreContext);
-            itemBroker.HandleCollectionUpdate(key.ToArray());
+            itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
         }
 
