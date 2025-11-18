@@ -61,7 +61,7 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public void BlittableIterationBasicTest([Values] DeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
+        public void BlittableIterationBasicTest([Values] TestDeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
         {
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"{deviceType}.log"));
 
