@@ -214,7 +214,7 @@ namespace Garnet.test
                         {
                             if (outputLog != null)
                             {
-                                // If we have an output log, we're not on the finalizer thread - so try and right results to test log
+                                // If we have an output log, we're not on the finalizer thread - so try and write results to test log
 
                                 lock (outputLog)
                                 {
