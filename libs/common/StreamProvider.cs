@@ -93,14 +93,20 @@ namespace Garnet.common
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = pool.Get((int)numBytesToRead);
-            device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
-                (uint)numBytesToRead, IOCallback, semaphore);
-            semaphore.Wait();
+            try
+            {
+                device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
+                    (uint)numBytesToRead, IOCallback, semaphore);
+                semaphore.Wait();
 
-            buffer = new byte[numBytesToRead];
-            fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, numBytesToRead, numBytesToRead);
-            pbuffer.Return();
+                buffer = new byte[numBytesToRead];
+                fixed (byte* bufferRaw = buffer)
+                    Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, numBytesToRead, numBytesToRead);
+            }
+            finally
+            {
+                pbuffer.Return();
+            }
         }
 
         private static void IOCallback(uint errorCode, uint numBytes, object context)

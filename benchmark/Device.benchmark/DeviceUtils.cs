@@ -31,12 +31,17 @@ namespace Device.benchmark
                 Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
             }
             using var semaphore = new SemaphoreSlim(0);
-            device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, semaphore);
-            semaphore.Wait();
 
-            pbuffer.Return();
+            try
+            {
+                device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, IOCallback, semaphore);
+                semaphore.Wait();
+            }
+            finally
+            {
+                pbuffer.Return();
+            }
         }
-
 
         /// <summary>
         /// Note: will read potentially more data (based on sector alignment)
@@ -53,13 +58,20 @@ namespace Device.benchmark
             var pbuffer = pool.Get((int)numBytesToRead);
 
             using var semaphore = new SemaphoreSlim(0);
-            device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, semaphore);
-            semaphore.Wait();
 
-            buffer = new byte[size];
-            fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, size, size);
-            pbuffer.Return();
+            try
+            {
+                device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, semaphore);
+                semaphore.Wait();
+
+                buffer = new byte[size];
+                fixed (byte* bufferRaw = buffer)
+                    Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, size, size);
+            }
+            finally
+            {
+                pbuffer.Return();
+            }
         }
 
         private static void IOCallback(uint errorCode, uint numBytes, object context)
