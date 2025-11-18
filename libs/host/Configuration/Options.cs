@@ -503,6 +503,10 @@ namespace Garnet
         [Option("use-azure-storage-for-config-export", Required = false, Default = false, HelpText = "Use Azure storage to export config file")]
         public bool? UseAzureStorageForConfigExport { get; set; }
 
+        [OptionValidation]
+        [Option("use-native-device-linux", Required = false, HelpText = "DEPRECATED: use --device-type Native instead.")]
+        public bool? UseNativeDeviceLinux { get; set; }
+
         [Option("device-type", Required = false, Default = DeviceType.Default, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
         public DeviceType DeviceType { get; set; }
 
