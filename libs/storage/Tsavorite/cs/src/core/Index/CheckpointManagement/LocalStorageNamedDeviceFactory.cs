@@ -35,7 +35,7 @@ namespace Tsavorite.core
         /// <param name="readOnly">Whether files are opened as readonly</param>
         /// <param name="baseName">Base name</param>
         /// <param name="logger">Logger</param>
-        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Native, bool readOnly = false, string baseName = null, ILogger logger = null)
+        public LocalStorageNamedDeviceFactory(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Default, bool readOnly = false, string baseName = null, ILogger logger = null)
         {
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
@@ -50,12 +50,12 @@ namespace Tsavorite.core
         /// <inheritdoc />
         public IDevice Get(FileDescriptor fileInfo)
         {
-            var device = Devices.CreateDevice(
-                Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName),
+            var device = Devices.CreateLogDevice(
+                logPath: Path.Combine(baseName, fileInfo.directoryName, fileInfo.fileName),
+                deviceType: deviceType,
                 preallocateFile: preallocateFile,
                 deleteOnClose: deleteOnClose,
                 disableFileBuffering: disableFileBuffering,
-                deviceType: deviceType,
                 readOnly: readOnly,
                 logger: logger);
             if (throttleLimit.HasValue)

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
@@ -27,20 +26,14 @@ namespace Tsavorite.core
         /// <param name="disableFileBuffering">Whether file buffering (during write) is disabled (default of true requires aligned writes)</param>
         /// <param name="throttleLimit">Throttle limit (max number of pending I/Os) for this device instance</param>
         /// <param name="deviceType">Device type</param>
-        /// <param name="useNativeDeviceLinux">Use native device on Linux</param>
         /// <param name="readOnly">Whether files are opened as readonly</param>
         /// <param name="logger">Logger</param>
-        public LocalStorageNamedDeviceFactoryCreator(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Native, bool useNativeDeviceLinux = false, bool readOnly = false, ILogger logger = null)
+        public LocalStorageNamedDeviceFactoryCreator(bool preallocateFile = false, bool deleteOnClose = false, bool disableFileBuffering = true, int? throttleLimit = null, DeviceType deviceType = DeviceType.Default, bool readOnly = false, ILogger logger = null)
         {
             this.preallocateFile = preallocateFile;
             this.deleteOnClose = deleteOnClose;
             this.disableFileBuffering = disableFileBuffering;
             this.throttleLimit = throttleLimit;
-            if (deviceType == DeviceType.Native && RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && !useNativeDeviceLinux)
-            {
-                logger?.LogInformation("UseNativeDeviceLinux not set, using RandomAccess device");
-                deviceType = DeviceType.RandomAccess;
-            }
             this.deviceType = deviceType;
             this.readOnly = readOnly;
             this.logger = logger;

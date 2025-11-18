@@ -504,10 +504,10 @@ namespace Garnet
         public bool? UseAzureStorageForConfigExport { get; set; }
 
         [OptionValidation]
-        [Option("use-native-device-linux", Required = false, HelpText = "Use experimental native device on Linux for local storage. If not set, device type of RandomAccess is used by default on Linux.")]
+        [Option("use-native-device-linux", Required = false, HelpText = "DEPRECATED: use --device-type Native instead.")]
         public bool? UseNativeDeviceLinux { get; set; }
 
-        [Option("device-type", Required = false, HelpText = "Device type (Native, RandomAccess, FileStream, AzureStorage)")]
+        [Option("device-type", Required = false, Default = DeviceType.Default, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
         public DeviceType DeviceType { get; set; }
 
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
@@ -722,6 +722,12 @@ namespace Garnet
             var enableStorageTier = EnableStorageTier.GetValueOrDefault();
             var enableRevivification = EnableRevivification.GetValueOrDefault();
 
+            if (UseNativeDeviceLinux.GetValueOrDefault())
+            {
+                logger?.LogWarning("The --use-native-device-linux option is deprecated. Please use --device-type Native instead.");
+                DeviceType = DeviceType.Native;
+            }
+
             var deviceType = GetDeviceType(logger);
 
             var useAzureStorage = deviceType == DeviceType.AzureStorage;
@@ -920,7 +926,6 @@ namespace Garnet
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
                 ClusterUsername = ClusterUsername,
                 ClusterPassword = ClusterPassword,
-                UseNativeDeviceLinux = UseNativeDeviceLinux.GetValueOrDefault(),
                 DeviceType = deviceType,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
@@ -953,6 +958,11 @@ namespace Garnet
         internal DeviceType GetDeviceType(ILogger logger = null)
         {
             var deviceType = DeviceType;
+
+            if (deviceType == DeviceType.Default)
+            {
+                deviceType = Devices.GetDefaultDeviceType();
+            }
             if (UseAzureStorage.GetValueOrDefault())
             {
                 logger?.LogInformation("The UseAzureStorage flag is deprecated, use DeviceType of AzureStorage instead");

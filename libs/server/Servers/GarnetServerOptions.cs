@@ -4,7 +4,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.InteropServices;
 using Garnet.server.Auth.Settings;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
@@ -385,15 +384,10 @@ namespace Garnet.server
         /// </summary>
         public bool UseAofNullDevice = false;
 
-        /// <summary>
-        /// Use native device on Linux for local storage
-        /// </summary>
-        public bool UseNativeDeviceLinux = false;
-
         // <summary>
         // Use specified device type
         // </summary>
-        public DeviceType DeviceType = DeviceType.Native;
+        public DeviceType DeviceType = DeviceType.Default;
 
         /// <summary>
         /// Limit of items to return in one iteration of *SCAN command
@@ -657,15 +651,11 @@ namespace Garnet.server
             }
             logger?.LogInformation("[Store] Using log mutable percentage of {MutablePercent}%", MutablePercent);
 
-            if (DeviceFactoryCreator == null)
+            if (DeviceType == DeviceType.Default)
             {
-                if (DeviceType == DeviceType.Native && RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && !UseNativeDeviceLinux)
-                {
-                    logger?.LogInformation("UseNativeDeviceLinux not set, using RandomAccess device");
-                    DeviceType = DeviceType.RandomAccess;
-                }
-                DeviceFactoryCreator = new LocalStorageNamedDeviceFactoryCreator(deviceType: DeviceType, logger: logger);
+                DeviceType = Devices.GetDefaultDeviceType();
             }
+            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(deviceType: DeviceType, logger: logger);
 
             logger?.LogInformation("Using device type {deviceType}", DeviceType);
 
