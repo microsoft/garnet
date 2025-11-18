@@ -1332,7 +1332,7 @@ namespace Garnet.server
 
             if ((int)(dcurr - d) > 0)
             {
-                //Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
+                // Debug.WriteLine("SEND: [" + Encoding.UTF8.GetString(new Span<byte>(d, (int)(dcurr - d))).Replace("\n", "|").Replace("\r", "!") + "]");
                 if (waitForAofBlocking)
                 {
                     var task = storeWrapper.WaitForCommitAsync();
