@@ -61,7 +61,7 @@ namespace Garnet.server
         /// <param name="sublogIdx"></param>
         /// <param name="keyOffset"></param>
         /// <returns></returns>
-        long GetSequenceNumberFrontier(int sublogIdx, int keyOffset)
+        long GetFrontierSequenceNumber(int sublogIdx, int keyOffset)
             => Math.Max(activeSequenceNumbers[sublogIdx][keyOffset], activeSequenceNumbers[sublogIdx][MaxSublogTimestampOffset]);
 
         /// <summary>
@@ -71,11 +71,12 @@ namespace Garnet.server
         /// <param name="keyOffset"></param>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        long GetKeyOffsetSequenceNumber(int sublogIdx, int keyOffset)
+        long GetKeySequenceNumber(int sublogIdx, int keyOffset)
             => activeSequenceNumbers[sublogIdx][keyOffset];
 
         /// <summary>
         /// Get maximum sequence number
+        /// NOTE: used on reset/failover to update sequence number start offset for replica that is taking over
         /// </summary>
         /// <returns></returns>
         public long GetMaximumSequenceNumber() => activeSequenceNumbers.SelectMany(sublogArray => sublogArray).Max();
@@ -129,7 +130,7 @@ namespace Garnet.server
             while (waitQs[sublogIdx].TryDequeue(out var waiter))
             {
                 // If timestamp has not progressed enough will re-add this waiter to the waitQ
-                if (waiter.waitForTimestamp > GetSequenceNumberFrontier(waiter.sublogIdx, waiter.keyOffset))
+                if (waiter.waitForTimestamp > GetFrontierSequenceNumber(waiter.sublogIdx, waiter.keyOffset))
                     waiterList.Add(waiter);
                 else
                     // Signal for waiter to proceed
@@ -195,13 +196,13 @@ namespace Garnet.server
             if (replicaReadSessionContext.lastSublogIdx == -1)
             {
                 replicaReadSessionContext.lastSublogIdx = sublogIdx;
-                replicaReadSessionContext.maximumSessionSequenceNumber = GetKeyOffsetSequenceNumber(sublogIdx, keyOffset);
+                replicaReadSessionContext.maximumSessionSequenceNumber = GetKeySequenceNumber(sublogIdx, keyOffset);
                 return;
             }
 
             // Here we have to wait for replay to catch up
             // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
-            if (replicaReadSessionContext.lastSublogIdx != sublogIdx && replicaReadSessionContext.maximumSessionSequenceNumber > GetSequenceNumberFrontier(sublogIdx, keyOffset))
+            if (replicaReadSessionContext.lastSublogIdx != sublogIdx && replicaReadSessionContext.maximumSessionSequenceNumber > GetFrontierSequenceNumber(sublogIdx, keyOffset))
             {
                 // Before adding to the waitQ set timestamp and reader associated information
                 readSessionWaiter.waitForTimestamp = replicaReadSessionContext.maximumSessionSequenceNumber;
@@ -218,7 +219,7 @@ namespace Garnet.server
 
             // If timestamp of current key is after maximum timestamp we can safely read the key
             replicaReadSessionContext.lastSublogIdx = sublogIdx;
-            replicaReadSessionContext.maximumSessionSequenceNumber = Math.Max(replicaReadSessionContext.maximumSessionSequenceNumber, GetKeyOffsetSequenceNumber(sublogIdx, keyOffset));
+            replicaReadSessionContext.maximumSessionSequenceNumber = Math.Max(replicaReadSessionContext.maximumSessionSequenceNumber, GetKeySequenceNumber(sublogIdx, keyOffset));
         }
     }
 }

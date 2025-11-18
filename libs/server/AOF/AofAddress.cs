@@ -319,5 +319,13 @@ namespace Garnet.server
                 max = Math.Max(max, addresses[i]);
             return max;
         }
+
+        public long Min()
+        {
+            var max = 0L;
+            for (var i = 0; i < Length; i++)
+                max = Math.Min(max, addresses[i]);
+            return max;
+        }
     }
 }

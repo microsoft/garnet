@@ -63,7 +63,7 @@ namespace Garnet.server
         /// Get info on primary from replica perspective.
         /// </summary>
         /// <returns></returns>
-        (long replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo();
+        (AofAddress replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo();
 
         /// <summary>
         /// Get info on replicas from primary perspective.

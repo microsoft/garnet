@@ -278,15 +278,13 @@ namespace Garnet.cluster
                 new("disk_checkpoint_entry", replicationManager.GetLatestCheckpointFromDiskInfo())];
 
         /// <inheritdoc />
-        public (long replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo()
+        public (AofAddress replication_offset, List<RoleInfo> replicaInfo) GetPrimaryInfo()
         {
             if (!serverOptions.EnableCluster)
             {
-                // TODO: populate replicationOffset information correctly instead of default zero-index
-                return (replicationManager.ReplicationOffset[0], default);
+                return (replicationManager.ReplicationOffset, default);
             }
-            // TODO: populate replicationOffset information correctly instead of default zero-index
-            return (replicationManager.ReplicationOffset[0], replicationManager.GetReplicaInfo());
+            return (replicationManager.ReplicationOffset, replicationManager.GetReplicaInfo());
         }
 
         /// <inheritdoc />
