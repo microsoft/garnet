@@ -28,6 +28,17 @@ namespace Garnet.server
 
     public sealed unsafe partial class AofProcessor
     {
+        /// <summary>
+        /// Coordinates the replay of Append-Only File (AOF) operations, including transaction processing, fuzzy region
+        /// handling, and stored procedure execution.
+        /// </summary>
+        /// <remarks>This class is responsible for managing the replay context, processing transaction
+        /// groups, and handling operations within fuzzy regions. It provides methods to add, replay, and process
+        /// transactions and operations, ensuring consistency and correctness during AOF replay.  The <see
+        /// cref="AofReplayCoordinator"/> is designed to work with an <see cref="AofProcessor"/> to facilitate the
+        /// replay of operations.</remarks>
+        /// <param name="aofProcessor"></param>
+        /// <param name="logger"></param>
         public class AofReplayCoordinator(AofProcessor aofProcessor, ILogger logger = null) : IDisposable
         {
             readonly ConcurrentDictionary<int, EventBarrier> eventBarriers = [];
@@ -130,7 +141,7 @@ namespace Garnet.server
                     void ClearSessionTxn()
                     {
                         aofReplayContext[sublogIdx].activeTxns[header.sessionID].Clear();
-                        aofReplayContext[sublogIdx].activeTxns.Remove(header.sessionID);
+                        _ = aofReplayContext[sublogIdx].activeTxns.Remove(header.sessionID);
                     }
 
                     return true;
