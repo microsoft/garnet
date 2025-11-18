@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -22,6 +23,249 @@ namespace Garnet.server
     public sealed partial class VectorManager
     {
         // TODO: Object store is going away, need to move this to some other locking scheme
+
+        /// <summary>
+        /// Holds a set of RW-esque locks for Vector Sets.
+        /// 
+        /// These are acquired and released as needed to prevent concurrent creation/deletion operations, or deletion concurrent with read operations.
+        /// 
+        /// This are outside of Tsavorite for correctness reasons.
+        /// </summary>
+        /// <remarks>
+        /// This is a counter based r/w lock scheme, with a bit of biasing for cache line awareness.
+        /// 
+        /// Each "key" acquires locks based on its hash.
+        /// Each hash is mapped to a range of indexes, each range is numShards in length.
+        /// When acquiring a shared lock, we take one index out of the keys range and acquire a read lock.
+        ///   This will block exclusive locks, but not impact other readers.
+        /// When acuiring an exclusive lock, we acquire write locks for all indexes in the key's range IN INCREASING _LOGICAL_ ORDER.
+        ///   The order is necessary to avoid deadlocks.
+        ///   By ensuring all exclusive locks walk "up" we guarantee no two exclusive lock acquisitions end up waiting for each other.
+        /// 
+        /// Locks themselves are just ints, where a negative value indicates an exclusive lock and a positive value is the number of active readers.
+        /// 
+        /// The last set of optimizations is around cache lines coherency:
+        ///   We assume cache lines of 64-bytes (the x86 default, which is also true for some [but not all] ARM processors)
+        ///   The first chunk of the array holding our counts are ignored
+        ///     This is due to the length of the array being around byte 16 of the array object, which every thread will need to read - modifications near it will force that cache line to shuffle between cores
+        ///   Each shard is placed, in so much as is possible, into a different cache line rather than grouping a hash's counts physically near each other
+        ///     This will tend to allow a core to retain ownership of the same cache lines even as it moves between different hashes
+        /// </remarks>
+        internal struct VectorSetLockContext
+        {
+            // This is true for all x86-derived processors and about 1/2 true for ARM-derived processors
+            internal const int CacheLineSizeBytes = 64;
+
+            // Arrays are laid out:
+            //   object header         ==> 8 bytes
+            //   method table pointer  ==> 8 bytes
+            //   length                ==> 4 bytes
+            //   data
+            //
+            // So writes to the first 60 bytes of the array will modifying the same cache line array.Length is in.
+            internal const int IgnoredLeadingInts = 15;
+
+            private readonly int[] lockCounts;
+            private readonly int lockShardCount;
+            private readonly int lockShardMask;
+            private readonly int perCoreCounts;
+
+            internal VectorSetLockContext(int numContexts)
+            {
+                Debug.Assert(numContexts > 0);
+
+                // ~1 per core
+                lockShardCount = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount);
+                lockShardMask = lockShardCount - 1;
+
+                perCoreCounts = numContexts;
+                if (perCoreCounts % (CacheLineSizeBytes / sizeof(int)) != 0)
+                {
+                    perCoreCounts += (CacheLineSizeBytes / sizeof(int)) - (perCoreCounts % (CacheLineSizeBytes / sizeof(int)));
+                }
+                Debug.Assert(perCoreCounts % (CacheLineSizeBytes / sizeof(int)) == 0, "Each core should be whole cache lines of data");
+
+                var size = IgnoredLeadingInts + (lockShardCount * perCoreCounts);
+
+                lockCounts = new int[size];
+            }
+
+            internal readonly int CalculateIndex(int hash, int currentProcessorHint)
+            {
+                // Hint might be out of range, so force it into the space we expect
+                var currentProcessor = currentProcessorHint & lockShardMask;
+
+                var startOfCoreCounts = currentProcessor * perCoreCounts;
+                var hashOffset = (int)((uint)hash % perCoreCounts);
+
+                var ixRaw = startOfCoreCounts + hashOffset;
+                var ixActual = ixRaw + IgnoredLeadingInts;
+
+                Debug.Assert(ixActual >= 0 && ixActual < lockCounts.Length, "About to do something out of bounds");
+
+                return ixActual;
+            }
+
+            internal readonly bool TryAcquireSharedLock(int hash, out int lockToken)
+            {
+                var ix = CalculateIndex(hash, Thread.GetCurrentProcessorId());
+
+                var res = Interlocked.Increment(ref lockCounts[ix]);
+                if (res < 0)
+                {
+                    // Exclusively locked
+                    _ = Interlocked.Decrement(ref lockCounts[ix]);
+                    Unsafe.SkipInit(out lockToken);
+                    return false;
+                }
+
+                lockToken = ix;
+                return true;
+            }
+
+            internal readonly void AcquireSharedLock(int hash, out int lockToken)
+            {
+                var ix = CalculateIndex(hash, Thread.GetCurrentProcessorId());
+
+                while (true)
+                {
+                    var res = Interlocked.Increment(ref lockCounts[ix]);
+                    if (res < 0)
+                    {
+                        // Exclusively locked
+                        _ = Interlocked.Decrement(ref lockCounts[ix]);
+
+                        // Spin until we can grab this one
+                        _ = Thread.Yield();
+                    }
+                    else
+                    {
+                        lockToken = ix;
+                        return;
+                    }
+                }
+            }
+
+            internal readonly void ReleaseSharedLock(int lockToken)
+            => Interlocked.Decrement(ref lockCounts[lockToken]);
+
+            internal readonly bool TryAcquireExclusiveLock(int hash, out int lockToken)
+            {
+                for (var i = 0; i < lockShardCount; i++)
+                {
+                    var acquireIx = CalculateIndex(hash, i);
+                    if (Interlocked.CompareExchange(ref lockCounts[acquireIx], int.MinValue, 0) != 0)
+                    {
+                        // Failed, release previously acquired
+                        for (var j = 0; j < i; j++)
+                        {
+                            var releaseIx = CalculateIndex(hash, j);
+                            while (Interlocked.CompareExchange(ref lockCounts[releaseIx], 0, int.MinValue) != int.MinValue)
+                            {
+                                // Optimistic shared lock got us, back off and try again
+                                _ = Thread.Yield();
+                            }
+                        }
+
+                        Unsafe.SkipInit(out lockToken);
+                        return false;
+                    }
+                }
+
+                // Successfully acquired all shards exclusively
+                lockToken = hash;
+                return true;
+            }
+
+            internal readonly void AcquireExclusiveLock(int hash, out int lockToken)
+            {
+                for (var i = 0; i < lockShardCount; i++)
+                {
+                    var acquireIx = CalculateIndex(hash, i);
+                    while (Interlocked.CompareExchange(ref lockCounts[acquireIx], int.MinValue, 0) != 0)
+                    {
+                        // Optimistic shared lock got us, or conflict with some other excluive lock acquisition
+                        //
+                        // Backoff and try again
+                        _ = Thread.Yield();
+                    }
+                }
+
+                lockToken = hash;
+            }
+
+            internal readonly void ReleaseExclusiveLock(int lockToken)
+            {
+                var hash = lockToken;
+
+                for (var i = 0; i < lockShardCount; i++)
+                {
+                    var releaseIx = CalculateIndex(hash, i);
+                    while (Interlocked.CompareExchange(ref lockCounts[releaseIx], 0, int.MinValue) != int.MinValue)
+                    {
+                        // Optimistic shared lock got us, back off and try again
+                        _ = Thread.Yield();
+                    }
+                }
+            }
+
+            internal readonly bool TryPromoteSharedLock(int hash, int lockToken, out int newLockToken)
+            {
+                Debug.Assert(Interlocked.CompareExchange(ref lockCounts[lockToken], 0, 0) > 0, "Illegal call when not holding shard lock");
+
+                for (var i = 0; i < lockShardCount; i++)
+                {
+                    var acquireIx = CalculateIndex(hash, i);
+                    if (acquireIx == lockToken)
+                    {
+                        // Do the promote
+                        if (Interlocked.CompareExchange(ref lockCounts[acquireIx], int.MinValue, 1) != 1)
+                        {
+                            // Failed, release previously acquired all of which are exclusive locks
+                            for (var j = 0; j < i; j++)
+                            {
+                                var releaseIx = CalculateIndex(hash, j);
+                                while (Interlocked.CompareExchange(ref lockCounts[releaseIx], 0, int.MinValue) != int.MinValue)
+                                {
+                                    // Optimistic shared lock got us, back off and try again
+                                    _ = Thread.Yield();
+                                }
+                            }
+
+                            // Note we're still holding the shared lock here
+                            Unsafe.SkipInit(out newLockToken);
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        // Otherwise attempt an exclusive acquire
+                        if (Interlocked.CompareExchange(ref lockCounts[acquireIx], int.MinValue, 0) != 0)
+                        {
+                            // Failed, release previously acquired - one of which MIGHT be the shared lock
+                            for (var j = 0; j < i; j++)
+                            {
+                                var releaseIx = CalculateIndex(hash, j);
+                                var releaseTargetValue = releaseIx == lockToken ? 1 : 0;
+
+                                while (Interlocked.CompareExchange(ref lockCounts[releaseIx], releaseTargetValue, int.MinValue) != int.MinValue)
+                                {
+                                    // Optimistic shared lock got us, back off and try again
+                                    _ = Thread.Yield();
+                                }
+                            }
+
+                            // Note we're still holding the shared lock here
+                            Unsafe.SkipInit(out newLockToken);
+                            return false;
+                        }
+                    }
+                }
+
+                newLockToken = hash;
+                return true;
+            }
+        }
 
         /// <summary>
         /// Used to scope a shared lock and context related to a Vector Set operation.
