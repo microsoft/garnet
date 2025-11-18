@@ -125,7 +125,7 @@ namespace Garnet.test
 
                     lock (OutputLog)
                     {
-                        _ = OutputLog.AppendLine($"[!ERR] {lineArgs.Data ?? ""}");
+                        _ = OutputLog.AppendLine($"[!ERR] {lineArgs.Data}");
                     }
                 };
             process.BeginOutputReadLine();
