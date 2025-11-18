@@ -273,23 +273,33 @@ namespace Garnet.test
         public void BitmapSimpleBitCountTest(string arg, string val)
         {
             using var server = new GarnetServerTestProcess(new() { [arg] = val });
-            using var redis = ConnectionMultiplexer.Connect(server.Options);
-
-            var db = redis.GetDatabase(0);
-            var maxBitmapLen = 1 << 12;
-            var iter = 1024;
-            var expectedCount = 0;
-            var key = "SimpleBitCountTest";
-
-            for (var i = 0; i < iter; i++)
+            try
             {
-                var offset = r.Next(1, maxBitmapLen);
-                var set = !db.StringSetBit(key, offset, true);
-                expectedCount += set ? 1 : 0;
-            }
 
-            var count = db.StringBitCount(key);
-            ClassicAssert.AreEqual(expectedCount, count);
+                using var redis = ConnectionMultiplexer.Connect(server.Options);
+
+                var db = redis.GetDatabase(0);
+                var maxBitmapLen = 1 << 12;
+                var iter = 1024;
+                var expectedCount = 0;
+                var key = "SimpleBitCountTest";
+
+                for (var i = 0; i < iter; i++)
+                {
+                    var offset = r.Next(1, maxBitmapLen);
+                    var set = !db.StringSetBit(key, offset, true);
+                    expectedCount += set ? 1 : 0;
+                }
+
+                var count = db.StringBitCount(key);
+                ClassicAssert.AreEqual(expectedCount, count);
+            }
+            catch
+            {
+                server.RecordTestOutput();
+
+                throw;
+            }
         }
 
         private static int Index(long offset) => (int)(offset >> 3);
@@ -837,7 +847,16 @@ namespace Garnet.test
             }
 
             using var server = new GarnetServerTestProcess(args);
-            BitOp_Binary_SameSize(server.Options, op, bitmapSize, keys);
+            try
+            {
+                BitOp_Binary_SameSize(server.Options, op, bitmapSize, keys);
+            }
+            catch
+            {
+                server.RecordTestOutput();
+
+                throw;
+            }
         }
 
         [Test]
