@@ -384,10 +384,10 @@ namespace Garnet.server
         /// </summary>
         public bool UseAofNullDevice = false;
 
-        /// <summary>
-        /// Use native device on Linux for local storage
-        /// </summary>
-        public bool UseNativeDeviceLinux = false;
+        // <summary>
+        // Use specified device type
+        // </summary>
+        public DeviceType DeviceType = DeviceType.Default;
 
         /// <summary>
         /// Limit of items to return in one iteration of *SCAN command
@@ -651,7 +651,13 @@ namespace Garnet.server
             }
             logger?.LogInformation("[Store] Using log mutable percentage of {MutablePercent}%", MutablePercent);
 
-            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux, logger: logger);
+            if (DeviceType == DeviceType.Default)
+            {
+                DeviceType = Devices.GetDefaultDeviceType();
+            }
+            DeviceFactoryCreator ??= new LocalStorageNamedDeviceFactoryCreator(deviceType: DeviceType, logger: logger);
+
+            logger?.LogInformation("Using device type {deviceType}", DeviceType);
 
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");

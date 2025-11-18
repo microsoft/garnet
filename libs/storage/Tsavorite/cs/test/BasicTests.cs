@@ -28,7 +28,7 @@ namespace Tsavorite.test
         private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> session;
         private BasicContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> bContext;
         private IDevice log;
-        DeviceType deviceType;
+        TestDeviceType deviceType;
 
         [SetUp]
         public void Setup()
@@ -37,7 +37,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
         }
 
-        private void Setup(KVSettings<KeyStruct, ValueStruct> kvSettings, DeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
+        private void Setup(KVSettings<KeyStruct, ValueStruct> kvSettings, TestDeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
         {
             kvSettings.IndexSize = 1L << 13;
 
@@ -82,7 +82,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteRead([Values] DeviceType deviceType)
+        public void NativeInMemWriteRead([Values] TestDeviceType deviceType)
         {
             Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
 
@@ -103,7 +103,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
+        public void NativeInMemWriteReadDelete([Values] TestDeviceType deviceType)
         {
             Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
 
@@ -140,7 +140,7 @@ namespace Tsavorite.test
         public void NativeInMemWriteReadDelete2()
         {
             // Just set this one since Write Read Delete already does all four devices
-            deviceType = DeviceType.MLSD;
+            deviceType = TestDeviceType.MLSD;
 
             const int count = 10;
 
@@ -188,7 +188,7 @@ namespace Tsavorite.test
         public unsafe void NativeInMemWriteRead2()
         {
             // Just use this one instead of all four devices since InMemWriteRead covers all four devices
-            deviceType = DeviceType.MLSD;
+            deviceType = TestDeviceType.MLSD;
 
             const int count = 200;
 
@@ -240,7 +240,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public unsafe void TestShiftHeadAddress([Values] DeviceType deviceType, [Values] BatchMode batchMode)
+        public unsafe void TestShiftHeadAddress([Values] TestDeviceType deviceType, [Values] BatchMode batchMode)
         {
             InputStruct input = default;
             const int RandSeed = 10;
@@ -322,7 +322,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public unsafe void NativeInMemRMWRefKeys([Values] DeviceType deviceType)
+        public unsafe void NativeInMemRMWRefKeys([Values] TestDeviceType deviceType)
         {
             InputStruct input = default;
             OutputStruct output = default;
@@ -385,7 +385,7 @@ namespace Tsavorite.test
         // Tests the overload where no reference params used: key,input,userContext
         [Test]
         [Category("TsavoriteKV")]
-        public unsafe void NativeInMemRMWNoRefKeys([Values] DeviceType deviceType)
+        public unsafe void NativeInMemRMWNoRefKeys([Values] TestDeviceType deviceType)
         {
             InputStruct input = default;
 
@@ -444,7 +444,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void ReadNoRefKeyInputOutput([Values] DeviceType deviceType)
+        public void ReadNoRefKeyInputOutput([Values] TestDeviceType deviceType)
         {
             InputStruct input = default;
 
@@ -467,7 +467,7 @@ namespace Tsavorite.test
         // Test the overload call of .Read (key, out output, userContext)
         [Test]
         [Category("TsavoriteKV")]
-        public void ReadNoRefKey([Values] DeviceType deviceType)
+        public void ReadNoRefKey([Values] TestDeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
@@ -490,7 +490,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void ReadWithoutInput([Values] DeviceType deviceType)
+        public void ReadWithoutInput([Values] TestDeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
@@ -514,7 +514,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void ReadBareMinParams([Values] DeviceType deviceType)
+        public void ReadBareMinParams([Values] TestDeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
@@ -538,7 +538,7 @@ namespace Tsavorite.test
         public void ReadAtAddressDefaultOptions()
         {
             // Just functional test of ReadFlag so one device is enough
-            deviceType = DeviceType.MLSD;
+            deviceType = TestDeviceType.MLSD;
 
             Setup(new() { MemorySize = 1L << 29 }, deviceType);
 
@@ -593,7 +593,7 @@ namespace Tsavorite.test
         public void ReadAtAddressIgnoreReadCache()
         {
             // Another ReadFlag functional test so one device is enough
-            deviceType = DeviceType.MLSD;
+            deviceType = TestDeviceType.MLSD;
 
             Setup(new() { MemorySize = 1L << 29, ReadCacheEnabled = true }, deviceType);
 
@@ -668,7 +668,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void UpsertDefaultsTest([Values] DeviceType deviceType)
+        public void UpsertDefaultsTest([Values] TestDeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
@@ -696,7 +696,7 @@ namespace Tsavorite.test
         public void UpsertNoRefNoDefaultsTest()
         {
             // Just checking more parameter values so one device is enough
-            deviceType = DeviceType.MLSD;
+            deviceType = TestDeviceType.MLSD;
 
             Setup(new() { MemorySize = 1L << 29 }, deviceType);
 

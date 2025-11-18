@@ -37,7 +37,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public void DeltaLogTest1([Values] TestUtils.DeviceType deviceType)
+        public void DeltaLogTest1([Values] TestUtils.TestDeviceType deviceType)
         {
             const int TotalCount = 200;
             string filename = Path.Join(TestUtils.MethodTestDir, $"delta_{deviceType}.log");
