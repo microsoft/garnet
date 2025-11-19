@@ -533,6 +533,11 @@ namespace Garnet.server
         public bool ClusterReplicaResumeWithData = false;
 
         /// <summary>
+        /// Represents the timeout duration for the state machine driver individual operations.
+        /// </summary>
+        public TimeSpan StateMachineDriverTimeout = TimeSpan.FromSeconds(60);
+
+        /// <summary>
         /// Get the directory name for database checkpoints
         /// </summary>
         /// <param name="dbId">Database Id</param>

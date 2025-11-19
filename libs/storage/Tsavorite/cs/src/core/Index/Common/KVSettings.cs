@@ -130,6 +130,11 @@ namespace Tsavorite.core
         public StateMachineDriver StateMachineDriver = null;
 
         /// <summary>
+        /// Represents the timeout duration for the state machine driver individual operations.
+        /// </summary>
+        public TimeSpan StateMachineDriverTimeout = TimeSpan.FromSeconds(60);
+
+        /// <summary>
         /// Create default configuration settings for TsavoriteKV. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").

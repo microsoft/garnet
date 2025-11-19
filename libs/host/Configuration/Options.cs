@@ -459,11 +459,11 @@ namespace Garnet
         [Option("repl-diskless-sync-delay", Required = false, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
         public int ReplicaDisklessSyncDelay { get; set; }
 
-        [IntRangeValidation(0, int.MaxValue)]
+        [IntRangeValidation(-1, int.MaxValue)]
         [Option("repl-attach-timeout", Required = false, HelpText = "Timeout in seconds for replication attach operation.")]
         public int ReplicaAttachTimeout { get; set; }
 
-        [IntRangeValidation(0, int.MaxValue)]
+        [IntRangeValidation(-1, int.MaxValue)]
         [Option("repl-sync-timeout", Required = false, HelpText = "Timeout in seconds for replication sync operations.")]
         public int ReplicaSyncTimeout { get; set; }
 
@@ -617,6 +617,10 @@ namespace Garnet
         [OptionValidation]
         [Option("lua-logging-mode", Required = false, HelpText = "Behavior of redis.log(...) when called from Lua scripts.  Defaults to Enable.")]
         public LuaLoggingMode LuaLoggingMode { get; set; }
+
+        [IntRangeValidation(-1, int.MaxValue, isRequired: false)]
+        [Option("smd-timeout", Required = false, HelpText = "Represents the timeout duration for the state machine driver individual operations in seconds.")]
+        public int StateMachineDriverTimeoutSecs { get; set; }
 
         // Parsing is a tad tricky here as JSON wants to set to empty at certain points
         //
@@ -942,6 +946,7 @@ namespace Garnet
                 ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
+                StateMachineDriverTimeout = StateMachineDriverTimeoutSecs <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaAttachTimeout),
             };
         }
 

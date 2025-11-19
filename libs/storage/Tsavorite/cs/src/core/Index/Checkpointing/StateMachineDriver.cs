@@ -30,15 +30,17 @@ namespace Tsavorite.core
         readonly LightEpoch epoch;
         readonly ILogger logger;
         readonly long[] NumActiveTransactions;
+        readonly TimeSpan timeout;
 
         public SystemState SystemState => SystemState.Copy(ref systemState);
 
-        public StateMachineDriver(LightEpoch epoch, ILogger logger = null)
+        public StateMachineDriver(LightEpoch epoch, TimeSpan timeout, ILogger logger = null)
         {
             this.epoch = epoch;
             this.systemState = SystemState.Make(Phase.REST, 1);
             this.waitingList = [];
             this.NumActiveTransactions = new long[2];
+            this.timeout = timeout;
             this.logger = logger;
         }
 

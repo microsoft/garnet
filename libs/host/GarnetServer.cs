@@ -335,7 +335,7 @@ namespace Garnet
             out LightEpoch epoch, out StateMachineDriver stateMachineDriver)
         {
             epoch = new LightEpoch();
-            stateMachineDriver = new StateMachineDriver(epoch, loggerFactory?.CreateLogger($"StateMachineDriver"));
+            stateMachineDriver = new StateMachineDriver(epoch, opts.StateMachineDriverTimeout, loggerFactory?.CreateLogger($"StateMachineDriver"));
 
             kvSettings = opts.GetSettings(loggerFactory, epoch, stateMachineDriver, out logFactory);
 
@@ -348,6 +348,7 @@ namespace Garnet
             kvSettings.CheckpointManager = opts.EnableCluster ?
                 clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
                 new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
+            kvSettings.StateMachineDriverTimeout = opts.StateMachineDriverTimeout;
 
             return new TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator>(kvSettings
                 , StoreFunctions<SpanByte, SpanByte>.Create()
@@ -373,6 +374,8 @@ namespace Garnet
             objKvSettings.CheckpointManager = opts.EnableCluster ?
                 clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: false, logger) :
                 new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
+
+            objKvSettings.StateMachineDriverTimeout = opts.StateMachineDriverTimeout;
 
             var objStore = new TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator>(
                 objKvSettings,
