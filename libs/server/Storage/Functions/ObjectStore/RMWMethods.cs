@@ -27,8 +27,7 @@ namespace Garnet.server
             var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
             try
             {
-                var ret = customObjectCommand.NeedInitialUpdate(key, ref input, ref writer);
-                return ret;
+                return customObjectCommand.NeedInitialUpdate(key, ref input, ref writer);
             }
             finally
             {

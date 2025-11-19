@@ -13,6 +13,7 @@ namespace Garnet.server
     /// </summary>
     public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedStoreInput, UnifiedStoreOutput, long>
     {
+        /// <inheritdoc />
         public bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output,
             ref RMWInfo rmwInfo)
         {
@@ -28,6 +29,7 @@ namespace Garnet.server
             };
         }
 
+        /// <inheritdoc />
         public bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
             ref UnifiedStoreOutput output, ref RMWInfo rmwInfo)
         {
@@ -46,6 +48,7 @@ namespace Garnet.server
             };
         }
 
+        /// <inheritdoc />
         public void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
             ref UnifiedStoreOutput output, ref RMWInfo rmwInfo)
         {
@@ -60,6 +63,7 @@ namespace Garnet.server
                 functionsState.objectStoreSizeTracker?.AddTrackedSize(logRecord.ValueObject.HeapMemorySize);
         }
 
+        /// <inheritdoc />
         public bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
             ref UnifiedStoreOutput output, ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
         {
@@ -73,6 +77,7 @@ namespace Garnet.server
             return true;
         }
 
+        /// <inheritdoc />
         public bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,
             in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref UnifiedStoreOutput output,
             ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
@@ -135,6 +140,7 @@ namespace Garnet.server
             return true;
         }
 
+        /// <inheritdoc />
         public bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,
             in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input, ref UnifiedStoreOutput output,
             ref RMWInfo rmwInfo) where TSourceLogRecord : ISourceLogRecord
@@ -191,6 +197,7 @@ namespace Garnet.server
             return true;
         }
 
+        /// <inheritdoc />
         public bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
             ref UnifiedStoreOutput output, ref RMWInfo rmwInfo)
         {

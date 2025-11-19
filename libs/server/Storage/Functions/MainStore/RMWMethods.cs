@@ -595,10 +595,8 @@ namespace Garnet.server
                         fixed (byte* valuePtr = logRecord.ValueSpan)
                             oldValSet = BitmapManager.UpdateBitmap(valuePtr, bOffset, bSetVal);
 
-                    if (oldValSet == 0)
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
-                    else
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output);
+                    functionsState.CopyDefaultResp(
+                        oldValSet == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output);
                     break;
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
@@ -768,9 +766,7 @@ namespace Garnet.server
                             return false;
 
                         // Append the new value with the client input at the end of the old data
-                        appendValue.
-                        // Append the new value with the client input at the end of the old data
-                        ReadOnlySpan.CopyTo(logRecord.ValueSpan.Slice(originalLength));
+                        appendValue.ReadOnlySpan.CopyTo(logRecord.ValueSpan.Slice(originalLength));
                         if (!TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output))
                             return false;
                         break;
@@ -1172,10 +1168,8 @@ namespace Garnet.server
                         }
                     }
 
-                    if (oldValSet == 0)
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
-                    else
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output);
+                    functionsState.CopyDefaultResp(
+                        oldValSet == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output);
                     break;
 
                 case RespCommand.BITFIELD:

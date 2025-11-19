@@ -23,7 +23,11 @@ namespace Garnet.server
             if (functionsState.StoredProcMode)
                 return;
 
-            input.header.flags |= RespInputFlags.Deterministic;
+            // We need this check because when we ingest records from the primary
+            // if the input is zero then input overlaps with value so any update to RespInputHeader->flags
+            // will incorrectly modify the total length of value.
+            if (input.SerializedLength > 0)
+                input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.UnifiedStoreStringUpsert, storeVersion = version, sessionID = sessionID },
@@ -61,7 +65,8 @@ namespace Garnet.server
             if (functionsState.StoredProcMode)
                 return;
 
-            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.UnifiedStoreDelete, storeVersion = version, sessionID = sessionID }, key, item2: default, out _);
+            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.UnifiedStoreDelete, storeVersion = version, sessionID = sessionID }, 
+                key, item2: default, out _);
         }
 
         /// <summary>
@@ -72,7 +77,9 @@ namespace Garnet.server
         /// </summary>
         void WriteLogRMW(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, long version, int sessionId)
         {
-            if (functionsState.StoredProcMode) return;
+            if (functionsState.StoredProcMode) 
+                return;
+            
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(
