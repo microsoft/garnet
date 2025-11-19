@@ -13,6 +13,7 @@ using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
 using Garnet.server.Lua;
+using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -444,7 +445,7 @@ namespace Garnet.server
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public long ReplayAOF(long untilAddress = -1) => this.databaseManager.ReplayAOF();
+        public long ReplayAOF(long untilAddress = -1) => this.databaseManager.ReplayAOF(untilAddress);
 
         /// <summary>
         /// Append a checkpoint commit to the AOF
@@ -641,7 +642,7 @@ namespace Garnet.server
             {
                 while (true)
                 {
-                    await Task.Delay(1000, token);
+                    await Task.Delay(TimeSpan.FromSeconds(serverOptions.AofSizeLimitEnforceFrequencySecs), token);
                     if (token.IsCancellationRequested) break;
 
                     await databaseManager.TaskCheckpointBasedOnAofSizeLimitAsync(aofSizeLimit, token, logger);
@@ -789,6 +790,8 @@ namespace Garnet.server
                 logger?.LogError(ex, $"{nameof(IndexAutoGrowTask)} exception received");
             }
         }
+
+        public (HybridLogScanMetrics, HybridLogScanMetrics)[] HybridLogDistributionScan() => databaseManager.CollectHybridLogStats();
 
         internal void Start()
         {

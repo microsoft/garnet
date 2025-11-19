@@ -88,6 +88,11 @@ namespace Garnet.server
         /// </summary>
         public RespCommandKeySpecification[] KeySpecifications { get; init; }
 
+        /// <summary>
+        /// Store type that the command operates on (None/Main/Object/All). Default: None for commands without key arguments.
+        /// </summary>
+        public StoreType StoreType { get; set; }
+
         /// <inheritdoc />
         public RespCommandsInfo[] SubCommands { get; init; }
 
@@ -96,6 +101,7 @@ namespace Garnet.server
         public RespCommandsInfo Parent { get; set; }
 
         private const string RespCommandsInfoEmbeddedFileName = @"RespCommandsInfo.json";
+        private const string UnknownCommandName = "UNKNOWN";
 
         private static bool IsInitialized = false;
         private static readonly object IsInitializedLock = new();
@@ -107,6 +113,7 @@ namespace Garnet.server
         private static IReadOnlySet<string> AllRespCommandNames = null;
         private static IReadOnlySet<string> ExternalRespCommandNames = null;
         private static IReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>> AclCommandInfo = null;
+        private static SimpleRespCommandInfo[] SimpleRespCommandsInfo = null;
 
         private static RespCommandsInfo[] FastBasicRespCommandsInfo = null;
 
@@ -154,6 +161,18 @@ namespace Garnet.server
                 }
             }
 
+            var tmpSimpleRespCommandInfo = new SimpleRespCommandInfo[(int)RespCommandExtensions.LastValidCommand + 1];
+            for (var cmdId = (int)RespCommandExtensions.FirstReadCommand; cmdId < tmpSimpleRespCommandInfo.Length; cmdId++)
+            {
+                if (!tmpFlattenedRespCommandsInfo.TryGetValue((RespCommand)cmdId, out var cmdInfo))
+                {
+                    tmpSimpleRespCommandInfo[cmdId] = SimpleRespCommandInfo.Default;
+                    continue;
+                }
+
+                cmdInfo.PopulateSimpleCommandInfo(ref tmpSimpleRespCommandInfo[cmdId]);
+            }
+
             var tmpAllSubCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
             var tmpExternalSubCommandsInfo = new Dictionary<string, RespCommandsInfo>(StringComparer.OrdinalIgnoreCase);
             foreach (var kvp in tmpAllRespCommandsInfo)
@@ -177,6 +196,7 @@ namespace Garnet.server
             AllRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, [.. AllRespCommandsInfo.Keys]);
             ExternalRespCommandNames = ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, [.. ExternalRespCommandsInfo.Keys]);
             FlattenedRespCommandsInfo = new ReadOnlyDictionary<RespCommand, RespCommandsInfo>(tmpFlattenedRespCommandsInfo);
+            SimpleRespCommandsInfo = tmpSimpleRespCommandInfo;
 
             AclCommandInfo =
                 new ReadOnlyDictionary<RespAclCategories, IReadOnlyList<RespCommandsInfo>>(
@@ -357,6 +377,37 @@ namespace Garnet.server
             respSubCommandsInfo = externalOnly ? ExternalRespSubCommandsInfo : AllRespSubCommandsInfo;
             return true;
         }
+
+        /// <summary>
+        /// Gets command's simplified info
+        /// </summary>
+        /// <param name="cmd">Resp command</param>
+        /// <param name="cmdInfo">Arity</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>True if valid command</returns>
+        public static bool TryGetSimpleRespCommandInfo(RespCommand cmd, out SimpleRespCommandInfo cmdInfo, ILogger logger = null)
+        {
+            cmdInfo = SimpleRespCommandInfo.Default;
+
+            if (!IsInitialized && !TryInitialize(logger))
+                return false;
+
+            var cmdId = (ushort)cmd;
+            if (cmdId >= SimpleRespCommandsInfo.Length)
+                return false;
+
+            cmdInfo = SimpleRespCommandsInfo[cmdId];
+            return true;
+        }
+
+        /// <summary>
+        /// Gets command's name
+        /// </summary>
+        /// <param name="cmd">Resp command</param>
+        /// <param name="logger">Logger</param>
+        /// <returns>Command name</returns>
+        public static string GetRespCommandName(RespCommand cmd, ILogger logger = null)
+            => TryGetRespCommandInfo(cmd, out var commandInfo, logger: logger) ? commandInfo.Name : UnknownCommandName;
 
         /// <summary>
         /// Serializes the current object to RESP format

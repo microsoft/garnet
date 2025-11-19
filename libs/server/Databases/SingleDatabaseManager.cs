@@ -5,6 +5,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -25,10 +26,14 @@ namespace Garnet.server
 
         readonly GarnetDatabase defaultDatabase;
 
+        readonly StoreWrapper storeWrapper;
+
+
         public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper, bool createDefaultDatabase = true) :
             base(createDatabaseDelegate, storeWrapper)
         {
             Logger = storeWrapper.loggerFactory?.CreateLogger(nameof(SingleDatabaseManager));
+            this.storeWrapper = storeWrapper;
 
             // Create default database of index 0 (unless specified otherwise)
             if (createDefaultDatabase)
@@ -127,7 +132,8 @@ namespace Garnet.server
         /// <inheritdoc/>
         public override bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default)
         {
-            if (!TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).GetAwaiter().GetResult())
+            // Check if checkpoint already in progress
+            if (!TryPauseCheckpoints(defaultDatabase.Id))
                 return false;
 
             var checkpointTask = TakeCheckpointAsync(defaultDatabase, logger: logger, token: token).ContinueWith(
@@ -213,11 +219,18 @@ namespace Garnet.server
             if (!TryPauseCheckpointsContinuousAsync(defaultDatabase.Id, token: token).GetAwaiter().GetResult())
                 return;
 
-            logger?.LogInformation("Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}",
-                aofSize, aofSizeLimit);
-
             try
             {
+                // Checkpoint will be triggered from AOF replay
+                if (storeWrapper.clusterProvider.IsReplica())
+                {
+                    logger?.LogInformation("Replica skipping {method}", nameof(TaskCheckpointBasedOnAofSizeLimitAsync));
+                    return;
+                }
+
+                logger?.LogInformation("Enforcing AOF size limit currentAofSize: {aofSize} >  AofSizeLimit: {aofSizeLimit}",
+                    aofSize, aofSizeLimit);
+
                 var result = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token);
 
                 var storeTailAddress = result.Item1;
@@ -404,6 +417,8 @@ namespace Garnet.server
             var (k2, t2) = StoreWrapper.serverOptions.DisableObjects ? (0, 0) : ObjectStoreExpiredKeyDeletionScan(DefaultDatabase);
             return (k1 + k2, t1 + t2);
         }
+
+        public override (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];
 
         private void SafeTruncateAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {

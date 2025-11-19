@@ -299,7 +299,11 @@ namespace Tsavorite.core
                 _ = Interlocked.Exchange(ref stateMachine, null);
                 if (ex != null)
                 {
-                    _ = _stateMachineCompleted.TrySetException(ex);
+                    // If the state machine stopped due to cancellation, propagate cancellation to the completion TCS
+                    if (ex is OperationCanceledException || ex is TaskCanceledException)
+                        _ = _stateMachineCompleted.TrySetCanceled();
+                    else
+                        _ = _stateMachineCompleted.TrySetException(ex);
                 }
                 else
                 {

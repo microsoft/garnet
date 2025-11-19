@@ -590,10 +590,10 @@ namespace Tsavorite.test.ReadCacheTests
 
             try
             {
-                luContext.SortKeyHashes(keys);
+                luContext.SortKeyHashes<FixedLengthLockableKeyStruct<long>>(keys);
 
                 // For this single-threaded test, the locking does not really have to be in order, but for consistency do it.
-                luContext.Lock(keys);
+                luContext.Lock<FixedLengthLockableKeyStruct<long>>(keys);
 
                 store.ReadCache.FlushAndEvict(wait: true);
 
@@ -618,7 +618,7 @@ namespace Tsavorite.test.ReadCacheTests
                     ClassicAssert.AreEqual(key.LockType == LockType.Exclusive, lockState.IsLockedExclusive);
                     ClassicAssert.AreEqual(key.LockType != LockType.Exclusive, lockState.NumLockedShared > 0);
 
-                    luContext.Unlock(keys, idx, 1);
+                    luContext.Unlock<FixedLengthLockableKeyStruct<long>>(keys.AsSpan().Slice(idx, 1));
                     lockState = store.LockTable.GetLockState(ref hei);
                     ClassicAssert.IsFalse(lockState.IsLockedExclusive);
                     ClassicAssert.AreEqual(0, lockState.NumLockedShared);
@@ -657,7 +657,7 @@ namespace Tsavorite.test.ReadCacheTests
             string filename = Path.Join(MethodTestDir, $"{GetType().Name}.log");
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is DeviceType deviceType)
+                if (arg is TestDeviceType deviceType)
                 {
                     log = CreateTestDevice(deviceType, filename, deleteOnClose: true);
                     continue;
@@ -902,7 +902,7 @@ namespace Tsavorite.test.ReadCacheTests
             string filename = Path.Join(MethodTestDir, $"{GetType().Name}.log");
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is DeviceType deviceType)
+                if (arg is TestDeviceType deviceType)
                 {
                     log = CreateTestDevice(deviceType, filename, deleteOnClose: true);
                     continue;

@@ -2,10 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.IO;
 using System.Net;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -186,52 +184,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get KVSettings
-        /// </summary>
-        public void GetSettings<TKey, TValue>()
-        {
-            var indexCacheLines = IndexSizeCachelines("hash index size", IndexSize);
-            var kvSettings = new KVSettings<TKey, TValue>()
-            {
-                IndexSize = indexCacheLines * 64L,
-                PreallocateLog = false,
-                PageSize = 1L << PageSizeBits()
-            };
-            logger?.LogInformation("[Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
-
-            kvSettings.MemorySize = 1L << MemorySizeBits();
-            logger?.LogInformation("[Store] Using log memory size of {MemorySize}", PrettySize(kvSettings.MemorySize));
-
-            logger?.LogInformation("[Store] There are {LogPages} log pages in memory", PrettySize(kvSettings.MemorySize / kvSettings.PageSize));
-
-            kvSettings.SegmentSize = 1L << SegmentSizeBits();
-            logger?.LogInformation("[Store] Using disk segment size of {SegmentSize}", PrettySize(kvSettings.SegmentSize));
-
-            logger?.LogInformation("[Store] Using hash index size of {IndexSize} ({CacheLines} cache lines)", PrettySize(kvSettings.IndexSize), PrettySize(indexCacheLines));
-
-            if (EnableStorageTier)
-            {
-                if (LogDir is null or "")
-                    LogDir = Directory.GetCurrentDirectory();
-                kvSettings.LogDevice = Devices.CreateLogDevice(LogDir + "/Store/hlog", logger: logger);
-            }
-            else
-            {
-                if (LogDir != null)
-                    throw new Exception("LogDir specified without enabling tiered storage (UseStorage)");
-                kvSettings.LogDevice = new NullDevice();
-            }
-
-            if (CheckpointDir == null) CheckpointDir = LogDir;
-
-            if (CheckpointDir is null or "")
-                CheckpointDir = Directory.GetCurrentDirectory();
-
-            kvSettings.CheckpointDir = CheckpointDir + "/Store/checkpoints";
-            kvSettings.RemoveOutdatedCheckpoints = true;
-        }
-
-        /// <summary>
         /// Parse size from string specification
         /// </summary>
         /// <param name="value"></param>
@@ -239,7 +191,7 @@ namespace Garnet.server
         /// <returns></returns>
         public static long ParseSize(string value, out int bytesRead)
         {
-            char[] suffix = ['k', 'm', 'g', 't', 'p'];
+            ReadOnlySpan<char> suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;
             bytesRead = 0;
             for (var i = 0; i < value.Length; i++)
@@ -289,7 +241,7 @@ namespace Garnet.server
         /// <returns></returns>
         internal static string PrettySize(long value)
         {
-            char[] suffix = ['k', 'm', 'g', 't', 'p'];
+            ReadOnlySpan<char> suffix = ['k', 'm', 'g', 't', 'p'];
             double v = value;
             int exp = 0;
             while (v - Math.Floor(v) > 0)

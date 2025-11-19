@@ -8,6 +8,7 @@
     <PackAsTool>true</PackAsTool>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <ImplicitUsings>enable</ImplicitUsings>
+    <RollForward>LatestMajor</RollForward>
   </PropertyGroup>
 
 	<PropertyGroup>

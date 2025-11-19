@@ -212,6 +212,40 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase(SaveType.BackgroundSave)]
+#pragma warning disable CS0618 // Type or member is obsolete
+        [TestCase(SaveType.ForegroundSave)]
+#pragma warning restore CS0618 // Type or member is obsolete
+        public void SeSaveInProgressTest(SaveType saveType)
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
+            var server = redis.GetServer(TestUtils.EndPoint);
+            var db = redis.GetDatabase(0);
+
+            var lastSave = server.LastSave();
+
+            // Check no saves present
+            ClassicAssert.AreEqual(DateTimeOffset.FromUnixTimeSeconds(0).Ticks, lastSave.Ticks);
+
+            // Add some data
+            for (var i = 0; i < 1024; i++)
+            {
+                db.StringSet($"k{i}", new string('x', 256));
+                db.ListLeftPush($"k{i}o", new string('x', 256));
+            }
+
+            // Issue background save
+            server.Save(SaveType.BackgroundSave);
+
+            // Issue another save while one is in progress
+            Assert.Throws<RedisServerException>(() => server.Save(saveType),
+                Encoding.ASCII.GetString(CmdStrings.RESP_ERR_CHECKPOINT_ALREADY_IN_PROGRESS));
+
+            // Wait for save to complete
+            while (server.LastSave() == lastSave) Thread.Sleep(10);
+        }
+
+        [Test]
         public void SeSaveRecoverCustomObjectTest()
         {
             string key = "key";

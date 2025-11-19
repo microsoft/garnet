@@ -32,7 +32,7 @@ namespace Tsavorite.test.recovery
             opsDone = false;
             expectedV1Count = new long[numKeys];
             expectedV2Count = new long[numKeys];
-            log = CreateTestDevice(DeviceType.LSD, Path.Join(MethodTestDir, "Test.log"));
+            log = CreateTestDevice(TestDeviceType.LSD, Path.Join(MethodTestDir, "Test.log"));
         }
 
         protected void BaseTearDown()
@@ -349,7 +349,7 @@ namespace Tsavorite.test.recovery
                 lc.BeginLockable();
 
                 // Lock keys, session acquires version in this call
-                lc.Lock(exclusiveVec);
+                lc.Lock<FixedLengthLockableKeyStruct<long>>(exclusiveVec);
 
                 txnVersion = store.stateMachineDriver.VerifyTransactionVersion(txnVersion);
                 lc.LocksAcquired(txnVersion);
@@ -359,7 +359,7 @@ namespace Tsavorite.test.recovery
                 _ = lc.RMW(ref key2, ref input);
 
                 // Unlock keys
-                lc.Unlock(exclusiveVec);
+                lc.Unlock<FixedLengthLockableKeyStruct<long>>(exclusiveVec);
 
                 // End transaction
                 lc.EndLockable();
