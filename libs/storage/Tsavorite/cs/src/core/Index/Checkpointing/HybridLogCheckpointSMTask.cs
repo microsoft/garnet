@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Tsavorite.core
@@ -96,7 +97,8 @@ namespace Tsavorite.core
                     if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
                     {
                         stateMachineDriver.lastVersion = lastVersion;
-                        stateMachineDriver.lastVersionTransactionsDone = new(0);
+                        var current = stateMachineDriver.lastVersionTransactionsDone;
+                        _ = Interlocked.CompareExchange(ref stateMachineDriver.lastVersionTransactionsDone, new(0), current);
                     }
                     if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
                         stateMachineDriver.AddToWaitingList(stateMachineDriver.lastVersionTransactionsDone);
