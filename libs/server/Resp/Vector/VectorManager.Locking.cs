@@ -46,33 +46,39 @@ namespace Garnet.server
         /// Read locks are acquired optimistically, so actual lock values will fluctate above int.MinValue when an exclusive lock is held.
         /// 
         /// The last set of optimizations is around cache lines coherency:
-        ///   We assume cache lines of 64-bytes (the x86 default, which is also true for some [but not all] ARM processors)
-        ///   We access arrays via reference, to avoid thrashing cache lines due to length checks
+        ///   We assume cache lines of 64-bytes (the x86 default, which is also true for some [but not all] ARM processors) and size counters-per-core in multiples of that
+        ///   We access array elements via reference, to avoid thrashing cache lines due to length checks
         ///   Each shard is placed, in so much as is possible, into a different cache line rather than grouping a hash's counts physically near each other
         ///     This will tend to allow a core to retain ownership of the same cache lines even as it moves between different hashes
+        ///     
+        /// Experimentally (using some rough microbenchmarks) various optimizations are worth (on either shared or exclusive acquisiton paths):
+        ///   - Split shards across cache lines   : 7x (read path), 2.5x (write path)
+        ///   - Fast math instead of mod and mult : 50% (read path), 20% (write path)
+        ///   - Unsafe ref instead of array access:  0% (read path), 10% (write path)
         /// </remarks>
-        internal struct VectorSetLockContext
+        internal struct VectorSetLocks
         {
             // This is true for all x86-derived processors and about 1/2 true for ARM-derived processors
             internal const int CacheLineSizeBytes = 64;
 
-            // Beyond 4K bytes per core we're well past "this is worth the tradeoff", so cut off then
+            // Beyond 4K bytes per core we're well past "this is worth the tradeoff", so cut off then.
+            //
+            // Must be a power of 2.
             internal const int MaxPerCoreContexts = 1_024;
 
             private readonly int[] lockCounts;
-            private readonly int lockShardCount;
-            private readonly int lockShardMask;
+            private readonly int coreSelectionMask;
             private readonly int perCoreCounts;
             private readonly ulong perCoreCountsFastMod;
             private readonly byte perCoreCountsMultShift;
 
-            internal VectorSetLockContext(int estimatedSimultaneousActiveVectorSets)
+            internal VectorSetLocks(int estimatedSimultaneousActiveVectorSets)
             {
                 Debug.Assert(estimatedSimultaneousActiveVectorSets > 0);
 
                 // ~1 per core
-                lockShardCount = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount);
-                lockShardMask = lockShardCount - 1;
+                var coreCount = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount);
+                coreSelectionMask = coreCount - 1;
 
                 // Use estimatedSimultaneousActiveVectorSets to determine number of shards per lock.
                 // 
@@ -102,16 +108,22 @@ namespace Garnet.server
                 // Avoid two multiplies in the hot path
                 perCoreCountsMultShift = (byte)BitOperations.Log2((uint)perCoreCounts);
 
-                var size = lockShardCount * perCoreCounts;
+                var size = coreCount * perCoreCounts;
 
                 lockCounts = new int[size];
             }
 
+            /// <summary>
+            /// Take a hash and a _hint_ about the current processor and determine which count should be used.
+            /// 
+            /// Walking <paramref name="currentProcessorHint"/> from 0 to (<see cref="coreSelectionMask"/> + 1) [exclusive] will return
+            /// all possible counts for a given hash.
+            /// </summary>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal readonly int CalculateIndex(int hash, int currentProcessorHint)
             {
                 // Hint might be out of range, so force it into the space we expect
-                var currentProcessor = currentProcessorHint & lockShardMask;
+                var currentProcessor = currentProcessorHint & coreSelectionMask;
 
                 var startOfCoreCounts = currentProcessor << perCoreCountsMultShift;
 
@@ -203,7 +215,8 @@ namespace Garnet.server
             {
                 ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
 
-                for (var i = 0; i < lockShardCount; i++)
+                var coreCount = coreSelectionMask + 1;
+                for (var i = 0; i < coreCount; i++)
                 {
                     var acquireIx = CalculateIndex(hash, i);
                     ref var acquireRef = ref Unsafe.Add(ref countRef, acquireIx);
@@ -243,7 +256,8 @@ namespace Garnet.server
             {
                 ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
 
-                for (var i = 0; i < lockShardCount; i++)
+                var coreCount = coreSelectionMask + 1;
+                for (var i = 0; i < coreCount; i++)
                 {
                     var acquireIx = CalculateIndex(hash, i);
 
@@ -271,7 +285,8 @@ namespace Garnet.server
 
                 var hash = lockToken;
 
-                for (var i = 0; i < lockShardCount; i++)
+                var coreCount = coreSelectionMask + 1;
+                for (var i = 0; i < coreCount; i++)
                 {
                     var releaseIx = CalculateIndex(hash, i);
 
@@ -301,7 +316,8 @@ namespace Garnet.server
 
                 ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
 
-                for (var i = 0; i < lockShardCount; i++)
+                var coreCount = coreSelectionMask + 1;
+                for (var i = 0; i < coreCount; i++)
                 {
                     var acquireIx = CalculateIndex(hash, i);
                     ref var acquireRef = ref Unsafe.Add(ref countRef, acquireIx);

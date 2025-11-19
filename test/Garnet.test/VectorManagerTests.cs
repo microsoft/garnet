@@ -21,7 +21,7 @@ namespace Garnet.test
         [TestCase(int.MinValue)]
         public void BasicLocks(int hash)
         {
-            var lockContext = new VectorManager.VectorSetLockContext(16);
+            var lockContext = new VectorManager.VectorSetLocks(16);
 
             var gotShared0 = lockContext.TryAcquireSharedLock(hash, out var sharedToken0);
             ClassicAssert.IsTrue(gotShared0);
@@ -49,7 +49,7 @@ namespace Garnet.test
         {
             const int Iters = 10_000;
 
-            var lockContext = new VectorManager.VectorSetLockContext(16);
+            var lockContext = new VectorManager.VectorSetLocks(16);
 
             var rand = new Random(2025_11_17_00);
 
@@ -72,7 +72,7 @@ namespace Garnet.test
 
                 foreach (var offset in offsets)
                 {
-                    var tooClose = offsets.Except([offset]).Where(x => Math.Abs(x - offset) < VectorManager.VectorSetLockContext.CacheLineSizeBytes / sizeof(int));
+                    var tooClose = offsets.Except([offset]).Where(x => Math.Abs(x - offset) < VectorManager.VectorSetLocks.CacheLineSizeBytes / sizeof(int));
                     ClassicAssert.IsEmpty(tooClose);
                 }
             }
@@ -95,7 +95,7 @@ namespace Garnet.test
             const int Iters = 100_000;
             const int LongsPerSlot = 4;
 
-            var lockContext = new VectorManager.VectorSetLockContext(Math.Min(Math.Max(hashCount / 2, 1), Environment.ProcessorCount));
+            var lockContext = new VectorManager.VectorSetLocks(Math.Min(Math.Max(hashCount / 2, 1), Environment.ProcessorCount));
 
             var threads = new Thread[Math.Max(Environment.ProcessorCount, 4)];
 
