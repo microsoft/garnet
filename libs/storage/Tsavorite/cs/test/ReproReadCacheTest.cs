@@ -84,7 +84,7 @@ namespace Tsavorite.test.ReadCacheTests
                     }
                     continue;
                 }
-                if (arg is DeviceType deviceType)
+                if (arg is TestDeviceType deviceType)
                 {
                     log = CreateTestDevice(deviceType, filename, deleteOnClose: true);
                     continue;

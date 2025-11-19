@@ -98,5 +98,14 @@ namespace Garnet.server
             else
                 return GarnetStatus.NOTFOUND;
         }
+
+
+        public void ReadWithPrefetch<TBatch, TContext>(ref TBatch batch, ref TContext context, long userContext = default)
+            where TBatch : IReadArgBatch<SpanByte, RawStringInput, SpanByteAndMemory>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        => context.ReadWithPrefetch(ref batch, userContext);
     }
 }
