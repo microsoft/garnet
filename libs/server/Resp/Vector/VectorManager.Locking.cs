@@ -29,25 +29,25 @@ namespace Garnet.server
         /// 
         /// These are acquired and released as needed to prevent concurrent creation/deletion operations, or deletion concurrent with read operations.
         /// 
-        /// This are outside of Tsavorite for correctness reasons.
+        /// These are outside of Tsavorite for correctness reasons.
         /// </summary>
         /// <remarks>
         /// This is a counter based r/w lock scheme, with a bit of biasing for cache line awareness.
         /// 
         /// Each "key" acquires locks based on its hash.
-        /// Each hash is mapped to a range of indexes, each range is numShards in length.
+        /// Each hash is mapped to a range of indexes, each range is lockShardCount in length.
         /// When acquiring a shared lock, we take one index out of the keys range and acquire a read lock.
         ///   This will block exclusive locks, but not impact other readers.
-        /// When acuiring an exclusive lock, we acquire write locks for all indexes in the key's range IN INCREASING _LOGICAL_ ORDER.
+        /// When acquiring an exclusive lock, we acquire write locks for all indexes in the key's range IN INCREASING _LOGICAL_ ORDER.
         ///   The order is necessary to avoid deadlocks.
         ///   By ensuring all exclusive locks walk "up" we guarantee no two exclusive lock acquisitions end up waiting for each other.
         /// 
         /// Locks themselves are just ints, where a negative value indicates an exclusive lock and a positive value is the number of active readers.
+        /// Read locks are acquired optimistically, so actual lock values will fluctate above int.MinValue when an exclusive lock is held.
         /// 
         /// The last set of optimizations is around cache lines coherency:
         ///   We assume cache lines of 64-bytes (the x86 default, which is also true for some [but not all] ARM processors)
-        ///   The first chunk of the array holding our counts are ignored
-        ///     This is due to the length of the array being around byte 16 of the array object, which every thread will need to read - modifications near it will force that cache line to shuffle between cores
+        ///   We access arrays via reference, to avoid thrashing cache lines due to length checks
         ///   Each shard is placed, in so much as is possible, into a different cache line rather than grouping a hash's counts physically near each other
         ///     This will tend to allow a core to retain ownership of the same cache lines even as it moves between different hashes
         /// </remarks>
@@ -56,65 +56,94 @@ namespace Garnet.server
             // This is true for all x86-derived processors and about 1/2 true for ARM-derived processors
             internal const int CacheLineSizeBytes = 64;
 
-            // Arrays are laid out:
-            //   object header         ==> 8 bytes
-            //   method table pointer  ==> 8 bytes
-            //   length                ==> 4 bytes
-            //   data
-            //
-            // So writes to the first 60 bytes of the array will modifying the same cache line array.Length is in.
-            internal const int IgnoredLeadingInts = 15;
+            // Beyond 4K bytes per core we're well past "this is worth the tradeoff", so cut off then
+            internal const int MaxPerCoreContexts = 1_024;
 
             private readonly int[] lockCounts;
             private readonly int lockShardCount;
             private readonly int lockShardMask;
             private readonly int perCoreCounts;
+            private readonly ulong perCoreCountsFastMod;
+            private readonly byte perCoreCountsMultShift;
 
-            internal VectorSetLockContext(int numContexts)
+            internal VectorSetLockContext(int estimatedSimultaneousActiveVectorSets)
             {
-                Debug.Assert(numContexts > 0);
+                Debug.Assert(estimatedSimultaneousActiveVectorSets > 0);
 
                 // ~1 per core
                 lockShardCount = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount);
                 lockShardMask = lockShardCount - 1;
 
-                perCoreCounts = numContexts;
+                // Use estimatedSimultaneousActiveVectorSets to determine number of shards per lock.
+                // 
+                // We scale up to a whole multiple of CacheLineSizeBytes to reduce cache line thrashing.
+                //
+                // We scale to a power of 2 to avoid divisions (and some multiplies) in index calculation.
+                perCoreCounts = estimatedSimultaneousActiveVectorSets;
                 if (perCoreCounts % (CacheLineSizeBytes / sizeof(int)) != 0)
                 {
                     perCoreCounts += (CacheLineSizeBytes / sizeof(int)) - (perCoreCounts % (CacheLineSizeBytes / sizeof(int)));
                 }
                 Debug.Assert(perCoreCounts % (CacheLineSizeBytes / sizeof(int)) == 0, "Each core should be whole cache lines of data");
 
-                var size = IgnoredLeadingInts + (lockShardCount * perCoreCounts);
+                perCoreCounts = (int)BitOperations.RoundUpToPowerOf2((uint)perCoreCounts);
+
+                // Put an upper bound of ~1 page worth of locks per core (which is still quite high).
+                //
+                // For the largest realistic machines out there (384 cores) this will put us at around ~2M of lock data, max.
+                if (perCoreCounts is <= 0 or > MaxPerCoreContexts)
+                {
+                    perCoreCounts = MaxPerCoreContexts;
+                }
+
+                // Pre-calculate an alternative to %, as that division will be in the hot path
+                perCoreCountsFastMod = (ulong.MaxValue / (uint)perCoreCounts) + 1;
+
+                // Avoid two multiplies in the hot path
+                perCoreCountsMultShift = (byte)BitOperations.Log2((uint)perCoreCounts);
+
+                var size = lockShardCount * perCoreCounts;
 
                 lockCounts = new int[size];
             }
 
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal readonly int CalculateIndex(int hash, int currentProcessorHint)
             {
                 // Hint might be out of range, so force it into the space we expect
                 var currentProcessor = currentProcessorHint & lockShardMask;
 
-                var startOfCoreCounts = currentProcessor * perCoreCounts;
-                var hashOffset = (int)((uint)hash % perCoreCounts);
+                var startOfCoreCounts = currentProcessor << perCoreCountsMultShift;
 
-                var ixRaw = startOfCoreCounts + hashOffset;
-                var ixActual = ixRaw + IgnoredLeadingInts;
+                // Avoid doing a division in the hot path
+                // Based on: https://github.com/dotnet/runtime/blob/3a95842304008b9ca84c14b4bec9ec99ed5802db/src/libraries/System.Private.CoreLib/src/System/Collections/HashHelpers.cs#L99
+                var hashOffset = (uint)(((((perCoreCountsFastMod * (uint)hash) >> 32) + 1) << perCoreCountsMultShift) >> 32);
 
-                Debug.Assert(ixActual >= 0 && ixActual < lockCounts.Length, "About to do something out of bounds");
+                Debug.Assert(hashOffset == ((uint)hash % perCoreCounts), "Replacing mod with multiplies failed");
 
-                return ixActual;
+                var ix = (int)(startOfCoreCounts + hashOffset);
+
+                Debug.Assert(ix >= 0 && ix < lockCounts.Length, "About to do something out of bounds");
+
+                return ix;
             }
 
+            /// <summary>
+            /// Attempt to acquire a shared lock for the given hash.
+            /// 
+            /// Will block exclusive locks until released.
+            /// </summary>
             internal readonly bool TryAcquireSharedLock(int hash, out int lockToken)
             {
                 var ix = CalculateIndex(hash, Thread.GetCurrentProcessorId());
 
-                var res = Interlocked.Increment(ref lockCounts[ix]);
+                ref var acquireRef = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(lockCounts), ix);
+
+                var res = Interlocked.Increment(ref acquireRef);
                 if (res < 0)
                 {
                     // Exclusively locked
-                    _ = Interlocked.Decrement(ref lockCounts[ix]);
+                    _ = Interlocked.Decrement(ref acquireRef);
                     Unsafe.SkipInit(out lockToken);
                     return false;
                 }
@@ -123,17 +152,24 @@ namespace Garnet.server
                 return true;
             }
 
+            /// <summary>
+            /// Acquire a shared lock for the given hash, blocking until that succeeds.
+            /// 
+            /// Will block exclusive locks until released.
+            /// </summary>
             internal readonly void AcquireSharedLock(int hash, out int lockToken)
             {
                 var ix = CalculateIndex(hash, Thread.GetCurrentProcessorId());
 
+                ref var acquireRef = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(lockCounts), ix);
+
                 while (true)
                 {
-                    var res = Interlocked.Increment(ref lockCounts[ix]);
+                    var res = Interlocked.Increment(ref acquireRef);
                     if (res < 0)
                     {
                         // Exclusively locked
-                        _ = Interlocked.Decrement(ref lockCounts[ix]);
+                        _ = Interlocked.Decrement(ref acquireRef);
 
                         // Spin until we can grab this one
                         _ = Thread.Yield();
@@ -146,21 +182,41 @@ namespace Garnet.server
                 }
             }
 
+            /// <summary>
+            /// Release a lock previously acquired with <see cref="TryAcquireSharedLock(int, out int)"/> or <see cref="AcquireSharedLock(int, out int)"/>.
+            /// </summary>
             internal readonly void ReleaseSharedLock(int lockToken)
-            => Interlocked.Decrement(ref lockCounts[lockToken]);
+            {
+                Debug.Assert(lockToken >= 0 && lockToken < lockCounts.Length, "Invalid lock token");
 
+                ref var releaseRef = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(lockCounts), lockToken);
+
+                _ = Interlocked.Decrement(ref releaseRef);
+            }
+
+            /// <summary>
+            /// Attempt to acquire an exclusive lock for the given hash.
+            /// 
+            /// Will block all other locks until released.
+            /// </summary>
             internal readonly bool TryAcquireExclusiveLock(int hash, out int lockToken)
             {
+                ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
+
                 for (var i = 0; i < lockShardCount; i++)
                 {
                     var acquireIx = CalculateIndex(hash, i);
-                    if (Interlocked.CompareExchange(ref lockCounts[acquireIx], int.MinValue, 0) != 0)
+                    ref var acquireRef = ref Unsafe.Add(ref countRef, acquireIx);
+
+                    if (Interlocked.CompareExchange(ref acquireRef, int.MinValue, 0) != 0)
                     {
                         // Failed, release previously acquired
                         for (var j = 0; j < i; j++)
                         {
                             var releaseIx = CalculateIndex(hash, j);
-                            while (Interlocked.CompareExchange(ref lockCounts[releaseIx], 0, int.MinValue) != int.MinValue)
+
+                            ref var releaseRef = ref Unsafe.Add(ref countRef, releaseIx);
+                            while (Interlocked.CompareExchange(ref releaseRef, 0, int.MinValue) != int.MinValue)
                             {
                                 // Optimistic shared lock got us, back off and try again
                                 _ = Thread.Yield();
@@ -177,12 +233,22 @@ namespace Garnet.server
                 return true;
             }
 
+
+            /// <summary>
+            /// Acquire an exclusive lock for the given hash, blocking until that succeeds.
+            /// 
+            /// Will block all other locks until released.
+            /// </summary>
             internal readonly void AcquireExclusiveLock(int hash, out int lockToken)
             {
+                ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
+
                 for (var i = 0; i < lockShardCount; i++)
                 {
                     var acquireIx = CalculateIndex(hash, i);
-                    while (Interlocked.CompareExchange(ref lockCounts[acquireIx], int.MinValue, 0) != 0)
+
+                    ref var acquireRef = ref Unsafe.Add(ref countRef, acquireIx);
+                    while (Interlocked.CompareExchange(ref acquireRef, int.MinValue, 0) != 0)
                     {
                         // Optimistic shared lock got us, or conflict with some other excluive lock acquisition
                         //
@@ -194,14 +260,23 @@ namespace Garnet.server
                 lockToken = hash;
             }
 
+            /// <summary>
+            /// Release a lock previously acquired with <see cref="TryAcquireExclusiveLock(int, out int)"/>, <see cref="AcquireExclusiveLock(int, out int)"/>, or <see cref="TryPromoteSharedLock(int, int, out int)"/>.
+            /// </summary>
             internal readonly void ReleaseExclusiveLock(int lockToken)
             {
+                // The lockToken is a hash, so no range check here
+
+                ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
+
                 var hash = lockToken;
 
                 for (var i = 0; i < lockShardCount; i++)
                 {
                     var releaseIx = CalculateIndex(hash, i);
-                    while (Interlocked.CompareExchange(ref lockCounts[releaseIx], 0, int.MinValue) != int.MinValue)
+
+                    ref var releaseRef = ref Unsafe.Add(ref countRef, releaseIx);
+                    while (Interlocked.CompareExchange(ref releaseRef, 0, int.MinValue) != int.MinValue)
                     {
                         // Optimistic shared lock got us, back off and try again
                         _ = Thread.Yield();
@@ -209,23 +284,40 @@ namespace Garnet.server
                 }
             }
 
+            /// <summary>
+            /// Attempt to promote a shared lock previously acquired via <see cref="TryAcquireSharedLock(int, out int)"/> or <see cref="AcquireSharedLock(int, out int)"/> to an exclusive lock.
+            /// 
+            /// If successful, will block all other locks until released.
+            /// 
+            /// If successful, must be released with <see cref="ReleaseExclusiveLock(int)"/>.
+            /// 
+            /// If unsuccessful, shared lock will still be held and must be released with <see cref="ReleaseSharedLock(int)"/>.
+            /// </summary>
             internal readonly bool TryPromoteSharedLock(int hash, int lockToken, out int newLockToken)
             {
                 Debug.Assert(Interlocked.CompareExchange(ref lockCounts[lockToken], 0, 0) > 0, "Illegal call when not holding shard lock");
 
+                Debug.Assert(lockToken >= 0 && lockToken < lockCounts.Length, "Invalid lock token");
+
+                ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
+
                 for (var i = 0; i < lockShardCount; i++)
                 {
                     var acquireIx = CalculateIndex(hash, i);
+                    ref var acquireRef = ref Unsafe.Add(ref countRef, acquireIx);
+
                     if (acquireIx == lockToken)
                     {
                         // Do the promote
-                        if (Interlocked.CompareExchange(ref lockCounts[acquireIx], int.MinValue, 1) != 1)
+                        if (Interlocked.CompareExchange(ref acquireRef, int.MinValue, 1) != 1)
                         {
                             // Failed, release previously acquired all of which are exclusive locks
                             for (var j = 0; j < i; j++)
                             {
                                 var releaseIx = CalculateIndex(hash, j);
-                                while (Interlocked.CompareExchange(ref lockCounts[releaseIx], 0, int.MinValue) != int.MinValue)
+
+                                ref var releaseRef = ref Unsafe.Add(ref countRef, releaseIx);
+                                while (Interlocked.CompareExchange(ref releaseRef, 0, int.MinValue) != int.MinValue)
                                 {
                                     // Optimistic shared lock got us, back off and try again
                                     _ = Thread.Yield();
@@ -240,7 +332,7 @@ namespace Garnet.server
                     else
                     {
                         // Otherwise attempt an exclusive acquire
-                        if (Interlocked.CompareExchange(ref lockCounts[acquireIx], int.MinValue, 0) != 0)
+                        if (Interlocked.CompareExchange(ref acquireRef, int.MinValue, 0) != 0)
                         {
                             // Failed, release previously acquired - one of which MIGHT be the shared lock
                             for (var j = 0; j < i; j++)
@@ -248,7 +340,8 @@ namespace Garnet.server
                                 var releaseIx = CalculateIndex(hash, j);
                                 var releaseTargetValue = releaseIx == lockToken ? 1 : 0;
 
-                                while (Interlocked.CompareExchange(ref lockCounts[releaseIx], releaseTargetValue, int.MinValue) != int.MinValue)
+                                ref var releaseRef = ref Unsafe.Add(ref countRef, releaseIx);
+                                while (Interlocked.CompareExchange(ref releaseRef, releaseTargetValue, int.MinValue) != int.MinValue)
                                 {
                                     // Optimistic shared lock got us, back off and try again
                                     _ = Thread.Yield();

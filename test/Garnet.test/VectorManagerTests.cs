@@ -67,8 +67,6 @@ namespace Garnet.test
                 for (var j = 0; j < Environment.ProcessorCount; j++)
                 {
                     var offset = lockContext.CalculateIndex(hash, hintBase + j);
-                    ClassicAssert.True(offset >= VectorManager.VectorSetLockContext.IgnoredLeadingInts);
-
                     ClassicAssert.True(offsets.Add(offset));
                 }
 
