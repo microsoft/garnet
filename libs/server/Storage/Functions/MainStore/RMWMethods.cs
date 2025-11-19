@@ -20,8 +20,6 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.SETKEEPTTLXX:
-                case RespCommand.PERSIST:
-                case RespCommand.EXPIRE:
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
                 case RespCommand.DELIFGREATER:
@@ -179,8 +177,6 @@ namespace Garnet.server
 
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETEXXX:
-                case RespCommand.EXPIRE:
-                case RespCommand.PERSIST:
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
                     throw new Exception();
@@ -244,7 +240,7 @@ namespace Garnet.server
                         value.Slice(0, offset).Clear();
                     newValue.CopyTo(value.Slice(offset));
 
-                    if (!CopyValueLengthToOutput(value, ref output))
+                    if (!TryCopyValueLengthToOutput(value, ref output))
                         return false;
                     break;
 
@@ -254,7 +250,7 @@ namespace Garnet.server
                     value = logRecord.ValueSpan;
                     appendValue.ReadOnlySpan.CopyTo(value);
 
-                    if (!CopyValueLengthToOutput(value, ref output))
+                    if (!TryCopyValueLengthToOutput(value, ref output))
                         return false;
                     break;
                 case RespCommand.INCR:
@@ -557,25 +553,6 @@ namespace Garnet.server
                     shouldUpdateEtag = false;   // since we already updated the ETag
                     break;
 
-                case RespCommand.EXPIRE:
-                    var expirationWithOption = new ExpirationWithOption(input.arg1);
-
-                    // reset etag state that may have been initialized earlier, but don't update etag because only the expiration was updated
-                    ETagState.ResetState(ref functionsState.etagState);
-                    return EvaluateExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, ref output);
-
-                case RespCommand.PERSIST:
-                    if (logRecord.Info.HasExpiration)
-                    {
-                        _ = logRecord.RemoveExpiration();
-                        output.SpanByte.Span[0] = 1;
-                    }
-
-                    // reset etag state that may have been initialized earlier, but don't update etag because only the metadata was updated
-                    ETagState.ResetState(ref functionsState.etagState);
-                    shouldUpdateEtag = false;
-                    break;
-
                 case RespCommand.INCR:
                     if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: 1))
                         return false;
@@ -744,7 +721,7 @@ namespace Garnet.server
                         return false;
 
                     newValue.CopyTo(logRecord.ValueSpan.Slice(offset));
-                    if (!CopyValueLengthToOutput(logRecord.ValueSpan, ref output))
+                    if (!TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output))
                         return false;
                     break;
 
@@ -794,14 +771,14 @@ namespace Garnet.server
                         appendValue.
                         // Append the new value with the client input at the end of the old data
                         ReadOnlySpan.CopyTo(logRecord.ValueSpan.Slice(originalLength));
-                        if (!CopyValueLengthToOutput(logRecord.ValueSpan, ref output))
+                        if (!TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output))
                             return false;
                         break;
                     }
 
                     // reset etag state that may have been initialized earlier, but don't update etag
                     ETagState.ResetState(ref functionsState.etagState);
-                    return CopyValueLengthToOutput(logRecord.ValueSpan, ref output);
+                    return TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output);
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -1117,28 +1094,6 @@ namespace Garnet.server
 
                     break;
 
-                case RespCommand.EXPIRE:
-                    shouldUpdateEtag = false;
-                    var expirationWithOption = new ExpirationWithOption(input.arg1);
-
-                    // First copy the old Value and non-Expiration optionals to the new record. This will also ensure space for expiration.
-                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
-                        return false;
-
-                    if (!EvaluateExpireCopyUpdate(ref dstLogRecord, in sizeInfo, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, dstLogRecord.ValueSpan, ref output))
-                        return false;
-                    break;
-                case RespCommand.PERSIST:
-                    shouldUpdateEtag = false;
-                    if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
-                        return false;
-                    if (srcLogRecord.Info.HasExpiration)
-                    {
-                        dstLogRecord.RemoveExpiration();
-                        output.SpanByte.Span[0] = 1;
-                    }
-                    break;
-
                 case RespCommand.INCR:
                     if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: 1))
                         return false;
@@ -1386,7 +1341,7 @@ namespace Garnet.server
 
                     input.parseState.GetArgSliceByRef(1).ReadOnlySpan.CopyTo(newValue.Slice(offset));
 
-                    _ = CopyValueLengthToOutput(newValue, ref output);
+                    _ = TryCopyValueLengthToOutput(newValue, ref output);
                     break;
 
                 case RespCommand.GETDEL:
@@ -1434,7 +1389,7 @@ namespace Garnet.server
                     newValue = dstLogRecord.ValueSpan;
                     appendValue.ReadOnlySpan.CopyTo(newValue.Slice(oldValue.Length));
 
-                    _ = CopyValueLengthToOutput(newValue, ref output);
+                    _ = TryCopyValueLengthToOutput(newValue, ref output);
                     break;
 
                 default:

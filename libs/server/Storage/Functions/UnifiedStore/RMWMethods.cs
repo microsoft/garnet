@@ -150,7 +150,7 @@ namespace Garnet.server
 
                 // First copy the new Value and optionals to the new record. This will also ensure space and set the flag for expiration if it's present.
                 // Do not set actually set dstLogRecord.Expiration until we know it is a command for which we allocated length in the LogRecord for it.
-                var expiryExisted = dstLogRecord.Info.HasExpiration;
+                var hasExpiration = dstLogRecord.Info.HasExpiration;
                 if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo))
                     return false;
 
@@ -160,7 +160,7 @@ namespace Garnet.server
                     case RespCommand.EXPIRE:
                         var expirationWithOption = new ExpirationWithOption(input.arg1);
 
-                        if (!EvaluateExpireInPlace(ref dstLogRecord, expirationWithOption.ExpireOption, expiryExisted, expirationWithOption.ExpirationTimeInTicks, ref output))
+                        if (!EvaluateExpireInPlace(ref dstLogRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, hasExpiration, ref output))
                             return false;
                         break;
 
@@ -249,8 +249,7 @@ namespace Garnet.server
                         ETagState.ResetState(ref functionsState.etagState);
                     }
 
-                    return EvaluateExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expiryExisted: logRecord.Info.HasExpiration,
-                        expirationWithOption.ExpirationTimeInTicks, ref output);
+                    return EvaluateExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, logRecord.Info.HasExpiration, ref output);
                 case RespCommand.PERSIST:
                     if (logRecord.Info.HasExpiration)
                     {
@@ -308,11 +307,10 @@ namespace Garnet.server
             var expirationWithOption = new ExpirationWithOption(input.arg1);
 
             // First copy the old Value and non-Expiration optionals to the new record. This will also ensure space for expiration.
-            var expiryExisted = dstLogRecord.Info.HasExpiration;
             if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                 return false;
 
-            return EvaluateExpireCopyUpdate(ref dstLogRecord, in sizeInfo, expirationWithOption.ExpireOption, expiryExisted,
+            return EvaluateExpireCopyUpdate(ref dstLogRecord, in sizeInfo, expirationWithOption.ExpireOption,
                 expirationWithOption.ExpirationTimeInTicks, dstLogRecord.ValueSpan, ref output);
         }
 

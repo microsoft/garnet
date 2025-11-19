@@ -406,8 +406,11 @@ namespace Garnet.server
             if (this.activeDbId != db.Id || initialSetup)
             {
                 basicContext = respServerSession.storageSession.basicContext.Session.BasicContext;
-                objectStoreBasicContext = respServerSession.storageSession.objectStoreBasicContext.Session.BasicContext;
                 unifiedStoreBasicContext = respServerSession.storageSession.unifiedStoreBasicContext.Session.BasicContext;
+
+                if (!storeWrapper.serverOptions.DisableObjects)
+                    objectStoreBasicContext = respServerSession.storageSession.objectStoreBasicContext.Session.BasicContext;
+
                 this.activeDbId = db.Id;
             }
         }

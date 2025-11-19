@@ -2843,7 +2843,7 @@ namespace Garnet.test
             var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
 
             var actualResult = (int)db.Execute(command, key, expireTimeUnix, "nX");
-            ClassicAssert.AreEqual(actualResult, 1);
+            ClassicAssert.AreEqual(1, actualResult);
 
             var actualTtl = db.KeyTimeToLive(key);
             ClassicAssert.IsTrue(actualTtl.HasValue);

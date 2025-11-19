@@ -295,56 +295,11 @@ namespace Garnet.server
                         fieldInfo.HasExpiration = input.arg1 != 0;
                         return fieldInfo;
 
-                    case RespCommand.PERSIST:
-                        fieldInfo.HasExpiration = false;
-                        fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
-                        return fieldInfo;
-
                     case RespCommand.SETIFGREATER:
                     case RespCommand.SETIFMATCH:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
                         fieldInfo.HasETag = true;
                         fieldInfo.HasExpiration = input.arg1 != 0 || srcLogRecord.Info.HasExpiration;
-                        return fieldInfo;
-
-                    case RespCommand.EXPIRE:
-                    case RespCommand.PEXPIRE:
-                    case RespCommand.EXPIREAT:
-                    case RespCommand.PEXPIREAT:
-                        {
-                            // Set HasExpiration to match with EvaluateExpireInPlace.
-                            if (srcLogRecord.Info.HasExpiration)
-                            {
-                                // case ExpireOption.NX:                // HasExpiration is true so we will retain it
-                                // case ExpireOption.XX:
-                                // case ExpireOption.None:
-                                // case ExpireOption.GT:
-                                // case ExpireOption.XXGT:
-                                // case ExpireOption.LT:
-                                // case ExpireOption.XXLT:
-                                fieldInfo.HasExpiration = true;         // Will update or retain
-                            }
-                            else
-                            {
-                                var expirationWithOption = new ExpirationWithOption(input.arg1);
-                                switch (expirationWithOption.ExpireOption)
-                                {
-                                    case ExpireOption.NX:
-                                    case ExpireOption.None:
-                                    case ExpireOption.LT:                   // If expiry doesn't exist, LT should treat the current expiration as infinite, so the new value must be less
-                                        fieldInfo.HasExpiration = true;     // Will update or retain
-                                        break;
-                                    default:
-                                        // case ExpireOption.XX:
-                                        // case ExpireOption.GT:            // If expiry doesn't exist, GT should treat the current expiration as infinite, so the new value cannot be greater
-                                        // case ExpireOption.XXGT:
-                                        // case ExpireOption.XXLT:
-                                        fieldInfo.HasExpiration = false;    // Will not add one and there is not one there now
-                                        break;
-                                }
-                            }
-                        }
-                        fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
                         return fieldInfo;
 
                     case RespCommand.SETRANGE:

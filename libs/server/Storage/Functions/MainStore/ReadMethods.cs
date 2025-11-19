@@ -22,7 +22,7 @@ namespace Garnet.server
                 return false;
             }
 
-            if (CheckExpiry(in srcLogRecord))
+            if (LogRecordUtils.CheckExpiry(in srcLogRecord))
                 return false;
 
             var cmd = input.header.cmd;

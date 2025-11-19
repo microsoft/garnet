@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -81,97 +80,40 @@ namespace Garnet.server
                 key, ref input, out _);
         }
 
-        bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, bool expiryExisted, long newExpiry, ReadOnlySpan<byte> newValue, ref UnifiedStoreOutput output)
+        bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, ReadOnlySpan<byte> newValue, ref UnifiedStoreOutput output)
         {
+            var hasExpiration = logRecord.Info.HasExpiration;
+
             // TODO ETag?
             if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
             {
-                functionsState.logger?.LogError("Failed to set value in {methodName}", "EvaluateExpireCopyUpdate");
+                functionsState.logger?.LogError("Failed to set value in {methodName}", nameof(EvaluateExpireCopyUpdate));
                 return false;
             }
 
-            var isSuccessful = TrySetRecordExpiration(ref logRecord, optionType, expiryExisted, newExpiry, out var result);
-            if (isSuccessful)
-            {
-                functionsState.CopyDefaultResp(
-                    result == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
-            }
+            var isSuccessful = SessionFunctionsUtils.EvaluateExpire(ref logRecord, optionType, newExpiry, hasExpiration,
+                logErrorOnFail: true, functionsState.logger, out var expirationChanged);
+
+            functionsState.CopyDefaultResp(
+                isSuccessful && expirationChanged ? CmdStrings.RESP_RETURN_VAL_1 : CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
 
             return isSuccessful;
         }
 
-        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, bool expiryExisted, long newExpiry, ref UnifiedStoreOutput output)
+        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, bool hasExpiration, ref UnifiedStoreOutput output)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 
-            var isSuccessful = TrySetRecordExpiration(ref logRecord, optionType, expiryExisted, newExpiry, out var result);
+            var isSuccessful = SessionFunctionsUtils.EvaluateExpire(ref logRecord, optionType, newExpiry, hasExpiration,
+                logErrorOnFail: false, functionsState.logger, out var expirationChanged);
+
             if (isSuccessful)
             {
                 functionsState.CopyDefaultResp(
-                    result == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
+                    expirationChanged ? CmdStrings.RESP_RETURN_VAL_1 : CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
             }
 
             return isSuccessful;
-        }
-
-        bool TrySetRecordExpiration(ref LogRecord logRecord, ExpireOption optionType, bool expiryExisted, long newExpiry, out int result)
-        {
-            result = 0;
-
-            if (expiryExisted)
-            {
-                // Expiration already exists so there is no need to check for space (i.e. failure of TrySetExpiration)
-                switch (optionType)
-                {
-                    case ExpireOption.NX:
-                        return true;
-                    case ExpireOption.XX:
-                    case ExpireOption.None:
-                        _ = logRecord.TrySetExpiration(newExpiry);
-                        result = 1;
-                        return true;
-                    case ExpireOption.GT:
-                    case ExpireOption.XXGT:
-                        if (newExpiry > logRecord.Expiration)
-                        {
-                            _ = logRecord.TrySetExpiration(newExpiry);
-                            result = 1;
-                        }
-                        return true;
-                    case ExpireOption.LT:
-                    case ExpireOption.XXLT:
-                        if (newExpiry < logRecord.Expiration)
-                        {
-                            _ = logRecord.TrySetExpiration(newExpiry);
-                            result = 1;
-                        }
-                        return true;
-                    default:
-                        throw new GarnetException($"EvaluateExpireCopyUpdate exception when expiryExists is false: optionType{optionType}");
-                }
-            }
-
-            // No expiration yet.
-            switch (optionType)
-            {
-                case ExpireOption.NX:
-                case ExpireOption.None:
-                case ExpireOption.LT:   // If expiry doesn't exist, LT should treat the current expiration as infinite
-                    if (!logRecord.TrySetExpiration(newExpiry))
-                    {
-                        functionsState.logger?.LogError("Failed to add expiration in {methodName}.{caseName}", "EvaluateExpireCopyUpdate", "LT");
-                        return false;
-                    }
-                    result = 1;
-                    return true;
-                case ExpireOption.XX:
-                case ExpireOption.GT:
-                case ExpireOption.XXGT:
-                case ExpireOption.XXLT:
-                    return true;
-                default:
-                    throw new GarnetException($"EvaluateExpireCopyUpdate exception when expiryExists is true: optionType{optionType}");
-            }
         }
     }
 }
