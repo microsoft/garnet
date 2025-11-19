@@ -269,10 +269,10 @@ namespace Tsavorite.core
 
         async Task ProcessWaitingListAsync(CancellationToken token = default)
         {
-            await waitForTransitionIn.WaitAsync(token);
+            await waitForTransitionIn.WaitAsync(timeout, token);
             foreach (var waiter in waitingList)
             {
-                await waiter.WaitAsync(token);
+                await waiter.WaitAsync(timeout, token);
             }
             waitingList.Clear();
         }
