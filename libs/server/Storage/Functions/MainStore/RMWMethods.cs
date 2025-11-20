@@ -850,7 +850,7 @@ namespace Garnet.server
                     }
 
                     // Ignore everything else
-                    return true;
+                    return IPUResult.Succeeded;
                 case RespCommand.VREM:
                     // Removing from a VectorSet is modeled as a read operations
                     //
@@ -858,7 +858,7 @@ namespace Garnet.server
                     // in a similar manner to VADD.
 
                     Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "VREM in place update should only happen for replication");                    // Ignore everything else
-                    return true;
+                    return IPUResult.Succeeded;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
