@@ -66,6 +66,9 @@ namespace Garnet.server
             // Must be a power of 2.
             internal const int MaxPerCoreContexts = 1_024;
 
+            [ThreadStatic]
+            private static int ProcessorHint;
+
             private readonly int[] lockCounts;
             private readonly int coreSelectionMask;
             private readonly int perCoreCounts;
@@ -114,6 +117,26 @@ namespace Garnet.server
             }
 
             /// <summary>
+            /// Get a somewhat-correlated-to-processor value.
+            /// 
+            /// While we could use <see cref="Thread.GetCurrentProcessorId()"/>, that isn't fast on all platforms.
+            /// 
+            /// For our purposes, we just need something that will tend to keep different active processors
+            /// from touching each other.  ManagedThreadId works well enough.
+            /// </summary>
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private static int GetProcessorHint()
+            {
+                var ret = ProcessorHint;
+                if (ret == 0)
+                {
+                    ProcessorHint = ret = Environment.CurrentManagedThreadId;
+                }
+
+                return ret;
+            }
+
+            /// <summary>
             /// Take a hash and a _hint_ about the current processor and determine which count should be used.
             /// 
             /// Walking <paramref name="currentProcessorHint"/> from 0 to (<see cref="coreSelectionMask"/> + 1) [exclusive] will return
@@ -147,7 +170,7 @@ namespace Garnet.server
             /// </summary>
             internal readonly bool TryAcquireSharedLock(int hash, out int lockToken)
             {
-                var ix = CalculateIndex(hash, Thread.GetCurrentProcessorId());
+                var ix = CalculateIndex(hash, GetProcessorHint());
 
                 ref var acquireRef = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(lockCounts), ix);
 
@@ -171,7 +194,7 @@ namespace Garnet.server
             /// </summary>
             internal readonly void AcquireSharedLock(int hash, out int lockToken)
             {
-                var ix = CalculateIndex(hash, Thread.GetCurrentProcessorId());
+                var ix = CalculateIndex(hash, GetProcessorHint());
 
                 ref var acquireRef = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(lockCounts), ix);
 
