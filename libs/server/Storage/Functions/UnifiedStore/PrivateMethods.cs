@@ -65,7 +65,7 @@ namespace Garnet.server
             if (functionsState.StoredProcMode)
                 return;
 
-            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.UnifiedStoreDelete, storeVersion = version, sessionID = sessionID }, 
+            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.UnifiedStoreDelete, storeVersion = version, sessionID = sessionID },
                 key, item2: default, out _);
         }
 
@@ -77,9 +77,9 @@ namespace Garnet.server
         /// </summary>
         void WriteLogRMW(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, long version, int sessionId)
         {
-            if (functionsState.StoredProcMode) 
+            if (functionsState.StoredProcMode)
                 return;
-            
+
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(

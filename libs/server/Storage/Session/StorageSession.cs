@@ -97,7 +97,7 @@ namespace Garnet.server
 
             basicContext = session.BasicContext;
             transactionalContext = session.TransactionalContext;
-            
+
             unifiedStoreBasicContext = unifiedStoreSession.BasicContext;
             unifiedStoreTransactionalContext = unifiedStoreSession.TransactionalContext;
 

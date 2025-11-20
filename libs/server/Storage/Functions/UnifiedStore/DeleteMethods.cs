@@ -25,7 +25,7 @@ namespace Garnet.server
         {
             if (logRecord.Info.ValueIsObject && !logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
-            
+
             if (functionsState.appendOnlyFile != null)
                 WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
         }
@@ -34,7 +34,7 @@ namespace Garnet.server
         {
             if (!logRecord.Info.ValueIsObject)
                 logRecord.ClearOptionals();
-            
+
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
 

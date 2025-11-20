@@ -716,7 +716,7 @@ namespace Garnet.server
         /// </summary>
         void WriteLogDelete(ReadOnlySpan<byte> key, long version, int sessionID)
         {
-            if (functionsState.StoredProcMode) 
+            if (functionsState.StoredProcMode)
                 return;
             functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID }, key, item2: default, out _);
         }

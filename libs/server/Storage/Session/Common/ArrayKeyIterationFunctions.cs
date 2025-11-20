@@ -19,7 +19,7 @@ namespace Garnet.server
         private ArrayKeyIterationFunctions.UnifiedStoreGetDBKeys unifiedStoreDbScanFuncs;
 
         // Iterator for expired key deletion
-        private ArrayKeyIterationFunctions.MainStoreExpiredKeyDeletionScan expiredKeyDeletionScanFuncs;
+        private ArrayKeyIterationFunctions.ExpiredKeyDeletionScan expiredKeyDeletionScanFuncs;
 
         // Iterator for KEYS command
         private ArrayKeyIterationFunctions.UnifiedStoreGetDBKeys unifiedStoreDbKeysFuncs;
@@ -83,10 +83,8 @@ namespace Garnet.server
             unifiedStoreDbScanFuncs.Initialize(Keys, allKeys ? null : patternPtr, patternB.Length, matchType);
 
             storeCursor = cursor;
-            var remainingCount = count;
 
             unifiedStoreBasicContext.Session.ScanCursor(ref storeCursor, count, unifiedStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
-            remainingCount -= Keys.Count; remainingCount -= Keys.Count;
 
             lastScanCursor = storeCursor;
             return true;
@@ -175,7 +173,7 @@ namespace Garnet.server
                 }
             }
 
-            internal sealed class MainStoreExpiredKeyDeletionScan : ExpiredKeysBase
+            internal sealed class ExpiredKeyDeletionScan : ExpiredKeysBase
             {
                 protected override bool DeleteIfExpiredInMemory<TSourceLogRecord>(in TSourceLogRecord logRecord,
                     RecordMetadata recordMetadata)
