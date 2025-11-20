@@ -145,7 +145,7 @@ namespace Garnet.test
                                             if (lockContext.TryAcquireSharedLock(hash, out var sharedLockToken))
                                             {
                                                 var sub = values[hashIx];
-                                                for(var k = 1; k< sub.Length; k++)
+                                                for (var k = 1; k < sub.Length; k++)
                                                 {
                                                     ClassicAssert.AreEqual(sub[0], sub[k]);
                                                 }
