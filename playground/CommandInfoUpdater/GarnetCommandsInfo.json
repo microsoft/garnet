@@ -216,6 +216,19 @@
         "SubCommands": null
       },
       {
+        "Command": "CLUSTER_RESERVE",
+        "Name": "CLUSTER|RESERVE",
+        "IsInternal": true,
+        "Arity": 4,
+        "Flags": "Admin, NoScript, NoMulti",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Garnet",
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
         "Command": "CLUSTER_MTASKS",
         "Name": "CLUSTER|MTASKS",
         "IsInternal": true,

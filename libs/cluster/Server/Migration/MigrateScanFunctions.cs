@@ -36,10 +36,34 @@ namespace Garnet.cluster
                 if (ClusterSession.Expired(ref value))
                     return true;
 
-                var s = HashSlotUtils.HashSlot(ref key);
-                // Check if key belongs to slot that is being migrated and if it can be added to our buffer
-                if (mss.Contains(s) && !mss.sketch.TryHashAndStore(key.AsSpan()))
-                    return false;
+                // TODO: Some other way to detect namespaces
+                if (key.MetadataSize == 1)
+                {
+                    var ns = key.GetNamespaceInPayload();
+
+                    if (mss.ContainsNamespace(ns) && !mss.sketch.TryHashAndStore(ns, key.AsSpan()))
+                        return false;
+                }
+                else
+                {
+                    var s = HashSlotUtils.HashSlot(ref key);
+
+                    // Check if key belongs to slot that is being migrated...
+                    if (mss.Contains(s))
+                    {
+                        if (recordMetadata.RecordInfo.VectorSet)
+                        {
+                            // We can't delete the vector set _yet_ nor can we migrate it, 
+                            // we just need to remember it to migrate once the associated namespaces are all moved over
+                            mss.EncounteredVectorSet(key.ToByteArray(), value.ToByteArray());
+                        }
+                        else if (!mss.sketch.TryHashAndStore(key.AsSpan()))
+                        {
+                            // Out of space, end scan for now
+                            return false;
+                        }
+                    }
+                }
 
                 return true;
             }
