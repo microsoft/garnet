@@ -6,9 +6,12 @@ title: Vector Sets
 
 # Overview
 
-Garnet has partial support for Vector Sets, implemented on top of the [DiskANN project](TODO).
+Garnet has partial support for Vector Sets, implemented on top of the [DiskANN project](https://www.nuget.org/packages/diskann-garnet/).
 
 This data type is very strange when compared to others Garnet supports.
+
+> [!IMPORTANT]
+> The DiskANN link needs to be updated once OSS'd.
 
 # Design
 
@@ -29,7 +32,7 @@ This is loaded and cached on startup, and updated (both in memory and in Tsavori
 
 ## Indexes
 
-The index key (represented by the [`Index`](TODO) struct) contains the following data:
+The index key (represented by the `Index` struct) contains the following data:
  - `ulong Context` - used to derive namespaces, detailed below
  - `ulong IndexPtr` - a pointer to the DiskANN data structure, note this may be _dangling_ after [recovery](#recovery) or [replication](#replication)
  - `uint Dimensions` - the expected dimension of vectors in commands targeting the Vector Set, this is inferred based on the `VADD` that creates the Vector Set
@@ -391,7 +394,7 @@ The callback returns 1 if key was found or created, and 0 if some error was enco
 
 ## DiskANN Functions
 
-Garnet calls into the following [DiskANN functions](TODO):
+Garnet calls into the following DiskANN functions:
 
  - [x] `nint create_index(ulong context, uint dimensions, uint reduceDims, VectorQuantType quantType, uint buildExplorationFactor, uint numLinks, nint readCallback, nint writeCallback, nint deleteCallback, nint readModifyWriteCallback)`
  - [x] `void drop_index(ulong context, nint index)`
