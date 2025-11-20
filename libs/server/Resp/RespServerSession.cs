@@ -1504,7 +1504,15 @@ namespace Garnet.server
         /// <returns>New database session</returns>
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId, logger, respProtocolVersion);
+            var dbStorageSession = new StorageSession(
+                storeWrapper,
+                scratchBufferBuilder,
+                sessionMetrics,
+                LatencyMetrics,
+                dbId,
+                consistentReadProtocolCallbacks: CreateConsistentReadCallbacks(),
+                logger,
+                respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext,
                 dbStorageSession.objectStoreBasicContext, dbStorageSession.unifiedStoreBasicContext);
             var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession,
@@ -1517,6 +1525,13 @@ namespace Garnet.server
 
             return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi, transactionManager);
         }
+
+        /// <summary>
+        /// Create consistent read callbacks for sharded-log based AOF
+        /// </summary>
+        /// <returns></returns>
+        private ConsistentReadProtocolCallbacks CreateConsistentReadCallbacks()
+            => storeWrapper.serverOptions.EnableCluster && storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.AofSublogCount > 1 ? new(ConsistentReadKeyPrepareCallback, ConsistentReadKeyUpdateCallback) : null;
 
         /// <summary>
         /// Switch current active database session

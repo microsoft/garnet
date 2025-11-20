@@ -44,7 +44,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void Hash(Span<byte> key, out long hash, out int sublogIdx, out int keyOffset)
+        public unsafe void Hash(ReadOnlySpan<byte> key, out long hash, out int sublogIdx, out int keyOffset)
         {
             hash = HASH(key);
             sublogIdx = (int)(((ulong)hash) % (ulong)shardedLog.Length);

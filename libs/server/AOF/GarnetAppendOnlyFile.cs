@@ -82,6 +82,23 @@ namespace Garnet.server
             => replayTimestampManager.MultiKeyConsistentRead(keys, ref replicaReadSessionContext, readSessionWaiter);
 
         /// <summary>
+        /// Invoke the prepare phase of the consistent read protocol
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="replicaReadSessionContext"></param>
+        /// <param name="readSessionWaiter"></param>
+        public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
+            => replayTimestampManager.ConsistentReadKeyPrepare(key, ref replicaReadSessionContext, readSessionWaiter);
+
+        /// <summary>
+        /// Invoke the update phase of the consistent read protocol
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="replicaReadSessionContext"></param>
+        public void ConsistentReadKeyUpdate(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext)
+            => replayTimestampManager.ConsistentReadKeyUpdate(key, ref replicaReadSessionContext);
+
+        /// <summary>
         /// Reset sequence number generator
         /// </summary>
         public void ResetSeqNumberGen()

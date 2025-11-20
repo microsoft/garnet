@@ -55,19 +55,12 @@ namespace Garnet.server
             storeWrapper.clusterProvider.ExtractKeySpecs(commandInfo, cmd, ref parseState, ref csvi);
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
-            var canServeRead = !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
-
-            if (SkipConsistentRead)
-                return canServeRead;
-
-            // Enforce consistent read protocol
-            storeWrapper.appendOnlyFile.MultiKeyConsistentRead(ref replicaReadContext, ref parseState, ref csvi, readSessionWaiter);
-
-            return canServeRead;
+            return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
 
         /// <summary>
         /// Multi key consistent read protocol implementation for list of keys
+        /// TODO: remove since we capture
         /// </summary>
         /// <param name="keys"></param>
         public void MultiKeyConsistentRead(List<byte[]> keys)
@@ -92,5 +85,29 @@ namespace Garnet.server
             storeWrapper.serverOptions.AofSublogCount == 1 ||
             !storeWrapper.clusterProvider.IsReplica() ||
             csvi.Asking;
+
+        /// <summary>
+        /// Consistent read key prepare callback
+        /// </summary>
+        /// <param name="key"></param>
+        public void ConsistentReadKeyPrepareCallback(PinnedSpanByte key)
+        {
+            // Skip consistent read protocol if this is not a replica
+            if (!storeWrapper.clusterProvider.IsReplica())
+                return;
+            storeWrapper.appendOnlyFile.ConsistentReadKeyPrepare(key, ref replicaReadContext, readSessionWaiter);
+        }
+
+        /// <summary>
+        /// Consistent read key update callback
+        /// </summary>
+        /// <param name="key"></param>
+        public void ConsistentReadKeyUpdateCallback(PinnedSpanByte key)
+        {
+            // Skip consistent read protocol if this is not a replica
+            if (!storeWrapper.clusterProvider.IsReplica())
+                return;
+            storeWrapper.appendOnlyFile.ConsistentReadKeyUpdate(key, ref replicaReadContext);
+        }
     }
 }

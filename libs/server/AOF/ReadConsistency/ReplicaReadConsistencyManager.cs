@@ -164,7 +164,7 @@ namespace Garnet.server
             for (var i = csvi.firstKey; i < csvi.lastKey; i += csvi.step)
             {
                 var key = parseState.GetArgSliceByRef(i).Span;
-                ConsistentReadInternal(key, ref replicaReadSessionContext, readSessionWaiter);
+                ConsistentReadKey(key, ref replicaReadSessionContext, readSessionWaiter);
             }
         }
 
@@ -179,7 +179,7 @@ namespace Garnet.server
         public void MultiKeyConsistentRead(List<byte[]> keys, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
         {
             for (var i = 0; i < keys.Count; i++)
-                ConsistentReadInternal(keys[i].AsSpan(), ref replicaReadSessionContext, readSessionWaiter);
+                ConsistentReadKey(keys[i].AsSpan(), ref replicaReadSessionContext, readSessionWaiter);
         }
 
         /// <summary>
@@ -188,7 +188,7 @@ namespace Garnet.server
         /// <param name="key"></param>
         /// <param name="replicaReadSessionContext"></param>
         /// <param name="readSessionWaiter"></param>
-        internal void ConsistentReadInternal(Span<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
+        public void ConsistentReadKey(Span<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
         {
             appendOnlyFile.Log.Hash(key, out _, out var sublogIdx, out var keyOffset);
 
@@ -218,6 +218,62 @@ namespace Garnet.server
             }
 
             // If timestamp of current key is after maximum timestamp we can safely read the key
+            replicaReadSessionContext.lastSublogIdx = sublogIdx;
+            replicaReadSessionContext.maximumSessionSequenceNumber = Math.Max(replicaReadSessionContext.maximumSessionSequenceNumber, GetKeySequenceNumber(sublogIdx, keyOffset));
+        }
+
+        /// <summary>
+        /// This method implements part of the consistent read protocol for a single key when shared AOF is enabled.
+        /// NOTE:
+        ///     This method waits until the log sequence number of the associated key is lesser or equal than the maximum session log sequence number.
+        ///     It executes before store.Read is processed to ensure that the log sequence number of the associated key is ahead of the last read in accordance to the consistent read protocol
+        ///     The replica read context is updated (<seealso cref="T:Garnet.server.ReplicaReadConsistencyManager.ConsistentReadKeyUpdate"/>) after the actual store.Read call to ensure that we don't underestimate the true log sequence number.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="replicaReadSessionContext"></param>
+        /// <param name="readSessionWaiter"></param>
+        public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
+        {
+            appendOnlyFile.Log.Hash(key, out _, out var sublogIdx, out var keyOffset);
+
+            // If first read initialize context
+            if (replicaReadSessionContext.lastSublogIdx == -1)
+            {
+                replicaReadSessionContext.lastSublogIdx = sublogIdx;
+                replicaReadSessionContext.maximumSessionSequenceNumber = GetKeySequenceNumber(sublogIdx, keyOffset);
+                return;
+            }
+
+            // Here we have to wait for replay to catch up
+            // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
+            if (replicaReadSessionContext.lastSublogIdx != sublogIdx && replicaReadSessionContext.maximumSessionSequenceNumber > GetFrontierSequenceNumber(sublogIdx, keyOffset))
+            {
+                // Before adding to the waitQ set timestamp and reader associated information
+                readSessionWaiter.waitForTimestamp = replicaReadSessionContext.maximumSessionSequenceNumber;
+                readSessionWaiter.sublogIdx = (byte)sublogIdx;
+                readSessionWaiter.keyOffset = keyOffset;
+
+                // Enqueue waiter and wait
+                waitQs[sublogIdx].Enqueue(readSessionWaiter);
+                readSessionWaiter.Wait(serverOptions.ReplicaSyncTimeout);
+
+                // Reset waiter for next iteration
+                readSessionWaiter.Reset();
+            }
+        }
+
+        /// <summary>
+        /// This method implements part of the consistent read protocol for a single key when shared AOF is enabled.
+        /// NOTE:
+        ///     This method is used to update the log sequence number after store.Read was processed.
+        ///     This is done to ensure that the log sequence number tracked by the ReadConsistencyManager is an overestimate of the actual sequence number since
+        ///     we cannot be certain at prepare phase what is the actual sequence number.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="replicaReadSessionContext"></param>
+        public void ConsistentReadKeyUpdate(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext)
+        {
+            appendOnlyFile.Log.Hash(key, out _, out var sublogIdx, out var keyOffset);
             replicaReadSessionContext.lastSublogIdx = sublogIdx;
             replicaReadSessionContext.maximumSessionSequenceNumber = Math.Max(replicaReadSessionContext.maximumSessionSequenceNumber, GetKeySequenceNumber(sublogIdx, keyOffset));
         }
