@@ -263,8 +263,7 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<nint, int> garnetCall;
             if (txnMode)
             {
-                txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.transactionalContext,
-                    respServerSession.storageSession.objectStoreTransactionalContext,
+                txnKeyEntries = new TxnKeyEntries(16,
                     respServerSession.storageSession.unifiedStoreTransactionalContext);
 
                 garnetCall = &LuaRunnerTrampolines.GarnetCallWithTransaction;

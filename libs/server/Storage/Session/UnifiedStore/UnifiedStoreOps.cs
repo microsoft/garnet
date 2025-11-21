@@ -14,6 +14,15 @@ namespace Garnet.server
 
     sealed partial class StorageSession : IDisposable
     {
+        /// <summary>
+        /// GET a value in the unified store context (value is serialized to the <see cref="UnifiedStoreOutput"/>'s <see cref="SpanByteAndMemory"/>).
+        /// </summary>
+        /// <typeparam name="TContext"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="context"></param>
+        /// <returns></returns>
         public GarnetStatus GET<TContext>(PinnedSpanByte key, ref UnifiedStoreInput input, ref UnifiedStoreOutput output, ref TContext context)
             where TContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
         {
@@ -87,9 +96,7 @@ namespace Garnet.server
             var output = new UnifiedStoreOutput();
 
             // TODO: The output is unused so optimize ReadMethods to not copy it.
-            var status = Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
-
-            return status;
+            return Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
         }
 
         /// <summary>
@@ -148,9 +155,7 @@ namespace Garnet.server
         /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
         public unsafe GarnetStatus EXPIREAT<TUnifiedContext>(PinnedSpanByte key, long expiryTimestamp, out bool timeoutSet, ExpireOption expireOption, ref TUnifiedContext unifiedContext, bool milliseconds = false)
             where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            return EXPIRE(key, expiryTimestamp, out timeoutSet, expireOption, ref unifiedContext, milliseconds ? RespCommand.PEXPIREAT : RespCommand.EXPIREAT);
-        }
+            => EXPIRE(key, expiryTimestamp, out timeoutSet, expireOption, ref unifiedContext, milliseconds ? RespCommand.PEXPIREAT : RespCommand.EXPIREAT);
 
         /// <summary>
         /// Set a timeout on key.
@@ -165,10 +170,8 @@ namespace Garnet.server
         /// <returns>Return GarnetStatus.OK when key found, else GarnetStatus.NOTFOUND</returns>
         public unsafe GarnetStatus EXPIRE<TUnifiedContext>(PinnedSpanByte key, TimeSpan expiry, out bool timeoutSet, ExpireOption expireOption, ref TUnifiedContext unifiedContext, bool milliseconds = false)
             where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            return EXPIRE(key, (long)(milliseconds ? expiry.TotalMilliseconds : expiry.TotalSeconds), out timeoutSet, expireOption,
+            => EXPIRE(key, (long)(milliseconds ? expiry.TotalMilliseconds : expiry.TotalSeconds), out timeoutSet, expireOption,
                 ref unifiedContext, milliseconds ? RespCommand.PEXPIRE : RespCommand.EXPIRE);
-        }
 
         /// <summary>
         /// Set a timeout on key.
@@ -210,14 +213,36 @@ namespace Garnet.server
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// RENAME a key in the unified store context
+        /// </summary>
+        /// <param name="oldKeySlice">The key to rename</param>
+        /// <param name="newKeySlice">The new key name</param>
+        /// <param name="withEtag">If true - if new key exists, advances etag; if new key does not exist - adds an etag</param>
+        /// <returns></returns>
         public unsafe GarnetStatus RENAME(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, bool withEtag)
             => RENAME(oldKeySlice, newKeySlice, false, out _, withEtag);
 
-        /// <inheritdoc/>
+        /// <summary>
+        /// RENAME a key in the unified store context - if the new key does not exist
+        /// </summary>
+        /// <param name="oldKeySlice">The key to rename</param>
+        /// <param name="newKeySlice">The new key name</param>
+        /// <param name="result">Number of renamed records</param>
+        /// <param name="withEtag">If true - if new key exists, advances etag; if new key does not exist - adds an etag</param>
+        /// <returns></returns>
         public unsafe GarnetStatus RENAMENX(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, out int result, bool withEtag)
             => RENAME(oldKeySlice, newKeySlice, true, out result, withEtag);
 
+        /// <summary>
+        /// RENAME a key in the unified store context
+        /// </summary>
+        /// <param name="oldKeySlice">The key to rename</param>
+        /// <param name="newKeySlice">The new key name</param>
+        /// <param name="isNX">If true, rename only if the new key does not exist</param>
+        /// <param name="result">Number of renamed records</param>
+        /// <param name="withEtag">If true - if new key exists, advances etag; if new key does not exist - adds an etag</param>
+        /// <returns></returns>
         private unsafe GarnetStatus RENAME(PinnedSpanByte oldKeySlice, PinnedSpanByte newKeySlice, bool isNX, out int result, bool withEtag)
         {
             result = -1;

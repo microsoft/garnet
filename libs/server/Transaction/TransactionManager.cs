@@ -149,7 +149,7 @@ namespace Garnet.server
             this.respSession = respSession;
 
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
-            keyEntries = new TxnKeyEntries(initialSliceBufferSize, transactionalContext, objectStoreTransactionalContext, unifiedStoreTransactionalContext);
+            keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedStoreTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;
 
             var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
