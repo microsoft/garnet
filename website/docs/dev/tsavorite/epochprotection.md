@@ -1,5 +1,5 @@
 ---
-id: epoch
+id: epochprotection
 sidebar_label: EpochProtection 
 title: Epoch Protection Framework
 
