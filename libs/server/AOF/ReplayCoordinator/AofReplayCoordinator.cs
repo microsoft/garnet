@@ -103,6 +103,7 @@ namespace Garnet.server
             internal unsafe bool AddOrReplayTransactionOperation(int sublogIdx, byte* ptr, int length, bool asReplica)
             {
                 var header = *(AofHeader*)ptr;
+                var extendedHeader = default(AofExtendedHeader);
                 var replayContext = GetReplayContext(sublogIdx);
                 // First try to process this as an existing transaction
                 if (aofReplayContext[sublogIdx].activeTxns.TryGetValue(header.sessionID, out var group))
@@ -113,6 +114,8 @@ namespace Garnet.server
                             throw new GarnetException("No nested transactions expected");
                         case AofEntryType.TxnAbort:
                             ClearSessionTxn();
+                            extendedHeader = *(AofExtendedHeader*)ptr;
+                            aofProcessor.storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
                             break;
                         case AofEntryType.TxnCommit:
                             if (replayContext.inFuzzyRegion)
@@ -159,6 +162,8 @@ namespace Garnet.server
                         // We encountered a transaction end without start - this could happen because we truncated the AOF
                         // after a checkpoint, and the transaction belonged to the previous version. It can safely
                         // be ignored.
+                        extendedHeader = *(AofExtendedHeader*)ptr;
+                        aofProcessor.storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
                         break;
                     default:
                         // Continue processing
@@ -240,6 +245,7 @@ namespace Garnet.server
                         var extendedHeader = *(AofExtendedHeader*)ptr;
                         // Synchronize replay of txn
                         ProcessSynchronizedOperation(
+                            sublogIdx,
                             ptr,
                             extendedHeader.header.sessionID,
                             () => { });
@@ -303,6 +309,7 @@ namespace Garnet.server
 
                     // Synchronized processing of stored proc operation
                     ProcessSynchronizedOperation(
+                        sublogIdx,
                         ptr,
                         extendedHeader.header.sessionID,
                         () => StoredProcRunnerWrapper(sublogIdx, id, ptr));
@@ -338,10 +345,11 @@ namespace Garnet.server
             /// <summary>
             /// Unified method to process operations that require synchronization across sublogs
             /// </summary>
+            /// <param name="sublogIdx">SublogIdx</param>
             /// <param name="ptr">Pointer to the AOF entry</param>
             /// <param name="barrierId">Unique barrier ID for this operation type</param>
             /// <param name="operation">The operation to execute</param>
-            internal void ProcessSynchronizedOperation(byte* ptr, int barrierId, Action operation)
+            internal void ProcessSynchronizedOperation(int sublogIdx, byte* ptr, int barrierId, Action operation)
             {
                 Debug.Assert(aofProcessor.storeWrapper.serverOptions.AofSublogCount > 1);
 
@@ -392,6 +400,9 @@ namespace Garnet.server
                 // able to remove it.
                 if (removeBarrierException != null)
                     throw removeBarrierException;
+
+                // Update timestamp
+                aofProcessor.storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
             }
         }
     }

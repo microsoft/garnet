@@ -58,7 +58,7 @@ namespace Garnet.server
             // Create manager only if sharded log is enabled
             if (Log.Size == 1) return;
             var currentVersion = replayTimestampManager?.CurrentVersion ?? 0L;
-            var _replayTimestampManager = new ReplicaReadConsistencyManager(currentVersion + 1, this, serverOptions);
+            var _replayTimestampManager = new ReplicaReadConsistencyManager(currentVersion + 1, this, serverOptions, logger);
             _ = Interlocked.CompareExchange(ref replayTimestampManager, _replayTimestampManager, replayTimestampManager);
         }
 
@@ -93,10 +93,9 @@ namespace Garnet.server
         /// <summary>
         /// Invoke the update phase of the consistent read protocol
         /// </summary>
-        /// <param name="key"></param>
         /// <param name="replicaReadSessionContext"></param>
-        public void ConsistentReadKeyUpdate(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext)
-            => replayTimestampManager.ConsistentReadKeyUpdate(key, ref replicaReadSessionContext);
+        public void ConsistentReadSequenceNumberUpdate(ref ReplicaReadSessionContext replicaReadSessionContext)
+            => replayTimestampManager.ConsistentReadSequenceNumberUpdate(ref replicaReadSessionContext);
 
         /// <summary>
         /// Reset sequence number generator

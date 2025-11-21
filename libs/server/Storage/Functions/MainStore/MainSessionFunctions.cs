@@ -27,5 +27,9 @@ namespace Garnet.server
             // TODO: Inspect input to determine whether we're in a context requiring ConvertToHeap.
             //output.ConvertToHeap();
         }
+
+        /// <inheritdoc />
+        public ContextCallbacks GetContextCallbacks()
+            => functionsState.contextCallbacks;
     }
 }

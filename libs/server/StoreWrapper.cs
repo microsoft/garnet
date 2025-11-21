@@ -528,6 +528,7 @@ namespace Garnet.server
         /// Create database functions state
         /// </summary>
         /// <param name="dbId">Database ID</param>
+        /// <param name="respProtocolVersion">Resp protocol version</param>
         /// <returns>Functions state</returns>
         /// <exception cref="GarnetException"></exception>
         internal FunctionsState CreateFunctionsState(int dbId = 0, byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)

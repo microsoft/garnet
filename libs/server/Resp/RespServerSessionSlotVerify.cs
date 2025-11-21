@@ -16,7 +16,7 @@ namespace Garnet.server
         /// <summary>
         /// Replica read context used with sharded log
         /// </summary>
-        ReplicaReadSessionContext replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastSublogIdx = -1 };
+        ReplicaReadSessionContext replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastSublogIdx = -1, lastKeyOffset = -1 };
 
         /// <summary>
         /// Read session waiter used with sharded log to avoid spin-wait
@@ -55,6 +55,10 @@ namespace Garnet.server
             storeWrapper.clusterProvider.ExtractKeySpecs(commandInfo, cmd, ref parseState, ref csvi);
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
+
+            // Ensure consistent read is enabled if necessary
+            ToggleConsistentReadSession();
+
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
 
@@ -86,28 +90,20 @@ namespace Garnet.server
             !storeWrapper.clusterProvider.IsReplica() ||
             csvi.Asking;
 
+        public bool EnsureConsistentRead
+            => storeWrapper.serverOptions.EnableCluster && storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.AofSublogCount == 1 && storeWrapper.clusterProvider.IsReplica();
+
         /// <summary>
         /// Consistent read key prepare callback
         /// </summary>
         /// <param name="key"></param>
         public void ConsistentReadKeyPrepareCallback(PinnedSpanByte key)
-        {
-            // Skip consistent read protocol if this is not a replica
-            if (!storeWrapper.clusterProvider.IsReplica())
-                return;
-            storeWrapper.appendOnlyFile.ConsistentReadKeyPrepare(key, ref replicaReadContext, readSessionWaiter);
-        }
+            => storeWrapper.appendOnlyFile.ConsistentReadKeyPrepare(key, ref replicaReadContext, readSessionWaiter);
 
         /// <summary>
         /// Consistent read key update callback
         /// </summary>
-        /// <param name="key"></param>
-        public void ConsistentReadKeyUpdateCallback(PinnedSpanByte key)
-        {
-            // Skip consistent read protocol if this is not a replica
-            if (!storeWrapper.clusterProvider.IsReplica())
-                return;
-            storeWrapper.appendOnlyFile.ConsistentReadKeyUpdate(key, ref replicaReadContext);
-        }
+        public void ConsistentReadSequenceNumberUpdate()
+            => storeWrapper.appendOnlyFile.ConsistentReadSequenceNumberUpdate(ref replicaReadContext);
     }
 }

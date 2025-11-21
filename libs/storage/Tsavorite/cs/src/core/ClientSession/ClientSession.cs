@@ -30,8 +30,11 @@ namespace Tsavorite.core
         readonly TransactionalUnsafeContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> luContext;
         readonly TransactionalContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> lContext;
         readonly BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> bContext;
+        readonly ConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> crContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
+
+        internal readonly ContextCallbacks consistentReadProtocolCallbacks = null;
 
         readonly ILoggerFactory loggerFactory;
         readonly ILogger logger;
@@ -90,6 +93,7 @@ namespace Tsavorite.core
             uContext = new(this);
             lContext = new(this);
             luContext = new(this);
+            crContext = new(this);
 
             this.loggerFactory = loggerFactory;
             logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
@@ -140,6 +144,11 @@ namespace Tsavorite.core
         /// Return a session wrapper struct that passes through to client session
         /// </summary>
         public BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> BasicContext => bContext;
+
+        /// <summary>
+        /// Return the consistent read contex;
+        /// </summary>
+        public ConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> ConsistentReadContext => crContext;
 
         #region ITsavoriteContext
 

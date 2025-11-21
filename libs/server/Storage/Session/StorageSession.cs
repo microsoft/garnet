@@ -25,6 +25,7 @@ namespace Garnet.server
         /// </summary>
         public BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> basicContext;
         public TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalContext;
+        public ConsistentReadContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> consistentReadContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll1;
         SectorAlignedMemory sectorAlignedMemoryHll2;
@@ -38,12 +39,14 @@ namespace Garnet.server
         /// </summary>
         public BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreBasicContext;
         public TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext;
+        public ConsistentReadContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectConsistentReadContext;
 
         /// <summary>
         /// Session Contexts for unified store
         /// </summary>
         public BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreBasicContext;
         public TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext;
+        public ConsistentReadContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreConsistentReadContext;
 
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
@@ -63,6 +66,7 @@ namespace Garnet.server
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             int dbId,
+            ContextCallbacks contextCallbacks,
             ILogger logger = null,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
@@ -74,6 +78,7 @@ namespace Garnet.server
             parseState.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
+            functionsState.contextCallbacks = contextCallbacks;
 
             var functions = new MainSessionFunctions(functionsState);
 
@@ -91,10 +96,13 @@ namespace Garnet.server
 
             basicContext = session.BasicContext;
             transactionalContext = session.TransactionalContext;
+            consistentReadContext = session.ConsistentReadContext;
             objectStoreBasicContext = objectStoreSession.BasicContext;
             objectStoreTransactionalContext = objectStoreSession.TransactionalContext;
+            objectConsistentReadContext = objectStoreSession.ConsistentReadContext;
             unifiedStoreBasicContext = unifiedStoreSession.BasicContext;
             unifiedStoreTransactionalContext = unifiedStoreSession.TransactionalContext;
+            unifiedStoreConsistentReadContext = unifiedStoreSession.ConsistentReadContext;
 
             HeadAddress = db.Store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;

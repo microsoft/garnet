@@ -138,12 +138,13 @@ namespace Garnet.cluster
             try
             {
                 var tasks = new List<Task>();
-                for (var i = 0; i < aofSyncTasks.Length; i++)
-                    tasks.Add(aofSyncTasks[i].RunAofSyncTask(this));
 
                 // Only add RefreshSublogTail task when using ShardedLog
                 if (aofSyncTasks.Length > 1)
                     tasks.Add(RefreshSublogTail());
+
+                for (var i = 0; i < aofSyncTasks.Length; i++)
+                    tasks.Add(aofSyncTasks[i].RunAofSyncTask(this));
 
                 _ = await Task.WhenAny([.. tasks]);
             }
@@ -189,7 +190,10 @@ namespace Garnet.cluster
                     {
                         cts.Token.ThrowIfCancellationRequested();
                         if (maxSublogSeqNumber[i] < mssn && previousAddress[i] == tailAddress[i])
+                        {
+                            // logger?.LogError("refresh> {i} {mssn}", i, mssn);
                             clusterProvider.storeWrapper.appendOnlyFile.EnqueueRefreshSublogTail(i, mssn);
+                        }
                     }
                 }
             }

@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 
 namespace Garnet.server
 {
-    [StructLayout(LayoutKind.Explicit, Size = 20)]
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
     public struct ReplicaReadSessionContext
     {
         /// <summary>
-        /// Last read sublogIdx
+        /// Session version
         /// </summary>
         [FieldOffset(0)]
         public long sessionVersion;
@@ -25,5 +25,11 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(16)]
         public int lastSublogIdx;
+
+        /// <summary>
+        /// Last read keyOffset
+        /// </summary>
+        [FieldOffset(20)]
+        public int lastKeyOffset;
     }
 }

@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -25,13 +26,15 @@ namespace Garnet.server
     /// <param name="nextVersion"></param>
     /// <param name="appendOnlyFile"></param>
     /// <param name="serverOptions"></param>
-    public class ReplicaReadConsistencyManager(long nextVersion, GarnetAppendOnlyFile appendOnlyFile, GarnetServerOptions serverOptions)
+    /// <param name="logger"></param>
+    public class ReplicaReadConsistencyManager(long nextVersion, GarnetAppendOnlyFile appendOnlyFile, GarnetServerOptions serverOptions, ILogger logger = null)
     {
         public long CurrentVersion { get; private set; } = nextVersion;
         public const int KeyOffsetCount = (1 << 15) + 1;
         const int MaxSublogTimestampOffset = KeyOffsetCount - 1;
         readonly GarnetAppendOnlyFile appendOnlyFile = appendOnlyFile;
         readonly GarnetServerOptions serverOptions = serverOptions;
+        readonly ILogger logger = logger;
 
         static ReplicaReadConsistencyManager()
         {
@@ -90,6 +93,7 @@ namespace Garnet.server
         /// <seealso cref="T:Garnet.cluster.AofSyncDriver.RefreshSublogTail"/>
         public void UpdateSublogSequencenumber(int sublogIdx, long sequenceNumber)
         {
+            // logger?.LogError("+sn: {sn} idx: {sublogIdx}", sequenceNumber, sublogIdx);
             _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][MaxSublogTimestampOffset], sequenceNumber, out _);
             SignalWaiters(sublogIdx);
         }
@@ -104,7 +108,9 @@ namespace Garnet.server
         {
             appendOnlyFile.Log.HashKey(ref key, out _, out var _sublogIdx, out var keyOffset);
             Debug.Assert(sublogIdx == _sublogIdx);
+            // logger?.LogError("*sn: {sn} idx: {sublogIdx} key: {keyOffset}", sequenceNumber, sublogIdx, keyOffset);
             _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][keyOffset], sequenceNumber, out _);
+            _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][MaxSublogTimestampOffset], sequenceNumber, out _);
             SignalWaiters(sublogIdx);
         }
 
@@ -117,6 +123,7 @@ namespace Garnet.server
         public void UpdateKeySequenceNumber(int sublogIdx, int keyOffset, long sequenceNumber)
         {
             _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][keyOffset], sequenceNumber, out _);
+            _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][MaxSublogTimestampOffset], sequenceNumber, out _);
             SignalWaiters(sublogIdx);
         }
 
@@ -192,6 +199,15 @@ namespace Garnet.server
         {
             appendOnlyFile.Log.Hash(key, out _, out var sublogIdx, out var keyOffset);
 
+            // If first time calling or version has been bumped reset read context
+            // NOTE: version changes every time replica is reset and a attached to a new primary
+            if (replicaReadSessionContext.sessionVersion == -1 || replicaReadSessionContext.sessionVersion != CurrentVersion)
+            {
+                replicaReadSessionContext.sessionVersion = CurrentVersion;
+                replicaReadSessionContext.lastSublogIdx = -1;
+                replicaReadSessionContext.maximumSessionSequenceNumber = 0;
+            }
+
             // If first read initialize context
             if (replicaReadSessionContext.lastSublogIdx == -1)
             {
@@ -236,11 +252,21 @@ namespace Garnet.server
         {
             appendOnlyFile.Log.Hash(key, out _, out var sublogIdx, out var keyOffset);
 
+            // If first time calling or version has been bumped reset read context
+            // NOTE: version changes every time replica is reset and a attached to a new primary
+            if (replicaReadSessionContext.sessionVersion == -1 || replicaReadSessionContext.sessionVersion != CurrentVersion)
+            {
+                replicaReadSessionContext.sessionVersion = CurrentVersion;
+                replicaReadSessionContext.lastSublogIdx = -1;
+                replicaReadSessionContext.maximumSessionSequenceNumber = 0;
+            }
+
             // If first read initialize context
             if (replicaReadSessionContext.lastSublogIdx == -1)
             {
+                // Store for future update
                 replicaReadSessionContext.lastSublogIdx = sublogIdx;
-                replicaReadSessionContext.maximumSessionSequenceNumber = GetKeySequenceNumber(sublogIdx, keyOffset);
+                replicaReadSessionContext.lastKeyOffset = keyOffset;
                 return;
             }
 
@@ -253,13 +279,29 @@ namespace Garnet.server
                 readSessionWaiter.sublogIdx = (byte)sublogIdx;
                 readSessionWaiter.keyOffset = keyOffset;
 
+                logger?.LogError("Paused [{last}] {msn} > [{current}] {fsn}",
+                    replicaReadSessionContext.lastSublogIdx,
+                    replicaReadSessionContext.maximumSessionSequenceNumber,
+                    sublogIdx,
+                    GetFrontierSequenceNumber(sublogIdx, keyOffset));
+
                 // Enqueue waiter and wait
                 waitQs[sublogIdx].Enqueue(readSessionWaiter);
-                readSessionWaiter.Wait(serverOptions.ReplicaSyncTimeout);
+                readSessionWaiter.Wait(TimeSpan.FromSeconds(1000));
+
+                logger?.LogError("Resumed [{last}] {msn} > [{current}] {fsn}",
+                    replicaReadSessionContext.lastSublogIdx,
+                    replicaReadSessionContext.maximumSessionSequenceNumber,
+                    sublogIdx,
+                    GetFrontierSequenceNumber(sublogIdx, keyOffset));
 
                 // Reset waiter for next iteration
                 readSessionWaiter.Reset();
             }
+
+            // Store for future update
+            replicaReadSessionContext.lastSublogIdx = sublogIdx;
+            replicaReadSessionContext.lastKeyOffset = keyOffset;
         }
 
         /// <summary>
@@ -269,13 +311,13 @@ namespace Garnet.server
         ///     This is done to ensure that the log sequence number tracked by the ReadConsistencyManager is an overestimate of the actual sequence number since
         ///     we cannot be certain at prepare phase what is the actual sequence number.
         /// </summary>
-        /// <param name="key"></param>
         /// <param name="replicaReadSessionContext"></param>
-        public void ConsistentReadKeyUpdate(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext)
+        public void ConsistentReadSequenceNumberUpdate(ref ReplicaReadSessionContext replicaReadSessionContext)
         {
-            appendOnlyFile.Log.Hash(key, out _, out var sublogIdx, out var keyOffset);
-            replicaReadSessionContext.lastSublogIdx = sublogIdx;
-            replicaReadSessionContext.maximumSessionSequenceNumber = Math.Max(replicaReadSessionContext.maximumSessionSequenceNumber, GetKeySequenceNumber(sublogIdx, keyOffset));
+            var sublogIdx = replicaReadSessionContext.lastSublogIdx;
+            var keyOffset = replicaReadSessionContext.lastKeyOffset;
+            replicaReadSessionContext.maximumSessionSequenceNumber = Math.Max(
+                replicaReadSessionContext.maximumSessionSequenceNumber, GetKeySequenceNumber(sublogIdx, keyOffset));
         }
     }
 }

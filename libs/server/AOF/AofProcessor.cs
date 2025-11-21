@@ -224,6 +224,7 @@ namespace Garnet.server
             var extendedHeader = default(AofExtendedHeader);
             var replayContext = aofReplayCoordinator.GetReplayContext(sublogIdx);
             isCheckpointStart = false;
+            var shardedLog = storeWrapper.serverOptions.AofSublogCount > 1;
 
             // Handle transactions
             if (aofReplayCoordinator.AddOrReplayTransactionOperation(sublogIdx, ptr, length, asReplica))
@@ -244,6 +245,12 @@ namespace Garnet.server
                         Debug.Assert(!replayContext.inFuzzyRegion);
                         replayContext.inFuzzyRegion = true;
                     }
+
+                    if (shardedLog)
+                    {
+                        extendedHeader = *(AofExtendedHeader*)ptr;
+                        storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                    }
                     break;
                 case AofEntryType.CheckpointEndCommit:
                     if (header.aofHeaderVersion > 1)
@@ -259,13 +266,14 @@ namespace Garnet.server
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                             {
-                                if (storeWrapper.serverOptions.AofSublogCount == 1)
+                                if (!shardedLog)
                                 {
                                     _ = storeWrapper.TakeCheckpoint(background: false, logger);
                                 }
                                 else
                                 {
                                     aofReplayCoordinator.ProcessSynchronizedOperation(
+                                        sublogIdx,
                                         ptr,
                                         (int)EventBarrierType.CHECKPOINT,
                                         () => storeWrapper.TakeCheckpoint(background: false, logger));
@@ -282,13 +290,14 @@ namespace Garnet.server
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
                     {
-                        if (storeWrapper.serverOptions.AofSublogCount == 1)
+                        if (!shardedLog)
                         {
                             storeWrapper.store.SetVersion(header.storeVersion);
                         }
                         else
                         {
                             aofReplayCoordinator.ProcessSynchronizedOperation(
+                                sublogIdx,
                                 ptr,
                                 (int)EventBarrierType.STREAMING_CHECKPOINT,
                                 () => storeWrapper.store.SetVersion(header.storeVersion));
@@ -298,23 +307,15 @@ namespace Garnet.server
                 case AofEntryType.ObjectStoreStreamingCheckpointStartCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
-                    //<<<<<<< HEAD
-                    //                        storeWrapper.store.SetVersion(header.storeVersion);
-                    //                    break;
-                    //                case AofEntryType.FlushAll:
-                    //                    storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1);
-                    //                    break;
-                    //                case AofEntryType.FlushDb:
-                    //                    storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId);
-                    //=======
                     {
-                        if (storeWrapper.serverOptions.AofSublogCount == 1)
+                        if (!shardedLog)
                         {
                             storeWrapper.store.SetVersion(header.storeVersion);
                         }
                         else
                         {
                             aofReplayCoordinator.ProcessSynchronizedOperation(
+                                sublogIdx,
                                 ptr,
                                 (int)EventBarrierType.STREAMING_CHECKPOINT,
                                 () => storeWrapper.store.SetVersion(header.storeVersion));
@@ -324,28 +325,35 @@ namespace Garnet.server
                 case AofEntryType.MainStoreStreamingCheckpointEndCommit:
                 case AofEntryType.ObjectStoreStreamingCheckpointEndCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
+                    if (shardedLog)
+                    {
+                        extendedHeader = *(AofExtendedHeader*)ptr;
+                        storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                    }
                     break;
                 case AofEntryType.FlushAll:
-                    if (storeWrapper.serverOptions.AofSublogCount == 1)
+                    if (!shardedLog)
                     {
                         storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1);
                     }
                     else
                     {
                         aofReplayCoordinator.ProcessSynchronizedOperation(
+                            sublogIdx,
                             ptr,
                             (int)EventBarrierType.FLUSH_DB_ALL,
                             () => storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1));
                     }
                     break;
                 case AofEntryType.FlushDb:
-                    if (storeWrapper.serverOptions.AofSublogCount == 1)
+                    if (!shardedLog)
                     {
                         storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId);
                     }
                     else
                     {
                         aofReplayCoordinator.ProcessSynchronizedOperation(
+                            sublogIdx,
                             ptr,
                             (int)EventBarrierType.FLUSH_DB,
                             () => storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId));
@@ -353,6 +361,7 @@ namespace Garnet.server
                     break;
                 case AofEntryType.RefreshSublogTail:
                     extendedHeader = *(AofExtendedHeader*)ptr;
+                    //logger?.LogDebug("RefreshSublogTail {sublogIdx} {idx}", sublogIdx, extendedHeader.sequenceNumber);
                     storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
                     break;
                 default:
