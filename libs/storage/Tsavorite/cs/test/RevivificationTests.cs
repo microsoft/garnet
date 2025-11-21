@@ -885,7 +885,7 @@ namespace Tsavorite.test.Revivification
             Status status = PerformDeletion(deletionRoute, key, fillByte);
 
             //if (deletionRoute == DeletionRoutes.DELETE)
-                ClassicAssert.IsTrue(status.Found, status.ToString());
+            ClassicAssert.IsTrue(status.Found, status.ToString());
             //else
             //    ClassicAssert.IsTrue(status.NotFound && status.IsExpired, status.ToString());
 
@@ -1526,8 +1526,8 @@ namespace Tsavorite.test.Revivification
                     functions.expectedValueLengths.Enqueue(InitialLength);
 
                     SpanByteAndMemory output = new();
-                    _ = updateOp == UpdateOp.Upsert 
-                        ? bContext.Upsert(key, ref pinnedInputSpan, input, ref output) 
+                    _ = updateOp == UpdateOp.Upsert
+                        ? bContext.Upsert(key, ref pinnedInputSpan, input, ref output)
                         : bContext.RMW(key, ref pinnedInputSpan);
                     output.Dispose();
                 }

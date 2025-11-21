@@ -25,7 +25,7 @@ namespace Tsavorite.benchmark
             public readonly long GetHashCode64(ReadOnlySpan<byte> key) => Utility.GetHashCode(key.AsRef<FixedLengthKey>().value);
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public bool Equals(ReadOnlySpan<byte> key1, ReadOnlySpan<byte>key2) => key1.AsRef<FixedLengthKey>().value == key2.AsRef<FixedLengthKey>().value;
+            public bool Equals(ReadOnlySpan<byte> key1, ReadOnlySpan<byte> key2) => key1.AsRef<FixedLengthKey>().value == key2.AsRef<FixedLengthKey>().value;
         }
     }
 }

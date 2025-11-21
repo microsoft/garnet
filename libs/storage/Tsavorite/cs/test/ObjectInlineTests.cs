@@ -291,7 +291,7 @@ namespace Tsavorite.test.Objects
             // Force test of overflow values
             const int OverflowValueSize = 1 << (LogSettings.kDefaultMaxInlineValueSizeBits + 1);
             byte[] pinnedValueOverflowBytes = GC.AllocateArray<byte>(OverflowValueSize, pinned: true);
-            Span<byte> GetOverflowValueSpanByte() => new (pinnedValueOverflowBytes);
+            Span<byte> GetOverflowValueSpanByte() => new(pinnedValueOverflowBytes);
 
             public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TestObjectInput input, ref TestObjectOutput output, ref RMWInfo rmwInfo)
             {
@@ -370,7 +370,7 @@ namespace Tsavorite.test.Objects
                 if (srcLogRecord.Info.ValueIsInline)
                     output.value = new TestObjectValue() { value = (int)srcLogRecord.ValueSpan.AsRef<ValueStruct>().vfield1 };
                 else if (srcLogRecord.Info.ValueIsOverflow)
-                { 
+                {
                     Assert.That(srcLogRecord.ValueSpan.Length, Is.EqualTo(OverflowValueSize));
                     unsafe { output.value = new TestObjectValue() { value = (int)srcLogRecord.ValueSpan.AsRef<long>() }; }
                 }
