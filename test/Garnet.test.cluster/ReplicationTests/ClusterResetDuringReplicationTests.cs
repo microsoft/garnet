@@ -53,7 +53,7 @@ namespace Garnet.test.cluster.ReplicationTests
             var nodes_count = 2;
 
             // Create instances with diskless sync enabled
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, enableDisklessSync: true, timeout: createInstanceTimeout);
+            context.CreateInstances(nodes_count, enableAOF: true, enableDisklessSync: true, timeout: createInstanceTimeout);
             context.CreateConnection();
 
             // Setup primary
@@ -109,7 +109,7 @@ namespace Garnet.test.cluster.ReplicationTests
             var nodes_count = 2;
 
             // (diskless sync is false)
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, enableDisklessSync: false, timeout: createInstanceTimeout);
+            context.CreateInstances(nodes_count, enableAOF: true, enableDisklessSync: false, timeout: createInstanceTimeout);
             context.CreateConnection();
 
             // Setup primary

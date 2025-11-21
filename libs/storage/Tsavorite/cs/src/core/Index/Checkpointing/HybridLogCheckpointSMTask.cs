@@ -11,16 +11,16 @@ namespace Tsavorite.core
     /// This task is the base class for a checkpoint "backend", which decides how a captured version is
     /// persisted on disk.
     /// </summary>
-    internal abstract class HybridLogCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator> : IStateMachineTask
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal abstract class HybridLogCheckpointSMTask<TStoreFunctions, TAllocator> : IStateMachineTask
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        protected readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
+        protected readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         protected long lastVersion;
         protected readonly Guid guid;
         protected bool isStreaming;
 
-        public HybridLogCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
+        public HybridLogCheckpointSMTask(TsavoriteKV<TStoreFunctions, TAllocator> store, Guid guid)
         {
             this.store = store;
             this.guid = guid;
@@ -34,6 +34,7 @@ namespace Tsavorite.core
             {
                 case Phase.PREPARE:
                     // Capture state before checkpoint starts
+                    CollectMetadata(next, store, isPrepare: true);
                     lastVersion = store._hybridLogCheckpoint.info.version = next.Version;
                     store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
@@ -58,7 +59,7 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:
-                    CollectMetadata(next, store);
+                    CollectMetadata(next, store, isPrepare: false);
                     store.WriteHybridLogMetaInfo();
                     store.lastVersion = lastVersion;
                     break;
@@ -73,16 +74,13 @@ namespace Tsavorite.core
             }
         }
 
-        protected static void CollectMetadata(SystemState next, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+        protected static void CollectMetadata(SystemState next, TsavoriteKV<TStoreFunctions, TAllocator> store, bool isPrepare)
         {
-            // Collect object log offsets only after flushes
-            // are completed
-            var seg = store.hlog.GetSegmentOffsets();
-            if (seg != null)
-            {
-                store._hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
-                Array.Copy(seg, store._hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
-            }
+            // Collect object log tail at start and after flushes are completed; having both is necessary to provide a segment count for replication.
+            if (isPrepare)
+                store._hybridLogCheckpoint.info.startObjectLogTail = store.hlogBase.GetObjectLogTail();
+            else
+                store._hybridLogCheckpoint.info.finalObjectLogTail = store.hlogBase.GetObjectLogTail();
         }
 
         /// <inheritdoc />

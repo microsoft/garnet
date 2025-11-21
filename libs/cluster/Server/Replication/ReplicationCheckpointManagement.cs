@@ -31,7 +31,7 @@ namespace Garnet.cluster
         public bool TryAcquireSettledMetadataForMainStore(CheckpointEntry entry, out LogFileInfo hlog_size, out long index_size)
         {
             hlog_size = default;
-            index_size = -1;
+            index_size = -1L;
             try
             {
                 hlog_size = storeWrapper.store.GetLogFileSize(entry.metadata.storeHlogToken);
@@ -41,29 +41,6 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Waiting for main store metadata to settle");
-                return false;
-            }
-        }
-
-        /// <summary>
-        ///  Keep trying to acquire object store metadata until it settles
-        /// </summary>
-        /// <param name="entry">CheckpointEntry to retrieve metadata for</param>
-        /// <param name="hlog_size">LogFileInfo to return</param>
-        /// <param name="index_size">Index size in bytes to return</param>
-        public bool TryAcquireSettledMetadataForObjectStore(CheckpointEntry entry, out LogFileInfo hlog_size, out long index_size)
-        {
-            hlog_size = default;
-            index_size = -1;
-            try
-            {
-                hlog_size = storeWrapper.objectStore.GetLogFileSize(entry.metadata.objectStoreHlogToken);
-                index_size = storeWrapper.objectStore.GetIndexFileSize(entry.metadata.objectStoreIndexToken);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "Waiting for object store metadata to settle");
                 return false;
             }
         }
@@ -90,10 +67,8 @@ namespace Garnet.cluster
         #endregion
 
         public long StoreCurrentSafeAofAddress => clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress;
-        public long ObjectStoreCurrentSafeAofAddress => clusterProvider.serverOptions.DisableObjects ? -1 : clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentSafeAofAddress;
 
         public long StoreRecoveredSafeAofTailAddress => clusterProvider.storeWrapper.StoreCheckpointManager.RecoveredSafeAofAddress;
-        public long ObjectStoreRecoveredSafeAofTailAddress => clusterProvider.serverOptions.DisableObjects ? -1 : clusterProvider.storeWrapper.ObjectStoreCheckpointManager.RecoveredSafeAofAddress;
 
         /// <summary>
         /// Update current aof address for pending commit.
@@ -103,8 +78,6 @@ namespace Garnet.cluster
         public void UpdateCommitSafeAofAddress(long safeAofTailAddress)
         {
             clusterProvider.storeWrapper.StoreCheckpointManager.CurrentSafeAofAddress = safeAofTailAddress;
-            if (!clusterProvider.serverOptions.DisableObjects)
-                clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentSafeAofAddress = safeAofTailAddress;
         }
 
         /// <summary>
@@ -114,8 +87,6 @@ namespace Garnet.cluster
         public void SetPrimaryReplicationId()
         {
             clusterProvider.storeWrapper.StoreCheckpointManager.CurrentHistoryId = PrimaryReplId;
-            if (!clusterProvider.serverOptions.DisableObjects)
-                clusterProvider.storeWrapper.ObjectStoreCheckpointManager.CurrentHistoryId = PrimaryReplId;
         }
     }
 }

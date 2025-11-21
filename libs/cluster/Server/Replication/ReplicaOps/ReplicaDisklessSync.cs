@@ -58,7 +58,6 @@ namespace Garnet.cluster
             async Task<string> TryBeginReplicaSync(bool downgradeLock)
             {
                 var disklessSync = clusterProvider.serverOptions.ReplicaDisklessSync;
-                var disableObjects = clusterProvider.serverOptions.DisableObjects;
                 GarnetClientSession gcs = null;
                 resetHandler ??= new CancellationTokenSource();
                 try
@@ -116,7 +115,6 @@ namespace Garnet.cluster
                         originNodeId: current.LocalNodeId,
                         currentPrimaryReplId: PrimaryReplId,
                         currentStoreVersion: storeWrapper.store.CurrentVersion,
-                        currentObjectStoreVersion: disableObjects ? -1 : storeWrapper.objectStore.CurrentVersion,
                         currentAofBeginAddress: storeWrapper.appendOnlyFile.BeginAddress,
                         currentAofTailAddress: storeWrapper.appendOnlyFile.TailAddress,
                         currentReplicationOffset: ReplicationOffset,
@@ -184,8 +182,6 @@ namespace Garnet.cluster
 
                 // Set DB version
                 storeWrapper.store.SetVersion(primarySyncMetadata.currentStoreVersion);
-                if (!clusterProvider.serverOptions.DisableObjects)
-                    storeWrapper.objectStore.SetVersion(primarySyncMetadata.currentObjectStoreVersion);
 
                 // Update replicationId to mark any subsequent checkpoints as part of this history
                 logger?.LogInformation("Updating ReplicationId");

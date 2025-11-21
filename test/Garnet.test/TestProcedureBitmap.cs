@@ -35,9 +35,9 @@ namespace Garnet
             if (bitmapB.Length == 0)
                 return false;
 
-            AddKey(bitmapA, LockType.Exclusive, false);
-            AddKey(destinationKey, LockType.Exclusive, false);
-            AddKey(bitmapB, LockType.Exclusive, false);
+            AddKey(bitmapA, LockType.Exclusive, StoreType.Main);
+            AddKey(destinationKey, LockType.Exclusive, StoreType.Main);
+            AddKey(bitmapB, LockType.Exclusive, StoreType.Main);
 
             return true;
         }
@@ -84,7 +84,7 @@ namespace Garnet
                 result = false;
                 goto returnTo;
             }
-            api.GET(destinationKeyBitOp, out var valueData);
+            api.GET(destinationKeyBitOp, out PinnedSpanByte valueData);
             var actualResultBitOp = BitConverter.ToInt64(valueData.ToArray(), 0);
 
             long expectedResultBitOp = ~src;

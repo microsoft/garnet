@@ -1,45 +1,42 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.IO;
 using System.Threading;
 using Tsavorite.core;
+using Tsavorite.test.recovery.sumstore;
 
 namespace Tsavorite.test.recovery.objects
 {
-    public class AdIdObj
-    {
-        public long adId;
-
-        public partial struct Comparer : IKeyComparer<AdIdObj>
-        {
-            public readonly long GetHashCode64(ref AdIdObj key) => Utility.GetHashCode(key.adId);
-
-            public readonly bool Equals(ref AdIdObj k1, ref AdIdObj k2) => k1.adId == k2.adId;
-        }
-
-        public class Serializer : BinaryObjectSerializer<AdIdObj>
-        {
-            public override void Deserialize(out AdIdObj obj) => obj = new AdIdObj { adId = reader.ReadInt64() };
-
-            public override void Serialize(ref AdIdObj obj) => writer.Write(obj.adId);
-        }
-    }
-
-    public class NumClicksObj
+    public class NumClicksObj : HeapObjectBase
     {
         public long numClicks;
 
-        public class Serializer : BinaryObjectSerializer<NumClicksObj>
-        {
-            public override void Deserialize(out NumClicksObj obj) => obj = new NumClicksObj { numClicks = reader.ReadInt64() };
+        public override string ToString() => numClicks.ToString();
 
-            public override void Serialize(ref NumClicksObj obj) => writer.Write(obj.numClicks);
+        public override void Dispose() { }
+
+        public override HeapObjectBase Clone() => throw new NotImplementedException();
+        public override void DoSerialize(BinaryWriter writer) => throw new NotImplementedException();
+        public override void WriteType(BinaryWriter writer, bool isNull) => throw new NotImplementedException();
+
+        public NumClicksObj()
+        {
+            HeapMemorySize = sizeof(long);
+        }
+
+        public class Serializer : BinaryObjectSerializer<IHeapObject>
+        {
+            public override void Deserialize(out IHeapObject obj) => obj = new NumClicksObj { numClicks = reader.ReadInt64() };
+
+            public override void Serialize(IHeapObject obj) => writer.Write(((NumClicksObj)obj).numClicks);
         }
     }
 
     public class Input
     {
-        public AdIdObj adId;
+        public AdId adId;
         public NumClicksObj numClicks;
     }
 
@@ -48,40 +45,32 @@ namespace Tsavorite.test.recovery.objects
         public NumClicksObj value;
     }
 
-    public class Functions : SessionFunctionsBase<AdIdObj, NumClicksObj, Input, Output, Empty>
+    public class Functions : SessionFunctionsBase<Input, Output, Empty>
     {
         // Read functions
-        public override bool SingleReader(ref AdIdObj key, ref Input input, ref NumClicksObj value, ref Output dst, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref Input input, ref Output output, ref ReadInfo readInfo)
         {
-            dst.value = value;
-            return true;
-        }
-
-        public override bool ConcurrentReader(ref AdIdObj key, ref Input input, ref NumClicksObj value, ref Output dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-        {
-            dst.value = value;
+            output.value = (NumClicksObj)srcLogRecord.ValueObject;
             return true;
         }
 
         // RMW functions
-        public override bool InitialUpdater(ref AdIdObj key, ref Input input, ref NumClicksObj value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+        public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo)
+            => dstLogRecord.TrySetValueObject(input.numClicks);
+
+        public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo)
         {
-            value = input.numClicks;
+            _ = Interlocked.Add(ref ((NumClicksObj)logRecord.ValueObject).numClicks, input.numClicks.numClicks);
             return true;
         }
 
-        public override bool InPlaceUpdater(ref AdIdObj key, ref Input input, ref NumClicksObj value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-        {
-            _ = Interlocked.Add(ref value.numClicks, input.numClicks.numClicks);
-            return true;
-        }
+        public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref Input input, ref Output output, ref RMWInfo rmwInfo)
+            => dstLogRecord.TrySetValueObject(new NumClicksObj { numClicks = ((NumClicksObj)srcLogRecord.ValueObject).numClicks + input.numClicks.numClicks });
 
-        public override bool NeedCopyUpdate(ref AdIdObj key, ref Input input, ref NumClicksObj oldValue, ref Output output, ref RMWInfo rmwInfo) => true;
-
-        public override bool CopyUpdater(ref AdIdObj key, ref Input input, ref NumClicksObj oldValue, ref NumClicksObj newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-        {
-            newValue = new NumClicksObj { numClicks = oldValue.numClicks + input.numClicks.numClicks };
-            return true;
-        }
+        public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref Input input)
+            => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+        /// <inheritdoc/>
+        public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref Input input)
+            => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
     }
 }

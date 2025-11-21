@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -15,17 +17,14 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.ReadCacheTests
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class RandomReadCacheTests
     {
         class Functions : SpanByteFunctions<Empty>
         {
-            public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-                => SingleReader(ref key, ref input, ref value, ref dst, ref readInfo);
-
-            public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
+            public override bool Reader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
             {
                 var keyString = new string(MemoryMarshal.Cast<byte, char>(key.AsReadOnlySpan()));
                 var inputString = new string(MemoryMarshal.Cast<byte, char>(input.AsReadOnlySpan()));
@@ -52,7 +51,7 @@ namespace Tsavorite.test.ReadCacheTests
         }
 
         IDevice log = default;
-        TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store = default;
+        TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store = default;
 
         [SetUp]
         public void Setup()
@@ -61,7 +60,7 @@ namespace Tsavorite.test.ReadCacheTests
 
             string filename = Path.Join(MethodTestDir, "BasicTests.log");
 
-            var kvSettings = new KVSettings<SpanByte, SpanByte>()
+            var kvSettings = new KVSettings()
             {
                 IndexSize = 1L << 26,
                 MemorySize = 1L << 15,
@@ -231,3 +230,5 @@ namespace Tsavorite.test.ReadCacheTests
         }
     }
 }
+
+#endif // LOGRECORD_TODO

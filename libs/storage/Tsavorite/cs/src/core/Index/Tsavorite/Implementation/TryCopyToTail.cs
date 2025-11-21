@@ -3,83 +3,57 @@
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
         /// Copy a record from the immutable region of the log, from the disk, or from ConditionalCopyToTail to the tail of the log (or splice into the log/readcache boundary).
         /// </summary>
-        /// <param name="pendingContext"></param>
-        /// <param name="key"></param>
-        /// <param name="input"></param>
-        /// <param name="value"></param>
-        /// <param name="output"></param>
-        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}"/> structures for this operation,
-        ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
-        /// <param name="srcRecordInfo">if <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}.HasInMemorySrc"/>, the recordInfo to close, if transferring.</param>
+        /// <param name="inputLogRecord">The source record, either from readonly region of the in-memory log, or from disk</param>
         /// <param name="sessionFunctions"></param>
-        /// <param name="reason">The reason for this operation.</param>
+        /// <param name="pendingContext"></param>
+        /// <param name="stackCtx">Contains the <see cref="HashEntryInfo"/> and <see cref="RecordSource{TStoreFunctions, TAllocator}"/> structures for this operation,
+        ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <returns>
         ///     <list type="bullet">
         ///     <item>RETRY_NOW: failed CAS, so no copy done. This routine deals entirely with new records, so will not encounter Sealed records</item>
         ///     <item>SUCCESS: copy was done</item>
         ///     </list>
         /// </returns>
-        internal OperationStatus TryCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                                    ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx,
-                                    ref RecordInfo srcRecordInfo, TSessionFunctionsWrapper sessionFunctions, WriteReason reason)
-        where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+        internal OperationStatus TryCopyToTail<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(in TSourceLogRecord inputLogRecord,
+                                    TSessionFunctionsWrapper sessionFunctions, ref PendingContext<TInput, TOutput, TContext> pendingContext,
+                                    ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSourceLogRecord : ISourceLogRecord
         {
-            var (actualSize, allocatedSize, keySize) = hlog.GetRecordSize(ref key, ref value);
-            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, actualSize, ref allocatedSize, keySize, new AllocateOptions() { Recycle = true },
-                    out long newLogicalAddress, out long newPhysicalAddress, out OperationStatus status))
+            var sizeInfo = new RecordSizeInfo() { FieldInfo = inputLogRecord.GetRecordFieldInfo() };
+            hlog.PopulateRecordSizeInfo(ref sizeInfo);
+
+            var allocOptions = new AllocateOptions() { recycle = true };
+            if (!TryAllocateRecord(sessionFunctions, ref pendingContext, ref stackCtx, ref sizeInfo, allocOptions, out var newLogicalAddress, out var newPhysicalAddress, out var status))
                 return status;
-            ref var newRecordInfo = ref WriteNewRecordInfo(ref key, hlogBase, newPhysicalAddress, inNewVersion: sessionFunctions.Ctx.InNewVersion, stackCtx.recSrc.LatestLogicalAddress);
+            var newLogRecord = WriteNewRecordInfo(inputLogRecord.Key, hlogBase, newLogicalAddress, newPhysicalAddress, in sizeInfo, inNewVersion: sessionFunctions.Ctx.InNewVersion, previousAddress: stackCtx.recSrc.LatestLogicalAddress);
+
             stackCtx.SetNewRecord(newLogicalAddress);
-
-            UpsertInfo upsertInfo = new()
-            {
-                Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID,
-                Address = newLogicalAddress,
-                KeyHash = stackCtx.hei.hash,
-            };
-            upsertInfo.SetRecordInfo(ref newRecordInfo);
-
-            ref TValue newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);
-            (upsertInfo.UsedValueLength, upsertInfo.FullValueLength) = GetNewValueLengths(actualSize, allocatedSize, newPhysicalAddress, ref newRecordValue);
-
-            if (!sessionFunctions.SingleWriter(ref key, ref input, ref value, ref newRecordValue, ref output, ref upsertInfo, reason, ref newRecordInfo))
-            {
-                // Save allocation for revivification (not retry, because we won't retry here), or abandon it if that fails.
-                if (RevivificationManager.UseFreeRecordPool && RevivificationManager.TryAdd(newLogicalAddress, newPhysicalAddress, allocatedSize, ref sessionFunctions.Ctx.RevivificationStats))
-                    stackCtx.ClearNewRecord();
-                else
-                    stackCtx.SetNewRecordInvalid(ref newRecordInfo);
-                return (upsertInfo.Action == UpsertAction.CancelOperation) ? OperationStatus.CANCELED : OperationStatus.SUCCESS;
-            }
-            SetExtraValueLength(ref newRecordValue, ref srcRecordInfo, upsertInfo.UsedValueLength, upsertInfo.FullValueLength);
+            _ = newLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
 
             // Insert the new record by CAS'ing either directly into the hash entry or splicing into the readcache/mainlog boundary.
-            bool success = CASRecordIntoChain(ref key, ref stackCtx, newLogicalAddress, ref newRecordInfo);
+            var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
-                newRecordInfo.UnsealAndValidate();
-                PostCopyToTail(ref key, ref stackCtx, ref srcRecordInfo, pendingContext.InitialEntryAddress);
+                newLogRecord.InfoRef.UnsealAndValidate();
 
-                pendingContext.recordInfo = newRecordInfo;
-                pendingContext.logicalAddress = upsertInfo.Address;
-                sessionFunctions.PostSingleWriter(ref key, ref input, ref value, ref hlog.GetValue(newPhysicalAddress), ref output, ref upsertInfo, reason, ref newRecordInfo);
+                pendingContext.logicalAddress = newLogicalAddress;
                 stackCtx.ClearNewRecord();
                 return OperationStatusUtils.AdvancedOpCode(OperationStatus.SUCCESS, StatusCode.Found | StatusCode.CopiedRecord);
             }
 
             // CAS failed
-            stackCtx.SetNewRecordInvalid(ref newRecordInfo);
-            storeFunctions.DisposeRecord(ref hlog.GetKey(newPhysicalAddress), ref hlog.GetValue(newPhysicalAddress), DisposeReason.SingleWriterCASFailed);
+            stackCtx.SetNewRecordInvalid(ref newLogRecord.InfoRef);
+            DisposeRecord(ref newLogRecord, DisposeReason.InitialWriterCASFailed);
 
-            SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress, allocatedSize);
+            SaveAllocationForRetry(ref pendingContext, newLogicalAddress, newPhysicalAddress);
             return OperationStatus.RETRY_NOW;   // CAS failure does not require epoch refresh
         }
     }

@@ -26,7 +26,7 @@ namespace NoOpModule
     {
         /// <inheritdoc />
         public DummyObject(byte type)
-            : base(type, 0, MemoryUtils.DictionaryOverhead)
+            : base(type, MemoryUtils.DictionaryOverhead)
         {
         }
 

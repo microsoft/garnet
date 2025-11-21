@@ -6,11 +6,13 @@ using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Tsavorite.core;
+using Tsavorite.test.recovery.sumstore;
 
 namespace Tsavorite.test.recovery.objects
 {
-    using ClassAllocator = GenericAllocator<AdIdObj, NumClicksObj, StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>>;
-    using ClassStoreFunctions = StoreFunctions<AdIdObj, NumClicksObj, AdIdObj.Comparer, DefaultRecordDisposer<AdIdObj, NumClicksObj>>;
+    using static Tsavorite.test.TestUtils;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<AdId.Comparer, DefaultRecordDisposer>>;
+    using ClassStoreFunctions = StoreFunctions<AdId.Comparer, DefaultRecordDisposer>;
 
     internal struct StructTuple<T1, T2>
     {
@@ -26,7 +28,7 @@ namespace Tsavorite.test.recovery.objects
         const long NumOps = 1L << 19;
         const long CompletePendingInterval = 1L << 10;
         const long CheckpointInterval = 1L << 16;
-        private TsavoriteKV<AdIdObj, NumClicksObj, ClassStoreFunctions, ClassAllocator> store;
+        private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private Guid token;
         private IDevice log, objlog;
 
@@ -47,7 +49,7 @@ namespace Tsavorite.test.recovery.objects
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<AdIdObj, NumClicksObj>.Create(new AdIdObj.Comparer(), () => new AdIdObj.Serializer(), () => new NumClicksObj.Serializer())
+            }, StoreFunctions.Create(new AdId.Comparer(), () => new NumClicksObj.Serializer(), DefaultRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -76,12 +78,12 @@ namespace Tsavorite.test.recovery.objects
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public async ValueTask ObjectRecoveryTest1([Values] bool isAsync)
+        public async ValueTask ObjectRecoveryTest1([Values] CompletionSyncMode syncMode)
         {
             Populate();
             PrepareToRecover();
 
-            if (isAsync)
+            if (syncMode == CompletionSyncMode.Async)
                 _ = await store.RecoverAsync(token, token);
             else
                 _ = store.Recover(token, token);
@@ -92,12 +94,12 @@ namespace Tsavorite.test.recovery.objects
         public unsafe void Populate()
         {
             // Prepare the dataset
-            var inputArray = new StructTuple<AdIdObj, Input>[NumOps];
+            var inputArray = GC.AllocateArray<StructTuple<AdId, Input>>((int)NumOps);
             for (int i = 0; i < NumOps; i++)
             {
-                inputArray[i] = new StructTuple<AdIdObj, Input>
+                inputArray[i] = new()
                 {
-                    Item1 = new AdIdObj { adId = i % NumUniqueKeys },
+                    Item1 = new AdId { adId = i % NumUniqueKeys },
                     Item2 = new Input { numClicks = new NumClicksObj { numClicks = 1 } }
                 };
             }
@@ -110,7 +112,7 @@ namespace Tsavorite.test.recovery.objects
             bool first = true;
             for (int i = 0; i < NumOps; i++)
             {
-                _ = bContext.RMW(ref inputArray[i].Item1, ref inputArray[i].Item2, Empty.Default);
+                _ = bContext.RMW(SpanByte.FromPinnedVariable(ref inputArray[i].Item1), ref inputArray[i].Item2, Empty.Default);
 
                 if ((i + 1) % CheckpointInterval == 0)
                 {
@@ -120,14 +122,11 @@ namespace Tsavorite.test.recovery.objects
                         while (!store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot)) ;
 
                     store.CompleteCheckpointAsync().GetAwaiter().GetResult();
-
                     first = false;
                 }
 
                 if (i % CompletePendingInterval == 0)
-                {
                     _ = bContext.CompletePending(false, false);
-                }
             }
 
 
@@ -139,12 +138,12 @@ namespace Tsavorite.test.recovery.objects
         public unsafe void Verify(Guid cprVersion, Guid indexVersion)
         {
             // Create array for reading
-            var inputArray = new StructTuple<AdIdObj, Input>[NumUniqueKeys];
+            var inputArray = GC.AllocateArray<StructTuple<AdId, Input>>((int)NumUniqueKeys);
             for (int i = 0; i < NumUniqueKeys; i++)
             {
-                inputArray[i] = new StructTuple<AdIdObj, Input>
+                inputArray[i] = new()
                 {
-                    Item1 = new AdIdObj { adId = i },
+                    Item1 = new AdId { adId = i },
                     Item2 = new Input { numClicks = new NumClicksObj { numClicks = 0 } }
                 };
             }
@@ -157,7 +156,7 @@ namespace Tsavorite.test.recovery.objects
             for (var i = 0; i < NumUniqueKeys; i++)
             {
                 Output output = new();
-                _ = bContext.Read(ref inputArray[i].Item1, ref input, ref output, Empty.Default);
+                _ = bContext.Read(SpanByte.FromPinnedVariable(ref inputArray[i].Item1), ref input, ref output, Empty.Default);
             }
 
             // Complete all pending requests

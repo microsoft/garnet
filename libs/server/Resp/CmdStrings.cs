@@ -32,8 +32,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> rewrite => "rewrite"u8;
         public static ReadOnlySpan<byte> CONFIG => "CONFIG"u8;
         public static ReadOnlySpan<byte> Memory => "memory"u8;
-        public static ReadOnlySpan<byte> ObjLogMemory => "obj-log-memory"u8;
-        public static ReadOnlySpan<byte> ObjHeapMemory => "obj-heap-memory"u8;
+        public static ReadOnlySpan<byte> HeapMemory => "heap-memory"u8;
         public static ReadOnlySpan<byte> Index => "index"u8;
         public static ReadOnlySpan<byte> ObjIndex => "obj-index"u8;
         public static ReadOnlySpan<byte> CertFileName => "cert-file-name"u8;
@@ -358,6 +357,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> hash => "hash"u8;
         public static ReadOnlySpan<byte> STRING => "STRING"u8;
         public static ReadOnlySpan<byte> stringt => "string"u8;
+        public static ReadOnlySpan<byte> none => "none"u8;
 
         /// <summary>
         /// Register object types

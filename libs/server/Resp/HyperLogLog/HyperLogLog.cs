@@ -383,7 +383,8 @@ namespace Garnet.server
             if (IsDense(value))
                 return this.DenseBytes;
 
-            throw new GarnetException("HyperLogLog UpdateGrowV2 invalid data structure type");
+            // This is called during GetRMWModifiedFieldInfo so be consistent between this and the actual updaters
+            throw new GarnetException(CmdStrings.RESP_ERR_WRONG_TYPE_HLL);
         }
 
         /// <summary>
@@ -605,7 +606,7 @@ namespace Garnet.server
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var currElement = input.parseState.GetArgSliceByRef(i);
-                var hashValue = (long)HashUtils.MurmurHash2x64A(currElement.ptr, currElement.Length);
+                var hashValue = (long)HashUtils.MurmurHash2x64A(currElement.ToPointer(), currElement.Length);
                 updated |= (dense ? UpdateDense(value, hashValue) : UpdateSparse(value, hashValue));
             }
             return updated;
