@@ -26,7 +26,7 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteArrayLength(parseState.Count, ref dcurr, dend))
                 SendAndReset();
 
-            RawStringInput input = default;
+            StringInput input = default;
 
             for (var c = 0; c < parseState.Count; c++)
             {
@@ -64,7 +64,7 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteArrayLength(parseState.Count, ref dcurr, dend))
                 SendAndReset();
 
-            RawStringInput input = default;
+            StringInput input = default;
             SpanByteAndMemory o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             for (var c = 0; c < parseState.Count; c++)
@@ -181,7 +181,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSETNX));
             }
 
-            var input = new RawStringInput(RespCommand.MSETNX, ref parseState);
+            var input = new StringInput(RespCommand.MSETNX, ref parseState);
             var status = storageApi.MSET_Conditional(ref input);
 
             // For a "set if not exists", NOTFOUND means that the operation succeeded
@@ -440,10 +440,10 @@ namespace Garnet.server
             var keySlice = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedStoreInput(RespCommand.TYPE);
+            var input = new UnifiedInput(RespCommand.TYPE);
 
-            // Prepare UnifiedStoreOutput output
-            var output = UnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            // Prepare UnifiedOutput output
+            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.TYPE(keySlice, ref input, ref output);
 

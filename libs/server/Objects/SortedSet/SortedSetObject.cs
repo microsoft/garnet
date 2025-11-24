@@ -315,7 +315,7 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new SortedSetObject(this);
 
         /// <inheritdoc />
-        public override bool Operate(ref ObjectInput input, ref ObjectStoreOutput output,
+        public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
                                      byte respProtocolVersion, out long memorySizeChange)
         {
             memorySizeChange = 0;

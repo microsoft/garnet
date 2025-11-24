@@ -23,7 +23,7 @@ namespace Garnet.server
             Debug.Assert(parseState.Count == 1);
 
             var key = parseState.GetArgSliceByRef(0);
-            var input = new RawStringInput(RespCommand.GETWITHETAG);
+            var input = new StringInput(RespCommand.GETWITHETAG);
             var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.GET(key, ref input, ref output);
 
@@ -54,7 +54,7 @@ namespace Garnet.server
             Debug.Assert(parseState.Count == 2);
 
             var key = parseState.GetArgSliceByRef(0);
-            var input = new RawStringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
             var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.GET(key, ref input, ref output);
 
@@ -96,7 +96,7 @@ namespace Garnet.server
             // Conditional delete is not natively supported for records in the stable region.
             // To achieve this, we use a conditional DEL command to gain RMW (Read-Modify-Write) access, enabling deletion based on conditions.
 
-            RawStringInput input = new RawStringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
+            StringInput input = new StringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
             input.header.SetWithETagFlag();
 
             GarnetStatus status = storageApi.DEL_Conditional(key, ref input);

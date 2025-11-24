@@ -24,7 +24,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD));
             }
 
-            var input = new RawStringInput(RespCommand.PFADD);
+            var input = new StringInput(RespCommand.PFADD);
 
             var output = stackalloc byte[1];
             byte pfaddUpdated = 0;
@@ -76,7 +76,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT));
             }
 
-            var input = new RawStringInput(RespCommand.PFCOUNT, ref parseState);
+            var input = new StringInput(RespCommand.PFCOUNT, ref parseState);
 
             storageApi.HyperLogLogLength(ref input, out var cardinality, out var error);
             if (error)
@@ -105,7 +105,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE));
             }
 
-            var input = new RawStringInput(RespCommand.PFMERGE, ref parseState);
+            var input = new StringInput(RespCommand.PFMERGE, ref parseState);
 
             var status = storageApi.HyperLogLogMerge(ref input, out var error);
 

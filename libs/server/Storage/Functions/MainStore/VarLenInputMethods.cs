@@ -10,7 +10,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
     {
         /// <summary>
         /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
@@ -97,7 +97,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref RawStringInput input)
+        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref StringInput input)
         {
             var cmd = input.header.cmd;
             var fieldInfo = new RecordFieldInfo()
@@ -192,7 +192,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref RawStringInput input)
+        public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input)
             where TSourceLogRecord : ISourceLogRecord
         {
             var fieldInfo = new RecordFieldInfo()
@@ -351,7 +351,7 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref RawStringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref StringInput input)
         {
             var fieldInfo = new RecordFieldInfo()
             {
@@ -371,10 +371,10 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref RawStringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref StringInput input)
             => throw new GarnetException("String store should not be called with IHeapObject");
 
-        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref RawStringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref StringInput input)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (inputLogRecord.Info.ValueIsObject)

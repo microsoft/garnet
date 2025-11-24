@@ -309,7 +309,7 @@ namespace Garnet.server
     /// <summary>
     /// Header for Garnet Main Store inputs
     /// </summary>
-    public struct RawStringInput : IStoreInput
+    public struct StringInput : IStoreInput
     {
         /// <summary>
         /// Common input header for Garnet
@@ -327,50 +327,50 @@ namespace Garnet.server
         public SessionParseState parseState;
 
         /// <summary>
-        /// Create a new instance of RawStringInput
+        /// Create a new instance of StringInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public RawStringInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
+        public StringInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
         {
             this.header = new RespInputHeader(cmd, flags);
             this.arg1 = arg1;
         }
 
         /// <summary>
-        /// Create a new instance of RawStringInput
+        /// Create a new instance of StringInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public RawStringInput(ushort cmd, byte flags = 0, long arg1 = 0) :
+        public StringInput(ushort cmd, byte flags = 0, long arg1 = 0) :
             this((RespCommand)cmd, (RespInputFlags)flags, arg1)
 
         {
         }
 
         /// <summary>
-        /// Create a new instance of RawStringInput
+        /// Create a new instance of StringInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public RawStringInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        public StringInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
         {
             this.parseState = parseState;
         }
 
         /// <summary>
-        /// Create a new instance of RawStringInput
+        /// Create a new instance of StringInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="startIdx">First command argument index in parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public RawStringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        public StringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
         {
             this.parseState = parseState.Slice(startIdx);
         }
@@ -428,9 +428,9 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Header for Garnet Main Store inputs
+    /// Header for Garnet Unified Store inputs
     /// </summary>
-    public struct UnifiedStoreInput : IStoreInput
+    public struct UnifiedInput : IStoreInput
     {
         /// <summary>
         /// Common input header for Garnet
@@ -448,50 +448,50 @@ namespace Garnet.server
         public SessionParseState parseState;
 
         /// <summary>
-        /// Create a new instance of UnifiedStoreInput
+        /// Create a new instance of UnifiedInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public UnifiedStoreInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
+        public UnifiedInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
         {
             this.header = new RespInputHeader(cmd, flags);
             this.arg1 = arg1;
         }
 
         /// <summary>
-        /// Create a new instance of UnifiedStoreInput
+        /// Create a new instance of UnifiedInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public UnifiedStoreInput(ushort cmd, byte flags = 0, long arg1 = 0) :
+        public UnifiedInput(ushort cmd, byte flags = 0, long arg1 = 0) :
             this((RespCommand)cmd, (RespInputFlags)flags, arg1)
 
         {
         }
 
         /// <summary>
-        /// Create a new instance of UnifiedStoreInput
+        /// Create a new instance of UnifiedInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public UnifiedStoreInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        public UnifiedInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
         {
             this.parseState = parseState;
         }
 
         /// <summary>
-        /// Create a new instance of UnifiedStoreInput
+        /// Create a new instance of UnifiedInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="startIdx">First command argument index in parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public UnifiedStoreInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        public UnifiedInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
         {
             this.parseState = parseState.Slice(startIdx);
         }
@@ -566,7 +566,7 @@ namespace Garnet.server
         public byte RespVersion { get; }
 
         /// <summary>
-        /// Create a new instance of RawStringInput
+        /// Create a new instance of StringInput
         /// </summary>
         /// <param name="parseState">Parse state</param>
         /// <param name="respVersion">RESP version for the session</param>
@@ -577,7 +577,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Create a new instance of RawStringInput
+        /// Create a new instance of StringInput
         /// </summary>
         /// <param name="parseState">Parse state</param>
         /// <param name="startIdx">First command argument index in parse state</param>

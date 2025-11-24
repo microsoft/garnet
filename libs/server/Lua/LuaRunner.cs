@@ -264,7 +264,7 @@ namespace Garnet.server
             if (txnMode)
             {
                 txnKeyEntries = new TxnKeyEntries(16,
-                    respServerSession.storageSession.unifiedStoreTransactionalContext);
+                    respServerSession.storageSession.unifiedTransactionalContext);
 
                 garnetCall = &LuaRunnerTrampolines.GarnetCallWithTransaction;
             }
@@ -1336,31 +1336,31 @@ namespace Garnet.server
             var txnVersion = respServerSession.storageSession.stateMachineDriver.AcquireTransactionVersion();
             try
             {
-                respServerSession.storageSession.transactionalContext.BeginTransaction();
-                if (!respServerSession.storageSession.objectStoreTransactionalContext.IsNull)
-                    respServerSession.storageSession.objectStoreTransactionalContext.BeginTransaction();
-                if (!respServerSession.storageSession.unifiedStoreTransactionalContext.IsNull)
-                    respServerSession.storageSession.unifiedStoreTransactionalContext.BeginTransaction();
+                respServerSession.storageSession.stringTransactionalContext.BeginTransaction();
+                if (!respServerSession.storageSession.objectTransactionalContext.IsNull)
+                    respServerSession.storageSession.objectTransactionalContext.BeginTransaction();
+                if (!respServerSession.storageSession.unifiedTransactionalContext.IsNull)
+                    respServerSession.storageSession.unifiedTransactionalContext.BeginTransaction();
                 respServerSession.SetTransactionMode(true);
                 txnKeyEntries.LockAllKeys();
 
                 txnVersion = respServerSession.storageSession.stateMachineDriver.VerifyTransactionVersion(txnVersion);
-                respServerSession.storageSession.transactionalContext.LocksAcquired(txnVersion);
-                if (!respServerSession.storageSession.objectStoreTransactionalContext.IsNull)
-                    respServerSession.storageSession.objectStoreTransactionalContext.LocksAcquired(txnVersion);
-                if (!respServerSession.storageSession.unifiedStoreTransactionalContext.IsNull)
-                    respServerSession.storageSession.unifiedStoreTransactionalContext.LocksAcquired(txnVersion);
+                respServerSession.storageSession.stringTransactionalContext.LocksAcquired(txnVersion);
+                if (!respServerSession.storageSession.objectTransactionalContext.IsNull)
+                    respServerSession.storageSession.objectTransactionalContext.LocksAcquired(txnVersion);
+                if (!respServerSession.storageSession.unifiedTransactionalContext.IsNull)
+                    respServerSession.storageSession.unifiedTransactionalContext.LocksAcquired(txnVersion);
                 RunCommon(ref response);
             }
             finally
             {
                 txnKeyEntries.UnlockAllKeys();
                 respServerSession.SetTransactionMode(false);
-                respServerSession.storageSession.transactionalContext.EndTransaction();
-                if (!respServerSession.storageSession.objectStoreTransactionalContext.IsNull)
-                    respServerSession.storageSession.objectStoreTransactionalContext.EndTransaction();
-                if (!respServerSession.storageSession.unifiedStoreTransactionalContext.IsNull)
-                    respServerSession.storageSession.unifiedStoreTransactionalContext.EndTransaction();
+                respServerSession.storageSession.stringTransactionalContext.EndTransaction();
+                if (!respServerSession.storageSession.objectTransactionalContext.IsNull)
+                    respServerSession.storageSession.objectTransactionalContext.EndTransaction();
+                if (!respServerSession.storageSession.unifiedTransactionalContext.IsNull)
+                    respServerSession.storageSession.unifiedTransactionalContext.EndTransaction();
                 respServerSession.storageSession.stateMachineDriver.EndTransaction(txnVersion);
             }
         }

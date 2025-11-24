@@ -410,7 +410,7 @@ namespace Garnet.server
             var input = new ObjectInput(header);
 
             // Prepare GarnetObjectStore output
-            var output = ObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SetMembers(key, ref input, ref output);
 
@@ -461,7 +461,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var output = ObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SetIsMember(key, ref input, ref output);
 
@@ -539,7 +539,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter);
 
             // Prepare GarnetObjectStore output
-            var output = ObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SetPop(key, ref input, ref output);
 
@@ -652,7 +652,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, countParameter, seed);
 
             // Prepare GarnetObjectStore output
-            var output = ObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SetRandomMember(key, ref input, ref output);
 

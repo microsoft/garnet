@@ -96,7 +96,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, popCount);
 
             // Prepare GarnetObjectStore output
-            var output = ObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var statusOp = command == RespCommand.LPOP
                 ? storageApi.ListLeftPop(key, ref input, ref output)
@@ -141,7 +141,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var output = ObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var statusOp = storageApi.ListPosition(key, ref input, ref output);
 
@@ -516,7 +516,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, start, end);
 
             // Prepare GarnetObjectStore output
-            var output = ObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var statusOp = storageApi.ListRange(key, ref input, ref output);
 
@@ -567,7 +567,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, index);
 
             // Prepare GarnetObjectStore output
-            var output = ObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var statusOp = storageApi.ListIndex(key, ref input, ref output);
 
@@ -816,7 +816,7 @@ namespace Garnet.server
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
             // Prepare GarnetObjectStore output
-            var output = ObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var statusOp = storageApi.ListSet(key, ref input, ref output);
 

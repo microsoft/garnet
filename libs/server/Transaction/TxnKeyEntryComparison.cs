@@ -11,18 +11,18 @@ namespace Garnet.server
 
     internal sealed class TxnKeyComparison
     {
-        public TransactionalContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext;
+        public TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedTransactionalContext;
 
         public readonly Comparison<TxnKeyEntry> comparisonDelegate;
 
         internal TxnKeyComparison(
-            TransactionalContext<UnifiedStoreInput, UnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext)
+            TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext)
         {
-            this.unifiedStoreTransactionalContext = unifiedStoreTransactionalContext;
+            this.UnifiedTransactionalContext = unifiedTransactionalContext;
             comparisonDelegate = Compare;
         }
 
         public int Compare(TxnKeyEntry key1, TxnKeyEntry key2)
-            => unifiedStoreTransactionalContext.CompareKeyHashes(ref key1, ref key2);
+            => UnifiedTransactionalContext.CompareKeyHashes(ref key1, ref key2);
     }
 }

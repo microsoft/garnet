@@ -20,20 +20,20 @@ namespace Garnet
     sealed class SetIfPMCustomCommand : CustomRawStringFunctions
     {
         /// <inheritdoc />
-        public override bool Reader(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
+        public override bool Reader(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
             => throw new InvalidOperationException();
         /// <inheritdoc />
-        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref RawStringInput input, ref RespMemoryWriter writer)
+        public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref StringInput input, ref RespMemoryWriter writer)
             => false;
         /// <inheritdoc />
-        public override int GetInitialLength(ref RawStringInput input)
+        public override int GetInitialLength(ref StringInput input)
             => throw new InvalidOperationException();
         /// <inheritdoc />
-        public override bool InitialUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, Span<byte> value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
+        public override bool InitialUpdater(ReadOnlySpan<byte> key, ref StringInput input, Span<byte> value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
             => throw new InvalidOperationException();
 
         /// <inheritdoc />
-        public override bool InPlaceUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, Span<byte> value, ref int valueLength, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
+        public override bool InPlaceUpdater(ReadOnlySpan<byte> key, ref StringInput input, Span<byte> value, ref int valueLength, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
         {
             var offset = 0;
             var newVal = GetNextArg(ref input, ref offset);
@@ -49,7 +49,7 @@ namespace Garnet
         }
 
         /// <inheritdoc />
-        public override bool NeedCopyUpdate(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> oldValue, ref RespMemoryWriter writer)
+        public override bool NeedCopyUpdate(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> oldValue, ref RespMemoryWriter writer)
         {
             var offset = 0;
             var newVal = GetNextArg(ref input, ref offset);
@@ -58,11 +58,11 @@ namespace Garnet
         }
 
         /// <inheritdoc />
-        public override int GetLength(ReadOnlySpan<byte> value, ref RawStringInput input)
+        public override int GetLength(ReadOnlySpan<byte> value, ref StringInput input)
             => GetFirstArg(ref input).Length;
 
         /// <inheritdoc />
-        public override bool CopyUpdater(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> oldValue, Span<byte> newValue, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
+        public override bool CopyUpdater(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> oldValue, Span<byte> newValue, ref RespMemoryWriter writer, ref RMWInfo rmwInfo)
         {
             var newVal = GetFirstArg(ref input);
             Debug.Assert(newVal.Length == newValue.Length);

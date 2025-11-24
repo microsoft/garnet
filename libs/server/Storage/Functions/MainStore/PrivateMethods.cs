@@ -13,7 +13,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
     {
         static void CopyTo(ReadOnlySpan<byte> src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
@@ -83,7 +83,7 @@ namespace Garnet.server
             }
         }
 
-        void CopyRespToWithInput<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, bool isFromPending)
+        void CopyRespToWithInput<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref SpanByteAndMemory output, bool isFromPending)
             where TSourceLogRecord : ISourceLogRecord
         {
             var value = srcLogRecord.ValueSpan;
@@ -678,7 +678,7 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> value, long version, int sessionId)
+        void WriteLogUpsert(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> value, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
 
@@ -699,7 +699,7 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(ReadOnlySpan<byte> key, ref RawStringInput input, long version, int sessionId)
+        void WriteLogRMW(ReadOnlySpan<byte> key, ref StringInput input, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
@@ -721,7 +721,7 @@ namespace Garnet.server
             functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID }, key, item2: default, out _);
         }
 
-        BitFieldCmdArgs GetBitFieldArguments(ref RawStringInput input)
+        BitFieldCmdArgs GetBitFieldArguments(ref StringInput input)
         {
             var currTokenIdx = 0;
 

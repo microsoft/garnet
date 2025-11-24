@@ -11,14 +11,14 @@ namespace Garnet.server
     /// <summary>
     /// Unified store functions
     /// </summary>
-    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedStoreInput, UnifiedStoreOutput, long>
+    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
     {
         /// <summary>
         /// Logging upsert from
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, ReadOnlySpan<byte> value, long version, int sessionID)
+        void WriteLogUpsert(ReadOnlySpan<byte> key, ref UnifiedInput input, ReadOnlySpan<byte> value, long version, int sessionID)
         {
             if (functionsState.StoredProcMode)
                 return;
@@ -39,7 +39,7 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, IGarnetObject value, long version, int sessionID)
+        void WriteLogUpsert(ReadOnlySpan<byte> key, ref UnifiedInput input, IGarnetObject value, long version, int sessionID)
         {
             if (functionsState.StoredProcMode)
                 return;
@@ -75,7 +75,7 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(ReadOnlySpan<byte> key, ref UnifiedStoreInput input, long version, int sessionId)
+        void WriteLogRMW(ReadOnlySpan<byte> key, ref UnifiedInput input, long version, int sessionId)
         {
             if (functionsState.StoredProcMode)
                 return;
@@ -87,7 +87,7 @@ namespace Garnet.server
                 key, ref input, out _);
         }
 
-        bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, ReadOnlySpan<byte> newValue, ref UnifiedStoreOutput output)
+        bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, ReadOnlySpan<byte> newValue, ref UnifiedOutput output)
         {
             var hasExpiration = logRecord.Info.HasExpiration;
 
@@ -107,7 +107,7 @@ namespace Garnet.server
             return isSuccessful;
         }
 
-        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, bool hasExpiration, ref UnifiedStoreOutput output)
+        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, bool hasExpiration, ref UnifiedOutput output)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 

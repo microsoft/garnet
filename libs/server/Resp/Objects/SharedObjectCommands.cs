@@ -63,7 +63,7 @@ namespace Garnet.server
             }
 
             // Prepare GarnetObjectStore output
-            var output = ObjectStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.ObjectScan(key, ref input, ref output);
 
             switch (status)

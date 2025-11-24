@@ -12,10 +12,10 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
-        public readonly bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             switch (input.header.cmd)
             {
@@ -60,7 +60,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
@@ -349,7 +349,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             // reset etag state set at need initial update
             if (input.header.cmd is (RespCommand.SET or RespCommand.SETEXNX or RespCommand.SETKEEPTTL or RespCommand.SETIFMATCH or RespCommand.SETIFGREATER))
@@ -364,7 +364,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             if (logRecord.Info.ValueIsObject)
             {
@@ -385,7 +385,7 @@ namespace Garnet.server
 
         // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with TRUE,
         // you must make sure you must reset etagState in FunctionState
-        private readonly bool InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        private readonly bool InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             RespCommand cmd = input.header.cmd;
             // Expired data
@@ -839,7 +839,7 @@ namespace Garnet.server
 
         // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with FALSE, you must make sure you must reset etagState in FunctionState
         /// <inheritdoc />
-        public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             switch (input.header.cmd)
@@ -961,7 +961,7 @@ namespace Garnet.server
 
         // NOTE: Before doing any return from this method, please make sure you are calling reset on etagState in functionsState.
         /// <inheritdoc />
-        public readonly bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             // Expired data
@@ -1438,7 +1438,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref RawStringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);

@@ -538,8 +538,8 @@ namespace Garnet.server
                 _ = storageSession.txnManager.Run(true);
             }
 
-            var objectTransactionalContext = storageSession.txnManager.ObjectStoreTransactionalContext;
-            var unifiedTransactionalContext = storageSession.txnManager.UnifiedStoreTransactionalContext;
+            var objectTransactionalContext = storageSession.txnManager.ObjectTransactionalContext;
+            var unifiedTransactionalContext = storageSession.txnManager.UnifiedTransactionalContext;
 
             try
             {

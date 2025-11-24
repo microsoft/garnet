@@ -582,13 +582,13 @@ namespace Garnet.server
             var input = new ObjectInput(header);
 
             ReadOnlySpan<PinnedSpanByte> key = [PinnedSpanByte.FromPinnedSpan("*"u8)];
-            storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
+            storageSession.HashCollect(key, ref input, ref storageSession.objectBasicContext);
             storageSession.scratchBufferBuilder.Reset();
         }
 
         private static void ExecuteSortedSetCollect(StorageSession storageSession)
         {
-            storageSession.SortedSetCollect(ref storageSession.objectStoreBasicContext);
+            storageSession.SortedSetCollect(ref storageSession.objectBasicContext);
             storageSession.scratchBufferBuilder.Reset();
         }
 

@@ -84,7 +84,7 @@ namespace Garnet.server
 
             storeCursor = cursor;
 
-            unifiedStoreBasicContext.Session.ScanCursor(ref storeCursor, count, unifiedStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
+            unifiedBasicContext.Session.ScanCursor(ref storeCursor, count, unifiedStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
 
             lastScanCursor = storeCursor;
             return true;
@@ -97,7 +97,7 @@ namespace Garnet.server
         {
             expiredKeyDeletionScanFuncs ??= new();
             expiredKeyDeletionScanFuncs.Initialize(this);
-            _ = unifiedStoreBasicContext.Session.ScanCursor(ref fromAddress, untilAddress, expiredKeyDeletionScanFuncs);
+            _ = unifiedBasicContext.Session.ScanCursor(ref fromAddress, untilAddress, expiredKeyDeletionScanFuncs);
             return (expiredKeyDeletionScanFuncs.deletedCount, expiredKeyDeletionScanFuncs.totalCount);
         }
 
@@ -114,13 +114,13 @@ namespace Garnet.server
         /// <returns></returns>
         internal bool IterateStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool validateCursor = false, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions
-            => basicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
+            => stringBasicContext.Session.IterateLookup(ref scanFunctions, ref cursor, untilAddress, validateCursor: validateCursor, maxAddress: maxAddress, resetCursor: false, includeTombstones: includeTombstones);
 
         /// <summary>
         /// Iterate the contents of the store (pull based)
         /// </summary>
         internal ITsavoriteScanIterator IterateStore()
-            => basicContext.Session.Iterate();
+            => stringBasicContext.Session.Iterate();
 
         /// <summary>
         ///  Get a list of the keys in the store and object store when using pattern
@@ -135,7 +135,7 @@ namespace Garnet.server
 
             unifiedStoreDbKeysFuncs ??= new();
             unifiedStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ToPointer(), pattern.Length);
-            unifiedStoreBasicContext.Session.Iterate(ref unifiedStoreDbKeysFuncs);
+            unifiedBasicContext.Session.Iterate(ref unifiedStoreDbKeysFuncs);
 
             return Keys;
         }
@@ -149,7 +149,7 @@ namespace Garnet.server
             unifiedStoreDbSizeFuncs ??= new();
             unifiedStoreDbSizeFuncs.Initialize();
             long cursor = 0;
-            unifiedStoreBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, unifiedStoreDbSizeFuncs);
+            unifiedBasicContext.Session.ScanCursor(ref cursor, long.MaxValue, unifiedStoreDbSizeFuncs);
 
             return unifiedStoreDbSizeFuncs.Count;
         }
@@ -178,7 +178,7 @@ namespace Garnet.server
                 protected override bool DeleteIfExpiredInMemory<TSourceLogRecord>(in TSourceLogRecord logRecord,
                     RecordMetadata recordMetadata)
                     => GarnetStatus.OK == storageSession.DELIFEXPIM(PinnedSpanByte.FromPinnedSpan(logRecord.Key),
-                        ref storageSession.unifiedStoreBasicContext);
+                        ref storageSession.unifiedBasicContext);
             }
 
             internal abstract class ExpiredKeysBase : IScanIteratorFunctions
