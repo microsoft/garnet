@@ -88,7 +88,7 @@ namespace Garnet.test.cluster
             var ex = Assert.Throws<RedisServerException>(() => server.Execute("cluster", args),
                 "Cluster forget call shouldn't have succeeded for an invalid node id.");
 
-            Assert.That(ex.Message == "ERR I don't know about node 1ip23j89123no.");
+            Assert.That(ex.Message, Is.EqualTo("ERR I don't know about node 1ip23j89123no."));
 
             nodesResult = context.clusterTestUtils.ClusterNodes(0);
             Assert.That(nodesResult.Nodes.Count == nbInstances, "No node should've been removed from the cluster after an invalid id was passed.");
