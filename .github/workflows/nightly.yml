@@ -245,6 +245,7 @@ jobs:
         with:
           name: allure-history
           path: test/Allure/CombinedResults/history
+        continue-on-error: true
         if: ${{ always() }}
 
       - name: Run GenerateAllureReport.ps1
