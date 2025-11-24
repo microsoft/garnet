@@ -9,7 +9,7 @@ env:
   DOTNET_NOLOGO: true
 
 permissions:
-  contents: read
+  contents: write  
   
 jobs:
   build-test-all:
@@ -49,6 +49,8 @@ jobs:
 
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Set workaround for libaio on Ubuntu 24.04 (see https://askubuntu.com/questions/1512196/libaio1-on-noble/1512197#1512197)
         run: |
@@ -85,6 +87,7 @@ jobs:
 #  DEBUG DEBUG        run: dotnet format --verify-no-changes --verbosity diagnostic
 #  DEBUG DEBUG        continue-on-error: true
 
+#  DEBUG DEBUG - for perf issuese when debugging, comment out this
 #  DEBUG DEBUG      - name: Build Tsavorite.test
 #  DEBUG DEBUG        if: ${{ matrix.test == 'Tsavorite.test' }}
 #  DEBUG DEBUG        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
@@ -174,6 +177,7 @@ jobs:
         with:
           ref: allure_data_history
           path: history-branch
+          persist-credentials: true
 
       - name: Copy history from allure_data_history branch into CombinedResults
         shell: pwsh
@@ -181,15 +185,24 @@ jobs:
           $source = "${{ github.workspace }}/history-branch/test/allure/history"
           $target = "${{ github.workspace }}/test/Allure/CombinedResults/history"
           if (Test-Path $source) {
-            New-Item -ItemType Directory -Path $target -Force
-            Copy-Item -Path $source -Destination $target -Recurse -Force
-            Write-Host "History copied from branch into CombinedResults"
+          New-Item -ItemType Directory -Path $target -Force
+          Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
+          Write-Host "History copied from branch into CombinedResults"
           } else {
-            Write-Host "No history found in branch, starting fresh"
+              Write-Host "No history found in branch, starting fresh"
           }
+
+      - name: DEBUG DEBUG List contents of test/allure/CombinedResults/history after copying from branch
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/CombinedResults/history"
+          Get-ChildItem -Path $target -Recurse          
+        if: ${{ always() }}
 
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Install Allure CLI
         shell: pwsh
@@ -241,6 +254,13 @@ jobs:
           Get-ChildItem -Path $target -Recurse
         if: ${{ always() }}
 
+      - name: DEBUG DEBUG List contents of test/allure/CombinedResults/history BEFORE Copy results
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/CombinedResults/history"
+          Get-ChildItem -Path $target -Recurse          
+        if: ${{ always() }}
+
       - name: Copy all results into one folder (CombinedResults)
         shell: pwsh
         run: |
@@ -256,6 +276,13 @@ jobs:
         shell: pwsh
         run: |
           $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/CombinedResults"
+          Get-ChildItem -Path $target -Recurse          
+        if: ${{ always() }}
+
+      - name: DEBUG DEBUG List contents of test/allure/CombinedResults/history BEFORE Copy results
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/CombinedResults/history"
           Get-ChildItem -Path $target -Recurse          
         if: ${{ always() }}
 
