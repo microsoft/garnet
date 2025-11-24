@@ -1038,7 +1038,7 @@ namespace Garnet.cluster
                     if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
                         continue;
                 }
-                else // Possibly multiple replicas may enter this but only the old primary should succeed in the event of a planned failover.
+                else if (currentOwnerId != RESERVED_WORKER_ID) // Possibly multiple replicas may enter this but only the old primary should succeed in the event of a planned failover.
                 {
                     // This should guarantee that only the old primary should proceed with re-assigning the slots to the replica that is taking over
                     // Scenario 4 nodes A,B,C,D for which B,C are replicas of A and B takes over from A,

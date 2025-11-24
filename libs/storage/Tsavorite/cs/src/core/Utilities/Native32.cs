@@ -82,6 +82,15 @@ namespace Tsavorite.core
             public uint ByteOffsetForPartitionAlignment;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        public unsafe struct OVERLAPPED_ENTRY
+        {
+            public UIntPtr lpCompletionKey;
+            public NativeOverlapped* lpOverlapped;
+            public uint Internal; // This is the NTSTATUS code
+            public UIntPtr dwNumberOfBytesTransferred;
+        }
+
         #endregion
 
         #region io constants and flags
@@ -139,6 +148,15 @@ namespace Tsavorite.core
             [Out] out IntPtr lpCompletionKey,
             [Out] out NativeOverlapped* lpOverlapped,
             [In] UInt32 dwMilliseconds);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern bool GetQueuedCompletionStatusEx(
+            [In] IntPtr hCompletionPort,
+            [In] OVERLAPPED_ENTRY* lpCompletionPortEntries,
+            [In] uint ulCount,
+            [Out] out uint ulNumEntriesRemoved,
+            [In] uint dwMilliseconds,
+            [In] bool fAlertable);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern bool GetFileSizeEx(
@@ -416,6 +434,9 @@ namespace Tsavorite.core
         {
             return unchecked(((int)0x80070000) | errorCode);
         }
+
+        [DllImport("ntdll.dll")]
+        internal static extern uint RtlNtStatusToDosError(uint NtStatus);
         #endregion
     }
 }

@@ -364,7 +364,7 @@ namespace Resp.benchmark
             else
                 key = Start + keyIndex++;
 
-            keyData = Encoding.ASCII.GetBytes(key.ToString().PadLeft(keyLen, numericValue ? '0' : 'X'));
+            keyData = Encoding.ASCII.GetBytes(key.ToString().PadLeft(keyLen, numericValue ? '1' : 'X'));
             return WriteStringBytes(ref curr, vend, keyData);
         }
 

@@ -45,22 +45,6 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        private GarnetServerTestProcess CreateServerWithEnvironmentVariables(string environment)
-        {
-            var parts = environment.Split('=', 2);
-            if (parts.Length == 2)
-            {
-                Dictionary<string, string> envVars = [];
-                envVars.Add(parts[0], parts[1]);
-
-                return new GarnetServerTestProcess(envVars);
-            }
-            else
-            {
-                return new GarnetServerTestProcess();
-            }
-        }
-
         private long LongRandom() => r.NextInt64(long.MinValue, long.MaxValue);
 
         private ulong ULongRandom() => (ulong)LongRandom();
@@ -270,29 +254,39 @@ namespace Garnet.test
 
         [Test, Order(6)]
         [Category("BITCOUNT")]
-        [TestCase("DOTNET_EnableAVX2=0")]
-        [TestCase("DOTNET_EnableHWIntrinsic=1")]
-        [TestCase("DOTNET_EnableHWIntrinsic=0")]
-        public void BitmapSimpleBitCountTest(string environment)
+        [TestCase("DOTNET_EnableAVX2", "0")]
+        [TestCase("DOTNET_EnableHWIntrinsic", "1")]
+        [TestCase("DOTNET_EnableHWIntrinsic", "0")]
+        public void BitmapSimpleBitCountTest(string arg, string val)
         {
-            using var server = CreateServerWithEnvironmentVariables(environment);
-            using var redis = ConnectionMultiplexer.Connect(server.Options);
-
-            var db = redis.GetDatabase(0);
-            var maxBitmapLen = 1 << 12;
-            var iter = 1024;
-            var expectedCount = 0;
-            var key = "SimpleBitCountTest";
-
-            for (var i = 0; i < iter; i++)
+            using var server = new GarnetServerTestProcess(new() { [arg] = val });
+            try
             {
-                var offset = r.Next(1, maxBitmapLen);
-                var set = !db.StringSetBit(key, offset, true);
-                expectedCount += set ? 1 : 0;
-            }
 
-            var count = db.StringBitCount(key);
-            ClassicAssert.AreEqual(expectedCount, count);
+                using var redis = ConnectionMultiplexer.Connect(server.Options);
+
+                var db = redis.GetDatabase(0);
+                var maxBitmapLen = 1 << 12;
+                var iter = 1024;
+                var expectedCount = 0;
+                var key = "SimpleBitCountTest";
+
+                for (var i = 0; i < iter; i++)
+                {
+                    var offset = r.Next(1, maxBitmapLen);
+                    var set = !db.StringSetBit(key, offset, true);
+                    expectedCount += set ? 1 : 0;
+                }
+
+                var count = db.StringBitCount(key);
+                ClassicAssert.AreEqual(expectedCount, count);
+            }
+            catch
+            {
+                server.RecordTestOutput();
+
+                throw;
+            }
         }
 
         private static int Index(long offset) => (int)(offset >> 3);
@@ -828,13 +822,28 @@ namespace Garnet.test
         [Test]
         [Category("BITOP")]
         public void BitOp_Binary_SameSize(
-            [Values("DOTNET_EnableHWIntrinsic=1", "DOTNET_PreferredVectorBitWidth=128", "DOTNET_EnableHWIntrinsic=0")] string environment,
+            [Values(new[] { "DOTNET_EnableHWIntrinsic", "1" }, new[] { "DOTNET_PreferredVectorBitWidth", "128" }, new[] { "DOTNET_EnableHWIntrinsic", "0" })] string[] environment,
             [Values(Bitwise.And, Bitwise.Or, Bitwise.Xor, Bitwise.Diff)] Bitwise op,
             [Values(512 + 32 + 3)] int bitmapSize,
             [Values(2, 3, 4)] int keys)
         {
-            using var server = CreateServerWithEnvironmentVariables(environment);
-            BitOp_Binary_SameSize(server.Options, op, bitmapSize, keys);
+            Dictionary<string, string> args = [];
+            for (var i = 0; i < environment.Length; i += 2)
+            {
+                args[environment[i]] = environment[i + 1];
+            }
+
+            using var server = new GarnetServerTestProcess(args);
+            try
+            {
+                BitOp_Binary_SameSize(server.Options, op, bitmapSize, keys);
+            }
+            catch
+            {
+                server.RecordTestOutput();
+
+                throw;
+            }
         }
 
         [Test]
