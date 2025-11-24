@@ -1560,7 +1560,6 @@ namespace Garnet.server
                 respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.consistentReadContext,
                 dbStorageSession.objectStoreConsistentReadContext, dbStorageSession.unifiedStoreConsistentReadContext);
-            // TODO: create consistent read transactional context and pass it to the Transactional API
             var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession,
                 dbStorageSession.transactionalConsistentReadContext, dbStorageSession.objectStoreTransactionalConsistentReadContext,
                 dbStorageSession.unifiedStoreTransactionalConsistentReadContext);

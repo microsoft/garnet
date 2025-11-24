@@ -107,6 +107,11 @@ namespace Garnet.server
             _ = Interlocked.CompareExchange(ref seqNumGen, newSeqNumGen, seqNumGen);
         }
 
+        /// <summary>
+        /// Set log shift tail callbacks
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="SafeTailShiftCallback"></param>
         public void SetLogShiftTailCallback(int sublogIdx, Action<long, long> SafeTailShiftCallback)
             => Log.GetSubLog(sublogIdx).SafeTailShiftCallback = SafeTailShiftCallback;
 

@@ -23,6 +23,7 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(16)]
         public long sequenceNumber;
+
         /// <summary>
         /// Used for synchronizing sublog replay
         /// </summary>
@@ -52,7 +53,7 @@ namespace Garnet.server
         /// Throws exception if AofHeader is not of AofExtendedType
         /// </summary>
         /// <exception cref="GarnetException"></exception>
-        public void ThrowIfNotExtendedHeader()
+        public readonly void ThrowIfNotExtendedHeader()
         {
             if (!IsExtendedHeader)
                 throw new GarnetException("AofHeader not of AofExtendedHeader type!");

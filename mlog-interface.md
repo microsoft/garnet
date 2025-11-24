@@ -37,13 +37,13 @@ Hence, we update the maximum session sequence number after the actual read to en
 This is enforced for the following operations
 
 <ul><ul>
-- [ ] Basic context operations
+- [X] Basic context operations
 </ul></ul> 
 <ul><ul>
 - [ ] Scan operations
 </ul></ul> 
 <ul><ul>
-- [ ] Transaction operations
+- [X] Transaction operations
 </ul></ul> 
 
 The read protocol is implemented using the following
@@ -57,12 +57,22 @@ The main idea is to maintain two database sessions per RespServerSession instanc
 Replicas will use the ConsistentReadDatabaseSession to server consistent reads when sharded-log based AOF is enabled in cluster modes.
 We require two distinct database sessions to allow any given node to switch back and forth between being a primary and a replica.
 The primaries avoid evaluation of the consistent read protocol completely through this approach.
+
+NOTES: 
+1. The database session switch happens when the node transitions from primary to replica and vice versa.
+This will happen at CLUSTER REPLICATE, REPLICAOF or CLUSTER FAILOVER
+
+2. If the read goes pending the update happens after the complete pending completes.
+This should guarantee prefix consistency even in the scatter-gather case.
+This realies on the assumption that the read returns the unaltered disk value from the immutable region,
+otherwise an RMW from the replay thread could interject an newer value which is not consistent according to the protocol.
+Good thing is that this is what currently happens on the complete pending callback (Need to actually verify).
+
 </ul></ul> 
 
-- [ ] Re-design tail witness to be more robust
-- [ ] Think about subtask parallel replay 
+- [ ] Re-design tail witness to avoid using enqueue.
+- [ ] Think about subtask parallel replay
 
-NOTES:
 - [ ] Role command does not work as expected with SE Redis.
 <ul><ul>
   Message: 
