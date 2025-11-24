@@ -852,7 +852,7 @@ namespace Garnet.server
         #region ListPop Methods
 
         /// <summary>
-        /// ListLeftPop ArgSlice version, with GarnetObjectStoreOuput
+        /// ListLeftPop ArgSlice version, with ObjectOutput
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>

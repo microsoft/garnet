@@ -58,7 +58,7 @@ namespace Garnet.server
         /// <summary>
         /// Basic context for object store
         /// </summary>
-        readonly BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreBasicContext;
+        readonly BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectBasicContext;
 
         /// <summary>
         /// Transactional context for object store
@@ -68,7 +68,7 @@ namespace Garnet.server
         /// <summary>
         /// Basic context for unified store
         /// </summary>
-        readonly BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreBasicContext;
+        readonly BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedBasicContext;
 
         /// <summary>
         /// Transactional context for unified store
@@ -133,13 +133,13 @@ namespace Garnet.server
 
             if (!storeWrapper.serverOptions.DisableObjects)
             {
-                var objectStoreSession = storageSession.objectBasicContext.Session;
-                objectStoreBasicContext = objectStoreSession.BasicContext;
-                objectTransactionalContext = objectStoreSession.TransactionalContext;
+                var objectSession = storageSession.objectBasicContext.Session;
+                objectBasicContext = objectSession.BasicContext;
+                objectTransactionalContext = objectSession.TransactionalContext;
             }
 
             var unifiedStoreSession = storageSession.unifiedBasicContext.Session;
-            unifiedStoreBasicContext = unifiedStoreSession.BasicContext;
+            unifiedBasicContext = unifiedStoreSession.BasicContext;
             unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
 
             this.functionsState = storageSession.functionsState;
@@ -180,7 +180,7 @@ namespace Garnet.server
                     // Release contexts
                     if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
                         stringTransactionalContext.EndTransaction();
-                    if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectStoreBasicContext.IsNull)
+                    if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
                         objectTransactionalContext.EndTransaction();
                     unifiedTransactionalContext.EndTransaction();
                 }
@@ -311,7 +311,7 @@ namespace Garnet.server
             // Release context
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
                 stringTransactionalContext.ResetModified(key.ReadOnlySpan);
-            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectStoreBasicContext.IsNull)
+            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
                 objectTransactionalContext.ResetModified(key.ReadOnlySpan);
             unifiedTransactionalContext.ResetModified(key.ReadOnlySpan);
         }
@@ -349,7 +349,7 @@ namespace Garnet.server
         {
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
                 stringTransactionalContext.BeginTransaction();
-            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectStoreBasicContext.IsNull)
+            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
                 objectTransactionalContext.BeginTransaction();
             unifiedTransactionalContext.BeginTransaction();
         }
@@ -358,7 +358,7 @@ namespace Garnet.server
         {
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
                 stringTransactionalContext.LocksAcquired(txnVersion);
-            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectStoreBasicContext.IsNull)
+            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
                 objectTransactionalContext.LocksAcquired(txnVersion);
             unifiedTransactionalContext.LocksAcquired(txnVersion);
         }

@@ -258,7 +258,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZSCORE };
             var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: respProtocolVersion);
 
-            // Prepare GarnetObjectStore output
+            // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetScore(key, ref input, ref output);
@@ -303,7 +303,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZMSCORE };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            // Prepare GarnetObjectStore output
+            // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetScores(key, ref input, ref output);
@@ -652,7 +652,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZINCRBY };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            // Prepare GarnetObjectStore output
+            // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetIncrement(key, ref input, ref output);
@@ -717,7 +717,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
             var input = new ObjectInput(header, ref parseState, startIdx: 1, arg1: includeWithScore ? 1 : 0);
 
-            // Prepare GarnetObjectStore output
+            // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetRank(key, ref input, ref output);
@@ -771,7 +771,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            // Prepare GarnetObjectStore output
+            // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetRemoveRange(key, ref input, ref output);
@@ -854,7 +854,7 @@ namespace Garnet.server
             // This prevents going to the backend if ZRANDMEMBER is called with a count of 0
             if (paramCount != 0)
             {
-                // Prepare GarnetObjectStore output
+                // Prepare output
                 output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
                 status = storageApi.SortedSetRandomMember(key, ref input, ref output);
             }
