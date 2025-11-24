@@ -43,7 +43,7 @@ jobs:
               Write-Host "Unsupported OS: $env:RUNNER_OS"
               exit 1
             }
-      - name: DEBUG Verify Allure installation
+      - name: DEBUG DEBUG Verify Allure installation
         run: allure --version
         shell: pwsh
 
@@ -117,7 +117,7 @@ jobs:
           path: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
         if: ${{ always() }}
 
-      - name: DEBUG Debug path existence using matrix variables
+      - name: DEBUG DEBUG path existence using matrix variables
         shell: pwsh
         run: |
           $source = "${{ github.workspace }}/test/Allure/TestData/${{ matrix.framework }}/allure-results"
@@ -129,7 +129,7 @@ jobs:
           }
         if: ${{ always() }}
 
-      - name: DEBUG Check if allure-results exists
+      - name: DEBUG DEBUG Check if allure-results exists
         shell: pwsh
         run: |
           $base = $env:GITHUB_WORKSPACE
@@ -139,7 +139,7 @@ jobs:
           }
         if: ${{ always() }}
 
-      - name: DEBUG Verify allure-results were copied
+      - name: DEBUG DEBUG Verify allure-results were copied
         shell: pwsh
         run: |
           $dest = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
@@ -169,6 +169,25 @@ jobs:
     needs: [ build-test-all ]
     if: ${{ always() }}
     steps:
+      - name: Checkout allure_data_history branch
+        uses: actions/checkout@v4
+        with:
+          ref: allure_data_history
+          path: history-branch
+
+      - name: Copy history from allure_data_history branch into CombinedResults
+        shell: pwsh
+        run: |
+          $source = "${{ github.workspace }}/history-branch/test/allure/history"
+          $target = "${{ github.workspace }}/test/Allure/CombinedResults/history"
+          if (Test-Path $source) {
+            New-Item -ItemType Directory -Path $target -Force
+            Copy-Item -Path $source -Destination $target -Recurse -Force
+            Write-Host "History copied from branch into CombinedResults"
+          } else {
+            Write-Host "No history found in branch, starting fresh"
+          }
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -196,7 +215,7 @@ jobs:
           path: test/Allure/AllResults
         if: ${{ always() }}
 
-      - name: DEBUG Show working directory and contents
+      - name: DEBUG DEBUGShow working directory and contents
         shell: pwsh
         run: |
           $cwd = Get-Location
@@ -204,7 +223,7 @@ jobs:
           Get-ChildItem -Force
         if: ${{ always() }}
 
-      - name: DEBUG Check if GenerateAllureReport.ps1 exists
+      - name: DEBUG DEBUGCheck if GenerateAllureReport.ps1 exists
         shell: pwsh
         run: |
           $scriptPath = Join-Path $env:GITHUB_WORKSPACE "test/Allure/GenerateAllureReport.ps1"
@@ -215,7 +234,7 @@ jobs:
           }
         if: ${{ always() }}
 
-      - name: DEBUG List contents of test/allure/AllResults
+      - name: DEBUG DEBUGList contents of test/allure/AllResults
         shell: pwsh
         run: |
           $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/AllResults"
@@ -233,19 +252,11 @@ jobs:
           }          
         if: ${{ always() }}
 
-      - name: DEBUG List contents of test/allure/CombinedResults
+      - name: DEBUG DEBUG List contents of test/allure/CombinedResults
         shell: pwsh
         run: |
           $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/CombinedResults"
           Get-ChildItem -Path $target -Recurse          
-        if: ${{ always() }}
-
-      - name: Download Allure history from previous runs
-        uses: actions/download-artifact@v4
-        with:
-          name: allure-history
-          path: test/Allure/CombinedResults/history
-        continue-on-error: true
         if: ${{ always() }}
 
       - name: Run GenerateAllureReport.ps1
@@ -255,12 +266,27 @@ jobs:
           .\GenerateAllureReport.ps1
         if: ${{ always() }}
 
-      - name: Upload Allure history so can be used in next run
+      - name: DEBUG DEBUG Upload Allure history to artifacts so can use for debugging
         uses: actions/upload-artifact@v4
         with:
           name: allure-history
           path: test/Allure/allure-report/history
         if: ${{ always() }}
+
+      - name: Commit updated history to allure_data_history
+        shell: pwsh
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin allure_data_history
+          git checkout allure_data_history
+          $source = "${{ github.workspace }}/test/Allure/allure-report/history"
+          $target = "${{ github.workspace }}/test/allure/history"
+          Remove-Item -Recurse -Force $target -ErrorAction SilentlyContinue
+          Copy-Item -Path $source -Destination $target -Recurse -Force
+          git add test/allure/history
+          git commit -m "Update Allure history [CI]"
+          git push origin allure_data_history
 
       - name: Upload Allure HTML report
         uses: actions/upload-artifact@v4

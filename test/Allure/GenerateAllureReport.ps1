@@ -6,7 +6,7 @@
 
     It is getting the data from the test/Allure/CombinedResults directory and generating the report into the test/Allure/allure-report directory.
 
-    NOTE: Preserving history between runs is handled in the GitHub Actions workflow by downloading and uploading the history folder as an artifact.
+    NOTE: Preserving history between runs is handled in the GitHub Actions workflow by downloading and uploading the history folder to allure_data_history branch.
 #>
 
 $OFS = "`r`n"
