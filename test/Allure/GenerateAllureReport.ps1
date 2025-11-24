@@ -5,6 +5,8 @@
     This script is called after all the Allure data is merged into one location and generates the Allure report.
 
     It is getting the data from the test/Allure/CombinedResults directory and generating the report into the test/Allure/allure-report directory.
+
+    NOTE: Preserving history between runs is handled in the GitHub Actions workflow by downloading and uploading the history folder as an artifact.
 #>
 
 $OFS = "`r`n"
@@ -32,23 +34,6 @@ if (-not (Test-Path -Path $allureResultsCombinedDir)) {
 Write-Host "Copying categories.json to $allureResultsCombinedDir"
 Copy-Item -Path "$basePath/test/Allure/categories.json" -Destination "$allureResultsCombinedDir/categories.json"
 
-# Load history from previous run (stored in another branch)
-#$historyBranch = "refs/heads/history"   
-#Write-Host "Fetching history branch: $historyBranch"
-#git fetch origin $historyBranch:$historyBranch      
-
-# Copy the history folder to CombinedResults - this is where history of tests all store
-Write-Host "Copying history to $allureResultsCombinedDir"
-$historySourceDir = "$basePath/test/Allure/history"
-$historyDestDir = "$allureResultsCombinedDir"
-if (Test-Path $historySourceDir) {
-    Copy-Item -Path $historySourceDir -Destination $historyDestDir -Force -Recurse
-    Write-Host "Copied history into CombinedResults"
-}   
-else {
-    Write-Host "No history directory found at $historySourceDir, so not copying history."
-}
-
 # Generate the report
 Write-Host "Generate the Allure report from $allureResultsCombinedDir"
 allure generate CombinedResults -o allure-report --clean
@@ -69,39 +54,6 @@ else {
 # Get-ChildItem -Path $allureResultsCombinedDir -Filter *.json |
 #    Where-Object { $_.Name -ne 'categories.json' } |
 #    Remove-Item
-
-# Copy the history folder from .\test\Allure\allure-report to .\test\Allure
-$newHistoryDir = "$basePath/test/Allure/allure-report/history"
-$persistedHistoryDir = "$basePath/test/Allure"
-if (Test-Path $newHistoryDir) {
-    Copy-Item -Path $newHistoryDir -Destination $persistedHistoryDir -Recurse -Force
-    Write-Host "Saved updated history for next run from $newHistoryDir to $persistedHistoryDir"
-}
-else {
-    Write-Host "No history directory found at $newHistoryDir, so not copying history."
-}
-
-# TO DO:  At some point, need to actually push history back to the current branch ... not sure how do this yet
-# From CoPilot:
-# Set Git identity
-# DEBUG git config --global user.name "github-actions"
-# DEBUG git config --global user.email "actions@github.com"
-
-# Stage updated history files
-# DEBUG $historyPath = "$basePath/test/Allure/history"
-# DEBUG git add $historyPath/*.json
-
-# Commit if there are changes
-# DEBUG if (git diff --cached --quiet) {
-# DEBUG     Write-Host "No changes to commit."
-# DEBUG } else {
-# DEBUG     git commit -m "Update Allure history [CI]"
-    # Push using GitHub token
-# DEBUG     $token = $env:GITHUB_TOKEN
-# DEBUG     $repo = $env:GITHUB_REPOSITORY
-# DEBUG     $url = "https://x-access-token:$token@github.com/$repo.git"
-# DEBUG     git push $url HEAD:${env:GITHUB_REF}
-# DEBUG }
 
 Write-Output "************************"
 Write-Output "**"
