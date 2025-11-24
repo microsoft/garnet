@@ -505,7 +505,7 @@ namespace Garnet.server
         }
 
         static void UnifiedStoreStringUpsert(BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> basicContext,
-            UnifiedInput input, byte* ptr, byte* outputPtr, int outputLength)
+            UnifiedInput unifiedInput, byte* ptr, byte* outputPtr, int outputLength)
         {
             var curr = ptr + sizeof(AofHeader);
             var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
@@ -517,10 +517,10 @@ namespace Garnet.server
             // Reconstructing UnifiedInput
 
             // input
-            _ = input.DeserializeFrom(curr);
+            _ = unifiedInput.DeserializeFrom(curr);
 
             var output = UnifiedOutput.FromPinnedPointer(outputPtr, outputLength);
-            basicContext.Upsert(key.ReadOnlySpan, ref input, value.ReadOnlySpan, ref output);
+            basicContext.Upsert(key.ReadOnlySpan, ref unifiedInput, value.ReadOnlySpan, ref output);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Memory.Dispose();
         }
