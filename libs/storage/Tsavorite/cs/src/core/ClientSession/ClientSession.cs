@@ -31,6 +31,7 @@ namespace Tsavorite.core
         readonly TransactionalContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> lContext;
         readonly BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> bContext;
         readonly ConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> crContext;
+        readonly TransactionalConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> tcrContext;
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
@@ -94,6 +95,7 @@ namespace Tsavorite.core
             lContext = new(this);
             luContext = new(this);
             crContext = new(this);
+            tcrContext = new(this);
 
             this.loggerFactory = loggerFactory;
             logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");
@@ -146,9 +148,14 @@ namespace Tsavorite.core
         public BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> BasicContext => bContext;
 
         /// <summary>
-        /// Return the consistent read contex;
+        /// Return the consistent read context;
         /// </summary>
         public ConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> ConsistentReadContext => crContext;
+
+        /// <summary>
+        /// Return the transactional consistent read context
+        /// </summary>
+        public TransactionalConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalConsistentReadContext => tcrContext;
 
         #region ITsavoriteContext
 

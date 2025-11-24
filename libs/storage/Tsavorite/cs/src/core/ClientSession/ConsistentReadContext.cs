@@ -20,7 +20,7 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Consistent Read Context that extends BasicContext functionality with consistent read protocols.
+    /// Consistent read context that extends basicContext functionality with consistent read protocols.
     /// </summary>
     public readonly struct ConsistentReadContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
         : ITsavoriteContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>
@@ -44,7 +44,7 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public long GetKeyHash(ReadOnlySpan<byte> key) => basicContext.GetKeyHash(key);
 
-        #region Read Methods - Override with Consistent Read Logic
+        #region ITsavoriteContext/Read
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -66,22 +66,36 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ReadOnlySpan<byte> key, ref TOutput output, TContext userContext = default)
-            => Read(key, ref output, userContext);
+        {
+            TInput input = default;
+            return Read(key, ref input, ref output, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ReadOnlySpan<byte> key, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
-            => Read(key, ref output, ref readOptions, userContext);
+        {
+            TInput input = default;
+            return Read(key, ref input, ref output, ref readOptions, userContext);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, TContext userContext = default)
-            => Read(key, userContext);
+        {
+            TInput input = default;
+            TOutput output = default;
+            return (Read(key, ref input, ref output, userContext), output);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (Status status, TOutput output) Read(ReadOnlySpan<byte> key, ref ReadOptions readOptions, TContext userContext = default)
-            => Read(key, ref readOptions, userContext);
+        {
+            TInput input = default;
+            TOutput output = default;
+            return (Read(key, ref input, ref output, ref readOptions, userContext), output);
+        }
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -98,16 +112,16 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            => basicContext.ReadAtAddress(address, ref input, ref output, ref readOptions, out recordMetadata, userContext);
+            => throw new TsavoriteException("Consistent read context does not allow reads from address!");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
-            => basicContext.ReadAtAddress(address, key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
+            => throw new TsavoriteException("Consistent read context does not allow reads from address!");
 
         #endregion
 
-        #region Delegate All Other Operations to BasicContext
+        #region ITsavoriteContext
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
@@ -120,15 +134,29 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-            => basicContext.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
+        {
+            var callbacks = Session.functions.GetContextCallbacks();
+            var status = basicContext.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
+            callbacks.consistentReadKeyUpdateCallback.Invoke();
+            return status;
+        }
 
         /// <inheritdoc/>
-        public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
-            => basicContext.CompletePendingAsync(waitForCommit, token);
+        public async ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
+        {
+            var callbacks = Session.functions.GetContextCallbacks();
+            await basicContext.CompletePendingAsync(waitForCommit, token);
+            callbacks.consistentReadKeyUpdateCallback.Invoke();
+        }
 
         /// <inheritdoc/>
-        public ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
-            => basicContext.CompletePendingWithOutputsAsync(waitForCommit, token);
+        public async ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
+        {
+            var callbacks = Session.functions.GetContextCallbacks();
+            var status = basicContext.CompletePendingWithOutputsAsync(waitForCommit, token);
+            callbacks.consistentReadKeyUpdateCallback.Invoke();
+            return await status;
+        }
 
         /// <inheritdoc/>
         public Status Upsert(ReadOnlySpan<byte> key, ReadOnlySpan<byte> desiredValue, TContext userContext = default)
@@ -224,11 +252,11 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public void ResetModified(ReadOnlySpan<byte> key)
-            => basicContext.ResetModified(key);
+            => throw new TsavoriteException("Consistent read context does not reset ResetModified!");
 
         /// <inheritdoc/>
         public void Refresh()
-            => basicContext.Refresh();
+            => throw new TsavoriteException("Consistent read context does not reset Refresh!");
 
         #endregion
     }

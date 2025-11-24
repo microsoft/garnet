@@ -44,6 +44,12 @@ namespace Garnet.server
             readonly ConcurrentDictionary<int, EventBarrier> eventBarriers = [];
             readonly AofProcessor aofProcessor = aofProcessor;
             readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(aofProcessor.storeWrapper.serverOptions.AofSublogCount);
+
+            /// <summary>
+            /// Replay context for replay subtask
+            /// </summary>
+            /// <param name="sublogIdx"></param>
+            /// <returns></returns>
             public AofReplayContext GetReplayContext(int sublogIdx) => aofReplayContext[sublogIdx];
             readonly ILogger logger = logger;
 

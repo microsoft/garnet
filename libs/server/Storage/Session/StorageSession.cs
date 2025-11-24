@@ -26,6 +26,7 @@ namespace Garnet.server
         public BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> basicContext;
         public TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalContext;
         public ConsistentReadContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> consistentReadContext;
+        public TransactionalConsistentReadContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalConsistentReadContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll1;
         SectorAlignedMemory sectorAlignedMemoryHll2;
@@ -39,7 +40,8 @@ namespace Garnet.server
         /// </summary>
         public BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreBasicContext;
         public TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext;
-        public ConsistentReadContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectConsistentReadContext;
+        public ConsistentReadContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreConsistentReadContext;
+        public TransactionalConsistentReadContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalConsistentReadContext;
 
         /// <summary>
         /// Session Contexts for unified store
@@ -47,6 +49,7 @@ namespace Garnet.server
         public BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreBasicContext;
         public TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext;
         public ConsistentReadContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreConsistentReadContext;
+        public TransactionalConsistentReadContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalConsistentReadContext;
 
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
@@ -97,12 +100,17 @@ namespace Garnet.server
             basicContext = session.BasicContext;
             transactionalContext = session.TransactionalContext;
             consistentReadContext = session.ConsistentReadContext;
+            transactionalConsistentReadContext = session.TransactionalConsistentReadContext;
+
             objectStoreBasicContext = objectStoreSession.BasicContext;
             objectStoreTransactionalContext = objectStoreSession.TransactionalContext;
-            objectConsistentReadContext = objectStoreSession.ConsistentReadContext;
+            objectStoreConsistentReadContext = objectStoreSession.ConsistentReadContext;
+            objectStoreTransactionalConsistentReadContext = objectStoreSession.TransactionalConsistentReadContext;
+
             unifiedStoreBasicContext = unifiedStoreSession.BasicContext;
             unifiedStoreTransactionalContext = unifiedStoreSession.TransactionalContext;
             unifiedStoreConsistentReadContext = unifiedStoreSession.ConsistentReadContext;
+            unifiedStoreTransactionalConsistentReadContext = unifiedStoreSession.TransactionalConsistentReadContext;
 
             HeadAddress = db.Store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
