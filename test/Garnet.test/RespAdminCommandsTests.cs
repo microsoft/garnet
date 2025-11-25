@@ -643,8 +643,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var ex = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG"),
-                    "Shouldn't be reachable, command is incorrect");
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG"));
             var expectedMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
                 $"{nameof(RespCommand.CONFIG)}");
             ClassicAssert.AreEqual(expectedMessage, ex.Message);
@@ -655,8 +654,7 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            var ex = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "GET"),
-                "Shouldn't be reachable, command is incorrect");
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "GET"));
             var expectedMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
                 $"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.GET)}"));
             ClassicAssert.AreEqual(expectedMessage, ex.Message);

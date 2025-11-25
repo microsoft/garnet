@@ -285,7 +285,7 @@ namespace Garnet.test.cluster
                 {
                     AssertSlotsNotAssigned(requestNodeIndex);
                     var ex = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest()),
-                        $"Should not reach here. Command: {command.Command} \n{ClusterState()}");
+                        $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                     ClassicAssert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
                 }
 
@@ -294,7 +294,7 @@ namespace Garnet.test.cluster
                     var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
                     AssertSlotsNotAssigned(requestNodeIndex);
                     var ex = Assert.Throws<Exception>(() => client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult(),
-                        $"Should not reach here. Command: {command.Command} \n{ClusterState()}");
+                        $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                     ClassicAssert.AreEqual("CLUSTERDOWN Hash slot not served", ex.Message, command.Command);
                 }
             }
@@ -378,7 +378,7 @@ namespace Garnet.test.cluster
                     if (!command.IsArrayCommand)
                         return;
                     var ex = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetCrossSlotRequest()),
-                        $"Should not reach here. Command: {command.Command} \n{ClusterState()}");
+                        $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                     ClassicAssert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
                 }
 
@@ -388,7 +388,7 @@ namespace Garnet.test.cluster
                         return;
                     var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
                     var ex = Assert.Throws<Exception>(() => client.ExecuteAsync(command.GetCrossslotRequestWithCommand).GetAwaiter().GetResult(),
-                        $"Should not reach here. Command: {command.Command} \n{ClusterState()}");
+                        $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                     ClassicAssert.AreEqual("CROSSSLOT Keys in request do not hash to the same slot", ex.Message, command.Command);
                 }
             }
@@ -415,7 +415,7 @@ namespace Garnet.test.cluster
                 void SERedisMOVEDTest(BaseCommand command)
                 {
                     var ex = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect),
-                        $"Should not reach here. Command: {command.Command} \n{ClusterState()}");
+                        $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                     ClassicAssert.IsTrue(ex.Message.StartsWith("Key has MOVED"), command.Command);
                     var tokens = ex.Message.Split(' ');
                     ClassicAssert.IsTrue(tokens.Length > 10 && tokens[2].Equals("MOVED"), command.Command);
@@ -432,7 +432,7 @@ namespace Garnet.test.cluster
                 {
                     var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
                     var ex = Assert.Throws<Exception>(() => client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult(),
-                        $"Should not reach here. Command: {command.Command} \n{ClusterState()}");
+                        $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                     ClassicAssert.AreEqual($"MOVED {command.GetSlot} {address}:{port}", ex.Message, command.Command);
                 }
             }
@@ -477,7 +477,7 @@ namespace Garnet.test.cluster
                 void SERedisASKTest(BaseCommand command)
                 {
                     var ex = Assert.Throws<RedisConnectionException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect),
-                        $"Should not reach here. Command: {command.Command} \n{ClusterState()}");
+                        $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                     var tokens = ex.Message.Split(' ');
                     ClassicAssert.IsTrue(tokens.Length > 10 && tokens[0].Equals("Endpoint"), command.Command + " => " + ex.Message);
 
@@ -493,7 +493,7 @@ namespace Garnet.test.cluster
                 {
                     var client = context.clusterTestUtils.GetGarnetClientSession(requestNodeIndex);
                     var ex = Assert.Throws<Exception>(() => client.ExecuteAsync(command.GetSingleSlotRequestWithCommand).GetAwaiter().GetResult(),
-                        $"Should not reach here. Command: {command.Command} \n{ClusterState()}");
+                        $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                     ClassicAssert.AreEqual($"ASK {command.GetSlot} {address}:{port}", ex.Message, command.Command);
                 }
             }
@@ -535,7 +535,7 @@ namespace Garnet.test.cluster
                     try
                     {
                         var ex = Assert.Throws<RedisServerException>(() => context.clusterTestUtils.GetServer(requestNodeIndex).Execute(command.Command, command.GetSingleSlotRequest(), CommandFlags.NoRedirect),
-                        $"Should not reach here. Command: {command.Command} \n{ClusterState()}");
+                        $"Expected exception was not thrown. Command: {command.Command} \n{ClusterState()}");
                         ClassicAssert.AreEqual("TRYAGAIN Multiple keys request during rehashing of slot", ex.Message, command.Command, $"\n{ClusterState()}");
                     }
                     finally
