@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using static Garnet.server.SessionFunctionsUtils;
 
 namespace Garnet.server
 {
@@ -98,7 +99,7 @@ namespace Garnet.server
                 return false;
             }
 
-            var isSuccessful = SessionFunctionsUtils.EvaluateExpire(ref logRecord, optionType, newExpiry, hasExpiration,
+            var isSuccessful = EvaluateExpire(ref logRecord, optionType, newExpiry, hasExpiration,
                 logErrorOnFail: true, functionsState.logger, out var expirationChanged);
 
             functionsState.CopyDefaultResp(
@@ -107,20 +108,20 @@ namespace Garnet.server
             return isSuccessful;
         }
 
-        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, bool hasExpiration, ref UnifiedOutput output)
+        IPUResult EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, bool hasExpiration, ref UnifiedOutput output)
         {
             Debug.Assert(output.SpanByteAndMemory.IsSpanByte, "This code assumes it is called in-place and did not go pending");
 
-            var isSuccessful = SessionFunctionsUtils.EvaluateExpire(ref logRecord, optionType, newExpiry, hasExpiration,
-                logErrorOnFail: false, functionsState.logger, out var expirationChanged);
+            if (!EvaluateExpire(ref logRecord, optionType, newExpiry, hasExpiration, logErrorOnFail: false, functionsState.logger, out var expirationChanged))
+                return IPUResult.Failed;
 
-            if (isSuccessful)
+            if (expirationChanged)
             {
-                functionsState.CopyDefaultResp(
-                    expirationChanged ? CmdStrings.RESP_RETURN_VAL_1 : CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
+                functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
+                return IPUResult.Succeeded;
             }
-
-            return isSuccessful;
+            functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
+            return IPUResult.NotUpdated;
         }
     }
 }

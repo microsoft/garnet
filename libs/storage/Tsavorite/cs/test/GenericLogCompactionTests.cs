@@ -46,7 +46,7 @@ namespace Tsavorite.test
             {
                 // For this class, deviceType is the only parameter. Using this to illustrate the approach; NUnit doesn't provide metadata for arguments,
                 // so for multi-parameter tests it is probably better to stay with the "separate SetUp method" approach.
-                var deviceType = (DeviceType)TestContext.CurrentContext.Test.Arguments[0];
+                var deviceType = (TestDeviceType)TestContext.CurrentContext.Test.Arguments[0];
 
                 log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"LogCompactBasicTest_{deviceType}.log"));
                 objlog = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"LogCompactBasicTest_{deviceType}.obj.log"));

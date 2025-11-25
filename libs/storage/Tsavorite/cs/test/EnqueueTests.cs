@@ -69,7 +69,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
+        public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType, [Values] TestUtils.TestDeviceType deviceType)
         {
 
             int entryLength = 20;
@@ -159,7 +159,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public async Task EnqueueAsyncBasicTest([Values] TestUtils.DeviceType deviceType)
+        public async Task EnqueueAsyncBasicTest([Values] TestUtils.TestDeviceType deviceType)
         {
 
             const int expectedEntryCount = 11;
@@ -168,7 +168,7 @@ namespace Tsavorite.test
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
 
-            if (OperatingSystem.IsWindows() && deviceType == TestUtils.DeviceType.EmulatedAzure)
+            if (OperatingSystem.IsWindows() && deviceType == TestUtils.TestDeviceType.EmulatedAzure)
                 return;
 
             CancellationToken cancellationToken = default;

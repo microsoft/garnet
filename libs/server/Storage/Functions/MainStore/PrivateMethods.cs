@@ -7,6 +7,7 @@ using System.Diagnostics;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using static Garnet.server.SessionFunctionsUtils;
 
 namespace Garnet.server
 {
@@ -297,15 +298,18 @@ namespace Garnet.server
             }
         }
 
-        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref SpanByteAndMemory output)
+        IPUResult EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref SpanByteAndMemory output)
         {
             var o = (OutputHeader*)output.SpanByte.ToPointer();
+            o->result1 = 0;
 
-            var isSuccessful = SessionFunctionsUtils.EvaluateExpire(ref logRecord, optionType, newExpiry, logRecord.Info.HasExpiration, logErrorOnFail: false,
-                functionsState.logger, out var expirationChanged);
+            if (!EvaluateExpire(ref logRecord, optionType, newExpiry, logRecord.Info.HasExpiration, logErrorOnFail: false, functionsState.logger, out var expirationChanged))
+                return IPUResult.Failed;
 
-            o->result1 = expirationChanged ? 1 : 0;
-            return isSuccessful;
+            if (!expirationChanged)
+                return IPUResult.NotUpdated;
+            o->result1 = 1;
+            return IPUResult.Succeeded;
         }
 
         bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, ReadOnlySpan<byte> newValue, ref SpanByteAndMemory output)
@@ -322,7 +326,7 @@ namespace Garnet.server
                 return false;
             }
 
-            var isSuccessful = SessionFunctionsUtils.EvaluateExpire(ref logRecord, optionType, newExpiry, hasExpiration, logErrorOnFail: true,
+            var isSuccessful = EvaluateExpire(ref logRecord, optionType, newExpiry, hasExpiration, logErrorOnFail: true,
                 functionsState.logger, out var expirationChanged);
 
             o->result1 = expirationChanged ? 1 : 0;

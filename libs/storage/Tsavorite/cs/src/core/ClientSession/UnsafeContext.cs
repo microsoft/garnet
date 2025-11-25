@@ -132,6 +132,18 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext)
+            where TBatch : IReadArgBatch<TInput, TOutput>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+        {
+            Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
+            clientSession.store.ContextReadWithPrefetch<TBatch, TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(ref batch, userContext, sessionFunctions);
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status ReadAtAddress(long address, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());

@@ -692,7 +692,7 @@ namespace Tsavorite.test.ReadCacheTests
             string filename = Path.Join(MethodTestDir, $"{GetType().Name}.log");
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is DeviceType deviceType)
+                if (arg is TestDeviceType deviceType)
                 {
                     log = CreateTestDevice(deviceType, filename, deleteOnClose: true);
                     continue;
@@ -909,7 +909,7 @@ namespace Tsavorite.test.ReadCacheTests
             string filename = Path.Join(MethodTestDir, $"{GetType().Name}.log");
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is DeviceType deviceType)
+                if (arg is TestDeviceType deviceType)
                 {
                     log = CreateTestDevice(deviceType, filename, deleteOnClose: true);
                     continue;

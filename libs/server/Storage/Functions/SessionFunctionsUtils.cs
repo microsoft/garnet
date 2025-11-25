@@ -7,8 +7,15 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    internal class SessionFunctionsUtils
+    internal static class SessionFunctionsUtils
     {
+        internal enum IPUResult : byte
+        {
+            Failed = 0,
+            Succeeded,
+            NotUpdated,
+        }
+
         /// <summary>
         /// Attempts to set the expiration time on a log record based on the specified <see cref="ExpireOption"/>.
         /// </summary>
@@ -68,7 +75,7 @@ namespace Garnet.server
                         logger?.LogError("Failed to add expiration in {methodName}.{caseName}", nameof(EvaluateExpire), optionType);
                         return false;
                     }
-                    expirationChanged = true;
+                    expirationChanged = isSuccessful;
                     return isSuccessful;
                 case ExpireOption.XX:
                 case ExpireOption.GT:

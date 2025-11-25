@@ -264,6 +264,14 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
             => storageSession.Read_UnifiedStore(key.ReadOnlySpan, ref input, ref output, ref unifiedContext);
+
+        /// <inheritdoc />
+        public void ReadWithPrefetch<TBatch>(ref TBatch batch, long userContext = default)
+            where TBatch : IReadArgBatch<StringInput, SpanByteAndMemory>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => storageSession.ReadWithPrefetch(ref batch, ref stringContext, userContext);
         #endregion
 
         #region Bitmap Methods

@@ -34,5 +34,12 @@ namespace Garnet.server
             Debug.Assert(!more);
             completedOutputs.Dispose();
         }
+
+        /// <summary>
+        /// Handles the complete pending status for Session Store, without outputs.
+        /// </summary>
+        static void CompletePendingForSession<TContext>(ref TContext context)
+            where TContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        => context.CompletePending(wait: true);
     }
 }

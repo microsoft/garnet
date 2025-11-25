@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Tsavorite.core;
+using static Garnet.server.SessionFunctionsUtils;
 
 namespace Garnet.server
 {
@@ -159,7 +160,7 @@ namespace Garnet.server
                 switch (cmd)
                 {
                     case RespCommand.EXPIRE:
-                        if (!HandleExpireInPlaceUpdate(ref dstLogRecord, hasExpiration, ref input, ref output))
+                        if (HandleExpireInPlaceUpdate(ref dstLogRecord, hasExpiration, ref input, ref output) == IPUResult.Failed)
                             return false;
                         break;
 
@@ -185,21 +186,26 @@ namespace Garnet.server
         public bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
             ref UnifiedOutput output, ref RMWInfo rmwInfo)
         {
-            if (InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out var sizeChange))
+            var ipuResult = InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo, out var sizeChange);
+            switch (ipuResult)
             {
-                if (!logRecord.Info.Modified)
-                    functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null)
-                    WriteLogRMW(logRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
-
-                if (logRecord.Info.ValueIsObject)
-                    functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeChange);
-                return true;
+                case IPUResult.Failed:
+                    return false;
+                case IPUResult.Succeeded:
+                    if (!logRecord.Info.Modified)
+                        functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+                    if (functionsState.appendOnlyFile != null)
+                        WriteLogRMW(logRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                    if (logRecord.Info.ValueIsObject)
+                        functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeChange);
+                    return true;
+                case IPUResult.NotUpdated:
+                default:
+                    return true;
             }
-            return false;
         }
 
-        bool InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input, ref UnifiedOutput output, ref RMWInfo rmwInfo, out long sizeChange)
+        IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input, ref UnifiedOutput output, ref RMWInfo rmwInfo, out long sizeChange)
         {
             sizeChange = 0;
             var cmd = input.header.cmd;
@@ -219,8 +225,7 @@ namespace Garnet.server
                     logRecord.RemoveETag();
 
                 rmwInfo.Action = cmd == RespCommand.DELIFEXPIM ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
-
-                return false;
+                return IPUResult.Failed;
             }
 
             var hadETagPreMutation = logRecord.Info.HasETag;
@@ -230,11 +235,13 @@ namespace Garnet.server
 
             var hasExpiration = logRecord.Info.HasExpiration;
 
+            var ipuResult = IPUResult.Succeeded;
             switch (cmd)
             {
                 case RespCommand.EXPIRE:
-                    if (!HandleExpireInPlaceUpdate(ref logRecord, hasExpiration, ref input, ref output))
-                        return false;
+                    ipuResult = HandleExpireInPlaceUpdate(ref logRecord, hasExpiration, ref input, ref output);
+                    if (ipuResult == IPUResult.Failed)
+                        return IPUResult.Failed;
                     break;
                 case RespCommand.PERSIST:
                     HandlePersistInPlaceUpdate(ref logRecord, hasExpiration, ref shouldUpdateEtag, ref output);
@@ -266,7 +273,7 @@ namespace Garnet.server
             }
 
             sizeInfo.AssertOptionals(logRecord.Info);
-            return true;
+            return ipuResult;
         }
 
         private bool HandleExpireCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,
@@ -283,18 +290,17 @@ namespace Garnet.server
                 expirationWithOption.ExpirationTimeInTicks, dstLogRecord.ValueSpan, ref output);
         }
 
-        private bool HandleExpireInPlaceUpdate(ref LogRecord logRecord, bool hasExpiration, ref UnifiedInput input, ref UnifiedOutput output)
+        private IPUResult HandleExpireInPlaceUpdate(ref LogRecord logRecord, bool hasExpiration, ref UnifiedInput input, ref UnifiedOutput output)
         {
             var expirationWithOption = new ExpirationWithOption(input.arg1);
 
-            if (!logRecord.Info.ValueIsObject)
+            if (!logRecord.Info.ValueIsObject)   // TODO ETag for unified store
             {
                 // reset etag state that may have been initialized earlier, but don't update etag because only the expiration was updated
                 ETagState.ResetState(ref functionsState.etagState);
             }
 
-            return EvaluateExpireInPlace(ref logRecord, expirationWithOption.ExpireOption,
-                expirationWithOption.ExpirationTimeInTicks, hasExpiration, ref output);
+            return EvaluateExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, hasExpiration, ref output);
         }
 
         private bool HandlePersistCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord,

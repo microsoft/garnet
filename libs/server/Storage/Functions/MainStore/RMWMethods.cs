@@ -6,6 +6,7 @@ using System.Diagnostics;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using static Garnet.server.SessionFunctionsUtils;
 
 namespace Garnet.server
 {
@@ -65,7 +66,7 @@ namespace Garnet.server
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
-            RespCommand cmd = input.header.cmd;
+            var cmd = input.header.cmd;
             switch (cmd)
             {
                 case RespCommand.PFADD:
@@ -372,20 +373,26 @@ namespace Garnet.server
                 return false;
             }
 
-            if (InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo))
+            var ipuResult = InPlaceUpdaterWorker(ref logRecord, in sizeInfo, ref input, ref output, ref rmwInfo);
+            switch (ipuResult)
             {
-                if (!logRecord.Info.Modified)
-                    functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null)
-                    WriteLogRMW(logRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
-                return true;
+                case IPUResult.Failed:
+                    return false;
+                case IPUResult.Succeeded:
+                    if (!logRecord.Info.Modified)
+                        functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
+                    if (functionsState.appendOnlyFile != null)
+                        WriteLogRMW(logRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                    return true;
+                case IPUResult.NotUpdated:
+                default:
+                    return true;
             }
-            return false;
         }
 
         // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with TRUE,
         // you must make sure you must reset etagState in FunctionState
-        private readonly bool InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        private readonly IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
             RespCommand cmd = input.header.cmd;
             // Expired data
@@ -393,7 +400,7 @@ namespace Garnet.server
             {
                 rmwInfo.Action = RMWAction.ExpireAndResume;
                 logRecord.RemoveETag();
-                return false;
+                return IPUResult.Failed;
             }
 
             bool hadETagPreMutation = logRecord.Info.HasETag;
@@ -420,12 +427,13 @@ namespace Garnet.server
                     // reset etag state after done using
                     ETagState.ResetState(ref functionsState.etagState);
                     // Nothing is set because being in this block means NX was already violated
-                    return true;
+                    return IPUResult.NotUpdated;
+
                 case RespCommand.DELIFGREATER:
                     long etagFromClient = input.parseState.GetLong(0);
                     rmwInfo.Action = etagFromClient > functionsState.etagState.ETag ? RMWAction.ExpireAndStop : RMWAction.CancelOperation;
                     ETagState.ResetState(ref functionsState.etagState);
-                    return false;
+                    return IPUResult.Failed;
 
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
@@ -454,21 +462,21 @@ namespace Garnet.server
                         }
                         // reset etag state after done using
                         ETagState.ResetState(ref functionsState.etagState);
-                        return true;
+                        return IPUResult.NotUpdated;
                     }
 
                     // If we're here we know we have a valid ETag for update. Get the value to update. We'll ned to return false for CopyUpdate if no space for new value.
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     if (!logRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
-                        return false;
+                        return IPUResult.Failed;
                     long newEtag = cmd is RespCommand.SETIFMATCH ? (functionsState.etagState.ETag + 1) : etagFromClient;
                     if (!logRecord.TrySetETag(newEtag))
-                        return false;
+                        return IPUResult.Failed;
 
                     // Need to check for input.arg1 != 0 because GetRMWModifiedFieldInfo shares its logic with CopyUpdater and thus may set sizeInfo.FieldInfo.Expiration true
                     // due to srcRecordInfo having expiration set; here, that srcRecordInfo is us, so we should do nothing if input.arg1 == 0.
                     if (sizeInfo.FieldInfo.HasExpiration && input.arg1 != 0 && !logRecord.TrySetExpiration(input.arg1))
-                        return false;
+                        return IPUResult.Failed;
 
                     // Write Etag and Val back to Client as an array of the format [etag, nil]
                     var nilResp = functionsState.nilResp;
@@ -493,7 +501,7 @@ namespace Garnet.server
 
                     var setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     if (!logRecord.TrySetValueSpanAndPrepareOptionals(setValue, in sizeInfo))
-                        return false;
+                        return IPUResult.Failed;
 
                     // If shouldUpdateEtag != inputHeaderHasEtag, then if inputHeaderHasEtag is true there is one that nextUpdate will remove (so we don't want to
                     // update it), else there isn't one and nextUpdate will add it.
@@ -501,14 +509,14 @@ namespace Garnet.server
 
                     // Update expiration
                     if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
-                        return false;
+                        return IPUResult.Failed;
 
                     // If withEtag is called we return the etag back in the response
                     if (inputHeaderHasEtag)
                     {
                         var newETag = functionsState.etagState.ETag + 1;
                         if (!logRecord.TrySetETag(newETag))
-                            return false;
+                            return IPUResult.Failed;
                         functionsState.CopyRespNumber(newETag, ref output);
                         // reset etag state after done using
                         ETagState.ResetState(ref functionsState.etagState);
@@ -516,7 +524,7 @@ namespace Garnet.server
                     else
                     {
                         if (!logRecord.RemoveETag())
-                            return false;
+                            return IPUResult.Failed;
                     }
 
                     shouldUpdateEtag = false;   // since we already updated the ETag
@@ -538,7 +546,7 @@ namespace Garnet.server
 
                     setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     if (!logRecord.TrySetValueSpanAndPrepareOptionals(setValue, in sizeInfo))
-                        return false;
+                        return IPUResult.Failed;
 
                     if (inputHeaderHasEtag != shouldUpdateEtag)
                         shouldUpdateEtag = inputHeaderHasEtag;
@@ -555,27 +563,27 @@ namespace Garnet.server
 
                 case RespCommand.INCR:
                     if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: 1))
-                        return false;
+                        return IPUResult.Failed;
                     break;
                 case RespCommand.DECR:
                     if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: -1))
-                        return false;
+                        return IPUResult.Failed;
                     break;
                 case RespCommand.INCRBY:
                     // Check if input contains a valid number
                     var incrBy = input.arg1;
                     if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: incrBy))
-                        return false;
+                        return IPUResult.Failed;
                     break;
                 case RespCommand.DECRBY:
                     var decrBy = input.arg1;
                     if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: -decrBy))
-                        return false;
+                        return IPUResult.Failed;
                     break;
                 case RespCommand.INCRBYFLOAT:
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
                     if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, incrByFloat))
-                        return false;
+                        return IPUResult.Failed;
                     break;
 
                 case RespCommand.SETBIT:
@@ -584,7 +592,7 @@ namespace Garnet.server
 
                     if (!BitmapManager.IsLargeEnough(logRecord.ValueSpan.Length, bOffset)
                             && !logRecord.TrySetContentLengths(BitmapManager.Length(bOffset), in sizeInfo, zeroInit: true))
-                        return false;
+                        return IPUResult.Failed;
 
                     _ = logRecord.RemoveExpiration();
 
@@ -602,7 +610,7 @@ namespace Garnet.server
                     var bitFieldArgs = GetBitFieldArguments(ref input);
                     if (!BitmapManager.IsLargeEnoughForType(bitFieldArgs, logRecord.ValueSpan.Length)
                             && !logRecord.TrySetContentLengths(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo, zeroInit: true))
-                        return false;
+                        return IPUResult.Failed;
 
                     _ = logRecord.RemoveExpiration();
 
@@ -621,7 +629,7 @@ namespace Garnet.server
                         // reset etag state that may have been initialized earlier, but don't update etag
                         ETagState.ResetState(ref functionsState.etagState);
                         shouldUpdateEtag = false;
-                        return true;
+                        return IPUResult.Succeeded;
                     }
 
                     functionsState.CopyRespNumber(bitfieldReturnValue, ref output);
@@ -659,13 +667,13 @@ namespace Garnet.server
 
                         // reset etag state that may have been initialized earlier, but don't update etag
                         ETagState.ResetState(ref functionsState.etagState);
-                        return true;
+                        return IPUResult.NotUpdated;
                     }
 
                     if (result)
                         *output.SpanByte.ToPointer() = updated ? (byte)1 : (byte)0;
                     if (!result)
-                        return false;
+                        return IPUResult.Failed;
                     break;
 
                 case RespCommand.PFMERGE:
@@ -704,10 +712,10 @@ namespace Garnet.server
 
                         // reset etag state that may have been initialized earlier, but don't update etag
                         ETagState.ResetState(ref functionsState.etagState);
-                        return true;
+                        return IPUResult.NotUpdated;
                     }
                     if (!result)
-                        return false;
+                        return IPUResult.Failed;
                     break;
 
                 case RespCommand.SETRANGE:
@@ -716,11 +724,11 @@ namespace Garnet.server
 
                     if (newValue.Length + offset > logRecord.ValueSpan.Length
                             && !logRecord.TrySetContentLengths(newValue.Length + offset, in sizeInfo))
-                        return false;
+                        return IPUResult.Failed;
 
                     newValue.CopyTo(logRecord.ValueSpan.Slice(offset));
                     if (!TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output))
-                        return false;
+                        return IPUResult.Failed;
                     break;
 
                 case RespCommand.GETDEL:
@@ -728,10 +736,12 @@ namespace Garnet.server
                     // Then, set ExpireAndStop action to delete the record.
                     CopyRespTo(logRecord.ValueSpan, ref output);
                     rmwInfo.Action = RMWAction.ExpireAndStop;
-                    return false;
+                    return IPUResult.Failed;
 
                 case RespCommand.GETEX:
                     CopyRespTo(logRecord.ValueSpan, ref output);
+
+                    var ipuResult = IPUResult.NotUpdated;
 
                     // If both EX and PERSIST were specified, EX wins
                     if (input.arg1 > 0)
@@ -740,19 +750,20 @@ namespace Garnet.server
                         var _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, OutputHeader.Size));
 
                         var newExpiry = input.arg1;
-                        if (!EvaluateExpireInPlace(ref logRecord, ExpireOption.None, newExpiry, ref _output))
-                            return false;
+                        ipuResult = EvaluateExpireInPlace(ref logRecord, ExpireOption.None, newExpiry, ref _output);
+                        if (ipuResult == IPUResult.Failed)
+                            return IPUResult.Failed;
                     }
                     else if (!sizeInfo.FieldInfo.HasExpiration)
                     {
-                        // GetRMWModifiedFieldLength saw PERSIST
+                        // GetRMWModifiedFieldLength saw PERSIST; if there is no expiration, the following is a no-op.
                         _ = logRecord.RemoveExpiration();
+                        ipuResult = IPUResult.Succeeded;
                     }
 
                     // reset etag state that may have been initialized earlier, but don't update etag
                     ETagState.ResetState(ref functionsState.etagState);
-                    shouldUpdateEtag = false;
-                    return true;
+                    return ipuResult;
 
                 case RespCommand.APPEND:
                     // If nothing to append, can avoid copy update.
@@ -763,18 +774,18 @@ namespace Garnet.server
                         // Try to grow in place.
                         var originalLength = logRecord.ValueSpan.Length;
                         if (!logRecord.TrySetContentLengths(originalLength + appendLength, in sizeInfo))
-                            return false;
+                            return IPUResult.Failed;
 
                         // Append the new value with the client input at the end of the old data
                         appendValue.ReadOnlySpan.CopyTo(logRecord.ValueSpan.Slice(originalLength));
                         if (!TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output))
-                            return false;
+                            return IPUResult.Failed;
                         break;
                     }
 
                     // reset etag state that may have been initialized earlier, but don't update etag
                     ETagState.ResetState(ref functionsState.etagState);
-                    return TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output);
+                    return TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output) ? IPUResult.Succeeded : IPUResult.Failed;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -783,7 +794,7 @@ namespace Garnet.server
                             functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output);
                             // reset etag state that may have been initialized earlier but don't update ETag
                             ETagState.ResetState(ref functionsState.etagState);
-                            return true;
+                            return IPUResult.Succeeded;
                         }
 
                         var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
@@ -797,7 +808,7 @@ namespace Garnet.server
                         {
                             // There is no existing metadata, but we want to add it. Try to do in place update.
                             if (!logRecord.TrySetExpiration(expirationInTicks))
-                                return false;
+                                return IPUResult.Failed;
                         }
                         shouldCheckExpiration = false;
 
@@ -811,7 +822,7 @@ namespace Garnet.server
                             // Adjust value length if user shrinks it
                             if (valueLength < logRecord.ValueSpan.Length)
                                 _ = logRecord.TrySetContentLengths(valueLength, in sizeInfo);
-                            return ret;
+                            return ret ? IPUResult.Succeeded : IPUResult.Failed;
                         }
                         finally
                         {
@@ -834,7 +845,7 @@ namespace Garnet.server
             }
 
             sizeInfo.AssertOptionals(logRecord.Info, checkExpiration: shouldCheckExpiration);
-            return true;
+            return IPUResult.Succeeded;
         }
 
         // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with FALSE, you must make sure you must reset etagState in FunctionState

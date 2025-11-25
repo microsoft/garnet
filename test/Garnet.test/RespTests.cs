@@ -3573,26 +3573,12 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // new key, length 10, offset -1 -> RedisServerException ("ERR offset is out of range")
-            try
-            {
-                db.StringSetRange(key, -1, value);
-                Assert.Fail();
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, -1, value));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
 
             // new key, length 10, offset invalid_offset -> RedisServerException ("ERR value is not an integer or out of range.")
-            try
-            {
-                db.Execute(nameof(RespCommand.SETRANGE), key, "invalid_offset", value);
-                Assert.Fail();
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message);
-            }
+            ex = Assert.Throws<RedisServerException>(() => db.Execute(nameof(RespCommand.SETRANGE), key, "invalid_offset", value));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message);
 
             // existing key, length 10, offset 0, value length 5 -> 10 ("ABCDE56789")
             ClassicAssert.IsTrue(db.StringSet(key, value));
@@ -3628,15 +3614,8 @@ namespace Garnet.test
 
             // existing key, length 10, offset -1, value length 5 -> RedisServerException ("ERR offset is out of range")
             ClassicAssert.IsTrue(db.StringSet(key, value));
-            try
-            {
-                db.StringSetRange(key, -1, newValue);
-                Assert.Fail();
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
-            }
+            ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, -1, newValue));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
         }
 
         [Test]
