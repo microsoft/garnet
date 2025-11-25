@@ -179,20 +179,20 @@ jobs:
           path: history-branch
           persist-credentials: true
 
-      - name: Copy history from allure_data_history branch into CombinedResults
+      - name: DEBUG NOT SURE IF NEEDED IF COPY LATER Copy history from allure_data_history branch into CombinedResults
         shell: pwsh
         run: |
-          $source = "${{ github.workspace }}/history-branch/test/allure/history"
+          $source = "${{ github.workspace }}/test/allure/history"
           $target = "${{ github.workspace }}/test/Allure/CombinedResults/history"
           if (Test-Path $source) {
           New-Item -ItemType Directory -Path $target -Force
           Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
-          Write-Host "History copied from branch into CombinedResults"
+          Write-Host "History copied from allure_data_history into CombinedResults"
           } else {
-              Write-Host "No history found in branch, starting fresh"
+              Write-Host "No history found in allure_data_history, starting fresh"
           }
 
-      - name: DEBUG DEBUG List contents of test/allure/CombinedResults/history after copying from branch
+      - name: DEBUG DEBUG List contents of test/allure/CombinedResults/history after copying from branch (could be blank if branch is empty)
         shell: pwsh
         run: |
           $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/CombinedResults/history"
@@ -228,7 +228,7 @@ jobs:
           path: test/Allure/AllResults
         if: ${{ always() }}
 
-      - name: DEBUG DEBUGShow working directory and contents
+      - name: DEBUG DEBUG Show working directory and contents
         shell: pwsh
         run: |
           $cwd = Get-Location
@@ -236,7 +236,7 @@ jobs:
           Get-ChildItem -Force
         if: ${{ always() }}
 
-      - name: DEBUG DEBUGCheck if GenerateAllureReport.ps1 exists
+      - name: DEBUG DEBUG Check if GenerateAllureReport.ps1 exists
         shell: pwsh
         run: |
           $scriptPath = Join-Path $env:GITHUB_WORKSPACE "test/Allure/GenerateAllureReport.ps1"
@@ -247,7 +247,7 @@ jobs:
           }
         if: ${{ always() }}
 
-      - name: DEBUG DEBUGList contents of test/allure/AllResults
+      - name: DEBUG DEBUG List contents of test/allure/AllResults
         shell: pwsh
         run: |
           $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/AllResults"
@@ -279,7 +279,20 @@ jobs:
           Get-ChildItem -Path $target -Recurse          
         if: ${{ always() }}
 
-      - name: DEBUG DEBUG List contents of test/allure/CombinedResults/history BEFORE Copy results
+      - name: DEBUG NOT SURE IF NEEDED IF COPY RIGHT AWAY - Copy history from allure_data_history branch into CombinedResults
+        shell: pwsh
+        run: |
+          $source = "${{ github.workspace }}/test/allure/history"
+          $target = "${{ github.workspace }}/test/Allure/CombinedResults/history"
+          if (Test-Path $source) {
+          New-Item -ItemType Directory -Path $target -Force
+          Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
+          Write-Host "History copied from allure_data_history into CombinedResults"
+          } else {
+              Write-Host "No history found in allure_data_history, starting fresh"
+          }
+
+      - name: DEBUG DEBUG List contents of test/allure/CombinedResults/history AFTER Copy results
         shell: pwsh
         run: |
           $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/CombinedResults/history"
@@ -314,6 +327,7 @@ jobs:
           git add test/allure/history
           git commit -m "Update Allure history [CI]"
           git push origin allure_data_history
+        if: ${{ always() }}
 
       - name: Upload Allure HTML report
         uses: actions/upload-artifact@v4
