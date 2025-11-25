@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.server;
@@ -29,6 +30,18 @@ namespace Garnet.cluster
                 value = ref SpanByte.ReinterpretWithoutLength(o.Memory.Memory.Span);
             }
 
+            // Map up any namespaces as needed
+            // TODO: Better way to do "has namespace"
+            if (key.MetadataSize == 1)
+            {
+                var oldNs = key.GetNamespaceInPayload();
+                if (_namespaceMap.TryGetValue(oldNs, out var newNs))
+                {
+                    Debug.Assert(newNs <= byte.MaxValue, "Namespace too large");
+                    key.SetNamespaceInPayload((byte)newNs);
+                }
+            }
+
             // Write key to network buffer if it has not expired
             if (!ClusterSession.Expired(ref value) && !WriteOrSendMainStoreKeyValuePair(gcs, ref key, ref value))
                 return false;
@@ -39,7 +52,7 @@ namespace Garnet.cluster
             {
                 // Check if we need to initialize cluster migrate command arguments
                 if (gcs.NeedsInitialization)
-                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: false);
 
                 // Try write serialized key value to client buffer
                 while (!gcs.TryWriteKeyValueSpanByte(ref key, ref value, out var task))
@@ -49,15 +62,15 @@ namespace Garnet.cluster
                         return false;
 
                     // re-initialize cluster migrate command parameters
-                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true);
+                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: false);
                 }
                 return true;
             }
         }
 
-        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, ref ArgSlice key, out GarnetStatus status)
+        private bool WriteOrSendObjectStoreKeyValuePair(GarnetClientSession gcs, LocalServerSession localServerSession, ref SpanByte key, out GarnetStatus status)
         {
-            var keyByteArray = key.ToArray();
+            var keyByteArray = key.AsReadOnlySpan().ToArray();
 
             ObjectInput input = default;
             GarnetObjectStoreOutput value = default;
@@ -81,14 +94,14 @@ namespace Garnet.cluster
             {
                 // Check if we need to initialize cluster migrate command arguments
                 if (gcs.NeedsInitialization)
-                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
+                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false, isVectorSets: false);
 
                 while (!gcs.TryWriteKeyValueByteArray(key, value, expiration, out var task))
                 {
                     // Flush key value pairs in the buffer
                     if (!HandleMigrateTaskResponse(task))
                         return false;
-                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false);
+                    gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: false, isVectorSets: false);
                 }
                 return true;
             }
