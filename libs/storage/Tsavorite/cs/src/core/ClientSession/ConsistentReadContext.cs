@@ -200,7 +200,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public Status Upsert<TSourceLogRecord>(in TSourceLogRecord diskLogRecord) where TSourceLogRecord : ISourceLogRecord
-            => throw new TsavoriteException("Consistent read context does not allow writes!");
+            => basicContext.Upsert(diskLogRecord);
 
         /// <inheritdoc/>
         public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord diskLogRecord) where TSourceLogRecord : ISourceLogRecord

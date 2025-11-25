@@ -137,7 +137,7 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                // 
+                // Switch all sessions to consistent read protocol
                 clusterProvider.replicationManager.ToggleConsistentReadDatabaseSessionForAllActiveSessions();
 
                 // Update replicationIds and replicationOffset2
