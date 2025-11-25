@@ -544,6 +544,26 @@ namespace Garnet.cluster
         }
 
         /// <summary>
+        /// Toggle consistent read protocol for all active sessions
+        /// </summary>
+        public void ToggleConsistentReadDatabaseSessionForAllActiveSessions()
+        {
+            // Do not need to enforce consistent read
+            // 1. On non-cluster deployments or
+            // 2. Deployments without AOF
+            // 3. Deployments with single log
+            if (!storeWrapper.serverOptions.EnableCluster || !storeWrapper.serverOptions.EnableAOF || storeWrapper.serverOptions.AofSublogCount == 1)
+                return;
+
+            foreach (var server in clusterProvider.storeWrapper.Servers)
+            {
+                var sessions = ((GarnetServerTcp)server).ActiveConsumers();
+                foreach (var session in sessions.Cast<ServerSessionBase>())
+                    session.ToggleConsistentReadSession();
+            }
+        }
+
+        /// <summary>
         /// Initiate connection with PRIMARY after restart
         /// </summary>
         public void Start()

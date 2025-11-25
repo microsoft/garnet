@@ -137,6 +137,9 @@ namespace Garnet.cluster
                     return false;
                 }
 
+                // 
+                clusterProvider.replicationManager.ToggleConsistentReadDatabaseSessionForAllActiveSessions();
+
                 // Update replicationIds and replicationOffset2
                 clusterProvider.replicationManager.TryUpdateForFailover();
 
@@ -150,12 +153,22 @@ namespace Garnet.cluster
                 // Initialize checkpoint history
                 if (!clusterProvider.replicationManager.InitializeCheckpointStore())
                     logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TakeOverAsPrimary));
+
                 _ = clusterProvider.BumpAndWaitForEpochTransition();
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "{method}", nameof(TakeOverAsPrimary));
+
+                // In the event the failover process fails this resets the default dbSession
+                // for all active sessions according to the node's role when sharded-log based AOF is used
+                clusterProvider.replicationManager.ToggleConsistentReadDatabaseSessionForAllActiveSessions();
             }
             finally
             {
                 // Disable recovering as now this node has become a primary or failed in its attempt earlier
-                if (acquiredLock) clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+                if (acquiredLock)
+                    clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
             }
 
             return true;

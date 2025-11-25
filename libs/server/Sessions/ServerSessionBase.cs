@@ -50,6 +50,11 @@ namespace Garnet.server
         public abstract unsafe void PatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value);
 
         /// <summary>
+        /// Toggle consistent read session when sharded log based AOF is used.
+        /// </summary>
+        public abstract void ToggleConsistentReadSession();
+
+        /// <summary>
         /// Dispose
         /// </summary>
         public virtual void Dispose() => networkSender?.Dispose();

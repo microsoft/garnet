@@ -44,6 +44,9 @@ namespace Garnet.cluster
                 // Create or update timestamp manager for sharded log if needed
                 storeWrapper.appendOnlyFile.CreateOrUpdateTimestampManager();
 
+                // Switch all sessions to consistent read protocol
+                ToggleConsistentReadDatabaseSessionForAllActiveSessions();
+
                 // Wait for threads to agree
                 session?.UnsafeBumpAndWaitForEpochTransition();
 
@@ -141,7 +144,6 @@ namespace Garnet.cluster
                     // 4. Replica responds with aofStartAddress sync
                     // 5. Primary will initiate aof sync task
                     // 6. Primary releases checkpoint
-
                     var resp = await gcs.ExecuteClusterInitiateReplicaSync(
                         nodeId,
                         PrimaryReplId,
@@ -152,10 +154,13 @@ namespace Garnet.cluster
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
+
                     if (options.AllowReplicaResetOnFailure)
-                    {
                         clusterProvider.clusterManager.TryResetReplica();
-                    }
+
+                    // In the event the attach process fails this resets the default dbSession
+                    // for all active sessions according to the node's role when sharded-log based AOF is used
+                    ToggleConsistentReadDatabaseSessionForAllActiveSessions();
                     return ex.Message;
                 }
                 finally

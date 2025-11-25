@@ -56,9 +56,6 @@ namespace Garnet.server
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
 
-            // Ensure consistent read is enabled if necessary
-            ToggleConsistentReadSession();
-
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
 

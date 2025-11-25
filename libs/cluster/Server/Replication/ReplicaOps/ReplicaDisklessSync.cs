@@ -38,6 +38,9 @@ namespace Garnet.cluster
                 // Create or update timestamp manager for sharded log if needed
                 storeWrapper.appendOnlyFile.CreateOrUpdateTimestampManager();
 
+                // Switch all sessions to consistent read protocol
+                ToggleConsistentReadDatabaseSessionForAllActiveSessions();
+
                 // Wait for threads to agree configuration change of this node
                 session.UnsafeBumpAndWaitForEpochTransition();
 
@@ -136,9 +139,11 @@ namespace Garnet.cluster
                     logger?.LogError(ex, $"{nameof(TryBeginReplicaSync)}");
 
                     if (options.AllowReplicaResetOnFailure)
-                    {
                         clusterProvider.clusterManager.TryResetReplica();
-                    }
+
+                    // In the event the attach process fails this resets the default dbSession
+                    // for all active sessions according to the node's role when sharded-log based AOF is used
+                    ToggleConsistentReadDatabaseSessionForAllActiveSessions();
 
                     return ex.Message;
                 }

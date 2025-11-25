@@ -302,6 +302,9 @@ namespace Garnet.server
             // Set the current active session to the default session
             SwitchActiveDatabaseSession(dbSession);
 
+            // Setup this session for consistent read if necessary
+            ToggleConsistentReadSession();
+
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
 
@@ -1589,13 +1592,13 @@ namespace Garnet.server
         /// <summary>
         /// Toggle consistent read session when using sharded-log based AOF
         /// </summary>
-        private void ToggleConsistentReadSession()
+        public override void ToggleConsistentReadSession()
         {
             // Do not need to enforce consistent read
             // 1. On non-cluster deployments or
             // 2. Deployments without AOF
             // 3. Deployments with single log
-            if (!storeWrapper.serverOptions.EnableCluster || !storeWrapper.serverOptions.EnableAOF || storeWrapper.serverOptions.AofSublogCount == 1)
+            if (storeWrapper.clusterProvider == null || !storeWrapper.serverOptions.EnableCluster || !storeWrapper.serverOptions.EnableAOF || storeWrapper.serverOptions.AofSublogCount == 1)
                 return;
 
             // Switch to consistent read session if this is a replica and we are using default db session
