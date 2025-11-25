@@ -353,15 +353,8 @@ namespace Garnet.test
             var unknownSubCommand = "UNKNOWN";
 
             // Get all commands using COMMAND INFO command
-            try
-            {
-                db.Execute("COMMAND", unknownSubCommand);
-                Assert.Fail();
-            }
-            catch (RedisServerException e)
-            {
-                ClassicAssert.AreEqual("ERR unknown subcommand 'UNKNOWN'.", e.Message);
-            }
+            var e = Assert.Throws<RedisServerException>(() => db.Execute("COMMAND", unknownSubCommand));
+            ClassicAssert.AreEqual("ERR unknown subcommand 'UNKNOWN'.", e.Message);
         }
 
         /// <summary>
