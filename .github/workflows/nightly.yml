@@ -189,6 +189,8 @@ jobs:
           } else {
               Write-Host "No history found in allure_data_history, starting fresh"
           }
+        if: ${{ always() }}
+
 
       - name: DEBUG DEBUG List contents of test/allure/CombinedResults/history after copying from branch (could be blank if branch is empty)
         shell: pwsh
