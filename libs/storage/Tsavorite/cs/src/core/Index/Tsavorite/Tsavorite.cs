@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics.X86;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -486,6 +487,129 @@ namespace Tsavorite.core
             var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
 
             return status;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [SkipLocalsInit] // Span<long> in here can be sizeable, so 0-init'ing isn't free
+        internal unsafe void ContextReadWithPrefetch<TBatch, TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TBatch batch, TContext context, TSessionFunctionsWrapper sessionFunctions)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+        {
+            if (batch.Count == 1)
+            {
+                // Not actually a batch, no point prefetching
+
+                batch.GetKey(0, out var key);
+                batch.GetInput(0, out var input);
+                batch.GetOutput(0, out var output);
+
+                var hash = storeFunctions.GetKeyHashCode64(ref key);
+
+                var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                OperationStatus internalStatus;
+
+                do
+                    internalStatus = InternalRead(ref key, hash, ref input, ref output, context, ref pcontext, sessionFunctions);
+                while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+
+                batch.SetStatus(0, HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus));
+                batch.SetOutput(0, output);
+            }
+            else
+            {
+                // Prefetch if we can
+
+                if (Sse.IsSupported)
+                {
+                    const int PrefetchSize = 12;
+
+                    var hashes = stackalloc long[PrefetchSize];
+
+                    // Prefetch the hash table entries for all keys
+                    var tableAligned = state[resizeInfo.version].tableAligned;
+                    var sizeMask = state[resizeInfo.version].size_mask;
+
+                    var batchCount = batch.Count;
+
+                    var nextBatchIx = 0;
+                    while (nextBatchIx < batchCount)
+                    {
+                        // First level prefetch
+                        var hashIx = 0;
+                        for (; hashIx < PrefetchSize && nextBatchIx < batchCount; hashIx++)
+                        {
+                            batch.GetKey(nextBatchIx, out var key);
+                            var hash = hashes[hashIx] = storeFunctions.GetKeyHashCode64(ref key);
+
+                            Sse.Prefetch0(tableAligned + (hash & sizeMask));
+
+                            nextBatchIx++;
+                        }
+
+                        // Second level prefetch
+                        for (var i = 0; i < hashIx; i++)
+                        {
+                            var keyHash = hashes[i];
+                            var hei = new HashEntryInfo(keyHash);
+
+                            // If the hash entry exists in the table, points to main memory in the main log (not read cache), also prefetch the record header address
+                            if (FindTag(ref hei) && !hei.IsReadCache && hei.Address >= hlogBase.HeadAddress)
+                            {
+                                Sse.Prefetch0((void*)hlog.GetPhysicalAddress(hei.Address));
+                            }
+                        }
+
+                        nextBatchIx -= hashIx;
+
+                        // Perform the reads
+                        for (var i = 0; i < hashIx; i++)
+                        {
+                            batch.GetKey(nextBatchIx, out var key);
+                            batch.GetInput(nextBatchIx, out var input);
+                            batch.GetOutput(nextBatchIx, out var output);
+
+                            var hash = hashes[i];
+
+                            var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                            OperationStatus internalStatus;
+
+                            do
+                                internalStatus = InternalRead(ref key, hash, ref input, ref output, context, ref pcontext, sessionFunctions);
+                            while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+
+                            batch.SetStatus(nextBatchIx, HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus));
+                            batch.SetOutput(nextBatchIx, output);
+
+                            nextBatchIx++;
+                        }
+                    }
+                }
+                else
+                {
+                    // Perform the reads
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        batch.GetKey(i, out var key);
+                        batch.GetInput(i, out var input);
+                        batch.GetOutput(i, out var output);
+
+                        var hash = storeFunctions.GetKeyHashCode64(ref key);
+
+                        var pcontext = new PendingContext<TInput, TOutput, TContext>(sessionFunctions.Ctx.ReadCopyOptions);
+                        OperationStatus internalStatus;
+
+                        do
+                            internalStatus = InternalRead(ref key, hash, ref input, ref output, context, ref pcontext, sessionFunctions);
+                        while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
+
+                        batch.SetStatus(i, HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus));
+                        batch.SetOutput(i, output);
+                    }
+                }
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
