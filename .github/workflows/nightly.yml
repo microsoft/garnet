@@ -49,8 +49,6 @@ jobs:
 
       - name: Check out code
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true
 
       - name: Set workaround for libaio on Ubuntu 24.04 (see https://askubuntu.com/questions/1512196/libaio1-on-noble/1512197#1512197)
         run: |
@@ -182,7 +180,7 @@ jobs:
       - name: DEBUG NOT SURE IF NEEDED IF COPY LATER Copy history from allure_data_history branch into CombinedResults
         shell: pwsh
         run: |
-          $source = "${{ github.workspace }}/test/allure/history"
+          $source = "${{ github.workspace }}/history-branch/test/allure/history"
           $target = "${{ github.workspace }}/test/Allure/CombinedResults/history"
           if (Test-Path $source) {
           New-Item -ItemType Directory -Path $target -Force
@@ -201,8 +199,6 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true
 
       - name: Install Allure CLI
         shell: pwsh
