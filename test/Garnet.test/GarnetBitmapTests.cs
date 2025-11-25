@@ -107,7 +107,7 @@ namespace Garnet.test
             ClassicAssert.IsFalse(db.StringGetBit(key, 8999));
             ClassicAssert.IsTrue(db.StringGetBit(key, 9999));
 
-            var ex = Assert.Throws<RedisServerException>(() => db.Execute("SETBIT", key, "-1", "1"),);
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("SETBIT", key, "-1", "1"));
             ClassicAssert.AreEqual("ERR bit offset is not an integer or out of range",
                                    ex.Message);
         }
