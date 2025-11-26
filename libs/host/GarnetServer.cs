@@ -10,6 +10,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.cluster;
 using Garnet.common;
 using Garnet.networking;
@@ -420,6 +421,180 @@ namespace Garnet
             Provider.Start();
             if (!opts.QuietMode)
                 Console.WriteLine("* Ready to accept connections");
+        }
+
+        /// <summary>
+        /// Performs graceful shutdown of the server.
+        /// Stops accepting new connections, waits for active connections to complete, commits AOF, and takes checkpoint if needed.
+        /// </summary>
+        /// <param name="timeout">Timeout for waiting on active connections (default: 30 seconds)</param>
+        /// <param name="token">Cancellation token</param>
+        /// <returns>Task representing the async shutdown operation</returns>
+        public async Task ShutdownAsync(TimeSpan? timeout = null, CancellationToken token = default)
+        {
+            var shutdownTimeout = timeout ?? TimeSpan.FromSeconds(30);
+
+            try
+            {
+                // Stop accepting new connections first
+                StopListening();
+
+                // Wait for existing connections to complete
+                await WaitForActiveConnectionsAsync(shutdownTimeout, token).ConfigureAwait(false);
+
+                // Commit AOF and take checkpoint if needed
+                await FinalizeDataAsync(token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Force shutdown requested
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "Error during graceful shutdown");
+            }
+        }
+
+        /// <summary>
+        /// Stop all servers from accepting new connections.
+        /// </summary>
+        private void StopListening()
+        {
+            if (servers == null) return;
+
+            logger?.LogInformation("Stopping listeners to prevent new connections...");
+            foreach (var server in servers)
+            {
+                try
+                {
+                    server?.StopListening();
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Error stopping listener");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Waits for active connections to complete within the specified timeout.
+        /// </summary>
+        private async Task WaitForActiveConnectionsAsync(TimeSpan timeout, CancellationToken token)
+        {
+            if (Metrics == null) return;
+
+            var stopwatch = Stopwatch.StartNew();
+            var delays = new[] { 50, 300, 1000 };
+            var delayIndex = 0;
+
+            while (stopwatch.Elapsed < timeout && !token.IsCancellationRequested)
+            {
+                try
+                {
+                    var activeConnections = GetActiveConnectionCount();
+
+                    if (activeConnections == 0)
+                    {
+                        logger?.LogInformation("All connections have been closed gracefully.");
+                        return;
+                    }
+
+                    logger?.LogInformation("Waiting for {ActiveConnections} active connections to complete...", activeConnections);
+
+                    var currentDelay = delays[delayIndex];
+                    if (delayIndex < delays.Length - 1) delayIndex++;
+
+                    await Task.Delay(currentDelay, token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "Error checking active connections");
+                    delayIndex = 0;
+                    await Task.Delay(500, token).ConfigureAwait(false);
+                }
+            }
+
+            if (stopwatch.Elapsed >= timeout)
+            {
+                logger?.LogWarning("Timeout reached after {TimeoutSeconds} seconds. Some connections may still be active.",
+                    timeout.TotalSeconds);
+            }
+        }
+
+        /// <summary>
+        /// Gets the current number of active connections directly from server instances.
+        /// </summary>
+        private int GetActiveConnectionCount()
+        {
+            int count = 0;
+            if (servers != null)
+            {
+                foreach (var server in servers)
+                {
+                    if (server is GarnetServerBase garnetServerBase)
+                    {
+                        count += (int)garnetServerBase.get_conn_active();
+                    }
+                }
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Commits AOF and takes checkpoint for data durability during shutdown.
+        /// </summary>
+        private async Task FinalizeDataAsync(CancellationToken token)
+        {
+            var enableAOF = opts.EnableAOF;
+            var enableStorageTier = opts.EnableStorageTier;
+
+            // Commit AOF before checkpoint/shutdown
+            if (enableAOF)
+            {
+                logger?.LogInformation("Committing AOF before shutdown...");
+                try
+                {
+                    var commitSuccess = await Store.CommitAOFAsync(token).ConfigureAwait(false);
+                    if (commitSuccess)
+                    {
+                        logger?.LogInformation("AOF committed successfully.");
+                    }
+                    else
+                    {
+                        logger?.LogInformation("AOF commit skipped (another commit in progress or replica mode).");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Error committing AOF during shutdown");
+                }
+            }
+
+            // Take checkpoint for tiered storage
+            if (enableStorageTier)
+            {
+                logger?.LogInformation("Taking checkpoint for tiered storage...");
+                try
+                {
+                    var checkpointSuccess = Store.TakeCheckpoint(background: false, token);
+                    if (checkpointSuccess)
+                    {
+                        logger?.LogInformation("Checkpoint completed successfully.");
+                    }
+                    else
+                    {
+                        logger?.LogInformation("Checkpoint skipped (another checkpoint in progress or replica mode).");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Error taking checkpoint during shutdown");
+                }
+            }
         }
 
         /// <summary>

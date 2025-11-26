@@ -28,6 +28,7 @@ namespace Garnet.server
         readonly int networkConnectionLimit;
         readonly string unixSocketPath;
         readonly UnixFileMode unixSocketPermission;
+        volatile bool isListening;
 
         /// <inheritdoc/>
         public override IEnumerable<IMessageConsumer> ActiveConsumers()
@@ -117,8 +118,29 @@ namespace Garnet.server
             }
 
             listenSocket.Listen(512);
+            isListening = true;
             if (!listenSocket.AcceptAsync(acceptEventArg))
                 AcceptEventArg_Completed(null, acceptEventArg);
+        }
+
+        /// <inheritdoc />
+        public override void StopListening()
+        {
+            if (!isListening)
+                return;
+
+            isListening = false;
+            try
+            {
+                // Close the listen socket to stop accepting new connections
+                // This will cause any pending AcceptAsync to complete with an error
+                listenSocket.Close();
+                logger?.LogInformation("Stopped accepting new connections on {endpoint}", EndPoint);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Error closing listen socket on {endpoint}", EndPoint);
+            }
         }
 
         private void AcceptEventArg_Completed(object sender, SocketAsyncEventArgs e)
