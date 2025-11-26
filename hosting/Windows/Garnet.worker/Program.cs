@@ -16,7 +16,7 @@ class Program
         // Configure Host shutdown timeout
         builder.Services.Configure<HostOptions>(options =>
         {
-            // Set graceful shutdown timeout to 15 seconds
+            // Set graceful shutdown timeout to 5 seconds
             options.ShutdownTimeout = TimeSpan.FromSeconds(5);
         });
 
