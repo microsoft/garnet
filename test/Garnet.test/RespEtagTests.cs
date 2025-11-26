@@ -1330,7 +1330,7 @@ namespace Garnet.test
             var actualResultRawStr = db.StringGet(key);
 
             var actualResult = double.Parse(actualResultStr, CultureInfo.InvariantCulture);
-            var actualResultRaw = double.Parse(actualResultRawStr, CultureInfo.InvariantCulture);
+            var actualResultRaw = double.Parse((string)actualResultRawStr, CultureInfo.InvariantCulture);
 
             Assert.That(actualResult, Is.EqualTo(expectedResult).Within(1.0 / Math.Pow(10, 15)));
             Assert.That(actualResult, Is.EqualTo(actualResultRaw).Within(1.0 / Math.Pow(10, 15)));
@@ -1383,13 +1383,6 @@ namespace Garnet.test
             ClassicAssert.IsFalse(respDel);
         }
 
-        private string GetRandomString(int len)
-        {
-            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            return new string(Enumerable.Repeat(chars, len)
-                .Select(s => s[r.Next(s.Length)]).ToArray());
-        }
-
         [Test]
         public void SingleDeleteWithObjectStoreDisable_LTMForEtagSetData()
         {
@@ -1408,7 +1401,7 @@ namespace Garnet.test
             List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
-                data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
+                data.Add(new Tuple<string, string>(TestUtils.GetRandomString(keyLen), TestUtils.GetRandomString(valLen)));
                 var pair = data.Last();
                 db.Execute("SET", [pair.Item1, pair.Item2, "WITHETAG"]);
             }
@@ -1451,7 +1444,7 @@ namespace Garnet.test
             List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
-                data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
+                data.Add(new Tuple<string, string>(TestUtils.GetRandomString(keyLen), TestUtils.GetRandomString(valLen)));
                 var pair = data.Last();
                 db.Execute("SET", [pair.Item1, pair.Item2, "WITHETAG"]);
             }
@@ -1486,7 +1479,7 @@ namespace Garnet.test
             List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
-                data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
+                data.Add(new Tuple<string, string>(TestUtils.GetRandomString(keyLen), TestUtils.GetRandomString(valLen)));
                 var pair = data.Last();
                 db.Execute("SET", [pair.Item1, pair.Item2, "WITHETAG"]);
             }
@@ -1987,15 +1980,8 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // new key, length 10, offset -1 -> RedisServerException ("ERR offset is out of range")
-            try
-            {
-                db.StringSetRange(key, -1, value);
-                Assert.Fail();
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, -1, value));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
 
             // existing key, length 10, offset 0, value length 5 -> 10 ("ABCDE56789")
             db.Execute("SET", key, value, "WITHETAG");
@@ -2043,15 +2029,9 @@ namespace Garnet.test
 
             // existing key, length 10, offset -1, value length 5 -> RedisServerException ("ERR offset is out of range")
             db.Execute("SET", [key, value, "WITHETAG"]);
-            try
-            {
-                db.StringSetRange(key, -1, newValue);
-                Assert.Fail();
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
-            }
+
+            ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, -1, newValue));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
         }
 
         [Test]

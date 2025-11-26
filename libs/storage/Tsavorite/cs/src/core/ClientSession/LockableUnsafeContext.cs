@@ -63,23 +63,17 @@ namespace Tsavorite.core
         public int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2) where TLockableKey : ILockableKey => clientSession.CompareKeyHashes(ref key1, ref key2);
 
         /// <inheritdoc/>
-        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys);
+        public void SortKeyHashes<TLockableKey>(Span<TLockableKey> keys) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys);
 
         /// <inheritdoc/>
-        public void SortKeyHashes<TLockableKey>(TLockableKey[] keys, int start, int count) where TLockableKey : ILockableKey => clientSession.SortKeyHashes(keys, start, count);
-
-        /// <inheritdoc/>
-        public void Lock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Lock(keys, 0, keys.Length);
-
-        /// <inheritdoc/>
-        public void Lock<TLockableKey>(TLockableKey[] keys, int start, int count)
+        public void Lock<TLockableKey>(ReadOnlySpan<TLockableKey> keys)
             where TLockableKey : ILockableKey
         {
             clientSession.CheckIsAcquiredLockable(sessionFunctions);
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
             while (true)
             {
-                if (LockableContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>.DoManualLock(sessionFunctions, clientSession, keys, start, count))
+                if (LockableContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>.DoManualLock(sessionFunctions, clientSession, keys))
                 {
                     break;
                 }
@@ -90,43 +84,28 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys)
+        public bool TryLock<TLockableKey>(ReadOnlySpan<TLockableKey> keys)
             where TLockableKey : ILockableKey
-            => TryLock(keys, 0, keys.Length, Timeout.InfiniteTimeSpan, cancellationToken: default);
+            => TryLock(keys, Timeout.InfiniteTimeSpan, cancellationToken: default);
 
         /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout)
+        public bool TryLock<TLockableKey>(ReadOnlySpan<TLockableKey> keys, TimeSpan timeout)
             where TLockableKey : ILockableKey
-            => TryLock(keys, 0, keys.Length, timeout, cancellationToken: default);
+            => TryLock(keys, timeout, cancellationToken: default);
 
         /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, TimeSpan timeout)
+        public bool TryLock<TLockableKey>(ReadOnlySpan<TLockableKey> keys, CancellationToken cancellationToken)
             where TLockableKey : ILockableKey
-            => TryLock(keys, start, count, timeout, cancellationToken: default);
+            => TryLock(keys, Timeout.InfiniteTimeSpan, cancellationToken);
 
         /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, 0, keys.Length, Timeout.InfiniteTimeSpan, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, start, count, Timeout.InfiniteTimeSpan, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, TimeSpan timeout, CancellationToken cancellationToken)
-            where TLockableKey : ILockableKey
-            => TryLock(keys, 0, keys.Length, timeout, cancellationToken);
-
-        /// <inheritdoc/>
-        public bool TryLock<TLockableKey>(TLockableKey[] keys, int start, int count, TimeSpan timeout, CancellationToken cancellationToken)
+        public bool TryLock<TLockableKey>(ReadOnlySpan<TLockableKey> keys, TimeSpan timeout, CancellationToken cancellationToken)
             where TLockableKey : ILockableKey
         {
             clientSession.CheckIsAcquiredLockable(sessionFunctions);
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Lock()");
 
-            return LockableContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>.DoManualTryLock(sessionFunctions, clientSession, keys, start, count, timeout, cancellationToken);
+            return LockableContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>.DoManualTryLock(sessionFunctions, clientSession, keys, timeout, cancellationToken);
         }
 
         /// <inheritdoc/>
@@ -155,16 +134,13 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public void Unlock<TLockableKey>(TLockableKey[] keys) where TLockableKey : ILockableKey => Unlock(keys, 0, keys.Length);
-
-        /// <inheritdoc/>
-        public void Unlock<TLockableKey>(TLockableKey[] keys, int start, int count)
+        public void Unlock<TLockableKey>(ReadOnlySpan<TLockableKey> keys)
             where TLockableKey : ILockableKey
         {
             clientSession.CheckIsAcquiredLockable(sessionFunctions);
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected(), "Epoch protection required for LockableUnsafeContext.Unlock()");
 
-            LockableContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>.DoManualUnlock(clientSession, keys, start, start + count - 1);
+            LockableContext<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>.DoManualUnlock(clientSession, keys);
         }
 
         /// <summary>
@@ -297,6 +273,18 @@ namespace Tsavorite.core
         {
             Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
             return clientSession.store.ContextRead(ref key, ref input, ref output, ref readOptions, out recordMetadata, userContext, sessionFunctions);
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext)
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+        {
+            Debug.Assert(clientSession.store.epoch.ThisInstanceProtected());
+            clientSession.store.ContextReadWithPrefetch<TBatch, TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, LockableSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(ref batch, userContext, sessionFunctions);
         }
 
         /// <inheritdoc/>

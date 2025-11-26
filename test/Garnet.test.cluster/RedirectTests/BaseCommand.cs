@@ -1742,7 +1742,7 @@ namespace Garnet.test.cluster
         public override ArraySegment<string>[] SetupSingleSlotRequest()
         {
             var ssk = GetSingleSlotKeys;
-            var setup = new ArraySegment<string>[] { new ArraySegment<string>(["EVAL", "return 'OK'", "3", ssk[1], ssk[2], ssk[3]]) };
+            var setup = new ArraySegment<string>[] { new(["MSET", ssk[1], "value1", ssk[2], "value", ssk[3], "value2"]) };
             return setup;
         }
     }
@@ -1781,7 +1781,7 @@ namespace Garnet.test.cluster
         public override ArraySegment<string>[] SetupSingleSlotRequest()
         {
             var ssk = GetSingleSlotKeys;
-            var setup = new ArraySegment<string>[] { new ArraySegment<string>(["EVALSHA", hash, "3", ssk[1], ssk[2], ssk[3]]) };
+            var setup = new ArraySegment<string>[] { new(["MSET", ssk[1], "value1", ssk[2], "value", ssk[3], "value2"]) };
             return setup;
         }
     }

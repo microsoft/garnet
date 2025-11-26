@@ -4,6 +4,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -220,7 +221,7 @@ namespace Garnet.server
         {
             try
             {
-                DoCompaction(db);
+                DoCompaction(db, isFromCheckpoint: true, logger);
                 var lastSaveStoreTailAddress = db.MainStore.Log.TailAddress;
                 var lastSaveObjectStoreTailAddress = (db.ObjectStore?.Log.TailAddress).GetValueOrDefault();
 
@@ -439,12 +440,13 @@ namespace Garnet.server
         /// </summary>
         /// <param name="db">Database to run compaction on</param>
         /// <param name="logger">Logger</param>
-        protected void DoCompaction(GarnetDatabase db, ILogger logger = null)
+        /// <param name="isFromCheckpoint">True if called from checkpointing, false if called from background task</param>
+        protected void DoCompaction(GarnetDatabase db, bool isFromCheckpoint = false, ILogger logger = null)
         {
             try
             {
-                // Periodic compaction -> no need to compact before checkpointing
-                if (StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
+                // If periodic compaction is enabled and this is called from checkpointing, skip compaction
+                if (isFromCheckpoint && StoreWrapper.serverOptions.CompactionFrequencySecs > 0) return;
 
                 DoCompaction(db, StoreWrapper.serverOptions.CompactionMaxSegments,
                     StoreWrapper.serverOptions.ObjectStoreCompactionMaxSegments, 1,
@@ -685,7 +687,7 @@ namespace Garnet.server
                 // During the checkpoint, we may have serialized Garnet objects in (v) versions of objects.
                 // We can now safely remove these serialized versions as they are no longer needed.
                 using var iter1 = db.ObjectStore.Log.Scan(db.ObjectStore.Log.ReadOnlyAddress,
-                    db.ObjectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeSealedRecords: true);
+                    db.ObjectStore.Log.TailAddress, ScanBufferingMode.SinglePageBuffering, includeClosedRecords: true);
                 while (iter1.GetNext(out _, out _, out var value))
                 {
                     if (value != null)
@@ -745,6 +747,78 @@ namespace Garnet.server
             Logger?.LogDebug("Object Store - Deleted {deletedCount} keys out {totalCount} records in range {scanFrom} to {scanUntil} for DB {id}", deletedCount, totalCount, scanFrom, scanUntil, db.Id);
 
             return (deletedCount, totalCount);
+        }
+
+        /// <inheritdoc/>
+        public abstract (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats();
+
+        protected (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore) CollectHybridLogStatsForDb(GarnetDatabase db)
+        {
+            FunctionsState functionsState = CreateFunctionsState();
+            MainSessionFunctions mainStoreSessionFuncs = new MainSessionFunctions(functionsState);
+            var mainStoreStats = CollectHybridLogStats(db, db.MainStore, mainStoreSessionFuncs);
+
+            HybridLogScanMetrics objectStoreStats = null;
+            if (ObjectStore != null)
+            {
+                ObjectSessionFunctions objectSessionFunctions = new ObjectSessionFunctions(functionsState);
+                objectStoreStats = CollectHybridLogStats(db, db.ObjectStore, objectSessionFunctions);
+            }
+
+            return (mainStoreStats, objectStoreStats);
+        }
+
+        private HybridLogScanMetrics CollectHybridLogStats<TKey, TValue, TFuncs, TAllocator, TInput, TOutput>(
+            GarnetDatabase db,
+            TsavoriteKV<TKey, TValue, TFuncs, TAllocator> store,
+            ISessionFunctions<TKey, TValue, TInput, TOutput, long> sessionFunctions)
+            where TFuncs : IStoreFunctions<TKey, TValue>
+            where TAllocator : IAllocator<TKey, TValue, TFuncs>
+        {
+            if (db.HybridLogStatScanStorageSession == null)
+            {
+                var scratchBufferManager = new ScratchBufferBuilder();
+                db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+            }
+
+            using var session = store.NewSession<TInput, TOutput, long, ISessionFunctions<TKey, TValue, TInput, TOutput, long>>(sessionFunctions);
+            var basicContext = session.BasicContext;
+            // region: Immutable || Mutable
+            // state: RCUdSealed || RCUdUnsealed || Tombstoned || ElidedFromHashIndex || Live
+            var scanMetrics = new HybridLogScanMetrics();
+            var fromAddr = store.Log.HeadAddress;
+            var toAddr = store.Log.TailAddress;
+            using var iter = store.Log.Scan(fromAddr, toAddr, includeClosedRecords: true);
+            // Records can be in readonly region, or mutable region
+            while (iter.GetNext(out RecordInfo recordInfo))
+            {
+                TKey key = iter.GetKey();
+                TValue value = iter.GetValue();
+                string region = iter.CurrentAddress >= db.MainStore.Log.ReadOnlyAddress ? "Mutable" : "Immutable";
+                string state = "Live";
+                if (recordInfo.IsSealed)
+                {
+                    // while the server is live, this is true for RCUd records, when we recover from checkpoints, we unseal the records, so some RCUd records may not be sealed
+                    state = "RCUdSealed";
+                }
+                else if (recordInfo.Invalid)
+                {
+                    // Setting invalid is done when a record has been elided from the hash index
+                    state = "ElidedFromHashIndex";
+                }
+                else if (recordInfo.Tombstone)
+                {
+                    state = "Tombstoned";
+                }
+                else if (!basicContext.ContainsKeyInMemory(ref key, out long tempKeyAddress, fromAddr).Found || iter.CurrentAddress != tempKeyAddress)
+                {
+                    // check if this was a record that RCUd by checking if the key when queried via hash index points to the same address
+                    state = "RCUdUnsealed";
+                }
+                long size = iter.NextAddress - iter.CurrentAddress;
+                scanMetrics.AddScanMetric(region, state, size);
+            }
+            return scanMetrics;
         }
     }
 }

@@ -135,33 +135,6 @@ namespace Garnet.server
     }
 
     /// <summary>
-    /// Flags for specifying expiration input.
-    /// </summary>
-    [Flags]
-    internal enum SortedSetExpireInputFlags : byte
-    {
-        /// <summary>
-        /// Default input flags.
-        /// </summary>
-        Default = 0,
-
-        /// <summary>
-        /// Expiration time in milliseconds.
-        /// </summary>
-        InMilliseconds = 1,
-
-        /// <summary>
-        /// Expiration time as a timestamp.
-        /// </summary>
-        InTimestamp = 1 << 1,
-
-        /// <summary>
-        /// Avoid skipping arguments when parsing parseState. This will be used when called programmatically.
-        /// </summary>
-        NoSkip = 1 << 2,
-    }
-
-    /// <summary>
     /// Sorted Set
     /// </summary>
     public partial class SortedSetObject : GarnetObjectBase
@@ -552,6 +525,7 @@ namespace Garnet.server
                         if (!sortedSetObject1.IsExpired(item.Key))
                             directResult.Add(item.Key, item.Value);
                     }
+                    return directResult;
                 }
             }
 

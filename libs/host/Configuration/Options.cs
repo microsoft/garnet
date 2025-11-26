@@ -146,7 +146,7 @@ namespace Garnet
         public bool? ObjectStoreCopyReadsToTail { get; set; }
 
         [LogDirValidation(false, false)]
-        [Option('l', "logdir", Required = false, HelpText = "Storage directory for tiered records (hybrid log), if storage tiering (--storage) is enabled. Uses current directory if unspecified.")]
+        [Option('l', "logdir", Required = false, HelpText = "Storage directory for tiered records (hybrid log), if storage tiering (--storage-tier) is enabled. Uses current directory if unspecified.")]
         public string LogDir { get; set; }
 
         [CheckpointDirValidation(false, false)]
@@ -180,6 +180,14 @@ namespace Garnet
         [OptionValidation]
         [Option("clean-cluster-config", Required = false, HelpText = "Start with clean cluster config.")]
         public bool? CleanClusterConfig { get; set; }
+
+        [IntRangeValidation(0, 16384)]
+        [Option("pmt", Required = false, HelpText = "Number of parallel migrate tasks to spawn when SLOTS or SLOTSRANGE option is used.")]
+        public int ParallelMigrateTaskCount { get; set; }
+
+        [OptionValidation]
+        [Option("fast-migrate", Required = false, HelpText = "When migrating slots 1. write directly to network buffer to avoid unecessary copies, 2. do not wait for ack from target before sending next batch of keys.")]
+        public bool? FastMigrate { get; set; }
 
         [Option("auth", Required = false, HelpText = "Authentication mode of Garnet. This impacts how AUTH command is processed and how clients are authenticated against Garnet. Value options: NoAuth, Password, Aad, ACL")]
         public GarnetAuthenticationMode AuthenticationMode { get; set; }
@@ -239,6 +247,10 @@ namespace Garnet
         public string AofSizeLimit { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
+        [Option("aof-size-limit-enforce-frequency", Required = false, HelpText = "Frequency (in secs) of execution of the AutoCheckpointBasedOnAofSizeLimit background task.")]
+        public int AofSizeLimitEnforceFrequencySecs { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
         [Option("aof-refresh-freq", Required = false, HelpText = "AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.")]
         public int AofReplicationRefreshFrequencyMs { get; set; }
 
@@ -288,6 +300,10 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("cluster-timeout", Required = false, HelpText = "Cluster node timeout is the amount of seconds a node must be unreachable.")]
         public int ClusterTimeout { get; set; }
+
+        [IntRangeValidation(-1, int.MaxValue)]
+        [Option("cluster-config-flush-frequency", Required = false, HelpText = "How frequently to flush cluster config unto disk to persist updates. =-1: never (memory only), =0: immediately (every update performs flush), >0: frequency in ms")]
+        public int ClusterConfigFlushFrequencyMs { get; set; }
 
         [Option("cluster-tls-client-target-host", Required = false, HelpText = "Name for the client target host when using TLS connections in cluster mode.")]
         public string ClusterTlsClientTargetHost { get; set; }
@@ -443,6 +459,14 @@ namespace Garnet
         [Option("repl-diskless-sync-delay", Required = false, HelpText = "Delay in diskless replication sync in seconds. =0: Immediately start diskless replication sync.")]
         public int ReplicaDisklessSyncDelay { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("repl-attach-timeout", Required = false, HelpText = "Timeout in seconds for replication attach operation.")]
+        public int ReplicaAttachTimeout { get; set; }
+
+        [IntRangeValidation(0, int.MaxValue)]
+        [Option("repl-sync-timeout", Required = false, HelpText = "Timeout in seconds for replication sync operations.")]
+        public int ReplicaSyncTimeout { get; set; }
+
         [MemorySizeValidation(false)]
         [Option("repl-diskless-sync-full-sync-aof-threshold", Required = false, HelpText = "AOF replay size threshold for diskless replication, beyond which we will perform a full sync even if a partial sync is possible. Defaults to AOF memory size if not specified.")]
         public string ReplicaDisklessSyncFullSyncAofThreshold { get; set; }
@@ -480,8 +504,11 @@ namespace Garnet
         public bool? UseAzureStorageForConfigExport { get; set; }
 
         [OptionValidation]
-        [Option("use-native-device-linux", Required = false, HelpText = "Use native device on Linux for local storage")]
+        [Option("use-native-device-linux", Required = false, HelpText = "DEPRECATED: use DeviceType (--device-type) of Native instead.")]
         public bool? UseNativeDeviceLinux { get; set; }
+
+        [Option("device-type", Required = false, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
+        public DeviceType DeviceType { get; set; }
 
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
             HelpText = "#,#,...,#: For the main store, the sizes of records in each revivification bin, in order of increasing size." +
@@ -636,6 +663,13 @@ namespace Garnet
         [Option("streams", Required = false, HelpText = "Enable streams on server.")]
         public bool? EnableStreams { get; set; }
 
+        [IntRangeValidation(0, int.MaxValue, includeMin: true, isRequired: false)]
+        [Option("cluster-replication-reestablishment-timeout")]
+        public int ClusterReplicationReestablishmentTimeout { get; set; }
+
+        [Option("cluster-replica-resume-with-data", Required = false, HelpText = "If a Cluster Replica resumes with data, allow it to be served prior to a Primary being available")]
+        public bool ClusterReplicaResumeWithData { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -689,17 +723,25 @@ namespace Garnet
 
         public GarnetServerOptions GetServerOptions(ILogger logger = null)
         {
-            var useAzureStorage = UseAzureStorage.GetValueOrDefault();
             var enableStorageTier = EnableStorageTier.GetValueOrDefault();
             var enableRevivification = EnableRevivification.GetValueOrDefault();
 
+            if (UseNativeDeviceLinux.GetValueOrDefault())
+            {
+                logger?.LogWarning("The --use-native-device-linux option is deprecated. Please use --device-type Native instead.");
+                DeviceType = DeviceType.Native;
+            }
+
+            var deviceType = GetDeviceType(logger);
+
+            var useAzureStorage = deviceType == DeviceType.AzureStorage;
             if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString) && string.IsNullOrEmpty(AzureStorageServiceUri))
             {
-                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage without supplying storage-string or storage-service-uri");
+                throw new InvalidAzureConfiguration("Cannot use AzureStorage device without supplying storage-string or storage-service-uri");
             }
             if (useAzureStorage && !string.IsNullOrEmpty(AzureStorageConnectionString) && !string.IsNullOrEmpty(AzureStorageServiceUri))
             {
-                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage with both storage-string and storage-service-uri");
+                throw new InvalidAzureConfiguration("Cannot use AzureStorage device with both storage-string and storage-service-uri");
             }
 
             var logDir = LogDir;
@@ -823,6 +865,8 @@ namespace Garnet
                 DisableObjects = DisableObjects.GetValueOrDefault(),
                 EnableCluster = EnableCluster.GetValueOrDefault(),
                 CleanClusterConfig = CleanClusterConfig.GetValueOrDefault(),
+                ParallelMigrateTaskCount = ParallelMigrateTaskCount,
+                FastMigrate = FastMigrate.GetValueOrDefault(),
                 AuthSettings = GetAuthenticationSettings(logger),
                 EnableAOF = EnableAOF.GetValueOrDefault(),
                 EnableLua = EnableLua.GetValueOrDefault(),
@@ -833,6 +877,7 @@ namespace Garnet
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),
                 AofSizeLimit = AofSizeLimit,
+                AofSizeLimitEnforceFrequencySecs = AofSizeLimitEnforceFrequencySecs,
                 CompactionFrequencySecs = CompactionFrequencySecs,
                 ExpiredObjectCollectionFrequencySecs = ExpiredObjectCollectionFrequencySecs,
                 CompactionType = CompactionType,
@@ -842,6 +887,7 @@ namespace Garnet
                 GossipSamplePercent = GossipSamplePercent,
                 GossipDelay = GossipDelay,
                 ClusterTimeout = ClusterTimeout,
+                ClusterConfigFlushFrequencyMs = ClusterConfigFlushFrequencyMs,
                 EnableFastCommit = EnableFastCommit.GetValueOrDefault(),
                 FastCommitThrottleFreq = FastCommitThrottleFreq,
                 NetworkSendThrottleMax = NetworkSendThrottleMax,
@@ -868,9 +914,8 @@ namespace Garnet
                 ThreadPoolMinIOCompletionThreads = ThreadPoolMinIOCompletionThreads,
                 ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
-                DeviceFactoryCreator = useAzureStorage
-                    ? azureFactoryCreator()
-                    : new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
+                DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
+                    : new LocalStorageNamedDeviceFactoryCreator(deviceType: deviceType, logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
@@ -879,11 +924,13 @@ namespace Garnet
                 OnDemandCheckpoint = OnDemandCheckpoint.GetValueOrDefault(),
                 ReplicaDisklessSync = ReplicaDisklessSync.GetValueOrDefault(),
                 ReplicaDisklessSyncDelay = ReplicaDisklessSyncDelay,
+                ReplicaSyncTimeout = ReplicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaSyncTimeout),
+                ReplicaAttachTimeout = ReplicaAttachTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(ReplicaAttachTimeout),
                 ReplicaDisklessSyncFullSyncAofThreshold = ReplicaDisklessSyncFullSyncAofThreshold,
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
                 ClusterUsername = ClusterUsername,
                 ClusterPassword = ClusterPassword,
-                UseNativeDeviceLinux = UseNativeDeviceLinux.GetValueOrDefault(),
+                DeviceType = deviceType,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
                 RevivBinRecordCounts = revivBinRecordCounts,
@@ -908,7 +955,25 @@ namespace Garnet
                 MaxDatabases = MaxDatabases,
                 ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
                 EnableStreams = EnableStreams.GetValueOrDefault(),
+                ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
+                ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
             };
+        }
+
+        internal DeviceType GetDeviceType(ILogger logger = null)
+        {
+            var deviceType = DeviceType;
+
+            if (deviceType == DeviceType.Default)
+            {
+                deviceType = Devices.GetDefaultDeviceType();
+            }
+            if (UseAzureStorage.GetValueOrDefault())
+            {
+                logger?.LogInformation("The UseAzureStorage flag is deprecated, use DeviceType of AzureStorage instead");
+                deviceType = DeviceType.AzureStorage;
+            }
+            return deviceType;
         }
 
         private IAuthenticationSettings GetAuthenticationSettings(ILogger logger = null)

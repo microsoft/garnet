@@ -8,7 +8,8 @@ namespace GarnetJSON.JSONPath
     /// </summary>
     public static class JsonExtensions
     {
-        private static JsonSelectSettings ErrorWhenNoMatchSettings => new JsonSelectSettings { ErrorWhenNoMatch = true };
+        private static JsonSelectSettings ErrorWhenNoMatchSettings =>
+            new JsonSelectSettings { ErrorWhenNoMatch = true };
 
         /// <summary>
         /// Tries to select a single JSON node based on the specified JSONPath.
@@ -19,7 +20,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="resultJsonNode">The resulting JSON node if found; otherwise, null.</param>
         /// <returns>True if a single JSON node is found; otherwise, false.</returns>
         /// <exception cref="JsonException">Thrown if the path returns multiple elements.</exception>
-        public static bool TrySelectNode(this JsonNode jsonNode, string path, JsonSelectSettings? settings, out JsonNode? resultJsonNode)
+        public static bool TrySelectNode(this JsonNode jsonNode, string path, JsonSelectSettings? settings,
+            out JsonNode? resultJsonNode)
         {
             JsonPath p = new JsonPath(path);
 
@@ -59,7 +61,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="path">The JSONPath expression to evaluate.</param>
         /// <param name="settings">Optional settings for JSONPath evaluation.</param>
         /// <returns>An enumerable collection of JSON nodes that match the JSONPath.</returns>
-        public static IEnumerable<JsonNode?> SelectNodes(this JsonNode jsonNode, string path, JsonSelectSettings? settings = null)
+        public static IEnumerable<JsonNode?> SelectNodes(this JsonNode jsonNode, string path,
+            JsonSelectSettings? settings = null)
         {
             JsonPath p = new JsonPath(path);
             return p.Evaluate(jsonNode, jsonNode, settings);

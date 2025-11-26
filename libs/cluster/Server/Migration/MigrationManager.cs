@@ -44,6 +44,14 @@ namespace Garnet.cluster
             var sendBufferSize = 1 << clusterProvider.serverOptions.PageSizeBits();
             this.networkBufferSettings = new NetworkBufferSettings(sendBufferSize, initialReceiveBufferSize);
             this.networkPool = networkBufferSettings.CreateBufferPool(logger: logger);
+
+            logger?.LogInformation("NetworkBufferSettings.sendBufferSize:{sendBufferSize}", networkBufferSettings.sendBufferSize);
+            logger?.LogInformation("NetworkBufferSettings.initialReceiveBufferSize:{initialReceiveBufferSize}", networkBufferSettings.initialReceiveBufferSize);
+            logger?.LogInformation("NetworkBufferSettings.maxReceiveBufferSize:{maxReceiveBufferSize}", networkBufferSettings.maxReceiveBufferSize);
+            logger?.LogInformation("ParallelMigrateTasks:{ParallelMigrateTasks}", clusterProvider.serverOptions.ParallelMigrateTaskCount);
+            logger?.LogInformation("FastMigrate:{FastMigrate}", clusterProvider.serverOptions.FastMigrate ? "Enabled" : "Disabled");
+            logger?.LogInformation("ServerOptions.LoggingFrequency:{LoggingFrequency}", clusterProvider.serverOptions.LoggingFrequency);
+            logger?.LogInformation("StoreWrapper.LoggingFrequency:{LoggingFrequency}", clusterProvider.storeWrapper.loggingFrequency);
         }
 
         /// <summary>
@@ -83,7 +91,7 @@ namespace Garnet.cluster
         /// <param name="replaceOption"></param>
         /// <param name="timeout"></param>
         /// <param name="slots"></param>
-        /// <param name="keys"></param>
+        /// <param name="sketch"></param>
         /// <param name="transferOption"></param>
         /// <param name="mSession"></param>
         /// <returns></returns>
@@ -99,7 +107,7 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            MigratingKeysWorkingSet keys,
+            Sketch sketch,
             TransferOption transferOption,
             out MigrateSession mSession) => migrationTaskStore.TryAddMigrateSession(
                 clusterSession,
@@ -114,7 +122,7 @@ namespace Garnet.cluster
                 replaceOption,
                 timeout,
                 slots,
-                keys,
+                sketch,
                 transferOption,
                 out mSession);
 

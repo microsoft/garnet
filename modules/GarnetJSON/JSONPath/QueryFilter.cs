@@ -28,7 +28,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The current JSON node to filter.</param>
         /// <param name="settings">The settings to use for JSON selection.</param>
         /// <returns>An enumerable of filtered JSON nodes.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current,
+            JsonSelectSettings? settings)
         {
             if (current is JsonArray arr)
             {
@@ -59,7 +60,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The collection of current JSON nodes to filter.</param>
         /// <param name="settings">The settings to use for JSON selection.</param>
         /// <returns>An enumerable of filtered JSON nodes.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current,
+            JsonSelectSettings? settings)
         {
             foreach (var item in current)
             {

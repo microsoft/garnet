@@ -403,8 +403,9 @@ namespace Garnet.server
                 var result = ProcessRespSingleTokenOutput(output);
                 if (result.length > 0)
                 {
+                    var sbResult = result.ReadOnlySpan;
                     // get the new score
-                    _ = NumUtils.TryParse(result.ReadOnlySpan, out newScore);
+                    _ = NumUtils.TryParseWithInfinity(sbResult, out newScore);
                 }
             }
 
@@ -1241,9 +1242,9 @@ namespace Garnet.server
                 return GarnetStatus.WRONGTYPE;
             }
 
+            pairs = SortedSetObject.CopyDiff(firstSortedSet, null);
             if (keys.Length == 1)
             {
-                pairs = firstSortedSet.Dictionary;
                 return GarnetStatus.OK;
             }
 
@@ -1262,10 +1263,7 @@ namespace Garnet.server
                     return GarnetStatus.WRONGTYPE;
                 }
 
-                if (pairs == default)
-                    pairs = SortedSetObject.CopyDiff(firstSortedSet, nextSortedSet);
-                else
-                    SortedSetObject.InPlaceDiff(pairs, nextSortedSet);
+                SortedSetObject.InPlaceDiff(pairs, nextSortedSet);
             }
 
             return GarnetStatus.OK;
@@ -1337,7 +1335,7 @@ namespace Garnet.server
             var status = SortedSetIntersect(keys, null, SortedSetAggregateType.Sum, out var pairs);
             if (status == GarnetStatus.OK && pairs != null)
             {
-                count = limit.HasValue ? Math.Min(pairs.Count, limit.Value) : pairs.Count;
+                count = limit > 0 ? Math.Min(pairs.Count, limit.Value) : pairs.Count;
             }
 
             return status;
@@ -1434,9 +1432,12 @@ namespace Garnet.server
                 if (status == GarnetStatus.OK)
                 {
                     pairs = new(SortedSetComparer.Instance);
-                    foreach (var pair in result)
+                    if (result != null)
                     {
-                        pairs.Add((pair.Value, pair.Key));
+                        foreach (var pair in result)
+                        {
+                            pairs.Add((pair.Value, pair.Key));
+                        }
                     }
                 }
 
@@ -1510,7 +1511,7 @@ namespace Garnet.server
                 if (statusOp != GarnetStatus.OK)
                 {
                     pairs = default;
-                    return statusOp;
+                    return GarnetStatus.OK;
                 }
 
                 if (nextObj.GarnetObject is not SortedSetObject nextSortedSet)
@@ -1535,6 +1536,12 @@ namespace Garnet.server
                         SortedSetAggregateType.Max => Math.Max(kvp.Value, weightedScore),
                         _ => kvp.Value + weightedScore // Default to SUM
                     };
+
+                    // That's what the references do. Arguably we're doing bug compatible behaviour here.
+                    if (double.IsNaN(pairs[kvp.Key]))
+                    {
+                        pairs[kvp.Key] = 0;
+                    }
                 }
 
                 // If intersection becomes empty, we can stop early
@@ -1577,19 +1584,14 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
             results = default;
-            var expireMillisecs = expireAt.ToUnixTimeMilliseconds();
-            var expiryLength = NumUtils.CountDigits(expireMillisecs);
-            var expiryArg = scratchBufferBuilder.CreateArgSlice(expiryLength);
-            var expirySpan = expiryArg.Span;
-            NumUtils.WriteInt64(expireMillisecs, expirySpan);
+            var expirationTimeInTicks = expireAt.UtcTicks;
 
-            parseState.Initialize(1 + members.Length);
-            parseState.SetArgument(0, expiryArg);
-            parseState.SetArguments(1, members);
+            var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
+
+            parseState.InitializeWithArguments(members);
 
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
-            var inputFlag = SortedSetExpireInputFlags.InMilliseconds | SortedSetExpireInputFlags.InTimestamp | SortedSetExpireInputFlags.NoSkip;
-            var innerInput = new ObjectInput(header, ref parseState, startIdx: 0, arg1: (int)expireOption, arg2: (int)inputFlag);
+            var innerInput = new ObjectInput(header, ref parseState, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
 
             var output = new GarnetObjectStoreOutput();
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref output);

@@ -97,6 +97,8 @@ namespace Garnet.server
             internal int BadArgPack { get; }
             /// <see cref="CmdStrings.LUA_bad_arg_unpack"/>
             internal int BadArgUnpack { get; }
+            /// <see cref="CmdStrings.LUA_bad_arg_format"/>
+            internal int BadArgFormat { get; }
             /// <see cref="CmdStrings.LUA_bad_arg_bor"/>
             internal int BadArgBOr { get; }
             /// <see cref="CmdStrings.LUA_bad_arg_band"/>
@@ -159,6 +161,8 @@ namespace Garnet.server
             internal int XOR { get; }
             /// <see cref="CmdStrings.LUA_NOT"/>
             internal int NOT { get; }
+            /// <see cref="CmdStrings.LUA_DIFF"/>
+            internal int DIFF { get; }
             /// <see cref="CmdStrings.LUA_KEYS"/>
             internal int KEYS { get; }
             /// <see cref="CmdStrings.LUA_ARGV"/>
@@ -212,6 +216,7 @@ namespace Garnet.server
                 BadArgDecode = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_decode);
                 BadArgPack = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_pack);
                 BadArgUnpack = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_unpack);
+                BadArgFormat = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_format);
                 BadArgBOr = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_bor);
                 BadArgBAnd = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_band);
                 BadArgBXor = ConstantStringToRegistry(ref state, CmdStrings.LUA_bad_arg_bxor);
@@ -243,6 +248,7 @@ namespace Garnet.server
                 OR = ConstantStringToRegistry(ref state, CmdStrings.LUA_OR);
                 XOR = ConstantStringToRegistry(ref state, CmdStrings.LUA_XOR);
                 NOT = ConstantStringToRegistry(ref state, CmdStrings.LUA_NOT);
+                DIFF = ConstantStringToRegistry(ref state, CmdStrings.LUA_DIFF);
                 KEYS = ConstantStringToRegistry(ref state, CmdStrings.LUA_KEYS);
                 ARGV = ConstantStringToRegistry(ref state, CmdStrings.LUA_ARGV);
             }

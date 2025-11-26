@@ -3,7 +3,9 @@
 
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Garnet.common;
+using Garnet.server;
 using Garnet.server.TLS;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -31,20 +33,30 @@ namespace Garnet.cluster
         readonly IGarnetTlsOptions tlsOptions;
 
         /// <summary>
+        /// Garnet server options
+        /// </summary>
+        readonly GarnetServerOptions serverOptions;
+
+        /// <summary>
         /// ClusterProvider
         /// </summary>
         public readonly ClusterProvider clusterProvider;
 
         /// <summary>
+        /// Flush count used to indicate a pending flush operation.
+        /// </summary>
+        int flushCount = 0;
+
+        /// <summary>
         /// Constructor
         /// </summary>
-        public unsafe ClusterManager(ClusterProvider clusterProvider, ILogger logger = null)
+        public ClusterManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
-            var opts = clusterProvider.serverOptions;
+            this.serverOptions = clusterProvider.serverOptions;
             var clusterFolder = "/cluster";
-            var clusterDataPath = opts.CheckpointDir + clusterFolder;
-            var deviceFactory = opts.GetInitializedDeviceFactory(clusterDataPath);
+            var clusterDataPath = serverOptions.CheckpointDir + clusterFolder;
+            var deviceFactory = serverOptions.GetInitializedDeviceFactory(clusterDataPath);
 
             clusterConfigDevice = deviceFactory.Get(new FileDescriptor(directoryName: "", fileName: "nodes.conf"));
             pool = new(1, (int)clusterConfigDevice.SectorSize);
@@ -52,10 +64,10 @@ namespace Garnet.cluster
             var clusterEndpoint = clusterProvider.storeWrapper.GetClusterEndpoint();
 
             this.logger = logger;
-            var recoverConfig = clusterConfigDevice.GetFileSize(0) > 0 && !opts.CleanClusterConfig;
+            var recoverConfig = clusterConfigDevice.GetFileSize(0) > 0 && !serverOptions.CleanClusterConfig;
 
-            tlsOptions = opts.TlsOptions;
-            if (!opts.CleanClusterConfig)
+            tlsOptions = serverOptions.TlsOptions;
+            if (!serverOptions.CleanClusterConfig)
                 logger?.LogInformation("Attempt to recover cluster config from: {configFilename}", clusterConfigDevice.FileName);
             else
                 logger?.LogInformation("Skipping recovery of local config due to CleanClusterConfig flag set");
@@ -84,10 +96,37 @@ namespace Garnet.cluster
             clusterConnectionStore = new GarnetClusterConnectionStore(logger: logger);
             InitLocal(clusterEndpoint.Address.ToString(), clusterEndpoint.Port, recoverConfig);
             logger?.LogInformation("{NodeInfoStartup}", CurrentConfig.GetClusterInfo(clusterProvider).TrimEnd('\n'));
-            gossipDelay = TimeSpan.FromSeconds(opts.GossipDelay);
-            clusterTimeout = opts.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(opts.ClusterTimeout);
+            gossipDelay = TimeSpan.FromSeconds(serverOptions.GossipDelay);
+            clusterTimeout = serverOptions.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(serverOptions.ClusterTimeout);
             numActiveTasks = 0;
-            GossipSamplePercent = opts.GossipSamplePercent;
+            GossipSamplePercent = serverOptions.GossipSamplePercent;
+
+            // Run Background task
+            if (serverOptions.ClusterConfigFlushFrequencyMs > 0)
+                Task.Run(() => FlushTask());
+
+            async Task FlushTask()
+            {
+                var flushConfigFrequency = TimeSpan.FromMilliseconds(serverOptions.ClusterConfigFlushFrequencyMs);
+                try
+                {
+                    Interlocked.Increment(ref numActiveTasks);
+                    while (true)
+                    {
+                        if (ctsGossip.IsCancellationRequested)
+                            return;
+
+                        if (Interlocked.CompareExchange(ref flushCount, 0, 0) > 0)
+                            ClusterUtils.WriteInto(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger: logger);
+
+                        await Task.Delay(flushConfigFrequency, ctsGossip.Token).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref numActiveTasks);
+                }
+            }
         }
 
         /// <summary>
@@ -118,10 +157,23 @@ namespace Garnet.cluster
         public void Start()
             => TryStartGossipTasks();
 
+        /// <summary>
+        /// Flush current config to disk
+        /// </summary>
         public void FlushConfig()
         {
-            lock (this)
-                ClusterUtils.WriteInto(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger: logger);
+            if (serverOptions.ClusterConfigFlushFrequencyMs == -1)
+                return;
+
+            if (serverOptions.ClusterConfigFlushFrequencyMs > 0)
+                Interlocked.Increment(ref flushCount);
+            else
+            {
+                lock (this)
+                {
+                    ClusterUtils.WriteInto(clusterConfigDevice, pool, 0, currentConfig.ToByteArray(), logger: logger);
+                }
+            }
         }
 
         /// <summary>
@@ -157,6 +209,10 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// Implements CLUSTER INFO command
+        /// </summary>
+        /// <returns></returns>
         public string GetInfo()
         {
             var current = CurrentConfig;
@@ -175,6 +231,11 @@ namespace Garnet.cluster
             return ClusterInfo;
         }
 
+        /// <summary>
+        /// Return range of slots from provided array of slots
+        /// </summary>
+        /// <param name="slots"></param>
+        /// <returns></returns>
         public static string GetRange(int[] slots)
         {
             var range = "> ";
@@ -286,7 +347,9 @@ namespace Garnet.cluster
             while (true)
             {
                 var current = currentConfig;
-                var newConfig = current.MakeReplicaOf(replicaId);
+                var slotMap = current.GetSlotList(1);
+                var workerId = current.GetWorkerIdFromNodeId(replicaId);
+                var newConfig = current.MakeReplicaOf(replicaId).AssignSlots(slotMap, workerId, SlotState.STABLE);
                 if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                     break;
             }

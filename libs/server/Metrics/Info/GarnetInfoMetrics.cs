@@ -6,7 +6,9 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using Garnet.common;
+using Garnet.server.Metrics;
 
 namespace Garnet.server
 {
@@ -19,6 +21,7 @@ namespace Garnet.server
                 InfoMetricsType.OBJECTSTOREHASHTABLE => false,
                 InfoMetricsType.STOREREVIV => false,
                 InfoMetricsType.OBJECTSTOREREVIV => false,
+                InfoMetricsType.HLOGSCAN => false,
                 _ => true
             })];
 
@@ -38,6 +41,7 @@ namespace Garnet.server
         MetricsItem[] keyspaceInfo = null;
         MetricsItem[] bufferPoolStats = null;
         MetricsItem[] checkpointStats = null;
+        MetricsItem[][] hlogScanStats = null;
 
         private void PopulateServerInfo(StoreWrapper storeWrapper)
         {
@@ -61,22 +65,26 @@ namespace Garnet.server
 
         private void PopulateMemoryInfo(StoreWrapper storeWrapper)
         {
-            var main_store_index_size = -1L;
-            var main_store_log_memory_size = -1L;
-            var main_store_read_cache_size = -1L;
-            var total_main_store_size = -1L;
+            var main_store_index_size = 0L;
+            var main_store_log_memory_size = 0L;
+            var main_store_read_cache_size = 0L;
+            long total_main_store_size;
 
-            var object_store_index_size = -1L;
-            var object_store_log_memory_size = -1L;
-            var object_store_read_cache_log_memory_size = -1L;
-            var object_store_heap_memory_size = -1L;
-            var object_store_read_cache_heap_memory_size = -1L;
-            var total_object_store_size = -1L;
+            var disableObj = storeWrapper.serverOptions.DisableObjects;
 
-            var aof_log_memory_size = -1L;
+            var initialSize = disableObj ? -1L : 0L;
+            var object_store_index_size = initialSize;
+            var object_store_log_memory_size = initialSize;
+            var object_store_read_cache_log_memory_size = initialSize;
+            var object_store_heap_memory_target_size = initialSize;
+            var object_store_heap_memory_size = initialSize;
+            var object_store_read_cache_heap_memory_size = initialSize;
+            var total_object_store_size = initialSize;
+
+            var enableAof = storeWrapper.serverOptions.EnableAOF;
+            var aof_log_memory_size = enableAof ? 0 : -1L;
 
             var databases = storeWrapper.GetDatabasesSnapshot();
-            var disableObj = storeWrapper.serverOptions.DisableObjects;
 
             foreach (var db in databases)
             {
@@ -84,14 +92,14 @@ namespace Garnet.server
                 main_store_log_memory_size += db.MainStore.Log.MemorySizeBytes;
                 main_store_read_cache_size += db.MainStore.ReadCache?.MemorySizeBytes ?? 0;
 
-
-                aof_log_memory_size = db.AppendOnlyFile?.MemorySizeBytes ?? -1;
+                aof_log_memory_size += db.AppendOnlyFile?.MemorySizeBytes ?? 0;
 
                 if (!disableObj)
                 {
                     object_store_index_size += db.ObjectStore.IndexSize * 64;
                     object_store_log_memory_size += db.ObjectStore.Log.MemorySizeBytes;
                     object_store_read_cache_log_memory_size += db.ObjectStore.ReadCache?.MemorySizeBytes ?? 0;
+                    object_store_heap_memory_target_size += db.ObjectStoreSizeTracker?.mainLogTracker.TargetSize ?? 0;
                     object_store_heap_memory_size += db.ObjectStoreSizeTracker?.mainLogTracker.LogHeapSizeBytes ?? 0;
                     object_store_read_cache_heap_memory_size += db.ObjectStoreSizeTracker?.readCacheTracker?.LogHeapSizeBytes ?? 0;
                 }
@@ -142,6 +150,7 @@ namespace Garnet.server
                 new("total_main_store_size", total_main_store_size.ToString()),
                 new("object_store_index_size", object_store_index_size.ToString()),
                 new("object_store_log_memory_size", object_store_log_memory_size.ToString()),
+                new("object_store_heap_memory_target_size", object_store_heap_memory_target_size.ToString()),
                 new("object_store_heap_memory_size", object_store_heap_memory_size.ToString()),
                 new("object_store_read_cache_log_memory_size", object_store_read_cache_log_memory_size.ToString()),
                 new("object_store_read_cache_heap_memory_size", object_store_read_cache_heap_memory_size.ToString()),
@@ -206,7 +215,9 @@ namespace Garnet.server
                     new("total_cluster_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_cluster_commands_processed().ToString()),
                     new("total_write_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_write_commands_processed().ToString()),
                     new("total_read_commands_processed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_read_commands_processed().ToString()),
-                    new("total_number_resp_server_session_exceptions", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_number_resp_server_session_exceptions().ToString())
+                    new("total_number_resp_server_session_exceptions", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_number_resp_server_session_exceptions().ToString()),
+                    new("total_transaction_commands_received", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_transaction_commands_received().ToString()),
+                    new("total_transaction_commands_execution_failed", metricsDisabled ? "0" : globalMetrics.globalSessionMetrics.get_total_transaction_commands_execution_failed().ToString()),
                 ];
 
             if (clusterEnabled)
@@ -241,6 +252,7 @@ namespace Garnet.server
             new($"Log.BeginAddress", db.MainStore.Log.BeginAddress.ToString()),
             new($"Log.BufferSize", db.MainStore.Log.BufferSize.ToString()),
             new($"Log.EmptyPageCount", db.MainStore.Log.EmptyPageCount.ToString()),
+            new($"Log.MinEmptyPageCount", db.MainStore.Log.MinEmptyPageCount.ToString()),
             new($"Log.FixedRecordSize", db.MainStore.Log.FixedRecordSize.ToString()),
             new($"Log.HeadAddress", db.MainStore.Log.HeadAddress.ToString()),
             new($"Log.MemorySizeBytes", db.MainStore.Log.MemorySizeBytes.ToString()),
@@ -276,6 +288,7 @@ namespace Garnet.server
             new($"Log.BeginAddress", db.ObjectStore.Log.BeginAddress.ToString()),
             new($"Log.BufferSize", db.ObjectStore.Log.BufferSize.ToString()),
             new($"Log.EmptyPageCount", db.ObjectStore.Log.EmptyPageCount.ToString()),
+            new($"Log.MinEmptyPageCount", db.ObjectStore.Log.MinEmptyPageCount.ToString()),
             new($"Log.FixedRecordSize", db.ObjectStore.Log.FixedRecordSize.ToString()),
             new($"Log.HeadAddress", db.ObjectStore.Log.HeadAddress.ToString()),
             new($"Log.MemorySizeBytes", db.ObjectStore.Log.MemorySizeBytes.ToString()),
@@ -367,7 +380,7 @@ namespace Garnet.server
             clientsInfo = [new("connected_clients", metricsDisabled ? "0" : (globalMetrics.total_connections_received - globalMetrics.total_connections_disposed).ToString())];
         }
 
-        private void PopulateKeyspaceInfo(StoreWrapper storeWrapper)
+        private void PopulateKeyspaceInfo()
         {
             keyspaceInfo = null;
         }
@@ -384,7 +397,27 @@ namespace Garnet.server
 
         private void PopulateCheckpointInfo(StoreWrapper storeWrapper)
         {
-            checkpointStats = storeWrapper.clusterProvider == null ? null : storeWrapper.clusterProvider.GetCheckpointInfo();
+            checkpointStats = storeWrapper.clusterProvider?.GetCheckpointInfo();
+        }
+
+        private void PopulateHlogScanInfo(StoreWrapper storeWrapper)
+        {
+            (HybridLogScanMetrics mainStoreMetrics, HybridLogScanMetrics objectStoreMetrics)[] res = storeWrapper.HybridLogDistributionScan();
+            var result = new List<MetricsItem[]>();
+            for (int i = 0; i < res.Length; i++)
+            {
+                var mainStoreMetric = res[i].mainStoreMetrics.DumpScanMetricsInfo();
+                mainStoreMetric = string.IsNullOrEmpty(mainStoreMetric) ? "Empty" : mainStoreMetric;
+                var objectStoreMetric = res[i].objectStoreMetrics.DumpScanMetricsInfo();
+                objectStoreMetric = string.IsNullOrEmpty(objectStoreMetric) ? "Empty" : objectStoreMetric;
+                result.Add(
+                    [
+                        new MetricsItem($"MainStore_HLog_{i}", mainStoreMetric),
+                        new MetricsItem($"ObjectStore_HLog_{i}", objectStoreMetric)
+                    ]);
+            }
+
+            hlogScanStats = result.ToArray();
         }
 
         public static string GetSectionHeader(InfoMetricsType infoType, int dbId)
@@ -410,31 +443,31 @@ namespace Garnet.server
                 InfoMetricsType.MODULES => "Modules",
                 InfoMetricsType.BPSTATS => "BufferPoolStats",
                 InfoMetricsType.CINFO => "CheckpointInfo",
+                InfoMetricsType.HLOGSCAN => $"MainStoreHLogScan_DB_{dbId}",
                 _ => "Default",
             };
         }
 
-        private static string GetSectionRespInfo(string sectionHeader, MetricsItem[] info)
+        private static void GetSectionRespInfo(string sectionHeader, MetricsItem[] info, StringBuilder sbResponse)
         {
-            var section = $"# {sectionHeader}\r\n";
+            sbResponse.Append($"# {sectionHeader}\r\n");
             if (info == null)
-                return section;
+                return;
 
             // For some metrics we have a multi-string in the value and no name, so don't print a stray leading ':'.
             if (string.IsNullOrEmpty(info[0].Name))
             {
                 Debug.Assert(info.Length == 1, "Unexpected empty name in first entry of multi-entry metrics info");
-                section += $"{info[0].Value}\r\n";
+                sbResponse.Append($"{info[0].Value}\r\n");
             }
             else
             {
                 for (var i = 0; i < info.Length; i++)
-                    section += $"{info[i].Name}:{info[i].Value}\r\n";
+                    sbResponse.Append($"{info[i].Name}:{info[i].Value}\r\n");
             }
-            return section;
         }
 
-        private string GetRespInfo(InfoMetricsType section, int dbId, StoreWrapper storeWrapper)
+        private void GetRespInfo(InfoMetricsType section, int dbId, StoreWrapper storeWrapper, StringBuilder sbResponse)
         {
             var header = GetSectionHeader(section, dbId);
 
@@ -442,75 +475,100 @@ namespace Garnet.server
             {
                 case InfoMetricsType.SERVER:
                     PopulateServerInfo(storeWrapper);
-                    return GetSectionRespInfo(header, serverInfo);
+                    GetSectionRespInfo(header, serverInfo, sbResponse);
+                    return;
                 case InfoMetricsType.MEMORY:
                     PopulateMemoryInfo(storeWrapper);
-                    return GetSectionRespInfo(header, memoryInfo);
+                    GetSectionRespInfo(header, memoryInfo, sbResponse);
+                    return;
                 case InfoMetricsType.CLUSTER:
                     PopulateClusterInfo(storeWrapper);
-                    return GetSectionRespInfo(header, clusterInfo);
+                    GetSectionRespInfo(header, clusterInfo, sbResponse);
+                    return;
                 case InfoMetricsType.REPLICATION:
                     PopulateReplicationInfo(storeWrapper);
-                    return GetSectionRespInfo(header, replicationInfo);
+                    GetSectionRespInfo(header, replicationInfo, sbResponse);
+                    return;
                 case InfoMetricsType.STATS:
                     PopulateStatsInfo(storeWrapper);
-                    return GetSectionRespInfo(header, statsInfo);
+                    GetSectionRespInfo(header, statsInfo, sbResponse);
+                    return;
                 case InfoMetricsType.STORE:
                     PopulateStoreStats(storeWrapper);
-                    return GetSectionRespInfo(header, storeInfo[dbId]);
+                    GetSectionRespInfo(header, storeInfo[dbId], sbResponse);
+                    return;
                 case InfoMetricsType.OBJECTSTORE:
-                    if (storeWrapper.serverOptions.DisableObjects) return "";
+                    if (storeWrapper.serverOptions.DisableObjects)
+                        return;
                     PopulateObjectStoreStats(storeWrapper);
-                    return GetSectionRespInfo(header, objectStoreInfo[dbId]);
+                    GetSectionRespInfo(header, objectStoreInfo[dbId], sbResponse);
+                    return;
                 case InfoMetricsType.STOREHASHTABLE:
                     PopulateStoreHashDistribution(storeWrapper);
-                    return GetSectionRespInfo(header, storeHashDistrInfo[dbId]);
+                    GetSectionRespInfo(header, storeHashDistrInfo[dbId], sbResponse);
+                    return;
                 case InfoMetricsType.OBJECTSTOREHASHTABLE:
-                    if (storeWrapper.serverOptions.DisableObjects) return "";
+                    if (storeWrapper.serverOptions.DisableObjects)
+                        return;
                     PopulateObjectStoreHashDistribution(storeWrapper);
-                    return GetSectionRespInfo(header, objectStoreHashDistrInfo[dbId]);
+                    GetSectionRespInfo(header, objectStoreHashDistrInfo[dbId], sbResponse);
+                    return;
                 case InfoMetricsType.STOREREVIV:
                     PopulateStoreRevivInfo(storeWrapper);
-                    return GetSectionRespInfo(header, storeRevivInfo[dbId]);
+                    GetSectionRespInfo(header, storeRevivInfo[dbId], sbResponse);
+                    return;
                 case InfoMetricsType.OBJECTSTOREREVIV:
-                    if (storeWrapper.serverOptions.DisableObjects) return "";
+                    if (storeWrapper.serverOptions.DisableObjects)
+                        return;
                     PopulateObjectStoreRevivInfo(storeWrapper);
-                    return GetSectionRespInfo(header, objectStoreRevivInfo[dbId]);
+                    GetSectionRespInfo(header, objectStoreRevivInfo[dbId], sbResponse);
+                    return;
                 case InfoMetricsType.PERSISTENCE:
-                    if (!storeWrapper.serverOptions.EnableAOF) return "";
+                    if (!storeWrapper.serverOptions.EnableAOF)
+                        return;
                     PopulatePersistenceInfo(storeWrapper);
-                    return GetSectionRespInfo(header, persistenceInfo[dbId]);
+                    GetSectionRespInfo(header, persistenceInfo[dbId], sbResponse);
+                    return;
                 case InfoMetricsType.CLIENTS:
                     PopulateClientsInfo(storeWrapper);
-                    return GetSectionRespInfo(header, clientsInfo);
+                    GetSectionRespInfo(header, clientsInfo, sbResponse);
+                    return;
                 case InfoMetricsType.KEYSPACE:
-                    PopulateKeyspaceInfo(storeWrapper);
-                    return GetSectionRespInfo(header, keyspaceInfo);
+                    PopulateKeyspaceInfo();
+                    GetSectionRespInfo(header, keyspaceInfo, sbResponse);
+                    return;
                 case InfoMetricsType.MODULES:
-                    return GetSectionRespInfo(header, null);
+                    GetSectionRespInfo(header, null, sbResponse);
+                    return;
                 case InfoMetricsType.BPSTATS:
                     PopulateClusterBufferPoolStats(storeWrapper);
-                    return GetSectionRespInfo(header, bufferPoolStats);
+                    GetSectionRespInfo(header, bufferPoolStats, sbResponse);
+                    return;
                 case InfoMetricsType.CINFO:
                     PopulateCheckpointInfo(storeWrapper);
-                    return GetSectionRespInfo(header, checkpointStats);
+                    GetSectionRespInfo(header, checkpointStats, sbResponse);
+                    return;
+                case InfoMetricsType.HLOGSCAN:
+                    PopulateHlogScanInfo(storeWrapper);
+                    GetSectionRespInfo(header, hlogScanStats[dbId], sbResponse);
+                    return;
                 default:
-                    return "";
+                    return;
             }
         }
 
         public string GetRespInfo(InfoMetricsType[] sections, int dbId, StoreWrapper storeWrapper)
         {
-            var response = "";
+            var sbResponse = new StringBuilder();
             for (var i = 0; i < sections.Length; i++)
             {
-                var section = sections[i];
-                var resp = GetRespInfo(section, dbId, storeWrapper);
-                if (string.IsNullOrEmpty(resp)) continue;
-                response += resp;
-                response += sections.Length - 1 == i ? "" : "\r\n";
+                GetRespInfo(sections[i], dbId, storeWrapper, sbResponse);
+
+                if (i != sections.Length - 1)
+                    sbResponse.Append("\r\n");
             }
-            return response;
+
+            return sbResponse.ToString();
         }
 
         private MetricsItem[] GetMetricInternal(InfoMetricsType section, int dbId, StoreWrapper storeWrapper)
@@ -536,32 +594,36 @@ namespace Garnet.server
                     PopulateStoreStats(storeWrapper);
                     return storeInfo[dbId];
                 case InfoMetricsType.OBJECTSTORE:
-                    if (storeWrapper.serverOptions.DisableObjects) return null;
+                    if (storeWrapper.serverOptions.DisableObjects)
+                        return null;
                     PopulateObjectStoreStats(storeWrapper);
                     return objectStoreInfo[dbId];
                 case InfoMetricsType.STOREHASHTABLE:
                     PopulateStoreHashDistribution(storeWrapper);
                     return storeHashDistrInfo[dbId];
                 case InfoMetricsType.OBJECTSTOREHASHTABLE:
-                    if (storeWrapper.serverOptions.DisableObjects) return null;
+                    if (storeWrapper.serverOptions.DisableObjects)
+                        return null;
                     PopulateObjectStoreHashDistribution(storeWrapper);
                     return objectStoreHashDistrInfo[dbId];
                 case InfoMetricsType.STOREREVIV:
                     PopulateStoreRevivInfo(storeWrapper);
                     return storeRevivInfo[dbId];
                 case InfoMetricsType.OBJECTSTOREREVIV:
-                    if (storeWrapper.serverOptions.DisableObjects) return null;
+                    if (storeWrapper.serverOptions.DisableObjects)
+                        return null;
                     PopulateObjectStoreRevivInfo(storeWrapper);
                     return objectStoreRevivInfo[dbId];
                 case InfoMetricsType.PERSISTENCE:
-                    if (!storeWrapper.serverOptions.EnableAOF) return null;
+                    if (!storeWrapper.serverOptions.EnableAOF)
+                        return null;
                     PopulatePersistenceInfo(storeWrapper);
                     return persistenceInfo[dbId];
                 case InfoMetricsType.CLIENTS:
                     PopulateClientsInfo(storeWrapper);
                     return clientsInfo;
                 case InfoMetricsType.KEYSPACE:
-                    PopulateKeyspaceInfo(storeWrapper);
+                    PopulateKeyspaceInfo();
                     return keyspaceInfo;
                 case InfoMetricsType.MODULES:
                     return null;
@@ -574,12 +636,11 @@ namespace Garnet.server
 
         public IEnumerable<(InfoMetricsType, MetricsItem[])> GetInfoMetrics(InfoMetricsType[] sections, int dbId, StoreWrapper storeWrapper)
         {
-            for (var i = 0; i < sections.Length; i++)
+            foreach (var section in sections)
             {
-                var infoType = sections[i];
-                var infoItems = GetMetricInternal(infoType, dbId, storeWrapper);
+                var infoItems = GetMetricInternal(section, dbId, storeWrapper);
                 if (infoItems != null)
-                    yield return (infoType, infoItems);
+                    yield return (section, infoItems);
             }
         }
     }

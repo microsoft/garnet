@@ -39,8 +39,7 @@ namespace TstRunner
                 //foreach (var item in clusterMigrateTestItems)
                 //    RunTest(clusterMigrateTests, item.Item1, item.Item2);
 
-                clusterReplicationTests.SetLogTextWriter(Console.Out);
-                var clusterReplicationTestItems = clusterReplicationTests.GetUnitTests();
+                var clusterReplicationTestItems = clusterReplicationTests.GetUnitTests().AsSpan().Slice(39);
                 foreach (var item in clusterReplicationTestItems)
                     RunTest(clusterReplicationTests, item.Item1, item.Item2);
 
@@ -50,18 +49,19 @@ namespace TstRunner
             }
         }
 
-        private static void RunTest<T>(T test, Action testCase, string name = "")
+        private static void RunTest<T>(T testGroup, Action testCase, string name = "")
         {
-            dynamic ctest = test;
+            dynamic cTestGroup = testGroup;
             try
             {
                 Console.WriteLine($"\tStarted {name} on {DateTime.Now}");
-                ctest.Setup();
+                cTestGroup.LogTextWriter = Console.Out;
+                cTestGroup.Setup();
                 testCase();
             }
             finally
             {
-                ctest.TearDown();
+                cTestGroup.TearDown();
             }
         }
     }

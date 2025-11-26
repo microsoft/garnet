@@ -40,6 +40,8 @@ jobs:
           build-mode: manual
         - language: javascript-typescript
           build-mode: none
+        - language: c-cpp
+          build-mode: none
         # CodeQL supports the following values keywords for 'language': 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'swift'
         # Use `c-cpp` to analyze code written in C, C++ or both
         # Use 'java-kotlin' to analyze code written in Java, Kotlin or both
@@ -75,17 +77,9 @@ jobs:
     # to build your code.
     # ℹ️ Command-line programs to run using the OS shell.
     # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
-    - name: Setup .NET 8.0
+    - name: Setup .NET
       if: ${{ matrix.build-mode == 'manual' }}
       uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 8.0.x
-
-    - name: Setup .NET 9.0
-      if: ${{ matrix.build-mode == 'manual' }}
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 9.0.x
 
     - name: Install dependencies
       if: ${{ matrix.build-mode == 'manual' }}

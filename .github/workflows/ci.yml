@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - main
+      - dev
   pull_request:
     branches:
       - main
+      - dev
   
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
@@ -49,14 +51,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-      - name: Setup .NET 8.0
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
-      - name: Setup .NET 9.0
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
       - name: Install dependencies
         run: dotnet restore Garnet.sln
       - name: Check style format
@@ -70,14 +66,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-      - name: Setup .NET 8.0
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
-      - name: Setup .NET 9.0
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
       - name: Install dependencies
         run: dotnet restore libs/storage/Tsavorite/cs/Tsavorite.sln
       - name: Check style format
@@ -99,14 +89,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-      - name: Setup .NET 8.0
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
-      - name: Setup .NET 9.0
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
       - name: Install dependencies
         run: dotnet restore
       - name: Build Garnet
@@ -146,14 +130,8 @@ jobs:
       - name: Set environment variable for Windows
         run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
         if: ${{ matrix.os == 'windows-latest' }}
-      - name: Setup .NET 8.0
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.0.x
-      - name: Setup .NET 9.0
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 9.0.x
       - name: Setup Node.js for Azurite
         uses: actions/setup-node@v4
         with:

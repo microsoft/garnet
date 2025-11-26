@@ -466,7 +466,7 @@ namespace Garnet.common
 
             signSize = (byte)(value < 0 ? 1 : 0); // Add sign if the number is negative
             value = Math.Abs(value);
-            integerDigits = (int)Math.Log10(value) + 1;
+            integerDigits = (value < 10) ? 1 : (int)Math.Log10(value) + 1;
 
             fractionalDigits = 0; // Max of 15 significant digits
             while (fractionalDigits <= 14 && Math.Abs(value - Math.Round(value, fractionalDigits)) > 2 * Double.Epsilon) // 2 * Double.Epsilon is used to handle floating point errors
@@ -502,6 +502,26 @@ namespace Garnet.common
         {
             return Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
                 bytesConsumed == source.Length;
+        }
+
+        /// <inheritdoc cref="Utf8Parser.TryParse(ReadOnlySpan{byte}, out double, out int, char)" path="//*[not(self::summary)]"/>
+        /// <summary>
+        /// Parses a Double at the start of a Utf8 string, including RESP's infinity format
+        /// </summary>
+        /// <remarks>
+        /// Formats supported:
+        ///     G/g  (default)
+        ///     F/f             12.45       Fixed point
+        ///     E/e             1.245000e1  Exponential
+        ///     [+-]inf         plus/minus infinity
+        /// </remarks>
+        public static bool TryParseWithInfinity(ReadOnlySpan<byte> source, out double value)
+        {
+            if (Utf8Parser.TryParse(source, out value, out var bytesConsumed, default) &&
+                bytesConsumed == source.Length)
+                return true;
+
+            return RespReadUtils.TryReadInfinity(source, out value);
         }
     }
 }

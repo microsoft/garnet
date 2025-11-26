@@ -25,7 +25,7 @@ namespace Garnet.server
     /// Note: Use <see cref="ScratchBufferAllocator"/> if you do not need all data to remain in a continuous chunk of memory
     /// and you do not want previously returned <see cref="ArgSlice"/> structs to potentially point to non-allocated memory.
     /// </summary>
-    internal sealed unsafe class ScratchBufferBuilder
+    public sealed unsafe class ScratchBufferBuilder
     {
         /// <summary>
         /// Session-local scratch buffer to hold temporary arguments in transactions and GarnetApi

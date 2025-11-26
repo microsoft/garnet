@@ -37,11 +37,34 @@ RUN sed -i 's/"ProtectedMode": "yes",/"ProtectedMode": "no",/' /src/libs/host/de
 WORKDIR /src/main/GarnetServer
 RUN dotnet publish -a $TARGETARCH -c Release -o /app --no-restore --self-contained false -f net8.0 -p:EnableSourceLink=false -p:EnableSourceControlManagerQueries=false
 
+# Delete xmldoc files
+RUN find /app -name '*.xml' -delete
+
+# --- Lua builder stage ---
+FROM ubuntu:22.04 AS lua-builder
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends liblua5.4-0 dpkg-dev \
+    && ARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH)" \
+    && mkdir -p /lua \
+    && cp "/usr/lib/${ARCH}/liblua5.4.so.0" /lua/ \
+    && ln -sf "liblua5.4.so.0" /lua/liblua54.so \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- .NET build and layout prep ---
+FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy AS prep-runtime
+
+# prep-runtime image HAS /bin/sh, so we can script here
+COPY --from=lua-builder /lua /lua
+RUN DN_DIR=$(ls -d /usr/share/dotnet/shared/Microsoft.NETCore.App/* | head -n1) \
+    && cp /lua/liblua54.so "$DN_DIR/liblua54.so"
+
 # Final stage/image
 FROM mcr.microsoft.com/dotnet/runtime:8.0-jammy-chiseled AS runtime
 WORKDIR /app
 
 COPY --from=build --chown=$APP_UID:$APP_UID /data /data
+# Copy the pre-symlinked .NET shared directory from prep-runtime
+COPY --from=prep-runtime /usr/share/dotnet/shared /usr/share/dotnet/shared
 COPY --from=build /app .
 
 VOLUME /data

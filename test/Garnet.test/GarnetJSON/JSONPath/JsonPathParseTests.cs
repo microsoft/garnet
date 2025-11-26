@@ -1,4 +1,5 @@
 #region License
+
 // Copyright (c) 2007 James Newton-King
 //
 // Permission is hereby granted, free of charge, to any person
@@ -21,8 +22,10 @@
 // WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 // OTHER DEALINGS IN THE SOFTWARE.
+
 #endregion
 
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -40,7 +43,8 @@ namespace Garnet.test.JSONPath
         {
             JsonPath path = new JsonPath("[?(1 > 2)]");
             ClassicAssert.AreEqual(1, path.Filters.Count);
-            BooleanQueryExpression booleanExpression = (BooleanQueryExpression)((QueryFilter)path.Filters[0]).Expression;
+            BooleanQueryExpression booleanExpression =
+                (BooleanQueryExpression)((QueryFilter)path.Filters[0]).Expression;
             ClassicAssert.AreEqual(1, ((JsonValue)booleanExpression.Left).GetValue<long>());
             ClassicAssert.AreEqual(2, ((JsonValue)booleanExpression.Right).GetValue<long>());
             ClassicAssert.AreEqual(QueryOperator.GreaterThan, booleanExpression.Operator);
@@ -51,7 +55,8 @@ namespace Garnet.test.JSONPath
         {
             JsonPath path = new JsonPath("[?(@.price > @.max_price)]");
             ClassicAssert.AreEqual(1, path.Filters.Count);
-            BooleanQueryExpression booleanExpression = (BooleanQueryExpression)((QueryFilter)path.Filters[0]).Expression;
+            BooleanQueryExpression booleanExpression =
+                (BooleanQueryExpression)((QueryFilter)path.Filters[0]).Expression;
             List<PathFilter> leftPaths = (List<PathFilter>)booleanExpression.Left;
             List<PathFilter> rightPaths = (List<PathFilter>)booleanExpression.Right;
 
@@ -119,19 +124,22 @@ namespace Garnet.test.JSONPath
         [Test]
         public void RootWithBadWhitespace()
         {
-            ClassicAssert.Throws<JsonException>(() => { new JsonPath("$ .Blah"); }, @"Unexpected character while parsing path:  ");
+            ClassicAssert.Throws<JsonException>(() => { new JsonPath("$ .Blah"); },
+                @"Unexpected character while parsing path:  ");
         }
 
         [Test]
         public void NoFieldNameAfterDot()
         {
-            ClassicAssert.Throws<JsonException>(() => { new JsonPath("$.Blah."); }, @"Unexpected end while parsing path.");
+            ClassicAssert.Throws<JsonException>(() => { new JsonPath("$.Blah."); },
+                @"Unexpected end while parsing path.");
         }
 
         [Test]
         public void RootWithBadWhitespace2()
         {
-            ClassicAssert.Throws<JsonException>(() => { new JsonPath("$. Blah"); }, @"Unexpected character while parsing path:  ");
+            ClassicAssert.Throws<JsonException>(() => { new JsonPath("$. Blah"); },
+                @"Unexpected character while parsing path:  ");
         }
 
         [Test]
@@ -333,19 +341,22 @@ namespace Garnet.test.JSONPath
             ClassicAssert.AreEqual("Blah", ((FieldFilter)path.Filters[0]).Name);
             BooleanQueryExpression expressions = (BooleanQueryExpression)((QueryFilter)path.Filters[1]).Expression;
             ClassicAssert.AreEqual(QueryOperator.RegexEquals, expressions.Operator);
-            ClassicAssert.AreEqual(@"/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g", ((JsonValue)expressions.Right).GetValue<string>());
+            ClassicAssert.AreEqual(@"/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g",
+                ((JsonValue)expressions.Right).GetValue<string>());
         }
 
         [Test]
         public void SinglePropertyAndFilterWithOpenRegex()
         {
-            ClassicAssert.Throws<JsonException>(() => { new JsonPath(@"Blah[?(@.title =~ /[\"); }, "Path ended with an open regex.");
+            ClassicAssert.Throws<JsonException>(() => { new JsonPath(@"Blah[?(@.title =~ /[\"); },
+                "Path ended with an open regex.");
         }
 
         [Test]
         public void SinglePropertyAndFilterWithUnknownEscape()
         {
-            ClassicAssert.Throws<JsonException>(() => { new JsonPath(@"Blah[ ?( @.name=='h\i' ) ]"); }, @"Unknown escape character: \i");
+            ClassicAssert.Throws<JsonException>(() => { new JsonPath(@"Blah[ ?( @.name=='h\i' ) ]"); },
+                @"Unknown escape character: \i");
         }
 
         [Test]
@@ -522,19 +533,22 @@ namespace Garnet.test.JSONPath
         [Test]
         public void BadOr1()
         {
-            ClassicAssert.Throws<JsonException>(() => new JsonPath("[?(@.name||)]"), "Unexpected character while parsing path query: )");
+            ClassicAssert.Throws<JsonException>(() => new JsonPath("[?(@.name||)]"),
+                "Unexpected character while parsing path query: )");
         }
 
         [Test]
         public void BaddOr2()
         {
-            ClassicAssert.Throws<JsonException>(() => new JsonPath("[?(@.name|)]"), "Unexpected character while parsing path query: |");
+            ClassicAssert.Throws<JsonException>(() => new JsonPath("[?(@.name|)]"),
+                "Unexpected character while parsing path query: |");
         }
 
         [Test]
         public void BaddOr3()
         {
-            ClassicAssert.Throws<JsonException>(() => new JsonPath("[?(@.name|"), "Unexpected character while parsing path query: |");
+            ClassicAssert.Throws<JsonException>(() => new JsonPath("[?(@.name|"),
+                "Unexpected character while parsing path query: |");
         }
 
         [Test]
@@ -546,7 +560,8 @@ namespace Garnet.test.JSONPath
         [Test]
         public void NoAtAfterOr()
         {
-            ClassicAssert.Throws<JsonException>(() => new JsonPath("[?(@.name||s"), "Unexpected character while parsing path query: s");
+            ClassicAssert.Throws<JsonException>(() => new JsonPath("[?(@.name||s"),
+                "Unexpected character while parsing path query: s");
         }
 
         [Test]
@@ -558,13 +573,15 @@ namespace Garnet.test.JSONPath
         [Test]
         public void NoPathAfterDot()
         {
-            ClassicAssert.Throws<JsonException>(() => new JsonPath("[?(@.name||@."), @"Unexpected end while parsing path.");
+            ClassicAssert.Throws<JsonException>(() => new JsonPath("[?(@.name||@."),
+                @"Unexpected end while parsing path.");
         }
 
         [Test]
         public void NoPathAfterDot2()
         {
-            ClassicAssert.Throws<JsonException>(() => new JsonPath("[?(@.name||@.)]"), @"Unexpected end while parsing path.");
+            ClassicAssert.Throws<JsonException>(() => new JsonPath("[?(@.name||@.)]"),
+                @"Unexpected end while parsing path.");
         }
 
         [Test]
@@ -591,7 +608,8 @@ namespace Garnet.test.JSONPath
         [Test]
         public void BadCharactersInIndexer()
         {
-            ClassicAssert.Throws<JsonException>(() => { new JsonPath("Blah[[0]].Two.Three[1].Four"); }, @"Unexpected character while parsing path indexer: [");
+            ClassicAssert.Throws<JsonException>(() => { new JsonPath("Blah[[0]].Two.Three[1].Four"); },
+                @"Unexpected character while parsing path indexer: [");
         }
 
         [Test]
@@ -725,24 +743,26 @@ namespace Garnet.test.JSONPath
         [Test]
         public void IndexerCloseInProperty()
         {
-            ClassicAssert.Throws<JsonException>(() => { new JsonPath("]"); }, "Unexpected character while parsing path: ]");
+            ClassicAssert.Throws<JsonException>(() => { new JsonPath("]"); },
+                "Unexpected character while parsing path: ]");
         }
 
         [Test]
         public void AdjacentIndexers()
         {
-            JsonPath path = new JsonPath("[1][0][0][" + int.MaxValue + "]");
+            JsonPath path = new JsonPath("[1][0][-4][" + int.MaxValue + "]");
             ClassicAssert.AreEqual(4, path.Filters.Count);
             ClassicAssert.AreEqual(1, ((ArrayIndexFilter)path.Filters[0]).Index);
             ClassicAssert.AreEqual(0, ((ArrayIndexFilter)path.Filters[1]).Index);
-            ClassicAssert.AreEqual(0, ((ArrayIndexFilter)path.Filters[2]).Index);
-            ClassicAssert.AreEqual(int.MaxValue, ((ArrayIndexFilter)path.Filters[3]).Index);
+            ClassicAssert.AreEqual(-4, ((ArrayIndexFilter)path.Filters[2]).Index);
+            ClassicAssert.AreEqual(Array.MaxLength, ((ArrayIndexFilter)path.Filters[3]).Index);
         }
 
         [Test]
         public void MissingDotAfterIndexer()
         {
-            ClassicAssert.Throws<JsonException>(() => { new JsonPath("[1]Blah"); }, "Unexpected character following indexer: B");
+            ClassicAssert.Throws<JsonException>(() => { new JsonPath("[1]Blah"); },
+                "Unexpected character following indexer: B");
         }
 
         [Test]
@@ -756,6 +776,45 @@ namespace Garnet.test.JSONPath
             ClassicAssert.AreEqual("dependencies", ((FieldFilter)path.Filters[2]).Name);
             ClassicAssert.AreEqual("System.Xml.ReaderWriter", ((FieldFilter)path.Filters[3]).Name);
             ClassicAssert.AreEqual("source", ((FieldFilter)path.Filters[4]).Name);
+        }
+
+        [Test]
+        public void ArrayOfArrayValue()
+        {
+            JsonPath path = new JsonPath("$.a[?(@.a in [[1,2],[2,3]])]");
+
+            ClassicAssert.AreEqual(2, path.Filters.Count);
+            ClassicAssert.AreEqual("a", ((FieldFilter)path.Filters[0]).Name);
+            QueryExpression InExpression = ((QueryFilter)path.Filters[1]).Expression;
+            ClassicAssert.AreEqual(QueryOperator.In, InExpression.Operator);
+            ClassicAssert.IsInstanceOf<BooleanQueryExpression>(InExpression);
+            JsonArray Array = ((BooleanQueryExpression)InExpression).Right as JsonArray;
+            ClassicAssert.AreEqual(2, Array?.Count);
+            ClassicAssert.AreEqual(true, JsonNode.DeepEquals(Array?[0], JsonNode.Parse("[1,2]")));
+        }
+
+        [Test]
+        public void ArrayOfArrayValueWithEscaping()
+        {
+            string hi_there_str = """
+                                  [
+                                  "\"hi\"",
+                                  "there"
+                                  ]
+                                  """;
+
+            JsonPath path = new JsonPath($"$.a[?(@.a in [{hi_there_str},[2,3]])]");
+
+            ClassicAssert.AreEqual(2, path.Filters.Count);
+            ClassicAssert.AreEqual("a", ((FieldFilter)path.Filters[0]).Name);
+            QueryExpression InExpression = ((QueryFilter)path.Filters[1]).Expression;
+            ClassicAssert.AreEqual(QueryOperator.In, InExpression.Operator);
+            ClassicAssert.IsInstanceOf<BooleanQueryExpression>(InExpression);
+            JsonArray Array = ((BooleanQueryExpression)InExpression).Right as JsonArray;
+            ClassicAssert.AreEqual(2, Array?.Count);
+
+
+            ClassicAssert.AreEqual(true, JsonNode.DeepEquals(Array?[0], JsonNode.Parse(hi_there_str)));
         }
     }
 }

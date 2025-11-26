@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -64,7 +65,7 @@ namespace Garnet.cluster
         public void InitializeIterationBuffer()
         {
             WaitForFlush().GetAwaiter().GetResult();
-            AofSyncTask.garnetClient.InitializeIterationBuffer();
+            AofSyncTask.garnetClient.InitializeIterationBuffer(clusterProvider.storeWrapper.loggingFrequency);
         }
 
         /// <summary>
@@ -130,8 +131,17 @@ namespace Garnet.cluster
         public void SetStatus(SyncStatus status, string error = null)
         {
             ssInfo.error = error;
-            // NOTE: set this last to signal state change
+            // NOTE: set this after error to signal complete state change
             ssInfo.syncStatus = status;
+
+            // Signal Release for WaitForSyncCompletion call
+            switch (status)
+            {
+                case SyncStatus.SUCCESS:
+                case SyncStatus.FAILED:
+                    signalCompletion.Release();
+                    break;
+            }
         }
 
         /// <summary>
@@ -151,7 +161,7 @@ namespace Garnet.cluster
                         return false;
                     }
                     return true;
-                }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(timeout, token);
+                }, TaskContinuationOptions.OnlyOnRanToCompletion).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, token);
             }
         }
 
@@ -181,11 +191,8 @@ namespace Garnet.cluster
         {
             try
             {
-                while (ssInfo.syncStatus is not SyncStatus.SUCCESS and not SyncStatus.FAILED)
-                {
-                    token.ThrowIfCancellationRequested();
-                    await Task.Yield();
-                }
+                await signalCompletion.WaitAsync(token);
+                Debug.Assert(ssInfo.syncStatus is SyncStatus.SUCCESS or SyncStatus.FAILED);
             }
             catch (Exception ex)
             {

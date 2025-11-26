@@ -54,6 +54,8 @@ namespace Garnet.cluster
             var configResumed = true;
             try
             {
+                clusterProvider.storeWrapper.store.PauseRevivification();
+
                 // Set target node to import state
                 if (!TrySetSlotRanges(GetSourceNodeId, MigrateState.IMPORT))
                 {
@@ -78,7 +80,7 @@ namespace Garnet.cluster
 
                 #region migrateData
                 // Migrate actual data
-                if (!MigrateSlotsDriver())
+                if (!await MigrateSlotsDriverInline())
                 {
                     logger?.LogError("MigrateSlotsDriver failed");
                     TryRecoverFromFailure();
@@ -113,10 +115,6 @@ namespace Garnet.cluster
 
                 // Gossip again to ensure that source and target agree on the slot exchange
                 await clusterProvider.clusterManager.TryMeetAsync(_targetAddress, _targetPort, acquireLock: false);
-
-                // Ensure that config merge resumes
-                clusterProvider.clusterManager.ResumeConfigMerge();
-                configResumed = true;
                 #endregion
 
                 // Enqueue success log
@@ -129,6 +127,7 @@ namespace Garnet.cluster
             finally
             {
                 if (!configResumed) clusterProvider.clusterManager.ResumeConfigMerge();
+                clusterProvider.storeWrapper.store.ResumeRevivification();
                 _ = clusterProvider.migrationManager.TryRemoveMigrationTask(this);
             }
         }

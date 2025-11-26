@@ -34,7 +34,7 @@ namespace Garnet
         /// <summary>
         /// Resp protocol version
         /// </summary>
-        internal const string RedisProtocolVersion = "7.2.5";
+        internal const string RedisProtocolVersion = "7.4.3";
 
         static readonly string version = GetVersion();
         static string GetVersion()
@@ -321,11 +321,10 @@ namespace Garnet
 
                 var modulePath = moduleCSData[0];
                 var moduleArgs = moduleCSData.Length > 1 ? moduleCSData.Skip(1).ToArray() : [];
-                if (ModuleUtils.LoadAssemblies([modulePath], null, opts.ExtensionAllowUnsignedAssemblies, out var loadedAssemblies, out var errorMsg, ignorePathCheckWhenUndefined: true))
-                {
-                    ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg);
-                }
-                else
+
+                if (!ModuleUtils.LoadAssemblies([modulePath], null, opts.ExtensionAllowUnsignedAssemblies,
+                        out var loadedAssemblies, out var errorMsg, ignorePathCheckWhenUndefined: true)
+                    || !ModuleRegistrar.Instance.LoadModule(customCommandManager, loadedAssemblies.ToList()[0], moduleArgs, logger, out errorMsg))
                 {
                     logger?.LogError("Module {0} failed to load with error {1}", modulePath, Encoding.UTF8.GetString(errorMsg));
                 }

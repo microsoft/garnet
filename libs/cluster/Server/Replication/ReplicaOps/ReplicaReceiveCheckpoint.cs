@@ -6,8 +6,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
+using Garnet.cluster.Server.Replication;
+using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -23,41 +26,35 @@ namespace Garnet.cluster
         /// Try initiate replicate attach
         /// </summary>
         /// <param name="session">ClusterSession for this connection.</param>
-        /// <param name="nodeId">Node-id to replicate.</param>
-        /// <param name="background">If replication sync will run in the background.</param>
-        /// <param name="force">Force adding this node as replica.</param>
-        /// <param name="tryAddReplica">Execute try add replica.</param>
+        /// <param name="options">Options for the sync.</param>
         /// <param name="errorMessage">The ASCII encoded error message if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <returns>A boolean indicating whether replication initiation was successful.</returns>
         public bool TryReplicateDiskbasedSync(
             ClusterSession session,
-            string nodeId,
-            bool background,
-            bool force,
-            bool tryAddReplica,
+            ReplicateSyncOptions options,
             out ReadOnlySpan<byte> errorMessage)
         {
             errorMessage = [];
             try
             {
-                logger?.LogTrace("CLUSTER REPLICATE {nodeid}", nodeId);
+                logger?.LogTrace("CLUSTER REPLICATE {nodeid}", options.NodeId);
                 // Update the configuration to make this node a replica of provided nodeId
-                if (tryAddReplica && !clusterProvider.clusterManager.TryAddReplica(nodeId, force: force, out errorMessage, logger: logger))
+                if (options.TryAddReplica && !clusterProvider.clusterManager.TryAddReplica(options.NodeId, options.Force, options.UpgradeLock, out errorMessage, logger: logger))
                     return false;
 
                 // Wait for threads to agree
                 session?.UnsafeBumpAndWaitForEpochTransition();
 
                 // Initiate remote checkpoint retrieval
-                if (background)
+                if (options.Background)
                 {
                     logger?.LogInformation("Initiating background checkpoint retrieval");
-                    _ = Task.Run(ReplicaSyncAttachTask);
+                    _ = Task.Run(() => ReplicaSyncAttachTask(options.UpgradeLock));
                 }
                 else
                 {
                     logger?.LogInformation("Initiating foreground checkpoint retrieval");
-                    var resp = ReplicaSyncAttachTask().GetAwaiter().GetResult();
+                    var resp = ReplicaSyncAttachTask(options.UpgradeLock).GetAwaiter().GetResult();
                     if (resp != null)
                     {
                         errorMessage = Encoding.ASCII.GetBytes(resp);
@@ -73,12 +70,33 @@ namespace Garnet.cluster
                 return false;
             }
 
-            async Task<string> ReplicaSyncAttachTask()
+            async Task<string> ReplicaSyncAttachTask(bool downgradeLock)
             {
                 Debug.Assert(IsRecovering);
                 GarnetClientSession gcs = null;
+                resetHandler ??= new CancellationTokenSource();
                 try
                 {
+                    // Immediately try to connect to a primary, so we FAIL
+                    // before resetting our local data
+                    var current = clusterProvider.clusterManager.CurrentConfig;
+                    var (address, port) = current.GetLocalNodePrimaryAddress();
+
+                    if (address == null || port == -1)
+                    {
+                        var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_ASSIGNED_PRIMARY_ERROR);
+                        logger?.LogError("{msg}", errorMsg);
+                        return errorMsg;
+                    }
+                    gcs = new(
+                        new IPEndPoint(IPAddress.Parse(address), port),
+                        clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
+                        clusterProvider.replicationManager.GetNetworkPool,
+                        tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
+                        authUsername: clusterProvider.ClusterUsername,
+                        authPassword: clusterProvider.ClusterPassword);
+                    gcs.Connect();
+
                     // Resetting here to decide later when to sync from
                     clusterProvider.replicationManager.ReplicationOffset = 0;
 
@@ -109,24 +127,7 @@ namespace Garnet.cluster
                     //
                     // Replica waits for retrieval to complete before moving forward to recovery
                     //      Retrieval completion coordinated by remoteCheckpointRetrievalCompleted
-                    var current = clusterProvider.clusterManager.CurrentConfig;
-                    var (address, port) = current.GetLocalNodePrimaryAddress();
-
-                    if (address == null || port == -1)
-                    {
-                        var errorMsg = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_NOT_ASSIGNED_PRIMARY_ERROR);
-                        logger?.LogError("{msg}", errorMsg);
-                        return errorMsg;
-                    }
-                    gcs = new(
-                        new IPEndPoint(IPAddress.Parse(address), port),
-                        clusterProvider.replicationManager.GetIRSNetworkBufferSettings,
-                        clusterProvider.replicationManager.GetNetworkPool,
-                        tlsOptions: clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
-                        authUsername: clusterProvider.ClusterUsername,
-                        authPassword: clusterProvider.ClusterPassword);
                     recvCheckpointHandler = new ReceiveCheckpointHandler(clusterProvider, logger);
-                    gcs.Connect();
 
                     var nodeId = current.LocalNodeId;
                     cEntry = GetLatestCheckpointEntryFromDisk();
@@ -141,24 +142,43 @@ namespace Garnet.cluster
                     // 4. Replica responds with aofStartAddress sync
                     // 5. Primary will initiate aof sync task
                     // 6. Primary releases checkpoint
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token, resetHandler.Token);
+
+                    // Exception injection point for testing cluster reset during disk-based replication
+                    await ExceptionInjectionHelper.WaitOnSet(ExceptionInjectionType.Replication_InProgress_During_DiskBased_Replica_Attach_Sync).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                     var resp = await gcs.ExecuteReplicaSync(
                         nodeId,
                         PrimaryReplId,
                         cEntry.ToByteArray(),
                         storeWrapper.appendOnlyFile.BeginAddress,
-                        storeWrapper.appendOnlyFile.TailAddress).ConfigureAwait(false);
+                        storeWrapper.appendOnlyFile.TailAddress).WaitAsync(storeWrapper.serverOptions.ReplicaAttachTimeout, linkedCts.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "An error occurred at ReplicationManager.RetrieveStoreCheckpoint");
-                    clusterProvider.clusterManager.TryResetReplica();
+                    if (options.AllowReplicaResetOnFailure)
+                    {
+                        clusterProvider.clusterManager.TryResetReplica();
+                    }
                     return ex.Message;
                 }
                 finally
                 {
-                    EndRecovery(RecoveryStatus.NoRecovery);
+                    if (downgradeLock)
+                    {
+                        EndRecovery(RecoveryStatus.ReadRole, downgradeLock: true);
+                    }
+                    else
+                    {
+                        EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+                    }
                     recvCheckpointHandler?.Dispose();
                     gcs?.Dispose();
+                    if (!resetHandler.TryReset())
+                    {
+                        resetHandler.Dispose();
+                        resetHandler = new CancellationTokenSource();
+                    }
                 }
                 return null;
             }
@@ -357,7 +377,7 @@ namespace Garnet.cluster
             finally
             {
                 // Done with recovery at this point
-                EndRecovery(RecoveryStatus.CheckpointRecoveredAtReplica);
+                EndRecovery(RecoveryStatus.CheckpointRecoveredAtReplica, downgradeLock: false);
             }
         }
     }

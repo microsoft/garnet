@@ -25,6 +25,9 @@ namespace Garnet.server
 
             LatencyMetrics?.Start(LatencyMetricsType.TX_PROC_LAT);
 
+
+            sessionMetrics?.incr_total_transaction_commands_received();
+
             var procInput = new CustomProcedureInput(ref parseState, startIdx: startIdx, respVersion: respProtocolVersion);
             if (txnManager.RunTransactionProc(id, ref procInput, proc, ref output))
             {
@@ -37,6 +40,7 @@ namespace Garnet.server
             }
             else
             {
+                sessionMetrics?.incr_total_transaction_execution_failed();
                 // Write output to wire
                 if (output.MemoryOwner != null)
                     SendAndReset(output.MemoryOwner, output.Length);
@@ -49,11 +53,11 @@ namespace Garnet.server
             return true;
         }
 
-        public bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)
+        public bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, ref MemoryResult<byte> output, bool isRecovering = false)
         {
             var proc = customCommandManagerSession
                 .GetCustomTransactionProcedure(id, this, txnManager, scratchBufferAllocator, out _);
-            return txnManager.RunTransactionProc(id, ref procInput, proc, ref output);
+            return txnManager.RunTransactionProc(id, ref procInput, proc, ref output, isRecovering);
         }
 
         private void TryCustomProcedure(CustomProcedure proc, int startIdx = 0)

@@ -33,7 +33,9 @@ namespace Garnet.test.JSONPath
             {
                 return false;
             }
-            return JsonNode.DeepEquals(JsonNode.Parse(JsonSerializer.Serialize(left)), JsonNode.Parse(JsonSerializer.Serialize(right.Value)));
+
+            return JsonNode.DeepEquals(JsonNode.Parse(JsonSerializer.Serialize(left)),
+                JsonNode.Parse(JsonSerializer.Serialize(right.Value)));
         }
     }
 

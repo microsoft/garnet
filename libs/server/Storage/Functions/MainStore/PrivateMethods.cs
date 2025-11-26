@@ -274,7 +274,7 @@ namespace Garnet.server
             }
         }
 
-        bool EvaluateExpireInPlace(ExpireOption optionType, bool expiryExists, long newExpiry, ref SpanByte value, ref SpanByteAndMemory output)
+        IPUResult EvaluateExpireInPlace(ExpireOption optionType, bool expiryExists, long newExpiry, ref SpanByte value, ref SpanByteAndMemory output)
         {
             ObjectOutputHeader* o = (ObjectOutputHeader*)output.SpanByte.ToPointer();
             if (expiryExists)
@@ -291,26 +291,26 @@ namespace Garnet.server
                         break;
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
-                        var replace = newExpiry < value.ExtraMetadata;
-                        value.ExtraMetadata = replace ? value.ExtraMetadata : newExpiry;
+                        var replace = newExpiry > value.ExtraMetadata;
+                        if (replace) value.ExtraMetadata = newExpiry;
                         if (replace)
-                            o->result1 = 0;
-                        else
                             o->result1 = 1;
+                        else
+                            o->result1 = 0;
                         break;
                     case ExpireOption.LT:
                     case ExpireOption.XXLT:
-                        replace = newExpiry > value.ExtraMetadata;
-                        value.ExtraMetadata = replace ? value.ExtraMetadata : newExpiry;
+                        replace = newExpiry < value.ExtraMetadata;
+                        if (replace) value.ExtraMetadata = newExpiry;
                         if (replace)
-                            o->result1 = 0;
-                        else
                             o->result1 = 1;
+                        else
+                            o->result1 = 0;
                         break;
                     default:
                         throw new GarnetException($"EvaluateExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
                 }
-                return true;
+                return o->result1 == 1 ? IPUResult.Succeeded : IPUResult.NotUpdated;
             }
             else
             {
@@ -319,13 +319,13 @@ namespace Garnet.server
                     case ExpireOption.NX:
                     case ExpireOption.None:
                     case ExpireOption.LT:  // If expiry doesn't exist, LT should treat the current expiration as infinite
-                        return false;
+                        return IPUResult.Failed;
                     case ExpireOption.XX:
                     case ExpireOption.GT:
                     case ExpireOption.XXGT:
                     case ExpireOption.XXLT:
                         o->result1 = 0;
-                        return true;
+                        return IPUResult.NotUpdated;
                     default:
                         throw new GarnetException($"EvaluateExpireInPlace exception expiryExists:{expiryExists}, optionType{optionType}");
                 }
@@ -532,6 +532,7 @@ namespace Garnet.server
                 // Move to tail of the log even when oldValue is alphanumeric
                 // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
                 oldValue.CopyTo(ref newValue);
+                output.SpanByte.AsSpan()[0] = (byte)OperationError.INVALID_TYPE;
                 return;
             }
 
@@ -605,12 +606,20 @@ namespace Garnet.server
         static bool IsValidDouble(int length, byte* source, Span<byte> output, out double val)
         {
             // Check for valid number
-            if (!NumUtils.TryReadDouble(length, source, out val) || !double.IsFinite(val))
+            if (!NumUtils.TryParseWithInfinity(new ReadOnlySpan<byte>(source, length), out val))
             {
                 // Signal value is not a valid number
                 output[0] = (byte)OperationError.INVALID_TYPE;
                 return false;
             }
+
+            if (!double.IsFinite(val))
+            {
+                // Signal value is not a Nan/Infinity
+                output[0] = (byte)OperationError.NAN_OR_INFINITY;
+                return false;
+            }
+
             return true;
         }
 

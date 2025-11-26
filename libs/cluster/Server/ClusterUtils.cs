@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -50,12 +50,16 @@ namespace Garnet.cluster
                 Buffer.MemoryCopy(bufferRaw, pbuffer.aligned_pointer, size, size);
             }
             using var semaphore = new SemaphoreSlim(0);
-            device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, logger == null ? IOCallback : logger.IOCallback, semaphore);
-            semaphore.Wait();
-
-            pbuffer.Return();
+            try
+            {
+                device.WriteAsync((IntPtr)pbuffer.aligned_pointer, address, (uint)numBytesToWrite, logger == null ? IOCallback : logger.IOCallback, semaphore);
+                semaphore.Wait();
+            }
+            finally
+            {
+                pbuffer.Return();
+            }
         }
-
 
         /// <summary>
         /// Note: will read potentially more data (based on sector alignment)
@@ -73,14 +77,21 @@ namespace Garnet.cluster
             numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
 
             var pbuffer = pool.Get((int)numBytesToRead);
-            device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
-                (uint)numBytesToRead, logger == null ? IOCallback : logger.IOCallback, semaphore);
-            semaphore.Wait();
 
-            buffer = new byte[numBytesToRead];
-            fixed (byte* bufferRaw = buffer)
-                Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, numBytesToRead, numBytesToRead);
-            pbuffer.Return();
+            try
+            {
+                device.ReadAsync(address, (IntPtr)pbuffer.aligned_pointer,
+                    (uint)numBytesToRead, logger == null ? IOCallback : logger.IOCallback, semaphore);
+                semaphore.Wait();
+
+                buffer = new byte[numBytesToRead];
+                fixed (byte* bufferRaw = buffer)
+                    Buffer.MemoryCopy(pbuffer.aligned_pointer, bufferRaw, numBytesToRead, numBytesToRead);
+            }
+            finally
+            {
+                pbuffer.Return();
+            }
         }
 
         private static void IOCallback(uint errorCode, uint numBytes, object context)
@@ -95,10 +106,14 @@ namespace Garnet.cluster
         {
             if (errorCode != 0)
             {
-                var errorMessage = new Win32Exception((int)errorCode).Message;
-                logger.LogError("[ClusterUtils] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
+                var errorMessage = Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
+                logger?.LogError("[ClusterUtils] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
+
             ((SemaphoreSlim)context).Release();
         }
+
+        [DllImport("libc")]
+        private static extern IntPtr strerror(int errnum);
     }
 }

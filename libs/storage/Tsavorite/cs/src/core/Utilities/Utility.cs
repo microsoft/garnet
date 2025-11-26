@@ -2,9 +2,11 @@
 // Licensed under the MIT license.
 
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -35,7 +37,7 @@ namespace Tsavorite.core
         /// <returns>The number</returns>
         public static long ParseSize(string value)
         {
-            char[] suffix = ['k', 'm', 'g', 't', 'p'];
+            ReadOnlySpan<char> suffix = ['k', 'm', 'g', 't', 'p'];
             long result = 0;
             foreach (char c in value)
             {
@@ -95,7 +97,7 @@ namespace Tsavorite.core
         /// <returns></returns>
         internal static string PrettySize(long value)
         {
-            char[] suffix = ['K', 'M', 'G', 'T', 'P'];
+            ReadOnlySpan<char> suffix = ['K', 'M', 'G', 'T', 'P'];
             double v = value;
             int exp = 0;
             while (v - Math.Floor(v) > 0)
@@ -343,7 +345,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// 
+        ///
         /// </summary>
         /// <returns></returns>
         public static ulong GetCurrentMilliseconds()
@@ -361,5 +363,25 @@ namespace Tsavorite.core
         }
 
         internal static string GetHashString(long? hash) => hash.HasValue ? GetHashString(hash.Value) : "null";
+
+        public static string GetCallbackErrorMessage(uint errorCode, uint numBytes, object context)
+        {
+            string errorMessage;
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                errorMessage = new Win32Exception((int)errorCode).Message;
+            }
+            else
+            {
+                // Use strerror for Unix-based systems
+                var messagePtr = strerror((int)errorCode);
+                errorMessage = Marshal.PtrToStringAnsi(messagePtr);
+            }
+
+            return errorMessage;
+        }
+
+        [DllImport("libc")]
+        private static extern IntPtr strerror(int errnum);
     }
 }

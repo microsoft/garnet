@@ -79,7 +79,7 @@ namespace Garnet.cluster
             bool replaceOption,
             int timeout,
             HashSet<int> slots,
-            MigratingKeysWorkingSet keysWithSize,
+            Sketch sketch,
             TransferOption transferOption,
             out MigrateSession mSession)
         {
@@ -97,7 +97,7 @@ namespace Garnet.cluster
                 replaceOption,
                 timeout,
                 slots,
-                keysWithSize,
+                sketch,
                 transferOption);
 
             try

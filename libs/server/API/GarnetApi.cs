@@ -248,6 +248,51 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus Decrement(ArgSlice key, out long output, long decrementCount = 1)
             => Increment(key, out output, -decrementCount);
+
+        /// <inheritdoc />
+        public GarnetStatus IncrementByFloat(ArgSlice key, ref ArgSlice output, double val)
+        {
+            SessionParseState parseState = default;
+
+            var input = new RawStringInput(RespCommand.INCRBYFLOAT, ref parseState, BitConverter.DoubleToInt64Bits(val));
+            _ = Increment(key, ref input, ref output);
+
+            if (output.Length != NumUtils.MaximumFormatDoubleLength + 1)
+                return GarnetStatus.OK;
+
+            var errorFlag = (OperationError)output.Span[0];
+
+            switch (errorFlag)
+            {
+                case OperationError.INVALID_TYPE:
+                case OperationError.NAN_OR_INFINITY:
+                    return GarnetStatus.WRONGTYPE;
+                default:
+                    throw new GarnetException($"Invalid OperationError {errorFlag}");
+            }
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus IncrementByFloat(ArgSlice key, out double output, double val)
+        {
+            Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
+            var _output = ArgSlice.FromPinnedSpan(outputBuffer);
+            var status = IncrementByFloat(key, ref _output, val);
+
+            switch (status)
+            {
+                case GarnetStatus.OK:
+                    _ = NumUtils.TryReadDouble(_output.ReadOnlySpan, out output);
+                    break;
+                case GarnetStatus.WRONGTYPE:
+                default:
+                    var errorFlag = (OperationError)_output.Span[0];
+                    output = errorFlag == OperationError.NAN_OR_INFINITY ? double.NaN : 0;
+                    break;
+            }
+
+            return status;
+        }
         #endregion
 
         #region DELETE
@@ -306,6 +351,13 @@ namespace Garnet.server
         /// <inheritdoc />
         public GarnetStatus Read_ObjectStore(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output)
             => storageSession.Read_ObjectStore(ref key, ref input, ref output, ref objectContext);
+
+        public void ReadWithPrefetch<TBatch>(ref TBatch batch, long userContext = default)
+            where TBatch : IReadArgBatch<SpanByte, RawStringInput, SpanByteAndMemory>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            => storageSession.ReadWithPrefetch(ref batch, ref context, userContext);
         #endregion
 
         #region Bitmap Methods
@@ -397,18 +449,18 @@ namespace Garnet.server
             => storageSession.DbScan(patternB, allKeys, cursor, out storeCursor, out Keys, count, type);
 
         /// <inheritdoc />
-        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>
-            => storageSession.IterateMainStore(ref scanFunctions, untilAddress);
+            => storageSession.IterateMainStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
         public ITsavoriteScanIterator<SpanByte, SpanByte> IterateMainStore()
             => storageSession.IterateMainStore();
 
         /// <inheritdoc />
-        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>
-            => storageSession.IterateObjectStore(ref scanFunctions, untilAddress);
+            => storageSession.IterateObjectStore(ref scanFunctions, ref cursor, untilAddress, maxAddress: maxAddress, includeTombstones: includeTombstones);
 
         /// <inheritdoc />
         public ITsavoriteScanIterator<byte[], IGarnetObject> IterateObjectStore()

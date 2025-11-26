@@ -29,7 +29,6 @@ namespace Tsavorite.core
             var ctx = new TsavoriteExecutionContext<TInput, TOutput, TContext>(sessionID);
             ctx.MergeReadCopyOptions(ReadCopyOptions, readCopyOptions);
 
-
             var session = new ClientSession<TKey, TValue, TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions);
             if (RevivificationManager.IsEnabled)
             {

@@ -373,7 +373,7 @@ namespace Garnet.server
                 customProcInput.DeserializeFrom(curr);
 
                 // Run the stored procedure with the reconstructed input
-                respServerSession.RunTransactionProc(id, ref customProcInput, ref output);
+                respServerSession.RunTransactionProc(id, ref customProcInput, ref output, isRecovering: true);
             }
         }
 

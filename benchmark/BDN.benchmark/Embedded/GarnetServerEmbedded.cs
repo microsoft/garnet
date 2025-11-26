@@ -18,6 +18,28 @@ namespace Embedded.server
         {
         }
 
+        /// <inheritdoc/>
+        public override IEnumerable<IMessageConsumer> ActiveConsumers()
+        {
+            foreach (var kvp in activeHandlers)
+            {
+                var consumer = kvp.Key.Session;
+                if (consumer != null)
+                    yield return consumer;
+            }
+        }
+
+        /// <inheritdoc/>
+        public override IEnumerable<IClusterSession> ActiveClusterSessions()
+        {
+            foreach (var kvp in activeHandlers)
+            {
+                var consumer = kvp.Key.Session;
+                if (consumer != null)
+                    yield return ((RespServerSession)consumer).clusterSession;
+            }
+        }
+
         public EmbeddedNetworkHandler CreateNetworkHandler(SslClientAuthenticationOptions tlsOptions = null, string remoteEndpointName = null)
         {
             var networkSender = new EmbeddedNetworkSender();

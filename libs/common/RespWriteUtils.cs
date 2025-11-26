@@ -638,16 +638,17 @@ namespace Garnet.common
             var buffer = new Span<byte>(curr, (int)(end - curr));
             if (double.IsPositiveInfinity(value))
             {
-                if (!"$4\r\n+inf\r\n"u8.TryCopyTo(buffer))
+                if (!"$3\r\ninf\r\n"u8.TryCopyTo(buffer))
                     return false;
+                curr += 9;
             }
             else
             {
                 if (!"$4\r\n-inf\r\n"u8.TryCopyTo(buffer))
                     return false;
+                curr += 10;
             }
 
-            curr += 10;
             return true;
         }
 
@@ -657,16 +658,17 @@ namespace Garnet.common
             var buffer = new Span<byte>(curr, (int)(end - curr));
             if (double.IsPositiveInfinity(value))
             {
-                if (!",+inf\r\n"u8.TryCopyTo(buffer))
+                if (!",inf\r\n"u8.TryCopyTo(buffer))
                     return false;
+                curr += 6;
             }
             else
             {
                 if (!",-inf\r\n"u8.TryCopyTo(buffer))
                     return false;
+                curr += 7;
             }
 
-            curr += 7;
             return true;
         }
 

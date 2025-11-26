@@ -1360,14 +1360,15 @@ namespace Garnet.test
             var actualResultRawStr = db.StringGet(key);
 
             var actualResult = double.Parse(actualResultStr, CultureInfo.InvariantCulture);
-            var actualResultRaw = double.Parse(actualResultRawStr, CultureInfo.InvariantCulture);
+            var actualResultRaw = double.Parse((string)actualResultRawStr, CultureInfo.InvariantCulture);
 
             Assert.That(actualResult, Is.EqualTo(expectedResult).Within(1.0 / Math.Pow(10, 15)));
             Assert.That(actualResult, Is.EqualTo(actualResultRaw).Within(1.0 / Math.Pow(10, 15)));
         }
 
         [Test]
-        [TestCase(0, 12.6)]
+        [TestCase(0, 0.1)]
+        [TestCase(0.1, 12.5)]
         [TestCase(12.6, 0)]
         [TestCase(10, 10)]
         [TestCase(910151, 0.23659)]
@@ -1389,7 +1390,7 @@ namespace Garnet.test
             var actualResultRawStr = db.StringGet(key);
 
             var actualResult = double.Parse(actualResultStr, CultureInfo.InvariantCulture);
-            var actualResultRaw = double.Parse(actualResultRawStr, CultureInfo.InvariantCulture);
+            var actualResultRaw = double.Parse((string)actualResultRawStr, CultureInfo.InvariantCulture);
 
             Assert.That(actualResult, Is.EqualTo(expectedResult).Within(1.0 / Math.Pow(10, 15)));
             Assert.That(actualResult, Is.EqualTo(actualResultRaw).Within(1.0 / Math.Pow(10, 15)));
@@ -1400,6 +1401,8 @@ namespace Garnet.test
         [TestCase(double.MaxValue, double.MaxValue)]
         [TestCase("abc", 10)]
         [TestCase(10, "xyz")]
+        [TestCase(10, "inf")]
+        [TestCase(double.PositiveInfinity, double.NegativeInfinity)]
         public void SimpleIncrementByFloatWithInvalidFloat(object initialValue, object incrByValue)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1457,12 +1460,6 @@ namespace Garnet.test
             ClassicAssert.IsFalse(respDel);
         }
 
-        private string GetRandomString(int len)
-        {
-            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-            return new string([.. Enumerable.Repeat(chars, len).Select(s => s[r.Next(s.Length)])]);
-        }
-
         [Test]
         public void SingleDeleteWithObjectStoreDisable_LTM()
         {
@@ -1481,7 +1478,7 @@ namespace Garnet.test
             List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
-                data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
+                data.Add(new Tuple<string, string>(TestUtils.GetRandomString(keyLen), TestUtils.GetRandomString(valLen)));
                 var pair = data.Last();
                 db.StringSet(pair.Item1, pair.Item2);
             }
@@ -1554,7 +1551,7 @@ namespace Garnet.test
             List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
-                data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
+                data.Add(new Tuple<string, string>(TestUtils.GetRandomString(keyLen), TestUtils.GetRandomString(valLen)));
                 var pair = data.Last();
                 db.StringSet(pair.Item1, pair.Item2);
             }
@@ -1582,12 +1579,12 @@ namespace Garnet.test
             List<string> keys = [];
             for (int i = 0; i < keyCount; i++)
             {
-                keys.Add(GetRandomString(keyLen));
+                keys.Add(TestUtils.GetRandomString(keyLen));
                 var key = keys.Last();
 
                 for (int j = 0; j < setCount; j++)
                 {
-                    var member = GetRandomString(valLen);
+                    var member = TestUtils.GetRandomString(valLen);
                     db.SetAdd(key, member);
                 }
             }
@@ -1622,7 +1619,7 @@ namespace Garnet.test
             List<Tuple<string, string>> data = [];
             for (int i = 0; i < keyCount; i++)
             {
-                data.Add(new Tuple<string, string>(GetRandomString(keyLen), GetRandomString(valLen)));
+                data.Add(new Tuple<string, string>(TestUtils.GetRandomString(keyLen), TestUtils.GetRandomString(valLen)));
                 var pair = data.Last();
                 db.StringSet(pair.Item1, pair.Item2);
             }
@@ -1649,12 +1646,12 @@ namespace Garnet.test
             List<string> keys = [];
             for (int i = 0; i < keyCount; i++)
             {
-                keys.Add(GetRandomString(keyLen));
+                keys.Add(TestUtils.GetRandomString(keyLen));
                 var key = keys.Last();
 
                 for (int j = 0; j < setCount; j++)
                 {
-                    var member = GetRandomString(valLen);
+                    var member = TestUtils.GetRandomString(valLen);
                     db.SetAdd(key, member);
                 }
             }
@@ -3548,26 +3545,12 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // new key, length 10, offset -1 -> RedisServerException ("ERR offset is out of range")
-            try
-            {
-                db.StringSetRange(key, -1, value);
-                Assert.Fail();
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, -1, value));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
 
             // new key, length 10, offset invalid_offset -> RedisServerException ("ERR value is not an integer or out of range.")
-            try
-            {
-                db.Execute(nameof(RespCommand.SETRANGE), key, "invalid_offset", value);
-                Assert.Fail();
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message);
-            }
+            ex = Assert.Throws<RedisServerException>(() => db.Execute(nameof(RespCommand.SETRANGE), key, "invalid_offset", value));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message);
 
             // existing key, length 10, offset 0, value length 5 -> 10 ("ABCDE56789")
             ClassicAssert.IsTrue(db.StringSet(key, value));
@@ -3603,15 +3586,8 @@ namespace Garnet.test
 
             // existing key, length 10, offset -1, value length 5 -> RedisServerException ("ERR offset is out of range")
             ClassicAssert.IsTrue(db.StringSet(key, value));
-            try
-            {
-                db.StringSetRange(key, -1, newValue);
-                Assert.Fail();
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
-            }
+            ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, -1, newValue));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
         }
 
         [Test]
@@ -3846,6 +3822,27 @@ namespace Garnet.test
         }
 
         [Test]
+        public void HelloAuthErrorTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var db = redis.GetDatabase(0);
+
+            // Failed HELLO should not change current protocol
+            Assert.Throws<RedisServerException>(() => db.Execute("HELLO", "3", "AUTH", "NX", "NX"),
+                           Encoding.ASCII.GetString(CmdStrings.RESP_WRONGPASS_INVALID_USERNAME_PASSWORD));
+            var result = db.Execute("HELLO");
+
+            ClassicAssert.IsNotNull(result);
+            ClassicAssert.AreEqual(ResultType.Array, result.Resp2Type);
+            ClassicAssert.AreEqual(ResultType.Array, result.Resp3Type);
+            var resultDict = result.ToDictionary();
+            ClassicAssert.IsNotNull(resultDict);
+
+            // Should remain 2 since protocol change failed
+            ClassicAssert.AreEqual(2, (int)resultDict["proto"]);
+        }
+
+        [Test]
         [TestCase([2, "$-1\r\n", "$1\r\n", "*4", '*'], Description = "RESP2 output")]
         [TestCase([3, "_\r\n", ",", "%2", '~'], Description = "RESP3 output")]
         public async Task RespOutputTests(byte respVersion, string expectedResponse, string doublePrefix, string mapPrefix, char setPrefix)
@@ -3914,8 +3911,8 @@ namespace Garnet.test
                 List<Tuple<string, string>> data = [];
                 for (var i = 0; i < keyCount; i++)
                 {
-                    lastKey = GetRandomString(keyLen);
-                    lastValue = GetRandomString(valLen);
+                    lastKey = TestUtils.GetRandomString(keyLen);
+                    lastValue = TestUtils.GetRandomString(valLen);
                     if (firstKey == null)
                     {
                         firstKey = lastKey;
@@ -4405,25 +4402,39 @@ namespace Garnet.test
             db.Execute("CLIENT", "SETNAME", "testname");
             var result = (string)db.Execute("CLIENT", "GETNAME");
             ClassicAssert.AreEqual("testname", result);
+
+            // Test clearing client name
+            db.Execute("CLIENT", "SETNAME", "");
+            result = (string)db.Execute("CLIENT", "GETNAME");
+            ClassicAssert.AreEqual(null, result);
         }
 
         [Test]
-        [TestCase("validname", true, Description = "Set valid name")]
-        [TestCase("", false, Description = "Set empty name")]
-        [TestCase(null, false, Description = "Set null name")]
-        [TestCase("name with spaces", false, Description = "Set name with spaces")]
-        public void ClientSetNameTest(string name, bool shouldSucceed)
+        [TestCase(false, "validname", true, "validname", Description = "Set valid name")]
+        [TestCase(true, "validname", true, "validname", Description = "Set valid name")]
+        [TestCase(false, "", true, Description = "Set empty name")]
+        [TestCase(true, "", true, Description = "Set empty name")]
+        [TestCase(false, "name with spaces", false, Description = "Set name with spaces")]
+        [TestCase(true, "name with spaces", false, Description = "Set name with spaces")]
+        public void ClientSetNameTest(bool hello, string name, bool shouldSucceed, string expectedName = null)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             if (shouldSucceed)
             {
-                var result = (string)db.Execute("CLIENT", "SETNAME", name);
-                ClassicAssert.AreEqual("OK", result);
+                if (!hello)
+                {
+                    var result = (string)db.Execute("CLIENT", "SETNAME", name);
+                    ClassicAssert.AreEqual("OK", result);
+                }
+                else
+                {
+                    db.Execute("HELLO", "2", "SETNAME", name);
+                }
 
                 var getName = (string)db.Execute("CLIENT", "GETNAME");
-                ClassicAssert.AreEqual(name, getName);
+                ClassicAssert.AreEqual(expectedName, getName);
             }
             else
             {

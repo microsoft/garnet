@@ -65,6 +65,9 @@ namespace Garnet.cluster
                     }
                 }
 
+                // Injection for a "something went wrong with THIS Replica's AOF file"
+                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Divergent_AOF_Stream);
+
                 var tail = storeWrapper.appendOnlyFile.TailAddress;
                 var nextPageBeginAddress = ((tail >> pageSizeBits) + 1) << pageSizeBits;
                 // Check to ensure:

@@ -26,7 +26,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The current JSON node (ignored).</param>
         /// <param name="settings">The settings for JSON selection (ignored).</param>
         /// <returns>An enumerable containing the root JSON node.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, JsonNode? current,
+            JsonSelectSettings? settings)
         {
             return [root];
         }
@@ -38,7 +39,8 @@ namespace GarnetJSON.JSONPath
         /// <param name="current">The current JSON nodes (ignored).</param>
         /// <param name="settings">The settings for JSON selection (ignored).</param>
         /// <returns>An enumerable containing the root JSON node.</returns>
-        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
+        public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current,
+            JsonSelectSettings? settings)
         {
             return [root];
         }

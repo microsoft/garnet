@@ -28,9 +28,9 @@ namespace Garnet.test
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             binPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true,
-                                                    enableModuleCommand: true,
-                                                    extensionAllowUnsignedAssemblies: true,
-                                                    extensionBinPaths: [binPath]);
+                enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes,
+                extensionAllowUnsignedAssemblies: true,
+                extensionBinPaths: [binPath]);
             server.Start();
         }
 
@@ -52,7 +52,8 @@ namespace Garnet.test
             Assert.Throws<RedisServerException>(() => db.Execute("JSON.SET", "key", "$", "{\"a\": 1"));
 
             // Invalid JSON path
-            Assert.Throws<RedisServerException>(() => db.Execute("JSON.SET", "key", "a", "{\"a\": 1}"), "ERR new objects must be created at the root");
+            Assert.Throws<RedisServerException>(() => db.Execute("JSON.SET", "key", "a", "{\"a\": 1}"),
+                "ERR new objects must be created at the root");
 
             db.Execute("JSON.SET", "k1", "$", "{\"f1\": {\"a\":1}, \"f2\":{\"a\":2}}");
             var result = db.Execute("JSON.GET", "k1");
@@ -70,7 +71,8 @@ namespace Garnet.test
 
             db.Execute("JSON.SET", "k1", "$.f5", "{\"c\": 5}");
             result = db.Execute("JSON.GET", "k1", "$");
-            ClassicAssert.AreEqual("[{\"f1\":{\"a\":3},\"f2\":{\"a\":3},\"f3\":4,\"f5\":{\"c\":5}}]", result.ToString());
+            ClassicAssert.AreEqual("[{\"f1\":{\"a\":3},\"f2\":{\"a\":3},\"f3\":4,\"f5\":{\"c\":5}}]",
+                result.ToString());
 
             result = db.Execute("JSON.GET", "k1", "f1");
             ClassicAssert.AreEqual("[{\"a\":3}]", result.ToString());
@@ -95,7 +97,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedOutput, result.ToString());
         }
 
-        [TestCase("$..a", 42, "{\"x\":{\"a\":1},\"y\":{\"a\":2}}", "{\"x\":{\"a\":42},\"y\":{\"a\":42}}", Description = "Update all 'a' fields")]
+        [TestCase("$..a", 42, "{\"x\":{\"a\":1},\"y\":{\"a\":2}}", "{\"x\":{\"a\":42},\"y\":{\"a\":42}}",
+            Description = "Update all 'a' fields")]
         [TestCase("$.x", "{\"b\":2}", "{\"x\":{\"a\":1}}", "{\"x\":{\"b\":2}}", Description = "Replace object")]
         [TestCase("$.new", 123, "{\"x\":1}", "{\"x\":1,\"new\":123}", Description = "Add new field")]
         [TestCase("$[0]", 42, "[1,2,3]", "[42,2,3]", Description = "Update array element")]
@@ -162,10 +165,17 @@ namespace Garnet.test
             ClassicAssert.IsTrue(result.IsNull);
         }
 
-        [TestCase("$.store.book[*].author", "[\"Nigel Rees\",\"Evelyn Waugh\",\"Herman Melville\",\"J. R. R. Tolkien\"]", Description = "Wildcard array access")]
-        [TestCase("$..author", "[\"Nigel Rees\",\"Evelyn Waugh\",\"Herman Melville\",\"J. R. R. Tolkien\"]", Description = "Recursive descent")]
-        [TestCase("$.store.book[2]", "[{\"category\":\"fiction\",\"author\":\"Herman Melville\",\"title\":\"Moby Dick\",\"price\":8.99}]", Description = "Array index access")]
-        [TestCase("$.store.book[?(@.price < 10)]", "[{\"category\":\"reference\",\"author\":\"Nigel Rees\",\"title\":\"Sayings of the Century\",\"price\":8.95},{\"category\":\"fiction\",\"author\":\"Herman Melville\",\"title\":\"Moby Dick\",\"price\":8.99}]", Description = "Filter expression")]
+        [TestCase("$.store.book[*].author",
+            "[\"Nigel Rees\",\"Evelyn Waugh\",\"Herman Melville\",\"J. R. R. Tolkien\"]",
+            Description = "Wildcard array access")]
+        [TestCase("$..author", "[\"Nigel Rees\",\"Evelyn Waugh\",\"Herman Melville\",\"J. R. R. Tolkien\"]",
+            Description = "Recursive descent")]
+        [TestCase("$.store.book[2]",
+            "[{\"category\":\"fiction\",\"author\":\"Herman Melville\",\"title\":\"Moby Dick\",\"price\":8.99}]",
+            Description = "Array index access")]
+        [TestCase("$.store.book[?(@.price < 10)]",
+            "[{\"category\":\"reference\",\"author\":\"Nigel Rees\",\"title\":\"Sayings of the Century\",\"price\":8.95},{\"category\":\"fiction\",\"author\":\"Herman Melville\",\"title\":\"Moby Dick\",\"price\":8.99}]",
+            Description = "Filter expression")]
         [TestCase("$.store.bicycle.color", "[\"red\"]", Description = "Direct property access")]
         public void JsonGetComplexPathTests(string path, string expected)
         {

@@ -20,6 +20,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    <PackageReference Include="System.Numerics.Tensors" />
     <PackageReference Include="KeraLua" />
   </ItemGroup>
 

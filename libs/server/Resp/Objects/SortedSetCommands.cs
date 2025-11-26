@@ -926,17 +926,6 @@ namespace Garnet.server
             }
 
             var includeWithScores = false;
-
-            // Read all the keys
-            if (parseState.Count <= 2)
-            {
-                //return empty array
-                while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
-                    SendAndReset();
-
-                return true;
-            }
-
             var keys = new ArgSlice[nKeys];
 
             for (var i = 1; i < nKeys + 1; i++)
@@ -1765,31 +1754,14 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            if (!parseState.TryGetLong(1, out var expireAt))
+            if (!parseState.TryGetLong(1, out var expiration))
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
-            if (expireAt < 0)
+            if (expiration < 0)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_EXPIRE_TIME);
-            }
-
-            var inputFlag = SortedSetExpireInputFlags.Default;
-            switch (command)
-            {
-                case RespCommand.ZPEXPIRE:
-                    inputFlag |= SortedSetExpireInputFlags.InMilliseconds;
-                    break;
-                case RespCommand.ZEXPIREAT:
-                    inputFlag |= SortedSetExpireInputFlags.InTimestamp;
-                    break;
-                case RespCommand.ZPEXPIREAT:
-                    inputFlag |= SortedSetExpireInputFlags.InTimestamp;
-                    inputFlag |= SortedSetExpireInputFlags.InMilliseconds;
-                    break;
-                default: // RespCommand.ZEXPIRE
-                    break;
             }
 
             var currIdx = 2;
@@ -1814,8 +1786,20 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrMustMatchNoOfArgs, "numMembers");
             }
 
+            // Convert to expiration time in ticks
+            var expirationTimeInTicks = command switch
+            {
+                RespCommand.ZEXPIRE => DateTimeOffset.UtcNow.AddSeconds(expiration).UtcTicks,
+                RespCommand.ZPEXPIRE => DateTimeOffset.UtcNow.AddMilliseconds(expiration).UtcTicks,
+                RespCommand.ZEXPIREAT => ConvertUtils.UnixTimestampInSecondsToTicks(expiration),
+                _ => ConvertUtils.UnixTimestampInMillisecondsToTicks(expiration)
+            };
+
+            // Encode expiration time and expiration option and pass them into the input object
+            var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
+
             var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, (int)expireOption, (int)inputFlag);
+            var input = new ObjectInput(header, ref parseState, startIdx: currIdx, expirationWithOption.WordHead, expirationWithOption.WordTail);
 
             var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
 

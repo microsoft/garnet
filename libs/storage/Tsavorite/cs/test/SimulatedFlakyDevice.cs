@@ -44,55 +44,61 @@ namespace Tsavorite.test
         {
             var logicalDestStart = segmentId * underlying.SegmentSize + (long)destinationAddress;
             var logicalDestEnd = logicalDestStart + numBytesToWrite;
-            versionScheme.Enter();
-            if (permanentlyFailedRangesStart.Count != 0)
+            var state = versionScheme.Enter();
+            try
             {
-                // First failed range that's smaller than requested range start
-                var startIndex = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
-                if (startIndex < 0) startIndex = ~startIndex - 1;
-                // Start at 0 if smaller
-                startIndex = Math.Max(0, startIndex);
-
-                // check if there are overlaps
-                for (var i = startIndex; i < permanentlyFailedRangesStart.Count; i++)
+                if (permanentlyFailedRangesStart.Count != 0)
                 {
-                    if (permanentlyFailedRangesStart[i] > logicalDestEnd) break;
-                    if (permanentlyFailedRangesEnd[i] > logicalDestStart)
+                    // First failed range that's smaller than requested range start
+                    var startIndex = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
+                    if (startIndex < 0) startIndex = ~startIndex - 1;
+                    // Start at 0 if smaller
+                    startIndex = Math.Max(0, startIndex);
+
+                    // check if there are overlaps
+                    for (var i = startIndex; i < permanentlyFailedRangesStart.Count; i++)
                     {
-                        // If so, simulate a failure by calling callback with an error
-                        callback(42, numBytesToWrite, context);
-                        versionScheme.Leave();
-                        return;
+                        if (permanentlyFailedRangesStart[i] > logicalDestEnd) break;
+                        if (permanentlyFailedRangesEnd[i] > logicalDestStart)
+                        {
+                            // If so, simulate a failure by calling callback with an error
+                            callback(42, numBytesToWrite, context);
+                            return;
+                        }
                     }
                 }
-            }
 
-            // Otherwise, decide whether we need to introduce a failure
-            if (random.Value.NextDouble() < options.writeTransientErrorRate)
-            {
-                callback(42, numBytesToWrite, context);
-            }
-            // decide whether failure should be in fact permanent. Don't necessarily need to fail concurrent requests
-            else if (random.Value.NextDouble() < options.writePermanentErrorRate)
-            {
-                callback(42, numBytesToWrite, context);
-                versionScheme.TryAdvanceVersionWithCriticalSection((_, _) =>
+                // Otherwise, decide whether we need to introduce a failure
+                if (random.Value.NextDouble() < options.writeTransientErrorRate)
                 {
-                    var index = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
-                    if (index >= 0)
-                        permanentlyFailedRangesEnd[index] =
-                            Math.Max(permanentlyFailedRangesEnd[index], logicalDestEnd);
-                    else
+                    callback(42, numBytesToWrite, context);
+                }
+                // decide whether failure should be in fact permanent. Don't necessarily need to fail concurrent requests
+                else if (random.Value.NextDouble() < options.writePermanentErrorRate)
+                {
+                    callback(42, numBytesToWrite, context);
+                    versionScheme.TryAdvanceVersionWithCriticalSection((_, _) =>
                     {
-                        // This technically does not correctly merge / stores overlapping ranges, but for failing
-                        // segments, it does not matter
-                        var i = ~index;
-                        permanentlyFailedRangesStart.Insert(i, logicalDestStart);
-                        permanentlyFailedRangesEnd.Insert(i, logicalDestEnd);
-                    }
-                });
+                        var index = permanentlyFailedRangesStart.BinarySearch(logicalDestStart);
+                        if (index >= 0)
+                            permanentlyFailedRangesEnd[index] =
+                                Math.Max(permanentlyFailedRangesEnd[index], logicalDestEnd);
+                        else
+                        {
+                            // This technically does not correctly merge / stores overlapping ranges, but for failing
+                            // segments, it does not matter
+                            var i = ~index;
+                            permanentlyFailedRangesStart.Insert(i, logicalDestStart);
+                            permanentlyFailedRangesEnd.Insert(i, logicalDestEnd);
+                        }
+                    });
+                }
             }
-            versionScheme.Leave();
+            finally
+            {
+                if (!state.IsError())
+                    versionScheme.Leave();
+            }
             underlying.WriteAsync(sourceAddress, segmentId, destinationAddress, numBytesToWrite, callback, context);
         }
 
@@ -101,52 +107,59 @@ namespace Tsavorite.test
         {
             var logicalSrcStart = segmentId * underlying.SegmentSize + (long)sourceAddress;
             var logicalSrcEnd = logicalSrcStart + readLength;
-            versionScheme.Enter();
-            if (permanentlyFailedRangesStart.Count != 0)
+            var state = versionScheme.Enter();
+            try
             {
-                // First failed range that's smaller than requested range start
-                var startIndex = permanentlyFailedRangesStart.BinarySearch(logicalSrcStart);
-                if (startIndex < 0) startIndex = ~startIndex - 1;
-                // Start at 0 if smaller
-                startIndex = Math.Max(0, startIndex);
-
-                // check if there are overlaps
-                for (var i = startIndex; i < permanentlyFailedRangesStart.Count; i++)
+                if (permanentlyFailedRangesStart.Count != 0)
                 {
-                    if (permanentlyFailedRangesStart[i] > logicalSrcEnd) break;
-                    if (permanentlyFailedRangesEnd[i] > logicalSrcStart)
+                    // First failed range that's smaller than requested range start
+                    var startIndex = permanentlyFailedRangesStart.BinarySearch(logicalSrcStart);
+                    if (startIndex < 0) startIndex = ~startIndex - 1;
+                    // Start at 0 if smaller
+                    startIndex = Math.Max(0, startIndex);
+
+                    // check if there are overlaps
+                    for (var i = startIndex; i < permanentlyFailedRangesStart.Count; i++)
                     {
-                        // If so, simulate a failure by calling callback with an error
-                        callback(42, readLength, context);
-                        versionScheme.Leave();
-                        return;
+                        if (permanentlyFailedRangesStart[i] > logicalSrcEnd) break;
+                        if (permanentlyFailedRangesEnd[i] > logicalSrcStart)
+                        {
+                            // If so, simulate a failure by calling callback with an error
+                            callback(42, readLength, context);
+                            return;
+                        }
                     }
                 }
-            }
-            // Otherwise, decide whether we need to introduce a failure
-            if (random.Value.NextDouble() < options.readTransientErrorRate)
-            {
-                callback(42, readLength, context);
-            }
-            else if (random.Value.NextDouble() < options.readPermanentErrorRate)
-            {
-                callback(42, readLength, context);
-
-                versionScheme.TryAdvanceVersionWithCriticalSection((_, _) =>
+                // Otherwise, decide whether we need to introduce a failure
+                if (random.Value.NextDouble() < options.readTransientErrorRate)
                 {
-                    var index = permanentlyFailedRangesStart.BinarySearch(logicalSrcStart);
-                    if (index >= 0)
-                        permanentlyFailedRangesEnd[index] =
-                            Math.Max(permanentlyFailedRangesEnd[index], logicalSrcEnd);
-                    else
+                    callback(42, readLength, context);
+                }
+                else if (random.Value.NextDouble() < options.readPermanentErrorRate)
+                {
+                    callback(42, readLength, context);
+
+                    versionScheme.TryAdvanceVersionWithCriticalSection((_, _) =>
                     {
-                        var i = ~index;
-                        permanentlyFailedRangesStart.Insert(i, logicalSrcStart);
-                        permanentlyFailedRangesEnd.Insert(i, logicalSrcEnd);
-                    }
-                });
+                        var index = permanentlyFailedRangesStart.BinarySearch(logicalSrcStart);
+                        if (index >= 0)
+                            permanentlyFailedRangesEnd[index] =
+                                Math.Max(permanentlyFailedRangesEnd[index], logicalSrcEnd);
+                        else
+                        {
+                            var i = ~index;
+                            permanentlyFailedRangesStart.Insert(i, logicalSrcStart);
+                            permanentlyFailedRangesEnd.Insert(i, logicalSrcEnd);
+                        }
+                    });
+                }
             }
-            versionScheme.Leave();
+            finally
+            {
+                if (!state.IsError())
+                    versionScheme.Leave();
+            }
+
             underlying.ReadAsync(segmentId, sourceAddress, destinationAddress, readLength, callback, context);
         }
 

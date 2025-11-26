@@ -16,7 +16,7 @@ namespace Tsavorite.core
         /// Pull-based scan interface for HLOG; user calls GetNext() which advances through the address range.
         /// </summary>
         /// <returns>Pull Scan iterator instance</returns>
-        public abstract ITsavoriteScanIterator<TKey, TValue> Scan(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeSealedRecords = false);
+        public abstract ITsavoriteScanIterator<TKey, TValue> Scan(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeClosedRecords = false);
 
         /// <summary>
         /// Push-based scan interface for HLOG, called from LogAccessor; scan the log given address range, calling <paramref name="scanFunctions"/> for each record.
@@ -186,11 +186,11 @@ namespace Tsavorite.core
         /// <remarks>Currently we load an entire page, which while inefficient in performance, allows us to make the cursor safe (by ensuring we align to a valid record) if it is not
         /// the last one returned. We could optimize this to load only the subset of a page that is pointed to by the cursor and do GetRequiredRecordSize/RetrievedFullRecord as in
         /// AsyncGetFromDiskCallback. However, this would not validate the cursor and would therefore require maintaining a cursor history.</remarks>
-        internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress)
+        internal abstract bool ScanCursor<TScanFunctions>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, long endAddress, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>;
 
         private protected bool ScanLookup<TInput, TOutput, TScanFunctions, TScanIterator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store,
-                ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor, long maxAddress)
+                ScanCursorState<TKey, TValue> scanCursorState, ref long cursor, long count, TScanFunctions scanFunctions, TScanIterator iter, bool validateCursor, long maxAddress, bool resetCursor = true, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
             where TScanIterator : ITsavoriteScanIterator<TKey, TValue>, IPushScanIterator<TKey>
         {
@@ -213,7 +213,7 @@ namespace Tsavorite.core
             long numPending = 0;
             while (iter.GetNext(out var recordInfo))
             {
-                if (!recordInfo.Tombstone)
+                if (!recordInfo.Tombstone || includeTombstones)
                 {
                     ref var key = ref iter.GetKey();
                     ref var value = ref iter.GetValue();
@@ -250,7 +250,7 @@ namespace Tsavorite.core
                 bContext.CompletePending(wait: true);
 
             IterationComplete:
-            cursor = 0;
+            if (resetCursor) cursor = 0;
             scanFunctions.OnStop(false, scanCursorState.acceptedCount);
             return false;
         }

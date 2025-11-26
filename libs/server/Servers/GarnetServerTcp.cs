@@ -29,9 +29,7 @@ namespace Garnet.server
         readonly string unixSocketPath;
         readonly UnixFileMode unixSocketPermission;
 
-        /// <summary>
-        /// Get active consumers
-        /// </summary>
+        /// <inheritdoc/>
         public override IEnumerable<IMessageConsumer> ActiveConsumers()
         {
             foreach (var kvp in activeHandlers)
@@ -42,10 +40,8 @@ namespace Garnet.server
             }
         }
 
-        /// <summary>
-        /// Get active consumers
-        /// </summary>
-        public IEnumerable<IClusterSession> ActiveClusterSessions()
+        /// <inheritdoc/>
+        public override IEnumerable<IClusterSession> ActiveClusterSessions()
         {
             foreach (var kvp in activeHandlers)
             {

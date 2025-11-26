@@ -7,12 +7,14 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.client;
 using Garnet.common;
+using Garnet.server.TLS;
 using GarnetClusterManagement;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -130,14 +132,14 @@ namespace Garnet.test.cluster
         public IPEndPoint[] GetEndpointsWithout(IPEndPoint endPoint) =>
             [.. endpoints.Select(x => (IPEndPoint)x).Where(x => x.Port != endPoint.Port || x.Address != endPoint.Address)];
 
-        public RedisResult Execute(IPEndPoint endPoint, string cmd, ICollection<object> args, bool skipLogging = false, ILogger logger = null)
+        public RedisResult Execute(IPEndPoint endPoint, string cmd, ICollection<object> args, bool skipLogging = false, ILogger logger = null, CommandFlags flags = CommandFlags.None)
         {
             if (!skipLogging)
                 logger?.LogInformation("({address}:{port}) > {cmd} {args}", endPoint.Address, endPoint.Port, cmd, string.Join(' ', args));
             try
             {
                 var server = GetServer(endPoint);
-                var resp = server.Execute(cmd, args);
+                var resp = server.Execute(cmd, args, flags: flags);
                 return resp;
             }
             catch (Exception ex)
@@ -586,6 +588,9 @@ namespace Garnet.test.cluster
             this.certificates = certificates;
         }
 
+        public int HashSlot(RedisKey key)
+        => redis.HashSlot(key);
+
         public static void BackOff(TimeSpan timeSpan = default) => Thread.Sleep(timeSpan == default ? backoff : timeSpan);
 
         public static void BackOff(CancellationToken cancellationToken, TimeSpan timeSpan = default, string msg = null)
@@ -637,6 +642,12 @@ namespace Garnet.test.cluster
         {
             redis?.Close(false);
             redis?.Dispose();
+
+            if (gcsConnections != null)
+            {
+                foreach (var gcs in gcsConnections)
+                    gcs?.Dispose();
+            }
         }
 
         public string[] GetNodeIds(List<int> nodes = null, ILogger logger = null)
@@ -682,16 +693,47 @@ namespace Garnet.test.cluster
 
         public IDatabase GetDatabase() => redis.GetDatabase(0);
 
-        public GarnetClientSession GetGarnetClientSession(int nodeIndex)
+        public GarnetClientSession GetGarnetClientSession(int nodeIndex, bool useTLS = false)
         {
             gcsConnections ??= new GarnetClientSession[endpoints.Count];
 
             if (gcsConnections[nodeIndex] == null)
             {
-                gcsConnections[nodeIndex] = new GarnetClientSession(GetEndPoint(nodeIndex), new());
+                SslClientAuthenticationOptions sslOptions = null;
+                if (useTLS)
+                {
+                    sslOptions = new SslClientAuthenticationOptions
+                    {
+                        ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                        TargetHost = "GarnetTest",
+                        AllowRenegotiation = false,
+                        RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
+                    };
+                }
+                gcsConnections[nodeIndex] = new GarnetClientSession(GetEndPoint(nodeIndex), new(), tlsOptions: sslOptions);
                 gcsConnections[nodeIndex].Connect();
             }
             return gcsConnections[nodeIndex];
+        }
+
+        public const string certFile = "testcert.pfx";
+        public const string certPassword = "placeholder";
+
+        public GarnetClientSession CreateGarnetClientSession(int nodeIndex, bool useTLS = false)
+        {
+            SslClientAuthenticationOptions sslOptions = null;
+            if (useTLS)
+            {
+                sslOptions = new SslClientAuthenticationOptions
+                {
+                    ClientCertificates = [CertificateUtils.GetMachineCertificateByFile(certFile, certPassword)],
+                    TargetHost = "GarnetTest",
+                    AllowRenegotiation = false,
+                    RemoteCertificateValidationCallback = TestUtils.ValidateServerCertificate,
+                };
+            }
+
+            return new(endpoints[nodeIndex], new(), tlsOptions: sslOptions);
         }
 
         public IServer GetServer(int nodeIndex) => redis.GetServer(GetEndPoint(nodeIndex));
@@ -721,6 +763,12 @@ namespace Garnet.test.cluster
             while (HashSlot(data) != slot) RandomBytes(ref data, startOffset, endOffset);
         }
 
+        public void RandomBytesRestrictedToSlot(ref Random r, ref byte[] data, int slot, int startOffset = -1, int endOffset = -1)
+        {
+            RandomBytes(ref data, startOffset, endOffset);
+            while (HashSlot(data) != slot) RandomBytes(ref r, ref data, startOffset, endOffset);
+        }
+
         public void InitRandom(int seed)
         {
             r = new Random(seed);
@@ -733,7 +781,7 @@ namespace Garnet.test.cluster
         {
             startOffset = startOffset == -1 ? 0 : startOffset;
             endOffset = endOffset == -1 ? data.Length : endOffset;
-            for (int i = startOffset; i < endOffset; i++)
+            for (var i = startOffset; i < endOffset; i++)
                 data[i] = ascii_chars[r.Next(ascii_chars.Length)];
         }
 
@@ -1702,6 +1750,13 @@ namespace Garnet.test.cluster
             return null;
         }
 
+        public void MigrateSlotsIndex(int sourceNodeIndex, int targetNodeIndex, List<int> slots, bool range = false, string authPassword = null, ILogger logger = null)
+        {
+            var srcPort = GetPortFromNodeIndex(sourceNodeIndex);
+            var dstPort = GetPortFromNodeIndex(targetNodeIndex);
+            MigrateSlots(srcPort, dstPort, slots, range, authPassword, logger);
+        }
+
         public void MigrateSlots(int sourcePort, int targetPort, List<int> slots, bool range = false, string authPassword = null, ILogger logger = null)
         {
             var sourceEndPoint = GetEndPointFromPort(sourcePort);
@@ -1751,7 +1806,7 @@ namespace Garnet.test.cluster
             {
                 target.Address.ToString(),
                 target.Port,
-                $"\"\"",
+                $"",
                 0,
                 -1,
                 "KEYS"
@@ -2051,6 +2106,23 @@ namespace Garnet.test.cluster
                 logger?.LogError(ex, "An error has occurred; FlushAllDatabases");
                 Assert.Fail();
             }
+        }
+
+        public string ClusterStatus(int[] nodeIndices)
+        {
+            var clusterStatus = "";
+            foreach (var index in nodeIndices)
+                clusterStatus += $"{GetNodeInfo(ClusterNodes(index))}\n";
+
+            static string GetNodeInfo(ClusterConfiguration nodeConfig)
+            {
+                var output = $"[{nodeConfig.Origin}]";
+
+                foreach (var node in nodeConfig.Nodes)
+                    output += $"\n\t{node.Raw}";
+                return output;
+            }
+            return clusterStatus;
         }
 
         public ClusterConfiguration ClusterNodes(int nodeIndex, ILogger logger = null)
@@ -2812,12 +2884,14 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null)
+        public void WaitForReplicaAofSync(int primaryIndex, int secondaryIndex, ILogger logger = null, CancellationToken cancellation = default)
         {
             long primaryReplicationOffset;
             long secondaryReplicationOffset1;
             while (true)
             {
+                cancellation.ThrowIfCancellationRequested();
+
                 primaryReplicationOffset = GetReplicationOffset(primaryIndex, logger);
                 secondaryReplicationOffset1 = GetReplicationOffset(secondaryIndex, logger);
                 if (primaryReplicationOffset == secondaryReplicationOffset1)
@@ -2883,6 +2957,27 @@ namespace Garnet.test.cluster
             {
                 var failoverState = GetFailoverState(nodeIndex, logger);
                 if (failoverState.Equals("no-failover")) break;
+                BackOff(cancellationToken: context.cts.Token);
+            }
+        }
+
+        public void WaitForFailoverCompleted(int nodeIndex, ILogger logger = null)
+        {
+            while (true)
+            {
+                var infoItem = context.clusterTestUtils.GetReplicationInfo(nodeIndex, [ReplicationInfoItem.LAST_FAILOVER_STATE], logger: context.logger);
+                if (infoItem[0].Item2.Equals("failover-completed"))
+                    break;
+                BackOff(cancellationToken: context.cts.Token, msg: nameof(WaitForFailoverCompleted));
+            }
+        }
+
+        public void WaitForPrimaryRole(int nodeIndex, ILogger logger = null)
+        {
+            while (true)
+            {
+                var role = RoleCommand(nodeIndex, logger);
+                if (role.Value.Equals("master")) break;
                 BackOff(cancellationToken: context.cts.Token);
             }
         }

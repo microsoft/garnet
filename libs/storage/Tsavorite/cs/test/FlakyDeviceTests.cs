@@ -30,9 +30,9 @@ namespace Tsavorite.test
             var errorOptions = new ErrorSimulationOptions
             {
                 readTransientErrorRate = 0,
-                readPermanentErrorRate = 0,
+                readPermanentErrorRate = 0.5,
                 writeTransientErrorRate = 0,
-                writePermanentErrorRate = 0.1,
+                writePermanentErrorRate = 0.5,
             };
             device = new SimulatedFlakyDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true),
                 errorOptions);
@@ -79,9 +79,9 @@ namespace Tsavorite.test
             var errorOptions = new ErrorSimulationOptions
             {
                 readTransientErrorRate = 0,
-                readPermanentErrorRate = 0,
+                readPermanentErrorRate = 0.5,
                 writeTransientErrorRate = 0,
-                writePermanentErrorRate = 0.05,
+                writePermanentErrorRate = 0.5,
             };
             device = new SimulatedFlakyDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true),
                 errorOptions);
@@ -145,9 +145,9 @@ namespace Tsavorite.test
             var errorOptions = new ErrorSimulationOptions
             {
                 readTransientErrorRate = 0,
-                readPermanentErrorRate = 0,
+                readPermanentErrorRate = 0.5,
                 writeTransientErrorRate = 0,
-                writePermanentErrorRate = 0.1,
+                writePermanentErrorRate = 0.5,
             };
             device = new SimulatedFlakyDevice(Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true),
                 errorOptions);

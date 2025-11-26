@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
@@ -23,7 +24,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, enableAOF: true, lowMemory: true);
             server.Start();
         }
 
@@ -427,6 +428,7 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             db.HashSet("user:user1", [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
             Assert.Throws<RedisServerException>(() => db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field1"), 4));
+            Assert.Throws<RedisServerException>(() => db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), double.PositiveInfinity));
             var result = db.HashIncrement(new RedisKey("user:user1"), new RedisValue("Field2"), -4);
             ClassicAssert.AreEqual(-3, result);
             //new Key
@@ -678,16 +680,9 @@ namespace Garnet.test
             db.HashSet("user:user1", [new HashEntry("name", "Alice"), new HashEntry("email", "email@example.com"), new HashEntry("age", "30")]);
 
             // HSCAN without key
-            try
-            {
-                db.Execute("HSCAN");
-                Assert.Fail();
-            }
-            catch (RedisServerException e)
-            {
-                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(HashOperation.HSCAN));
-                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
-            }
+            var e = Assert.Throws<RedisServerException>(() => db.Execute("HSCAN"));
+            var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(HashOperation.HSCAN));
+            ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
 
             // HSCAN without parameters
             members = db.HashScan("user:user1");
@@ -1174,6 +1169,106 @@ namespace Garnet.test
             ClassicAssert.AreEqual("StringValue", data[0].Value.ToString());
             ClassicAssert.AreEqual("Field2", data[1].Name.ToString());
             ClassicAssert.AreEqual("1", data[1].Value.ToString());
+        }
+
+        [Test]
+        public void CanDoHashExpireWithAofRecovery()
+        {
+            // Test AOF recovery of hash entries with expiry
+
+            var key1 = "key1";
+            var key2 = "key2";
+            HashEntry[] values1_1 = [new HashEntry("key1_1", "val1_1"), new HashEntry("key1_2", "val1_2")];
+            HashEntry[] values1_2 = [new HashEntry("key1_3", "val1_3"), new HashEntry("key1_4", "val1_4")];
+            HashEntry[] values2_1 = [new HashEntry("key2_1", "val2_1"), new HashEntry("key2_2", "val2_2")];
+            HashEntry[] values2_2 = [new HashEntry("key2_3", "val2_3"), new HashEntry("key2_4", "val2_4")];
+
+            var expireTime = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(1);
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Set 1st hash set, add long expiry to 1 entry
+                db.HashSet(key1, values1_1);
+                db.Execute("HEXPIREAT", key1, expireTime.ToUnixTimeSeconds(), "FIELDS", 1, "key1_1");
+
+                // Set 1st hash set, add short expiry to 1 entry
+                db.HashSet(key2, values2_1);
+                db.Execute("HEXPIRE", key2, 1, "FIELDS", 1, "key2_1");
+
+                // Wait for short expiry to pass
+                Thread.Sleep(2000);
+
+                // Add more entries to 1st and 2nd hash sets
+                db.HashSet(key1, values1_2);
+                db.HashSet(key2, values2_2);
+
+                // Add longer expiry to entry in 2nd hash set
+                db.Execute("HPEXPIRE", key2, 15000, "FIELDS", 1, "key2_2");
+                Thread.Sleep(2000);
+
+                // Verify 1st hash set contains all added entries
+                var recoveredValues = db.HashGetAll(key1);
+                CollectionAssert.AreEquivalent(values1_1.Union(values1_2), recoveredValues);
+
+                // Verify expiry times of entries in 1st hash set
+                var recoveredValuesExpTime = (RedisResult[])db.Execute("HEXPIRETIME", key1, "FIELDS", 2, "key1_1", "key1_2");
+                ClassicAssert.IsNotNull(recoveredValuesExpTime);
+                ClassicAssert.AreEqual(2, recoveredValuesExpTime!.Length);
+                Assert.That(expireTime.ToUnixTimeSeconds(), Is.EqualTo((long)recoveredValuesExpTime[0]).Within(1));
+                ClassicAssert.AreEqual(-1, (long)recoveredValuesExpTime[1]);
+
+                // Verify 2nd hash set contains all added entries except 1 expired entry
+                recoveredValues = db.HashGetAll(key2);
+                CollectionAssert.AreEquivalent(values2_1.Skip(1).Union(values2_2), recoveredValues);
+
+                // Verify 2nd hash set entries ttls
+                var recoveredValuesTtl = (RedisResult[])db.Execute("HTTL", key2, "FIELDS", 4, "key2_1", "key2_2", "key2_3", "key2_4");
+                ClassicAssert.IsNotNull(recoveredValuesTtl);
+                ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
+                ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
+                ClassicAssert.Less((long)recoveredValuesTtl[1], 13);
+                ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
+                ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
+                ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
+            }
+
+            // Commit to AOF and restart server
+            server.Store.CommitAOF(true);
+            server.Dispose(false);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Verify 1st hash set contains all added entries
+                var recoveredValues = db.HashGetAll(key1);
+                CollectionAssert.AreEquivalent(values1_1.Union(values1_2), recoveredValues);
+
+                // Verify expiry times of entries in 1st hash set
+                var recoveredValuesExpTime = (RedisResult[])db.Execute("HEXPIRETIME", key1, "FIELDS", 2, "key1_1", "key1_2");
+                ClassicAssert.IsNotNull(recoveredValuesExpTime);
+                ClassicAssert.AreEqual(2, recoveredValuesExpTime!.Length);
+                Assert.That(expireTime.ToUnixTimeSeconds(), Is.EqualTo((long)recoveredValuesExpTime[0]).Within(1));
+                ClassicAssert.AreEqual(-1, (long)recoveredValuesExpTime[1]);
+
+                // Verify 2nd hash set contains all added entries except 1 expired entry
+                recoveredValues = db.HashGetAll(key2);
+                CollectionAssert.AreEquivalent(values2_1.Skip(1).Union(values2_2), recoveredValues);
+
+                // Verify 2nd hash set entries ttls
+                var recoveredValuesTtl = (RedisResult[])db.Execute("HPTTL", key2, "FIELDS", 4, "key2_1", "key2_2", "key2_3", "key2_4");
+                ClassicAssert.IsNotNull(recoveredValuesTtl);
+                ClassicAssert.AreEqual(4, recoveredValuesTtl!.Length);
+                ClassicAssert.AreEqual(-2, (long)recoveredValuesTtl[0]);
+                ClassicAssert.Less((long)recoveredValuesTtl[1], 13000);
+                ClassicAssert.Greater((long)recoveredValuesTtl[1], 0);
+                ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[2]);
+                ClassicAssert.AreEqual(-1, (long)recoveredValuesTtl[3]);
+            }
         }
 
         [Test]

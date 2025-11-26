@@ -49,5 +49,15 @@ namespace Garnet.server
         /// Read operation on object store
         /// </summary>
         GarnetStatus Read_ObjectStore(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+
+        /// <summary>
+        /// Read batch of keys on main store.
+        /// </summary>
+        void ReadWithPrefetch<TBatch>(ref TBatch batch, long context = default)
+            where TBatch : IReadArgBatch<SpanByte, RawStringInput, SpanByteAndMemory>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
     }
 }

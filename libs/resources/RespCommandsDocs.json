@@ -39,6 +39,22 @@
         ]
       },
       {
+        "Command": "ACL_GENPASS",
+        "Name": "ACL|GENPASS",
+        "Summary": "Generates a pseudorandom, secure password that can be used to identify ACL users.",
+        "Group": "Server",
+        "Complexity": "O(1)",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "BITS",
+            "DisplayText": "bits",
+            "Type": "Integer",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
         "Command": "ACL_GETUSER",
         "Name": "ACL|GETUSER",
         "Summary": "Lists the ACL rules of a user.",
@@ -109,21 +125,6 @@
         "Summary": "Returns the authenticated username of the current connection.",
         "Group": "Server",
         "Complexity": "O(1)"
-      }
-    ]
-  },
-  {
-    "Command": "EXPDELSCAN",
-    "Name": "EXPDELSCAN",
-    "Summary": "Scans mutable records to delete expired ones.",
-    "Group": "Generic",
-    "Complexity": "O(1) for every call. O(N) for a complete iteration. N is the number of records in memory.",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "DBID",
-        "DisplayText": "dbid",
-        "Type": "Integer"
       }
     ]
   },
@@ -1369,6 +1370,13 @@
         ]
       },
       {
+        "Command": "CLUSTER_FLUSHALL",
+        "Name": "CLUSTER|FLUSHALL",
+        "Summary": "Sent by primary to replica to force to FLUSH its database",
+        "Group": "Cluster",
+        "Complexity": "O(1)"
+      },
+      {
         "Command": "CLUSTER_FORGET",
         "Name": "CLUSTER|FORGET",
         "Summary": "Removes a node from the nodes table.",
@@ -1911,22 +1919,6 @@
     ]
   },
   {
-    "Command": "DELIFEXPIM",
-    "Name": "DELIFEXPIM",
-    "Summary": "Deletes a key if it is in memory and expired.",
-    "Group": "Generic",
-    "Complexity": "O(1)",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      }
-    ]
-  },
-  {
     "Command": "DELIFGREATER",
     "Name": "DELIFGREATER",
     "Summary": "Deletes a key only if the provided Etag is strictly greater than the existing Etag for the key.",
@@ -2079,6 +2071,21 @@
         "Type": "Key",
         "ArgumentFlags": "Multiple",
         "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "EXPDELSCAN",
+    "Name": "EXPDELSCAN",
+    "Summary": "Scans mutable records to delete expired ones.",
+    "Group": "Generic",
+    "Complexity": "O(1) for every call. O(N) for a complete iteration. N is the number of records in memory.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "DBID",
+        "DisplayText": "dbid",
+        "Type": "Integer"
       }
     ]
   },
@@ -2521,7 +2528,7 @@
   {
     "Command": "GEORADIUS",
     "Name": "GEORADIUS",
-    "Summary": "Query a sorted set representing a geospatial index to fetch members matching a given maximum distance from a point",
+    "Summary": "Queries a geospatial index for members within a distance from a coordinate, optionally stores the result.",
     "Group": "Geo",
     "Complexity": "O(N\u002Blog(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
     "DocFlags": "Deprecated",
@@ -2530,22 +2537,26 @@
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
         "Name": "KEY",
+        "DisplayText": "key",
         "Type": "Key",
         "KeySpecIndex": 0
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "LONGITUDE",
+        "DisplayText": "longitude",
         "Type": "Double"
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "LATITUDE",
+        "DisplayText": "latitude",
         "Type": "Double"
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "RADIUS",
+        "DisplayText": "radius",
         "Type": "Double"
       },
       {
@@ -2556,24 +2567,28 @@
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "M",
+            "DisplayText": "m",
             "Type": "PureToken",
             "Token": "M"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "KM",
+            "DisplayText": "km",
             "Type": "PureToken",
             "Token": "KM"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "FT",
+            "DisplayText": "ft",
             "Type": "PureToken",
             "Token": "FT"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "MI",
+            "DisplayText": "mi",
             "Type": "PureToken",
             "Token": "MI"
           }
@@ -2582,6 +2597,7 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHCOORD",
+        "DisplayText": "withcoord",
         "Type": "PureToken",
         "Token": "WITHCOORD",
         "ArgumentFlags": "Optional"
@@ -2589,6 +2605,7 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHDIST",
+        "DisplayText": "withdist",
         "Type": "PureToken",
         "Token": "WITHDIST",
         "ArgumentFlags": "Optional"
@@ -2596,25 +2613,28 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHHASH",
+        "DisplayText": "withhash",
         "Type": "PureToken",
         "Token": "WITHHASH",
         "ArgumentFlags": "Optional"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "COUNT",
+        "Name": "COUNT-BLOCK",
         "Type": "Block",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COUNT",
+            "DisplayText": "count",
             "Type": "Integer",
             "Token": "COUNT"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ANY",
+            "DisplayText": "any",
             "Type": "PureToken",
             "Token": "ANY",
             "ArgumentFlags": "Optional"
@@ -2630,39 +2650,49 @@
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ASC",
+            "DisplayText": "asc",
             "Type": "PureToken",
             "Token": "ASC"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "DESC",
+            "DisplayText": "desc",
             "Type": "PureToken",
             "Token": "DESC"
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "Type": "Key",
-        "Token": "STORE",
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "STORE",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
-        "KeySpecIndex": 1
-      },
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "Type": "Key",
-        "Token": "STOREDIST",
-        "ArgumentFlags": "Optional",
-        "KeySpecIndex": 2
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "STOREKEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "Token": "STORE",
+            "KeySpecIndex": 1
+          },
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "STOREDISTKEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "Token": "STOREDIST",
+            "KeySpecIndex": 2
+          }
+        ]
       }
     ]
   },
   {
     "Command": "GEORADIUS_RO",
     "Name": "GEORADIUS_RO",
-    "Summary": "A read-only variant for GEORADIUS",
+    "Summary": "Returns members from a geospatial index that are within a distance from a coordinate.",
     "Group": "Geo",
     "Complexity": "O(N\u002Blog(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
     "DocFlags": "Deprecated",
@@ -2671,22 +2701,26 @@
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
         "Name": "KEY",
+        "DisplayText": "key",
         "Type": "Key",
         "KeySpecIndex": 0
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "LONGITUDE",
+        "DisplayText": "longitude",
         "Type": "Double"
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "LATITUDE",
+        "DisplayText": "latitude",
         "Type": "Double"
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "RADIUS",
+        "DisplayText": "radius",
         "Type": "Double"
       },
       {
@@ -2697,24 +2731,28 @@
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "M",
+            "DisplayText": "m",
             "Type": "PureToken",
             "Token": "M"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "KM",
+            "DisplayText": "km",
             "Type": "PureToken",
             "Token": "KM"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "FT",
+            "DisplayText": "ft",
             "Type": "PureToken",
             "Token": "FT"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "MI",
+            "DisplayText": "mi",
             "Type": "PureToken",
             "Token": "MI"
           }
@@ -2723,6 +2761,7 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHCOORD",
+        "DisplayText": "withcoord",
         "Type": "PureToken",
         "Token": "WITHCOORD",
         "ArgumentFlags": "Optional"
@@ -2730,6 +2769,7 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHDIST",
+        "DisplayText": "withdist",
         "Type": "PureToken",
         "Token": "WITHDIST",
         "ArgumentFlags": "Optional"
@@ -2737,25 +2777,28 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHHASH",
+        "DisplayText": "withhash",
         "Type": "PureToken",
         "Token": "WITHHASH",
         "ArgumentFlags": "Optional"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "COUNT",
+        "Name": "COUNT-BLOCK",
         "Type": "Block",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COUNT",
+            "DisplayText": "count",
             "Type": "Integer",
             "Token": "COUNT"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ANY",
+            "DisplayText": "any",
             "Type": "PureToken",
             "Token": "ANY",
             "ArgumentFlags": "Optional"
@@ -2771,12 +2814,14 @@
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ASC",
+            "DisplayText": "asc",
             "Type": "PureToken",
             "Token": "ASC"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "DESC",
+            "DisplayText": "desc",
             "Type": "PureToken",
             "Token": "DESC"
           }
@@ -2787,7 +2832,7 @@
   {
     "Command": "GEORADIUSBYMEMBER",
     "Name": "GEORADIUSBYMEMBER",
-    "Summary": "Query a sorted set representing a geospatial index to fetch members matching a given maximum distance from a member",
+    "Summary": "Queries a geospatial index for members within a distance from a member, optionally stores the result.",
     "Group": "Geo",
     "Complexity": "O(N\u002Blog(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
     "DocFlags": "Deprecated",
@@ -2796,17 +2841,20 @@
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
         "Name": "KEY",
+        "DisplayText": "key",
         "Type": "Key",
         "KeySpecIndex": 0
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
+        "DisplayText": "member",
         "Type": "String"
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "RADIUS",
+        "DisplayText": "radius",
         "Type": "Double"
       },
       {
@@ -2817,24 +2865,28 @@
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "M",
+            "DisplayText": "m",
             "Type": "PureToken",
             "Token": "M"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "KM",
+            "DisplayText": "km",
             "Type": "PureToken",
             "Token": "KM"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "FT",
+            "DisplayText": "ft",
             "Type": "PureToken",
             "Token": "FT"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "MI",
+            "DisplayText": "mi",
             "Type": "PureToken",
             "Token": "MI"
           }
@@ -2843,6 +2895,7 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHCOORD",
+        "DisplayText": "withcoord",
         "Type": "PureToken",
         "Token": "WITHCOORD",
         "ArgumentFlags": "Optional"
@@ -2850,6 +2903,7 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHDIST",
+        "DisplayText": "withdist",
         "Type": "PureToken",
         "Token": "WITHDIST",
         "ArgumentFlags": "Optional"
@@ -2857,25 +2911,28 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHHASH",
+        "DisplayText": "withhash",
         "Type": "PureToken",
         "Token": "WITHHASH",
         "ArgumentFlags": "Optional"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "COUNT",
+        "Name": "COUNT-BLOCK",
         "Type": "Block",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COUNT",
+            "DisplayText": "count",
             "Type": "Integer",
             "Token": "COUNT"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ANY",
+            "DisplayText": "any",
             "Type": "PureToken",
             "Token": "ANY",
             "ArgumentFlags": "Optional"
@@ -2891,39 +2948,49 @@
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ASC",
+            "DisplayText": "asc",
             "Type": "PureToken",
             "Token": "ASC"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "DESC",
+            "DisplayText": "desc",
             "Type": "PureToken",
             "Token": "DESC"
           }
         ]
       },
       {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "Type": "Key",
-        "Token": "STORE",
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "STORE",
+        "Type": "OneOf",
         "ArgumentFlags": "Optional",
-        "KeySpecIndex": 1
-      },
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "Type": "Key",
-        "Token": "STOREDIST",
-        "ArgumentFlags": "Optional",
-        "KeySpecIndex": 2
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "STOREKEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "Token": "STORE",
+            "KeySpecIndex": 1
+          },
+          {
+            "TypeDiscriminator": "RespCommandKeyArgument",
+            "Name": "STOREDISTKEY",
+            "DisplayText": "key",
+            "Type": "Key",
+            "Token": "STOREDIST",
+            "KeySpecIndex": 2
+          }
+        ]
       }
     ]
   },
   {
     "Command": "GEORADIUSBYMEMBER_RO",
     "Name": "GEORADIUSBYMEMBER_RO",
-    "Summary": "A read-only variant for GEORADIUSBYMEMBER",
+    "Summary": "Returns members from a geospatial index that are within a distance from a member.",
     "Group": "Geo",
     "Complexity": "O(N\u002Blog(M)) where N is the number of elements inside the bounding box of the circular area delimited by center and radius and M is the number of items inside the index.",
     "DocFlags": "Deprecated",
@@ -2932,17 +2999,20 @@
       {
         "TypeDiscriminator": "RespCommandKeyArgument",
         "Name": "KEY",
+        "DisplayText": "key",
         "Type": "Key",
         "KeySpecIndex": 0
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "MEMBER",
+        "DisplayText": "member",
         "Type": "String"
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "RADIUS",
+        "DisplayText": "radius",
         "Type": "Double"
       },
       {
@@ -2953,24 +3023,28 @@
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "M",
+            "DisplayText": "m",
             "Type": "PureToken",
             "Token": "M"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "KM",
+            "DisplayText": "km",
             "Type": "PureToken",
             "Token": "KM"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "FT",
+            "DisplayText": "ft",
             "Type": "PureToken",
             "Token": "FT"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "MI",
+            "DisplayText": "mi",
             "Type": "PureToken",
             "Token": "MI"
           }
@@ -2979,6 +3053,7 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHCOORD",
+        "DisplayText": "withcoord",
         "Type": "PureToken",
         "Token": "WITHCOORD",
         "ArgumentFlags": "Optional"
@@ -2986,6 +3061,7 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHDIST",
+        "DisplayText": "withdist",
         "Type": "PureToken",
         "Token": "WITHDIST",
         "ArgumentFlags": "Optional"
@@ -2993,25 +3069,28 @@
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "WITHHASH",
+        "DisplayText": "withhash",
         "Type": "PureToken",
         "Token": "WITHHASH",
         "ArgumentFlags": "Optional"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "COUNT",
+        "Name": "COUNT-BLOCK",
         "Type": "Block",
         "ArgumentFlags": "Optional",
         "Arguments": [
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "COUNT",
+            "DisplayText": "count",
             "Type": "Integer",
             "Token": "COUNT"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ANY",
+            "DisplayText": "any",
             "Type": "PureToken",
             "Token": "ANY",
             "ArgumentFlags": "Optional"
@@ -3027,12 +3106,14 @@
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "ASC",
+            "DisplayText": "asc",
             "Type": "PureToken",
             "Token": "ASC"
           },
           {
             "TypeDiscriminator": "RespCommandBasicArgument",
             "Name": "DESC",
+            "DisplayText": "desc",
             "Type": "PureToken",
             "Token": "DESC"
           }
@@ -4520,14 +4601,6 @@
         "DisplayText": "count",
         "Type": "Integer",
         "Token": "COUNT",
-        "ArgumentFlags": "Optional"
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "NOVALUES",
-        "DisplayText": "novalues",
-        "Type": "PureToken",
-        "Token": "NOVALUES",
         "ArgumentFlags": "Optional"
       }
     ]
@@ -6918,7 +6991,8 @@
         "Name": "NOGET",
         "DisplayText": "noget",
         "Type": "PureToken",
-        "Token": "NOGET"
+        "Token": "NOGET",
+        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -6975,7 +7049,8 @@
         "Name": "NOGET",
         "DisplayText": "noget",
         "Type": "PureToken",
-        "Token": "NOGET"
+        "Token": "NOGET",
+        "ArgumentFlags": "Optional"
       }
     ]
   },
@@ -7547,18 +7622,20 @@
   {
     "Command": "SWAPDB",
     "Name": "SWAPDB",
-    "Summary": "Swaps two Memurai databases",
+    "Summary": "Swaps two Redis databases.",
     "Group": "Server",
     "Complexity": "O(N) where N is the count of clients watching or blocking on keys from both databases.",
     "Arguments": [
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "INDEX1",
+        "DisplayText": "index1",
         "Type": "Integer"
       },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "INDEX2",
+        "DisplayText": "index2",
         "Type": "Integer"
       }
     ]

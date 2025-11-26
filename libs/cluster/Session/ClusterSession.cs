@@ -51,6 +51,12 @@ namespace Garnet.cluster
         public void SetReadOnlySession() => readWriteSession = false;
         public void SetReadWriteSession() => readWriteSession = true;
 
+        /// <inheritdoc/>
+        public bool IsReplicating { get; private set; }
+
+        /// <inheritdoc/>
+        public IGarnetServer Server { get; set; }
+
         public ClusterSession(ClusterProvider clusterProvider, TransactionManager txnManager, IGarnetAuthenticator authenticator, UserHandle userHandle, GarnetSessionMetrics sessionMetrics, BasicGarnetApi basicGarnetApi, INetworkSender networkSender, ILogger logger = null)
         {
             this.clusterProvider = clusterProvider;
@@ -69,13 +75,13 @@ namespace Garnet.cluster
             this.dend = dend;
             this.parseState = parseState;
             var invalidParameters = false;
-            string respCommandName = default;
 
             try
             {
+                RespCommandsInfo commandInfo = null;
                 if (command.IsClusterSubCommand())
                 {
-                    if (RespCommandsInfo.TryGetRespCommandInfo(command, out var commandInfo) && commandInfo.KeySpecifications != null)
+                    if (RespCommandsInfo.TryGetRespCommandInfo(command, out commandInfo) && commandInfo.KeySpecifications != null)
                     {
                         csvi.keyNumOffset = -1;
                         clusterProvider.ExtractKeySpecs(commandInfo, command, ref parseState, ref csvi);
@@ -84,14 +90,6 @@ namespace Garnet.cluster
                     }
 
                     ProcessClusterCommands(command, out invalidParameters);
-
-                    if (invalidParameters)
-                    {
-                        // Have to lookup the RESP name now that we're in the failure case
-                        respCommandName = RespCommandsInfo.TryGetRespCommandInfo(command, out var info)
-                            ? info.Name.ToLowerInvariant()
-                            : "unknown";
-                    }
                 }
                 else
                 {
@@ -106,8 +104,8 @@ namespace Garnet.cluster
 
                 if (invalidParameters)
                 {
-                    var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
-                        respCommandName ?? command.ToString());
+                    var cmdName = commandInfo?.Name ?? RespCommandsInfo.GetRespCommandName(command);
+                    var errorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, cmdName.ToLowerInvariant());
                     while (!RespWriteUtils.TryWriteError(errorMessage, ref this.dcurr, this.dend))
                         SendAndReset();
                 }

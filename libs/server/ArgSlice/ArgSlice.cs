@@ -82,7 +82,7 @@ namespace Garnet.server
         /// <remarks>
         /// SAFETY: The <paramref name="span"/> MUST point to pinned memory.
         /// </remarks>
-        internal static ArgSlice FromPinnedSpan(ReadOnlySpan<byte> span)
+        public static ArgSlice FromPinnedSpan(ReadOnlySpan<byte> span)
         {
             return new ArgSlice((byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(span)), span.Length);
         }

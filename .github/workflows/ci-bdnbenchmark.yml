@@ -47,16 +47,12 @@ jobs:
           - framework: net8.0
             gh-pages-branch: continuousbenchmark_net80
         configuration: [ 'Release' ]
-        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Operations.SortedSetOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations','Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.ScriptOperations', 'Operations.ModuleOperations', 'Operations.JsonOperations', 'Operations.PubSubOperations', 'Operations.SetOperations', 'Network.BasicOperations', 'Network.RawStringOperations' ]
+        test: [ 'Operations.BasicOperations', 'Operations.ObjectOperations', 'Operations.HashObjectOperations', 'Operations.SortedSetOperations', 'Cluster.ClusterMigrate', 'Cluster.ClusterOperations', 'Lua.LuaScripts', 'Lua.LuaScriptCacheOperations','Lua.LuaRunnerOperations','Operations.CustomOperations', 'Operations.RawStringOperations', 'Operations.ScriptOperations', 'Operations.ModuleOperations', 'Operations.JsonOperations', 'Operations.PubSubOperations', 'Operations.SetOperations', 'Operations.TxnOperations', 'Network.BasicOperations', 'Network.RawStringOperations' ]
     steps:
       - name: Check out code
         uses: actions/checkout@v4
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: | 
-            8.0.x
-            9.0.x
       - name: Install dependencies
         run: dotnet restore
 
@@ -67,7 +63,7 @@ jobs:
   
       - name: Random pause between tasks so multiple inserts don't run at the same time
         run: |
-          $delay = Get-Random -Minimum 1 -Maximum 120
+          $delay = Get-Random -Minimum 1 -Maximum 600
           Write-Host "Sleeping for $delay seconds..."
           Start-Sleep -Seconds $delay
         shell: pwsh

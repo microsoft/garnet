@@ -394,7 +394,7 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TrySafeCopyTo(ref SpanByte dst, int fullDestSize, long metadata = 0)
         {
-            // Need to account for extra metadata if current value does not have any.
+            // If the incoming caller wants to addMetadata and the destination does not already have metadata, the new length needs to account for it.
             var addMetadata = metadata > 0 && MetadataSize == 0;
 
             var newTotalSize = addMetadata ? TotalSize + sizeof(long) : TotalSize;
@@ -402,20 +402,11 @@ namespace Tsavorite.core
                 return false;
 
             var newLength = addMetadata ? Length + sizeof(long) : Length;
-            if (dst.Length < newLength)
-            {
-                // dst is shorter than src, but we have already verified there is enough extra value space to grow dst to store src.
-                dst.Length = newLength;
-                CopyTo(ref dst, metadata);
-            }
-            else
-            {
-                // dst length is equal or longer than src. We can adjust the length header on the serialized log, if we wish (here, we do).
-                // This method will also zero out the extra space to retain log scan correctness.
-                dst.ShrinkSerializedLength(newLength);
-                CopyTo(ref dst, metadata);
-                dst.Length = newLength;
-            }
+            dst.ShrinkSerializedLength(newLength);
+            // Note: If dst is shorter than src we have already verified there is enough extra value space to grow dst to store src.
+            dst.Length = newLength;
+            CopyTo(ref dst, metadata);
+
             return true;
         }
 

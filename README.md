@@ -7,7 +7,7 @@
 [![Discord Shield](https://discordapp.com/api/guilds/1213937452272582676/widget.png?style=shield)](https://aka.ms/garnet-discord)
 
 Garnet is a new remote cache-store from Microsoft Research, that offers several unique benefits:
-* Garnet adopts the popular [RESP](https://redis.io/docs/reference/protocol-spec/) wire protocol as a starting point, which makes it possible to use Garnet from unmodified Redis clients available in
+* Garnet adopts the popular [RESP](https://redis.io/docs/latest/develop/reference/protocol-spec/) wire protocol as a starting point, which makes it possible to use Garnet from unmodified Redis clients available in
   most programming languages of today, such as [StackExchange.Redis](https://github.com/StackExchange/StackExchange.Redis) in C#.
 * Garnet offers much better throughput and scalability with many client connections and small batches, relative to comparable open-source cache-stores, leading to cost savings for large apps and services.
 * Garnet demonstrates extremely low client latencies (often less than 300 microseconds at the 99.9th percentile) using commodity cloud (Azure) VMs with Accelerated Networking enabled, which is critical to real-world scenarios.

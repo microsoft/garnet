@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Threading;
 using Garnet.common;
@@ -99,6 +100,10 @@ namespace Garnet.cluster
             try
             {
                 SuspendConfigMerge();
+
+                // Reset recovery operations before proceeding with reset
+                clusterProvider.replicationManager.ResetRecovery();
+
                 var resp = CmdStrings.RESP_OK;
                 while (true)
                 {
@@ -112,8 +117,9 @@ namespace Garnet.cluster
                     this.clusterConnectionStore.CloseAll();
 
                     var newNodeId = soft ? current.LocalNodeId : Generator.CreateHexId();
-                    var address = current.LocalNodeIp;
-                    var port = current.LocalNodePort;
+                    var endpoint = clusterProvider.storeWrapper.GetClusterEndpoint();
+                    var address = endpoint.Address.ToString();
+                    var port = endpoint.Port;
 
                     var configEpoch = soft ? current.LocalNodeConfigEpoch : 0;
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
@@ -141,11 +147,17 @@ namespace Garnet.cluster
         /// Try to make this node a replica of node with nodeid
         /// </summary>
         /// <param name="nodeid"></param>
-        /// <param name="force">Check if node is clean (i.e. is PRIMARY without any assigned nodes)</param>
+        /// <param name="force">If false, checks if node is clean (i.e. is PRIMARY without any assigned nodes) before making changes.</param>
+        /// <param name="upgradeLock">If true, allows for a <see cref="RecoveryStatus.ReadRole"/> read lock to be upgraded to <see cref="RecoveryStatus.ClusterReplicate"/>.</param>
         /// <param name="errorMessage">The ASCII encoded error response if the method returned <see langword="false"/>; otherwise <see langword="default"/></param>
         /// <param name="logger"></param>
-        public bool TryAddReplica(string nodeid, bool force, out ReadOnlySpan<byte> errorMessage, ILogger logger = null)
+        public bool TryAddReplica(string nodeid, bool force, bool upgradeLock, out ReadOnlySpan<byte> errorMessage, ILogger logger = null)
         {
+            Debug.Assert(
+                !upgradeLock || clusterProvider.replicationManager.currentRecoveryStatus == RecoveryStatus.ReadRole,
+                "Lock upgrades are only allowed if caller holds a ReadRole lock"
+            );
+
             errorMessage = default;
             while (true)
             {
@@ -188,7 +200,7 @@ namespace Garnet.cluster
 
                 // Transition to recovering state
                 // Only one caller will succeed in becoming a replica for the provided node-id
-                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterReplicate))
+                if (!clusterProvider.replicationManager.BeginRecovery(RecoveryStatus.ClusterReplicate, upgradeLock))
                 {
                     logger?.LogError($"{nameof(TryAddReplica)}: {{logMessage}}", Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK));
                     errorMessage = CmdStrings.RESP_ERR_GENERIC_CANNOT_ACQUIRE_RECOVERY_LOCK;
@@ -200,7 +212,14 @@ namespace Garnet.cluster
                     break;
 
                 // If we reach here then we failed to update config so we need to suspend recovery and retry to update the config
-                clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery);
+                if (upgradeLock)
+                {
+                    clusterProvider.replicationManager.EndRecovery(RecoveryStatus.ReadRole, downgradeLock: true);
+                }
+                else
+                {
+                    clusterProvider.replicationManager.EndRecovery(RecoveryStatus.NoRecovery, downgradeLock: false);
+                }
             }
             FlushConfig();
             return true;

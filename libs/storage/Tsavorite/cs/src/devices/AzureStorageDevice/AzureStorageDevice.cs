@@ -180,11 +180,18 @@ namespace Tsavorite.devices
                         {
                             var client = pageBlobDirectory.Client.WithRetries;
 
-                            var page = await client.GetBlobsAsync(
+                            await using var asEnum = client.GetBlobsAsync(
                                 prefix: prefix,
                                 cancellationToken: StorageErrorHandler.Token)
                                 .AsPages(continuationToken, 100)
-                                .FirstAsync();
+                                .ConfigureAwait(false).GetAsyncEnumerator();
+
+                            if (!await asEnum.MoveNextAsync())
+                            {
+                                throw new InvalidOperationException("Sequence contains no elements");
+                            }
+
+                            var page = asEnum.Current;
 
                             pageResults = page.Values;
                             continuationToken = page.ContinuationToken;

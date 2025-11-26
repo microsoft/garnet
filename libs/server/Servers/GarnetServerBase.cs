@@ -3,7 +3,6 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -74,10 +73,12 @@ namespace Garnet.server
         /// <summary>
         /// Returns all the active message consumers.
         /// </summary>
-        public virtual IEnumerable<IMessageConsumer> ActiveConsumers()
-        {
-            return this.activeHandlers.Keys.Select(k => k.Session);
-        }
+        public abstract IEnumerable<IMessageConsumer> ActiveConsumers();
+
+        /// <summary>
+        /// Return all active <see cref="IClusterSession"/>s.
+        /// </summary>
+        public abstract IEnumerable<IClusterSession> ActiveClusterSessions();
 
         /// <summary>
         /// Get total_connections_active

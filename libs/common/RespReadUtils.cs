@@ -1316,5 +1316,40 @@ namespace Garnet.common
 
             return true;
         }
+
+        /// <summary>
+        /// Parses "[+/-]inf" string and returns double.PositiveInfinity/double.NegativeInfinity respectively.
+        /// If string is not an infinity, parsing fails.
+        /// </summary>
+        /// <param name="value">input data</param>
+        /// <param name="number">If parsing was successful,contains positive or negative infinity</param>
+        /// <returns>True is infinity was read, false otherwise</returns>
+        public static bool TryReadInfinity(ReadOnlySpan<byte> value, out double number)
+        {
+            if (value.Length == 3)
+            {
+                if (value.EqualsUpperCaseSpanIgnoringCase(RespStrings.INFINITY))
+                {
+                    number = double.PositiveInfinity;
+                    return true;
+                }
+            }
+            else if (value.Length == 4)
+            {
+                if (value.EqualsUpperCaseSpanIgnoringCase(RespStrings.POS_INFINITY, true))
+                {
+                    number = double.PositiveInfinity;
+                    return true;
+                }
+                else if (value.EqualsUpperCaseSpanIgnoringCase(RespStrings.NEG_INFINITY, true))
+                {
+                    number = double.NegativeInfinity;
+                    return true;
+                }
+            }
+
+            number = default;
+            return false;
+        }
     }
 }

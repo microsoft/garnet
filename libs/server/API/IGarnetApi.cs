@@ -240,7 +240,7 @@ namespace Garnet.server
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
         /// <summary>
-        /// Increment (INCR, INCRBY, DECR, DECRBY)
+        /// Increment (INCR, INCRBY, INCRBYFLOAT, DECR, DECRBY)
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
@@ -265,6 +265,24 @@ namespace Garnet.server
         /// <param name="decrementCount"></param>
         /// <returns></returns>
         GarnetStatus Decrement(ArgSlice key, out long output, long decrementCount = 1);
+
+        /// <summary>
+        /// Increment by float (INCRBYFLOAT)
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="val"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
+        GarnetStatus IncrementByFloat(ArgSlice key, ref ArgSlice output, double val);
+
+        /// <summary>
+        /// Increment by float (INCRBYFLOAT)
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="output"></param>
+        /// <param name="val"></param>
+        /// <returns></returns>
+        GarnetStatus IncrementByFloat(ArgSlice key, out double output, double val);
         #endregion
 
         #region DELETE
@@ -1075,12 +1093,10 @@ namespace Garnet.server
         /// Sets an expiration time on a hash field.
         /// </summary>
         /// <param name="key">The key of the hash.</param>
-        /// <param name="expireAt">The expiration time in Unix timestamp format.</param>
-        /// <param name="expireOption">The expiration option to apply.</param>
         /// <param name="input">The input object containing additional parameters.</param>
         /// <param name="output">The output object to store the result.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus HashExpire(ArgSlice key, long expireAt, bool isMilliseconds, ExpireOption expireOption, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+        GarnetStatus HashExpire(ArgSlice key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
 
         /// <summary>
         /// Persists the specified hash key, removing any expiration time set on it.
@@ -1950,8 +1966,11 @@ namespace Garnet.server
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
         /// <param name="untilAddress"></param>
+        /// <param name="maxAddress"></param>
+        /// <param name="cursor"></param>
+        /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        public bool IterateMainStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<SpanByte, SpanByte>;
 
         /// <summary>
@@ -1966,8 +1985,11 @@ namespace Garnet.server
         /// <typeparam name="TScanFunctions"></typeparam>
         /// <param name="scanFunctions"></param>
         /// <param name="untilAddress"></param>
+        /// <param name="maxAddress"></param>
+        /// <param name="cursor"></param>
+        /// <param name="includeTombstones"></param>
         /// <returns></returns>
-        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, long untilAddress = -1)
+        public bool IterateObjectStore<TScanFunctions>(ref TScanFunctions scanFunctions, ref long cursor, long untilAddress = -1, long maxAddress = long.MaxValue, bool includeTombstones = false)
             where TScanFunctions : IScanIteratorFunctions<byte[], IGarnetObject>;
 
         /// <summary>

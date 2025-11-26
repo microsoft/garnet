@@ -33,7 +33,8 @@ namespace Garnet.test.Resp.ACL
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, defaultPassword: DefaultPassword,
-                                                  useAcl: true, enableLua: true, enableModuleCommand: true, enableStreams: true);
+                                                  useAcl: true, enableLua: true,
+                                                  enableModuleCommand: Garnet.server.Auth.Settings.ConnectionProtectionOption.Yes, enableStreams: true);
 
             // Register custom commands so we can test ACL'ing them
             ClassicAssert.IsTrue(TestUtils.TryGetCustomCommandsInfo(out respCustomCommandsInfo));
@@ -177,6 +178,21 @@ namespace Garnet.test.Resp.ACL
             {
                 long val = await client.ExecuteForLongResultAsync("ACL", ["DELUSER", "does-not-exist-1", "does-not-exist-2"]);
                 ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task AclGenPassACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "ACL GENPASS",
+                [DoAclGenPassAsync]
+            );
+
+            static async Task DoAclGenPassAsync(GarnetClient client)
+            {
+                var result = await client.ExecuteForStringResultAsync("ACL", ["GENPASS"]);
+                ClassicAssert.AreEqual(64, result.Length);
             }
         }
 

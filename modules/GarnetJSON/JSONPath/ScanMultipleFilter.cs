@@ -60,6 +60,7 @@ internal class ScanMultipleFilter : PathFilter
                         {
                             yield return jsonNode;
                         }
+
                         stack.Push(enumerator);
                     }
 
@@ -91,7 +92,8 @@ internal class ScanMultipleFilter : PathFilter
     /// <param name="current">The enumerable of current JSON nodes.</param>
     /// <param name="settings">The JSON select settings.</param>
     /// <returns>An enumerable of filtered JSON nodes.</returns>
-    public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current, JsonSelectSettings? settings)
+    public override IEnumerable<JsonNode?> ExecuteFilter(JsonNode root, IEnumerable<JsonNode?> current,
+        JsonSelectSettings? settings)
     {
         return current.SelectMany(x => ExecuteFilter(root, x, settings));
     }

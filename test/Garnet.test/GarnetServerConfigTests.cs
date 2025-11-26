@@ -315,7 +315,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(options.MemorySize == "16g");
             ClassicAssert.IsNull(options.AzureStorageServiceUri);
             ClassicAssert.IsNull(options.AzureStorageManagedIdentity);
-            ClassicAssert.IsFalse(options.UseAzureStorage);
+            ClassicAssert.AreNotEqual(DeviceType.AzureStorage, options.GetDeviceType());
 
             var args = new[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m", "--storage-service-uri", "https://demo.blob.core.windows.net", "--storage-managed-identity", "demo" };
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);
@@ -795,6 +795,149 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public void ClusterReplicationReestablishmentTimeout()
+        {
+            // Command line args
+            {
+                // No value is accepted
+                {
+                    var args = Array.Empty<string>();
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.ClusterReplicationReestablishmentTimeout);
+                }
+
+                // 0 accepted
+                {
+                    var args = new[] { "--cluster-replication-reestablishment-timeout", "0" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.ClusterReplicationReestablishmentTimeout);
+                }
+
+                // Positive accepted
+                {
+                    var args = new[] { "--cluster-replication-reestablishment-timeout", "30" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(30, options.ClusterReplicationReestablishmentTimeout);
+                }
+
+                // Negative rejected
+                {
+                    var args = new[] { "--cluster-replication-reestablishment-timeout", "-1" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Invalid rejected
+                {
+                    var args = new[] { "--cluster-replication-reestablishment-timeout", "foo" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+
+            // JSON args
+            {
+                // No value is accepted
+                {
+                    const string JSON = @"{ }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.ClusterReplicationReestablishmentTimeout);
+                }
+
+                // 0 accepted
+                {
+                    const string JSON = @"{ ""ClusterReplicationReestablishmentTimeout"": 0 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(0, options.ClusterReplicationReestablishmentTimeout);
+                }
+
+                // Positive accepted
+                {
+                    const string JSON = @"{ ""ClusterReplicationReestablishmentTimeout"": 30 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.AreEqual(30, options.ClusterReplicationReestablishmentTimeout);
+                }
+
+                // Negative rejected
+                {
+                    const string JSON = @"{ ""ClusterReplicationReestablishmentTimeout"": -1 }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+
+                // Invalid rejected
+                {
+                    const string JSON = @"{ ""ClusterReplicationReestablishmentTimeout"": ""foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
+        [Test]
+        public void ClusterReplicaResumeWithData()
+        {
+            // Command line args
+            {
+                // Default accepted
+                {
+                    var args = Array.Empty<string>();
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.ClusterReplicaResumeWithData);
+                }
+
+                // Switch is accepted
+                {
+                    var args = new[] { "--cluster-replica-resume-with-data" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.ClusterReplicaResumeWithData);
+                }
+            }
+
+            // JSON args
+            {
+                // Default accepted
+                {
+                    const string JSON = @"{ }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.ClusterReplicaResumeWithData);
+                }
+
+                // False is accepted
+                {
+                    const string JSON = @"{ ""ClusterReplicaResumeWithData"": false }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.ClusterReplicaResumeWithData);
+                }
+
+                // True is accepted
+                {
+                    const string JSON = @"{ ""ClusterReplicaResumeWithData"": true }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.ClusterReplicaResumeWithData);
+                }
+
+                // Invalid rejected
+                {
+                    const string JSON = @"{ ""ClusterReplicaResumeWithData"": ""foo"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out var invalidOptions, out var exitGracefully);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
         /// <summary>
         /// Import a garnet.conf file with the given contents
         /// </summary>
@@ -861,6 +1004,63 @@ namespace Garnet.test
         }
 
         [Test]
+        [TestCase(ConnectionProtectionOption.No)]
+        [TestCase(ConnectionProtectionOption.Local)]
+        [TestCase(ConnectionProtectionOption.Yes)]
+        public async Task ConnectionProtectionTest(ConnectionProtectionOption connectionProtectionOption)
+        {
+            List<IPAddress> addresses = [IPAddress.IPv6Loopback, IPAddress.Loopback];
+
+            var hostname = TestUtils.GetHostName();
+
+            var address = Dns.GetHostAddresses(hostname).Where(x => !IPAddress.IsLoopback(x)).FirstOrDefault();
+            if (address == default)
+            {
+                if (connectionProtectionOption == ConnectionProtectionOption.Local)
+                    Assert.Ignore("No nonloopback address");
+            }
+            else
+            {
+                addresses.Add(address);
+            }
+
+            var endpoints = addresses.Select(address => new IPEndPoint(address, TestUtils.TestPort)).ToArray();
+            var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, endpoints: endpoints,
+                                                      enableDebugCommand: connectionProtectionOption);
+            server.Start();
+
+            foreach (var endpoint in endpoints)
+            {
+                var shouldfail = connectionProtectionOption == ConnectionProtectionOption.No ||
+                        (!IPAddress.IsLoopback(endpoint.Address) && connectionProtectionOption == ConnectionProtectionOption.Local);
+                var client = TestUtils.GetGarnetClientSession(endPoint: endpoint);
+                client.Connect();
+
+                try
+                {
+                    var result = await client.ExecuteAsync("DEBUG", "LOG", "Loopback test");
+                    if (shouldfail)
+                        Assert.Fail("Connection protection should have not allowed the command to run");
+                    else
+                        ClassicAssert.AreEqual("OK", result);
+                }
+                catch (Exception ex)
+                {
+                    if (shouldfail)
+                        ClassicAssert.AreEqual("ERR", ex.Message[0..3]);
+                    else
+                        Assert.Fail("Connection protection should have allowed command from this address");
+                }
+                finally
+                {
+                    client.Dispose();
+                }
+            }
+
+            server.Dispose();
+        }
+
+        [Test]
         public async Task MultiTcpSocketTest()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
@@ -868,7 +1068,7 @@ namespace Garnet.test
             var addresses = Dns.GetHostAddresses(hostname);
             addresses = [.. addresses, IPAddress.IPv6Loopback, IPAddress.Loopback];
 
-            var endpoints = addresses.Select(address => new IPEndPoint(address, TestUtils.TestPort)).ToArray();
+            var endpoints = addresses.Distinct().Select(address => new IPEndPoint(address, TestUtils.TestPort)).ToArray();
             var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, endpoints: endpoints);
             server.Start();
 

@@ -58,6 +58,26 @@ One of the following:
 
 ---
 
+### ACL GENPASS
+
+```bash
+    ACL GENPASS [bits]
+```
+
+The command output is a hexadecimal representation of a random binary string,
+which is 'strong' enough to be usable as a password. By default it emits 256 bits (so 64 hex characters)
+The user can provide an argument in form of number of bits to emit from 1 to 1024 to change the output length.
+Note that the number of bits provided is always rounded to the next multiple of 4.
+So for instance asking for just 1 bit password will result in 4 bits to be emitted,
+in the form of a single hex character.
+
+#### Resp Reply
+
+Bulk string reply: pseudorandom data. By default it contains 64 bytes, representing 256 bits of data.
+If bits was given, the output string length is the number of specified bits (rounded to the next multiple of 4) divided by 4.
+
+---
+
 ### ACL LIST
 
 #### Syntax

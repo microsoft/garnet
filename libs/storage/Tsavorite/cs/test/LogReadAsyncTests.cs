@@ -46,7 +46,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public void LogReadAsyncBasicTest([Values] ParameterDefaultsIteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
+        public void LogReadAsyncBasicTest([Values] ParameterDefaultsIteratorType iteratorType, [Values] TestUtils.TestDeviceType deviceType)
         {
             int entryLength = 20;
             int numEntries = 500;

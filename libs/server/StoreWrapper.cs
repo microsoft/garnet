@@ -13,6 +13,7 @@ using Garnet.common;
 using Garnet.server.ACL;
 using Garnet.server.Auth.Settings;
 using Garnet.server.Lua;
+using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -455,7 +456,7 @@ namespace Garnet.server
         /// <summary>
         /// When replaying AOF we do not want to write AOF records again.
         /// </summary>
-        public long ReplayAOF(long untilAddress = -1) => this.databaseManager.ReplayAOF();
+        public long ReplayAOF(long untilAddress = -1) => this.databaseManager.ReplayAOF(untilAddress);
 
         /// <summary>
         /// Append a checkpoint commit to the AOF
@@ -475,32 +476,40 @@ namespace Garnet.server
         /// Commit AOF for all active databases
         /// </summary>
         /// <param name="spinWait">True if should wait until all commits complete</param>
-        internal void CommitAOF(bool spinWait)
+        /// <returns>false if config prevents committing to AOF</returns>
+        internal bool CommitAOF(bool spinWait)
         {
-            if (!serverOptions.EnableAOF) return;
+            if (!serverOptions.EnableAOF)
+            {
+                return false;
+            }
 
             var task = databaseManager.CommitToAofAsync();
-            if (!spinWait) return;
+            if (!spinWait) return true;
 
             task.GetAwaiter().GetResult();
+
+            return true;
         }
 
         /// <summary>
         /// Wait for commits from all active databases
         /// </summary>
-        internal void WaitForCommit() =>
+        /// <returns>false if config prevents committing to AOF</returns>
+        internal bool WaitForCommit() =>
             WaitForCommitAsync().GetAwaiter().GetResult();
 
         /// <summary>
         /// Asynchronously wait for commits from all active databases
         /// </summary>
         /// <param name="token">Cancellation token</param>
-        /// <returns>ValueTask</returns>
-        internal async ValueTask WaitForCommitAsync(CancellationToken token = default)
+        /// <returns>false if commit is skipped for config reasons</returns>
+        internal async ValueTask<bool> WaitForCommitAsync(CancellationToken token = default)
         {
-            if (!serverOptions.EnableAOF) return;
+            if (!serverOptions.EnableAOF) return false;
 
             await databaseManager.WaitForCommitToAofAsync(token);
+            return true;
         }
 
         /// <summary>
@@ -509,21 +518,22 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId">Specific database ID to commit AOF for (optional)</param>
         /// <param name="token">Cancellation token</param>
-        /// <returns>ValueTask</returns>
-        internal async ValueTask CommitAOFAsync(int dbId = -1, CancellationToken token = default)
+        /// <returns>false if commit is skipped for config reasons</returns>
+        internal async ValueTask<bool> CommitAOFAsync(int dbId = -1, CancellationToken token = default)
         {
-            if (!serverOptions.EnableAOF) return;
+            if (!serverOptions.EnableAOF) return false;
 
             if (dbId == -1)
             {
                 await databaseManager.CommitToAofAsync(token, logger);
-                return;
+                return true;
             }
 
             if (dbId != 0 && !CheckMultiDatabaseCompatibility())
                 throw new GarnetException($"Unable to call {nameof(databaseManager.CommitToAofAsync)} with DB ID: {dbId}");
 
             await databaseManager.CommitToAofAsync(dbId, token);
+            return true;
         }
 
         /// <summary>
@@ -643,7 +653,7 @@ namespace Garnet.server
             {
                 while (true)
                 {
-                    await Task.Delay(1000, token);
+                    await Task.Delay(TimeSpan.FromSeconds(serverOptions.AofSizeLimitEnforceFrequencySecs), token);
                     if (token.IsCancellationRequested) break;
 
                     await databaseManager.TaskCheckpointBasedOnAofSizeLimitAsync(aofSizeLimit, token, logger);
@@ -791,6 +801,8 @@ namespace Garnet.server
                 logger?.LogError(ex, $"{nameof(IndexAutoGrowTask)} exception received");
             }
         }
+
+        public (HybridLogScanMetrics, HybridLogScanMetrics)[] HybridLogDistributionScan() => databaseManager.CollectHybridLogStats();
 
         internal void Start()
         {

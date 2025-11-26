@@ -27,8 +27,8 @@ namespace Tsavorite.core
         /// Constructor
         /// </summary>
         public GenericScanIterator(TsavoriteKV<TKey, TValue, TStoreFunctions, GenericAllocator<TKey, TValue, TStoreFunctions>> store, GenericAllocatorImpl<TKey, TValue, TStoreFunctions> hlog,
-                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeSealedRecords, LightEpoch epoch, ILogger logger = null)
-            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeSealedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
+                long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode, bool includeClosedRecords, LightEpoch epoch, ILogger logger = null)
+            : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddress(0) : beginAddress, endAddress, scanBufferingMode, includeClosedRecords, epoch, hlog.LogPageSizeBits, logger: logger)
         {
             this.store = store;
             this.hlog = hlog;
@@ -125,8 +125,8 @@ namespace Tsavorite.core
                         currentFrame = -1;      // Frame is not used in this case.
 
                         recordInfo = hlog.values[currentPage][currentOffset].info;
-                        bool _skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
-                        if (_skipOnScan)
+                        bool _skipOnScan = includeClosedRecords ? false : recordInfo.SkipOnScan;
+                        if (_skipOnScan || recordInfo.IsNull())
                         {
                             continue;
                         }
@@ -156,7 +156,7 @@ namespace Tsavorite.core
 
                     currentFrame = currentPage % frameSize;
                     recordInfo = frame.GetInfo(currentFrame, currentOffset);
-                    bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                    bool skipOnScan = includeClosedRecords ? false : recordInfo.SkipOnScan;
                     if (skipOnScan || recordInfo.IsNull())
                     {
                         continue;
@@ -210,7 +210,7 @@ namespace Tsavorite.core
                 recordInfo = hlog.values[currentPage][currentOffset].info;
                 nextAddress = currentAddress + recordSize;
 
-                bool skipOnScan = includeSealedRecords ? recordInfo.Invalid : recordInfo.SkipOnScan;
+                bool skipOnScan = includeClosedRecords ? false : recordInfo.SkipOnScan;
                 if (skipOnScan || recordInfo.IsNull() || !hlog._storeFunctions.KeysEqual(ref hlog.values[currentPage][currentOffset].key, ref key))
                 {
                     epoch?.Suspend();

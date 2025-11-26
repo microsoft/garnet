@@ -46,6 +46,12 @@ namespace Tsavorite.core
                     // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
                     store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
 
+                    if (store._hybridLogCheckpoint.info.finalLogicalAddress <= store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress)
+                    {
+                        // Nothing to flush because the flushed region already contains everything up to finalLogicalAddress.
+                        break;
+                    }
+
                     long startPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress);
                     long endPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.finalLogicalAddress);
                     if (store._hybridLogCheckpoint.info.finalLogicalAddress >

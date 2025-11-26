@@ -300,6 +300,9 @@ namespace Garnet.server
             Register(ref state, "garnet_bit_bswap\0"u8, &LuaRunnerTrampolines.BitBswap);
             Register(ref state, "garnet_cmsgpack_pack\0"u8, &LuaRunnerTrampolines.CMsgPackPack);
             Register(ref state, "garnet_cmsgpack_unpack\0"u8, &LuaRunnerTrampolines.CMsgPackUnpack);
+            Register(ref state, "garnet_struct_pack\0"u8, &LuaRunnerTrampolines.StructPack);
+            Register(ref state, "garnet_struct_unpack\0"u8, &LuaRunnerTrampolines.StructUnpack);
+            Register(ref state, "garnet_struct_size\0"u8, &LuaRunnerTrampolines.StructSize);
             Register(ref state, "garnet_call\0"u8, garnetCall);
             Register(ref state, "garnet_sha1hex\0"u8, &LuaRunnerTrampolines.SHA1Hex);
             Register(ref state, "garnet_log\0"u8, &LuaRunnerTrampolines.Log);

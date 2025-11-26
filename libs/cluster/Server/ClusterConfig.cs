@@ -20,6 +20,16 @@ namespace Garnet.cluster
     internal sealed partial class ClusterConfig
     {
         /// <summary>
+        /// Reserved offset in workers array
+        /// </summary>
+        public const int RESERVED_WORKER_ID = 0;
+
+        /// <summary>
+        /// Reserved Worker offset in workers array.
+        /// </summary>
+        public const int LOCAL_WORKER_ID = 1;
+
+        /// <summary>
         /// Minimum hash slot value.
         /// </summary>
         public const int MIN_HASH_SLOT_VALUE = 0;
@@ -50,7 +60,7 @@ namespace Garnet.cluster
         public ClusterConfig()
         {
             slotMap = new HashSlot[MAX_HASH_SLOT_VALUE];
-            for (int i = 0; i < MAX_HASH_SLOT_VALUE; i++)
+            for (var i = 0; i < MAX_HASH_SLOT_VALUE; i++)
             {
                 slotMap[i]._state = SlotState.OFFLINE;
                 slotMap[i]._workerId = 0;
@@ -85,14 +95,14 @@ namespace Garnet.cluster
         /// </summary>
         private void InitializeUnassignedWorker()
         {
-            workers[0].Address = "unassigned";
-            workers[0].Port = 0;
-            workers[0].Nodeid = null;
-            workers[0].ConfigEpoch = 0;
-            workers[0].Role = NodeRole.UNASSIGNED;
-            workers[0].ReplicaOfNodeId = null;
-            workers[0].ReplicationOffset = 0;
-            workers[0].hostname = null;
+            workers[RESERVED_WORKER_ID].Address = "unassigned";
+            workers[RESERVED_WORKER_ID].Port = 0;
+            workers[RESERVED_WORKER_ID].Nodeid = null;
+            workers[RESERVED_WORKER_ID].ConfigEpoch = 0;
+            workers[RESERVED_WORKER_ID].Role = NodeRole.UNASSIGNED;
+            workers[RESERVED_WORKER_ID].ReplicaOfNodeId = null;
+            workers[RESERVED_WORKER_ID].ReplicationOffset = 0;
+            workers[RESERVED_WORKER_ID].hostname = null;
         }
 
         /// <summary>
@@ -117,14 +127,14 @@ namespace Garnet.cluster
         {
             var newWorkers = new Worker[workers.Length];
             Array.Copy(workers, newWorkers, workers.Length);
-            newWorkers[1].Address = address;
-            newWorkers[1].Port = port;
-            newWorkers[1].Nodeid = nodeId;
-            newWorkers[1].ConfigEpoch = configEpoch;
-            newWorkers[1].Role = role;
-            newWorkers[1].ReplicaOfNodeId = replicaOfNodeId;
-            newWorkers[1].ReplicationOffset = 0;
-            newWorkers[1].hostname = hostname;
+            newWorkers[LOCAL_WORKER_ID].Address = address;
+            newWorkers[LOCAL_WORKER_ID].Port = port;
+            newWorkers[LOCAL_WORKER_ID].Nodeid = nodeId;
+            newWorkers[LOCAL_WORKER_ID].ConfigEpoch = configEpoch;
+            newWorkers[LOCAL_WORKER_ID].Role = role;
+            newWorkers[LOCAL_WORKER_ID].ReplicaOfNodeId = replicaOfNodeId;
+            newWorkers[LOCAL_WORKER_ID].ReplicationOffset = 0;
+            newWorkers[LOCAL_WORKER_ID].hostname = hostname;
             return new ClusterConfig(slotMap, newWorkers);
         }
 
@@ -155,7 +165,7 @@ namespace Garnet.cluster
         /// <returns>True if slot is owned by this node, false otherwise</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool IsLocal(ushort slot, bool readWriteSession = true)
-            => slotMap[slot].workerId == 1 || IsLocalExpensive(slot, readWriteSession);
+            => slotMap[slot].workerId == LOCAL_WORKER_ID || IsLocalExpensive(slot, readWriteSession);
 
         /// <summary>
         /// If slot in MIGRATE state then it must have been set by original owner, so we keep treating it like a local slot and serve requests if the key has not yet migrated.
@@ -200,50 +210,50 @@ namespace Garnet.cluster
         /// Get local node ip
         /// </summary>
         /// <returns>IP of local worker</returns>
-        public string LocalNodeIp => workers[1].Address;
+        public string LocalNodeIp => workers[LOCAL_WORKER_ID].Address;
 
         /// <summary>
         /// Get local node port
         /// </summary>
         /// <returns>Port of local worker</returns>
-        public int LocalNodePort => workers[1].Port;
+        public int LocalNodePort => workers[LOCAL_WORKER_ID].Port;
 
         /// <summary>
         /// Get local node ID
         /// </summary>
         /// <returns>Node-id of local worker.</returns>
-        public string LocalNodeId => workers[1].Nodeid;
+        public string LocalNodeId => workers[LOCAL_WORKER_ID].Nodeid;
 
         /// <summary>
         /// NOTE: Use this only for logging not comparison
         /// Get short local node ID
         /// </summary>
         /// <returns>Short node-id of local worker.</returns>
-        public string LocalNodeIdShort => workers[1].Nodeid.Substring(0, 8);
+        public string LocalNodeIdShort => workers[LOCAL_WORKER_ID].Nodeid.Substring(0, 8);
 
         /// <summary>
         /// Get local node role
         /// </summary>
         /// <returns>Role of local node.</returns>
-        public NodeRole LocalNodeRole => workers[1].Role;
+        public NodeRole LocalNodeRole => workers[LOCAL_WORKER_ID].Role;
 
         /// <summary>
         /// Get nodeid of primary.
         /// </summary>
         /// <returns>Primary-id of the node this node is replicating.</returns>
-        public string LocalNodePrimaryId => workers[1].ReplicaOfNodeId;
+        public string LocalNodePrimaryId => workers[LOCAL_WORKER_ID].ReplicaOfNodeId;
 
         /// <summary>
         /// Get config epoch for local worker.
         /// </summary>
         /// <returns>Config epoch of local node.</returns>
-        public long LocalNodeConfigEpoch => workers[1].ConfigEpoch;
+        public long LocalNodeConfigEpoch => workers[LOCAL_WORKER_ID].ConfigEpoch;
 
         /// <summary>
         /// Return endpoint of primary if this node is a replica.
         /// </summary>
         /// <returns>Returns primary endpoints if this node is a replica, otherwise (null,-1)</returns>
-        public (string address, int port) GetLocalNodePrimaryAddress() => GetWorkerAddressFromNodeId(workers[1].ReplicaOfNodeId);
+        public (string address, int port) GetLocalNodePrimaryAddress() => GetWorkerAddressFromNodeId(workers[LOCAL_WORKER_ID].ReplicaOfNodeId);
 
         /// <summary>
         /// Get local node replicas
@@ -261,7 +271,7 @@ namespace Garnet.cluster
             for (ushort i = 2; i < workers.Length; i++)
             {
                 var replicaOf = workers[i].ReplicaOfNodeId;
-                if (replicaOf != null && replicaOf.Equals(workers[1].Nodeid, StringComparison.OrdinalIgnoreCase))
+                if (replicaOf != null && replicaOf.Equals(workers[LOCAL_WORKER_ID].Nodeid, StringComparison.OrdinalIgnoreCase))
                     replicas.Add(new(IPAddress.Parse(workers[i].Address), workers[i].Port));
             }
             return replicas;
@@ -274,8 +284,8 @@ namespace Garnet.cluster
         /// <returns>List of pairs (address,port) representing known primary endpoints</returns>
         public List<IPEndPoint> GetLocalNodePrimaryEndpoints(bool includeMyPrimaryFirst = false)
         {
-            string myPrimaryId = includeMyPrimaryFirst ? LocalNodePrimaryId : "";
-            List<IPEndPoint> primaries = new();
+            var myPrimaryId = includeMyPrimaryFirst ? LocalNodePrimaryId : "";
+            var primaries = new List<IPEndPoint>();
             for (ushort i = 2; i < workers.Length; i++)
             {
                 if (workers[i].Role == NodeRole.PRIMARY && !workers[i].Nodeid.Equals(myPrimaryId, StringComparison.OrdinalIgnoreCase))
@@ -325,7 +335,7 @@ namespace Garnet.cluster
         /// <returns>List of strings representing known node ids.</returns>
         public List<string> GetRemoteNodeIds()
         {
-            List<string> remoteNodeIds = new List<string>();
+            var remoteNodeIds = new List<string>();
             for (int i = 2; i < workers.Length; i++)
                 remoteNodeIds.Add(workers[i].Nodeid);
             return remoteNodeIds;
@@ -387,13 +397,6 @@ namespace Garnet.cluster
                 return null;
             var workerId = GetWorkerIdFromNodeId(nodeId);
             return workerId == 0 ? null : workers[workerId].hostname;
-        }
-
-        private static void slotBitmapSetBit(ref byte[] bitmap, int pos)
-        {
-            int BYTE = (pos / 8);
-            int BIT = pos & 7;
-            bitmap[BYTE] |= (byte)(1 << BIT);
         }
         #endregion
 
@@ -538,31 +541,59 @@ namespace Garnet.cluster
             AppendSlotRange(nodeInfoStringBuilder, workerId);
             AppendSpecialStates(nodeInfoStringBuilder, workerId);
             _ = nodeInfoStringBuilder.Append('\n');
-        }
 
-        private void AppendSpecialStates(StringBuilder stringBuilder, uint workerId)
-        {
-            // Only print special states for local node
-            if (workerId != 1) return;
-            for (var slot = 0; slot < slotMap.Length; slot++)
+            void AppendSlotRange(StringBuilder stringBuilder, uint workerId)
             {
-                var _workerId = slotMap[slot]._workerId;
-                var _state = slotMap[slot]._state;
-
-                if (_state == SlotState.STABLE) continue;
-                if (_workerId > NumWorkers) continue;
-
-                var _nodeId = workers[_workerId].Nodeid;
-                if (_nodeId == null) continue;
-
-                stringBuilder.Append(_state switch
+                ushort start = ushort.MaxValue, end = 0;
+                for (ushort i = 0; i < MAX_HASH_SLOT_VALUE; i++)
                 {
-                    SlotState.MIGRATING => $" [{slot}->-{_nodeId}]",
-                    SlotState.IMPORTING => $" [{slot}-<-{_nodeId}]",
-                    _ => ""
-                });
+                    if (slotMap[i].workerId == workerId)
+                    {
+                        if (i < start) start = i;
+                        if (i > end) end = i;
+                    }
+                    else
+                    {
+                        if (start != ushort.MaxValue)
+                        {
+                            if (end == start) stringBuilder.Append($" {start}");
+                            else stringBuilder.Append($" {start}-{end}");
+                            start = ushort.MaxValue;
+                            end = 0;
+                        }
+                    }
+                }
+                if (start != ushort.MaxValue)
+                {
+                    if (end == start) stringBuilder.Append($" {start}");
+                    else stringBuilder.Append($" {start}-{end}");
+                }
             }
-            return;
+
+            void AppendSpecialStates(StringBuilder stringBuilder, uint workerId)
+            {
+                // Only print special states for local node
+                if (workerId != LOCAL_WORKER_ID) return;
+                for (var slot = 0; slot < slotMap.Length; slot++)
+                {
+                    var _workerId = slotMap[slot]._workerId;
+                    var _state = slotMap[slot]._state;
+
+                    if (_state == SlotState.STABLE) continue;
+                    if (_workerId > NumWorkers) continue;
+
+                    var _nodeId = workers[_workerId].Nodeid;
+                    if (_nodeId == null) continue;
+
+                    stringBuilder.Append(_state switch
+                    {
+                        SlotState.MIGRATING => $" [{slot}->-{_nodeId}]",
+                        SlotState.IMPORTING => $" [{slot}-<-{_nodeId}]",
+                        _ => ""
+                    });
+                }
+                return;
+            }
         }
 
         /// <summary>
@@ -607,56 +638,15 @@ namespace Garnet.cluster
             return replicaWorkerIds;
         }
 
-        private string CreateFormattedNodeInfo(int workerId)
-        {
-            var nodeInfo = "*12\r\n";
-            nodeInfo += "$2\r\nid\r\n";
-            nodeInfo += $"$40\r\n{workers[workerId].Nodeid}\r\n";
-            nodeInfo += "$4\r\nport\r\n";
-            nodeInfo += $":{workers[workerId].Port}\r\n";
-            nodeInfo += "$7\r\naddress\r\n";
-            nodeInfo += $"${workers[workerId].Address.Length}\r\n{workers[workerId].Address}\r\n";
-            nodeInfo += "$4\r\nrole\r\n";
-            nodeInfo += $"${workers[workerId].Role.ToString().Length}\r\n{workers[workerId].Role}\r\n";
-            nodeInfo += "$18\r\nreplication-offset\r\n";
-            nodeInfo += $":{workers[workerId].ReplicationOffset}\r\n";
-            nodeInfo += "$6\r\nhealth\r\n";
-            nodeInfo += $"$6\r\nonline\r\n";
-            return nodeInfo;
-        }
-
-        private string CreateFormattedShardInfo(int primaryWorkerId, List<(ushort, ushort)> shardRanges, List<int> replicaWorkerIds)
-        {
-            var shardInfo = $"*4\r\n";
-
-            shardInfo += $"$5\r\nslots\r\n";//1
-
-            shardInfo += $"*{shardRanges.Count * 2}\r\n";//2
-            for (int i = 0; i < shardRanges.Count; i++)
-            {
-                var range = shardRanges[i];
-                shardInfo += $":{range.Item1}\r\n";
-                shardInfo += $":{range.Item2}\r\n";
-            }
-
-            shardInfo += $"$5\r\nnodes\r\n";//3
-
-            shardInfo += $"*{1 + replicaWorkerIds.Count}\r\n";//4
-            shardInfo += CreateFormattedNodeInfo(primaryWorkerId);
-            foreach (var id in replicaWorkerIds)
-                shardInfo += CreateFormattedNodeInfo(id);
-
-            return shardInfo;
-        }
-
         /// <summary>
         /// Get formatted (using CLUSTER SHARDS format) cluster config information.
         /// </summary>
+        /// <param name="clusterConnection"></param>
         /// <returns>RESP formatted string</returns>
-        public string GetShardsInfo()
+        public string GetShardsInfo(GarnetClusterConnectionStore clusterConnection)
         {
-            string shardsInfo = "";
-            int shardCount = 0;
+            var shardsInfo = "";
+            var shardCount = 0;
             for (ushort i = 1; i <= NumWorkers; i++)
             {
                 if (workers[i].Role == NodeRole.PRIMARY)
@@ -669,6 +659,54 @@ namespace Garnet.cluster
             }
             shardsInfo = $"*{shardCount}\r\n" + shardsInfo;
             return shardsInfo;
+
+            string CreateFormattedShardInfo(int primaryWorkerId, List<(ushort, ushort)> shardRanges, List<int> replicaWorkerIds)
+            {
+                var shardInfo = $"*4\r\n";
+                shardInfo += $"$5\r\nslots\r\n";
+                shardInfo += $"*{shardRanges.Count * 2}\r\n";
+                for (var i = 0; i < shardRanges.Count; i++)
+                {
+                    var range = shardRanges[i];
+                    shardInfo += $":{range.Item1}\r\n";
+                    shardInfo += $":{range.Item2}\r\n";
+                }
+
+                shardInfo += $"$5\r\nnodes\r\n";
+                shardInfo += $"*{1 + replicaWorkerIds.Count}\r\n";
+                if (primaryWorkerId == 1)
+                    shardInfo += CreateFormattedNodeInfo(primaryWorkerId, true);
+                else
+                {
+                    _ = clusterConnection.GetConnectionInfo(workers[primaryWorkerId].Nodeid, out var info);
+                    shardInfo += CreateFormattedNodeInfo(primaryWorkerId, info.connected);
+                }
+                foreach (var id in replicaWorkerIds)
+                {
+                    _ = clusterConnection.GetConnectionInfo(workers[id].Nodeid, out var info);
+                    shardInfo += CreateFormattedNodeInfo(id, info.connected);
+                }
+
+                return shardInfo;
+
+                string CreateFormattedNodeInfo(int workerId, bool connected)
+                {
+                    var nodeInfo = "*12\r\n";
+                    nodeInfo += "$2\r\nid\r\n";
+                    nodeInfo += $"$40\r\n{workers[workerId].Nodeid}\r\n";
+                    nodeInfo += "$4\r\nport\r\n";
+                    nodeInfo += $":{workers[workerId].Port}\r\n";
+                    nodeInfo += "$7\r\naddress\r\n";
+                    nodeInfo += $"${workers[workerId].Address.Length}\r\n{workers[workerId].Address}\r\n";
+                    nodeInfo += "$4\r\nrole\r\n";
+                    nodeInfo += $"${workers[workerId].Role.ToString().Length}\r\n{workers[workerId].Role}\r\n";
+                    nodeInfo += "$18\r\nreplication-offset\r\n";
+                    nodeInfo += $":{workers[workerId].ReplicationOffset}\r\n";
+                    nodeInfo += "$6\r\nhealth\r\n";
+                    nodeInfo += connected ? "$6\r\nonline\r\n" : "$7\r\noffline\r\n";
+                    return nodeInfo;
+                }
+            }
         }
 
         private string CreateFormattedSlotInfo(int slotStart, int slotEnd, string address, int port, string nodeid, string hostname, List<string> replicaIds)
@@ -729,34 +767,6 @@ namespace Garnet.cluster
             //Console.WriteLine(completeSlotInfo);
 
             return completeSlotInfo;
-        }
-
-        private void AppendSlotRange(StringBuilder stringBuilder, uint workerId)
-        {
-            ushort start = ushort.MaxValue, end = 0;
-            for (ushort i = 0; i < MAX_HASH_SLOT_VALUE; i++)
-            {
-                if (slotMap[i].workerId == workerId)
-                {
-                    if (i < start) start = i;
-                    if (i > end) end = i;
-                }
-                else
-                {
-                    if (start != ushort.MaxValue)
-                    {
-                        if (end == start) stringBuilder.Append($" {start}");
-                        else stringBuilder.Append($" {start}-{end}");
-                        start = ushort.MaxValue;
-                        end = 0;
-                    }
-                }
-            }
-            if (start != ushort.MaxValue)
-            {
-                if (end == start) stringBuilder.Append($" {start}");
-                else stringBuilder.Append($" {start}-{end}");
-            }
         }
 
         /// <summary>
@@ -921,7 +931,7 @@ namespace Garnet.cluster
         /// </summary>
         /// <param name="newReplicationOffset">Long of new replication offset.</param>
         public void LazyUpdateLocalReplicationOffset(long newReplicationOffset)
-            => workers[1].ReplicationOffset = newReplicationOffset;
+            => workers[LOCAL_WORKER_ID].ReplicationOffset = newReplicationOffset;
 
         /// <summary>
         /// Merging incoming configuration from gossip with local configuration copy.
@@ -952,7 +962,7 @@ namespace Garnet.cluster
 
         private ClusterConfig MergeWorkerInfo(Worker worker)
         {
-            ushort workerId = 0;
+            ushort workerId = RESERVED_WORKER_ID;
             // Find workerId offset from my local configuration
             for (var i = 1; i < workers.Length; i++)
             {
@@ -967,7 +977,7 @@ namespace Garnet.cluster
 
             var newWorkers = workers;
             // Check if we need to add worker to the known workers list
-            if (workerId == 0)
+            if (workerId == RESERVED_WORKER_ID)
             {
                 newWorkers = new Worker[workers.Length + 1];
                 workerId = (ushort)workers.Length;
@@ -991,7 +1001,7 @@ namespace Garnet.cluster
             // Track if update happened to avoid expensive merge and FlushConfig operation when possible
             var updated = false;
             var senderSlotMap = senderConfig.slotMap;
-            var senderWorkerId = GetWorkerIdFromNodeId(senderConfig.LocalNodeId);
+            var assignToWorkerId = GetWorkerIdFromNodeId(senderConfig.LocalNodeId);
 
             // Create a copy of the local slotMap
             var newSlotMap = new HashSlot[MAX_HASH_SLOT_VALUE];
@@ -1004,8 +1014,8 @@ namespace Garnet.cluster
                 if (senderSlotMap[i]._state != SlotState.STABLE)
                     continue;
 
-                // Process this slot information when sender is claimant of this slot
-                if (senderSlotMap[i]._workerId != 1)
+                // Skip processing this slot information when the sender is not the claimant of the slot and is a primary                
+                if (senderSlotMap[i]._workerId != LOCAL_WORKER_ID && senderConfig.IsPrimary)
                 {
                     var currentOwnerNodeId = workers[currentOwnerId].Nodeid;
                     // Sender does not own node but local node believes it does
@@ -1016,22 +1026,34 @@ namespace Garnet.cluster
                     if (currentOwnerNodeId != null && currentOwnerNodeId.Equals(senderConfig.LocalNodeId, StringComparison.OrdinalIgnoreCase))
                     {
                         logger?.LogWarning("MergeReset: {senderConfig.LocalNodeIdShort} > {i} > {LocalNodeIdShort}", senderConfig.LocalNodeIdShort, i, LocalNodeIdShort);
-                        newSlotMap[i]._workerId = 0;
+                        newSlotMap[i]._workerId = RESERVED_WORKER_ID;
                         newSlotMap[i]._state = SlotState.OFFLINE;
                     }
                     continue;
                 }
 
-                // Process this slot information when config epoch of original owner is greater than config epoch of sender
-                if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
-                    continue;
+                if (senderConfig.IsPrimary)
+                {
+                    // Sender is claimant of this node and is a primary, hence it can update the state of this slot, if its config epoch is higher than the old epoch.
+                    if (senderConfig.LocalNodeConfigEpoch != 0 && workers[currentOwnerId].ConfigEpoch >= senderConfig.LocalNodeConfigEpoch)
+                        continue;
+                }
+                else if (currentOwnerId != RESERVED_WORKER_ID) // Possibly multiple replicas may enter this but only the old primary should succeed in the event of a planned failover.
+                {
+                    // This should guarantee that only the old primary should proceed with re-assigning the slots to the replica that is taking over
+                    // Scenario 4 nodes A,B,C,D for which B,C are replicas of A and B takes over from A,
+                    // then due to delay D will receive a gossip from A,B,C in any order.
+                    if (!workers[currentOwnerId].Nodeid.Equals(senderConfig.LocalNodeId))
+                        continue;
+                    assignToWorkerId = GetWorkerIdFromNodeId(senderConfig.LocalNodePrimaryId);
+                }
 
                 // Update happened only if workerId or state changed
                 // NOTE: this avoids message flooding when sender epoch equals zero
-                updated = newSlotMap[i]._workerId != senderWorkerId || newSlotMap[i]._state != SlotState.STABLE;
+                updated = newSlotMap[i]._workerId != assignToWorkerId || newSlotMap[i]._state != SlotState.STABLE;
 
                 // Update ownership of node
-                newSlotMap[i]._workerId = senderWorkerId;
+                newSlotMap[i]._workerId = assignToWorkerId;
                 newSlotMap[i]._state = SlotState.STABLE;
             }
 
@@ -1062,21 +1084,21 @@ namespace Garnet.cluster
                 // Node being removed is owner of slot
                 if (newSlotMap[i]._state == SlotState.STABLE && newSlotMap[i].workerId == workerId)
                 {
-                    Debug.Assert(newSlotMap[i]._workerId != 1);
-                    newSlotMap[i]._workerId = 0;
+                    Debug.Assert(newSlotMap[i]._workerId != LOCAL_WORKER_ID);
+                    newSlotMap[i]._workerId = RESERVED_WORKER_ID;
                     newSlotMap[i]._state = SlotState.OFFLINE;
                 }
                 // Node being removed is target node for migration and this is the source node
                 else if (newSlotMap[i]._state == SlotState.MIGRATING && newSlotMap[i]._workerId == workerId)
                 {
-                    Debug.Assert(newSlotMap[i].workerId == 1);
-                    newSlotMap[i]._workerId = 1;
+                    Debug.Assert(newSlotMap[i].workerId == LOCAL_WORKER_ID);
+                    newSlotMap[i]._workerId = LOCAL_WORKER_ID;
                     newSlotMap[i]._state = SlotState.STABLE;
                 }
                 // Node being remove is source node for migration and this is the target node
                 else if (newSlotMap[i]._state == SlotState.IMPORTING && workers[newSlotMap[i]._workerId].Nodeid.Equals(nodeid, StringComparison.OrdinalIgnoreCase))
                 {
-                    newSlotMap[i]._workerId = 0;
+                    newSlotMap[i]._workerId = RESERVED_WORKER_ID;
                     newSlotMap[i]._state = SlotState.OFFLINE;
                 }
                 // Every other node with greater workerId need to decrement its offset
@@ -1104,8 +1126,8 @@ namespace Garnet.cluster
             var newWorkers = new Worker[workers.Length];
             Array.Copy(workers, newWorkers, workers.Length);
 
-            newWorkers[1].ReplicaOfNodeId = nodeid;
-            newWorkers[1].Role = NodeRole.REPLICA;
+            newWorkers[LOCAL_WORKER_ID].ReplicaOfNodeId = nodeid;
+            newWorkers[LOCAL_WORKER_ID].Role = NodeRole.REPLICA;
             return new ClusterConfig(slotMap, newWorkers);
         }
 
@@ -1119,7 +1141,7 @@ namespace Garnet.cluster
             var newWorkers = new Worker[workers.Length];
             Array.Copy(workers, newWorkers, workers.Length);
 
-            newWorkers[1].Role = role;
+            newWorkers[LOCAL_WORKER_ID].Role = role;
             return new ClusterConfig(slotMap, newWorkers);
         }
 
@@ -1131,15 +1153,15 @@ namespace Garnet.cluster
         {
             var newWorkers = new Worker[workers.Length];
             Array.Copy(workers, newWorkers, workers.Length);
-            newWorkers[1].Role = NodeRole.PRIMARY;
-            newWorkers[1].ReplicaOfNodeId = null;
+            newWorkers[LOCAL_WORKER_ID].Role = NodeRole.PRIMARY;
+            newWorkers[LOCAL_WORKER_ID].ReplicaOfNodeId = null;
 
             var slots = GetLocalPrimarySlots();
             var newSlotMap = new HashSlot[MAX_HASH_SLOT_VALUE];
             Array.Copy(slotMap, newSlotMap, slotMap.Length);
             foreach (var slot in slots)
             {
-                newSlotMap[slot]._workerId = 1;
+                newSlotMap[slot]._workerId = LOCAL_WORKER_ID;
                 newSlotMap[slot]._state = SlotState.STABLE;
             }
 
@@ -1170,13 +1192,32 @@ namespace Garnet.cluster
                         slotAssigned = slot;
                         return false;
                     }
-                    newSlotMap[slot]._workerId = 1;
+                    newSlotMap[slot]._workerId = LOCAL_WORKER_ID;
                     newSlotMap[slot]._state = state;
                 }
             }
 
             config = new ClusterConfig(newSlotMap, workers);
             return true;
+        }
+
+        /// <summary>
+        /// Assign slots to workerId
+        /// </summary>
+        /// <param name="slots"></param>
+        /// <param name="workerId"></param>
+        /// <param name="state"></param>
+        /// <returns></returns>
+        public ClusterConfig AssignSlots(List<int> slots, ushort workerId, SlotState state)
+        {
+            var newSlotMap = new HashSlot[16384];
+            Array.Copy(slotMap, newSlotMap, slotMap.Length);
+            foreach (var slot in slots)
+            {
+                newSlotMap[slot]._workerId = workerId;
+                newSlotMap[slot]._state = state;
+            }
+            return new ClusterConfig(newSlotMap, workers);
         }
 
         /// <summary>
@@ -1256,7 +1297,7 @@ namespace Garnet.cluster
             foreach (ushort slot in slots)
             {
                 var slotState = GetState(slot);
-                var workerId = slotState == SlotState.MIGRATING ? 1 : GetWorkerIdFromSlot(slot);
+                var workerId = slotState == SlotState.MIGRATING ? LOCAL_WORKER_ID : GetWorkerIdFromSlot(slot);
                 newSlotMap[slot]._workerId = (ushort)workerId;
                 newSlotMap[slot]._state = SlotState.STABLE;
             }
@@ -1274,9 +1315,9 @@ namespace Garnet.cluster
             Array.Copy(workers, newWorkers, workers.Length);
 
             // Ensure epoch is zero and monotonicity
-            if (workers[1].ConfigEpoch == 0 && workers[1].ConfigEpoch < configEpoch)
+            if (workers[LOCAL_WORKER_ID].ConfigEpoch == 0 && workers[LOCAL_WORKER_ID].ConfigEpoch < configEpoch)
             {
-                newWorkers[1].ConfigEpoch = configEpoch;
+                newWorkers[LOCAL_WORKER_ID].ConfigEpoch = configEpoch;
             }
             else
                 return null;
@@ -1309,7 +1350,7 @@ namespace Garnet.cluster
             var senderConfigEpoch = senderConfig.LocalNodeConfigEpoch;
 
             // If incoming config epoch different than local don't need to do anything
-            if (localNodeConfigEpoch != senderConfigEpoch || !IsPrimary || !senderConfig.IsPrimary)
+            if (localNodeConfigEpoch != senderConfigEpoch)
                 return this;
 
             var senderNodeId = senderConfig.LocalNodeId;

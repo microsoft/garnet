@@ -99,27 +99,5 @@ namespace Garnet.server
         {
             return AbortWithErrorMessage(Encoding.ASCII.GetBytes(string.Format(format, args)));
         }
-
-        /// <summary>
-        /// Tries to parse the input as "LEFT" or "RIGHT" and returns the corresponding OperationDirection.
-        /// If parsing fails, returns OperationDirection.Unknown.
-        /// </summary>
-        /// <param name="input">The input to parse.</param>
-        /// <returns>The parsed OperationDirection, or OperationDirection.Unknown if parsing fails.</returns>
-        public OperationDirection GetOperationDirection(ArgSlice input)
-        {
-            // Optimize for the common case
-            if (input.ReadOnlySpan.SequenceEqual("LEFT"u8))
-                return OperationDirection.Left;
-            if (input.ReadOnlySpan.SequenceEqual("RIGHT"u8))
-                return OperationDirection.Right;
-            // Rare case: try making upper case and retry
-            MakeUpperCase(input.ptr);
-            if (input.ReadOnlySpan.SequenceEqual("LEFT"u8))
-                return OperationDirection.Left;
-            if (input.ReadOnlySpan.SequenceEqual("RIGHT"u8))
-                return OperationDirection.Right;
-            return OperationDirection.Unknown;
-        }
     }
 }

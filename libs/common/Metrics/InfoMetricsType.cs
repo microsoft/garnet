@@ -81,7 +81,11 @@ namespace Garnet.common
         /// <summary>
         /// Checkpoint information used for cluster
         /// </summary>
-        CINFO
+        CINFO,
+        /// <summary>
+        /// Scan and return distribution of in-memory portion of hybrid logs for main store and object store
+        /// </summary>
+        HLOGSCAN,
     }
 
     /// <summary>

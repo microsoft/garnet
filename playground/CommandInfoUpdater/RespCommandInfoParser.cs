@@ -15,11 +15,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="ptr">Pointer to current RESP chunk to read</param>
         /// <param name="end">Pointer to end of RESP chunk to read</param>
-        /// <param name="supportedCommands">Mapping between command name and Garnet RespCommand and ArrayCommand values</param>
+        /// <param name="supportedCommands">Mapping between command name, Garnet RespCommand and StoreType</param>
         /// <param name="commandInfo">Parsed RespCommandsInfo object</param>
         /// <param name="parentCommand">Name of parent command, null if none</param>
         /// <returns>True if parsing successful</returns>
-        public static unsafe bool TryReadFromResp(ref byte* ptr, byte* end, IReadOnlyDictionary<string, RespCommand> supportedCommands, out RespCommandsInfo commandInfo, string parentCommand = null)
+        public static unsafe bool TryReadFromResp(ref byte* ptr, byte* end, IReadOnlyDictionary<string, (RespCommand, StoreType)> supportedCommands, out RespCommandsInfo commandInfo, string parentCommand = null)
         {
             commandInfo = default;
 
@@ -98,9 +98,10 @@ namespace Garnet.server
                 subCommands.Add(commandInfo);
             }
 
+            var supportedCommand = supportedCommands.GetValueOrDefault(name, (RespCommand.NONE, StoreType.None));
             commandInfo = new RespCommandsInfo()
             {
-                Command = supportedCommands.GetValueOrDefault(name, RespCommand.NONE),
+                Command = supportedCommand.Item1,
                 Name = name.ToUpper(),
                 IsInternal = false,
                 Arity = arity,
@@ -111,6 +112,7 @@ namespace Garnet.server
                 AclCategories = aclCategories,
                 Tips = tips.Length == 0 ? null : tips,
                 KeySpecifications = keySpecifications.Length == 0 ? null : keySpecifications,
+                StoreType = supportedCommand.Item2,
                 SubCommands = subCommands.Count == 0 ? null : [.. subCommands.OrderBy(sc => sc.Name)]
             };
 

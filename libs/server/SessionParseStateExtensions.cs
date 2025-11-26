@@ -3,6 +3,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using Garnet.common;
 
@@ -59,6 +61,8 @@ namespace Garnet.server
                 value = InfoMetricsType.BPSTATS;
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("CINFO"u8))
                 value = InfoMetricsType.CINFO;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("HLOGSCAN"u8))
+                value = InfoMetricsType.HLOGSCAN;
             else return false;
 
             return true;
@@ -89,6 +93,41 @@ namespace Garnet.server
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("NET_RS_LAT_ADMIN"u8))
                 value = LatencyMetricsType.NET_RS_LAT_ADMIN;
             else return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Parse client name from parse state at specified index.
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="idx">The argument index</param>
+        /// <param name="clientName">Client name</param>
+        /// <returns>True if value parsed successfully</returns>
+        internal static bool TryGetClientName(this SessionParseState parseState, int idx, out string clientName)
+        {
+            clientName = parseState.GetString(idx);
+
+            if (clientName == null)
+            {
+                return false;
+            }
+
+            // Reference allows clearing client name
+            if (clientName == string.Empty)
+            {
+                return true;
+            }
+
+            // Client names cannot contain spaces, newlines or special characters.
+            // We limit names to printable characters excluding space.
+            foreach (var c in clientName)
+            {
+                if (c < 33 || c > 126)
+                {
+                    return false;
+                }
+            }
 
             return true;
         }
@@ -556,7 +595,6 @@ namespace Garnet.server
             return true;
         }
 
-
         /// <summary>
         /// Parse manager type from parse state at specified index
         /// </summary>
@@ -576,6 +614,21 @@ namespace Garnet.server
             else if (sbArg.EqualsUpperCaseSpanIgnoringCase("SERVERLISTENER"u8))
                 value = ManagerType.ServerListener;
             else return false;
+
+            return true;
+        }
+
+        internal static bool TryGetOperationDirection(this SessionParseState parseState, int idx, out OperationDirection value)
+        {
+            value = OperationDirection.Unknown;
+            var sbArg = parseState.GetArgSliceByRef(idx).ReadOnlySpan;
+
+            if (sbArg.EqualsUpperCaseSpanIgnoringCase("LEFT"u8))
+                value = OperationDirection.Left;
+            else if (sbArg.EqualsUpperCaseSpanIgnoringCase("RIGHT"u8))
+                value = OperationDirection.Right;
+            else
+                return false;
 
             return true;
         }
@@ -797,50 +850,53 @@ namespace Garnet.server
         /// Tries to extract keys from the key specifications in the given RespCommandsInfo.
         /// </summary>
         /// <param name="state">The SessionParseState instance.</param>
-        /// <param name="keySpecs">The RespCommandKeySpecification array contains the key specification</param>
-        /// <param name="keys">The list to store extracted keys.</param>
-        /// <returns>True if keys were successfully extracted, otherwise false.</returns>
-        internal static bool TryExtractKeysFromSpecs(this ref SessionParseState state, RespCommandKeySpecification[] keySpecs, out List<ArgSlice> keys)
+        /// <param name="commandInfo">The command's simplified info</param>
+        /// <returns>The extracted keys</returns>
+        internal static ArgSlice[] ExtractCommandKeys(this ref SessionParseState state, SimpleRespCommandInfo commandInfo)
         {
-            keys = new();
+            var keysIndexes = new List<(ArgSlice Key, int Index)>();
 
-            foreach (var spec in keySpecs)
-            {
-                if (!ExtractKeysFromSpec(ref state, keys, spec))
-                {
-                    return false;
-                }
-            }
+            foreach (var spec in commandInfo.KeySpecs)
+                TryAppendKeysFromSpec(ref state, spec, commandInfo.IsSubCommand, keysIndexes);
 
-            return true;
+            return keysIndexes.OrderBy(k => k.Index).Select(k => k.Key).ToArray();
         }
 
         /// <summary>
         /// Tries to extract keys and their associated flags from the key specifications in the given RespCommandsInfo.
         /// </summary>
         /// <param name="state">The SessionParseState instance.</param>
-        /// <param name="keySpecs">The RespCommandKeySpecification array containing the key specifications.</param>
-        /// <param name="keys">The list to store extracted keys.</param>
-        /// <param name="flags">The list to store associated flags for each key.</param>
-        /// <returns>True if keys and flags were successfully extracted, otherwise false.</returns>
-        internal static bool TryExtractKeysAndFlagsFromSpecs(this ref SessionParseState state, RespCommandKeySpecification[] keySpecs, out List<ArgSlice> keys, out List<string[]> flags)
+        /// <param name="commandInfo">The command's simplified info</param>
+        /// <returns>The extracted keys and flags</returns>
+        internal static (ArgSlice, KeySpecificationFlags)[] ExtractCommandKeysAndFlags(this ref SessionParseState state, SimpleRespCommandInfo commandInfo)
         {
-            keys = new();
-            flags = new();
+            var keysFlagsIndexes = new List<(ArgSlice Key, KeySpecificationFlags Flags, int Index)>();
 
-            foreach (var spec in keySpecs)
+            foreach (var spec in commandInfo.KeySpecs)
+                TryAppendKeysAndFlagsFromSpec(ref state, spec, commandInfo.IsSubCommand, keysFlagsIndexes);
+
+            return keysFlagsIndexes.OrderBy(k => k.Index).Select(k => (k.Key, k.Flags)).ToArray();
+        }
+
+        /// <summary>
+        /// Extracts keys from the given key specification in the provided SessionParseState.
+        /// </summary>
+        /// <param name="parseState">The SessionParseState instance.</param>
+        /// <param name="keySpec">The key specification to use for extraction.</param>
+        /// <param name="isSubCommand">True if command is a sub-command</param>
+        /// <param name="keysToIndexes">The list to store extracted keys and their matching indexes</param>
+        private static bool TryAppendKeysFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<(ArgSlice Key, int Index)> keysToIndexes)
+        {
+            if (!parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, isSubCommand, out var searchArgs))
+                return false;
+
+            for (var i = searchArgs.firstIdx; i <= searchArgs.lastIdx; i += searchArgs.step)
             {
-                var prevKeyCount = keys.Count;
-                if (!ExtractKeysFromSpec(ref state, keys, spec))
-                {
-                    return false;
-                }
+                var key = parseState.GetArgSliceByRef(i);
+                if (key.Length == 0)
+                    continue;
 
-                var keyFlags = spec.RespFormatFlags;
-                for (int i = prevKeyCount; i < keys.Count; i++)
-                {
-                    flags.Add(keyFlags);
-                }
+                keysToIndexes.Add((key, i));
             }
 
             return true;
@@ -849,30 +905,108 @@ namespace Garnet.server
         /// <summary>
         /// Extracts keys from the given key specification in the provided SessionParseState.
         /// </summary>
-        /// <param name="state">The SessionParseState instance.</param>
-        /// <param name="keys">The list to store extracted keys.</param>
-        /// <param name="spec">The key specification to use for extraction.</param>
-        /// <returns>True if keys were successfully extracted, otherwise false.</returns>
-        private static bool ExtractKeysFromSpec(ref SessionParseState state, List<ArgSlice> keys, RespCommandKeySpecification spec)
+        /// <param name="parseState">The SessionParseState instance.</param>
+        /// <param name="keySpec">The key specification to use for extraction.</param>
+        /// <param name="isSubCommand">True if command is a sub-command</param>
+        /// <param name="keysAndFlags">The list to store extracted keys and flags and their indexes</param>
+        private static bool TryAppendKeysAndFlagsFromSpec(ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, List<(ArgSlice Key, KeySpecificationFlags Flags, int Index)> keysAndFlags)
         {
-            int startIndex = 0;
+            if (!parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, isSubCommand, out var searchArgs))
+                return false;
 
-            if (spec.BeginSearch is BeginSearchKeySpecMethodBase bsKeyword)
+            for (var i = searchArgs.firstIdx; i <= searchArgs.lastIdx; i += searchArgs.step)
             {
-                if (!bsKeyword.TryGetStartIndex(ref state, out startIndex))
+                var key = parseState.GetArgSliceByRef(i);
+                if (key.Length == 0)
+                    continue;
+
+                keysAndFlags.Add((key, keySpec.Flags, i));
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Extracts the first, last, and step arguments for key searching based on a simplified RESP key specification and the current parse state.
+        /// </summary>
+        /// <param name="parseState">The current parse state</param>
+        /// <param name="keySpec">The simplified key specification</param>
+        /// <param name="isSubCommand">True if command is a sub-command</param>
+        /// <param name="searchArgs">First, last, and step arguments for key searching</param>
+        /// <returns></returns>
+        internal static bool TryGetKeySearchArgsFromSimpleKeySpec(this ref SessionParseState parseState, SimpleRespKeySpec keySpec, bool isSubCommand, out (int firstIdx, int lastIdx, int step) searchArgs)
+        {
+            searchArgs = (-1, -1, -1);
+
+            // Determine the starting index for searching keys
+            var beginSearchIdx = keySpec.BeginSearch.Index < 0
+                ? parseState.Count + keySpec.BeginSearch.Index
+                : keySpec.BeginSearch.Index - (isSubCommand ? 2 : 1);
+
+            if (beginSearchIdx < 0 || beginSearchIdx >= parseState.Count)
+                return false;
+
+            var firstKeyIdx = -1;
+
+            // If the begin search is an index type - use the specified index as a constant
+            if (keySpec.BeginSearch.IsIndexType)
+            {
+                firstKeyIdx = beginSearchIdx;
+            }
+            // If the begin search is a keyword type - search for the keyword in the parse state, starting at the specified index
+            else
+            {
+                var step = keySpec.BeginSearch.Index < 0 ? -1 : 1;
+                for (var i = beginSearchIdx; i < parseState.Count; i += step)
                 {
-                    return false;
+                    if (parseState.GetArgSliceByRef(i).ReadOnlySpan
+                        .EqualsUpperCaseSpanIgnoringCase(keySpec.BeginSearch.Keyword))
+                    {
+                        // The begin search index is the argument immediately after the keyword
+                        firstKeyIdx = i + 1;
+                        break;
+                    }
                 }
             }
 
-            if (startIndex < 0 || startIndex >= state.Count)
-                return false;
+            // Next, determine the first, last, and step arguments for key searching based on the find keys specification
+            var keyStep = keySpec.FindKeys.KeyStep;
+            int lastKeyIdx;
 
-            if (spec.FindKeys is FindKeysKeySpecMethodBase findKey)
+            if (keySpec.FindKeys.IsRangeType)
             {
-                findKey.ExtractKeys(ref state, startIndex, keys);
+                // If the find keys is of type range with limit, the last key index is determined by the limit factor
+                // 0 and 1 mean no limit, 2 means half of the remaining arguments, 3 means a third, and so on.
+                if (keySpec.FindKeys.IsRangeLimitType)
+                {
+                    var limit = keySpec.FindKeys.LastKeyOrLimit;
+                    var keyNum = 1 + ((parseState.Count - 1 - firstKeyIdx) / keyStep);
+                    lastKeyIdx = limit is 0 or 1 ? firstKeyIdx + ((keyNum - 1) * keyStep)
+                        : firstKeyIdx + (((keyNum / limit) - 1) * keyStep);
+                }
+                // If the find keys is of type range with last key, the last key index is determined by the specified last key index relative to the begin search index
+                else
+                {
+                    lastKeyIdx = keySpec.FindKeys.LastKeyOrLimit;
+                    lastKeyIdx = lastKeyIdx < 0 ? lastKeyIdx + parseState.Count : firstKeyIdx + lastKeyIdx;
+                }
+            }
+            // If the find keys is of type keynum, the last key index is determined by the number of keys specified at the key number index relative to the begin search index
+            else
+            {
+                var keyNumIdx = beginSearchIdx + keySpec.FindKeys.KeyNumIndex;
+                Debug.Assert(keyNumIdx >= 0 && keyNumIdx < parseState.Count);
+
+                var keyNumFound = parseState.TryGetInt(keyNumIdx, out var keyNum);
+                Debug.Assert(keyNumFound);
+
+                firstKeyIdx += keySpec.FindKeys.FirstKey;
+                lastKeyIdx = firstKeyIdx + ((keyNum - 1) * keyStep);
             }
 
+            Debug.Assert(lastKeyIdx < parseState.Count);
+
+            searchArgs = (firstKeyIdx, lastKeyIdx, keyStep);
             return true;
         }
     }

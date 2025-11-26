@@ -39,5 +39,7 @@ namespace Garnet.server
         /// Set expiry only when the key has an existing expiry and the new expiry is less than current one
         /// </summary>
         XXLT = XX | LT,
+
+        // Important: Any addition to this enum beyond 4 bytes will break ExpirationWithOption struct
     }
 }
