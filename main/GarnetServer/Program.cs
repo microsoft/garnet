@@ -15,6 +15,7 @@ namespace Garnet
             GarnetServer server = null;
             using var shutdownCts = new CancellationTokenSource();
             int shutdownInitiated = 0; // Guard to ensure single shutdown/dispose
+            int serverStarted = 0; // Guard to track if server started successfully
 
             try
             {
@@ -33,8 +34,9 @@ namespace Garnet
 
                 AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
                 {
-                    // Only initiate shutdown if not already done
-                    if (Interlocked.Exchange(ref shutdownInitiated, 1) == 0)
+                    // Only initiate shutdown if not already done and server has started
+                    if (Interlocked.Exchange(ref shutdownInitiated, 1) == 0 &&
+                        Interlocked.CompareExchange(ref serverStarted, 0, 0) == 1)
                     {
                         Console.WriteLine("Process exit signal received. Starting graceful shutdown...");
                         shutdownCts.Cancel();
@@ -47,6 +49,7 @@ namespace Garnet
 
                 // Start the server
                 server.Start();
+                Interlocked.Exchange(ref serverStarted, 1); // Mark server as started
 
                 // Wait for shutdown signal
                 try
@@ -58,8 +61,9 @@ namespace Garnet
                     // Normal shutdown path
                 }
 
-                // Only initiate shutdown if not already done by ProcessExit handler
-                if (Interlocked.Exchange(ref shutdownInitiated, 1) == 0)
+                // Only initiate shutdown if not already done by ProcessExit handler and server has started
+                if (Interlocked.Exchange(ref shutdownInitiated, 1) == 0 &&
+                    Interlocked.CompareExchange(ref serverStarted, 0, 0) == 1)
                 {
                     // Block synchronously for shutdown - ensures cleanup completes before process exits
                     server.ShutdownAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
