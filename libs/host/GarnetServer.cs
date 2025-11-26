@@ -481,7 +481,7 @@ namespace Garnet
         /// </summary>
         private async Task WaitForActiveConnectionsAsync(TimeSpan timeout, CancellationToken token)
         {
-            if (Metrics == null) return;
+            if (servers == null) return;
 
             var stopwatch = Stopwatch.StartNew();
             var delays = new[] { 50, 300, 1000 };
