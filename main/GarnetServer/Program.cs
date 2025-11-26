@@ -13,7 +13,7 @@ namespace Garnet
         static async Task Main(string[] args)
         {
             GarnetServer server = null;
-            var shutdownCts = new CancellationTokenSource();
+            using var shutdownCts = new CancellationTokenSource();
             int shutdownInitiated = 0; // Guard to ensure single shutdown/dispose
 
             try
