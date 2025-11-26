@@ -64,7 +64,7 @@ namespace Garnet
                     // Block synchronously for shutdown - ensures cleanup completes before process exits
                     server.ShutdownAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
                         .GetAwaiter().GetResult();
-                    server?.Dispose();
+                    server.Dispose();
                 }
             }
             catch (Exception ex)
