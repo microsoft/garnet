@@ -713,7 +713,7 @@ namespace Garnet.test
             // Perform multiple operations to ensure connection remains active
             var result = db.StringGet("key1");
             ClassicAssert.AreEqual("value1", (string)result);
-            
+
             // Verify we can still perform operations during grace period
             db.StringSet("key2", "value2");
             var result2 = db.StringGet("key2");
@@ -807,11 +807,11 @@ namespace Garnet.test
             // Assert - Should complete within reasonable time (timeout + some overhead for AOF/checkpoint)
             // The timeout is for waiting on connections, but shutdown also does AOF commit and checkpoint
             // So we allow more time than the timeout itself
-            ClassicAssert.Less(stopwatch.ElapsedMilliseconds, 5000, 
+            ClassicAssert.Less(stopwatch.ElapsedMilliseconds, 5000,
                 $"Shutdown should complete within reasonable time. Actual: {stopwatch.ElapsedMilliseconds}ms");
-            
+
             // Verify it completed faster than a longer timeout would take
-            ClassicAssert.Less(stopwatch.ElapsedMilliseconds, 2000, 
+            ClassicAssert.Less(stopwatch.ElapsedMilliseconds, 2000,
                 "Shutdown with short timeout should be faster than longer timeout");
 
             testServer.Dispose();
