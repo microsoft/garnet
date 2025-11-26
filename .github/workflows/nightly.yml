@@ -173,8 +173,8 @@ jobs:
       # First checkout the main repo into the default workspace root
       - name: Checkout main repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # optional, ensures full history if you need it  DEBUG DEBUG - maybe remove later
+        #with:
+          #fetch-depth: 0   # optional, ensures full history if you need it  DEBUG DEBUG - maybe remove later
 
       # Then checkout the allure_data_history branch into a subfolder
       - name: Checkout allure_data_history branch
@@ -183,7 +183,7 @@ jobs:
           ref: allure_data_history
           path: history-branch
           persist-credentials: true
-          fetch-depth: 0   # optional, ensures full branch contents  DEBUG DEBUG - maybe remove later
+          #fetch-depth: 0   # optional, ensures full branch contents  DEBUG DEBUG - maybe remove later
 
       - name: DEBUG DEBUG List files in history-branch root after check out
         shell: pwsh
