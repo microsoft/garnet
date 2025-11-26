@@ -178,7 +178,7 @@ jobs:
           persist-credentials: true
           fetch-depth: 0
 
-      - name: DEBUG DEBUG List files in history-branch root
+      - name: DEBUG DEBUG List files in history-branch root before other check out
         shell: pwsh
         run: |
           Get-ChildItem -Recurse -Path "${{ github.workspace }}/history-branch"
@@ -187,6 +187,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         if: ${{ always() }}
+
+      - name: DEBUG DEBUG List files in history-branch root after other check out
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse -Path "${{ github.workspace }}/history-branch"
+        if: ${{ always() }}
+
 
       - name: Install Allure CLI
         shell: pwsh
@@ -292,7 +299,6 @@ jobs:
               Write-Host "No history found in allure_data_history, starting fresh"
           }        
         if: ${{ always() }}
-
 
       - name: DEBUG DEBUG List contents of test/Allure/CombinedResults/history AFTER Copy previous history
         shell: pwsh
