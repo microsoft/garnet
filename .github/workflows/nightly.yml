@@ -90,79 +90,79 @@ jobs:
 #  DEBUG DEBUG        if: ${{ matrix.test == 'Tsavorite.test' }}
 #  DEBUG DEBUG        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
 
-      # - name: Build Garnet
-      #   if: ${{ matrix.test != 'Tsavorite.test' }}
-      #   run: dotnet build --configuration ${{ matrix.configuration }}
+      - name: Build Garnet
+        if: ${{ matrix.test != 'Tsavorite.test' }}
+        run: dotnet build --configuration ${{ matrix.configuration }}
 
-      # - name: Run tests ${{ matrix.test }}
-      #   shell: pwsh
-      #   run: |
-      #     $resultsDir = "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-      #     if ("${{ matrix.test }}" -eq "Tsavorite.test") {
-      #       dotnet test "libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj" -f "${{ matrix.framework }}" `
-      #         --logger "console;verbosity=detailed" `
-      #         --logger "trx" `
-      #         --results-directory "$resultsDir"
-      #     } else {
-      #       dotnet test "test/${{ matrix.test }}" -f "${{ matrix.framework }}" `
-      #         --logger "console;verbosity=detailed" `
-      #         --logger "trx" `
-      #         --results-directory "$resultsDir"
-      #     }
-      #   timeout-minutes: 55 
+      - name: Run tests ${{ matrix.test }}
+        shell: pwsh
+        run: |
+          $resultsDir = "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
+            dotnet test "libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj" -f "${{ matrix.framework }}" `
+              --logger "console;verbosity=detailed" `
+              --logger "trx" `
+              --results-directory "$resultsDir"
+          } else {
+            dotnet test "test/${{ matrix.test }}" -f "${{ matrix.framework }}" `
+              --logger "console;verbosity=detailed" `
+              --logger "trx" `
+              --results-directory "$resultsDir"
+          }
+        timeout-minutes: 55 
 
-      # - name: Upload test results
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-      #     path: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-      #   if: ${{ always() }}
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+          path: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+        if: ${{ always() }}
 
-      # - name: DEBUG DEBUG path existence using matrix variables
-      #   shell: pwsh
-      #   run: |
-      #     $source = "${{ github.workspace }}/test/Allure/TestData/${{ matrix.framework }}/allure-results"
-      #     Write-Host "Checking source path: $source"
-      #     if (Test-Path $source) {
-      #       Write-Host "Source path exists."
-      #     } else {
-      #       Write-Host "Source path does NOT exist."
-      #     }
-      #   if: ${{ always() }}
+      - name: DEBUG DEBUG path existence using matrix variables
+        shell: pwsh
+        run: |
+          $source = "${{ github.workspace }}/test/Allure/TestData/${{ matrix.framework }}/allure-results"
+          Write-Host "Checking source path: $source"
+          if (Test-Path $source) {
+            Write-Host "Source path exists."
+          } else {
+            Write-Host "Source path does NOT exist."
+          }
+        if: ${{ always() }}
 
-      # - name: DEBUG DEBUG Check if allure-results exists
-      #   shell: pwsh
-      #   run: |
-      #     $base = $env:GITHUB_WORKSPACE
-      #     $path = Join-Path -Path $base -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-      #     if (-Not (Test-Path $path)) {
-      #       Write-Host "No $path found for this matrix combination."
-      #     }
-      #   if: ${{ always() }}
+      - name: DEBUG DEBUG Check if allure-results exists
+        shell: pwsh
+        run: |
+          $base = $env:GITHUB_WORKSPACE
+          $path = Join-Path -Path $base -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          if (-Not (Test-Path $path)) {
+            Write-Host "No $path found for this matrix combination."
+          }
+        if: ${{ always() }}
 
-      # - name: DEBUG DEBUG Verify allure-results were copied
-      #   shell: pwsh
-      #   run: |
-      #     $dest = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-      #     Write-Host "Contents of ${dest}:"
-      #     Get-ChildItem -Path $dest -Recurse | ForEach-Object { Write-Host $_.FullName }
-      #   if: ${{ always() }}
+      - name: DEBUG DEBUG Verify allure-results were copied
+        shell: pwsh
+        run: |
+          $dest = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          Write-Host "Contents of ${dest}:"
+          Get-ChildItem -Path $dest -Recurse | ForEach-Object { Write-Host $_.FullName }
+        if: ${{ always() }}
 
-      # - name: Stage allure-results into test/Allure/AllResults
-      #   shell: pwsh
-      #   run: |
-      #     $source = Join-Path $env:GITHUB_WORKSPACE "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-      #     $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
-      #     New-Item -ItemType Directory -Path $target -Force
-      #     Get-ChildItem -Path $source -Recurse | Copy-Item -Destination $target -Force
-      #   if: ${{ always() }}
+      - name: Stage allure-results into test/Allure/AllResults
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
+          New-Item -ItemType Directory -Path $target -Force
+          Get-ChildItem -Path $source -Recurse | Copy-Item -Destination $target -Force
+        if: ${{ always() }}
 
-      # - name: Upload Allure Results to artifacts
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: AllureResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
-      #     path: test/Allure/AllResults
-      #   if: ${{ always() }}
+      - name: Upload Allure Results to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AllureResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: test/Allure/AllResults
+        if: ${{ always() }}
 
   generate-allure-report:
     name: Generate Allure Report
@@ -177,30 +177,9 @@ jobs:
           path: history-branch
           persist-credentials: true
 
-#      - name: DEBUG NOT SURE IF NEEDED IF COPY LATER Copy history from allure_data_history branch into CombinedResults
-#        shell: pwsh
-#        run: |
-#          $source = "${{ github.workspace }}/history-branch/test/allure/history"
-#          $target = "${{ github.workspace }}/test/Allure/CombinedResults/history"
-#          if (Test-Path $source) {
-#          New-Item -ItemType Directory -Path $target -Force
-#          Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
-#          Write-Host "History copied from allure_data_history into CombinedResults"
-#          } else {
-#              Write-Host "No history found in allure_data_history, starting fresh"
-#          }
-#        if: ${{ always() }}
-
-
-      - name: DEBUG DEBUG List contents of test/allure/CombinedResults/history after copying from branch (could be blank if branch is empty)
-        shell: pwsh
-        run: |
-          $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/CombinedResults/history"
-          Get-ChildItem -Path $target -Recurse          
-        if: ${{ always() }}
-
       - name: Checkout repository
         uses: actions/checkout@v4
+        if: ${{ always() }}
 
       - name: Install Allure CLI
         shell: pwsh
