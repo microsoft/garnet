@@ -333,5 +333,23 @@ jobs:
           path: test/Allure/allure-report
         if: ${{ always() }}
 
+      - name: Publish Allure report to GH Web site
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "test/Allure/allure-report"
+          $target = Join-Path $env:GITHUB_WORKSPACE "website/static/allure"
+          Write-Host "Copying Allure report from $source to $target"
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
+          Write-Host "Allure report staged in website/static/allure"
+
+      - name: DEBUG DEBUG List contents of website/static to make sure Allure report copied
+        shell: pwsh
+        run: |
+          $static = Join-Path $env:GITHUB_WORKSPACE "website/static"
+          Write-Host "=== Listing contents of website/static ==="
+          Get-ChildItem -Path $static -Recurse
+        if: ${{ always() }}                    
+
       - name: Echo completion
         run: echo Done!
