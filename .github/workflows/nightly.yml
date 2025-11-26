@@ -176,6 +176,13 @@ jobs:
           ref: allure_data_history
           path: history-branch
           persist-credentials: true
+          fetch-depth: 0
+
+      - name: DEBUG DEBUG List files in history-branch root
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse -Path "${{ github.workspace }}/history-branch"
+        if: ${{ always() }}
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -224,17 +231,17 @@ jobs:
           }
         if: ${{ always() }}
 
-      - name: DEBUG DEBUG List contents of test/allure/AllResults
+      - name: DEBUG DEBUG List contents of test/Allure/AllResults
         shell: pwsh
         run: |
-          $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/AllResults"
+          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
           Get-ChildItem -Path $target -Recurse
         if: ${{ always() }}
 
-#      - name: DEBUG DEBUG List contents of test/allure/CombinedResults/history BEFORE Copy results
+#      - name: DEBUG DEBUG List contents of test/Allure/CombinedResults/history BEFORE Copy results
 #        shell: pwsh
 #        run: |
-#          $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/CombinedResults/history"
+#          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/CombinedResults/history"
 #          Get-ChildItem -Path $target -Recurse          
 #        if: ${{ always() }}
 
@@ -249,10 +256,10 @@ jobs:
           }          
         if: ${{ always() }}
 
-      - name: DEBUG DEBUG List contents of test/allure/CombinedResults BEFORE Copy previous history
+      - name: DEBUG DEBUG List contents of test/Allure/CombinedResults BEFORE Copy previous history
         shell: pwsh
         run: |
-          $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/CombinedResults"
+          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/CombinedResults"
           Write-Host "=== CombinedResults ==="
           Get-ChildItem -Path $target -Recurse
 
@@ -275,8 +282,8 @@ jobs:
       - name: Copy history from allure_data_history branch into CombinedResults
         shell: pwsh
         run: |
-          $source = "${{ github.workspace }}/history-branch/test/allure/history"
-          $target = "${{ github.workspace }}/test/allure/CombinedResults/history"
+          $source = "${{ github.workspace }}/history-branch/test/Allure/history"
+          $target = "${{ github.workspace }}/test/Allure/CombinedResults/history"
           if (Test-Path $source) {
           New-Item -ItemType Directory -Path $target -Force
           Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
@@ -287,10 +294,10 @@ jobs:
         if: ${{ always() }}
 
 
-      - name: DEBUG DEBUG List contents of test/allure/CombinedResults/history AFTER Copy previous history
+      - name: DEBUG DEBUG List contents of test/Allure/CombinedResults/history AFTER Copy previous history
         shell: pwsh
         run: |
-          $target = Join-Path $env:GITHUB_WORKSPACE "test/allure/CombinedResults/history"
+          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/CombinedResults/history"
           Get-ChildItem -Path $target -Recurse          
         if: ${{ always() }}
 
@@ -316,10 +323,10 @@ jobs:
           git fetch origin allure_data_history
           git checkout allure_data_history
           $source = "${{ github.workspace }}/test/Allure/allure-report/history"
-          $target = "${{ github.workspace }}/test/allure/history"
+          $target = "${{ github.workspace }}/test/Allure/history"
           Remove-Item -Recurse -Force $target -ErrorAction SilentlyContinue
           Copy-Item -Path $source -Destination $target -Recurse -Force
-          git add test/allure/history
+          git add test/Allure/history
           git commit -m "Update Allure history [CI]"
           git push origin allure_data_history
         if: ${{ always() }}
