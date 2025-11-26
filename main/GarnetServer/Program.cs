@@ -39,7 +39,7 @@ namespace Garnet
                         Console.WriteLine("Process exit signal received. Starting graceful shutdown...");
                         shutdownCts.Cancel();
                         // Wait for graceful shutdown with timeout
-                        server?.ShutdownAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
+                        server?.ShutdownAsync(TimeSpan.FromSeconds(3), CancellationToken.None)
                             .GetAwaiter().GetResult();
                         server?.Dispose();
                     }
