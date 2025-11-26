@@ -170,25 +170,41 @@ jobs:
     needs: [ build-test-all ]
     if: ${{ always() }}
     steps:
+      # First checkout the main repo into the default workspace root
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # optional, ensures full history if you need it
+
+      # Then checkout the allure_data_history branch into a subfolder
       - name: Checkout allure_data_history branch
         uses: actions/checkout@v4
         with:
           ref: allure_data_history
           path: history-branch
           persist-credentials: true
-          fetch-depth: 0
+          fetch-depth: 0   # optional, ensures full branch contents
 
-      - name: DEBUG DEBUG List files in history-branch root before other check out
-        shell: pwsh
-        run: |
-          Get-ChildItem -Recurse -Path "${{ github.workspace }}/history-branch"
-        if: ${{ always() }}
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        if: ${{ always() }}
+#      - name: Checkout allure_data_history branch
+#        uses: actions/checkout@v4
+#        with:
+#          ref: allure_data_history
+#          path: history-branch
+#          persist-credentials: true
+#          fetch-depth: 0
 
-      - name: DEBUG DEBUG List files in history-branch root after other check out
+#      - name: DEBUG DEBUG List files in history-branch root before other check out
+#        shell: pwsh
+#        run: |
+#          Get-ChildItem -Recurse -Path "${{ github.workspace }}/history-branch"
+#        if: ${{ always() }}
+
+#      - name: Checkout repository
+#        uses: actions/checkout@v4
+#        if: ${{ always() }}
+
+      - name: DEBUG DEBUG List files in history-branch root after check out
         shell: pwsh
         run: |
           Get-ChildItem -Recurse -Path "${{ github.workspace }}/history-branch"
