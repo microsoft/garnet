@@ -18,13 +18,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ORIGINAL test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
-        test: [ 'Garnet.test' ]
-        # ORIGINAL os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
-        os: [  windows-2022 ]
+        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
+        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
         framework: [ 'net8.0', 'net9.0' ]
-        # ORIGINAL configuration: [ 'Debug', 'Release' ]
-        configuration: [ 'Release' ]
+        configuration: [ 'Debug', 'Release' ]
 
     steps:
       - name: Install Allure CLI
@@ -85,10 +82,9 @@ jobs:
 #  DEBUG DEBUG        run: dotnet format --verify-no-changes --verbosity diagnostic
 #  DEBUG DEBUG        continue-on-error: true
 
-#  DEBUG DEBUG - for perf issuese when debugging, comment out this
-#  DEBUG DEBUG      - name: Build Tsavorite.test
-#  DEBUG DEBUG        if: ${{ matrix.test == 'Tsavorite.test' }}
-#  DEBUG DEBUG        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
+      - name: Build Tsavorite.test
+        if: ${{ matrix.test == 'Tsavorite.test' }}
+        run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
 
       - name: Build Garnet
         if: ${{ matrix.test != 'Tsavorite.test' }}
@@ -173,8 +169,6 @@ jobs:
       # First checkout the main repo into the default workspace root
       - name: Checkout main repository
         uses: actions/checkout@v4
-        #with:
-          #fetch-depth: 0   # optional, ensures full history if you need it  DEBUG DEBUG - maybe remove later
 
       # Then checkout the allure_data_history branch into a subfolder
       - name: Checkout allure_data_history branch
@@ -183,7 +177,6 @@ jobs:
           ref: allure_data_history
           path: history-branch
           persist-credentials: true
-          #fetch-depth: 0   # optional, ensures full branch contents  DEBUG DEBUG - maybe remove later
 
       - name: DEBUG DEBUG List files in history-branch root after check out
         shell: pwsh
