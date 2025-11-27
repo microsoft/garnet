@@ -15,7 +15,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Scan iterator for TsavoriteLog
     /// </summary>
-    public class TsavoriteLogIterator : ScanIteratorBase, IDisposable
+    public class TsavoriteLogScanIterator : ScanIteratorBase, IDisposable
     {
         protected readonly TsavoriteLog tsavoriteLog;
         private readonly TsavoriteLogAllocatorImpl allocator;
@@ -32,7 +32,7 @@ namespace Tsavorite.core
         public bool Ended => (nextAddress >= endAddress) || (tsavoriteLog.LogCompleted && nextAddress == tsavoriteLog.TailAddress);
 
         /// <summary>Constructor</summary>
-        internal unsafe TsavoriteLogIterator(TsavoriteLog tsavoriteLog, TsavoriteLogAllocatorImpl hlog, long beginAddress, long endAddress,
+        internal unsafe TsavoriteLogScanIterator(TsavoriteLog tsavoriteLog, TsavoriteLogAllocatorImpl hlog, long beginAddress, long endAddress,
                 GetMemory getMemory, DiskScanBufferingMode diskScanBufferingMode, LightEpoch epoch, int headerSize, bool scanUncommitted = false, ILogger logger = null)
             : base(beginAddress == 0 ? hlog.GetFirstValidLogicalAddressOnPage(0) : beginAddress, endAddress,
                 diskScanBufferingMode, InMemoryScanBufferingMode.NoBuffering, includeClosedRecords: false, epoch, hlog.LogPageSizeBits, logger: logger)
@@ -149,7 +149,7 @@ namespace Tsavorite.core
             return SlowWaitUncommittedAsync(token);
         }
 
-        private static async ValueTask<bool> SlowWaitAsync(TsavoriteLogIterator @this, CancellationToken token)
+        private static async ValueTask<bool> SlowWaitAsync(TsavoriteLogScanIterator @this, CancellationToken token)
         {
             while (true)
             {

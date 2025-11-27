@@ -68,12 +68,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Object log tail (where the next record will be written) at the start of the checkpoint.
         /// </summary>
-        public ObjectLogFilePositionInfo startObjectLogTail;
+        internal ObjectLogFilePositionInfo startObjectLogTail;
 
         /// <summary>
         /// Object log tail (where the next record will be written) at the end of the checkpoint.
         /// </summary>
-        public ObjectLogFilePositionInfo finalObjectLogTail;
+        internal ObjectLogFilePositionInfo finalObjectLogTail;
 
         /// <summary>
         /// Tail address of delta file: -1 indicates this is not a delta checkpoint metadata

@@ -538,12 +538,16 @@ namespace Garnet
         public bool? ExtensionAllowUnsignedAssemblies { get; set; }
 
         [IntRangeValidation(1, int.MaxValue, isRequired: false)]
-        [Option("index-resize-freq", Required = false, HelpText = "Index resize check frequency in seconds")]
+        [Option("index-resize-freq", Required = false, HelpText = "Hash-index resize check frequency in seconds")]
         public int IndexResizeFrequencySecs { get; set; }
 
         [IntRangeValidation(1, 100, isRequired: false)]
-        [Option("index-resize-threshold", Required = false, HelpText = "Overflow bucket count over total index size in percentage to trigger index resize")]
+        [Option("index-resize-threshold", Required = false, HelpText = "Hash-index Overflow bucket count over total index size in percentage to trigger index resize")]
         public int IndexResizeThreshold { get; set; }
+
+        [IntRangeValidation(1, int.MaxValue, isRequired: false)]
+        [Option("value-overflow-threshold", Required = false, HelpText = "The length at which a value string becomes an overflow byte[]")]
+        public int ValueOverflowThreshold { get; set; }
 
         [OptionValidation]
         [Option("fail-on-recovery-error", Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
@@ -681,13 +685,9 @@ namespace Garnet
 
             var useAzureStorage = deviceType == DeviceType.AzureStorage;
             if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString) && string.IsNullOrEmpty(AzureStorageServiceUri))
-            {
                 throw new InvalidAzureConfiguration("Cannot use AzureStorage device without supplying storage-string or storage-service-uri");
-            }
             if (useAzureStorage && !string.IsNullOrEmpty(AzureStorageConnectionString) && !string.IsNullOrEmpty(AzureStorageServiceUri))
-            {
                 throw new InvalidAzureConfiguration("Cannot use AzureStorage device with both storage-string and storage-service-uri");
-            }
 
             var logDir = LogDir;
             if (!useAzureStorage && enableStorageTier) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
@@ -879,6 +879,7 @@ namespace Garnet
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
+                ValueOverflowThreshold = ValueOverflowThreshold,
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),

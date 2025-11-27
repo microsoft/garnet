@@ -183,6 +183,17 @@ namespace Tsavorite.core
             var recordLength = sizeInfo.AllocatedInlineRecordSize;
             var numRecordLengthBytes = GetByteCount(recordLength);
             var numKeyLengthBytes = GetByteCount(keyLength);
+
+            // If this was from revivification, we should have <= keyLengthBytes and == recordLengthBytes. Don't change keyLengthBytes, as that would move the RecordLength
+            // field in the header and that might not be an atomic update if it crosses a ulong boundary.
+            if (sizeInfo.IsRevivifiedRecord)
+            {
+                var (revivKeyLenBytes, revivRecLenBytes) = DeconstructKVByteLengths(out _ /*headerLength*/);
+                if (numKeyLengthBytes > revivKeyLenBytes || numRecordLengthBytes != revivRecLenBytes)
+                    throw new TsavoriteException($"In revivification, cannot exceed previous KeyLengthBytes {revivKeyLenBytes} or change RecordLengthBytes {revivRecLenBytes}");
+                numKeyLengthBytes = revivKeyLenBytes;
+            }
+
             *HeaderPtr = (byte)(((numRecordLengthBytes - 1) << kRecordLengthIndicatorShift) | ((numKeyLengthBytes - 1) >> kKeyLengthIndicatorShift));
 
             // TODO: Pass in the actual Span<byte>Namespace to VarLenMethods to set sizeInfo.FieldInfo.ExtendedNamespaceSize. Here we are only concerned
@@ -227,8 +238,8 @@ namespace Tsavorite.core
             Debug.Assert(!recordInfo.HasETag && !recordInfo.HasExpiration, "Expected no optionals in InitializeForRevivification");
 
             // See Initialize() for formatting notes.
-            // The keyLengthBytes and RecordLength must be less than or equal to those before revivification (even if we could fit a larger Key, the movement
-            // of RecordLength might not be atomic if it crosses the ulong boundary).
+            // The keyLengthBytes and RecordLength must be less than or equal to those before revivification (even if we could fit a larger Key, any movement
+            // of RecordLength might not be atomic if it crosses the ulong boundary, so we just don't allow it).
             var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
             var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
             Debug.Assert(GetByteCount(sizeInfo.InlineKeySize) <= numKeyLengthBytes, "Cannot exceed previous Key size bytes in InitializeForRevivification");
@@ -245,6 +256,7 @@ namespace Tsavorite.core
             // RecordLength is already set and we don't set key here; we wait for Revivification to do that. But we must update the sizeInfo
             // to ensure the AllocatedInlineRecordSize retains recordLength when LogRecord.InitializeRecord is called.
             sizeInfo.AllocatedInlineRecordSize = recordLength;
+            sizeInfo.IsRevivifiedRecord = true;
         }
 
         /// <summary>Set the record length; this is ONLY to be used for temporary copies (e.g. serialization for Migration and Replication).</summary>

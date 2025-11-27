@@ -268,20 +268,74 @@ namespace Tsavorite.core
             }
         }
 
-        protected override void TruncateUntilAddress(long toAddress)
-        {
-            base.TruncateUntilAddress(toAddress);
-        }
-
         protected override void TruncateUntilAddressBlocking(long toAddress)
         {
+            // First get the segment of the object log to remove. We've put the lowest object log position used by a page into its PageHeader.
+            // If toAddress is in the middle of a main log page, we must limit objectlog truncation to the lowest segment used by the that page.
+            // If toAddress is not past the PageHeader, then assume it is the start of the page and its PageHeader hasn't been written, so use
+            // the previous page.
+            var objectLogSegment = -1;
+            if (objectLogDevice is not null)
+            {
+                var addressOfStartOfMainLogPage = GetAddressOfStartOfPageOfAddress(toAddress);
+                if (GetOffsetOnPage(toAddress) <= PageHeader.Size)
+                    addressOfStartOfMainLogPage -= PageSize;
+                objectLogSegment = GetHighestObjectLogSegmentToRemove(addressOfStartOfMainLogPage);
+            }
+
+            // Now do the actual truncations.
             base.TruncateUntilAddressBlocking(toAddress);
+            if (objectLogSegment >= 0)
+                objectLogDevice.TruncateUntilSegment(objectLogSegment);
         }
 
         protected override void RemoveSegment(int segment)
         {
-            //TODOnow("Get the object log segment information from this main-log segment's last PageHeader");
+            // if segment is not the last segment (which should be the case), we can use the page header of the start of the segment to get
+            // the highest object log segment to remove because we know its PageHeader has been written. Otherwise, we have to use the previous
+            // page's PageHeader to get the object log segment to remove.
+            var objectLogSegment = -1;
+            if (objectLogDevice is not null)
+            {
+                var addressOfStartOfMainLogPage = GetStartLogicalAddressOfSegment(segment);
+                if (segment >= device.EndSegment)
+                    addressOfStartOfMainLogPage -= PageSize;
+                objectLogSegment = GetHighestObjectLogSegmentToRemove(addressOfStartOfMainLogPage);
+            }
+
+            // Now do the actual truncations.
             base.RemoveSegment(segment);
+            if (objectLogSegment >= 0)
+                objectLogDevice.TruncateUntilSegment(objectLogSegment);
+        }
+
+        private int GetHighestObjectLogSegmentToRemove(long addressOfStartOfMainLogPage)
+        {
+            Debug.Assert(objectLogDevice is not null, "GetHighestObjectLogSegmentToRemove should not be called if there is no objectLogDevice");
+            var objectLogSegment = -1;
+            var buffer = bufferPool.Get(sectorSize);
+            PageAsyncReadResult<int> result = new() { handle = new CountdownEvent(1) };
+            try
+            {
+                device.ReadAsync((ulong)addressOfStartOfMainLogPage, (IntPtr)buffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);
+                result.handle.Wait();
+                if (result.context >= PageHeader.Size)
+                {
+                    var pageHeader = *(PageHeader*)buffer.aligned_pointer;
+                    if (pageHeader.objectLogLowestPosition != ObjectLogFilePositionInfo.NotSet)
+                    {
+                        var objectLogPosition = new ObjectLogFilePositionInfo(pageHeader.objectLogLowestPosition, objectLogTail.SegmentSizeBits);   // TODO verify SegmentSizeBits is correct
+                        objectLogSegment = objectLogPosition.SegmentId;
+                    }
+                }
+            }
+            finally
+            {
+                bufferPool.Return(buffer);
+                result.DisposeHandle();
+            }
+
+            return objectLogSegment;
         }
 
         protected override void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
@@ -368,7 +422,7 @@ namespace Tsavorite.core
             // Short circuit if we are not using flushBuffers (e.g. using ObjectAllocator for string-only purposes).
             if (flushBuffers is null)
             {
-                WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage),
+                WriteInlinePageAsync((nint)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage),
                                 (uint)AlignedPageSizeBytes, callback, asyncResult, device);
                 return;
             }
@@ -438,7 +492,7 @@ namespace Tsavorite.core
                 // Read back the first sector if the start is not aligned (this means we already wrote a partially-filled sector with ObjectLog fields set).
                 if (startPadding > 0)
                 {
-                    // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
+                    // TODO: This will potentially overwrite partial sectors (with the same data) if this is a partial flush; a workaround would be difficult.
                     // TODO: Cache the last sector flushed in readBuffers so we can avoid this Read.
                     PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
                     device.ReadAsync(alignedMainLogFlushPageAddress + (ulong)alignedStartOffset, (IntPtr)srcBuffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);

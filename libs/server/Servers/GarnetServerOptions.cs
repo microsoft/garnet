@@ -105,6 +105,11 @@ namespace Garnet.server
         public int IndexResizeThreshold = 50;
 
         /// <summary>
+        /// The length at which a value string becomes an overflow byte[]
+        /// </summary>
+        public int ValueOverflowThreshold = 4096;   // TODO Tsavorite.core.LogSettings.MaxInlineValueSize
+
+        /// <summary>
         /// Wait for AOF to commit before returning results to client.
         /// Warning: will greatly increase operation latency.
         /// </summary>
@@ -560,6 +565,7 @@ namespace Garnet.server
                 PageSize = 1L << PageSizeBits(),
                 Epoch = epoch,
                 StateMachineDriver = stateMachineDriver,
+                MaxInlineValueSize = ValueOverflowThreshold,
                 loggerFactory = loggerFactory,
                 logger = loggerFactory?.CreateLogger("TsavoriteKV [main]")
             };

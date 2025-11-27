@@ -267,10 +267,13 @@ namespace Tsavorite.core
         ///   or <paramref name="output"/>.<see cref="SpanByteAndMemory.Memory"/></param>
         /// <remarks>
         /// This is used for migration and replication, and output.SpanByteAndMemory is a span of the remaining space in the network buffer.
-        /// This allocates <see cref="SpanByteAndMemory.Memory"/> if needed; in that case the caller will flush the network buffer and retry with the full length.
-        /// The record stream is prefixed with the int length of the stream. RespReadUtils.GetSerializedRecordSpan sets up for deserialization from the network buffer.
+        /// <list type="bullet">
+        ///     <item>If <paramref name="output"/>.<see cref="SpanByteAndMemory.IsSpanByte"/>, it points directly to the network buffer so we include the length prefix in the output.</item>
+        ///     <item><see cref="SpanByteAndMemory.Memory"/> is allocated if needed; in that case the caller will flush the network buffer and retry with the full length.</item>
+        ///     <item>The record stream is prefixed with the int length of the stream. RespReadUtils.GetSerializedRecordSpan sets up for deserialization from the network buffer.</item>
+        /// </list>
         /// </remarks>
-        /// <remarks>If <paramref name="output"/>.<see cref="SpanByteAndMemory.IsSpanByte"/>, it points directly to the network buffer so we include the length prefix in the output.</remarks>
+        /// <returns>The total number of bytes in the output.</returns>
         public static int Serialize<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, int maxHeapAllocationSize, IObjectSerializer<IHeapObject> valueObjectSerializer,
             MemoryPool<byte> memoryPool, ref SpanByteAndMemory output)
             where TSourceLogRecord : ISourceLogRecord

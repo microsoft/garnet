@@ -254,7 +254,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
 
-            // TODO verify the keys are in the same slot
+            // Note: RespServerSession.CanServeSlot has already verified the keys are in the same slot
 
             var createTransaction = false;
             if (txnManager.state != TxnState.Running)

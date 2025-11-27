@@ -275,7 +275,7 @@ namespace Garnet.server
         {
             try
             {
-                if (db.Store.Log.TailAddress > 64)
+                if (db.Store.Log.TailAddress > PageHeader.Size)
                     db.Store.Reset();
                 db.AppendOnlyFile?.Reset();
 

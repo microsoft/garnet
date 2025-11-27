@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -1786,25 +1787,13 @@ namespace Garnet.server
 
             if (c - firstPending >= outputArr.Length)
             {
-                int newCount = (int)NextPowerOf2(c - firstPending + 1);
+                int newCount = (int)BitOperations.RoundUpToPowerOf2((uint)(c - firstPending + 1));
                 var outputArr2 = new (GarnetStatus, SpanByteAndMemory)[newCount];
                 Array.Copy(outputArr, outputArr2, outputArr.Length);
                 outputArr = outputArr2;
             }
 
             outputArr[c - firstPending] = (status, output);
-        }
-
-        static long NextPowerOf2(long v)    // TODO: consolidate this and other Tsavorite.core.Utility method clones
-        {
-            v--;
-            v |= v >> 1;
-            v |= v >> 2;
-            v |= v >> 4;
-            v |= v >> 8;
-            v |= v >> 16;
-            v |= v >> 32;
-            return v + 1;
         }
     }
 }

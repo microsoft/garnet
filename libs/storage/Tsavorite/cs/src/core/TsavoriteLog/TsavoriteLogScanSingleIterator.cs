@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// This modification allows us to use a SingleWaiterAutoResetEvent per iterator
     /// so we can avoid TCS allocations per tail bump.
     /// </summary>
-    public sealed class TsavoriteLogScanSingleIterator : TsavoriteLogIterator
+    public sealed class TsavoriteLogScanSingleIterator : TsavoriteLogScanIterator
     {
         readonly SingleWaiterAutoResetEvent onEnqueue;
 

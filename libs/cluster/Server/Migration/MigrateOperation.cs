@@ -93,14 +93,18 @@ namespace Garnet.cluster
             {
                 // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
                 // so we can reuse the SpanByteAndMemory.Memory across iterations.
-                var output = new UnifiedOutput();    // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
+                // TODO: initialize 'output' based on gcs curr and end; make sure it has the initial part of the "send" set, and call gcs.IncrementRecordDirect().
+                //       This will still allow SBAM.Memory to be reused.
+                var output = new UnifiedOutput();
 
                 try
                 {
                     var keys = sketch.Keys;
 
-                    var input = new UnifiedInput(RespCommand.MIGRATE);
-                    input.arg1 = session.NetworkBufferSettings.sendBufferSize - 1024;   // Reserve some space for overhead
+                    var input = new UnifiedInput(RespCommand.MIGRATE)
+                    {
+                        arg1 = session.NetworkBufferSettings.sendBufferSize - 1024   // Reserve some space for overhead
+                    };
                     for (var i = 0; i < keys.Count; i++)
                     {
                         if (keys[i].Item2)

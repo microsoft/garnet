@@ -222,9 +222,9 @@ namespace Tsavorite.core
                 newOverflow = new(newLength, startOffset: 0, endOffset: 0, zeroInit: false);
                 var copyLength = oldSpan.Length < newLength ? oldSpan.Length : newLength;
 
-                oldOverflow.Span.Slice(0, copyLength).CopyTo(newOverflow.Span);
+                oldOverflow.AsReadOnlySpan(0, copyLength).CopyTo(newOverflow.Span);
                 if (copyLength < newLength)
-                    newOverflow.Span.Slice(copyLength, newLength - copyLength).Clear();
+                    newOverflow.AsSpan(copyLength, newLength - copyLength).Clear();
             }
             else
             {

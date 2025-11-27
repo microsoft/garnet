@@ -7,6 +7,8 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
+#pragma warning disable IDE1006 // Naming Styles
+
 namespace Tsavorite.test
 {
     [TestFixture]
@@ -66,7 +68,7 @@ namespace Tsavorite.test
                     entry[i - 1] = (byte)(i - 1);
 
                 // Add to TsavoriteLog
-                log.Enqueue(entry);
+                _ = log.Enqueue(entry);
             }
 
             // Commit to the log
@@ -92,13 +94,12 @@ namespace Tsavorite.test
                     entry[j - 1] = (byte)(j - 1);
 
                 // Add to TsavoriteLog
-                logUncommitted.Enqueue(entry);
+                _ = logUncommitted.Enqueue(entry);
             }
 
             // Wait for safe tail to catch up
             while (logUncommitted.SafeTailAddress < logUncommitted.TailAddress)
-                Thread.Yield();
-
+                _ = Thread.Yield();
         }
 
         [Test]
@@ -165,7 +166,7 @@ namespace Tsavorite.test
                 // Wait for allocator to realize the new BeginAddress
                 // Needed as this is done post-commit
                 while (log.AllocatorBeginAddress < log.TailAddress)
-                    Thread.Yield();
+                    _ = Thread.Yield();
 
                 // Iterator will skip ahead to tail
                 next = iter.GetNext(out result, out _, out _);
@@ -178,7 +179,7 @@ namespace Tsavorite.test
                 tcs.Cancel();
                 try
                 {
-                    task.GetAwaiter().GetResult();
+                    _ = task.GetAwaiter().GetResult();
                 }
                 catch { }
             }

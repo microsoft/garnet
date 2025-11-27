@@ -466,7 +466,6 @@ namespace Garnet.cluster
             var storeWrapper = clusterProvider.storeWrapper;
             var transientObjectIdMap = storeWrapper.store.Log.TransientObjectIdMap;
 
-            // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
             DiskLogRecord diskLogRecord = default;
             try
             {
@@ -475,17 +474,17 @@ namespace Garnet.cluster
                     if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
                         return false;
 
-                    diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer,
-                        transientObjectIdMap, storeWrapper.storeFunctions);
-
+                    diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
                     _ = basicGarnetApi.SET(in diskLogRecord);
                     diskLogRecord.Dispose();
                     i++;
                 }
             }
-            finally
+            catch
             {
+                // Dispose the diskLogRecord if there was an exception in SET
                 diskLogRecord.Dispose();
+                throw;
             }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))

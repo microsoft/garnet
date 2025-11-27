@@ -28,6 +28,9 @@ namespace Tsavorite.core
         /// <summary>Number of bytes in entire record length; see <see cref="RecordDataHeader"/>.</summary>
         public int RecordLengthBytes;
 
+        /// <summary>Whether the record allocation returned a revivified record.</summary>
+        internal bool IsRevivifiedRecord;
+
         /// <summary>Whether the value was specified to be an object.</summary>
         public readonly bool ValueIsObject => FieldInfo.ValueIsObject;
 
