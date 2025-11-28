@@ -44,6 +44,7 @@ namespace Garnet.server
 
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
+        public readonly StreamManager streamManager;
 
         public TransactionManager txnManager;
         public StateMachineDriver stateMachineDriver;
@@ -83,6 +84,7 @@ namespace Garnet.server
             var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
             var objectStoreSession = db.ObjectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
 
+            streamManager = storeWrapper.streamManager;
             basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
             if (objectStoreSession != null)

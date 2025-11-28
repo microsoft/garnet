@@ -762,7 +762,7 @@ namespace Garnet.server
         /// <returns></returns>
         public long StreamPageSizeBytes()
         {
-            long size = ParseSize(StreamPageSize);
+            long size = ParseSize(StreamPageSize, out int _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation($"Warning: using lower stream page size than specified (power of 2)");
@@ -775,7 +775,7 @@ namespace Garnet.server
         /// <returns></returns>
         public long StreamMemorySizeBytes()
         {
-            long size = ParseSize(StreamMemorySize);
+            long size = ParseSize(StreamMemorySize, out int _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation($"Warning: using lower stream page size than specified (power of 2)");

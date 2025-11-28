@@ -29,6 +29,15 @@ namespace Garnet.server
         List<byte[]> objStoreKeys;
         List<byte[]> Keys;
 
+
+        private const long ObjectStoreCursorBitMask = (1L << 49) - 1; // bits 0-48 set to 1
+        private const long StreamStoreCursorBitMask = (1L << 50) - 1; // bits 0-49 set to 1
+
+        private long GetObjectStoreCursor(long cursor) => cursor & ObjectStoreCursorBitMask;
+        private long GetStreamStoreCursor(long cursor) => cursor & StreamStoreCursorBitMask;
+        private bool IsNotObjectStoreCursorAndNotStreamCursor(long cursor) => (cursor & (1L << 49)) == 0 && (cursor & (1L << 50)) == 0;
+        private bool IsNotStreamCursor(long cursor) => (cursor & (1L << 50)) == 0;
+
         /// <summary>
         ///  Gets keys matching the pattern with a limit of count in every iteration
         ///  when using pattern
@@ -44,6 +53,8 @@ namespace Garnet.server
         internal unsafe bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeCursor, out List<byte[]> keys, long count = 10, ReadOnlySpan<byte> typeObject = default)
         {
             const long IsObjectStoreCursor = 1L << 49;
+            const long IsStreamStoreCursor = 1L << 50;
+
             Keys ??= new();
             Keys.Clear();
 
@@ -71,7 +82,9 @@ namespace Garnet.server
                 {
                     matchType = typeof(HashObject);
                 }
-                else if (!typeObject.SequenceEqual(CmdStrings.STRING) && !typeObject.SequenceEqual(CmdStrings.stringt))
+                else if (
+                    !typeObject.SequenceEqual(CmdStrings.STREAM) && !typeObject.SequenceEqual(CmdStrings.stream) &&
+                    !typeObject.SequenceEqual(CmdStrings.STRING) && !typeObject.SequenceEqual(CmdStrings.stringt))
                 {
                     // Unexpected typeObject type
                     storeCursor = lastScanCursor = 0;
@@ -89,24 +102,37 @@ namespace Garnet.server
             storeCursor = cursor;
             long remainingCount = count;
 
-            // Cursor is zero or not an object store address
+            // Cursor is zero or not an object store address or not a stream cursor. If it is an object store address or stream cursor address. We know we have already scanned main store and we can skip forward.
             // Scan main store only for string or default key type
-            if ((cursor & IsObjectStoreCursor) == 0 && (typeObject.IsEmpty || typeObject.SequenceEqual(CmdStrings.STRING) || typeObject.SequenceEqual(CmdStrings.stringt)))
+            if (IsNotObjectStoreCursorAndNotStreamCursor(cursor) && (typeObject.IsEmpty || typeObject.SequenceEqual(CmdStrings.STRING) || typeObject.SequenceEqual(CmdStrings.stringt)))
             {
                 basicContext.Session.ScanCursor(ref storeCursor, count, mainStoreDbScanFuncs, validateCursor: cursor != 0 && cursor != lastScanCursor);
                 remainingCount -= Keys.Count;
             }
 
+            // Cursor is zero or not a stream store address. If it is a stream cursor address. We know we have already scanned main store and object store and we can skip forward.
             // Scan object store with the type parameter
             // Check the cursor value corresponds to the object store
-            if (!objectStoreBasicContext.IsNull && remainingCount > 0 && (typeObject.IsEmpty || (!typeObject.SequenceEqual(CmdStrings.STRING) && !typeObject.SequenceEqual(CmdStrings.stringt))))
+            if (IsNotStreamCursor(cursor) && !objectStoreBasicContext.IsNull && remainingCount > 0 &&
+                (typeObject.IsEmpty || (!typeObject.SequenceEqual(CmdStrings.STRING) && !typeObject.SequenceEqual(CmdStrings.stringt) &&
+                !typeObject.SequenceEqual(CmdStrings.STREAM) && !typeObject.SequenceEqual(CmdStrings.stream))))
             {
                 var validateCursor = storeCursor != 0 && storeCursor != lastScanCursor;
-                storeCursor &= ~IsObjectStoreCursor;
+                storeCursor = GetObjectStoreCursor(storeCursor); // get the number formed from the lower 48 bits only
                 objectStoreBasicContext.Session.ScanCursor(ref storeCursor, remainingCount, objStoreDbScanFuncs, validateCursor: validateCursor);
                 if (storeCursor != 0)
-                    storeCursor |= IsObjectStoreCursor;
+                    storeCursor |= IsObjectStoreCursor; // set the 49th bit to indicate the cursor is object store?
+
                 Keys.AddRange(objStoreKeys);
+                remainingCount -= Keys.Count;
+            }
+
+            if (streamManager != null && remainingCount > 0 && (typeObject.IsEmpty || typeObject.SequenceEqual(CmdStrings.STREAM) || typeObject.SequenceEqual(CmdStrings.stream)))
+            {
+                storeCursor = GetStreamStoreCursor(storeCursor);
+                streamManager.KeyScan(patternPtr, patternB.Length, ref storeCursor, remainingCount, Keys);
+                if (storeCursor != 0)
+                    storeCursor |= IsStreamStoreCursor; // set the 50th bit to indicate the cursor is stream store
             }
 
             lastScanCursor = storeCursor;
@@ -198,6 +224,12 @@ namespace Garnet.server
                 objStoreDbKeysFuncs ??= new();
                 objStoreDbKeysFuncs.Initialize(Keys, allKeys ? null : pattern.ptr, pattern.Length, matchType: null);
                 objectStoreBasicContext.Session.Iterate(ref objStoreDbKeysFuncs);
+            }
+
+            if (streamManager != null)
+            {
+                var streamKeys = streamManager.GetKeys(allKeys ? null : pattern.ptr, pattern.Length);
+                Keys.AddRange(streamKeys);
             }
 
             return Keys;

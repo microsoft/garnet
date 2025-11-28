@@ -349,7 +349,6 @@ namespace Garnet.server
         public const string GenericErrIndexSizeGrowFailed = "ERR failed to grow index size beyond current size (option: '{0}')";
         public const string GenericErrMemorySizeGreaterThanBuffer = "ERR Cannot set dynamic memory size greater than configured circular buffer size (option: '{0}')";
         public const string GenericErrHeapMemorySizeTrackerNotRunning = "ERR Cannot adjust object store heap memory size when size tracker is not running (option: '{0}')";
-
         /// <summary>
         /// Response errors while scripting
         /// </summary>
@@ -367,6 +366,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> hash => "hash"u8;
         public static ReadOnlySpan<byte> STRING => "STRING"u8;
         public static ReadOnlySpan<byte> stringt => "string"u8;
+        public static ReadOnlySpan<byte> STREAM => "STREAM"u8;
+        public static ReadOnlySpan<byte> stream => "stream"u8;
 
         /// <summary>
         /// Register object types

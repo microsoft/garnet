@@ -3,7 +3,7 @@
 
 using System;
 using System.Collections.Generic;
-using Garnet.common;
+    using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -23,6 +23,91 @@ namespace Garnet.server
             defPageSize = pageSize;
             defMemorySize = memorySize;
             this.safeTailRefreshFreqMs = safeTailRefreshFreqMs;
+        }
+
+        /*
+        SCAN semantics:
+        Eventually returns all stable keys: Keys that exist from start to finish of the full scan will be returned at least once
+        No duplicates for stable keys: Keys that don't change during the scan won't be returned multiple times (though this isn't guaranteed if rehashing occurs)
+        May return deleted keys: A key deleted after being scanned but before the cursor is returned can still appear in results
+        May miss new keys: Keys added during the scan may or may not be returned
+        May return modified keys multiple times: If keys are added/deleted causing rehash, some keys might be returned more than once
+        Full scan always terminates: Returns cursor 0 eventually, even with ongoing modifications.
+        Note: Naive locking is okay till I see something in the profiler that suggests otherwise.
+        */
+        public unsafe void KeyScan(byte* patternPtr, int length, ref long cursor, long remainingCount, List<byte[]> keys)
+        {
+            _lock.ReadLock();
+            try
+            {
+                int cursorFromStart = 0;
+                Dictionary<byte[], StreamObject>.KeyCollection streamKeys = streams.Keys;
+                foreach (byte[] key in streams.Keys)
+                {
+                    // skip till we reach the cursor position, better to tradeoff some CPU for memory here by avoiding having to store all keys in an array
+                    if (cursorFromStart < cursor)
+                    {
+                        cursorFromStart++;
+                        continue;
+                    }
+
+                    if (patternPtr != null)
+                    {
+                        fixed (byte* keyPtr = key)
+                            if (!GlobUtils.Match(patternPtr, length, keyPtr, key.Length, true))
+                                continue;
+                    }
+
+                    keys.Add(key);
+                    cursorFromStart++;
+                    remainingCount--;
+                    if (remainingCount == 0)
+                    {
+                        break;
+                    }
+                }
+
+                cursor = cursorFromStart < streams.Count ? cursorFromStart : 0;
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+        }
+
+        /// <summary>
+        /// Get all the stream keys
+        /// </summary>
+        /// <returns>Array of stream keys as strings</returns>
+        public unsafe byte[][] GetKeys(byte* pattern, int len)
+        {
+            _lock.ReadLock();
+            byte[][] keys = new byte[streams.Count][];
+            try
+            {
+                int i = 0;
+                foreach (var key in streams.Keys)
+                {
+                    if (pattern != null)
+                    {
+                        fixed (byte* keyPtr = key)
+                        {
+                            if (!GlobUtils.Match(pattern, len, keyPtr, key.Length, true))
+                            {
+                                continue;
+                            }
+                        }
+                    }
+
+                    keys[i] = key;
+                    i++;
+                }
+                return keys;
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
         }
 
         /// <summary>
@@ -161,15 +246,12 @@ namespace Garnet.server
         /// <returns></returns>
         public bool StreamDelete(ArgSlice keySlice, ArgSlice idSlice, out StreamObject lastSeenStream)
         {
-            bool foundStream;
             var key = keySlice.ToArray();
             StreamObject stream;
             lastSeenStream = null;
             if (streams != null)
             {
-                foundStream = streams.TryGetValue(key, out stream);
-
-                if (foundStream)
+                if (streams.TryGetValue(key, out stream))
                 {
                     lastSeenStream = stream;
                     return stream.DeleteEntry(idSlice);
