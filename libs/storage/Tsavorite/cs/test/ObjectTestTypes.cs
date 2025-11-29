@@ -194,7 +194,7 @@ namespace Tsavorite.test
 
         public TestLargeObjectValue() { }
 
-        public TestLargeObjectValue(int size, bool serializedSizeIsExact)
+        public TestLargeObjectValue(int size)
         {
             value = new byte[size];
             for (int i = 0; i < size; i++)
@@ -284,7 +284,8 @@ namespace Tsavorite.test
         {
             if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
                 return false;
-            output.valueObject = logRecord.Info.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
+            if (output is not null)
+                output.valueObject = logRecord.Info.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
             return true;
         }
 

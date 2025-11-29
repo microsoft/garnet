@@ -280,7 +280,7 @@ namespace Tsavorite.core
                 var addressOfStartOfMainLogPage = GetAddressOfStartOfPageOfAddress(toAddress);
                 if (GetOffsetOnPage(toAddress) <= PageHeader.Size)
                     addressOfStartOfMainLogPage -= PageSize;
-                objectLogSegment = GetHighestObjectLogSegmentToRemove(addressOfStartOfMainLogPage);
+                objectLogSegment = GetLowestObjectLogSegmentInUse(addressOfStartOfMainLogPage);
             }
 
             // Now do the actual truncations.
@@ -300,26 +300,26 @@ namespace Tsavorite.core
                 var addressOfStartOfMainLogPage = GetStartLogicalAddressOfSegment(segment);
                 if (segment >= device.EndSegment)
                     addressOfStartOfMainLogPage -= PageSize;
-                objectLogSegment = GetHighestObjectLogSegmentToRemove(addressOfStartOfMainLogPage);
+                objectLogSegment = GetLowestObjectLogSegmentInUse(addressOfStartOfMainLogPage);
             }
 
-            // Now do the actual truncations.
+            // Now do the actual truncations; TruncateUntilSegment does not remove the passed segment.
             base.RemoveSegment(segment);
             if (objectLogSegment >= 0)
                 objectLogDevice.TruncateUntilSegment(objectLogSegment);
         }
 
-        private int GetHighestObjectLogSegmentToRemove(long addressOfStartOfMainLogPage)
+        private int GetLowestObjectLogSegmentInUse(long addressOfStartOfMainLogPage)
         {
             Debug.Assert(objectLogDevice is not null, "GetHighestObjectLogSegmentToRemove should not be called if there is no objectLogDevice");
             var objectLogSegment = -1;
             var buffer = bufferPool.Get(sectorSize);
-            PageAsyncReadResult<int> result = new() { handle = new CountdownEvent(1) };
+            PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
             try
             {
                 device.ReadAsync((ulong)addressOfStartOfMainLogPage, (IntPtr)buffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);
                 result.handle.Wait();
-                if (result.context >= PageHeader.Size)
+                if (result.numBytesRead >= PageHeader.Size)
                 {
                     var pageHeader = *(PageHeader*)buffer.aligned_pointer;
                     if (pageHeader.objectLogLowestPosition != ObjectLogFilePositionInfo.NotSet)
@@ -585,6 +585,7 @@ namespace Tsavorite.core
 
             // Set the page status to flushed
             var result = (PageAsyncReadResult<Empty>)context;
+            result.numBytesRead = numBytes;
             _ = result.handle.Signal();
         }
 
