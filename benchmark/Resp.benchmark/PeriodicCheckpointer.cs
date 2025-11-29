@@ -26,7 +26,8 @@ namespace Resp.benchmark
             var server = redis.GetServer(address, port);
             while (true)
             {
-                if (cts.IsCancellationRequested) break;
+                if (cts.IsCancellationRequested)
+                    break;
                 Thread.Sleep(periodMs);
                 try
                 {

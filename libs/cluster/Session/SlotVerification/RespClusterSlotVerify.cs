@@ -7,6 +7,7 @@ using System.Text;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -95,10 +96,11 @@ namespace Garnet.cluster
         /// <param name="dend"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, byte sessionAsking, ref byte* dcurr, ref byte* dend, int count = -1)
+        public bool NetworkKeyArraySlotVerify(Span<PinnedSpanByte> keys, bool readOnly, byte sessionAsking, ref byte* dcurr, ref byte* dend, int count = -1)
         {
             // If cluster is not enabled or a transaction is running skip slot check
-            if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
+            if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running)
+                return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
             var vres = MultiKeySlotVerify(config, ref keys, readOnly, sessionAsking, count);

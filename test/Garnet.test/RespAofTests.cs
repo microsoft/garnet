@@ -469,21 +469,39 @@ namespace Garnet.test
                 db.ListRightPush(key1, values1_1);
                 db.KeyExpire(key1, expireTime);
 
+                var recoveredValuesExpTimeXxx = db.KeyExpireTime(key1);
+                ClassicAssert.IsTrue(recoveredValuesExpTimeXxx.HasValue);
+
                 // Add 2nd list to object store with short expiry
                 db.ListRightPush(key2, values2_1);
                 db.KeyExpire(key2, TimeSpan.FromSeconds(1));
 
+                recoveredValuesExpTimeXxx = db.KeyExpireTime(key1);
+                ClassicAssert.IsTrue(recoveredValuesExpTimeXxx.HasValue);
+
                 // Wait for 2nd list record to expire
                 Thread.Sleep(2000);
+
+                recoveredValuesExpTimeXxx = db.KeyExpireTime(key1);
+                ClassicAssert.IsTrue(recoveredValuesExpTimeXxx.HasValue);
 
                 // Push to elements to 1st list and 2nd list (now empty)
                 db.ListRightPush(key1, values1_2);
                 db.ListRightPush(key2, values2_2);
 
+                recoveredValuesExpTimeXxx = db.KeyExpireTime(key1);
+                ClassicAssert.IsTrue(recoveredValuesExpTimeXxx.HasValue);
+
                 // Add longer expiry to 2nd list
                 db.KeyExpire(key2, TimeSpan.FromSeconds(15));
 
+                recoveredValuesExpTimeXxx = db.KeyExpireTime(key1);
+                ClassicAssert.IsTrue(recoveredValuesExpTimeXxx.HasValue);
+
                 Thread.Sleep(2000);
+
+                recoveredValuesExpTimeXxx = db.KeyExpireTime(key1);
+                ClassicAssert.IsTrue(recoveredValuesExpTimeXxx.HasValue);
 
                 // Verify 1st list has values from both pushes
                 var recoveredValues = db.ListRange(key1);

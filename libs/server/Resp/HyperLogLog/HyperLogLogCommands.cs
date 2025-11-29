@@ -24,17 +24,17 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFADD));
             }
 
-            var input = new RawStringInput(RespCommand.PFADD);
+            var input = new StringInput(RespCommand.PFADD);
 
             var output = stackalloc byte[1];
             byte pfaddUpdated = 0;
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
 
             for (var i = 1; i < parseState.Count; i++)
             {
                 input.parseState = parseState.Slice(i, 1);
-                var o = new SpanByteAndMemory(output, 1);
-                storageApi.HyperLogLogAdd(ref key, ref input, ref o);
+                var o = SpanByteAndMemory.FromPinnedPointer(output, 1);
+                storageApi.HyperLogLogAdd(key, ref input, ref o);
 
                 // Invalid HLL Type
                 if (*output == 0xFF)
@@ -76,7 +76,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFCOUNT));
             }
 
-            var input = new RawStringInput(RespCommand.PFCOUNT, ref parseState);
+            var input = new StringInput(RespCommand.PFCOUNT, ref parseState);
 
             storageApi.HyperLogLogLength(ref input, out var cardinality, out var error);
             if (error)
@@ -105,7 +105,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.PFMERGE));
             }
 
-            var input = new RawStringInput(RespCommand.PFMERGE, ref parseState);
+            var input = new StringInput(RespCommand.PFMERGE, ref parseState);
 
             var status = storageApi.HyperLogLogMerge(ref input, out var error);
 

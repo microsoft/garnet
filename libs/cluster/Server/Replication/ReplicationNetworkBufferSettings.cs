@@ -12,7 +12,7 @@ namespace Garnet.cluster
         /// <summary>
         /// NetworkBufferSettings for the buffer pool maintained by the ReplicationManager
         /// </summary>
-        NetworkBufferSettings networkBufferSettings => NetworkBufferSettings.GetInclusive([GetRSSNetworkBufferSettings, GetIRSNetworkBufferSettings, GetAofSyncNetworkBufferSettings]);
+        internal NetworkBufferSettings networkBufferSettings => NetworkBufferSettings.GetInclusive([GetRSSNetworkBufferSettings, GetIRSNetworkBufferSettings, GetAofSyncNetworkBufferSettings]);
 
         /// <summary>
         /// Network pool maintained by the ReplicationManager

@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -328,7 +329,7 @@ namespace Garnet.server
         /// <param name="state">The current session parse state.</param>
         /// <param name="startIndex">The index from which to start extracting keys.</param>
         /// <param name="keys">The list to which extracted keys will be added.</param>
-        public abstract void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys);
+        public abstract void ExtractKeys(ref SessionParseState state, int startIndex, List<PinnedSpanByte> keys);
     }
 
     /// <summary>
@@ -381,7 +382,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
+        public override void ExtractKeys(ref SessionParseState state, int startIndex, List<PinnedSpanByte> keys)
         {
             int lastKey;
             if (LastKey < 0)
@@ -461,7 +462,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
+        public override void ExtractKeys(ref SessionParseState state, int startIndex, List<PinnedSpanByte> keys)
         {
             int numKeys = 0;
             int firstKey = startIndex + FirstKey;
@@ -518,7 +519,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override void ExtractKeys(ref SessionParseState state, int startIndex, List<ArgSlice> keys)
+        public override void ExtractKeys(ref SessionParseState state, int startIndex, List<PinnedSpanByte> keys)
         {
             // Do nothing
         }

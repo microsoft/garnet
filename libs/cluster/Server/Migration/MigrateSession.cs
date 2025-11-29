@@ -71,7 +71,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Get network buffer specs
         /// </summary>
-        public NetworkBufferSettings GetNetworkBufferSettings => clusterProvider.migrationManager.GetNetworkBufferSettings;
+        public NetworkBufferSettings NetworkBufferSettings => clusterProvider.migrationManager.GetNetworkBufferSettings;
 
         /// <summary>
         /// Get network pool
@@ -163,7 +163,7 @@ namespace Garnet.cluster
         public GarnetClientSession GetGarnetClient()
             => new(
                 new IPEndPoint(IPAddress.Parse(_targetAddress), _targetPort),
-                networkBufferSettings: GetNetworkBufferSettings,
+                networkBufferSettings: NetworkBufferSettings,
                 networkPool: GetNetworkPool,
                 clusterProvider?.serverOptions.TlsOptions?.TlsClientOptions,
                 authUsername: _username,

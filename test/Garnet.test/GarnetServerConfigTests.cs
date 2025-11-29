@@ -125,7 +125,7 @@ namespace Garnet.test
             var binPaths = new[] { GetFullExtensionBinPath("Garnet.test"), GetFullExtensionBinPath("Garnet.test.cluster") };
             var modules = new[] { Assembly.GetExecutingAssembly().Location };
 
-            var args = new[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--index", "128m", "--recover", "--port", "53", "--reviv-obj-bin-record-count", "2", "--reviv-fraction", "0.5", "--reviv-bin-record-counts", "1,2,3", "--extension-bin-paths", string.Join(',', binPaths), "--loadmodulecs", string.Join(',', modules) };
+            var args = new[] { "--config-export-path", configPath, "-p", "4m", "-m", "128m", "-s", "2g", "--index", "128m", "--recover", "--port", "53", "--reviv-fraction", "0.5", "--reviv-bin-record-counts", "1,2,3", "--extension-bin-paths", string.Join(',', binPaths), "--loadmodulecs", string.Join(',', modules) };
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out optionsJson, out exitGracefully, silentMode: true);
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
@@ -133,7 +133,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual("128m", options.MemorySize);
             ClassicAssert.AreEqual("2g", options.SegmentSize);
             ClassicAssert.AreEqual(53, options.Port);
-            ClassicAssert.AreEqual(2, options.RevivObjBinRecordCount);
             ClassicAssert.AreEqual(0.5, options.RevivifiableFraction);
             CollectionAssert.AreEqual(new[] { 1, 2, 3 }, options.RevivBinRecordCounts);
             ClassicAssert.IsTrue(options.Recover);
@@ -143,7 +142,7 @@ namespace Garnet.test
 
             // Validate non-default configuration options
             nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
-            ClassicAssert.AreEqual(10, nonDefaultOptions.Count);
+            ClassicAssert.AreEqual(9, nonDefaultOptions.Count);
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.PageSize)));
             ClassicAssert.AreEqual("4m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.Port)));
@@ -175,7 +174,7 @@ namespace Garnet.test
 
             // Validate non-default configuration options
             nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
-            ClassicAssert.AreEqual(10, nonDefaultOptions.Count);
+            ClassicAssert.AreEqual(9, nonDefaultOptions.Count);
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.PageSize)));
             ClassicAssert.AreEqual("4m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
 
@@ -198,7 +197,7 @@ namespace Garnet.test
 
             // Validate non-default configuration options
             nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
-            ClassicAssert.AreEqual(11, nonDefaultOptions.Count);
+            ClassicAssert.AreEqual(10, nonDefaultOptions.Count);
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.PageSize)));
             ClassicAssert.AreEqual("12m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.Port)));

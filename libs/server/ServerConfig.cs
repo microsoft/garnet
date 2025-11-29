@@ -131,10 +131,8 @@ namespace Garnet.server
             string clusterUsername = null;
             string clusterPassword = null;
             string memorySize = null;
-            string objLogMemory = null;
-            string objHeapMemory = null;
+            string heapMemory = null;
             string index = null;
-            string objIndex = null;
 
             var unknownOption = false;
             var unknownKey = "";
@@ -146,14 +144,10 @@ namespace Garnet.server
 
                 if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.Memory, allowNonAlphabeticChars: false))
                     memorySize = Encoding.ASCII.GetString(value);
-                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjLogMemory, allowNonAlphabeticChars: true))
-                    objLogMemory = Encoding.ASCII.GetString(value);
-                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjHeapMemory, allowNonAlphabeticChars: true))
-                    objHeapMemory = Encoding.ASCII.GetString(value);
+                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.HeapMemory, allowNonAlphabeticChars: true))
+                    heapMemory = Encoding.ASCII.GetString(value);
                 else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.Index, allowNonAlphabeticChars: false))
                     index = Encoding.ASCII.GetString(value);
-                else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.ObjIndex, allowNonAlphabeticChars: true))
-                    objIndex = Encoding.ASCII.GetString(value);
                 else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.CertFileName, allowNonAlphabeticChars: true))
                     certFileName = Encoding.ASCII.GetString(value);
                 else if (key.EqualsLowerCaseSpanIgnoringCase(CmdStrings.CertPassword, allowNonAlphabeticChars: true))
@@ -210,17 +204,11 @@ namespace Garnet.server
                 if (memorySize != null)
                     HandleMemorySizeChange(memorySize, sbErrorMsg);
 
-                if (objLogMemory != null)
-                    HandleMemorySizeChange(objLogMemory, sbErrorMsg, mainStore: false);
-
                 if (index != null)
                     HandleIndexSizeChange(index, sbErrorMsg);
 
-                if (objIndex != null)
-                    HandleIndexSizeChange(objIndex, sbErrorMsg, mainStore: false);
-
-                if (objHeapMemory != null)
-                    HandleObjHeapMemorySizeChange(objHeapMemory, sbErrorMsg);
+                if (heapMemory != null)
+                    HandleHeapMemorySizeChange(heapMemory, sbErrorMsg);
             }
 
             if (sbErrorMsg.Length == 0)
@@ -237,20 +225,16 @@ namespace Garnet.server
             return true;
         }
 
-        private void HandleMemorySizeChange(string memorySize, StringBuilder sbErrorMsg, bool mainStore = true)
+        private void HandleMemorySizeChange(string memorySize, StringBuilder sbErrorMsg)
         {
-            var option = mainStore ? CmdStrings.Memory : CmdStrings.ObjLogMemory;
-
             if (!ServerOptions.TryParseSize(memorySize, out var newMemorySize))
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, option);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, CmdStrings.Memory);
                 return;
             }
 
             // Parse the configured memory size
-            var confMemorySize = ServerOptions.ParseSize(
-                    mainStore ? storeWrapper.serverOptions.MemorySize
-                        : storeWrapper.serverOptions.ObjectStoreLogMemorySize, out _);
+            var confMemorySize = ServerOptions.ParseSize(storeWrapper.serverOptions.MemorySize, out _);
 
             // If the new memory size is the same as the configured memory size, nothing to do
             if (newMemorySize == confMemorySize)
@@ -262,35 +246,24 @@ namespace Garnet.server
             // If the new memory size is greater than the configured memory size, return an error
             if (newMemorySize > confMemorySize)
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrMemorySizeGreaterThanBuffer, option);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrMemorySizeGreaterThanBuffer, CmdStrings.Memory);
                 return;
             }
 
             // Parse & adjust the configured page size
-            var pageSize = ServerOptions.ParseSize(
-                    mainStore ? storeWrapper.serverOptions.PageSize : storeWrapper.serverOptions.ObjectStorePageSize,
-                    out _);
+            var pageSize = ServerOptions.ParseSize(storeWrapper.serverOptions.PageSize, out _);
             pageSize = ServerOptions.PreviousPowerOf2(pageSize);
 
             // Compute the new minimum empty page count and update the store's log accessor
             var newMinEmptyPageCount = (int)((confMemorySize - newMemorySize) / pageSize);
-            if (mainStore)
-            {
-                storeWrapper.store.Log.MinEmptyPageCount = newMinEmptyPageCount;
-            }
-            else
-            {
-                storeWrapper.objectStore.Log.MinEmptyPageCount = newMinEmptyPageCount;
-            }
+            storeWrapper.store.Log.MinEmptyPageCount = newMinEmptyPageCount;
         }
 
-        private void HandleIndexSizeChange(string indexSize, StringBuilder sbErrorMsg, bool mainStore = true)
+        private void HandleIndexSizeChange(string indexSize, StringBuilder sbErrorMsg)
         {
-            var option = mainStore ? CmdStrings.Index : CmdStrings.ObjIndex;
-
             if (!ServerOptions.TryParseSize(indexSize, out var newIndexSize))
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, option);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, CmdStrings.Index);
                 return;
             }
 
@@ -298,19 +271,18 @@ namespace Garnet.server
             var adjNewIndexSize = ServerOptions.PreviousPowerOf2(newIndexSize);
             if (adjNewIndexSize != newIndexSize)
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizePowerOfTwo, option);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizePowerOfTwo, CmdStrings.Index);
                 return;
             }
 
             // Check if the index auto-grow task is running. If so - return an error.
-            if ((mainStore && storeWrapper.serverOptions.AdjustedIndexMaxCacheLines > 0) ||
-                (!mainStore && storeWrapper.serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0))
+            if (storeWrapper.serverOptions.AdjustedIndexMaxCacheLines > 0)
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeAutoGrow, option);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeAutoGrow, CmdStrings.Index);
                 return;
             }
 
-            var currIndexSize = mainStore ? storeWrapper.store.IndexSize : storeWrapper.objectStore.IndexSize;
+            var currIndexSize = storeWrapper.store.IndexSize;
 
             // Convert new index size to cache lines
             adjNewIndexSize /= 64;
@@ -322,20 +294,18 @@ namespace Garnet.server
             // If the new index size is smaller than the current index size, return an error
             if (currIndexSize > adjNewIndexSize)
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeSmallerThanCurrent, option);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeSmallerThanCurrent, CmdStrings.Index);
                 return;
             }
 
             // Try to grow the index size by doubling it until it reaches the new size
             while (currIndexSize < adjNewIndexSize)
             {
-                var isSuccessful = mainStore
-                    ? storeWrapper.store.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult()
-                    : storeWrapper.objectStore.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                var isSuccessful = storeWrapper.store.GrowIndexAsync().ConfigureAwait(false).GetAwaiter().GetResult();
 
                 if (!isSuccessful)
                 {
-                    AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeGrowFailed, option);
+                    AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIndexSizeGrowFailed, CmdStrings.Index);
                     return;
                 }
 
@@ -343,23 +313,23 @@ namespace Garnet.server
             }
         }
 
-        private void HandleObjHeapMemorySizeChange(string heapMemorySize, StringBuilder sbErrorMsg)
+        private void HandleHeapMemorySizeChange(string heapMemorySize, StringBuilder sbErrorMsg)
         {
             if (!ServerOptions.TryParseSize(heapMemorySize, out var newHeapMemorySize))
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, CmdStrings.ObjHeapMemory);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrIncorrectSizeFormat, CmdStrings.HeapMemory);
                 return;
             }
 
             // If the object store size tracker is not running, return an error
-            if (storeWrapper.objectStoreSizeTracker == null)
+            if (storeWrapper.sizeTracker == null)
             {
-                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrHeapMemorySizeTrackerNotRunning, CmdStrings.ObjHeapMemory);
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrHeapMemorySizeTrackerNotRunning, CmdStrings.HeapMemory);
                 return;
             }
 
             // Set the new target size for the object store size tracker
-            storeWrapper.objectStoreSizeTracker.TargetSize = newHeapMemorySize;
+            storeWrapper.sizeTracker.TargetSize = newHeapMemorySize;
         }
 
         private static void AppendError(StringBuilder sbErrorMsg, string error)

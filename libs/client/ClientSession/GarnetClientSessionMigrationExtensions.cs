@@ -23,8 +23,6 @@ namespace Garnet.client
         static ReadOnlySpan<byte> DELKEY => "DELKEY"u8;
         static ReadOnlySpan<byte> GETKVPAIRINSLOT => "GETKVPAIRINSLOT"u8;
 
-        static ReadOnlySpan<byte> MAIN_STORE => "SSTORE"u8;
-        static ReadOnlySpan<byte> OBJECT_STORE => "OSTORE"u8;
         static ReadOnlySpan<byte> T => "T"u8;
         static ReadOnlySpan<byte> F => "F"u8;
 
@@ -169,18 +167,17 @@ namespace Garnet.client
         /// </summary>
         /// <param name="sourceNodeId"></param>
         /// <param name="replace"></param>
-        /// <param name="isMainStore"></param>
-        public void SetClusterMigrateHeader(string sourceNodeId, bool replace, bool isMainStore)
+        public void SetClusterMigrateHeader(string sourceNodeId, bool replace)
         {
-            currTcsIterationTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            tcsQueue.Enqueue(currTcsIterationTask);
+            // For Migration we send the (curr - end) buffer as the SpanByteAndMemory.SpanByte output to Tsavorite. Thus we must
+            // initialize the header first, so we have curr properly positioned, but we cannot yet enqueue currTcsIterationTask.
+            // Therefore we defer this until the actual Flush(), when we know we have records to send. This is not a concern for
+            // Replication, because it uses an iterator and thus knows it has a record before it initializes the header.
             curr = offset;
-            this.isMainStore = isMainStore;
             this.ist = IncrementalSendType.MIGRATE;
-            var storeType = isMainStore ? MAIN_STORE : OBJECT_STORE;
             var replaceOption = replace ? T : F;
 
-            var arraySize = 6;
+            var arraySize = 5;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
@@ -222,14 +219,6 @@ namespace Garnet.client
             offset = curr;
 
             // 5
-            while (!RespWriteUtils.TryWriteBulkString(storeType, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            // 6
             // Reserve space for the bulk string header + final newline
             while (ExtraSpace + 2 > (int)(end - curr))
             {
@@ -245,11 +234,10 @@ namespace Garnet.client
         /// </summary>
         /// <param name="sourceNodeId"></param>
         /// <param name="replace"></param>
-        /// <param name="isMainStore"></param>
         /// <returns></returns>
-        public Task<string> CompleteMigrate(string sourceNodeId, bool replace, bool isMainStore)
+        public Task<string> CompleteMigrate(string sourceNodeId, bool replace)
         {
-            SetClusterMigrateHeader(sourceNodeId, replace, isMainStore);
+            SetClusterMigrateHeader(sourceNodeId, replace);
 
             Debug.Assert(end - curr >= 2);
             *curr++ = (byte)'\r';
@@ -257,15 +245,16 @@ namespace Garnet.client
 
             // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
             var size = (int)(curr - 2 - head - (ExtraSpace - 4));
-            TrackIterationProgress(keyValuePairCount, size, completed: true);
+            TrackIterationProgress(recordCount, size, completed: true);
             var success = RespWriteUtils.TryWritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
             Debug.Assert(success);
 
             // Number of key value pairs in payload
-            *(int*)head = keyValuePairCount;
+            *(int*)head = recordCount;
 
             // Reset offset and flush buffer
             offset = curr;
+            EnsureTcsIsEnqueued();
             Flush();
             Interlocked.Increment(ref numCommands);
 
@@ -273,7 +262,7 @@ namespace Garnet.client
             var task = currTcsIterationTask.Task;
             currTcsIterationTask = null;
             curr = head = null;
-            keyValuePairCount = 0;
+            recordCount = 0;
             return task;
         }
     }

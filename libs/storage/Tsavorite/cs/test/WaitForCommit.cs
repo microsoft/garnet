@@ -57,26 +57,20 @@ namespace Tsavorite.test
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
-            {
                 entry[i] = (byte)i;
-            }
 
             // Enqueue / WaitForCommit on a task (that will be waited) until the Commit on the separate thread is done
             if (SyncTest == "Sync")
-            {
                 new Thread(new ThreadStart(LogWriter)).Start();
-            }
             else
-            {
                 new Thread(new ThreadStart(LogWriterAsync)).Start();
-            }
 
             ev.WaitOne();
             log.Commit(true);
 
             // Read the log to make sure all entries are put in
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {

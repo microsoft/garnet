@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Diagnostics;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -8,41 +11,97 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
-        public bool SingleWriter(ref SpanByte key, ref RawStringInput input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
+        public bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
-            // Since upsert may be on existing key we need to wipe out the record info property
-            recordInfo.ClearHasETag();
-            return SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, input.arg1);
+            if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
+                return false;
+            if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
+                return false;
+            sizeInfo.AssertOptionals(dstLogRecord.Info);
+            return true;
         }
 
         /// <inheritdoc />
-        public void PostSingleWriter(ref SpanByte key, ref RawStringInput input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, WriteReason reason)
+        public bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, IHeapObject srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            => throw new GarnetException("String store should not be called with IHeapObject");
+
+        /// <inheritdoc />
+        public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, in TSourceLogRecord inputLogRecord, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (inputLogRecord.Info.ValueIsObject)
+                throw new GarnetException("String store should not be called with IHeapObject");
+            return dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+        }
+
+        /// <inheritdoc />
+        public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
         {
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
-            if (reason == WriteReason.Upsert && functionsState.appendOnlyFile != null)
-                WriteLogUpsert(ref key, ref input, ref src, upsertInfo.Version, upsertInfo.SessionID);
+            if (functionsState.appendOnlyFile != null)
+                WriteLogUpsert(logRecord.Key, ref input, srcValue, upsertInfo.Version, upsertInfo.SessionID);
         }
 
         /// <inheritdoc />
-        public bool ConcurrentWriter(ref SpanByte key, ref RawStringInput input, ref SpanByte src, ref SpanByte dst, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+        public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, IHeapObject srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            => throw new GarnetException("String store should not be called with IHeapObject");
+
+        /// <inheritdoc />
+        public void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, in TSourceLogRecord inputLogRecord, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            where TSourceLogRecord : ISourceLogRecord
         {
-            // Since upsert may be on existing key we need to wipe out the record info property
-            recordInfo.ClearHasETag();
-            if (ConcurrentWriterWorker(ref src, ref dst, ref input, ref upsertInfo, ref recordInfo))
+            functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
+            if (functionsState.appendOnlyFile != null)
             {
-                if (!upsertInfo.RecordInfo.Modified)
+                Debug.Assert(!inputLogRecord.Info.ValueIsObject, "String store should not be called with IHeapObject");
+                WriteLogUpsert(logRecord.Key, ref input, inputLogRecord.ValueSpan, upsertInfo.Version, upsertInfo.SessionID);
+            }
+        }
+
+        /// <inheritdoc />
+        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ReadOnlySpan<byte> srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+        {
+            if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
+                return false;
+            var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
+            if (ok)
+            {
+                if (input.header.CheckWithETagFlag())
+                {
+                    var newETag = functionsState.etagState.ETag + 1;
+                    ok = logRecord.TrySetETag(newETag);
+                    if (ok)
+                        functionsState.CopyRespNumber(newETag, ref output);
+                }
+                else
+                    ok = logRecord.RemoveETag();
+            }
+            if (ok)
+            {
+                sizeInfo.AssertOptionals(logRecord.Info);
+                if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
                 if (functionsState.appendOnlyFile != null)
-                    WriteLogUpsert(ref key, ref input, ref src, upsertInfo.Version, upsertInfo.SessionID);
+                    WriteLogUpsert(logRecord.Key, ref input, srcValue, upsertInfo.Version, upsertInfo.SessionID);
                 return true;
             }
             return false;
         }
 
-        static bool ConcurrentWriterWorker(ref SpanByte src, ref SpanByte dst, ref RawStringInput input, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-            => SpanByteFunctions<RawStringInput, SpanByteAndMemory, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, input.arg1);
+        /// <inheritdoc />
+        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, IHeapObject srcValue, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            => throw new GarnetException("String store should not be called with IHeapObject");
+
+        /// <inheritdoc />
+        public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, in TSourceLogRecord inputLogRecord, ref SpanByteAndMemory output, ref UpsertInfo upsertInfo)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (inputLogRecord.Info.ValueIsObject)
+                throw new GarnetException("String store should not be called with IHeapObject");
+            return logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+        }
     }
 }

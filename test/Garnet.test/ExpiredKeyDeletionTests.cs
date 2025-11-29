@@ -101,11 +101,9 @@ namespace Garnet.test
 
                 // Merge reviv stats across sessions
                 server.Provider.StoreWrapper.store.DumpRevivificationStats();
-                server.Provider.StoreWrapper.objectStore.DumpRevivificationStats();
 
                 // Check that revivification happened for expired record 
                 ClassicAssert.IsTrue(server.Provider.StoreWrapper.store.RevivificationManager.stats.successfulAdds > 0, "Active expiration did not revivify for main store as expected");
-                ClassicAssert.IsTrue(server.Provider.StoreWrapper.objectStore.RevivificationManager.stats.successfulAdds > 0, "Active expiration did not revivify for obj store as expected");
 
                 // Post expired key deletion scan, expired records don't exist for sure. This can be fooled by passive expiration too, so check reviv metrics too
                 CheckExistenceConditionOnAllKeys(db, tombstonedRecords, false, "All to be expired should no longer exist post gc");
@@ -125,22 +123,17 @@ namespace Garnet.test
             for (int i = 0; i < keys.Count; i++)
             {
                 int expirationOrScore = rnd.Next(allowedExpirationRange.Item1, allowedExpirationRange.Item2);
-                bool isMainStore = rnd.Next(0, 2) == 0;
+                bool addString = rnd.Next(0, 2) == 0;
                 bool hasExpiration = rnd.Next(0, 2) == 0;
-                if (isMainStore)
-                {
+                if (addString)
                     db.StringSet(keys[i], Guid.NewGuid().ToString());
-                }
                 else
-                {
                     db.SortedSetAdd(keys[i], Guid.NewGuid().ToString(), expirationOrScore);
-                }
 
                 if (hasExpiration || forceExpirationaddition)
                 {
                     if (expirationOrScore < ExpiredKeyDeletionScanFrequencySecs)
                         totalKeysThatWillExpire++;
-
                     ClassicAssert.IsTrue(db.KeyExpire(keys[i], TimeSpan.FromSeconds(expirationOrScore)));
                 }
             }

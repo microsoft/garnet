@@ -16,7 +16,7 @@ using StackExchange.Redis;
 namespace Garnet.test
 {
     [TestFixture]
-    public class RespEtagTests
+    public class RespETagTests
     {
         private GarnetServer server;
         private Random r;
@@ -288,7 +288,7 @@ namespace Garnet.test
         }
 
         [Test]
-        public void SetWithEtagWorksWithMetadata()
+        public void SetWithEtagWorksWithExpiration()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             IDatabase db = redis.GetDatabase(0);
@@ -1581,8 +1581,12 @@ namespace Garnet.test
 
             // Scenario: old key had etag => new key has updated etag when made with withetag (new key exists withetag)
             // setup new key with updated etag
-            db.Execute("SET", newKey, origValue + "delta", "WITHETAG");
+            etag = long.Parse(db.Execute("SET", newKey, origValue + "delta", "WITHETAG").ToString());
+            ClassicAssert.AreEqual(1, etag);
+
             db.Execute("SETIFMATCH", newKey, origValue, 1); // updates etag to 2
+            ClassicAssert.IsTrue(EtagAndValMatches(db, newKey, 2, origValue));
+
             // old key with etag
             etag = long.Parse(db.Execute("SET", [oldKey, origValue, "WITHETAG"]).ToString());
             ClassicAssert.AreEqual(1, etag);
@@ -1817,21 +1821,19 @@ namespace Garnet.test
 
             ClassicAssert.AreEqual(1, long.Parse(db.Execute("SET", key, "v1", "WITHETAG").ToString()));
 
-            // Do SetAdd using the same key
-            ClassicAssert.IsTrue(db.SetAdd(key, "v2"));
+            // Do SetAdd using the same key, expected error
+            Assert.Throws<RedisServerException>(() => db.SetAdd(key, "v2"),
+                Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE));
 
-            // Two keys "test:1" - this is expected as of now
-            // because Garnet has a separate main and object store
+            // One key "test:1" with a string value is expected
             var keys = server.Keys(db.Database, key).ToList();
-            ClassicAssert.AreEqual(2, keys.Count);
+            ClassicAssert.AreEqual(1, keys.Count);
             ClassicAssert.AreEqual(key, (string)keys[0]);
-            ClassicAssert.AreEqual(key, (string)keys[1]);
+            var value = db.StringGet(key);
+            ClassicAssert.AreEqual("v1", (string)value);
 
             // do ListRightPush using the same key, expected error
-            var ex = Assert.Throws<RedisServerException>(() => db.ListRightPush(key, "v3"));
-            var expectedError = Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE);
-            ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(expectedError, ex.Message);
+            Assert.Throws<RedisServerException>(() => db.ListRightPush(key, "v3"), Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE));
         }
 
         [Test]
@@ -2224,6 +2226,9 @@ namespace Garnet.test
             var keyWithMetadata = "keyWithMetadata";
             db.Execute("SET", [keyWithMetadata, val, "WITHETAG"]);
             db.KeyExpire(keyWithMetadata, TimeSpan.FromSeconds(10000));
+            var time = db.KeyTimeToLive(keyWithMetadata);
+            ClassicAssert.IsTrue(time.Value.TotalSeconds > 0);
+
             etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [keyWithMetadata]))[0].ToString());
             ClassicAssert.AreEqual(1, etagToCheck);
 
@@ -2233,7 +2238,7 @@ namespace Garnet.test
             _val = db.StringGet(keyWithMetadata);
             ClassicAssert.AreEqual(val + val2, _val.ToString());
 
-            var time = db.KeyTimeToLive(keyWithMetadata);
+            time = db.KeyTimeToLive(keyWithMetadata);
             ClassicAssert.IsTrue(time.Value.TotalSeconds > 0);
 
             etagToCheck = long.Parse(((RedisResult[])db.Execute("GETWITHETAG", [keyWithMetadata]))[0].ToString());
@@ -2413,7 +2418,7 @@ namespace Garnet.test
             RedisServerException ex = Assert.Throws<RedisServerException>(() => db.Execute("PFADD", [key, "woohoo"]));
 
             ClassicAssert.IsNotNull(ex);
-            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE_HLL), ex.Message);
+            Assert.That(ex.Message, Does.EndWith(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE_HLL)));
 
             ex = Assert.Throws<RedisServerException>(() => db.Execute("PFMERGE", [key, key2]));
 

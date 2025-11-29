@@ -21,9 +21,8 @@ namespace Garnet.client
     public sealed unsafe partial class GarnetClientSession : IServerHook, IMessageConsumer
     {
         IncrementalSendType ist;
-        bool isMainStore;
         byte* curr, head;
-        int keyValuePairCount;
+        int recordCount;
         TaskCompletionSource<string> currTcsIterationTask = null;
 
         /// <summary>
@@ -42,15 +41,27 @@ namespace Garnet.client
         public bool NeedsInitialization => curr == null;
 
         /// <summary>
-        /// Flush and initialize buffers/parameters used for migrate command
+        /// Return a <see cref="Span{_byte_}"/> of all remaining available space in the network buffer.
+        /// </summary>
+        public PinnedSpanByte GetAvailableNetworkBufferSpan() => PinnedSpanByte.FromPinnedPointer(curr, (int)(end - curr));
+
+        public void IncrementRecordDirect(int size)
+        {
+            ++recordCount;
+            curr += size;
+        }
+
+        /// <summary>
+        /// Flush and initialize buffers/parameters used for Migrate and Replica commands
         /// </summary>
         /// <param name="iterationProgressFreq"></param>
         public void InitializeIterationBuffer(TimeSpan iterationProgressFreq)
         {
+            EnsureTcsIsEnqueued();
             Flush();
             currTcsIterationTask = null;
             curr = head = null;
-            keyValuePairCount = 0;
+            recordCount = 0;
             this.iterationProgressFreq = default ? TimeSpan.FromSeconds(5) : iterationProgressFreq;
         }
 
@@ -59,7 +70,14 @@ namespace Garnet.client
         /// </summary>
         public Task<string> SendAndResetIterationBuffer()
         {
-            if (keyValuePairCount == 0) return null;
+            Task<string> task = null;
+            if (recordCount == 0)
+            {
+                // No records to Flush(), but we need to reset buffer offsets as we may have written a header due to the need to initialize the buffer
+                // before passing it to Tsavorite as the output SpanByteAndMemory.SpanByte for Read().
+                ResetOffset();
+                goto done;
+            }
 
             Debug.Assert(end - curr >= 2);
             *curr++ = (byte)'\r';
@@ -67,114 +85,55 @@ namespace Garnet.client
 
             // Payload format = [$length\r\n][number of keys (4 bytes)][raw key value pairs]\r\n
             var size = (int)(curr - 2 - head - (ExtraSpace - 4));
-            TrackIterationProgress(keyValuePairCount, size);
+            TrackIterationProgress(recordCount, size);
             var success = RespWriteUtils.TryWritePaddedBulkStringLength(size, ExtraSpace - 4, ref head, end);
             Debug.Assert(success);
 
             // Number of key value pairs in payload
-            *(int*)head = keyValuePairCount;
+            *(int*)head = recordCount;
 
             // Reset offset and flush buffer
             offset = curr;
+            EnsureTcsIsEnqueued();
             Flush();
             Interlocked.Increment(ref numCommands);
 
             // Return outstanding task and reset current tcs
-            var task = currTcsIterationTask.Task;
+            task = currTcsIterationTask.Task;
             currTcsIterationTask = null;
+            recordCount = 0;
+
+        done:
             curr = head = null;
-            keyValuePairCount = 0;
             return task;
         }
 
         /// <summary>
-        /// Try write key value pair for main store directly to the client buffer
+        /// Try to write the span for the entire record directly to the client buffer
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <param name="task"></param>
-        /// <returns></returns>
-        public bool TryWriteKeyValueSpanByte(ref SpanByte key, ref SpanByte value, out Task<string> task)
+        public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, out Task<string> task)
         {
-            task = null;
-            // Try write key value pair directly to client buffer
-            if (!WriteSerializedSpanByte(ref key, ref value))
+            // We include space for newline at the end, to be added before sending
+            var recordSpanSize = recordSpan.TotalSize();
+            var totalLen = recordSpanSize + 2;
+            if (totalLen > (int)(end - curr))
             {
-                // If failed to write because no space left send outstanding data and retrieve task
-                // Caller is responsible for retrying
+                // If there is no space left, send outstanding data and return the send-completion task.
+                // Caller is responsible for waiting for task completion and retrying.
                 task = SendAndResetIterationBuffer();
                 return false;
             }
 
-            keyValuePairCount++;
-            return true;
-
-            bool WriteSerializedSpanByte(ref SpanByte key, ref SpanByte value)
-            {
-                var totalLen = key.TotalSize + value.TotalSize + 2 + 2;
-                if (totalLen > (int)(end - curr))
-                    return false;
-
-                key.CopyTo(curr);
-                curr += key.TotalSize;
-                value.CopyTo(curr);
-                curr += value.TotalSize;
-                return true;
-            }
-        }
-
-        /// <summary>
-        /// Try write key value pair for object store directly to the client buffer
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
-        /// <param name="expiration"></param>
-        /// <param name="task"></param>
-        /// <returns></returns>
-        public bool TryWriteKeyValueByteArray(byte[] key, byte[] value, long expiration, out Task<string> task)
-        {
+            recordSpan.SerializeTo(curr);
+            curr += recordSpanSize;
+            ++recordCount;
             task = null;
-            // Try write key value pair directly to client buffer
-            if (!WriteSerializedKeyValueByteArray(key, value, expiration))
-            {
-                // If failed to write because no space left send outstanding data and retrieve task
-                // Caller is responsible for retrying
-                task = SendAndResetIterationBuffer();
-                return false;
-            }
-
-            keyValuePairCount++;
             return true;
-
-            bool WriteSerializedKeyValueByteArray(byte[] key, byte[] value, long expiration)
-            {
-                // We include space for newline at the end, to be added before sending
-                int totalLen = 4 + key.Length + 4 + value.Length + 8 + 2;
-                if (totalLen > (int)(end - curr))
-                    return false;
-
-                *(int*)curr = key.Length;
-                curr += 4;
-                fixed (byte* keyPtr = key)
-                    Buffer.MemoryCopy(keyPtr, curr, key.Length, key.Length);
-                curr += key.Length;
-
-                *(int*)curr = value.Length;
-                curr += 4;
-                fixed (byte* valPtr = value)
-                    Buffer.MemoryCopy(valPtr, curr, value.Length, value.Length);
-                curr += value.Length;
-
-                *(long*)curr = expiration;
-                curr += 8;
-
-                return true;
-            }
         }
 
-        long lastLog = 0;
-        long totalKeyCount = 0;
-        long totalPayloadSize = 0;
+        long lastLog;
+        long totalKeyCount;
+        long totalPayloadSize;
         TimeSpan iterationProgressFreq;
 
         /// <summary>
@@ -190,12 +149,21 @@ namespace Garnet.client
             var duration = TimeSpan.FromTicks(Stopwatch.GetTimestamp() - lastLog);
             if (completed || lastLog == 0 || duration >= iterationProgressFreq)
             {
-                logger?.LogTrace("[{op}]: store:({storeType}) totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)",
+                logger?.LogTrace("[{op}]: totalKeyCount:({totalKeyCount}), totalPayloadSize:({totalPayloadSize} KB)",
                     completed ? "COMPLETED" : ist,
-                    isMainStore ? "MAIN STORE" : "OBJECT STORE",
                     totalKeyCount.ToString("N0"),
                     ((long)((double)totalPayloadSize / 1024)).ToString("N0"));
                 lastLog = Stopwatch.GetTimestamp();
+            }
+        }
+
+        private void EnsureTcsIsEnqueued()
+        {
+            // See comments in SetClusterMigrateHeader() as to why this is decoupled from the header initialization.
+            if (recordCount > 0 && currTcsIterationTask == null)
+            {
+                currTcsIterationTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+                tcsQueue.Enqueue(currTcsIterationTask);
             }
         }
     }

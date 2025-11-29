@@ -13,12 +13,6 @@ namespace Garnet.server
         public long storeCheckpointCoveredAofAddress;
         public string storePrimaryReplId;
 
-        public long objectStoreVersion;
-        public Guid objectStoreHlogToken;
-        public Guid objectStoreIndexToken;
-        public long objectCheckpointCoveredAofAddress;
-        public string objectStorePrimaryReplId;
-
         public CheckpointMetadata()
         {
             storeVersion = -1;
@@ -26,12 +20,6 @@ namespace Garnet.server
             storeIndexToken = default;
             storeCheckpointCoveredAofAddress = long.MaxValue;
             storePrimaryReplId = null;
-
-            objectStoreVersion = -1;
-            objectStoreHlogToken = default;
-            objectStoreIndexToken = default;
-            objectCheckpointCoveredAofAddress = long.MaxValue;
-            objectStorePrimaryReplId = null;
         }
 
         /// <summary>
@@ -45,12 +33,7 @@ namespace Garnet.server
                 $"storeHlogToken={storeHlogToken}," +
                 $"storeIndexToken={storeIndexToken}," +
                 $"storeCheckpointCoveredAofAddress={storeCheckpointCoveredAofAddress}," +
-                $"storePrimaryReplId={storePrimaryReplId ?? "(empty)"}," +
-                $"objectStoreVersion={objectStoreVersion}," +
-                $"objectStoreHlogToken={objectStoreHlogToken}," +
-                $"objectStoreIndexToken={objectStoreIndexToken}," +
-                $"objectCheckpointCoveredAofAddress={objectCheckpointCoveredAofAddress}," +
-                $"objectStorePrimaryReplId={objectStorePrimaryReplId ?? "(empty)"}";
+                $"storePrimaryReplId={storePrimaryReplId ?? "(empty)"}";
         }
     }
 }

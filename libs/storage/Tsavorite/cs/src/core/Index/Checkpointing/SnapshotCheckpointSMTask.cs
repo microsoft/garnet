@@ -10,11 +10,11 @@ namespace Tsavorite.core
     /// slower and more complex than a foldover, but more space-efficient on the log, and retains in-place
     /// update performance as it does not advance the readonly marker unnecessarily.
     /// </summary>
-    internal sealed class SnapshotCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class SnapshotCheckpointSMTask<TStoreFunctions, TAllocator> : HybridLogCheckpointSMTask<TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        public SnapshotCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
+        public SnapshotCheckpointSMTask(TsavoriteKV<TStoreFunctions, TAllocator> store, Guid guid)
             : base(store, guid)
         {
         }
@@ -40,8 +40,8 @@ namespace Tsavorite.core
                         store.checkpointManager.GetSnapshotLogDevice(store._hybridLogCheckpointToken);
                     store._hybridLogCheckpoint.snapshotFileObjectLogDevice =
                         store.checkpointManager.GetSnapshotObjectLogDevice(store._hybridLogCheckpointToken);
-                    store._hybridLogCheckpoint.snapshotFileDevice.Initialize(store.hlogBase.GetSegmentSize());
-                    store._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(-1);
+                    store._hybridLogCheckpoint.snapshotFileDevice.Initialize(store.hlogBase.GetMainLogSegmentSize());
+                    store._hybridLogCheckpoint.snapshotFileObjectLogDevice.Initialize(store.hlogBase.GetObjectLogSegmentSize());
 
                     // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
                     store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
@@ -55,7 +55,7 @@ namespace Tsavorite.core
                     long startPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress);
                     long endPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.finalLogicalAddress);
                     if (store._hybridLogCheckpoint.info.finalLogicalAddress >
-                        store.hlog.GetStartLogicalAddress(endPage))
+                        store.hlogBase.GetLogicalAddressOfStartOfPage(endPage))
                     {
                         endPage++;
                     }
@@ -64,7 +64,7 @@ namespace Tsavorite.core
                     // handle corrupted or unexpected concurrent page changes during the flush, e.g., by
                     // resuming epoch protection if necessary. Correctness is not affected as we will
                     // only read safe pages during recovery.
-                    store.hlogBase.AsyncFlushPagesToDevice(
+                    store.hlogBase.AsyncFlushPagesForSnapshot(
                         startPage,
                         endPage,
                         store._hybridLogCheckpoint.info.finalLogicalAddress,

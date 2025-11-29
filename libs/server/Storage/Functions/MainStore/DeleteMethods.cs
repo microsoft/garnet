@@ -8,31 +8,31 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
-        public bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
+        public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            recordInfo.ClearHasETag();
+            logRecord.InfoRef.ClearHasETag();
             functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             return true;
         }
 
         /// <inheritdoc />
-        public void PostSingleDeleter(ref SpanByte key, ref DeleteInfo deleteInfo)
+        public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             if (functionsState.appendOnlyFile != null)
-                WriteLogDelete(ref key, deleteInfo.Version, deleteInfo.SessionID);
+                WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
         }
 
         /// <inheritdoc />
-        public bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
+        public bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
-            recordInfo.ClearHasETag();
-            if (!deleteInfo.RecordInfo.Modified)
+            logRecord.ClearOptionals();
+            if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogDelete(ref key, deleteInfo.Version, deleteInfo.SessionID);
+                WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
             return true;
         }
     }
