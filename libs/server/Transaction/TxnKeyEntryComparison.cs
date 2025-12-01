@@ -11,24 +11,18 @@ namespace Garnet.server
 
     internal sealed class TxnKeyComparison
     {
-        public TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalContext;
-        public TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext;
-        public TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext;
+        public TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedTransactionalContext;
 
         public readonly Comparison<TxnKeyEntry> comparisonDelegate;
 
-        internal TxnKeyComparison(TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalContext,
-                TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext,
-                TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext)
+        internal TxnKeyComparison(
+            TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext)
         {
-            this.transactionalContext = transactionalContext;
-            this.objectStoreTransactionalContext = objectStoreTransactionalContext;
-            this.unifiedStoreTransactionalContext = unifiedStoreTransactionalContext;
+            this.UnifiedTransactionalContext = unifiedTransactionalContext;
             comparisonDelegate = Compare;
         }
 
-        /// <inheritdoc />
         public int Compare(TxnKeyEntry key1, TxnKeyEntry key2)
-            => unifiedStoreTransactionalContext.CompareKeyHashes(ref key1, ref key2);
+            => UnifiedTransactionalContext.CompareKeyHashes(ref key1, ref key2);
     }
 }

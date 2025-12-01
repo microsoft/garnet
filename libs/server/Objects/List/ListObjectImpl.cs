@@ -13,7 +13,7 @@ namespace Garnet.server
     /// </summary>
     public partial class ListObject : IGarnetObject
     {
-        private void ListRemove(ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        private void ListRemove(ref ObjectInput input, ref ObjectOutput output)
         {
             var count = input.arg1;
 
@@ -67,7 +67,7 @@ namespace Garnet.server
             output.Header.result1 = removedCount;
         }
 
-        private void ListInsert(ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        private void ListInsert(ref ObjectInput input, ref ObjectOutput output)
         {
             //indicates partial execution
             output.Header.result1 = int.MinValue;
@@ -107,7 +107,7 @@ namespace Garnet.server
             }
         }
 
-        private void ListIndex(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void ListIndex(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var index = input.arg1;
 
@@ -123,7 +123,7 @@ namespace Garnet.server
             }
         }
 
-        private void ListRange(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void ListRange(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var start = input.arg1;
             var stop = input.arg2;
@@ -169,7 +169,7 @@ namespace Garnet.server
             }
         }
 
-        private void ListTrim(ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        private void ListTrim(ref ObjectInput input, ref ObjectOutput output)
         {
             var start = input.arg1;
             var end = input.arg2;
@@ -219,12 +219,12 @@ namespace Garnet.server
             }
         }
 
-        private void ListLength(ref GarnetObjectStoreOutput output)
+        private void ListLength(ref ObjectOutput output)
         {
             output.Header.result1 = list.Count;
         }
 
-        private void ListPush(ref ObjectInput input, ref GarnetObjectStoreOutput output, bool fAddAtHead)
+        private void ListPush(ref ObjectInput input, ref ObjectOutput output, bool fAddAtHead)
         {
             output.Header.result1 = 0;
             for (var i = 0; i < input.parseState.Count; i++)
@@ -242,7 +242,7 @@ namespace Garnet.server
             output.Header.result1 = list.Count;
         }
 
-        private void ListPop(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion, bool fDelAtHead)
+        private void ListPop(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, bool fDelAtHead)
         {
             var count = input.arg1;
 
@@ -283,7 +283,7 @@ namespace Garnet.server
             }
         }
 
-        private void ListSet(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void ListSet(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -323,7 +323,7 @@ namespace Garnet.server
             output.Header.result1 = 1;
         }
 
-        private void ListPosition(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void ListPosition(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var element = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
 

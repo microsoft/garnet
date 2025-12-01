@@ -383,13 +383,10 @@ namespace Tsavorite.core
             device.Reset();
         }
 
-        /// <summary>Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices</summary>
-        protected virtual void TruncateUntilAddress(long toAddress)
-        {
-            _ = Task.Run(() => device.TruncateUntilAddress(toAddress));
-        }
+        /// <summary>Asynchronously wraps <see cref="TruncateUntilAddressBlocking(long)"/>.</summary>
+        internal void TruncateUntilAddress(long toAddress) => _ = Task.Run(() => TruncateUntilAddressBlocking(toAddress));
 
-        /// <summary>Wraps <see cref="IDevice.TruncateUntilAddress(long)"/> when an allocator potentially has to interact with multiple devices</summary>
+        /// <summary>Synchronously (blocking) wraps <see cref="IDevice.TruncateUntilAddress(long)"/>; overridden when an allocator potentially has to interact with multiple devices</summary>
         protected virtual void TruncateUntilAddressBlocking(long toAddress) => device.TruncateUntilAddress(toAddress);
 
         /// <summary>Remove disk segment</summary>
@@ -669,6 +666,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long GetPhysicalAddress(long logicalAddress)
         {
+            Debug.Assert(!disposed, "GetPhysicalAddress called when disposed");
+
             // Index of page within the circular buffer, and offset on the page.
             var pageIndex = GetPageIndexForAddress(logicalAddress);
             var offset = GetOffsetOnPage(logicalAddress);

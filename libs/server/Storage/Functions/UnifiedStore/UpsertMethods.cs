@@ -10,36 +10,39 @@ namespace Garnet.server
     /// <summary>
     /// Unified store functions
     /// </summary>
-    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedStoreInput, GarnetUnifiedStoreOutput, long>
+    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
     {
-        public bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
-            ReadOnlySpan<byte> srcValue, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
+        /// <inheritdoc />
+        public bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
+            ReadOnlySpan<byte> srcValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
+            if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
-            if (input.arg1 != 0 && !logRecord.TrySetExpiration(input.arg1))
+            if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
-            sizeInfo.AssertOptionals(logRecord.Info);
+            sizeInfo.AssertOptionals(dstLogRecord.Info);
             return true;
         }
 
-        public bool InitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
-            IHeapObject srcValue, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
+        /// <inheritdoc />
+        public bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
+            IHeapObject srcValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
-            if (!logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo))
+            if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
             // TODO ETag
-            if (input.arg1 != 0 && !logRecord.TrySetExpiration(input.arg1))
+            if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
-            sizeInfo.AssertOptionals(logRecord.Info);
+            sizeInfo.AssertOptionals(dstLogRecord.Info);
             return true;
         }
 
-        public bool InitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo,
-            ref UnifiedStoreInput input, in TSourceLogRecord inputLogRecord, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
-            where TSourceLogRecord : ISourceLogRecord
+        /// <inheritdoc />
+        public bool InitialWriter<TSourceLogRecord>(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo,
+            ref UnifiedInput input, in TSourceLogRecord inputLogRecord, ref UnifiedOutput output,
+            ref UpsertInfo upsertInfo) where TSourceLogRecord : ISourceLogRecord
         {
-            if (!logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
+            if (!dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
                 return false;
 
             if (input.header.IsWithEtag())
@@ -47,13 +50,14 @@ namespace Garnet.server
                 // If the old record had an ETag, we will replace it. Otherwise, we must have reserved space for it.
                 Debug.Assert(sizeInfo.FieldInfo.HasETag, "IsWithEtag specified but SizeInfo.HasETag is false");
                 var newETag = functionsState.etagState.ETag + 1;
-                logRecord.TrySetETag(newETag);
+                dstLogRecord.TrySetETag(newETag);
             }
             return true;
         }
 
-        public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
-            ReadOnlySpan<byte> srcValue, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
+        /// <inheritdoc />
+        public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
+            ReadOnlySpan<byte> srcValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
             if (logRecord.Info.ValueIsObject)
             {
@@ -79,8 +83,9 @@ namespace Garnet.server
             }
         }
 
-        public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
-            IHeapObject srcValue, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
+        /// <inheritdoc />
+        public void PostInitialWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
+            IHeapObject srcValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
             var garnetObject = (IGarnetObject)srcValue;
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
@@ -91,8 +96,9 @@ namespace Garnet.server
             functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
+        /// <inheritdoc />
         public void PostInitialWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo,
-            ref UnifiedStoreInput input, in TSourceLogRecord inputLogRecord, ref GarnetUnifiedStoreOutput output,
+            ref UnifiedInput input, in TSourceLogRecord inputLogRecord, ref UnifiedOutput output,
             ref UpsertInfo upsertInfo) where TSourceLogRecord : ISourceLogRecord
         {
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
@@ -111,8 +117,9 @@ namespace Garnet.server
             }
         }
 
-        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
-            ReadOnlySpan<byte> newValue, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
+        /// <inheritdoc />
+        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
+            ReadOnlySpan<byte> newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
 
         {
             if (logRecord.Info.ValueIsObject)
@@ -166,8 +173,9 @@ namespace Garnet.server
             return false;
         }
 
-        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedStoreInput input,
-            IHeapObject newValue, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
+        /// <inheritdoc />
+        public bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref UnifiedInput input,
+            IHeapObject newValue, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
         {
             var garnetObject = (IGarnetObject)newValue;
 
@@ -189,8 +197,9 @@ namespace Garnet.server
             return true;
         }
 
+        /// <inheritdoc />
         public bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo,
-            ref UnifiedStoreInput input, in TSourceLogRecord inputLogRecord, ref GarnetUnifiedStoreOutput output, ref UpsertInfo upsertInfo)
+            ref UnifiedInput input, in TSourceLogRecord inputLogRecord, ref UnifiedOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             var oldSize = logRecord.Info.ValueIsInline

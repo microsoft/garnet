@@ -10,10 +10,10 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
-using Tsavorite.test.TransactionalUnsafeContext;
 using Tsavorite.test.LockTable;
-using static Tsavorite.test.TestUtils;
+using Tsavorite.test.TransactionalUnsafeContext;
 using static Tsavorite.core.LogAddress;
+using static Tsavorite.test.TestUtils;
 
 #pragma warning disable  // Add parentheses for clarity
 
@@ -692,7 +692,7 @@ namespace Tsavorite.test.ReadCacheTests
             string filename = Path.Join(MethodTestDir, $"{GetType().Name}.log");
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is DeviceType deviceType)
+                if (arg is TestDeviceType deviceType)
                 {
                     log = CreateTestDevice(deviceType, filename, deleteOnClose: true);
                     continue;
@@ -909,7 +909,7 @@ namespace Tsavorite.test.ReadCacheTests
             string filename = Path.Join(MethodTestDir, $"{GetType().Name}.log");
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)
             {
-                if (arg is DeviceType deviceType)
+                if (arg is TestDeviceType deviceType)
                 {
                     log = CreateTestDevice(deviceType, filename, deleteOnClose: true);
                     continue;

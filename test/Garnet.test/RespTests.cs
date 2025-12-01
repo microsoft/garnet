@@ -1526,9 +1526,8 @@ namespace Garnet.test
             var mykey = "mykey";
             for (var i = 0; i < iter; i++)
             {
-                //var exception = Assert.Throws<StackExchange.Redis.RedisServerException>(() => _ = db.ListLength(mykey));
-                //ClassicAssert.AreEqual("ERR Garnet Exception: Object store is disabled", exception.Message);
-                Assert.That(db.ListLength(mykey), Is.EqualTo(0));   // We do not actually disable object with UnifiedStore, just the commands that expose them
+                var exception = Assert.Throws<RedisServerException>(() => _ = db.ListLength(mykey));
+                ClassicAssert.AreEqual("ERR Garnet Exception: Object store is disabled", exception.Message);
             }
 
             // Ensure connection is still healthy
@@ -2844,7 +2843,7 @@ namespace Garnet.test
             var expireTimeUnix = command == "EXPIREAT" ? DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeSeconds() : DateTimeOffset.UtcNow.Add(expireTimeSpan).ToUnixTimeMilliseconds();
 
             var actualResult = (int)db.Execute(command, key, expireTimeUnix, "nX");
-            ClassicAssert.AreEqual(actualResult, 1);
+            ClassicAssert.AreEqual(1, actualResult);
 
             var actualTtl = db.KeyTimeToLive(key);
             ClassicAssert.IsTrue(actualTtl.HasValue);
@@ -3574,26 +3573,12 @@ namespace Garnet.test
             ClassicAssert.IsTrue(db.KeyDelete(key));
 
             // new key, length 10, offset -1 -> RedisServerException ("ERR offset is out of range")
-            try
-            {
-                db.StringSetRange(key, -1, value);
-                Assert.Fail();
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, -1, value));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
 
             // new key, length 10, offset invalid_offset -> RedisServerException ("ERR value is not an integer or out of range.")
-            try
-            {
-                db.Execute(nameof(RespCommand.SETRANGE), key, "invalid_offset", value);
-                Assert.Fail();
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message);
-            }
+            ex = Assert.Throws<RedisServerException>(() => db.Execute(nameof(RespCommand.SETRANGE), key, "invalid_offset", value));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER), ex.Message);
 
             // existing key, length 10, offset 0, value length 5 -> 10 ("ABCDE56789")
             ClassicAssert.IsTrue(db.StringSet(key, value));
@@ -3629,15 +3614,8 @@ namespace Garnet.test
 
             // existing key, length 10, offset -1, value length 5 -> RedisServerException ("ERR offset is out of range")
             ClassicAssert.IsTrue(db.StringSet(key, value));
-            try
-            {
-                db.StringSetRange(key, -1, newValue);
-                Assert.Fail();
-            }
-            catch (RedisServerException ex)
-            {
-                ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
-            }
+            ex = Assert.Throws<RedisServerException>(() => db.StringSetRange(key, -1, newValue));
+            ClassicAssert.AreEqual(Encoding.ASCII.GetString(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE), ex.Message);
         }
 
         [Test]

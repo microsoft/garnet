@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Represents the information about the segment and offset of a location within the object log file.
     /// </summary>
-    public struct ObjectLogFilePositionInfo
+    internal struct ObjectLogFilePositionInfo
     {
         /// <summary>Indicates the word has not been set.</summary>
         internal const ulong NotSet = ulong.MaxValue;
@@ -28,6 +28,10 @@ namespace Tsavorite.core
         internal readonly bool IsSet => SegmentSizeBits != 0;
         internal readonly bool HasData => word != 0 && word != NotSet;
 
+        /// <summary>
+        /// Default initialization. ObjectLogFilePositionInfo must be instantiated by new(), not default; we don't have arrays of this,
+        /// and fields are initalized with some overload of new().
+        /// </summary>
         public ObjectLogFilePositionInfo()
         {
             SegmentSizeBits = 0;

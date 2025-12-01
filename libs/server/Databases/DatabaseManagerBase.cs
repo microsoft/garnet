@@ -37,7 +37,7 @@ namespace Garnet.server
         public abstract void ResumeCheckpoints(int dbId);
 
         /// <inheritdoc/>
-        public abstract void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, CheckpointMetadata metadata = null);
+        public abstract void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null);
 
         /// <inheritdoc/>
         public abstract bool TakeCheckpoint(bool background, ILogger logger = null, CancellationToken token = default);
@@ -275,7 +275,7 @@ namespace Garnet.server
         {
             try
             {
-                if (db.Store.Log.TailAddress > 64)
+                if (db.Store.Log.TailAddress > PageHeader.Size)
                     db.Store.Reset();
                 db.AppendOnlyFile?.Reset();
 
@@ -333,9 +333,9 @@ namespace Garnet.server
 
             if (!DefaultDatabase.StoreIndexMaxedOut)
             {
-                var dbMainStore = DefaultDatabase.Store;
-                if (GrowIndexIfNeeded(StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, dbMainStore.OverflowBucketAllocations,
-                        () => dbMainStore.IndexSize, async () => await dbMainStore.GrowIndexAsync()))
+                var store = DefaultDatabase.Store;
+                if (GrowIndexIfNeeded(StoreWrapper.serverOptions.AdjustedIndexMaxCacheLines, store.OverflowBucketAllocations,
+                        () => store.IndexSize, async () => await store.GrowIndexAsync()))
                 {
                     db.StoreIndexMaxedOut = true;
                 }
@@ -565,12 +565,12 @@ namespace Garnet.server
             using var iter1 = db.Store.Log.Scan(db.Store.Log.ReadOnlyAddress, db.Store.Log.TailAddress, DiskScanBufferingMode.SinglePageBuffering, includeClosedRecords: true);
             while (iter1.GetNext())
             {
-                if (iter1.Info.ValueIsObject)
-                {
-                    var valueObject = iter1.ValueObject;
-                    if (valueObject != null)
-                        ((GarnetObjectBase)iter1.ValueObject).ClearSerializedObjectData();
-                }
+                if (!iter1.Info.ValueIsObject)
+                    continue;
+
+                var valueObject = iter1.ValueObject;
+                if (valueObject != null)
+                    ((GarnetObjectBase)iter1.ValueObject).ClearSerializedObjectData();
             }
 
             logger?.LogInformation("Completed checkpoint for DB ID: {id}", db.Id);
@@ -582,13 +582,13 @@ namespace Garnet.server
             var input = new ObjectInput(header);
 
             ReadOnlySpan<PinnedSpanByte> key = [PinnedSpanByte.FromPinnedSpan("*"u8)];
-            storageSession.HashCollect(key, ref input, ref storageSession.objectStoreBasicContext);
+            storageSession.HashCollect(key, ref input, ref storageSession.objectBasicContext);
             storageSession.scratchBufferBuilder.Reset();
         }
 
         private static void ExecuteSortedSetCollect(StorageSession storageSession)
         {
-            storageSession.SortedSetCollect(ref storageSession.objectStoreBasicContext);
+            storageSession.SortedSetCollect(ref storageSession.objectBasicContext);
             storageSession.scratchBufferBuilder.Reset();
         }
 

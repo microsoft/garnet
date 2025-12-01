@@ -331,7 +331,7 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new SortedSetObject(this);
 
         /// <inheritdoc />
-        public override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+        public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
                                      byte respProtocolVersion, long etag, out long memorySizeChange)
         {
             memorySizeChange = 0;
@@ -648,13 +648,13 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void CleanupExpirationStructuresIfEmpty()
         {
-            if (expirationTimes.Count == 0)
-            {
-                HeapMemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueOverhead) * expirationQueue.Count;
-                HeapMemorySize -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
-                expirationTimes = null;
-                expirationQueue = null;
-            }
+            if (expirationTimes.Count != 0)
+                return;
+
+            HeapMemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueOverhead) * expirationQueue.Count;
+            HeapMemorySize -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
+            expirationTimes = null;
+            expirationQueue = null;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

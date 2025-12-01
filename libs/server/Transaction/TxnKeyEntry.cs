@@ -53,13 +53,12 @@ namespace Garnet.server
 
         public int phase;
 
-        internal TxnKeyEntries(int initialCount, TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalContext,
-                TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext,
-                TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext)
+        internal TxnKeyEntries(int initialCount,
+                TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext)
         {
             keys = GC.AllocateArray<TxnKeyEntry>(initialCount, pinned: true);
             // We sort a single array for speed, and the sessions use the same sorting logic,
-            comparison = new(transactionalContext, objectStoreTransactionalContext, unifiedStoreTransactionalContext);
+            comparison = new(unifiedTransactionalContext);
         }
 
         public bool IsReadOnly
@@ -81,7 +80,7 @@ namespace Garnet.server
 
         public void AddKey(PinnedSpanByte keyArgSlice, LockType type)
         {
-            var keyHash = comparison.unifiedStoreTransactionalContext.GetKeyHash(keyArgSlice.ReadOnlySpan);
+            var keyHash = comparison.UnifiedTransactionalContext.GetKeyHash(keyArgSlice.ReadOnlySpan);
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)
@@ -110,7 +109,7 @@ namespace Garnet.server
             // Issue unified store locks
             if (keyCount > 0)
             {
-                comparison.unifiedStoreTransactionalContext.Lock<TxnKeyEntry>(keys.AsSpan().Slice(0, keyCount));
+                comparison.UnifiedTransactionalContext.Lock<TxnKeyEntry>(keys.AsSpan().Slice(0, keyCount));
                 unifiedStoreKeyLocked = true;
             }
 
@@ -131,7 +130,7 @@ namespace Garnet.server
             // TryLock will unlock automatically in case of partial failure
             if (keyCount > 0)
             {
-                unifiedStoreKeyLocked = comparison.unifiedStoreTransactionalContext.TryLock<TxnKeyEntry>(keys.AsSpan().Slice(0, keyCount), lock_timeout);
+                unifiedStoreKeyLocked = comparison.UnifiedTransactionalContext.TryLock<TxnKeyEntry>(keys.AsSpan().Slice(0, keyCount), lock_timeout);
                 if (!unifiedStoreKeyLocked)
                 {
                     phase = 0;
@@ -147,7 +146,7 @@ namespace Garnet.server
         {
             phase = 2;
             if (unifiedStoreKeyLocked && keyCount > 0)
-                comparison.unifiedStoreTransactionalContext.Unlock<TxnKeyEntry>(keys.AsSpan().Slice(0, keyCount));
+                comparison.UnifiedTransactionalContext.Unlock<TxnKeyEntry>(keys.AsSpan().Slice(0, keyCount));
             keyCount = 0;
             unifiedStoreKeyLocked = false;
             phase = 0;

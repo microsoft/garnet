@@ -1193,7 +1193,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
             var keys = GC.AllocateArray<long>(NumRecords, pinned: true);
 
             var rng = new Random(101);
-            var keyVec = Enumerable.Range(0, NumRecords).Select(ii => { keys[ii] = rng.Next(NumRecords); return createKey(SpanByte.FromPinnedVariable(ref keys[ii]));}).ToArray();
+            var keyVec = Enumerable.Range(0, NumRecords).Select(ii => { keys[ii] = rng.Next(NumRecords); return createKey(SpanByte.FromPinnedVariable(ref keys[ii])); }).ToArray();
 
             luContext.BeginUnsafe();
             luContext.BeginTransaction();

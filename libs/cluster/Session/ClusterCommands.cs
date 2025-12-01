@@ -17,7 +17,7 @@ namespace Garnet.cluster
 
         private int CountKeysInSlot(int slot)
         {
-            ClusterKeyIterationFunctions.MainStoreCountKeys iterFuncs = new(slot);
+            ClusterKeyIterationFunctions.CountKeys iterFuncs = new(slot);
             var cursor = 0L;
             _ = basicGarnetApi.IterateStore(ref iterFuncs, ref cursor);
             return iterFuncs.KeyCount;
@@ -26,9 +26,9 @@ namespace Garnet.cluster
         private List<byte[]> GetKeysInSlot(int slot, int keyCount)
         {
             List<byte[]> keys = [];
-            ClusterKeyIterationFunctions.MainStoreGetKeysInSlot mainIterFuncs = new(keys, slot, keyCount);
+            ClusterKeyIterationFunctions.GetKeysInSlot iterFuncs = new(keys, slot, keyCount);
             var cursor = 0L;
-            _ = basicGarnetApi.IterateStore(ref mainIterFuncs, ref cursor);
+            _ = basicGarnetApi.IterateStore(ref iterFuncs, ref cursor);
             return keys;
         }
 

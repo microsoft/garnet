@@ -73,7 +73,7 @@ namespace Garnet.server
         public abstract override void Dispose();
 
         /// <inheritdoc />
-        public sealed override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+        public sealed override bool Operate(ref ObjectInput input, ref ObjectOutput output,
                                             byte respProtocolVersion, long etag, out long sizeChange)
         {
             sizeChange = 0;

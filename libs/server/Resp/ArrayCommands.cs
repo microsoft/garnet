@@ -20,131 +20,23 @@ namespace Garnet.server
         private bool NetworkMGET<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            // Write array header
+            while (!RespWriteUtils.TryWriteArrayLength(parseState.Count, ref dcurr, dend))
+                SendAndReset();
+
             if (storeWrapper.serverOptions.EnableScatterGatherGet)
-                return NetworkMGET_SG(ref storageApi);
-
-            while (!RespWriteUtils.TryWriteArrayLength(parseState.Count, ref dcurr, dend))
-                SendAndReset();
-
-            RawStringInput input = default;
-
-            for (var c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c);
-                var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-                var status = storageApi.GET(key, ref input, ref o);
+                MGetReadArgBatch_SG batch = new(this);
 
-                switch (status)
-                {
-                    case GarnetStatus.OK:
-                        if (!o.IsSpanByte)
-                            SendAndReset(o.Memory, o.Length);
-                        else
-                            dcurr += o.Length;
-                        break;
-                    case GarnetStatus.NOTFOUND:
-                        Debug.Assert(o.IsSpanByte);
-                        WriteNull();
-                        break;
-                }
+                storageApi.ReadWithPrefetch(ref batch);
+                batch.CompletePending(ref storageApi);
             }
-            return true;
-        }
-
-        /// <summary>
-        /// MGET - scatter gather version
-        /// </summary>
-        private bool NetworkMGET_SG<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetAdvancedApi
-        {
-            var firstPending = -1;
-            (GarnetStatus, SpanByteAndMemory)[] outputArr = null;
-
-            // Write array length header
-            while (!RespWriteUtils.TryWriteArrayLength(parseState.Count, ref dcurr, dend))
-                SendAndReset();
-
-            RawStringInput input = default;
-            SpanByteAndMemory o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-
-            for (var c = 0; c < parseState.Count; c++)
+            else
             {
-                var key = parseState.GetArgSliceByRef(c);
-
-                // Store index in context, since completions are not in order
-                long ctx = c;
-
-                var status = storageApi.GET_WithPending(key, ref input, ref o, ctx, out var isPending);
-
-                if (isPending)
-                {
-                    if (firstPending == -1)
-                    {
-                        outputArr = new (GarnetStatus, SpanByteAndMemory)[parseState.Count];
-                        firstPending = c;
-                    }
-                    outputArr[c] = (status, default);
-                    o = new SpanByteAndMemory();
-                }
-                else
-                {
-                    if (status == GarnetStatus.OK)
-                    {
-                        if (firstPending == -1)
-                        {
-                            // Found in memory without IO, and no earlier pending, so we can add directly to the output
-                            if (!o.IsSpanByte)
-                                SendAndReset(o.Memory, o.Length);
-                            else
-                                dcurr += o.Length;
-                            o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-                        }
-                        else
-                        {
-                            outputArr[c] = (status, o);
-                            o = new SpanByteAndMemory();
-                        }
-                    }
-                    else
-                    {
-                        if (firstPending == -1)
-                        {
-                            // Realized not-found without IO, and no earlier pending, so we can add directly to the output
-                            WriteNull();
-                            o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-                        }
-                        else
-                        {
-                            outputArr[c] = (status, o);
-                            o = new SpanByteAndMemory();
-                        }
-                    }
-                }
+                MGetReadArgBatch<TGarnetApi> batch = new(ref storageApi, this);
+                storageApi.ReadWithPrefetch(ref batch);
             }
 
-            if (firstPending != -1)
-            {
-                // First complete all pending ops
-                _ = storageApi.GET_CompletePending(outputArr, true);
-
-                // Write the outputs to network buffer
-                for (var i = firstPending; i < parseState.Count; i++)
-                {
-                    var status = outputArr[i].Item1;
-                    var output = outputArr[i].Item2;
-                    if (status == GarnetStatus.OK)
-                    {
-                        if (!output.IsSpanByte)
-                            SendAndReset(output.Memory, output.Length);
-                        else
-                            dcurr += output.Length;
-                    }
-                    else
-                    {
-                        WriteNull();
-                    }
-                }
-            }
             return true;
         }
 
@@ -181,7 +73,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSETNX));
             }
 
-            var input = new RawStringInput(RespCommand.MSETNX, ref parseState, metaCommand, ref metaCommandParseState);
+            var input = new StringInput(RespCommand.MSETNX, ref parseState, metaCommand, ref metaCommandParseState);
             var status = storageApi.MSET_Conditional(ref input);
 
             // For a "set if not exists", NOTFOUND means that the operation succeeded
@@ -201,7 +93,7 @@ namespace Garnet.server
                 if (parseState.Count != 1)
                     return AbortWithWrongNumberOfArguments(nameof(RespCommand.DEL));
 
-                var input = new RawStringInput(RespCommand.DEL, metaCommand, ref metaCommandParseState);
+                var input = new StringInput(RespCommand.DEL, metaCommand, ref metaCommandParseState);
                 var key = parseState.GetArgSliceByRef(0);
                 var status = storageApi.DEL_Conditional(key, ref input);
 
@@ -456,11 +348,10 @@ namespace Garnet.server
             var keySlice = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedStoreInput(RespCommand.TYPE);
+            var input = new UnifiedInput(RespCommand.TYPE);
 
-            // Prepare GarnetUnifiedStoreOutput output
-            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-
+            // Prepare UnifiedOutput output
+            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.TYPE(keySlice, ref input, ref output);
 

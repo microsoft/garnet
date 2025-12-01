@@ -7,13 +7,14 @@ using System.Diagnostics;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using static Garnet.server.SessionFunctionsUtils;
 
 namespace Garnet.server
 {
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
     {
         static void CopyTo(ReadOnlySpan<byte> src, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
         {
@@ -83,7 +84,7 @@ namespace Garnet.server
             }
         }
 
-        void CopyRespToWithInput<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref RawStringInput input, ref SpanByteAndMemory output, bool isFromPending)
+        void CopyRespToWithInput<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref SpanByteAndMemory output, bool isFromPending)
             where TSourceLogRecord : ISourceLogRecord
         {
             var value = srcLogRecord.ValueSpan;
@@ -124,10 +125,8 @@ namespace Garnet.server
                         fixed (byte* valuePtr = value)
                             oldValSet = BitmapManager.GetBit(offset, valuePtr, value.Length);
 
-                    if (oldValSet == 0)
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
-                    else
-                        functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_1, ref output);
+                    functionsState.CopyDefaultResp(
+                        oldValSet == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output);
                     break;
 
                 case RespCommand.BITCOUNT:
@@ -235,22 +234,24 @@ namespace Garnet.server
 
                 case RespCommand.PFCOUNT:
                 case RespCommand.PFMERGE:
-                    bool ok;
+                    bool isValid;
                     if (srcLogRecord.IsPinnedValue)
                     {
-                        if (ok = HyperLogLog.DefaultHLL.IsValidHYLL(srcLogRecord.PinnedValuePointer, value.Length))
+                        isValid = HyperLogLog.DefaultHLL.IsValidHYLL(srcLogRecord.PinnedValuePointer, value.Length);
+                        if (isValid)
                             Buffer.MemoryCopy(srcLogRecord.PinnedValuePointer, output.SpanByte.ToPointer(), value.Length, value.Length);
                     }
                     else
                     {
                         fixed (byte* valuePtr = value)
                         {
-                            if (ok = HyperLogLog.DefaultHLL.IsValidHYLL(valuePtr, value.Length))
+                            isValid = HyperLogLog.DefaultHLL.IsValidHYLL(valuePtr, value.Length);
+                            if (isValid)
                                 Buffer.MemoryCopy(valuePtr, output.SpanByte.ToPointer(), value.Length, value.Length);
                         }
                     }
 
-                    if (!ok)
+                    if (!isValid)
                     {
                         *(long*)output.SpanByte.ToPointer() = -1;
                         return;
@@ -297,130 +298,39 @@ namespace Garnet.server
             }
         }
 
-        bool EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref SpanByteAndMemory output)
+        IPUResult EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref SpanByteAndMemory output)
         {
             var o = (OutputHeader*)output.SpanByte.ToPointer();
             o->result1 = 0;
-            if (logRecord.Info.HasExpiration)
-            {
-                switch (optionType)
-                {
-                    case ExpireOption.NX:
-                        return true;
-                    case ExpireOption.XX:
-                    case ExpireOption.None:
-                        _ = logRecord.TrySetExpiration(newExpiry);
-                        o->result1 = 1;
-                        return true;
-                    case ExpireOption.GT:
-                    case ExpireOption.XXGT:
-                        if (newExpiry > logRecord.Expiration)
-                        {
-                            _ = logRecord.TrySetExpiration(newExpiry);
-                            o->result1 = 1;
-                        }
-                        return true;
-                    case ExpireOption.LT:
-                    case ExpireOption.XXLT:
-                        if (newExpiry < logRecord.Expiration)
-                        {
-                            _ = logRecord.TrySetExpiration(newExpiry);
-                            o->result1 = 1;
-                        }
-                        return true;
-                    default:
-                        throw new GarnetException($"EvaluateExpireInPlace exception expiryExists: True, optionType {optionType}");
-                }
-            }
-            else
-            {
-                switch (optionType)
-                {
-                    case ExpireOption.NX:
-                    case ExpireOption.None:
-                    case ExpireOption.LT:  // If expiry doesn't exist, LT should treat the current expiration as infinite, so the new value must be less
-                        var ok = logRecord.TrySetExpiration(newExpiry);
-                        o->result1 = 1;
-                        return ok;
-                    case ExpireOption.XX:
-                    case ExpireOption.GT:  // If expiry doesn't exist, GT should treat the current expiration as infinite, so the new value cannot be greater
-                    case ExpireOption.XXGT:
-                    case ExpireOption.XXLT:
-                        return true;
-                    default:
-                        throw new GarnetException($"EvaluateExpireInPlace exception expiryExists: False, optionType {optionType}");
-                }
-            }
+
+            if (!EvaluateExpire(ref logRecord, optionType, newExpiry, logRecord.Info.HasExpiration, logErrorOnFail: false, functionsState.logger, out var expirationChanged))
+                return IPUResult.Failed;
+
+            if (!expirationChanged)
+                return IPUResult.NotUpdated;
+            o->result1 = 1;
+            return IPUResult.Succeeded;
         }
 
         bool EvaluateExpireCopyUpdate(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ExpireOption optionType, long newExpiry, ReadOnlySpan<byte> newValue, ref SpanByteAndMemory output)
         {
-            var expiryExists = logRecord.Info.HasExpiration;
+            var hasExpiration = logRecord.Info.HasExpiration;
+
             var o = (OutputHeader*)output.SpanByte.ToPointer();
             o->result1 = 0;
 
             // TODO ETag?
             if (!logRecord.TrySetValueSpanAndPrepareOptionals(newValue, in sizeInfo))
             {
-                functionsState.logger?.LogError("Failed to set value in {methodName}", "EvaluateExpireCopyUpdate");
+                functionsState.logger?.LogError("Failed to set value in {methodName}", nameof(EvaluateExpireCopyUpdate));
                 return false;
             }
-            if (expiryExists)
-            {
-                // Expiration already exists so there is no need to check for space (i.e. failure of TrySetExpiration)
-                switch (optionType)
-                {
-                    case ExpireOption.NX:
-                        return true;
-                    case ExpireOption.XX:
-                    case ExpireOption.None:
-                        _ = logRecord.TrySetExpiration(newExpiry);
-                        o->result1 = 1;
-                        return true;
-                    case ExpireOption.GT:
-                    case ExpireOption.XXGT:
-                        if (newExpiry > logRecord.Expiration)
-                        {
-                            _ = logRecord.TrySetExpiration(newExpiry);
-                            o->result1 = 1;
-                        }
-                        return true;
-                    case ExpireOption.LT:
-                    case ExpireOption.XXLT:
-                        if (newExpiry < logRecord.Expiration)
-                        {
-                            _ = logRecord.TrySetExpiration(newExpiry);
-                            o->result1 = 1;
-                        }
-                        return true;
-                    default:
-                        throw new GarnetException($"EvaluateExpireCopyUpdate exception when expiryExists is false: optionType{optionType}");
-                }
-            }
-            else
-            {
-                // No expiration yet. Because this is CopyUpdate we should already have verified the space, but check anyway
-                switch (optionType)
-                {
-                    case ExpireOption.NX:
-                    case ExpireOption.None:
-                    case ExpireOption.LT:   // If expiry doesn't exist, LT should treat the current expiration as infinite
-                        if (!logRecord.TrySetExpiration(newExpiry))
-                        {
-                            functionsState.logger?.LogError("Failed to add expiration in {methodName}.{caseName}", "EvaluateExpireCopyUpdate", "LT");
-                            return false;
-                        }
-                        o->result1 = 1;
-                        return true;
-                    case ExpireOption.XX:
-                    case ExpireOption.GT:
-                    case ExpireOption.XXGT:
-                    case ExpireOption.XXLT:
-                        return true;
-                    default:
-                        throw new GarnetException($"EvaluateExpireCopyUpdate exception when expiryExists is true: optionType{optionType}");
-                }
-            }
+
+            var isSuccessful = EvaluateExpire(ref logRecord, optionType, newExpiry, hasExpiration, logErrorOnFail: true,
+                functionsState.logger, out var expirationChanged);
+
+            o->result1 = expirationChanged ? 1 : 0;
+            return isSuccessful;
         }
 
         static (int, int) NormalizeRange(int start, int end, int len)
@@ -445,10 +355,6 @@ namespace Garnet.server
             }
             return (0, 0);
         }
-
-        internal static bool CheckExpiry<TSourceLogRecord>(in TSourceLogRecord srcLogRecord)
-            where TSourceLogRecord : ISourceLogRecord
-            => srcLogRecord.Info.HasExpiration && srcLogRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
 
         static bool InPlaceUpdateNumber(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, long val, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
         {
@@ -716,14 +622,14 @@ namespace Garnet.server
         /// <summary>
         /// Copy length of value to output (as ASCII bytes)
         /// </summary>
-        static bool CopyValueLengthToOutput(ReadOnlySpan<byte> value, ref SpanByteAndMemory output)
+        static bool TryCopyValueLengthToOutput(ReadOnlySpan<byte> value, ref SpanByteAndMemory output)
         {
             Debug.Assert(output.IsSpanByte, "This code assumes it is called in a non-pending context or in a pending context where dst.SpanByte's pointer remains valid");
 
             var numDigits = NumUtils.CountDigits(value.Length);
             if (numDigits > output.SpanByte.Length)
             {
-                Debug.Fail("Output length overflow in CopyValueLengthToOutput");
+                Debug.Fail("Output length overflow in TryCopyValueLengthToOutput");
                 return false;
             }
 
@@ -801,7 +707,7 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert(ReadOnlySpan<byte> key, ref RawStringInput input, ReadOnlySpan<byte> value, long version, int sessionId)
+        void WriteLogUpsert(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> value, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
 
@@ -822,7 +728,7 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(ReadOnlySpan<byte> key, ref RawStringInput input, long version, int sessionId)
+        void WriteLogRMW(ReadOnlySpan<byte> key, ref StringInput input, long version, int sessionId)
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
@@ -839,11 +745,12 @@ namespace Garnet.server
         /// </summary>
         void WriteLogDelete(ReadOnlySpan<byte> key, long version, int sessionID)
         {
-            if (functionsState.StoredProcMode) return;
+            if (functionsState.StoredProcMode)
+                return;
             functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID }, key, item2: default, out _);
         }
 
-        BitFieldCmdArgs GetBitFieldArguments(ref RawStringInput input)
+        BitFieldCmdArgs GetBitFieldArguments(ref StringInput input)
         {
             var currTokenIdx = 0;
 

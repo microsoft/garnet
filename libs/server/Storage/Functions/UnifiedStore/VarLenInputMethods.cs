@@ -9,10 +9,10 @@ namespace Garnet.server
     /// <summary>
     /// Unified store functions
     /// </summary>
-    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedStoreInput, GarnetUnifiedStoreOutput, long>
+    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
     {
         public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
-            ref UnifiedStoreInput input) where TSourceLogRecord : ISourceLogRecord
+            ref UnifiedInput input) where TSourceLogRecord : ISourceLogRecord
         {
             var fieldInfo = new RecordFieldInfo
             {
@@ -83,7 +83,7 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref UnifiedStoreInput input)
+        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref UnifiedInput input)
         {
             return new RecordFieldInfo
             {
@@ -94,7 +94,7 @@ namespace Garnet.server
         }
 
         public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value,
-            ref UnifiedStoreInput input)
+            ref UnifiedInput input)
         {
             return new RecordFieldInfo
             {
@@ -105,7 +105,7 @@ namespace Garnet.server
             };
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref UnifiedStoreInput input)
+        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref UnifiedInput input)
         {
             return new RecordFieldInfo
             {
@@ -118,7 +118,7 @@ namespace Garnet.server
 
         public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key,
             in TSourceLogRecord inputLogRecord,
-            ref UnifiedStoreInput input) where TSourceLogRecord : ISourceLogRecord
+            ref UnifiedInput input) where TSourceLogRecord : ISourceLogRecord
         {
             return new RecordFieldInfo
             {

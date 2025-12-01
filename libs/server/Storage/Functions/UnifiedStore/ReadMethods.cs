@@ -8,16 +8,16 @@ using Tsavorite.core;
 namespace Garnet.server
 {
 #pragma warning disable IDE0065 // Misplaced using directive
-    using static Utility;
     using static LogRecordUtils;
+    using static Utility;
 
     /// <summary>
     /// Unified store functions
     /// </summary>
-    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedStoreInput, GarnetUnifiedStoreOutput, long>
+    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
     {
-        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedStoreInput input,
-            ref GarnetUnifiedStoreOutput output, ref ReadInfo readInfo) where TSourceLogRecord : ISourceLogRecord
+        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedInput input,
+            ref UnifiedOutput output, ref ReadInfo readInfo) where TSourceLogRecord : ISourceLogRecord
         {
             if (CheckExpiry(in srcLogRecord))
             {
@@ -43,7 +43,7 @@ namespace Garnet.server
         }
 
         private bool HandleGetEtag<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
-            ref GarnetUnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
+            ref UnifiedOutput output) where TSourceLogRecord : ISourceLogRecord
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -54,7 +54,7 @@ namespace Garnet.server
         }
 
         private bool HandleMemoryUsage<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
-            ref GarnetUnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
+            ref UnifiedOutput output) where TSourceLogRecord : ISourceLogRecord
         {
             var inlineRecordSize = srcLogRecord.AllocatedSize;
             long heapMemoryUsage = 0;
@@ -77,7 +77,7 @@ namespace Garnet.server
         }
 
         private bool HandleType<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
-            ref GarnetUnifiedStoreOutput output) where TSourceLogRecord : ISourceLogRecord
+            ref UnifiedOutput output) where TSourceLogRecord : ISourceLogRecord
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -108,7 +108,7 @@ namespace Garnet.server
         }
 
         private bool HandleTtl<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
-            ref GarnetUnifiedStoreOutput output, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
+            ref UnifiedOutput output, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -122,7 +122,7 @@ namespace Garnet.server
         }
 
         private bool HandleExpireTime<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
-            ref GarnetUnifiedStoreOutput output, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
+            ref UnifiedOutput output, bool milliseconds) where TSourceLogRecord : ISourceLogRecord
         {
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -135,7 +135,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool HandleMigrate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, int maxHeapAllocationSize, ref GarnetUnifiedStoreOutput output)
+        private bool HandleMigrate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, int maxHeapAllocationSize, ref UnifiedOutput output)
             where TSourceLogRecord : ISourceLogRecord
         {
             DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize,
@@ -144,7 +144,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool HandleRename<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref GarnetUnifiedStoreOutput output)
+        private bool HandleRename<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref UnifiedOutput output)
             where TSourceLogRecord : ISourceLogRecord
         {
             // First, copy the inline portion of the record to the output. Any object references are retained in this step; we do *not* serialize,

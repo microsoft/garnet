@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -29,7 +30,7 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ref storageApi);
 
-            var input = new RawStringInput(RespCommand.NONE, metaCommand, ref metaCommandParseState);
+            var input = new StringInput(RespCommand.NONE, metaCommand, ref metaCommandParseState);
 
             var key = parseState.GetArgSliceByRef(0);
             var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -101,7 +102,7 @@ namespace Garnet.server
             }
 
             var expiry = (tsExpiry.HasValue && tsExpiry.Value.Ticks > 0) ? DateTimeOffset.UtcNow.Ticks + tsExpiry.Value.Ticks : 0;
-            var input = new RawStringInput(RespCommand.GETEX, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState, arg1: expiry);
+            var input = new StringInput(RespCommand.GETEX, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState, arg1: expiry);
 
             var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.GETEX(key, ref input, ref o);
@@ -135,7 +136,7 @@ namespace Garnet.server
 
             // Set up input to instruct storage to write output to IMemory rather than
             // network buffer, if the operation goes pending.
-            var input = new RawStringInput(RespCommand.ASYNC, metaCommand, ref metaCommandParseState);
+            var input = new StringInput(RespCommand.ASYNC, metaCommand, ref metaCommandParseState);
 
             var status = storageApi.GET_WithPending(key, ref input, ref o, asyncStarted, out var pending);
 
@@ -169,7 +170,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetAdvancedApi
         {
             var key = parseState.GetArgSliceByRef(0);
-            RawStringInput input = default;
+            StringInput input = default;
             var firstPending = -1;
             (GarnetStatus, SpanByteAndMemory)[] outputArr = null;
             SpanByteAndMemory o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -292,7 +293,7 @@ namespace Garnet.server
             Debug.Assert(parseState.Count == 2);
             var key = parseState.GetArgSliceByRef(0);
 
-            return NetworkSET_Conditional(RespCommand.SET, 0, key, true, false, ref storageApi);
+            return NetworkSET_Conditional(RespCommand.SET, 0, key, getValue: true, highPrecision: false, ref storageApi);
         }
 
         /// <summary>
@@ -314,7 +315,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE);
             }
 
-            var input = new RawStringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
+            var input = new StringInput(RespCommand.SETRANGE, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
@@ -338,7 +339,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
-            var input = new RawStringInput(RespCommand.GETRANGE, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
+            var input = new StringInput(RespCommand.GETRANGE, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
 
             var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
@@ -389,7 +390,7 @@ namespace Garnet.server
 
             var value = parseState.GetArgSliceByRef(2);
 
-            var input = new RawStringInput(RespCommand.SETEX, metaCommand, ref metaCommandParseState, arg1: valMetadata);
+            var input = new StringInput(RespCommand.SETEX, metaCommand, ref metaCommandParseState, arg1: valMetadata);
             _ = storageApi.SET(key, ref input, value);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -411,7 +412,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            var input = new RawStringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
+            var input = new StringInput(RespCommand.SETEXNX, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
             var status = storageApi.SET_Conditional(key, ref input);
 
             // The status returned for SETNX as NOTFOUND is the expected status in the happy path
@@ -580,7 +581,7 @@ namespace Garnet.server
                                   ? TimeSpan.FromMilliseconds(expiry).Ticks
                                   : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var input = new RawStringInput(cmd, metaCommand, ref metaCommandParseState, arg1: valMetadata);
+            var input = new StringInput(cmd, metaCommand, ref metaCommandParseState, arg1: valMetadata);
 
             storageApi.SET(key, ref input, val);
 
@@ -599,7 +600,7 @@ namespace Garnet.server
                       ? TimeSpan.FromMilliseconds(expiry).Ticks
                       : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var input = new RawStringInput(cmd, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState, arg1: inputArg);
+            var input = new StringInput(cmd, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState, arg1: inputArg);
 
             if (!getValue && metaCommand == RespMetaCommand.None)
             {
@@ -684,7 +685,7 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
 
-            var input = new RawStringInput(cmd, metaCommand, ref metaCommandParseState, arg1: incrByValue);
+            var input = new StringInput(cmd, metaCommand, ref metaCommandParseState, arg1: incrByValue);
             _ = storageApi.Increment(key, ref input, ref output);
 
             var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
@@ -756,7 +757,7 @@ namespace Garnet.server
         {
             var sbKey = parseState.GetArgSliceByRef(0);
 
-            var input = new RawStringInput(RespCommand.APPEND, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
+            var input = new StringInput(RespCommand.APPEND, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = SpanByteAndMemory.FromPinnedSpan(outputBuffer);
@@ -1402,10 +1403,10 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var input = new UnifiedStoreInput(RespCommand.MEMORY_USAGE, metaCommand, ref metaCommandParseState);
+            var input = new UnifiedInput(RespCommand.MEMORY_USAGE, metaCommand, ref metaCommandParseState);
 
-            // Prepare GarnetUnifiedStoreOutput output
-            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            // Prepare UnifiedOutput output
+            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.MEMORYUSAGE(key, ref input, ref output);
 
@@ -1759,25 +1760,13 @@ namespace Garnet.server
 
             if (c - firstPending >= outputArr.Length)
             {
-                int newCount = (int)NextPowerOf2(c - firstPending + 1);
+                int newCount = (int)BitOperations.RoundUpToPowerOf2((uint)(c - firstPending + 1));
                 var outputArr2 = new (GarnetStatus, SpanByteAndMemory)[newCount];
                 Array.Copy(outputArr, outputArr2, outputArr.Length);
                 outputArr = outputArr2;
             }
 
             outputArr[c - firstPending] = (status, output);
-        }
-
-        static long NextPowerOf2(long v)    // TODO: consolidate this and other Tsavorite.core.Utility method clones
-        {
-            v--;
-            v |= v >> 1;
-            v |= v >> 2;
-            v |= v >> 4;
-            v |= v >> 8;
-            v |= v >> 16;
-            v |= v >> 32;
-            return v + 1;
         }
     }
 }

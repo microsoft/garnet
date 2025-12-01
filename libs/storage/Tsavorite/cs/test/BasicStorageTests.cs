@@ -78,7 +78,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void OmitSegmentIdTest([Values] TestUtils.DeviceType deviceType)
+        public void OmitSegmentIdTest([Values] TestUtils.TestDeviceType deviceType)
         {
             var filename = Path.Join(MethodTestDir, "test.log");
             var omit = false;

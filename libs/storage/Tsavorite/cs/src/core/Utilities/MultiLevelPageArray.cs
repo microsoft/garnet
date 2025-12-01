@@ -13,6 +13,8 @@ namespace Tsavorite.core
         // TODO: Make MLPA config numbers internally configurable (e.g. smaller log pages need less overhead). Should be able to do this internally
         //      and not expose another set of public config options.
         internal const int InitialBookSizeBits = 2;
+        internal const int PrimaryClearRetainedChapterSizeBits = InitialBookSizeBits << 1;
+        internal const int FreeListClearRetainedChapterSizeBits = InitialBookSizeBits;
         internal const int ChapterSizeBits = 10;
 
         internal const int InitialBookSize = 1 << InitialBookSizeBits;
@@ -38,7 +40,7 @@ namespace Tsavorite.core
 
         /// <summary>Value of the tail before initialization; start at -1 so Allocate() sets it to 0</summary>
         private const int InitialTail = -1;
-        
+
         /// <summary>The next index to be returned; <see cref="InitialTail"/> if we are not yet initialized.</summary>
         internal int tail = InitialTail;
 
@@ -195,41 +197,48 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Clear()
+        public void Clear(int retainedChapterCount = 1 << MultiLevelPageArray.PrimaryClearRetainedChapterSizeBits)
         {
-            if (!IsInitialized)
+            if (!IsInitialized || tail == 0)
                 return;
 
             // Tail is the next item to return, so may be the first item in a chapter that may still be null--or may be past end of book.
             var lastChapterIndex = (tail - 1) >> MultiLevelPageArray.ChapterSizeBits;
-            for (int chapter = 0; chapter <= lastChapterIndex; chapter++)
+            for (var chapter = 0; chapter <= lastChapterIndex; chapter++)
+            {
                 Array.Clear(book[chapter], 0, MultiLevelPageArray.ChapterSize);
+                if (chapter > retainedChapterCount)
+                    book[chapter] = null;
+            }
+
             tail = InitialTail;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Clear(Action<TElement> action)
+        public void Clear(Action<TElement> action, int retainedChapterCount = 1 << MultiLevelPageArray.PrimaryClearRetainedChapterSizeBits)
         {
-            if (!IsInitialized)
+            if (!IsInitialized || tail == 0)
                 return;
 
             // Tail is the next item to return, so may be the first item in a chapter that may still be null--or may be past end of book.
             var lastChapterIndex = (tail - 1) >> MultiLevelPageArray.ChapterSizeBits;
             var lastPageIndex = (tail - 1) & MultiLevelPageArray.PageIndexMask;
-            for (int chapter = 0; chapter <= lastChapterIndex; chapter++)
+            for (var chapter = 0; chapter <= lastChapterIndex; chapter++)
             {
                 var maxPage = chapter < lastChapterIndex ? MultiLevelPageArray.ChapterSize : lastPageIndex;
-                for (int page = 0; page < maxPage; page++)
+                for (var page = 0; page < maxPage; page++)
                 {
                     // Note: 'action' must check for null/default.
                     action(book[chapter][page]);
                     book[chapter][page] = default;
                 }
+                if (chapter > retainedChapterCount)
+                    book[chapter] = null;
             }
             tail = InitialTail;
         }
 
         /// <inheritdoc/>
-        public override string ToString() => $"Tail: {tail}, IsInitialized: {IsInitialized}, book set: {book is not null}";
+        public override string ToString() => $"Tail: {tail}, IsInit: {IsInitialized}, book.Len: {(book is not null ? book.Length : "null")}";
     }
 }

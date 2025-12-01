@@ -285,9 +285,9 @@ namespace Garnet.server
             // Serialize arguments
             for (var i = 0; i < Count; i++)
             {
-                var sbParam = *(bufferPtr + i);
-                sbParam.SerializeTo(curr);
-                curr += sbParam.TotalSize;
+                var argument = *(bufferPtr + i);
+                argument.SerializeTo(curr);
+                curr += argument.TotalSize;
             }
 
             return (int)(dest - curr);

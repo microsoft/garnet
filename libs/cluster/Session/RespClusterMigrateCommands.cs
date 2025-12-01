@@ -11,13 +11,13 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
+    using BasicGarnetApi = GarnetApi<BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+        BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
+        BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
             /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
@@ -121,7 +121,7 @@ namespace Garnet.cluster
                             var keySlice = PinnedSpanByte.FromPinnedSpan(diskLogRecord.Key);
                             if (replaceOption || !Exists(keySlice))
                                 _ = basicGarnetApi.SET(in diskLogRecord);
-                            
+
                             diskLogRecord.Dispose();
                             i++;
                         }

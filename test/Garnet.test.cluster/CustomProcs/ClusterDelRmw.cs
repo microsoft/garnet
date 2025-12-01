@@ -34,7 +34,7 @@ namespace Garnet.test.cluster
             var parsed = ParseUtils.TryReadLong(value, out var valueToIncrement);
             Debug.Assert(parsed, "Value to increment must be a valid long integer.");
 
-            var input = new RawStringInput(RespCommand.INCRBY, arg1: valueToIncrement);
+            var input = new StringInput(RespCommand.INCRBY, arg1: valueToIncrement);
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var outputArgSlice = PinnedSpanByte.FromPinnedSpan(outputBuffer);
             // Increment key

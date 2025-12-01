@@ -10,7 +10,7 @@ The `LogRecord` struct is a major revision in the Tsavorite `ISessionFunctions` 
 
 Much of the record-related logic of the allocators (e.g. `SpanByteAllocator`) has been moved into the `LogRecord` structs.
 
-See [RecordDataHeader](#recorddataheader)for details of the layout, including `RecordType`, `Namespace`, and the ObjectLogPosition ulong if the record is not inline (has an Overflow Key and/or an Overflow or Object value).
+See [RecordDataHeader](#recorddataheader) for details of the layout, including `RecordType`, `Namespace`, and the ObjectLogPosition ulong if the record is not inline (has an Overflow Key and/or an Overflow or Object value).
 
 ## `SpanByte` and `ArgSlice` are now `PinnedSpanByte` or `ReadOnlySpan<byte>`
 

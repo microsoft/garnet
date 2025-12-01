@@ -41,6 +41,9 @@ namespace Tsavorite.core
         /// <summary>Read buffers if Reading ObjectAllocator.</summary>
         public CircularDiskReadBuffer readBuffers;
 
+        /// <summary>Number of bytes read.</summary>
+        public uint numBytesRead;
+
         /// <summary>The max offset on the main log page to iterate records when determining how many bytes in the ObjectLog to read.</summary>
         internal long maxPtr;
 

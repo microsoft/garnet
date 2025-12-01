@@ -34,7 +34,7 @@ namespace Tsavorite.test.recovery
             opsDone = false;
             expectedV1Count = new long[numKeys];
             expectedV2Count = new long[numKeys];
-            log = CreateTestDevice(DeviceType.LSD, Path.Join(MethodTestDir, "Test.log"));
+            log = CreateTestDevice(TestDeviceType.LSD, Path.Join(MethodTestDir, "Test.log"));
         }
 
         protected void BaseTearDown()

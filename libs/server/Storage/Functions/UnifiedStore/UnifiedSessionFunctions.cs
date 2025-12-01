@@ -8,7 +8,7 @@ namespace Garnet.server
     /// <summary>
     /// Unified store functions
     /// </summary>
-    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedStoreInput, GarnetUnifiedStoreOutput, long>
+    public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
     {
         readonly FunctionsState functionsState;
 
@@ -20,7 +20,7 @@ namespace Garnet.server
             this.functionsState = functionsState;
         }
 
-        public void ConvertOutputToHeap(ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output)
+        public void ConvertOutputToHeap(ref UnifiedInput input, ref UnifiedOutput output)
         {
             // TODO: Inspect input to determine whether we're in a context requiring ConvertToHeap.
             //output.ConvertToHeap();

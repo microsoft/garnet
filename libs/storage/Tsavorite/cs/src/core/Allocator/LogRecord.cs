@@ -53,7 +53,7 @@ namespace Tsavorite.core
 
         /// <summary>Address-only ctor. Must only be used for simple record parsing, including inline size calculations.
         /// In particular, if knowledge of whether this is a string or object record is required, or an overflow allocator is needed, this method cannot be used.</summary>
-        public LogRecord(byte *recordPtr) => physicalAddress = (long)recordPtr;
+        public LogRecord(byte* recordPtr) => physicalAddress = (long)recordPtr;
 
         internal readonly long DataHeaderAddress => physicalAddress + RecordInfo.Size;
         private readonly long NamespaceAddress => physicalAddress + RecordInfo.Size + 1;

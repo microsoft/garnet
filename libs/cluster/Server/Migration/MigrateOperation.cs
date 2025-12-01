@@ -14,8 +14,7 @@ namespace Garnet.cluster
         {
             public readonly Sketch sketch;
             public readonly List<byte[]> keysToDelete;
-            public MainStoreScan mss;
-            public ObjectStoreScan oss;
+            public StoreScan storeScan;
 
             readonly MigrateSession session;
             readonly GarnetClientSession gcs;
@@ -33,8 +32,7 @@ namespace Garnet.cluster
                 gcs = session.GetGarnetClient();
                 localServerSession = session.GetLocalSession();
                 this.sketch = sketch ?? new(keyCount: batchSize << 2);
-                mss = new MainStoreScan(this);
-                oss = new ObjectStoreScan(this);
+                storeScan = new StoreScan(this);
                 keysToDelete = [];
             }
 
@@ -58,7 +56,7 @@ namespace Garnet.cluster
             /// <param name="currentAddress"></param>
             /// <param name="endAddress"></param>
             public void Scan(ref long currentAddress, long endAddress)
-                => localServerSession.BasicGarnetApi.IterateStore(ref mss, ref currentAddress, endAddress, endAddress,
+                => localServerSession.BasicGarnetApi.IterateStore(ref storeScan, ref currentAddress, endAddress, endAddress,
                     includeTombstones: true);
 
             /// <summary>
@@ -67,11 +65,11 @@ namespace Garnet.cluster
             /// <returns></returns>
             public bool TransmitSlots()
             {
-                var output = new GarnetUnifiedStoreOutput();    // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
+                var output = new UnifiedOutput();    // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
 
                 try
                 {
-                    var input = new UnifiedStoreInput(RespCommand.MIGRATE);
+                    var input = new UnifiedInput(RespCommand.MIGRATE);
                     input.arg1 = session.NetworkBufferSettings.sendBufferSize - 1024;   // Reserve some space for overhead
                     foreach (var key in sketch.argSliceVector)
                     {
@@ -95,14 +93,18 @@ namespace Garnet.cluster
             {
                 // Use this for both stores; main store will just use the SpanByteAndMemory directly. We want it to be outside iterations
                 // so we can reuse the SpanByteAndMemory.Memory across iterations.
-                var output = new GarnetUnifiedStoreOutput();    // TODO: initialize this based on gcs curr and end; make sure it has the initial part of the "send" set
+                // TODO: initialize 'output' based on gcs curr and end; make sure it has the initial part of the "send" set, and call gcs.IncrementRecordDirect().
+                //       This will still allow SBAM.Memory to be reused.
+                var output = new UnifiedOutput();
 
                 try
                 {
                     var keys = sketch.Keys;
 
-                    var input = new UnifiedStoreInput(RespCommand.MIGRATE);
-                    input.arg1 = session.NetworkBufferSettings.sendBufferSize - 1024;   // Reserve some space for overhead
+                    var input = new UnifiedInput(RespCommand.MIGRATE)
+                    {
+                        arg1 = session.NetworkBufferSettings.sendBufferSize - 1024   // Reserve some space for overhead
+                    };
                     for (var i = 0; i < keys.Count; i++)
                     {
                         if (keys[i].Item2)

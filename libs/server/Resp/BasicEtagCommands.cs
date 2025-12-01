@@ -22,10 +22,10 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedStoreInput(RespCommand.GETETAG);
+            var input = new UnifiedInput(RespCommand.GETETAG);
 
-            // Prepare GarnetUnifiedStoreOutput output
-            var output = GarnetUnifiedStoreOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            // Prepare UnifiedOutput output
+            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.GETETAG(key, ref input, ref output);
 

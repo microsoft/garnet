@@ -10,7 +10,7 @@ namespace Garnet.server
     /// Any field / property added to this struct must be set in the back-end (IFunctions) and used in the front-end (GarnetApi caller).
     /// That is in order to justify transferring data in this struct through the Tsavorite storage layer.
     /// </summary>
-    public struct GarnetObjectStoreOutput
+    public struct ObjectOutput
     {
         /// <summary>
         /// Span byte and memory
@@ -50,11 +50,11 @@ namespace Garnet.server
         public readonly bool IsObjectUnchanged =>
             (OutputFlags & OutputFlags.ObjectUnchanged) == OutputFlags.ObjectUnchanged;
 
-        public GarnetObjectStoreOutput() => SpanByteAndMemory = new(null);
+        public ObjectOutput() => SpanByteAndMemory = new(null);
 
-        public GarnetObjectStoreOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;
+        public ObjectOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;
 
-        public static unsafe GarnetObjectStoreOutput FromPinnedPointer(byte* pointer, int length)
+        public static unsafe ObjectOutput FromPinnedPointer(byte* pointer, int length)
             => new(new SpanByteAndMemory() { SpanByte = PinnedSpanByte.FromPinnedPointer(pointer, length) });
 
         public void ConvertToHeap()

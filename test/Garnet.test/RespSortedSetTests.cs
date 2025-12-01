@@ -19,13 +19,13 @@ using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
-    using TestBasicGarnetApi = GarnetApi<BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
+    using TestBasicGarnetApi = GarnetApi<BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
             /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
+        BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
             /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
+        BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
             /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
             ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
@@ -103,8 +103,8 @@ namespace Garnet.test
             db.SortedSetAdd("key1", "b", 2);
 
             var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
-            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext,
-                session.storageSession.objectStoreBasicContext, session.storageSession.unifiedStoreBasicContext);
+            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.stringBasicContext,
+                session.storageSession.objectBasicContext, session.storageSession.unifiedBasicContext);
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
             {
@@ -136,8 +136,8 @@ namespace Garnet.test
             Thread.Sleep(200);
 
             var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
-            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext,
-                session.storageSession.objectStoreBasicContext, session.storageSession.unifiedStoreBasicContext);
+            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.stringBasicContext,
+                session.storageSession.objectBasicContext, session.storageSession.unifiedBasicContext);
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
             {
@@ -924,16 +924,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // ZSCAN without key
-            try
-            {
-                db.Execute("ZSCAN");
-                Assert.Fail();
-            }
-            catch (RedisServerException e)
-            {
-                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(SortedSetOperation.ZSCAN));
-                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
-            }
+            var e = Assert.Throws<RedisServerException>(() => db.Execute("ZSCAN"));
+            var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(SortedSetOperation.ZSCAN));
+            ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
 
             // Use sortedsetscan on non existing key
             var items = db.SortedSetScan(new RedisKey("foo"), new RedisValue("*"), pageSize: 10);

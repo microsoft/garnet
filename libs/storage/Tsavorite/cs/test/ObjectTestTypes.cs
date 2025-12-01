@@ -194,7 +194,7 @@ namespace Tsavorite.test
 
         public TestLargeObjectValue() { }
 
-        public TestLargeObjectValue(int size, bool serializedSizeIsExact)
+        public TestLargeObjectValue(int size)
         {
             value = new byte[size];
             for (int i = 0; i < size; i++)
@@ -284,7 +284,8 @@ namespace Tsavorite.test
         {
             if (!logRecord.TrySetValueObject(srcValue)) // We should always be non-inline
                 return false;
-            output.valueObject = logRecord.Info.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
+            if (output is not null)
+                output.valueObject = logRecord.Info.ValueIsObject ? (TestLargeObjectValue)logRecord.ValueObject : default;
             return true;
         }
 
@@ -295,7 +296,13 @@ namespace Tsavorite.test
         public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref TestLargeObjectInput input)
             => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
         public override RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref TestLargeObjectInput input)
-            => new() { KeySize = key.Length, ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length, ValueIsObject = inputLogRecord.Info.ValueIsObject,
-                       HasETag = inputLogRecord.Info.HasETag, HasExpiration = inputLogRecord.Info.HasExpiration};
+            => new()
+            {
+                KeySize = key.Length,
+                ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
+                ValueIsObject = inputLogRecord.Info.ValueIsObject,
+                HasETag = inputLogRecord.Info.HasETag,
+                HasExpiration = inputLogRecord.Info.HasExpiration
+            };
     }
 }

@@ -216,9 +216,6 @@ namespace Tsavorite.test.Objects
             Assert.That(numPendingReads, Is.GreaterThanOrEqualTo(numPendingUpdates));
         }
 
-        /// <summary>Whether value object sizes are known at the time of serialization (Exact, as most Garnet objects) or not (Inexact, e.g. JsonObject).</summary>
-        public enum SerializeValueSizeMode { SerSizeExact, SerSizeInexact };
-
         /// <summary>Various sizes to test</summary>
         public enum SerializeKeyValueSize
         {
@@ -232,7 +229,7 @@ namespace Tsavorite.test.Objects
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         //[Repeat(300)]
-        public void ObjectDiskWriteReadLargeValueSmallKey([Values] SerializeValueSizeMode serSizeMode, [Values] SerializeKeyValueSize serializeValueSize)
+        public void ObjectDiskWriteReadLargeValueSmallKey([Values] SerializeKeyValueSize serializeValueSize)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
@@ -248,7 +245,7 @@ namespace Tsavorite.test.Objects
             {
                 var key1Struct = new TestObjectKey { key = ii };
                 var key = SpanByte.FromPinnedVariable(ref key1Struct);
-                var value = new TestLargeObjectValue(valueSize + (ii * 4096), serializedSizeIsExact: serSizeMode == SerializeValueSizeMode.SerSizeExact);
+                var value = new TestLargeObjectValue(valueSize + (ii * 4096));
                 new Span<byte>(value.value).Fill(0x42);
                 _ = bContext.Upsert(key, ref input, value, ref output);
             }
@@ -321,7 +318,7 @@ namespace Tsavorite.test.Objects
 
         [Test, Category(TsavoriteKVTestCategory), Category(LogRecordCategory), Category(SmokeTestCategory), Category(ObjectIdMapCategory)]
         //[Repeat(300)]
-        public void ObjectDiskWriteReadLargeKeyAndValue([Values] SerializeKeyValueSize serializeKeySize, [Values] SerializeValueSizeMode serSizeMode, [Values] SerializeKeyValueSize serializeValueSize)
+        public void ObjectDiskWriteReadLargeKeyAndValue([Values] SerializeKeyValueSize serializeKeySize, [Values] SerializeKeyValueSize serializeValueSize)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
@@ -337,7 +334,7 @@ namespace Tsavorite.test.Objects
             const int numRec = 3;
             for (int ii = 0; ii < numRec; ii++)
             {
-                var value = new TestLargeObjectValue(valueSize + (ii * 4096), serializedSizeIsExact: serSizeMode == SerializeValueSizeMode.SerSizeExact);
+                var value = new TestLargeObjectValue(valueSize + (ii * 4096));
                 var key = new Span<byte>(keyBuf);
                 key.Fill((byte)(ii + 100));
                 new Span<byte>(value.value).Fill(0x42);

@@ -190,9 +190,9 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Clear()
+        public void Clear(int retainedChapterCount = 1 << MultiLevelPageArray.FreeListClearRetainedChapterSizeBits)
         {
-            elementArray.Clear();
+            elementArray.Clear(retainedChapterCount);
             stack = new(SimpleFreeStackNode.Nil, version: 0);
             freeNodes = new(SimpleFreeStackNode.Nil, version: 0);
         }

@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System.Buffers;
 using System.IO;
 using System.Linq;
@@ -11,6 +9,8 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
+
+#pragma warning disable IDE1006 // Naming Styles
 
 namespace Tsavorite.test
 {
@@ -69,7 +69,7 @@ namespace Tsavorite.test
             for (int i = 0; i < entryLength; i++)
             {
                 entry[i] = (byte)i;
-                LocalMemorylog.Enqueue(entry);
+                _ = LocalMemorylog.Enqueue(entry);
             }
 
             // Commit to the log
@@ -143,5 +143,3 @@ namespace Tsavorite.test
         }
     }
 }
-
-#endif // LOGRECORD_TODO

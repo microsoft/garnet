@@ -12,7 +12,7 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class MigrateSession : IDisposable
     {
-        private bool WriteOrSendRecord(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref UnifiedStoreInput input, ref GarnetUnifiedStoreOutput output, out GarnetStatus status)
+        private bool WriteOrSendRecord(GarnetClientSession gcs, LocalServerSession localServerSession, PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output, out GarnetStatus status)
         {
             // Must initialize this here because we use the network buffer as output.
             if (gcs.NeedsInitialization)
