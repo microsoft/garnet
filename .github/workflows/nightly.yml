@@ -96,17 +96,21 @@ jobs:
         run: |
           $resultsDir = "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
           if ("${{ matrix.test }}" -eq "Tsavorite.test") {
-            dotnet test "libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj" -f "${{ matrix.framework }}" `
+            dotnet test "libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj" `
+              -f "${{ matrix.framework }}" `
+              --configuration "${{ matrix.configuration }}" `
               --logger "console;verbosity=detailed" `
               --logger "trx" `
               --results-directory "$resultsDir"
           } else {
-            dotnet test "test/${{ matrix.test }}" -f "${{ matrix.framework }}" `
+            dotnet test "test/${{ matrix.test }}" `
+              -f "${{ matrix.framework }}" `
+              --configuration "${{ matrix.configuration }}" `
               --logger "console;verbosity=detailed" `
               --logger "trx" `
               --results-directory "$resultsDir"
           }
-        timeout-minutes: 55 
+        timeout-minutes: 55        
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
