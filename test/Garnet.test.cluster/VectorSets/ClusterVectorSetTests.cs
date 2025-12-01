@@ -1300,7 +1300,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true, OnDemandCheckpoint: true, EnableIncrementalSnapshots: true);
+            context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true, OnDemandCheckpoint: true, EnableIncrementalSnapshots: true, checkpointThrottleFlushDelayMs: 30_000);
             context.CreateConnection(useTLS: true);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1, logger: context.logger);
 
