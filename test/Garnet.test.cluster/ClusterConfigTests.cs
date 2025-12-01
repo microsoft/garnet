@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -10,6 +9,7 @@ using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
+using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
@@ -79,21 +79,16 @@ namespace Garnet.test.cluster
             var nodesResult = context.clusterTestUtils.ClusterNodes(0);
             Assert.That(nodesResult.Nodes.Count == nbInstances);
 
-            try
-            {
-                var server = context.clusterTestUtils.GetServer(context.endpoints[0].ToIPEndPoint());
-                var args = new List<object>() {
+            var server = context.clusterTestUtils.GetServer(context.endpoints[0].ToIPEndPoint());
+            var args = new List<object>() {
                     "forget",
                     Encoding.ASCII.GetBytes("1ip23j89123no"),
                     Encoding.ASCII.GetBytes("0")
                 };
-                var result = (string)server.Execute("cluster", args);
-                Assert.Fail("Cluster forget call shouldn't have succeeded for an invalid node id.");
-            }
-            catch (Exception ex)
-            {
-                Assert.That(ex.Message == "ERR I don't know about node 1ip23j89123no.");
-            }
+            var ex = Assert.Throws<RedisServerException>(() => server.Execute("cluster", args),
+                "Cluster forget call shouldn't have succeeded for an invalid node id.");
+
+            Assert.That(ex.Message, Is.EqualTo("ERR I don't know about node 1ip23j89123no."));
 
             nodesResult = context.clusterTestUtils.ClusterNodes(0);
             Assert.That(nodesResult.Nodes.Count == nbInstances, "No node should've been removed from the cluster after an invalid id was passed.");

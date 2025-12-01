@@ -924,16 +924,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // ZSCAN without key
-            try
-            {
-                db.Execute("ZSCAN");
-                Assert.Fail();
-            }
-            catch (RedisServerException e)
-            {
-                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(SortedSetOperation.ZSCAN));
-                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
-            }
+            var e = Assert.Throws<RedisServerException>(() => db.Execute("ZSCAN"));
+            var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(SortedSetOperation.ZSCAN));
+            ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
 
             // Use sortedsetscan on non existing key
             var items = db.SortedSetScan(new RedisKey("foo"), new RedisValue("*"), pageSize: 10);
