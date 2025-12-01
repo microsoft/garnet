@@ -71,16 +71,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // Check RUNTXP without id
-            try
-            {
-                db.Execute("RUNTXP");
-                Assert.Fail();
-            }
-            catch (RedisServerException e)
-            {
-                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.RUNTXP));
-                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
-            }
+            var e = Assert.Throws<RedisServerException>(() => db.Execute("RUNTXP"));
+            var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(RespCommand.RUNTXP));
+            ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
 
             string readkey = "readkey";
             string value = "foovalue0";
@@ -90,16 +83,9 @@ namespace Garnet.test
             string writekey2 = "writekey2";
 
             // Check RUNTXP with insufficient parameters
-            try
-            {
-                db.Execute("RUNTXP", id, readkey);
-                Assert.Fail();
-            }
-            catch (RedisServerException e)
-            {
-                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgsTxn, id, numParams, 1);
-                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
-            }
+            e = Assert.Throws<RedisServerException>(() => db.Execute("RUNTXP", id, readkey));
+            expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgsTxn, id, numParams, 1);
+            ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
 
             var result = db.Execute("RUNTXP", id, readkey, writekey1, writekey2);
             ClassicAssert.AreEqual("SUCCESS", (string)result);

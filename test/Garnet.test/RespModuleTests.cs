@@ -260,15 +260,9 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            try
-            {
-                db.Execute($"MODULE", ["LOADCS", modulePath]);
-                Assert.Fail("Module with empty OnLoad should not load successfully");
-            }
-            catch (RedisException ex)
-            {
-                ClassicAssert.AreEqual("ERR Error during module OnLoad", ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute($"MODULE", ["LOADCS", modulePath]),
+                "Module with empty OnLoad should not load successfully");
+            ClassicAssert.AreEqual("ERR Error during module OnLoad", ex.Message);
         }
 
         [Test]
@@ -281,15 +275,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             db.Execute($"MODULE", ["LOADCS", modulePath]);
-            try
-            {
-                db.Execute($"MODULE", ["LOADCS", modulePath]);
-                Assert.Fail("Already loaded module should not successfully load again");
-            }
-            catch (RedisException ex)
-            {
-                ClassicAssert.AreEqual("ERR Error during module OnLoad", ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute($"MODULE", ["LOADCS", modulePath]),
+                "Already loaded module should not successfully load again");
+            ClassicAssert.AreEqual("ERR Error during module OnLoad", ex.Message);
         }
 
         [Test]
@@ -399,17 +387,12 @@ namespace Garnet.test
 
             // Test loading no-op module
             var noOpModulePath = Path.Join(binPath, "NoOpModule.dll");
-            try
-            {
-                db.Execute($"MODULE", "LOADCS", noOpModulePath);
-                Assert.Fail("Should fail since module path allowlist is undefined");
-            }
-            catch (RedisException ex)
-            {
-                var err = "To enable client-side assembly loading, you must specify a list of allowed paths from which assemblies " +
-                          "can potentially be loaded using the ExtensionBinPath directive.";
-                ClassicAssert.AreEqual(err, ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute($"MODULE", "LOADCS", noOpModulePath),
+                "Should fail since module path allowlist is undefined");
+
+            var err = "To enable client-side assembly loading, you must specify a list of allowed paths from which assemblies " +
+                      "can potentially be loaded using the ExtensionBinPath directive.";
+            ClassicAssert.AreEqual(err, ex.Message);
         }
 
         [Test]
@@ -428,18 +411,13 @@ namespace Garnet.test
 
             // Test loading no-op module
             var noOpModulePath = Path.Join(binPath, "NoOpModule.dll");
-            try
-            {
-                db.Execute($"MODULE", "LOADCS", noOpModulePath);
-                Assert.Fail("Should fail since MODULE command is disabled");
-            }
-            catch (RedisException ex)
-            {
-                var err = "ERR MODULE command not allowed. If the enable-module-command option is set to \"local\", " +
-                          "you can run it from a local connection, otherwise you need to set this option in the configuration file, " +
-                          "and then restart the server.";
-                ClassicAssert.AreEqual(err, ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute($"MODULE", "LOADCS", noOpModulePath),
+            "Should fail since MODULE command is disabled");
+
+            var err = "ERR MODULE command not allowed. If the enable-module-command option is set to \"local\", " +
+                      "you can run it from a local connection, otherwise you need to set this option in the configuration file, " +
+                      "and then restart the server.";
+            ClassicAssert.AreEqual(err, ex.Message);
         }
     }
 }

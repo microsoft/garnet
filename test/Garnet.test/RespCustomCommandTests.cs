@@ -1381,16 +1381,10 @@ namespace Garnet.test
                 server.Register.NewTransactionProc($"GETTWOKEYSNOTXN{i + 1}", () => new GetTwoKeysNoTxn(), new RespCommandsInfo { Arity = 3 });
             }
 
-            try
-            {
-                // This register should fail as there could only be byte.MaxValue + 1 transactions registered
-                server.Register.NewTransactionProc($"GETTWOKEYSNOTXN{byte.MaxValue + 3}", () => new GetTwoKeysNoTxn(), new RespCommandsInfo { Arity = 3 });
-                Assert.Fail();
-            }
-            catch (Exception e)
-            {
-                ClassicAssert.AreEqual("Out of registration space", e.Message);
-            }
+            // This register should fail as there could only be byte.MaxValue + 1 transactions registered
+            var e = Assert.Throws<Exception>(() => server.Register.NewTransactionProc($"GETTWOKEYSNOTXN{byte.MaxValue + 3}", () => new GetTwoKeysNoTxn(), new RespCommandsInfo { Arity = 3 }));
+
+            ClassicAssert.AreEqual("Out of registration space", e.Message);
 
             for (var i = 0; i < regCount; i++)
             {
@@ -1421,16 +1415,9 @@ namespace Garnet.test
                 server.Register.NewProcedure($"SUM{i + 1}", () => new Sum());
             }
 
-            try
-            {
-                // This register should fail as there could only be byte.MaxValue + 1 procedures registered
-                server.Register.NewProcedure($"SUM{byte.MaxValue + 3}", () => new Sum());
-                Assert.Fail();
-            }
-            catch (Exception e)
-            {
-                ClassicAssert.AreEqual("Out of registration space", e.Message);
-            }
+            // This register should fail as there could only be byte.MaxValue + 1 procedures registered
+            var e = Assert.Throws<Exception>(() => server.Register.NewProcedure($"SUM{byte.MaxValue + 3}", () => new Sum()));
+            ClassicAssert.AreEqual("Out of registration space", e.Message);
 
             db.StringSet("key1", "10");
             db.StringSet("key2", "35");
