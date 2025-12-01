@@ -150,7 +150,7 @@ jobs:
             Write-Host "No allure-results found at $path for this matrix combination."
           }
         if: ${{ always() }}
-        
+
       - name: DEBUG DEBUG Verify allure-results were copied
         shell: pwsh
         run: |
@@ -162,11 +162,11 @@ jobs:
             $dest = Join-Path $base "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
           }
 
-          Write-Host "Contents of $dest:"
+          Write-Host "Contents of ${dest}:"
           if (Test-Path $dest) {
             Get-ChildItem -Path $dest -Recurse | ForEach-Object { Write-Host $_.FullName }
           } else {
-            Write-Host "No allure-results found at $dest"
+            Write-Host "No allure-results found at ${dest}"
           }
         if: ${{ always() }}
 
