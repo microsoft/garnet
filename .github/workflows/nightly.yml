@@ -18,7 +18,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
+        # DEBUG DEBUG test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
+        test: [ 'Tsavorite.test' ]
         os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
@@ -117,7 +118,12 @@ jobs:
       - name: DEBUG DEBUG path existence using matrix variables
         shell: pwsh
         run: |
-          $source = "${{ github.workspace }}/test/Allure/TestData/${{ matrix.framework }}/allure-results"
+          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
+            $source = "${{ github.workspace }}/libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          } else {
+            $source = "${{ github.workspace }}/test/Allure/TestData/${{ matrix.framework }}/allure-results"
+          }
+
           Write-Host "Checking source path: $source"
           if (Test-Path $source) {
             Write-Host "Source path exists."
@@ -130,27 +136,62 @@ jobs:
         shell: pwsh
         run: |
           $base = $env:GITHUB_WORKSPACE
-          $path = Join-Path -Path $base -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          if (-Not (Test-Path $path)) {
-            Write-Host "No $path found for this matrix combination."
+
+          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
+            $path = Join-Path $base "libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          } else {
+            $path = Join-Path $base "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          }
+
+          Write-Host "Checking path: $path"
+          if (Test-Path $path) {
+            Write-Host "Found allure-results for this matrix combination."
+          } else {
+            Write-Host "No allure-results found at $path for this matrix combination."
           }
         if: ${{ always() }}
-
+        
       - name: DEBUG DEBUG Verify allure-results were copied
         shell: pwsh
         run: |
-          $dest = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          Write-Host "Contents of ${dest}:"
-          Get-ChildItem -Path $dest -Recurse | ForEach-Object { Write-Host $_.FullName }
+          $base = $env:GITHUB_WORKSPACE
+
+          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
+            $dest = Join-Path $base "libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          } else {
+            $dest = Join-Path $base "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          }
+
+          Write-Host "Contents of $dest:"
+          if (Test-Path $dest) {
+            Get-ChildItem -Path $dest -Recurse | ForEach-Object { Write-Host $_.FullName }
+          } else {
+            Write-Host "No allure-results found at $dest"
+          }
         if: ${{ always() }}
 
       - name: Stage allure-results into test/Allure/AllResults
         shell: pwsh
         run: |
-          $source = Join-Path $env:GITHUB_WORKSPACE "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
-          New-Item -ItemType Directory -Path $target -Force
-          Get-ChildItem -Path $source -Recurse | Copy-Item -Destination $target -Force
+          $base = $env:GITHUB_WORKSPACE
+
+          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
+            $source = Join-Path $base "libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          } else {
+            $source = Join-Path $base "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          }
+
+          $target = Join-Path $base "test/Allure/AllResults"
+          Write-Host "Staging allure-results from $source into $target"
+
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+
+          if (Test-Path $source) {
+            Get-ChildItem -Path $source -Recurse | Copy-Item -Destination $target -Force
+            Write-Host "Copied allure-results into $target"
+          } else {
+            Write-Host "Source path $source not found, skipping copy"
+          }
         if: ${{ always() }}
 
       - name: Upload Allure Results to artifacts
