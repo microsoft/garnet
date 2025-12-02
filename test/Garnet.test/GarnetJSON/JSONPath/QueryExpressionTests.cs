@@ -24,13 +24,13 @@
 // OTHER DEALINGS IN THE SOFTWARE.
 
 #endregion
-
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
+using Allure.NUnit;
 using GarnetJSON.JSONPath;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
-using Allure.NUnit;
+
 
 namespace Garnet.test.JSONPath
 {

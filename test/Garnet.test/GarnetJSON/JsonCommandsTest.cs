@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -8,12 +7,13 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading;
+using Allure.NUnit;
 using Garnet.server;
 using GarnetJSON;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
-using Allure.NUnit;
+
 
 namespace Garnet.test
 {

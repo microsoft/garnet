@@ -124,8 +124,7 @@ namespace Garnet.test
 
         #endregion
 
-         #region hashmaps
-
+        #region hashmaps
         [Test]
         [TestCase(100)]
         [TestCase(131042)]

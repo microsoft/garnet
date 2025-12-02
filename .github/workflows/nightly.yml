@@ -78,10 +78,8 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
 
-#  DEBUG DEBUG - Set to  continue-on-error: true for now as it is failing and needs to be addressed at some point        
-#  DEBUG DEBUG      - name: Check style format
-#  DEBUG DEBUG        run: dotnet format --verify-no-changes --verbosity diagnostic
-#  DEBUG DEBUG        continue-on-error: true
+      - name: Check style format
+        run: dotnet format --verify-no-changes --verbosity diagnostic
 
       - name: Build Tsavorite.test
         if: ${{ matrix.test == 'Tsavorite.test' }}
