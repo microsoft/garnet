@@ -1300,7 +1300,7 @@ namespace Garnet.test.cluster
             const int Secondary0Index = 2;
             const int Secondary1Index = 3;
 
-            context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true, OnDemandCheckpoint: true, EnableIncrementalSnapshots: true, checkpointThrottleFlushDelayMs: 30_000);
+            context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true, OnDemandCheckpoint: true, EnableIncrementalSnapshots: true);
             context.CreateConnection(useTLS: true);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1, logger: context.logger);
 
@@ -1365,6 +1365,12 @@ namespace Garnet.test.cluster
 
                         while (!cts.IsCancellationRequested)
                         {
+                            if (TestUtils.IsRunningAsGitHubAction)
+                            {
+                                // Throw some delay in when running as a GitHub Action to work around the weak drives those VMs have
+                                await Task.Delay(1);
+                            }
+
                             // This should follow redirects, so migration shouldn't cause any failures
                             try
                             {

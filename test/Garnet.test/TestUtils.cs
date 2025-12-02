@@ -125,6 +125,9 @@ namespace Garnet.test
             }
         }
 
+        internal static bool IsRunningAsGitHubAction
+        => "true".Equals(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"), StringComparison.OrdinalIgnoreCase);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void AssertEqualUpToExpectedLength(string expectedResponse, byte[] response)
         {
