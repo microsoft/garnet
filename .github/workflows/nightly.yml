@@ -197,12 +197,12 @@ jobs:
           }
         if: ${{ always() }}
 
-      - name: Upload Allure Results to artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: AllureResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
-          path: test/Allure/AllResults
-        if: ${{ always() }}
+# DEBUG DEBUG - uploading too many files     - name: Upload Allure Results to artifacts
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: AllureResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+#          path: test/Allure/AllResults
+#        if: ${{ always() }}
 
   generate-allure-report:
     name: Generate Allure Report
