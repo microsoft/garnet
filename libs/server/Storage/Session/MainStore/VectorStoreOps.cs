@@ -264,10 +264,7 @@ namespace Garnet.server
                     return status;
                 }
 
-                // No need to recreate, all of this data is available to Garnet alone
-
-                // After a successful read we add the vector while holding a shared lock
-                // That lock prevents deletion, but everything else can proceed in parallel
+                // After a successful read we extract metadata
                 VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _);
 
                 dimensions = (int)(reducedDimensionsUS == 0 ? dimensionsUS : reducedDimensionsUS);

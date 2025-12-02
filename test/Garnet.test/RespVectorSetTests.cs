@@ -495,8 +495,10 @@ namespace Garnet.test
             var res4 = db.Execute("VDIM", "bar");
             ClassicAssert.AreEqual(75, (int)res4);
 
-            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VDIM", "fizz"));
-            ClassicAssert.IsTrue(exc.Message.Contains("Key not found"));
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VDIM", "fizz"));
+            ClassicAssert.IsTrue(exc1.Message.Contains("Key not found"));
+
+            // TODO: Add WRONGTYPE behavior check once implemented
         }
 
         [Test]
