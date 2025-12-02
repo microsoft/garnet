@@ -716,21 +716,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Helper to complete read/writes during vector set op replay that go async.
-        /// </summary>
-        private static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> context)
-        {
-            _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-            var more = completedOutputs.Next();
-            Debug.Assert(more);
-            status = completedOutputs.Current.Status;
-            output = completedOutputs.Current.Output;
-            more = completedOutputs.Next();
-            Debug.Assert(!more);
-            completedOutputs.Dispose();
-        }
-
-        /// <summary>
         /// Determine the dimensions of a vector given its <see cref="VectorValueType"/> and its raw data.
         /// </summary>
         internal static uint CalculateValueDimensions(VectorValueType valueType, ReadOnlySpan<byte> values)
