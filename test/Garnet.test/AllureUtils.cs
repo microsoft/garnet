@@ -48,6 +48,8 @@ namespace Garnet.test
                 x.labels.Add(Label.Suite(os));
                 x.labels.Add(Label.SubSuite($"{framework} | {config}"));
                 //x.historyId = Guid.NewGuid().ToString(); // Optional: breaks history grouping but keeps each test separate (shows as a "retry" if not separate). Adding the "AddTestParameter" also handles this.
+                x.historyId = $"{x.name}-{os}-{framework}-{config}";
+                x.name = $"{x.name} [{os}, {framework}, {config}]";
             });
 
             // allows to separate out tests based on config but still hold history
