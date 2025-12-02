@@ -149,7 +149,7 @@ namespace Garnet.server
                     return status;
                 }
 
-                // After a successful read we add the vector while holding a shared lock
+                // After a successful read we remove the vector while holding a shared lock
                 // That lock prevents deletion, but everything else can proceed in parallel
                 var res = vectorManager.TryRemove(indexSpan, element.AsReadOnlySpan());
 
