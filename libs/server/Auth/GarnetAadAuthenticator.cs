@@ -11,8 +11,6 @@ using Garnet.server.Auth.Aad;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.IdentityModel.Validators;
-//using Microsoft.IdentityModel.Tokens;
-//using Microsoft.IdentityModel.Validators;
 
 namespace Garnet.server.Auth
 {
