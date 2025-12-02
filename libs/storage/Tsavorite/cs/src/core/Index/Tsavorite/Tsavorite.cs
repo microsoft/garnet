@@ -625,7 +625,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -656,7 +656,7 @@ namespace Tsavorite.core
                 internalStatus = InternalReadAtAddress(address, key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -674,7 +674,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue, srcObjectValue: null, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -692,7 +692,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -710,7 +710,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, in inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -726,7 +726,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 

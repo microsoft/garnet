@@ -55,8 +55,9 @@ namespace Tsavorite.core
         /// wrap around to it again. For both of these, we do not have to worry that there is pending IO in the buffer.
         /// </summary>
         /// <param name="bufferIndex">The index into <see cref="buffers"/> of the <see cref="DiskReadBuffer"/> that will do the reading</param>
-        /// <param name="unalignedRecordStartPosition">Start position on the page (relative to start of page)</param>
-        private void DoReadBuffer(int bufferIndex, int unalignedRecordStartPosition)
+        /// <param name="unalignedReadStartPosition">The "actual" read start position in the buffer (relative to start of buffer), which will
+        ///     become the "current position" of the buffer</param>
+        private void DoReadBuffer(int bufferIndex, int unalignedReadStartPosition)
         {
             var buffer = buffers[bufferIndex];
             if (buffer is null)
@@ -70,8 +71,8 @@ namespace Tsavorite.core
                 buffer.Initialize();
             }
 
-            var alignedReadStartPosition = RoundDown(unalignedRecordStartPosition, (int)objectLogDevice.SectorSize);
-            var recordStartPosition = unalignedRecordStartPosition - alignedReadStartPosition;
+            var alignedReadStartPosition = RoundDown(unalignedReadStartPosition, (int)objectLogDevice.SectorSize);
+            var bufferStartPosition = unalignedReadStartPosition - alignedReadStartPosition;
 
             // See how much to read. We have two limits: the total size requested for this ReadAsync operation, and the segment size.
             var unalignedReadLength = bufferSize - alignedReadStartPosition;
@@ -79,19 +80,25 @@ namespace Tsavorite.core
                 unalignedReadLength = (int)unreadLengthRemaining;
 
             Debug.Assert(IsAligned(nextFileReadPosition.Offset, (int)objectLogDevice.SectorSize), $"filePosition.Offset ({nextFileReadPosition.Offset}) is not sector-aligned");
-            if (nextFileReadPosition.Offset + (ulong)unalignedReadLength > nextFileReadPosition.SegmentSize)
+            var segmentIsComplete = false;
+            if (nextFileReadPosition.Offset + (ulong)unalignedReadLength >= nextFileReadPosition.SegmentSize)
+            {
                 unalignedReadLength = (int)(nextFileReadPosition.SegmentSize - nextFileReadPosition.Offset);
+                Debug.Assert(IsAligned(unalignedReadLength, (int)objectLogDevice.SectorSize), $"unalignedReadLength ({unalignedReadLength}) is not sector-aligned at segment end");
+                segmentIsComplete = true;
+            }
 
             // We may not have had a sector-aligned amount of remaining unread data.
             var alignedReadLength = RoundUp(unalignedReadLength, (int)objectLogDevice.SectorSize);
-            buffer.ReadFromDevice(nextFileReadPosition, recordStartPosition, (uint)alignedReadLength, ReadFromDeviceCallback);
+            buffer.ReadFromDevice(nextFileReadPosition, bufferStartPosition, (uint)alignedReadLength, ReadFromDeviceCallback);
 
             // Advance the filePosition. This used aligned read length so may advance it past end of record but that's OK because
             // filePosition is for the "read buffer-sized chunks" logic while data transfer via Read() uses buffer.currentPosition.
+            // Note: If segmentIsComplete, this increment results in nextFileReadPosition.Offset == SegmentSize, which will mask off to a 0.
             nextFileReadPosition.Offset += (uint)alignedReadLength;
 
             Debug.Assert(nextFileReadPosition.Offset <= nextFileReadPosition.SegmentSize, $"filePosition.Offset ({nextFileReadPosition.Offset}) must be <= filePosition.SegmentSize ({nextFileReadPosition.SegmentSize})");
-            if (nextFileReadPosition.Offset == nextFileReadPosition.SegmentSize)
+            if (segmentIsComplete)
                 nextFileReadPosition.AdvanceToNextSegment();
 
             unreadLengthRemaining -= (uint)unalignedReadLength;
@@ -180,7 +187,7 @@ namespace Tsavorite.core
         {
             // If we have more data to read, "backfill" this buffer with a read before departing it, else initialize it.
             if (unreadLengthRemaining > 0)
-                DoReadBuffer(currentIndex, unalignedRecordStartPosition: 0);
+                DoReadBuffer(currentIndex, unalignedReadStartPosition: 0);
             else
                 buffers[currentIndex].Initialize();
 

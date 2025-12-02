@@ -14,7 +14,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        internal unsafe struct PendingContext<TInput, TOutput, TContext> : ISourceLogRecord
+        internal unsafe struct PendingContext<TInput, TOutput, TContext>// : ISourceLogRecord
         {
             // User provided information
             internal OperationType type;
@@ -52,7 +52,7 @@ namespace Tsavorite.core
             /// <summary>The logical address of the found record, if any; used to create <see cref="RecordMetadata"/>.</summary>
             internal long logicalAddress;
 
-            /// <summary>The record's ETag, if any; used to create <see cref="RecordMetadata"/>.</summary>
+            /// <summary>The record's ETag, if any; used to create <see cref="RecordMetadata"/> output in RUMD.</summary>
             internal long eTag;
 
             /// <summary>The initial highest logical address of the search; used to limit search ranges when the pending operation completes (e.g. to see if a duplicate was inserted).</summary>
@@ -188,97 +188,30 @@ namespace Tsavorite.core
 
             #endregion // Serialized Record Creation
 
-            #region ISourceLogRecord
+            #region Shortcuts to contained DiskLogRecord
             /// <inheritdoc/>
-            public readonly ref RecordInfo InfoRef => ref diskLogRecord.InfoRef;
-            /// <inheritdoc/>
-            public readonly RecordInfo Info => diskLogRecord.Info;
-
-            /// <inheritdoc/>
-            public byte RecordType => diskLogRecord.RecordType;
-
-            /// <inheritdoc/>
-            public byte Namespace => diskLogRecord.Namespace;
-
-            /// <inheritdoc/>
-            public readonly ObjectIdMap ObjectIdMap => diskLogRecord.ObjectIdMap;
+            public readonly RecordInfo Info
+            {
+                get
+                {
+                    Debug.Assert(IsSet, "PendingContext.diskLogRecord must be set for 'Info'");
+                    return diskLogRecord.Info;
+                }
+            }
 
             /// <inheritdoc/>
             public readonly bool IsSet => diskLogRecord.IsSet;
 
             /// <inheritdoc/>
-            public readonly ReadOnlySpan<byte> Key => diskLogRecord.Key;
-
-            /// <inheritdoc/>
-            public readonly bool IsPinnedKey => diskLogRecord.IsPinnedKey;
-
-            /// <inheritdoc/>
-            public readonly byte* PinnedKeyPointer => diskLogRecord.PinnedKeyPointer;
-
-            /// <inheritdoc/>
-            public OverflowByteArray KeyOverflow
+            public readonly ReadOnlySpan<byte> Key
             {
-                readonly get => diskLogRecord.KeyOverflow;
-                set => diskLogRecord.KeyOverflow = value;
+                get
+                {
+                    Debug.Assert(IsSet, "PendingContext.diskLogRecord must be set for 'Key'");
+                    return diskLogRecord.Key;
+                }
             }
-
-            /// <inheritdoc/>
-            public readonly unsafe Span<byte> ValueSpan => diskLogRecord.ValueSpan;
-
-            /// <inheritdoc/>
-            public readonly IHeapObject ValueObject => diskLogRecord.ValueObject;
-
-            /// <inheritdoc/>
-            public readonly bool IsPinnedValue => diskLogRecord.IsPinnedValue;
-
-            /// <inheritdoc/>
-            public readonly byte* PinnedValuePointer => diskLogRecord.PinnedValuePointer;
-
-            /// <inheritdoc/>
-            public OverflowByteArray ValueOverflow
-            {
-                readonly get => diskLogRecord.ValueOverflow;
-                set => diskLogRecord.ValueOverflow = value;
-            }
-
-            /// <inheritdoc/>
-            public readonly long ETag => diskLogRecord.IsSet ? diskLogRecord.ETag : this.eTag;
-
-            /// <inheritdoc/>
-            public readonly long Expiration => diskLogRecord.Expiration;
-
-            /// <inheritdoc/>
-            public readonly void ClearValueIfHeap(Action<IHeapObject> disposer) { }  // Not relevant for PendingContext
-
-            /// <inheritdoc/>
-            public readonly bool IsMemoryLogRecord => diskLogRecord.IsMemoryLogRecord;
-
-            /// <inheritdoc/>
-            public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => ref diskLogRecord.AsMemoryLogRecordRef();
-
-            /// <inheritdoc/>
-            public readonly bool IsDiskLogRecord => true;
-
-            /// <inheritdoc/>
-            public readonly unsafe ref DiskLogRecord AsDiskLogRecordRef() => ref Unsafe.AsRef(in diskLogRecord);
-
-            /// <inheritdoc/>
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public readonly RecordFieldInfo GetRecordFieldInfo() => new()
-            {
-                KeySize = Key.Length,
-                ValueSize = Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : ValueSpan.Length,
-                ValueIsObject = Info.ValueIsObject,
-                HasETag = Info.HasETag,
-                HasExpiration = Info.HasExpiration
-            };
-
-            /// <inheritdoc/>
-            public readonly int AllocatedSize => diskLogRecord.AllocatedSize;
-
-            /// <inheritdoc/>
-            public readonly int ActualSize => diskLogRecord.ActualSize;
-            #endregion // ISourceLogRecord
+            #endregion Shortcuts to contained DiskLogRecord
         }
     }
 }

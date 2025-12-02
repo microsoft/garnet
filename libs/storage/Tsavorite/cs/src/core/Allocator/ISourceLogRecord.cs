@@ -22,7 +22,7 @@ namespace Tsavorite.core
         byte RecordType { get; }
 
         /// <summary>Namespace of the record. Should be set on creation of the <see cref="LogRecord"/> and then immutable.</summary>
-        byte Namespace { get; }
+        ReadOnlySpan<byte> Namespace { get; }
 
         /// <summary>The <see cref="ObjectIdMap"/> for this instance. May be the allocator's or transient (for <see cref="DiskLogRecord"/>).</summary>
         ObjectIdMap ObjectIdMap { get; }

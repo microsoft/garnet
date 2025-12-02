@@ -55,9 +55,13 @@ namespace Tsavorite.core
         /// In particular, if knowledge of whether this is a string or object record is required, or an overflow allocator is needed, this method cannot be used.</summary>
         public LogRecord(byte* recordPtr) => physicalAddress = (long)recordPtr;
 
+        /// <summary>Address of the <see cref="RecordDataHeader"/></summary>
         internal readonly long DataHeaderAddress => physicalAddress + RecordInfo.Size;
-        private readonly long NamespaceAddress => physicalAddress + RecordInfo.Size + 1;
-        private readonly long RecordTypeAddress => physicalAddress + RecordInfo.Size + 2;
+        /// <summary>Address of the namespace indicator byte. If the <see cref="RecordDataHeader.ExtendedNamespaceIndicatorBit"/> is not set, then the <see cref="RecordDataHeader.NamespaceIndicatorMask"/> bits
+        /// contain the full namespace as a single byte; otherwise those bits are the length of the extended namespace data preceding the key data.</summary>
+        private readonly long NamespaceAddress => physicalAddress + RecordInfo.Size + RecordDataHeader.NamespaceOffsetInHeader;
+        /// <summary>Address of the Record type indicator byte</summary>
+        private readonly long RecordTypeAddress => physicalAddress + RecordInfo.Size + RecordDataHeader.RecordTypeOffsetInHeader;
 
         public readonly byte IndicatorByte => *(byte*)DataHeaderAddress;
 
@@ -123,17 +127,27 @@ namespace Tsavorite.core
 
         #region ISourceLogRecord
         /// <inheritdoc/>
-        public readonly byte RecordType
-        {
-            get => *(byte*)RecordTypeAddress;
-            set => *(byte*)RecordTypeAddress = value;
-        }
+        public readonly byte RecordType => *(byte*)RecordTypeAddress;
 
         /// <inheritdoc/>
-        public readonly byte Namespace
+        public readonly ReadOnlySpan<byte> Namespace
         {
-            get => *(byte*)NamespaceAddress;
-            set => *(byte*)NamespaceAddress = value;
+            get
+            {
+                var indicator = *(byte*)NamespaceAddress;
+                if ((indicator & RecordDataHeader.ExtendedNamespaceIndicatorBit) == 0)
+                {
+                    // Single-byte namespace
+                    return new ReadOnlySpan<byte>(&indicator, 1);
+                }
+                else
+                {
+                    // Extended namespace
+                    var length = indicator & RecordDataHeader.NamespaceIndicatorMask;
+                    // return new ReadOnlySpan<byte>((byte*)(ExtendedNamespaceAddress + 1), length);
+                    throw new TsavoriteException("Extended namespace not yet supported");
+                }
+            }
         }
 
         /// <inheritdoc/>
@@ -601,7 +615,7 @@ namespace Tsavorite.core
             // Because it is for (re)initialization, we don't zero-initialize; the caller should assume they have to do that if they only copy partial data in.
             ClearOptionals();
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info);
+            var (_ /*valueLength*/, valueAddress) = dataHeader.GetValueFieldInfo(Info);
             var recordLength = dataHeader.GetRecordLength();
             var fillerLength = (int)(physicalAddress + recordLength - (valueAddress + sizeInfo.InlineValueSize));
             if (fillerLength < 0)
@@ -878,15 +892,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Copy the entire record values: Value and optionals (ETag, Expiration).
+        /// Copy the entire record values: Value and optionals (ETag, Expiration). Key is not copied as it has already been set into 'this'.
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TryCopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            // TODOnow: For RENAME, add a key param to this and copy it in. Reflect this in RecordFieldInfo's KeyLength etc. (including whether it's overflow)
-            // For now, this assumes the Key has been set and is not changed
             if (srcLogRecord.Info.ValueIsInline)
             {
                 if (!TrySetContentLengths(in sizeInfo))
@@ -1080,7 +1092,7 @@ namespace Tsavorite.core
                 // Get the high byte in the ObjectLogPosition (it is combined with the length that is stored in the ObjectId field data of the record).
                 // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
                 var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
-                valueObjectLength = *(uint*)valueAddress | ((uint)ObjectLogFilePositionInfo.GetObjectSizeHighByte(objectLogPositionPtr) << 32);
+                valueObjectLength = *(uint*)valueAddress | ((ulong)ObjectLogFilePositionInfo.GetObjectSizeHighByte(objectLogPositionPtr) << 32);
             }
             else // ValueIsInline is true; valueLength will be ignored
             {

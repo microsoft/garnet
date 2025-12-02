@@ -183,10 +183,10 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public readonly byte RecordType => logRecord.IsSet ? logRecord.RecordType : (byte)0;
+        public readonly byte RecordType => logRecord.IsSet ? logRecord.RecordType : default;
 
         /// <inheritdoc/>
-        public readonly byte Namespace => logRecord.IsSet ? logRecord.Namespace : (byte)0;
+        public readonly ReadOnlySpan<byte> Namespace => logRecord.IsSet ? logRecord.Namespace : default;
 
         /// <inheritdoc/>
         public readonly ObjectIdMap ObjectIdMap => logRecord.objectIdMap;

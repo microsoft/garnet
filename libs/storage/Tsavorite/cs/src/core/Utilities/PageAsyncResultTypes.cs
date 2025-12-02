@@ -164,6 +164,9 @@ namespace Tsavorite.core
 
         internal FlushCompletionTracker flushCompletionTracker;
 
+        /// <summary>If this is set then we are using a different objectLog device from that in the allocator, and do not use the allocator's <see cref="ObjectLogFilePositionInfo"/>.</summary>
+        internal ObjectLogFilePositionInfo objectLogFilePositionInfo;
+
         public override string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";

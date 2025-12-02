@@ -238,6 +238,8 @@ namespace Tsavorite.test
 
         public enum WaitMode { Wait, NoWait }
 
+        public enum RandomMode { Rng, NoRng }
+
         internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext>(CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);
 

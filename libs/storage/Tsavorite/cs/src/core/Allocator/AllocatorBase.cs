@@ -1595,6 +1595,7 @@ namespace Tsavorite.core
             completed = new CountdownEvent(numPages);
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
             {
+                // Note: create separate readBuffers for each main-log page, as each page launches its own async read and callbacks are on different threads.
                 using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
 
                 var pageIndex = (int)(readPage % BufferSize);
@@ -1809,6 +1810,7 @@ namespace Tsavorite.core
 
                 // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator). This calls our callback when the last write of a partial flush completes.
                 using var flushBuffers = CreateCircularFlushBuffers(objectLogDevice, logger);
+                flushBuffers?.InitializeOwnObjectLogFilePosition(objectLogDevice.SegmentSize);
 
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {

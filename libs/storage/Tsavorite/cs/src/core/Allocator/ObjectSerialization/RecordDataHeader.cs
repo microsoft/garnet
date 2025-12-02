@@ -103,8 +103,13 @@ namespace Tsavorite.core
         /// <summary>The number of data header indicator bytes; currently 3 for the length indicator, Namespace, RecordType.</summary>
         internal const int NumIndicatorBytes = 3;
 
-        /// <summary>The flag indicating that the namespace is more that sbyte.MaxValue, in which case there is extended data before the key.</summary>
-        internal const byte ExtendedNamespaceFlag = 1 << 7;
+        /// <summary>If the <see cref="ExtendedNamespaceIndicatorBit"/> is not set, then the <see cref="NamespaceIndicatorMask"/> bits
+        /// contain the full namespace as a single byte; otherwise those bits are the length of the extended namespace data preceding the key data.</summary>
+        internal const byte ExtendedNamespaceIndicatorBit = 1 << 7;
+        /// <summary>If the <see cref="ExtendedNamespaceIndicatorBit"/> is not set, then the <see cref="NamespaceIndicatorMask"/> bits
+        /// contain the full namespace as a single byte; otherwise those bits are the length of the extended namespace data preceding the key data.</summary>
+        internal const byte NamespaceIndicatorMask = ExtendedNamespaceIndicatorBit - 1;
+
         /// <summary>Offset of the nameSpace byte in the header.</summary>
         internal const byte NamespaceOffsetInHeader = 1;
         /// <summary>Offset of the recordType byte in the header.</summary>
@@ -146,7 +151,7 @@ namespace Tsavorite.core
             get
             {
                 var nameSpace = *(HeaderPtr + NamespaceOffsetInHeader);
-                return (nameSpace & ExtendedNamespaceFlag) == 0 ? nameSpace : nameSpace & ~ExtendedNamespaceFlag;
+                return (nameSpace & ExtendedNamespaceIndicatorBit) == 0 ? nameSpace : nameSpace & NamespaceIndicatorMask;
             }
         }
 
@@ -156,7 +161,7 @@ namespace Tsavorite.core
             get
             {
                 var nameSpace = *(HeaderPtr + NamespaceOffsetInHeader);
-                if ((nameSpace & ExtendedNamespaceFlag) != 0)
+                if ((nameSpace & ExtendedNamespaceIndicatorBit) != 0)
                     throw new TsavoriteException("Cannot get NamespaceByte when ExtendedNamespaceFlag is set");
                 return nameSpace;
             }
@@ -199,7 +204,7 @@ namespace Tsavorite.core
             // TODO: Pass in the actual Span<byte>Namespace to VarLenMethods to set sizeInfo.FieldInfo.ExtendedNamespaceSize. Here we are only concerned
             // with setting the correct length indicators; LogRecord.InitializeRecord will set the actual data for it. sizeInfo.FieldInfo.ExtendedNamespaceSize
             // has been verified by RecordSizeInfo.CalculateSizes to be within byte range.
-            *(HeaderPtr + NamespaceOffsetInHeader) = (byte)(sizeInfo.FieldInfo.ExtendedNamespaceSize > 0 ? (ExtendedNamespaceFlag | (sizeInfo.FieldInfo.ExtendedNamespaceSize & 0x7f)) : 0);
+            *(HeaderPtr + NamespaceOffsetInHeader) = (byte)(sizeInfo.FieldInfo.ExtendedNamespaceSize > 0 ? (ExtendedNamespaceIndicatorBit | (sizeInfo.FieldInfo.ExtendedNamespaceSize & NamespaceIndicatorMask)) : 0);
             *(HeaderPtr + RecordTypeOffsetInHeader) = recordType;
 
             // Calculate and store the filler length, if any. Filler includes any space for optionals that won't have been set this early in the initialization process.

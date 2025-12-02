@@ -278,7 +278,7 @@ namespace Tsavorite.core
             if (objectLogDevice is not null)
             {
                 var addressOfStartOfMainLogPage = GetAddressOfStartOfPageOfAddress(toAddress);
-                if (GetOffsetOnPage(toAddress) <= PageHeader.Size)
+                if (GetOffsetOnPage(toAddress) <= PageHeader.Size && addressOfStartOfMainLogPage >= PageSize)
                     addressOfStartOfMainLogPage -= PageSize;
                 objectLogSegment = GetLowestObjectLogSegmentInUse(addressOfStartOfMainLogPage);
             }
@@ -357,7 +357,7 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    // We are writing to a separate device which starts at "startPage"
+                    // We are writing to a separate device which starts at "startPage" (this is probably from checkpointing)
                     WriteAsync(flushBuffers, flushPage, (ulong)(AlignedPageSizeBytes * (flushPage - startPage)), (uint)possiblyPartialPageSize,
                                callback, asyncResult, device, objectLogDevice, fuzzyStartLogicalAddress);
                 }
@@ -565,8 +565,7 @@ namespace Tsavorite.core
                 // Finally write the main log page as part of OnPartialFlushComplete, or directly if we had no flushBuffers.
                 // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
                 if (logWriter is not null)
-                    logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset,
-                        callback, asyncResult, out objectLogTail);
+                    logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, ref objectLogTail);
                 else
                     device.WriteAsync((IntPtr)srcBuffer.GetValidPointer(), alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
             }
@@ -700,15 +699,10 @@ namespace Tsavorite.core
                 {
                     var logRecord = new LogRecord(recordAddress, objectIdMapToUse);
 
-                    // Use allocatedSize here because that is what LogicalAddress is based on.
-                    if (logRecord.Info.RecordIsInline)
-                    {
-                        recordAddress += logRecord.AllocatedSize;
-                        continue;
-                    }
-
+                    // Increment by allocatedSize because that is what LogicalAddress is based on.
                     recordAddress += logRecord.AllocatedSize;
-                    if (logRecord.Info.Valid)
+
+                    if (!logRecord.Info.RecordIsInline && logRecord.Info.Valid)
                     {
                         // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
                         // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.

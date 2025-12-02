@@ -94,7 +94,7 @@ namespace Tsavorite.core
 
             var flushLength = (uint)(currentPosition - flushedUntilPosition);
             Debug.Assert(IsAligned(flushLength, (int)device.SectorSize), $"flushLength {flushLength} is not sector-aligned");
-            Debug.Assert(flushLength <= filePosition.RemainingSize, $"flushLength ({flushLength}) cannot be greater than filePosition.RemainingSize ({filePosition.RemainingSize})");
+            Debug.Assert(flushLength <= filePosition.RemainingSizeInSegment, $"flushLength ({flushLength}) cannot be greater than filePosition.RemainingSize ({filePosition.RemainingSizeInSegment})");
 
             var spanPtr = memory.GetValidPointer() + flushedUntilPosition;
             device.WriteAsync((IntPtr)spanPtr, filePosition.SegmentId, filePosition.Offset, flushLength, callback, pageWriteCallbackContext);

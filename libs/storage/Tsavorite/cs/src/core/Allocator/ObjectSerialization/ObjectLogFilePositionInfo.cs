@@ -17,7 +17,13 @@ namespace Tsavorite.core
         internal const ulong NotSet = ulong.MaxValue;
 
         /// <summary>Maximum number of bytes to use for segment + offset. 7 bytes gives a 72PB Object Log size range.</summary>
-        private const int MaxBytesForSegmentAndOffset = 7;
+        private const int NumSegmentAndOffsetBytes = 7;
+
+        /// <summary>Maximum number of bits to use for segment + offset. 7 bytes gives a 72PB Object Log size range.</summary>
+        private const int NumSegmentAndOffsetBits = NumSegmentAndOffsetBytes * sizeof(long);
+
+        /// <summary>Maximum number of bytes to use for segment + offset. 7 bytes gives a 72PB Object Log size range.</summary>
+        private const ulong SegmentAndOffsetMask = (1UL << NumSegmentAndOffsetBits) - 1;
 
         /// <summary>Object log segment size bits</summary>
         internal int SegmentSizeBits;
@@ -29,18 +35,12 @@ namespace Tsavorite.core
         internal readonly bool HasData => word != 0 && word != NotSet;
 
         /// <summary>
-        /// Default initialization. ObjectLogFilePositionInfo must be instantiated by new(), not default; we don't have arrays of this,
+        /// Default initialization; leaves IsSet false. ObjectLogFilePositionInfo must be instantiated by new(), not default; we don't have arrays of this,
         /// and fields are initalized with some overload of new().
         /// </summary>
         public ObjectLogFilePositionInfo()
         {
             SegmentSizeBits = 0;
-            word = NotSet;
-        }
-
-        internal ObjectLogFilePositionInfo(int segSizeBits)
-        {
-            SegmentSizeBits = segSizeBits;
             word = NotSet;
         }
 
@@ -50,7 +50,7 @@ namespace Tsavorite.core
             this.word = word;
         }
 
-        internal void Serialize(StreamWriter writer)
+        internal readonly void Serialize(StreamWriter writer)
         {
             writer.WriteLine(SegmentSizeBits);
             writer.WriteLine(word);
@@ -68,13 +68,13 @@ namespace Tsavorite.core
         public int ObjectSizeHighByte
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get { return (int)((word >> (MaxBytesForSegmentAndOffset * 8)) & 0xFF); }
+            readonly get { return (int)((word >> NumSegmentAndOffsetBits) & 0xFFUL); }
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
                 if (value > byte.MaxValue)
                     throw new ArgumentOutOfRangeException(nameof(value), $"Object size high byte must be less than or equal to {byte.MaxValue}.");
-                word = (word & ~(0xFFUL << (MaxBytesForSegmentAndOffset * 8))) | ((ulong)value << (MaxBytesForSegmentAndOffset * 8));
+                word = (word & ~(0xFFUL << NumSegmentAndOffsetBits)) | ((ulong)value << NumSegmentAndOffsetBits);
             }
         }
 
@@ -84,12 +84,12 @@ namespace Tsavorite.core
         {
             if (value > byte.MaxValue)
                 throw new ArgumentOutOfRangeException(nameof(value), $"Object size high byte must be less than or equal to {byte.MaxValue}.");
-            *wordPtr = (*wordPtr & ~(0xFFUL << (MaxBytesForSegmentAndOffset * 8))) | ((ulong)value << (MaxBytesForSegmentAndOffset * 8));
+            *wordPtr = (*wordPtr & ~(0xFFUL << NumSegmentAndOffsetBits)) | ((ulong)value << NumSegmentAndOffsetBits);
         }
 
         /// <summary>The high byte is combined with the Value object length stored in the Value field when serialized, yielding 40 bits or 1TB max single object size.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe int GetObjectSizeHighByte(ulong* wordPtr) => (int)((*wordPtr >> (MaxBytesForSegmentAndOffset * 8)) & 0xFFUL);
+        public static unsafe int GetObjectSizeHighByte(ulong* wordPtr) => (int)((*wordPtr >> NumSegmentAndOffsetBits) & 0xFFUL);
 
         /// <summary>The offset within the current <see cref="SegmentId"/>.</summary>
         public ulong Offset
@@ -116,23 +116,23 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get
             {
-                var mask = (ulong)((1L << ((sizeof(long) * 8) - SegmentSizeBits)) - 1L);
+                var mask = (ulong)((1L << (NumSegmentAndOffsetBits - SegmentSizeBits)) - 1L);
                 return (int)((word >> SegmentSizeBits) & mask);
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set
             {
-                var mask = (ulong)((1L << ((sizeof(long) * 8) - SegmentSizeBits)) - 1L);
-                word = (word & (mask << SegmentSizeBits)) | (((ulong)value & mask) << SegmentSizeBits);
+                var mask = (ulong)((1L << (NumSegmentAndOffsetBits - SegmentSizeBits)) - 1L);
+                word = (word & ~(mask << SegmentSizeBits)) | (((ulong)value & mask) << SegmentSizeBits);
             }
         }
 
-        private int MaxSegmentId
+        private readonly int MaxSegmentId
         {
             get
             {
-                var seg = 1L << ((MaxBytesForSegmentAndOffset * sizeof(long)) - SegmentSizeBits);
+                var seg = 1L << (NumSegmentAndOffsetBits - SegmentSizeBits);
                 return seg > int.MaxValue ? int.MaxValue : (int)seg;
             }
         }
@@ -147,13 +147,14 @@ namespace Tsavorite.core
                 return;
             }
 
-            // See if we can move to the next segment(s).
+            // Note: If size == remaining, we will advance to the start of the next segment.
+            size -= remaining;
+
+            // Move to the next segment(s).
             long nextSegmentId = SegmentId + (int)(size / SegmentSize) + 1;
             if (nextSegmentId > MaxSegmentId)
                 throw new InvalidDataException($"Advancing position by {size:N} bytes exceeds maximum object log segment.");
 
-            // Note: If size == remaining, we advance to the start of the next segment.
-            size -= remaining;
             SegmentId = (int)nextSegmentId;
             Offset += size & (SegmentSize - 1);
         }
@@ -170,18 +171,18 @@ namespace Tsavorite.core
         public static ulong operator -(ObjectLogFilePositionInfo left, ObjectLogFilePositionInfo right)
         {
             Debug.Assert(left.SegmentSizeBits == right.SegmentSizeBits, "Segment size bits must match to compute distance");
-            Debug.Assert(left.word >= right.word, "comparison position must be greater");
+            Debug.Assert((left.word & SegmentAndOffsetMask) >= (right.word & SegmentAndOffsetMask), "comparison position must be greater");
             var segmentDiff = (ulong)(left.SegmentId - right.SegmentId);
             if (segmentDiff == 0)
                 return left.Offset - right.Offset;
-            return (segmentDiff - 1) * left.SegmentSize + (left.SegmentSize - right.Offset) + left.Offset;
+            return ((segmentDiff - 1) * left.SegmentSize) + (left.SegmentSize - right.Offset) + left.Offset;
         }
 
         public readonly ulong SegmentSize => 1UL << SegmentSizeBits;
 
-        public readonly ulong RemainingSize => SegmentSize - Offset;
+        public readonly ulong RemainingSizeInSegment => SegmentSize - Offset;
 
         /// <inheritdoc/>
-        public override readonly string ToString() => $"Segment# {SegmentId}; Offset {Offset:N0}; SegBits {SegmentSizeBits}; SegSize {SegmentSize:N0}";
+        public override readonly string ToString() => $"Segment# {SegmentId}; Offset {Offset:N0}; SegBits {SegmentSizeBits}; SegSize {SegmentSize:N0}; RemSize {RemainingSizeInSegment:N0}";
     }
 }

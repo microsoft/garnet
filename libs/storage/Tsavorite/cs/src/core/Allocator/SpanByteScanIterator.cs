@@ -315,7 +315,7 @@ namespace Tsavorite.core
         public byte RecordType => diskLogRecord.RecordType;
 
         /// <inheritdoc/>
-        public byte Namespace => diskLogRecord.Namespace;
+        public ReadOnlySpan<byte> Namespace => diskLogRecord.Namespace;
 
         /// <inheritdoc/>
         public ObjectIdMap ObjectIdMap => diskLogRecord.ObjectIdMap;

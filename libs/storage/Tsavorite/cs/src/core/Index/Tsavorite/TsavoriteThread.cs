@@ -142,7 +142,7 @@ namespace Tsavorite.core
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
                                                      status,
-                                                     new RecordMetadata(pendingContext.logicalAddress, pendingContext.ETag));
+                                                     new RecordMetadata(pendingContext.logicalAddress, pendingContext.eTag));
                 }
                 else if (pendingContext.type == OperationType.RMW)
                 {
@@ -151,7 +151,7 @@ namespace Tsavorite.core
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
                                                      status,
-                                                     new RecordMetadata(pendingContext.logicalAddress, pendingContext.ETag));
+                                                     new RecordMetadata(pendingContext.logicalAddress, pendingContext.eTag));
                 }
             }
 
