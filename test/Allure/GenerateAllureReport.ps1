@@ -6,7 +6,7 @@
 
     It is getting the data from the test/Allure/CombinedResults directory and generating the report into the test/Allure/allure-report directory.
 
-    NOTE: Preserving history between runs is handled in the GitHub Actions workflow by downloading and uploading the history folder to allure_data_history branch.
+    NOTE: Preserving history between runs is handled in the GitHub Actions workflow by downloading and uploading the history folder to allure_data_history branch (test/Allure/history).
 #>
 
 $OFS = "`r`n"
@@ -47,13 +47,6 @@ if (-not (Test-Path -Path $reportDir)) {
 else {
     Write-Host "Allure report generated successfully at $reportDir.  Use 'allure open allure-report' to view it locally."
 }
-
-# DEBUG DEBUG - Removes comments
-# Deletes all .json except categories.json - do this after the report is ran just so we don't have a 1000s of result files in artifacts for each run
-# Write-Host "Deleting Allure result files from $allureResultsCombinedDir"
-# Get-ChildItem -Path $allureResultsCombinedDir -Filter *.json |
-#    Where-Object { $_.Name -ne 'categories.json' } |
-#    Remove-Item
 
 Write-Output "************************"
 Write-Output "**"
