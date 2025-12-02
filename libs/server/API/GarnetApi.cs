@@ -29,14 +29,12 @@ namespace Garnet.server
         readonly StorageSession storageSession;
         TContext context;
         TObjectContext objectContext;
-        TVectorContext vectorContext;
 
-        internal GarnetApi(StorageSession storageSession, TContext context, TObjectContext objectContext, TVectorContext vectorContext)
+        internal GarnetApi(StorageSession storageSession, TContext context, TObjectContext objectContext)
         {
             this.storageSession = storageSession;
             this.context = context;
             this.objectContext = objectContext;
-            this.vectorContext = vectorContext;
         }
 
         #region WATCH

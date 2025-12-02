@@ -103,7 +103,7 @@ namespace Garnet.test
             db.SortedSetAdd("key1", "b", 2);
 
             var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
-            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext, session.storageSession.objectStoreBasicContext, session.storageSession.vectorContext);
+            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext, session.storageSession.objectStoreBasicContext);
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
             {
@@ -135,7 +135,7 @@ namespace Garnet.test
             Thread.Sleep(200);
 
             var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
-            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext, session.storageSession.objectStoreBasicContext, session.storageSession.vectorContext);
+            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext, session.storageSession.objectStoreBasicContext);
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
             {

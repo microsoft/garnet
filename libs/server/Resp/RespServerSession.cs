@@ -1521,8 +1521,8 @@ namespace Garnet.server
             Debug.Assert(dbRes, "Should always find database if we're switching to it");
 
             var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId, database.VectorManager, logger, respProtocolVersion);
-            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext, dbStorageSession.vectorContext);
-            var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext, dbStorageSession.vectorLockableContext);
+            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
+            var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
 
             var transactionManager = new TransactionManager(storeWrapper, this, dbGarnetApi, dbLockableGarnetApi,
                 dbStorageSession, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger, dbId);
