@@ -1444,8 +1444,8 @@ namespace Garnet.test
 
             try
             {
-                db.Execute("SET", key1, value1, "WITHETAG");
-                db.Execute("SET", key2, value2, "WITHETAG");
+                db.Execute("EXECWITHETAG", "SET", key1, value1);
+                db.Execute("EXECWITHETAG", "SET", key2, value2);
 
                 RedisResult result = db.Execute("RANDOPS", key1, key2);
 
@@ -1482,8 +1482,8 @@ namespace Garnet.test
 
             try
             {
-                db.Execute("SET", key1, value1, "WITHETAG");
-                db.Execute("SET", key2, value2, "WITHETAG");
+                db.Execute("EXECWITHETAG", "SET", key1, value1);
+                db.Execute("EXECWITHETAG", "SET", key2, value2);
 
                 // incr key2, and just get key1
                 RedisResult result = db.Execute("INCRGET", key2, key1);

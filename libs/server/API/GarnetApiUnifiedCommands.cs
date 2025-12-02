@@ -81,6 +81,14 @@ namespace Garnet.server
 
         #endregion
 
+        #region RENAME
+
+        /// <inheritdoc />
+        public GarnetStatus RENAME(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output)
+            => storageSession.RENAME(key, ref input, ref output);
+        
+        #endregion
+
         #region EXPIRE
 
         /// <inheritdoc />

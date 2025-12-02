@@ -1130,14 +1130,6 @@
         "DisplayText": "newkey",
         "Type": "Key",
         "KeySpecIndex": 1
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "WITHETAG",
-        "DisplayText": "WITHETAG",
-        "Type": "PureToken",
-        "ArgumentFlags": "Optional",
-        "Token": "WITHETAG"
       }
     ]
   },
@@ -1161,14 +1153,6 @@
         "DisplayText": "newkey",
         "Type": "Key",
         "KeySpecIndex": 1
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "WITHETAG",
-        "DisplayText": "WITHETAG",
-        "Type": "PureToken",
-        "ArgumentFlags": "Optional",
-        "Token": "WITHETAG"
       }
     ]
   },
@@ -1238,14 +1222,6 @@
         "Type": "PureToken",
         "Token": "GET",
         "ArgumentFlags": "Optional"
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "WITHETAG",
-        "DisplayText": "WITHETAG",
-        "Type": "PureToken",
-        "ArgumentFlags": "Optional",
-        "Token": "WITHETAG"
       },
       {
         "TypeDiscriminator": "RespCommandContainerArgument",

@@ -224,70 +224,39 @@ namespace Garnet.server
         /// <summary>
         /// TryRENAME
         /// </summary>
-        private bool NetworkRENAME<TGarnetApi>(ref TGarnetApi storageApi)
+        private bool NetworkRENAME<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            // one optional command for with etag
+            Debug.Assert(cmd == RespCommand.RENAME || cmd == RespCommand.RENAMENX);
+
             if (parseState.Count != 2)
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAME));
+                return AbortWithWrongNumberOfArguments(cmd.ToString());
 
-            var oldKeySlice = parseState.GetArgSliceByRef(0);
-            var newKeySlice = parseState.GetArgSliceByRef(1);
+            var key = parseState.GetArgSliceByRef(0);
 
-            var withEtag = metaCommand == RespMetaCommand.ExecWithEtag;
+            var input = new UnifiedInput(cmd, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
 
-            var status = storageApi.RENAME(oldKeySlice, newKeySlice, withEtag);
+            var isNx = cmd == RespCommand.RENAMENX;
+            var output = isNx ? UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr)) : default;
+
+            var status = storageApi.RENAME(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                        SendAndReset();
+                    if (isNx)
+                        ProcessOutput(output.SpanByteAndMemory);
+                    else
+                    {
+                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                            SendAndReset();
+                    }
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
                         SendAndReset();
                     break;
             }
-            return true;
-        }
-
-        /// <summary>
-        /// TryRENAMENX
-        /// </summary>
-        private bool NetworkRENAMENX<TGarnetApi>(ref TGarnetApi storageApi)
-            where TGarnetApi : IGarnetApi
-        {
-            // one optional command for with etag
-            if (parseState.Count < 2 || parseState.Count > 3)
-                return AbortWithWrongNumberOfArguments(nameof(RespCommand.RENAMENX));
-
-            var oldKeySlice = parseState.GetArgSliceByRef(0);
-            var newKeySlice = parseState.GetArgSliceByRef(1);
-
-            var withEtag = false;
-            if (parseState.Count == 3)
-            {
-                if (!parseState.GetArgSliceByRef(2).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.WITHETAG))
-                    return AbortWithErrorMessage(string.Format(CmdStrings.GenericErrUnsupportedOption, parseState.GetString(2)));
-                withEtag = true;
-            }
-
-            var status = storageApi.RENAMENX(oldKeySlice, newKeySlice, out var result, withEtag);
-
-            if (status == GarnetStatus.OK)
-            {
-                // Integer reply: 1 if key was renamed to newkey.
-                // Integer reply: 0 if newkey already exists.
-                while (!RespWriteUtils.TryWriteInt32(result, ref dcurr, dend))
-                    SendAndReset();
-            }
-            else
-            {
-                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_NOSUCHKEY, ref dcurr, dend))
-                    SendAndReset();
-            }
-
             return true;
         }
 

@@ -229,7 +229,7 @@ namespace Garnet.test
                 var db = redis.GetDatabase(0);
                 db.StringSet("SeAofUpsertRecoverTestKey1", "SeAofUpsertRecoverTestValue1", expiry: TimeSpan.FromDays(1), when: When.NotExists);
                 db.StringSet("SeAofUpsertRecoverTestKey2", "SeAofUpsertRecoverTestValue2", expiry: TimeSpan.FromDays(1), when: When.NotExists);
-                db.Execute("SET", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3", "WITHETAG");
+                db.Execute("EXECWITHETAG", "SET", "SeAofUpsertRecoverTestKey3", "SeAofUpsertRecoverTestValue3");
                 db.Execute("EXECIFMATCH", 1, "SET", "SeAofUpsertRecoverTestKey3", "UpdatedSeAofUpsertRecoverTestValue3");
                 db.Execute("SET", "SeAofUpsertRecoverTestKey4", "2");
                 var res = db.Execute("INCR", "SeAofUpsertRecoverTestKey4");

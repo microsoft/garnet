@@ -499,9 +499,8 @@ namespace Garnet.server
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.GET))
                 {
-                    if (metaCommand != RespMetaCommand.None)
+                    if (metaCommand == RespMetaCommand.ExecWithEtag)
                     {
-                        // cannot do withEtag and getValue since withEtag SET already returns ETag in response
                         errorMessage = CmdStrings.RESP_ERR_WITHETAG_AND_GETVALUE;
                         break;
                     }

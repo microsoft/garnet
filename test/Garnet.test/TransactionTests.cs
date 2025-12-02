@@ -442,7 +442,7 @@ namespace Garnet.test
             var lightClientRequest = TestUtils.CreateRequest();
 
             var expectedResponse = ":1\r\n";
-            var response = lightClientRequest.SendCommand("SET key1 value1 WITHETAG");
+            var response = lightClientRequest.SendCommand("EXECWITHETAG SET key1 value1");
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             expectedResponse = "+OK\r\n";
@@ -462,7 +462,7 @@ namespace Garnet.test
             await Task.Run(() =>
             {
                 using var lightClientRequestCopy = TestUtils.CreateRequest();
-                string command = "SET key1 value1_updated WITHETAG";
+                string command = "EXECWITHETAG SET key1 value1_updated";
                 lightClientRequestCopy.SendCommand(command);
             });
 

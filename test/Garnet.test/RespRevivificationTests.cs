@@ -201,7 +201,7 @@ namespace Garnet.test
             var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
             ClassicAssert.IsTrue(stats.ToString().Contains("Successful Takes: 1"), "Expected FreeRecord revivification to happen, but it did not.");
 
-            var res = (RedisResult[])await db.ExecuteAsync("GETWITHETAG", "the");
+            var res = (RedisResult[])await db.ExecuteAsync("EXECWITHETAG", "GET", "the");
 
             ClassicAssert.AreEqual(23, (long)res[0], "Incorrect Etag.");
             ClassicAssert.AreEqual("terminator", res[1].ToString(), "Expected the value to be updated via RMW operation, but it was not.");

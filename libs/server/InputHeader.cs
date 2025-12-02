@@ -597,7 +597,6 @@ namespace Garnet.server
         /// <param name="arg1">General-purpose argument</param>
         public UnifiedInput(ushort cmd, byte metaCmd = 0, byte flags = 0, long arg1 = 0) :
             this((RespCommand)cmd, (RespMetaCommand)metaCmd, (RespInputFlags)flags, arg1)
-
         {
         }
 

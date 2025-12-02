@@ -165,16 +165,6 @@ namespace Garnet.server
 
         #endregion
 
-        #region RENAME
-        /// <inheritdoc />
-        public GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false)
-            => storageSession.RENAME(oldKey, newKey, withEtag);
-
-        /// <inheritdoc />
-        public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false)
-            => storageSession.RENAMENX(oldKey, newKey, out result, withEtag);
-        #endregion
-
         #region Increment (INCR, INCRBY, DECR, DECRBY)
         /// <inheritdoc />
         public GarnetStatus Increment(PinnedSpanByte key, ref StringInput input, ref PinnedSpanByte output)

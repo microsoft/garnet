@@ -658,32 +658,6 @@
     ]
   },
   {
-    "Command": "GETWITHETAG",
-    "Name": "GETWITHETAG",
-    "IsInternal": false,
-    "Arity": 2,
-    "Flags": "NONE",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Fast, String, Read",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RO, Access"
-      }
-    ]
-  },
-  {
     "Command": "HCOLLECT",
     "Name": "HCOLLECT",
     "Arity": 2,

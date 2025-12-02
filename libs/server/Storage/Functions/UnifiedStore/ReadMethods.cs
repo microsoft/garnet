@@ -37,7 +37,7 @@ namespace Garnet.server
                 RespCommand.PTTL => HandleTtl(in srcLogRecord, ref output, cmd == RespCommand.PTTL),
                 RespCommand.EXPIRETIME or
                 RespCommand.PEXPIRETIME => HandleExpireTime(in srcLogRecord, ref output, cmd == RespCommand.PEXPIRETIME),
-                RespCommand.RENAME => HandleRename(in srcLogRecord, ref output),
+                RespCommand.RENAME or RespCommand.RENAMENX => HandleRename(in srcLogRecord, ref output),
                 _ => throw new NotImplementedException(),
             };
         }

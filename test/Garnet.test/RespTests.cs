@@ -2274,8 +2274,8 @@ namespace Garnet.test
             var key = "key1";
             var newKey = "key2";
 
-            db.Execute("SET", key, origValue, "WITHETAG");
-            db.Execute("SET", newKey, "foo", "WITHETAG");
+            db.Execute("EXECWITHETAG", "SET", key, origValue);
+            db.Execute("EXECWITHETAG", "SET", newKey, "foo");
 
             var result = db.KeyRename(key, newKey, When.NotExists);
             ClassicAssert.IsFalse(result);
@@ -2290,7 +2290,7 @@ namespace Garnet.test
             var key = "key1";
             var newKey = "key2";
 
-            db.Execute("SET", key, origValue, "WITHETAG");
+            db.Execute("EXECWITHETAG", "SET", key, origValue);
 
             var result = db.KeyRename(key, newKey, When.NotExists);
             ClassicAssert.IsTrue(result);
@@ -2302,7 +2302,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(oldKeyRes.IsNull);
 
             // Since the original key was set with etag, the new key should have an etag attached to it
-            var etagRes = (RedisResult[])db.Execute("GETWITHETAG", newKey);
+            var etagRes = (RedisResult[])db.Execute("EXECWITHETAG", "GET", newKey);
             ClassicAssert.AreEqual(0, (long)etagRes[0]);
             ClassicAssert.AreEqual(origValue, etagRes[1].ToString());
         }
