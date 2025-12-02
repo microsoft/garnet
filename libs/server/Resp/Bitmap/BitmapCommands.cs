@@ -325,7 +325,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_BITOP_KEY_LIMIT);
             }
 
-            var input = new StringInput(RespCommand.BITOP, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState);
+            var input = new StringInput(RespCommand.BITOP, ref parseState, metaCommand, ref metaCommandParseState);
 
             _ = storageApi.StringBitOperation(ref input, bitOp, out var result);
             while (!RespWriteUtils.TryWriteInt64(result, ref dcurr, dend))

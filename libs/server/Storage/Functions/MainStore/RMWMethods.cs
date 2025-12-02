@@ -84,7 +84,7 @@ namespace Garnet.server
                     RecordSizeInfo.AssertValueDataLength(HyperLogLog.DefaultHLL.SparseInitialLength(ref input), in sizeInfo);
                     if (!logRecord.TrySetContentLengths(in sizeInfo))
                     {
-                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "PFADD");
+                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", nameof(InitialUpdater), cmd);
                         return false;
                     }
 
@@ -104,7 +104,7 @@ namespace Garnet.server
 
                     if (!logRecord.TrySetContentLengths(sbSrcHLL.Length, in sizeInfo))
                     {
-                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "PFMERGE");
+                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", nameof(InitialUpdater), cmd);
                         return false;
                     }
 
@@ -122,20 +122,18 @@ namespace Garnet.server
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     if (!logRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                     {
-                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "SETEXNX");
-                        return false;
-                    }
-
-                    // Set or remove expiration
-                    if (sizeInfo.FieldInfo.HasExpiration && !logRecord.TrySetExpiration(input.arg1))
-                    {
-                        functionsState.logger?.LogError("Could not set expiration in {methodName}.{caseName}", "InitialUpdater", "SETEXNX");
+                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", nameof(InitialUpdater), cmd);
                         return false;
                     }
 
                     if (updatedEtag != LogRecord.NoETag)
                     {
-                        _ = logRecord.TrySetETag(updatedEtag);
+                        if (!logRecord.TrySetETag(updatedEtag))
+                        {
+                            functionsState.logger?.LogError("Could not set etag in {methodName}.{caseName}", nameof(InitialUpdater), cmd);
+                            return false;
+                        }
+
                         ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
                     }
 
@@ -143,6 +141,13 @@ namespace Garnet.server
                         WriteValueAndEtagToDst(functionsState.nilResp, updatedEtag, ref output, writeDirect: true);
                     else if (metaCmd is RespMetaCommand.ExecWithEtag)
                         functionsState.CopyRespNumber(updatedEtag, ref output);
+
+                    // Set or remove expiration
+                    if (sizeInfo.FieldInfo.HasExpiration && !logRecord.TrySetExpiration(input.arg1))
+                    {
+                        functionsState.logger?.LogError("Could not set expiration in {methodName}.{caseName}", nameof(InitialUpdater), cmd);
+                        return false;
+                    }
 
                     break;
                 case RespCommand.SETKEEPTTL:
@@ -152,7 +157,7 @@ namespace Garnet.server
                     // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
                     if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(LogRecord.NoETag + 1))
                     {
-                        functionsState.logger?.LogError("Could not set etag in {methodName}.{caseName}", "InitialUpdater", "SETKEEPTTL");
+                        functionsState.logger?.LogError("Could not set etag in {methodName}.{caseName}", nameof(InitialUpdater), cmd);
                         return false;
                     }
                     ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
@@ -172,7 +177,7 @@ namespace Garnet.server
 
                     if (!logRecord.TrySetContentLengths(BitmapManager.Length(bOffset), in sizeInfo, zeroInit: true))
                     {
-                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "SETBIT");
+                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", nameof(InitialUpdater), cmd);
                         return false;
                     }
 
@@ -193,7 +198,7 @@ namespace Garnet.server
 
                     if (!logRecord.TrySetContentLengths(BitmapManager.LengthFromType(bitFieldArgs), in sizeInfo, zeroInit: true))
                     {
-                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "BitField");
+                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", nameof(InitialUpdater), cmd);
                         return false;
                     }
 
@@ -242,7 +247,7 @@ namespace Garnet.server
                     // This is InitialUpdater so set the value to 1 and the length to the # of digits in "1"
                     if (!logRecord.TrySetContentLengths(1, in sizeInfo))
                     {
-                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "INCR");
+                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", nameof(InitialUpdater), cmd);
                         return false;
                     }
 
@@ -255,7 +260,7 @@ namespace Garnet.server
                     var ndigits = NumUtils.CountDigits(incrBy, out var isNegative);
                     if (!logRecord.TrySetContentLengths(ndigits + (isNegative ? 1 : 0), in sizeInfo))
                     {
-                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "INCRBY");
+                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", nameof(InitialUpdater), "INCRBY");
                         return false;
                     }
 
@@ -277,7 +282,7 @@ namespace Garnet.server
                     ndigits = NumUtils.CountDigits(decrBy, out isNegative);
                     if (!logRecord.TrySetContentLengths(ndigits + (isNegative ? 1 : 0), in sizeInfo))
                     {
-                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", "InitialUpdater", "DECRBY");
+                        functionsState.logger?.LogError("Length overflow in {methodName}.{caseName}", nameof(InitialUpdater), "DECRBY");
                         return false;
                     }
 
@@ -294,12 +299,12 @@ namespace Garnet.server
                         var functions = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd);
                         if (!logRecord.TrySetContentLengths(functions.GetInitialLength(ref input), in sizeInfo, zeroInit: true))   // ZeroInit to be safe
                         {
-                            functionsState.logger?.LogError("Length overflow in 'default' > StartOffset: {methodName}.{caseName}", "InitialUpdater", "default");
+                            functionsState.logger?.LogError("Length overflow in 'default' > StartOffset: {methodName}.{caseName}", nameof(InitialUpdater), "default");
                             return false;
                         }
                         if (input.arg1 > 0 && !logRecord.TrySetExpiration(input.arg1))
                         {
-                            functionsState.logger?.LogError("Could not set expiration in 'default' > StartOffset: {methodName}.{caseName}", "InitialUpdater", "default");
+                            functionsState.logger?.LogError("Could not set expiration in 'default' > StartOffset: {methodName}.{caseName}", nameof(InitialUpdater), "default");
                             return false;
                         }
 
@@ -319,7 +324,7 @@ namespace Garnet.server
                     // Copy input to value
                     if (!logRecord.TrySetValueSpanAndPrepareOptionals(input.parseState.GetArgSliceByRef(0).ReadOnlySpan, in sizeInfo))
                     {
-                        functionsState.logger?.LogError("Failed to set value in {methodName}.{caseName}", "InitialUpdater", "default");
+                        functionsState.logger?.LogError("Failed to set value in {methodName}.{caseName}", nameof(InitialUpdater), "default");
                         return false;
                     }
 
@@ -453,6 +458,15 @@ namespace Garnet.server
                         return IPUResult.NotUpdated;
                     }
 
+                    // Check if SetGet flag is set
+                    if (input.header.CheckSetGetFlag())
+                    {
+                        Debug.Assert(metaCmd == RespMetaCommand.None);
+
+                        // Copy value to output for the GET part of the command.
+                        CopyRespTo(logRecord.ValueSpan, ref output);
+                    }
+
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     if (!logRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                         return IPUResult.Failed;
@@ -486,18 +500,8 @@ namespace Garnet.server
                         WriteValueAndEtagToDst(functionsState.nilResp, updatedEtag, ref output, writeDirect: true);
                     else if (metaCmd is RespMetaCommand.ExecWithEtag)
                         functionsState.CopyRespNumber(updatedEtag, ref output);
-                    else
-                    {
-                        // Check if SetGet flag is set
-                        if (input.header.CheckSetGetFlag())
-                        {
-                            // Copy value to output for the GET part of the command.
-                            CopyRespTo(logRecord.ValueSpan, ref output);
-                        }
-
-                        if (!logRecord.RemoveETag())
-                            return IPUResult.Failed;
-                    }
+                    else if (!logRecord.RemoveETag())
+                        return IPUResult.Failed;
 
                     // reset etag state after done using
                     ETagState.ResetState(ref functionsState.etagState);
@@ -997,6 +1001,15 @@ namespace Garnet.server
                 case RespCommand.SETEXXX:
                     shouldUpdateEtag = true;
 
+                    // Check if SetGet flag is set
+                    if (input.header.CheckSetGetFlag())
+                    {
+                        Debug.Assert(metaCmd == RespMetaCommand.None);
+
+                        // Copy value to output for the GET part of the command.
+                        CopyRespTo(srcLogRecord.ValueSpan, ref output);
+                    }
+
                     var inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
                     if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(inputValue, in sizeInfo))
                         return false;
@@ -1017,13 +1030,6 @@ namespace Garnet.server
                         functionsState.CopyRespNumber(updatedEtag, ref output);
                     else
                     {
-                        // Check if SetGet flag is set
-                        if (input.header.CheckSetGetFlag())
-                        {
-                            // Copy value to output for the GET part of the command.
-                            CopyRespTo(dstLogRecord.ValueSpan, ref output);
-                        }
-
                         if (!dstLogRecord.RemoveETag())
                             return false;
                     }

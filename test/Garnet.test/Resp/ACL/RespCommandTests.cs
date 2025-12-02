@@ -3045,6 +3045,21 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ExecWithEtagACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "EXECWITHETAG",
+                [DoExecWithEtagAsync]
+            );
+
+            static async Task DoExecWithEtagAsync(GarnetClient client)
+            {
+                var val = await client.ExecuteForStringResultAsync("EXECWITHETAG", ["GET", "foo"]);
+                ClassicAssert.IsNull(val);
+            }
+        }
+
+        [Test]
         public async Task ExistsACLsAsync()
         {
             await CheckCommandsAsync(
