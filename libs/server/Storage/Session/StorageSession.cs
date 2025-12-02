@@ -64,12 +64,17 @@ namespace Garnet.server
 
         public readonly int ObjectScanCountLimit;
 
+        /// <summary>
+        /// Flag indicating if this is storage session that uses consistent read context
+        /// </summary>
+        readonly bool IsConsistentReadSession;
+
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferBuilder scratchBufferBuilder,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             int dbId,
-            ContextCallbacks contextCallbacks,
+            ConsistentReadContextCallbacks consistentReadContextCallbacks,
             ILogger logger = null,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
@@ -78,10 +83,11 @@ namespace Garnet.server
             this.scratchBufferBuilder = scratchBufferBuilder;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
+            this.IsConsistentReadSession = consistentReadContextCallbacks != null;
             parseState.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
-            functionsState.contextCallbacks = contextCallbacks;
+            functionsState.consistentReadContextCallbacks = consistentReadContextCallbacks;
 
             var functions = new MainSessionFunctions(functionsState);
 

@@ -35,7 +35,7 @@ namespace Tsavorite.core
 
         internal const string NotAsyncSessionErr = "Session does not support async operations";
 
-        internal readonly ContextCallbacks consistentReadProtocolCallbacks = null;
+        internal readonly ConsistentReadContextCallbacks consistentReadProtocolCallbacks = null;
 
         readonly ILoggerFactory loggerFactory;
         readonly ILogger logger;

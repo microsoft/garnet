@@ -28,7 +28,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public ContextCallbacks GetContextCallbacks()
-            => functionsState.contextCallbacks;
+        public ConsistentReadContextCallbacks GetContextCallbacks()
+            => functionsState.consistentReadContextCallbacks;
     }
 }

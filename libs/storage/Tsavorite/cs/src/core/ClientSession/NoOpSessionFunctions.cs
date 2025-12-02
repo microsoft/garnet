@@ -109,6 +109,6 @@ namespace Tsavorite.core
 
         public readonly void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
 
-        public readonly ContextCallbacks GetContextCallbacks() { return null; }
+        public readonly ConsistentReadContextCallbacks GetContextCallbacks() { return null; }
     }
 }

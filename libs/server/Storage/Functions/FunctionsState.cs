@@ -27,7 +27,7 @@ namespace Garnet.server
         public readonly ILogger logger;
         public byte respProtocolVersion;
         public bool StoredProcMode;
-        public ContextCallbacks contextCallbacks = null;
+        public ConsistentReadContextCallbacks consistentReadContextCallbacks = null;
 
         internal ReadOnlySpan<byte> nilResp => respProtocolVersion >= 3 ? CmdStrings.RESP3_NULL_REPLY : CmdStrings.RESP_ERRNOTFOUND;
 

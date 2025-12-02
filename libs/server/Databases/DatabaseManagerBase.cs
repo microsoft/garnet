@@ -389,7 +389,7 @@ namespace Garnet.server
             {
                 var scratchBufferManager = new ScratchBufferBuilder();
                 db.StoreCollectionDbStorageSession =
-                    new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, contextCallbacks: null, Logger);
+                    new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, consistentReadContextCallbacks: null, Logger);
             }
 
             ExecuteHashCollect(db.StoreCollectionDbStorageSession);
@@ -630,7 +630,7 @@ namespace Garnet.server
             if (db.StoreExpiredKeyDeletionDbStorageSession == null)
             {
                 var scratchBufferManager = new ScratchBufferBuilder();
-                db.StoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, contextCallbacks: null, Logger);
+                db.StoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, consistentReadContextCallbacks: null, Logger);
             }
 
             var scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
@@ -668,7 +668,7 @@ namespace Garnet.server
             if (db.HybridLogStatScanStorageSession == null)
             {
                 var scratchBufferManager = new ScratchBufferBuilder();
-                db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, contextCallbacks: null, Logger);
+                db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, consistentReadContextCallbacks: null, Logger);
             }
 
             using var session = store.NewSession<TInput, TOutput, long, ISessionFunctions<TInput, TOutput, long>>(sessionFunctions);

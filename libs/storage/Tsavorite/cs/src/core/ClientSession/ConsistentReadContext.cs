@@ -13,10 +13,10 @@ namespace Tsavorite.core
     /// </summary>
     /// <param name="ConsistentReadKeyPrepareCallback">Callback used to implement prepare phase of the consistent read protocol</param>
     /// <param name="ConsistentReadKeyUpdateCallback">Callback used to implement update phase of the consistent read protocol</param>
-    public class ContextCallbacks(Action<PinnedSpanByte> ConsistentReadKeyPrepareCallback, Action ConsistentReadKeyUpdateCallback)
+    public class ConsistentReadContextCallbacks(Action<PinnedSpanByte> ConsistentReadKeyPrepareCallback, Action ConsistentReadKeyUpdateCallback)
     {
-        internal readonly Action<PinnedSpanByte> consistentReadKeyPrepareCallback = ConsistentReadKeyPrepareCallback;
-        internal readonly Action consistentReadKeyUpdateCallback = ConsistentReadKeyUpdateCallback;
+        public readonly Action<PinnedSpanByte> consistentReadKeyPrepareCallback = ConsistentReadKeyPrepareCallback;
+        public readonly Action consistentReadKeyUpdateCallback = ConsistentReadKeyUpdateCallback;
     }
 
     /// <summary>

@@ -283,7 +283,7 @@ namespace Tsavorite.core
         /// <param name="output"></param>
         void ConvertOutputToHeap(ref TInput input, ref TOutput output);
 
-        ContextCallbacks GetContextCallbacks();
+        ConsistentReadContextCallbacks GetContextCallbacks();
         #endregion Utilities
     }
 

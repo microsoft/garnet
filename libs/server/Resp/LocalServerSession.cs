@@ -51,7 +51,7 @@ namespace Garnet.server
             this.scratchBufferBuilder = new ScratchBufferBuilder();
 
             // Create storage session and API
-            this.storageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId: 0, contextCallbacks: null, logger);
+            this.storageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId: 0, consistentReadContextCallbacks: null, logger);
 
             this.BasicGarnetApi = new BasicGarnetApi(storageSession, storageSession.basicContext, storageSession.objectStoreBasicContext, storageSession.unifiedStoreBasicContext);
         }

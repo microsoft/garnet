@@ -1529,7 +1529,7 @@ namespace Garnet.server
                 sessionMetrics,
                 LatencyMetrics,
                 dbId,
-                contextCallbacks: null,
+                consistentReadContextCallbacks: null,
                 logger,
                 respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext,
@@ -1558,7 +1558,7 @@ namespace Garnet.server
                 sessionMetrics,
                 LatencyMetrics,
                 dbId,
-                contextCallbacks: new ContextCallbacks(ConsistentReadKeyPrepareCallback, ConsistentReadSequenceNumberUpdate),
+                consistentReadContextCallbacks: new(ConsistentReadKeyPrepareCallback, ConsistentReadSequenceNumberUpdate),
                 logger,
                 respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.consistentReadContext,
