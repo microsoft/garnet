@@ -5,7 +5,6 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
-using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Channels;
@@ -96,9 +95,8 @@ namespace Garnet.server
             }
 
             // TODO: Probably configurable?
-            // For now, nearest power of 2 >= process count;
-            readLockShardCount = (int)BitOperations.RoundUpToPowerOf2((uint)Environment.ProcessorCount);
-            readLockShardMask = readLockShardCount - 1;
+            // For now, just number of processors
+            vectorSetLocks = new(Environment.ProcessorCount);
 
             this.getCleanupSession = getCleanupSession;
             cleanupTaskChannel = Channel.CreateUnbounded<object>(new() { SingleWriter = false, SingleReader = true, AllowSynchronousContinuations = false });
@@ -312,9 +310,7 @@ namespace Garnet.server
 
             Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
 
-            Span<TxnKeyEntry> exclusiveLocks = stackalloc TxnKeyEntry[readLockShardCount];
-
-            using (ReadForDeleteVectorIndex(storageSession, ref key, ref input, indexSpan, exclusiveLocks, out var status))
+            using (ReadForDeleteVectorIndex(storageSession, ref key, ref input, indexSpan, out var status))
             {
                 if (status != GarnetStatus.OK)
                 {

@@ -5,15 +5,11 @@ using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Threading;
 using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
-
     /// <summary>
     /// Methods managing locking around Vector Sets.
     /// 
@@ -21,21 +17,19 @@ namespace Garnet.server
     /// </summary>
     public sealed partial class VectorManager
     {
-        // TODO: Object store is going away, need to move this to ReadOptimizedLock
-
         /// <summary>
-        /// Used to scope a shared lock and context related to a Vector Set operation.
+        /// Used to scope a shared lock related to a Vector Set operation.
         /// 
-        /// Disposing this ends the lockable context, releases the lock, and exits the storage session context on the current thread.
+        /// Disposing this releases the lock and exits the storage session context on the current thread.
         /// </summary>
         internal readonly ref struct ReadVectorLock : IDisposable
         {
-            private readonly ref LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> lockableCtx;
-            private readonly TxnKeyEntry entry;
+            private readonly ref readonly ReadOptimizedLock lockableCtx;
+            private readonly int lockToken;
 
-            internal ReadVectorLock(ref LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> lockableCtx, TxnKeyEntry entry)
+            internal ReadVectorLock(ref readonly ReadOptimizedLock lockableCtx, int lockToken)
             {
-                this.entry = entry;
+                this.lockToken = lockToken;
                 this.lockableCtx = ref lockableCtx;
             }
 
@@ -45,29 +39,28 @@ namespace Garnet.server
                 Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
                 ActiveThreadSession = null;
 
-                if (Unsafe.IsNullRef(ref lockableCtx))
+                if (Unsafe.IsNullRef(in lockableCtx))
                 {
                     return;
                 }
 
-                lockableCtx.Unlock([entry]);
-                lockableCtx.EndLockable();
+                lockableCtx.ReleaseSharedLock(lockToken);
             }
         }
 
         /// <summary>
-        /// Used to scope exclusive locks and a context related to exclusive Vector Set operation (delete, migrate, etc.).
+        /// Used to scope exclusive locks  to exclusive Vector Set operation (delete, migrate, etc.).
         /// 
-        /// Disposing this ends the lockable context, releases the locks, and exits the storage session context on the current thread.
+        /// Disposing this releases the lock and exits the storage session context on the current thread.
         /// </summary>
         internal readonly ref struct ExclusiveVectorLock : IDisposable
         {
-            private readonly ref LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> lockableCtx;
-            private readonly ReadOnlySpan<TxnKeyEntry> entries;
+            private readonly ref readonly ReadOptimizedLock lockableCtx;
+            private readonly int lockToken;
 
-            internal ExclusiveVectorLock(ref LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> lockableCtx, ReadOnlySpan<TxnKeyEntry> entries)
+            internal ExclusiveVectorLock(ref readonly ReadOptimizedLock lockableCtx, int lockToken)
             {
-                this.entries = entries;
+                this.lockToken = lockToken;
                 this.lockableCtx = ref lockableCtx;
             }
 
@@ -77,18 +70,16 @@ namespace Garnet.server
                 Debug.Assert(ActiveThreadSession != null, "Shouldn't exit context when not in one");
                 ActiveThreadSession = null;
 
-                if (Unsafe.IsNullRef(ref lockableCtx))
+                if (Unsafe.IsNullRef(in lockableCtx))
                 {
                     return;
                 }
 
-                lockableCtx.Unlock(entries);
-                lockableCtx.EndLockable();
+                lockableCtx.ReleaseExclusiveLock(lockToken);
             }
         }
 
-        private readonly int readLockShardCount;
-        private readonly long readLockShardMask;
+        private readonly ReadOptimizedLock vectorSetLocks;
 
         /// <summary>
         /// Returns true for indexes that were created via a previous instance of <see cref="VectorManager"/>.
@@ -116,20 +107,9 @@ namespace Garnet.server
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
 
-            PrepareReadLockHash(storageSession, ref key, out var keyHash, out var readLockHash);
-
-            Span<TxnKeyEntry> sharedLocks = stackalloc TxnKeyEntry[1];
-            scoped Span<TxnKeyEntry> exclusiveLocks = default;
-
-            ref var readLockEntry = ref sharedLocks[0];
-            readLockEntry.isObject = false;
-            readLockEntry.keyHash = readLockHash;
-            readLockEntry.lockType = LockType.Shared;
+            var keyHash = storageSession.basicContext.GetKeyHash(ref key);
 
             var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
-
-            ref var lockCtx = ref storageSession.objectStoreLockableContext;
-            lockCtx.BeginLockable();
 
             var readCmd = input.header.cmd;
 
@@ -138,7 +118,7 @@ namespace Garnet.server
                 input.header.cmd = readCmd;
                 input.arg1 = 0;
 
-                lockCtx.Lock([readLockEntry]);
+                vectorSetLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
 
                 GarnetStatus readRes;
                 try
@@ -148,8 +128,7 @@ namespace Garnet.server
                 }
                 catch
                 {
-                    lockCtx.Unlock([readLockEntry]);
-                    lockCtx.EndLockable();
+                    vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
                     throw;
                 }
@@ -158,14 +137,11 @@ namespace Garnet.server
 
                 if (needsRecreate)
                 {
-                    if (exclusiveLocks.IsEmpty)
+                    if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out var exclusiveLockToken))
                     {
-                        exclusiveLocks = stackalloc TxnKeyEntry[readLockShardCount];
-                    }
+                        // Release the SHARED lock if we can't promote and try again
+                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
-                    if (!TryAcquireExclusiveLocks(storageSession, exclusiveLocks, keyHash, readLockHash))
-                    {
-                        // All locks will have been released by here
                         continue;
                     }
 
@@ -210,8 +186,7 @@ namespace Garnet.server
                     }
                     catch
                     {
-                        lockCtx.Unlock<TxnKeyEntry>(exclusiveLocks);
-                        lockCtx.EndLockable();
+                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
 
                         throw;
                     }
@@ -219,14 +194,13 @@ namespace Garnet.server
                     if (writeRes == GarnetStatus.OK)
                     {
                         // Try again so we don't hold an exclusive lock while performing a search
-                        lockCtx.Unlock<TxnKeyEntry>(exclusiveLocks);
+                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
                         continue;
                     }
                     else
                     {
                         status = writeRes;
-                        lockCtx.Unlock<TxnKeyEntry>(exclusiveLocks);
-                        lockCtx.EndLockable();
+                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
 
                         return default;
                     }
@@ -234,14 +208,13 @@ namespace Garnet.server
                 else if (readRes != GarnetStatus.OK)
                 {
                     status = readRes;
-                    lockCtx.Unlock<TxnKeyEntry>(sharedLocks);
-                    lockCtx.EndLockable();
+                    vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
                     return default;
                 }
 
                 status = GarnetStatus.OK;
-                return new(ref lockCtx, readLockEntry);
+                return new(in vectorSetLocks, sharedLockToken);
             }
         }
 
@@ -263,26 +236,15 @@ namespace Garnet.server
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
 
-            PrepareReadLockHash(storageSession, ref key, out var keyHash, out var readLockHash);
-
-            Span<TxnKeyEntry> sharedLocks = stackalloc TxnKeyEntry[1];
-            scoped Span<TxnKeyEntry> exclusiveLocks = default;
-
-            ref var readLockEntry = ref sharedLocks[0];
-            readLockEntry.isObject = false;
-            readLockEntry.keyHash = readLockHash;
-            readLockEntry.lockType = LockType.Shared;
+            var keyHash = storageSession.basicContext.GetKeyHash(ref key);
 
             var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
-
-            ref var lockCtx = ref storageSession.objectStoreLockableContext;
-            lockCtx.BeginLockable();
 
             while (true)
             {
                 input.arg1 = 0;
 
-                lockCtx.Lock<TxnKeyEntry>(sharedLocks);
+                vectorSetLocks.AcquireSharedLock(keyHash, out var sharedLockToken);
 
                 GarnetStatus readRes;
                 try
@@ -292,8 +254,7 @@ namespace Garnet.server
                 }
                 catch
                 {
-                    lockCtx.Unlock<TxnKeyEntry>(sharedLocks);
-                    lockCtx.EndLockable();
+                    vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
                     throw;
                 }
@@ -301,17 +262,13 @@ namespace Garnet.server
                 var needsRecreate = readRes == GarnetStatus.OK && storageSession.vectorManager.NeedsRecreate(indexSpan);
                 if (readRes == GarnetStatus.NOTFOUND || needsRecreate)
                 {
-                    if (exclusiveLocks.IsEmpty)
+                    if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out var exclusiveLockToken))
                     {
-                        exclusiveLocks = stackalloc TxnKeyEntry[readLockShardCount];
-                    }
+                        // Release the SHARED lock if we can't promote and try again
+                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
-                    if (!TryAcquireExclusiveLocks(storageSession, exclusiveLocks, keyHash, readLockHash))
-                    {
-                        // All locks will have been released by here
                         continue;
                     }
-
 
                     ulong indexContext;
                     nint newlyAllocatedIndex;
@@ -407,8 +364,7 @@ namespace Garnet.server
                     }
                     catch
                     {
-                        lockCtx.Unlock<TxnKeyEntry>(exclusiveLocks);
-                        lockCtx.EndLockable();
+                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
 
                         throw;
                     }
@@ -416,64 +372,48 @@ namespace Garnet.server
                     if (writeRes == GarnetStatus.OK)
                     {
                         // Try again so we don't hold an exclusive lock while adding a vector (which might be time consuming)
-                        lockCtx.Unlock<TxnKeyEntry>(exclusiveLocks);
+                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
                         continue;
                     }
                     else
                     {
                         status = writeRes;
-
-                        lockCtx.Unlock<TxnKeyEntry>(exclusiveLocks);
-                        lockCtx.EndLockable();
+                        vectorSetLocks.ReleaseExclusiveLock(exclusiveLockToken);
 
                         return default;
                     }
                 }
                 else if (readRes != GarnetStatus.OK)
                 {
-                    lockCtx.Unlock<TxnKeyEntry>(sharedLocks);
-                    lockCtx.EndLockable();
+                    vectorSetLocks.ReleaseSharedLock(sharedLockToken);
 
                     status = readRes;
                     return default;
                 }
 
                 status = GarnetStatus.OK;
-                return new(ref lockCtx, readLockEntry);
+                return new(in vectorSetLocks, sharedLockToken);
             }
         }
 
         /// <summary>
         /// Acquire exclusive lock over a given key.
         /// </summary>
-        private ExclusiveVectorLock AcquireExclusiveLocks(StorageSession storageSession, ref SpanByte key, Span<TxnKeyEntry> exclusiveLocks)
+        private ExclusiveVectorLock AcquireExclusiveLocks(StorageSession storageSession, ref SpanByte key)
         {
-            Debug.Assert(exclusiveLocks.Length == readLockShardCount, "Incorrect number of locks");
-
             var keyHash = storageSession.lockableContext.GetKeyHash(key);
 
-            for (var i = 0; i < exclusiveLocks.Length; i++)
-            {
-                exclusiveLocks[i].isObject = false;
-                exclusiveLocks[i].lockType = LockType.Exclusive;
-                exclusiveLocks[i].keyHash = (keyHash & ~readLockShardMask) | (long)i;
-            }
+            vectorSetLocks.AcquireExclusiveLock(keyHash, out var exclusiveLockToken);
 
-            ref var lockCtx = ref storageSession.objectStoreLockableContext;
-            lockCtx.BeginLockable();
-
-            lockCtx.Lock<TxnKeyEntry>(exclusiveLocks);
-
-            return new(ref lockCtx, exclusiveLocks);
+            return new(in vectorSetLocks, exclusiveLockToken);
         }
 
         /// <summary>
         /// Utility method that will read vector set index out, and acquire exclusive locks to allow it to be deleted.
         /// </summary>
-        internal ExclusiveVectorLock ReadForDeleteVectorIndex(StorageSession storageSession, ref SpanByte key, ref RawStringInput input, scoped Span<byte> indexSpan, Span<TxnKeyEntry> exclusiveLocks, out GarnetStatus status)
+        internal ExclusiveVectorLock ReadForDeleteVectorIndex(StorageSession storageSession, ref SpanByte key, ref RawStringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
         {
             Debug.Assert(indexSpan.Length == IndexSizeBytes, "Insufficient space for index");
-            Debug.Assert(exclusiveLocks.Length == readLockShardCount, "Insufficient space for exclusive locks");
 
             Debug.Assert(ActiveThreadSession == null, "Shouldn't enter context when already in one");
             ActiveThreadSession = storageSession;
@@ -481,7 +421,7 @@ namespace Garnet.server
             var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
 
             // Get the index
-            var acquiredLock = AcquireExclusiveLocks(storageSession, ref key, exclusiveLocks);
+            var acquiredLock = AcquireExclusiveLocks(storageSession, ref key);
             try
             {
                 status = storageSession.Read_MainStore(ref key, ref input, ref indexConfig, ref storageSession.basicContext);
@@ -502,83 +442,6 @@ namespace Garnet.server
             }
 
             return acquiredLock;
-        }
-
-        /// <summary>
-        /// Prepare a hash based on the given key and the currently active processor.
-        /// 
-        /// This can only be used for read locking, as it will block exclusive lock acquisition but not other readers.
-        /// 
-        /// Sharded for performance reasons.
-        /// </summary>
-        private void PrepareReadLockHash(StorageSession storageSession, ref SpanByte key, out long keyHash, out long readLockHash)
-        {
-            var id = Thread.GetCurrentProcessorId() & readLockShardMask;
-
-            keyHash = storageSession.basicContext.GetKeyHash(ref key);
-            readLockHash = (keyHash & ~readLockShardMask) | id;
-        }
-
-        /// <summary>
-        /// Used to upgrade from one SHARED lock to all EXCLUSIVE locks.
-        /// 
-        /// Can fail, unlike <see cref="AcquireExclusiveLocks(StorageSession, ref SpanByte, Span{TxnKeyEntry})"/>.
-        /// </summary>
-        private bool TryAcquireExclusiveLocks(StorageSession storageSession, Span<TxnKeyEntry> exclusiveLocks, long keyHash, long readLockHash)
-        {
-            Debug.Assert(exclusiveLocks.Length == readLockShardCount, "Insufficient space for exclusive locks");
-
-            // When we start, we still hold a SHARED lock on readLockHash
-
-            for (var i = 0; i < exclusiveLocks.Length; i++)
-            {
-                exclusiveLocks[i].isObject = false;
-                exclusiveLocks[i].lockType = LockType.Shared;
-                exclusiveLocks[i].keyHash = (keyHash & ~readLockShardMask) | (long)i;
-            }
-
-            AssertSorted(exclusiveLocks);
-
-            ref var lockCtx = ref storageSession.objectStoreLockableContext;
-
-            TxnKeyEntry toUnlock = default;
-            toUnlock.keyHash = readLockHash;
-            toUnlock.isObject = false;
-            toUnlock.lockType = LockType.Shared;
-
-            if (!lockCtx.TryLock<TxnKeyEntry>(exclusiveLocks))
-            {
-                // We don't hold any new locks, but still have the old SHARED lock
-
-                lockCtx.Unlock([toUnlock]);
-                return false;
-            }
-
-            // Drop down to just 1 shared lock per id
-            lockCtx.Unlock([toUnlock]);
-
-            // Attempt to promote
-            for (var i = 0; i < exclusiveLocks.Length; i++)
-            {
-                if (!lockCtx.TryPromoteLock(exclusiveLocks[i]))
-                {
-                    lockCtx.Unlock<TxnKeyEntry>(exclusiveLocks);
-                    return false;
-                }
-
-                exclusiveLocks[i].lockType = LockType.Exclusive;
-            }
-
-            return true;
-
-            [Conditional("DEBUG")]
-            static void AssertSorted(ReadOnlySpan<TxnKeyEntry> locks)
-            {
-                for (var i = 1; i < locks.Length; i++)
-                {
-                    Debug.Assert(locks[i - 1].keyHash <= locks[i].keyHash, "Locks should be naturally sorted, but weren't");
-                }
-            }
         }
     }
 }

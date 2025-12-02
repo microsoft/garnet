@@ -121,8 +121,13 @@ namespace Garnet.common
         /// all possible counts for a given hash.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly int CalculateIndex(int hash, int currentProcessorHint)
+        public readonly int CalculateIndex(long hashLong, int currentProcessorHint)
         {
+            // Throw away half the top half of the hash
+            //
+            // This set of locks will be small enough that the extra bits shoulnd't matter
+            var hash = (int)hashLong;
+
             // Hint might be out of range, so force it into the space we expect
             var currentProcessor = currentProcessorHint & coreSelectionMask;
 
@@ -146,7 +151,7 @@ namespace Garnet.common
         /// 
         /// Will block exclusive locks until released.
         /// </summary>
-        public readonly bool TryAcquireSharedLock(int hash, out int lockToken)
+        public readonly bool TryAcquireSharedLock(long hash, out int lockToken)
         {
             var ix = CalculateIndex(hash, GetProcessorHint());
 
@@ -170,7 +175,7 @@ namespace Garnet.common
         /// 
         /// Will block exclusive locks until released.
         /// </summary>
-        public readonly void AcquireSharedLock(int hash, out int lockToken)
+        public readonly void AcquireSharedLock(long hash, out int lockToken)
         {
             var ix = CalculateIndex(hash, GetProcessorHint());
 
@@ -196,7 +201,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Release a lock previously acquired with <see cref="TryAcquireSharedLock(int, out int)"/> or <see cref="AcquireSharedLock(int, out int)"/>.
+        /// Release a lock previously acquired with <see cref="TryAcquireSharedLock(long, out int)"/> or <see cref="AcquireSharedLock(long, out int)"/>.
         /// </summary>
         public readonly void ReleaseSharedLock(int lockToken)
         {
@@ -212,7 +217,7 @@ namespace Garnet.common
         /// 
         /// Will block all other locks until released.
         /// </summary>
-        public readonly bool TryAcquireExclusiveLock(int hash, out int lockToken)
+        public readonly bool TryAcquireExclusiveLock(long hash, out int lockToken)
         {
             ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
 
@@ -243,7 +248,10 @@ namespace Garnet.common
             }
 
             // Successfully acquired all shards exclusively
-            lockToken = hash;
+
+            // Throwing away half the hash shouldn't affect correctness since we do the same thing when processing the full hash
+            lockToken = (int)hash;
+
             return true;
         }
 
@@ -253,7 +261,7 @@ namespace Garnet.common
         /// 
         /// Will block all other locks until released.
         /// </summary>
-        public readonly void AcquireExclusiveLock(int hash, out int lockToken)
+        public readonly void AcquireExclusiveLock(long hash, out int lockToken)
         {
             ref var countRef = ref MemoryMarshal.GetArrayDataReference(lockCounts);
 
@@ -272,11 +280,12 @@ namespace Garnet.common
                 }
             }
 
-            lockToken = hash;
+            // Throwing away half the hash shouldn't affect correctness since we do the same thing when processing the full hash
+            lockToken = (int)hash;
         }
 
         /// <summary>
-        /// Release a lock previously acquired with <see cref="TryAcquireExclusiveLock(int, out int)"/>, <see cref="AcquireExclusiveLock(int, out int)"/>, or <see cref="TryPromoteSharedLock(int, int, out int)"/>.
+        /// Release a lock previously acquired with <see cref="TryAcquireExclusiveLock(long, out int)"/>, <see cref="AcquireExclusiveLock(long, out int)"/>, or <see cref="TryPromoteSharedLock(long, int, out int)"/>.
         /// </summary>
         public readonly void ReleaseExclusiveLock(int lockToken)
         {
@@ -301,7 +310,7 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Attempt to promote a shared lock previously acquired via <see cref="TryAcquireSharedLock(int, out int)"/> or <see cref="AcquireSharedLock(int, out int)"/> to an exclusive lock.
+        /// Attempt to promote a shared lock previously acquired via <see cref="TryAcquireSharedLock(long, out int)"/> or <see cref="AcquireSharedLock(long, out int)"/> to an exclusive lock.
         /// 
         /// If successful, will block all other locks until released.
         /// 
@@ -309,7 +318,7 @@ namespace Garnet.common
         /// 
         /// If unsuccessful, shared lock will still be held and must be released with <see cref="ReleaseSharedLock(int)"/>.
         /// </summary>
-        public readonly bool TryPromoteSharedLock(int hash, int lockToken, out int newLockToken)
+        public readonly bool TryPromoteSharedLock(long hash, int lockToken, out int newLockToken)
         {
             Debug.Assert(Interlocked.CompareExchange(ref lockCounts[lockToken], 0, 0) > 0, "Illegal call when not holding shard lock");
 
@@ -372,7 +381,8 @@ namespace Garnet.common
                 }
             }
 
-            newLockToken = hash;
+            // Throwing away half the hash shouldn't affect correctness since we do the same thing when processing the full hash
+            newLockToken = (int)hash;
             return true;
         }
 

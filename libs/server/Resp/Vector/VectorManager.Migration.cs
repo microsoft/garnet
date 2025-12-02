@@ -187,9 +187,7 @@ namespace Garnet.server
 
                 // Exclusive lock to prevent other modification of this key
 
-                Span<TxnKeyEntry> exclusiveLocks = stackalloc TxnKeyEntry[readLockShardCount];
-
-                using (AcquireExclusiveLocks(ActiveThreadSession, ref key, exclusiveLocks))
+                using (AcquireExclusiveLocks(ActiveThreadSession, ref key))
                 {
                     // Perform the write
                     var writeRes = ActiveThreadSession.RMW_MainStore(ref key, ref input, ref indexConfig, ref ActiveThreadSession.basicContext);
