@@ -18,8 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # DEBUG DEBUG test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
-        test: [ 'Garnet.test.cluster' ]
+        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
         os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
