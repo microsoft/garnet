@@ -291,8 +291,8 @@ namespace Garnet.cluster
                 var mainStoreCheckpointTask = ClusterProvider.storeWrapper.store.
                     TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, cancellationToken: cts.Token, streamingSnapshotIteratorFunctions: manager.StoreSnapshotIterator);
 
-                var result = await WaitOrDie(checkpointTask: mainStoreCheckpointTask, iteratorManager: manager);
-                if (!result.success)
+                var (success, _) = await WaitOrDie(checkpointTask: mainStoreCheckpointTask, iteratorManager: manager);
+                if (!success)
                     throw new GarnetException("Main store checkpoint stream failed!");
 
                 // Note: We do not truncate the AOF here as this was just a "virtual" checkpoint

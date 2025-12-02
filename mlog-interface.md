@@ -40,7 +40,7 @@ This is enforced for the following operations
 - [X] Basic context operations
 </ul></ul> 
 <ul><ul>
-- [ ] Scan operations
+- [X] Scan operations
 </ul></ul> 
 <ul><ul>
 - [X] Transaction operations
