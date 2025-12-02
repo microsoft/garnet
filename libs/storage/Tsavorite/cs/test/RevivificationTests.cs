@@ -9,12 +9,12 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using static Tsavorite.core.Utility;
 using static Tsavorite.test.TestUtils;
-using Garnet.test;
 
 namespace Tsavorite.test.Revivification
 {

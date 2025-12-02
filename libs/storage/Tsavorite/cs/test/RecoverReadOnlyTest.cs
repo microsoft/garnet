@@ -7,9 +7,9 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
-using Garnet.test;
 
 //** Note - this test is based on TsavoriteLogPubSub sample found in the samples directory.
 
