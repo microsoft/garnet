@@ -20,10 +20,7 @@ namespace Garnet.cluster
             public MainStoreScan mss;
             public ObjectStoreScan oss;
 
-            public readonly ConcurrentDictionary<byte[], byte[]> vectorSetsIndexKeysToMigrate;
-#if NET9_0_OR_GREATER
-            private readonly ConcurrentDictionary<byte[], byte[]>.AlternateLookup<ReadOnlySpan<byte>> vectorSetsIndexKeysToMigrateLookup;
-#endif
+            private readonly ConcurrentDictionary<byte[], byte[]> vectorSetsIndexKeysToMigrate;
 
             readonly MigrateSession session;
             readonly GarnetClientSession gcs;
@@ -52,9 +49,6 @@ namespace Garnet.cluster
                 oss = new ObjectStoreScan(this);
                 keysToDelete = [];
                 vectorSetsIndexKeysToMigrate = new(ByteArrayComparer.Instance);
-#if NET9_0_OR_GREATER
-                vectorSetsIndexKeysToMigrateLookup = vectorSetsIndexKeysToMigrate.GetAlternateLookup<ReadOnlySpan<byte>>();
-#endif
             }
 
             public bool Initialize()
