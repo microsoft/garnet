@@ -100,8 +100,7 @@ namespace Garnet.server
         /// <returns>Tail address</returns>
         public long Recover(GarnetDatabase db, long untilAddress = -1)
         {
-            Stopwatch swatch = new();
-            swatch.Start();
+            var start = Stopwatch.GetTimestamp();
             var total_number_of_replayed_records = 0L;
             try
             {
@@ -110,16 +109,18 @@ namespace Garnet.server
             }
             finally
             {
-                var seconds = swatch.ElapsedMilliseconds / 1000.0;
+                var end = Stopwatch.GetTimestamp();
+                var elapsed = Stopwatch.GetElapsedTime(start, end);
+                var seconds = elapsed.TotalMilliseconds / 1000.0;
                 var aofSize = db.AppendOnlyFile.TailAddress - db.AppendOnlyFile.BeginAddress;
                 var recordsPerSec = total_number_of_replayed_records / seconds;
-                var GiBperSecs = (aofSize / seconds) / (double)1_000_000_000;
+                var gigabytesPerSec = (aofSize / seconds) / (double)1_000_000_000;
 
                 logger?.LogInformation("AOF Recovery in {seconds} secs", seconds);
                 logger?.LogInformation("Total number of replayed records {total_number_of_replayed_records:N0} bytes", total_number_of_replayed_records);
                 logger?.LogInformation("Throughput {recordsPerSec:N2} records/sec", recordsPerSec);
                 logger?.LogInformation("AOF Recovery size {aofSize:N0}", aofSize);
-                logger?.LogInformation("AOF Recovery throughput {GiBperSecs:N2} GiB/secs", GiBperSecs);
+                logger?.LogInformation("AOF Recovery throughput {GiBperSecs:N2} GiB/secs", gigabytesPerSec);
             }
 
             long RecoverReplay(GarnetDatabase db, long untilAddress)
@@ -287,22 +288,22 @@ namespace Garnet.server
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    StoreUpsert(storeContext, replayContext.storeInput, entryPtr + HeaderSize());
+                    StoreUpsert(storeContext, replayContext.storeInput, entryPtr + sizeof(AofHeader));
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(storeContext, replayContext.storeInput, entryPtr + HeaderSize());
+                    StoreRMW(storeContext, replayContext.storeInput, entryPtr + sizeof(AofHeader));
                     break;
                 case AofEntryType.StoreDelete:
-                    StoreDelete(storeContext, entryPtr + HeaderSize());
+                    StoreDelete(storeContext, entryPtr + sizeof(AofHeader));
                     break;
                 case AofEntryType.ObjectStoreRMW:
-                    ObjectStoreRMW(objectStoreContext, replayContext.objectStoreInput, entryPtr + HeaderSize(), bufferPtr, bufferLength);
+                    ObjectStoreRMW(objectStoreContext, replayContext.objectStoreInput, entryPtr + sizeof(AofHeader), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
-                    ObjectStoreUpsert(objectStoreContext, storeWrapper.GarnetObjectSerializer, entryPtr + HeaderSize(), bufferPtr, bufferLength);
+                    ObjectStoreUpsert(objectStoreContext, storeWrapper.GarnetObjectSerializer, entryPtr + sizeof(AofHeader), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreDelete:
-                    ObjectStoreDelete(objectStoreContext, entryPtr + HeaderSize());
+                    ObjectStoreDelete(objectStoreContext, entryPtr + sizeof(AofHeader));
                     break;
                 case AofEntryType.StoredProcedure:
                     aofReplayCoordinator.ReplayStoredProc(header.procedureId, entryPtr);
@@ -337,8 +338,6 @@ namespace Garnet.server
                 this.activeDbId = db.Id;
             }
         }
-
-        static int HeaderSize() => sizeof(AofHeader);
 
         static void StoreUpsert<TContext>(
             TContext context,

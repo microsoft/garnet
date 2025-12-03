@@ -11,7 +11,7 @@ namespace Garnet.server
     /// <summary>
     /// AofReplayContext
     /// </summary>
-    public class AofReplayContext
+    public sealed class AofReplayContext
     {
         public readonly List<byte[]> fuzzyRegionOps = [];
         public readonly Queue<TransactionGroup> txnGroupBuffer = [];

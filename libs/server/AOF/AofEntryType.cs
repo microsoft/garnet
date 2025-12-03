@@ -77,7 +77,7 @@ namespace Garnet.server
         /// <summary>
         /// Flush db
         /// </summary>
-        FlushDb = 0x61
+        FlushDb = 0x61,
     }
 
     internal enum AofStoreType : byte

@@ -224,13 +224,13 @@ namespace Garnet.server
                                 case AofEntryType.StoreUpsert:
                                 case AofEntryType.StoreRMW:
                                 case AofEntryType.StoreDelete:
-                                    key = ref Unsafe.AsRef<SpanByte>(entryPtr + HeaderSize());
+                                    key = ref Unsafe.AsRef<SpanByte>(entryPtr + sizeof(AofHeader));
                                     isObject = false;
                                     break;
                                 case AofEntryType.ObjectStoreUpsert:
                                 case AofEntryType.ObjectStoreRMW:
                                 case AofEntryType.ObjectStoreDelete:
-                                    key = ref Unsafe.AsRef<SpanByte>(entryPtr + HeaderSize());
+                                    key = ref Unsafe.AsRef<SpanByte>(entryPtr + sizeof(AofHeader));
                                     isObject = true;
                                     break;
                                 default:
@@ -268,7 +268,7 @@ namespace Garnet.server
                 // Based run stored proc method used of legacy single log implementation
                 void StoredProcRunnerBase(byte id, byte* ptr)
                 {
-                    var curr = ptr + HeaderSize();
+                    var curr = ptr + sizeof(AofHeader);
 
                     // Reconstructing CustomProcedureInput
                     _ = aofReplayContext.customProcInput.DeserializeFrom(curr);
