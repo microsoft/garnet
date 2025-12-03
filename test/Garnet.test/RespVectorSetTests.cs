@@ -562,10 +562,31 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(1, addRes2);
 
                 var readExc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GET", ["foo"]));
-                ClassicAssert.IsTrue(readExc.Message.Equals("WRONGTYPE Operation against a key holding the wrong kind of value."));
+                ClassicAssert.IsTrue(readExc.Message.Equals("WRONGTYPE Operation against a key holding the wrong kind of value."), $"In iteration: {i}");
 
                 var query = (byte[][])db.Execute("VSIM", ["foo", "XB8", bytes3]);
-                ClassicAssert.AreEqual(2, query.Length);
+
+                if (query is null)
+                {
+                    try
+                    {
+                        var res = db.Execute("FOO");
+                        Console.WriteLine($"After unexpected null, got: {res}");
+                    }
+                    catch { }
+                }
+                else if (query.Length != 2)
+                {
+                    Console.WriteLine($"Wrong length {query.Length} != 2 response was");
+                    for (var j = 0; j < query.Length; j++)
+                    {
+                        var txt = Encoding.UTF8.GetString(query[j]);
+                        Console.WriteLine("---");
+                        Console.WriteLine(txt);
+                    }
+                }
+
+                ClassicAssert.AreEqual(2, query.Length, $"In iteration: {i}");
             }
         }
 
