@@ -562,7 +562,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(1, addRes2);
 
                 var readExc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GET", ["foo"]));
-                ClassicAssert.IsTrue(readExc.Message.StartsWith("WRONGTYPE "));
+                ClassicAssert.IsTrue(readExc.Message.Equals("WRONGTYPE Operation against a key holding the wrong kind of value."));
 
                 var query = (byte[][])db.Execute("VSIM", ["foo", "XB8", bytes3]);
                 ClassicAssert.AreEqual(2, query.Length);

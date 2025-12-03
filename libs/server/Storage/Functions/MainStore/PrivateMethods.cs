@@ -657,11 +657,11 @@ namespace Garnet.server
             }
 
             dst.ConvertToHeap();
-            dst.Length = errMsg.Length + 1;
-            dst.Memory = functionsState.memoryPool.Rent(errMsg.Length + 1);
+            dst.Length = errMsg.Length + 3;
+            dst.Memory = functionsState.memoryPool.Rent(errMsg.Length + 3);
             dst.Memory.Memory.Span[0] = (byte)'-';
             errMsg.CopyTo(dst.Memory.Memory.Span[1..]);
-            "\r\n"u8.CopyTo(dst.Memory.Memory.Span[(3 + errMsg.Length)..]);
+            "\r\n"u8.CopyTo(dst.Memory.Memory.Span[(1 + errMsg.Length)..]);
         }
 
         void CopyRespNumber(long number, ref SpanByteAndMemory dst)
