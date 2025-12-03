@@ -103,13 +103,17 @@ namespace Tsavorite.core
                         Address = request.logicalAddress,
                         IsFromPending = pendingContext.type != OperationType.NONE,
                     };
+                    pendingContext.logicalAddress = request.logicalAddress;
 
                     var success = false;
                     if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
                     {
                         // If this succeeds, we don't need to copy to tail or readcache, so return success.
                         if (sessionFunctions.Reader(in memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo))
+                        {
+                            pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                             return OperationStatus.SUCCESS;
+                        }
                     }
                     else if (memoryRecord.IsSet)
                     {
@@ -237,7 +241,7 @@ namespace Tsavorite.core
             // Unfortunately, InternalRMW will go through the lookup process again. But we're only here in the case another record was added or we went below
             // HeadAddress, and this should be rare.
             do
-                status = InternalRMW(pendingContext.Key, pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, sessionFunctions);
+                status = InternalRMW(pendingContext.request_key.Get(), pendingContext.keyHash, ref pendingContext.input.Get(), ref pendingContext.output, ref pendingContext.userContext, ref pendingContext, sessionFunctions);
             while (HandleImmediateRetryStatus(status, sessionFunctions, ref pendingContext));
             return status;
         }

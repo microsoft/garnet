@@ -66,9 +66,6 @@ namespace Tsavorite.core
 
             if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out var status))
                 return status;
-
-            LogRecord srcLogRecord = default;
-
             ReadInfo readInfo = new()
             {
                 Version = sessionFunctions.Ctx.version,
@@ -78,6 +75,7 @@ namespace Tsavorite.core
 
             try
             {
+                LogRecord srcLogRecord;
                 if (stackCtx.hei.IsReadCache)
                 {
                     if (FindInReadCache(key, ref stackCtx, minAddress: kInvalidAddress, alwaysFindLatestLA: false))

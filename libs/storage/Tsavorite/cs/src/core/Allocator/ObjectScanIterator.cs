@@ -259,7 +259,7 @@ namespace Tsavorite.core
                         diskLogRecord = new(logRecord,
                                             store is not null
                                             ? obj => store.storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk)
-                                            : obj => { });  // TODOnow this needs to dispose the object even if store is null; review whether we should have separate arg for behavior instead of a null store
+                                            : obj => { });  // TODOobjDispose this needs to dispose the object even if store is null; review whether we should have separate arg for behavior instead of a null store
                     }
                 }
                 finally
@@ -404,7 +404,7 @@ namespace Tsavorite.core
                 hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             recordBuffer?.Return();
             recordBuffer = null;
-            //TODOnow("Dispose objects in frame");
+            //TODOobjDispose("Dispose objects in frame");
             frame?.Dispose();
         }
 

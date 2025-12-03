@@ -75,7 +75,8 @@ namespace Tsavorite.core
                 readcacheBase.OnDeserializationObserver?.OnRecord(in newLogRecord);
 
                 newLogRecord.InfoRef.UnsealAndValidate();
-                pendingContext.logicalAddress = kInvalidAddress;  // We aren't doing anything with this; and we never expose readcache addresses
+                // Do not clear pendingContext.logicalAddress; we've already set it to the requested address, which is valid. We don't expose readcache
+                // addresses, but here we found it in the main log address space, so retain that address.
                 stackCtx.ClearNewRecord();
                 return true;
             }

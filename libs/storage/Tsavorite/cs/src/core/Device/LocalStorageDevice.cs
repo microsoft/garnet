@@ -362,6 +362,8 @@ namespace Tsavorite.core
         /// </summary>
         public override void Dispose()
         {
+            if (_disposed)
+                return;
             _disposed = true;
             foreach (var logHandle in logHandles.Values)
                 logHandle.Dispose();
@@ -370,9 +372,7 @@ namespace Tsavorite.core
                 new SafeFileHandle(ioCompletionPort, true).Dispose();
 
             while (results.TryDequeue(out var entry))
-            {
                 Overlapped.Free(entry.nativeOverlapped);
-            }
         }
 
         /// <inheritdoc/>

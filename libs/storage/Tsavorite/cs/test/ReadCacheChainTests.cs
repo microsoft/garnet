@@ -767,7 +767,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
-        //[Repeat(300)]
+        //[Repeat(1000)]
 #pragma warning disable IDE0060 // Remove unused parameter (modRange is used by Setup())
         public void LongRcMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
                                           [Values(UpdateOp.Upsert, UpdateOp.RMW)] UpdateOp updateOp)
@@ -778,7 +778,7 @@ namespace Tsavorite.test.ReadCacheTests
             if ((numReadThreads > 2 || numWriteThreads > 2) && IsRunningAzureTests)
                 Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
 
             PopulateAndEvict();
 
@@ -818,7 +818,7 @@ namespace Tsavorite.test.ReadCacheTests
                                     status = completedOutputs.Current.Status;
                                     output = completedOutputs.Current.Output;
                                     key = completedOutputs.Current.Key.AsRef<long>();
-                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == kInvalidAddress, status.Record.CopiedToReadCache, $"key {key}: {status}");
+
                                     ClassicAssert.IsTrue(status.Found, $"key {key}, status {status}, wasPending {true}");
                                     ClassicAssert.AreEqual(key, output % ValueAdd);
                                 }
@@ -1079,8 +1079,6 @@ namespace Tsavorite.test.ReadCacheTests
                                     output = completedOutputs.Current.Output;
                                     // Note: do NOT overwrite 'key' here
                                     long keyLong = BitConverter.ToInt64(completedOutputs.Current.Key);
-
-                                    ClassicAssert.AreEqual(completedOutputs.Current.RecordMetadata.Address == kInvalidAddress, status.Record.CopiedToReadCache, $"key {keyLong}: {status}");
 
                                     ClassicAssert.IsTrue(status.Found, $"pending: tid {tid}, key {keyLong}, {status}, wasPending {true}, pt 1");
                                     ClassicAssert.IsNotNull(output.Memory, $"pending: tid {tid}, key {keyLong}, wasPending {true}, pt 2");
