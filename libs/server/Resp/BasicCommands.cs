@@ -37,6 +37,7 @@ namespace Garnet.server
 
             switch (status)
             {
+                case GarnetStatus.WRONGTYPE:
                 case GarnetStatus.OK:
                     if (!o.IsSpanByte)
                         SendAndReset(o.Memory, o.Length);

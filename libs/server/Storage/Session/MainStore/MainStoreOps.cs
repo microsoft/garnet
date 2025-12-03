@@ -36,6 +36,10 @@ namespace Garnet.server
                 incr_session_found();
                 return GarnetStatus.OK;
             }
+            else if (status.IsCanceled)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
             else
             {
                 incr_session_notfound();

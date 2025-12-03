@@ -31,6 +31,7 @@ namespace Garnet.server
             {
                 // Attempted an illegal op on a VectorSet
                 CopyRespError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dst);
+                readInfo.Action = ReadAction.CancelOperation;
                 return true;
             }
             else if (!readInfo.RecordInfo.VectorSet && cmd.IsLegalOnVectorSet())
@@ -116,6 +117,7 @@ namespace Garnet.server
             {
                 // Attempted an illegal op on a VectorSet
                 CopyRespError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dst);
+                readInfo.Action = ReadAction.CancelOperation;
                 return true;
             }
             else if (!recordInfo.VectorSet && cmd.IsLegalOnVectorSet())
