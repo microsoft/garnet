@@ -1403,7 +1403,20 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.VADD:
-                    Debug.Assert(input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg, "Unexpected CopyUpdater call on VADD key");
+                    // Handle "make me delete-able"
+                    if (input.arg1 == VectorManager.DeleteAfterDropArg)
+                    {
+                        newValue.AsSpan().Clear();
+                    }
+                    else if (input.arg1 == VectorManager.RecreateIndexArg)
+                    {
+                        var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(10).Span);
+
+                        oldValue.CopyTo(ref newValue);
+
+                        functionsState.vectorManager.RecreateIndex(newIndexPtr, ref newValue);
+                    }
+
                     break;
 
                 case RespCommand.VREM:
