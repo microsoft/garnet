@@ -255,7 +255,6 @@ namespace Garnet.common
             return true;
         }
 
-
         /// <summary>
         /// Acquire an exclusive lock for the given hash, blocking until that succeeds.
         /// 
