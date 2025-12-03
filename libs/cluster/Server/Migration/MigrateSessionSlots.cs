@@ -112,65 +112,66 @@ namespace Garnet.cluster
                 try
                 {
                     await Task.WhenAll(migrateOperationRunners).WaitAsync(_timeout, _cts.Token).ConfigureAwait(false);
+
+                    // Handle migration of discovered Vector Set keys now that they're namespaces have been moved
+                    if (storeType == StoreType.Main)
+                    {
+                        var vectorSets = migrateOperation.SelectMany(static mo => mo.VectorSets).GroupBy(static g => g.Key, ByteArrayComparer.Instance).ToDictionary(static g => g.Key, g => g.First().Value, ByteArrayComparer.Instance);
+
+                        if (vectorSets.Count > 0)
+                        {
+                            var gcs = migrateOperation[0].Client;
+
+                            foreach (var (key, value) in vectorSets)
+                            {
+                                // Update the index context as we move it, so it arrives on the destination node pointed at the appropriate
+                                // namespaces for element data
+                                VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _);
+
+                                var newContext = _namespaceMap[oldContext];
+                                VectorManager.SetContextForMigration(value, newContext);
+
+                                unsafe
+                                {
+                                    fixed (byte* keyPtr = key, valuePtr = value)
+                                    {
+                                        var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
+                                        var valSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
+
+                                        if (gcs.NeedsInitialization)
+                                            gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
+
+                                        while (!gcs.TryWriteKeyValueSpanByte(ref keySpan, ref valSpan, out var task))
+                                        {
+                                            if (!HandleMigrateTaskResponse(task))
+                                            {
+                                                logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", keySpan);
+                                                return false;
+                                            }
+
+                                            gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
+                                        }
+
+                                        // Force a flush before doing the delete, in case that fails
+                                        if (!HandleMigrateTaskResponse(gcs.SendAndResetIterationBuffer()))
+                                        {
+                                            logger?.LogCritical("Flush failed before deletion of Vector Set {key} duration migration", keySpan);
+                                            return false;
+                                        }
+
+                                        // Delete the index on this node now that it's moved over to the destination node
+                                        migrateOperation[0].DeleteVectorSet(ref keySpan);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
                     logger?.LogError(ex, "{CreateAndRunMigrateTasks}: {storeType} {beginAddress} {tailAddress} {pageSize}", nameof(CreateAndRunMigrateTasks), storeType, beginAddress, tailAddress, pageSize);
                     _cts.Cancel();
                     return false;
-                }
-
-                // Handle migration of discovered Vector Set keys now that they're namespaces have been moved
-                if (storeType == StoreType.Main)
-                {
-                    var vectorSets = migrateOperation.SelectMany(static mo => mo.VectorSets).GroupBy(static g => g.Key, ByteArrayComparer.Instance).ToDictionary(static g => g.Key, g => g.First().Value, ByteArrayComparer.Instance);
-
-                    if (vectorSets.Count > 0)
-                    {
-                        var gcs = migrateOperation[0].Client;
-
-                        foreach (var (key, value) in vectorSets)
-                        {
-                            // Update the index context as we move it, so it arrives on the destination node pointed at the appropriate
-                            // namespaces for element data
-                            VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _);
-
-                            var newContext = _namespaceMap[oldContext];
-                            VectorManager.SetContextForMigration(value, newContext);
-
-                            unsafe
-                            {
-                                fixed (byte* keyPtr = key, valuePtr = value)
-                                {
-                                    var keySpan = SpanByte.FromPinnedPointer(keyPtr, key.Length);
-                                    var valSpan = SpanByte.FromPinnedPointer(valuePtr, value.Length);
-
-                                    if (gcs.NeedsInitialization)
-                                        gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
-
-                                    while (!gcs.TryWriteKeyValueSpanByte(ref keySpan, ref valSpan, out var task))
-                                    {
-                                        if (!HandleMigrateTaskResponse(task))
-                                        {
-                                            logger?.LogCritical("Failed to migrate Vector Set key {key} during migration", keySpan);
-                                            return false;
-                                        }
-
-                                        gcs.SetClusterMigrateHeader(_sourceNodeId, _replaceOption, isMainStore: true, isVectorSets: true);
-                                    }
-
-                                    // Delete the index on this node now that it's moved over to the destination node
-                                    migrateOperation[0].DeleteVectorSet(ref keySpan);
-                                }
-                            }
-                        }
-
-                        if (!HandleMigrateTaskResponse(gcs.SendAndResetIterationBuffer()))
-                        {
-                            logger?.LogCritical("Final flush after Vector Set migration failed");
-                            return false;
-                        }
-                    }
                 }
 
                 return true;
