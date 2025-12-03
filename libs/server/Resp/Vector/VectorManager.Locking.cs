@@ -435,7 +435,7 @@ namespace Garnet.server
 
             if (status != GarnetStatus.OK)
             {
-                // This can happen is something else successfully deleted before we acquired the lock
+                // This can happen if something else successfully deleted before we acquired the lock
 
                 acquiredLock.Dispose();
                 return default;

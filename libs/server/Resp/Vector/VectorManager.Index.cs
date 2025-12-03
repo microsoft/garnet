@@ -137,7 +137,7 @@ namespace Garnet.server
             out Guid processInstanceId
         )
         {
-            Debug.Assert(indexValue.Length != Index.Size, $"Index size is incorrect ({indexValue.Length} != {Index.Size}), implies vector set index is probably corrupted");
+            Debug.Assert(indexValue.Length == Index.Size, $"Index size is incorrect ({indexValue.Length} != {Index.Size}), implies vector set index is probably corrupted");
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexValue));
 
@@ -162,11 +162,7 @@ namespace Garnet.server
         public static void SetContextForMigration(Span<byte> indexValue, ulong newContext)
         {
             Debug.Assert(newContext != 0, "0 is special, should not be assigning to an index");
-
-            if (indexValue.Length != Index.Size)
-            {
-                throw new GarnetException($"Index size is incorrect ({indexValue.Length} != {Index.Size}), implies vector set index is probably corrupted");
-            }
+            Debug.Assert(indexValue.Length == Index.Size, $"Index size is incorrect ({indexValue.Length} != {Index.Size}), implies vector set index is probably corrupted");
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexValue));
 
