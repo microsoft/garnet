@@ -1,4 +1,4 @@
-// Copyright (c) Microsoft Corporation.
+﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using Garnet.common;
@@ -7,10 +7,10 @@ using Tsavorite.core;
 
 namespace Garnet
 {
-    sealed class BulkIncrementBy : CustomTransactionProcedure
+    sealed class BulkRead : CustomTransactionProcedure
     {
-        // BULKINCRBY 2 a 10 [b 15] [c 25] ...
-        public static readonly RespCommandsInfo CommandInfo = new() { Arity = -4 };
+        // BULKREAD 3 a [b] [c]
+        public static readonly RespCommandsInfo CommandInfo = new() { Arity = -3 };
 
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
@@ -21,10 +21,7 @@ namespace Garnet
                 return false;
 
             for (var i = 0; i < count; i++)
-            {
-                AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Main);
-                GetNextArg(ref procInput, ref offset);
-            }
+                AddKey(GetNextArg(ref procInput, ref offset), LockType.Shared, StoreType.Main);
 
             return true;
         }
@@ -39,19 +36,13 @@ namespace Garnet
                 return;
             }
 
+            var result = new PinnedSpanByte[count];
             for (var i = 0; i < count; i++)
             {
                 var key = GetNextArg(ref procInput, ref offset);
-                arg = GetNextArg(ref procInput, ref offset);
-                if (!NumUtils.TryReadInt64(arg.ReadOnlySpan, out var incrBy))
-                {
-                    WriteSimpleString(ref output, "FAILED parsing incrBy parameter");
-                    return;
-                }
-                _ = api.Increment(key, out _, incrBy);
+                _ = api.GET(key, out result[i]);
             }
-
-            WriteSimpleString(ref output, "OK");
+            WriteBulkStringArray(ref output, result);
         }
     }
 }

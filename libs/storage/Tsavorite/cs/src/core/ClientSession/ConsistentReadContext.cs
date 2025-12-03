@@ -28,21 +28,21 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        readonly BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> basicContext;
+        public readonly BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> BasicContext { get; }
 
         internal ConsistentReadContext(ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
         {
-            basicContext = new BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(clientSession);
+            BasicContext = new BasicContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(clientSession);
         }
 
         /// <inheritdoc/>
-        public bool IsNull => basicContext.IsNull;
+        public bool IsNull => BasicContext.IsNull;
 
         /// <inheritdoc/>
-        public ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => basicContext.Session;
+        public ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => BasicContext.Session;
 
         /// <inheritdoc/>
-        public long GetKeyHash(ReadOnlySpan<byte> key) => basicContext.GetKeyHash(key);
+        public long GetKeyHash(ReadOnlySpan<byte> key) => BasicContext.GetKeyHash(key);
 
         #region ITsavoriteContext/Read
 
@@ -52,7 +52,7 @@ namespace Tsavorite.core
         {
             var callbacks = Session.functions.GetContextCallbacks();
             callbacks.consistentReadKeyPrepareCallback.Invoke(PinnedSpanByte.FromPinnedSpan(key));
-            var status = basicContext.Read(key, ref input, ref output, userContext);
+            var status = BasicContext.Read(key, ref input, ref output, userContext);
             if (status.Found)
                 callbacks.consistentReadKeyUpdateCallback.Invoke();
             return status;
@@ -103,7 +103,7 @@ namespace Tsavorite.core
         {
             var callbacks = Session.functions.GetContextCallbacks();
             callbacks.consistentReadKeyPrepareCallback.Invoke(PinnedSpanByte.FromPinnedSpan(key));
-            var status = basicContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
+            var status = BasicContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
             if (status.Found)
                 callbacks.consistentReadKeyUpdateCallback.Invoke();
             return status;
@@ -127,7 +127,7 @@ namespace Tsavorite.core
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
         {
             var callbacks = Session.functions.GetContextCallbacks();
-            var status = basicContext.CompletePending(wait, spinWaitForCommit);
+            var status = BasicContext.CompletePending(wait, spinWaitForCommit);
             callbacks.consistentReadKeyUpdateCallback.Invoke();
             return status;
         }
@@ -136,7 +136,7 @@ namespace Tsavorite.core
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
         {
             var callbacks = Session.functions.GetContextCallbacks();
-            var status = basicContext.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
+            var status = BasicContext.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
             callbacks.consistentReadKeyUpdateCallback.Invoke();
             return status;
         }
@@ -145,7 +145,7 @@ namespace Tsavorite.core
         public async ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
         {
             var callbacks = Session.functions.GetContextCallbacks();
-            await basicContext.CompletePendingAsync(waitForCommit, token);
+            await BasicContext.CompletePendingAsync(waitForCommit, token);
             callbacks.consistentReadKeyUpdateCallback.Invoke();
         }
 
@@ -153,7 +153,7 @@ namespace Tsavorite.core
         public async ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
         {
             var callbacks = Session.functions.GetContextCallbacks();
-            var status = basicContext.CompletePendingWithOutputsAsync(waitForCommit, token);
+            var status = BasicContext.CompletePendingWithOutputsAsync(waitForCommit, token);
             callbacks.consistentReadKeyUpdateCallback.Invoke();
             return await status;
         }
@@ -200,7 +200,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public Status Upsert<TSourceLogRecord>(in TSourceLogRecord diskLogRecord) where TSourceLogRecord : ISourceLogRecord
-            => basicContext.Upsert(diskLogRecord);
+            => BasicContext.Upsert(diskLogRecord);
 
         /// <inheritdoc/>
         public Status Upsert<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord diskLogRecord) where TSourceLogRecord : ISourceLogRecord

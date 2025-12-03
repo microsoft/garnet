@@ -753,5 +753,84 @@ namespace Garnet.test.cluster
             }
             return values;
         }
+
+        public void ExecuteTxnBulkIncrement(string[] keys, string[] values)
+        {
+            try
+            {
+                var db = clusterTestUtils.GetDatabase();
+                var txn = db.CreateTransaction();
+                for (var i = 0; i < keys.Length; i++)
+                    _ = txn.StringIncrementAsync(keys[i], long.Parse(values[i]));
+                _ = txn.Execute();
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail(ex.Message);
+            }
+        }
+
+        public string[] ExecuteTxnBulkRead(IServer server, string[] keys)
+        {
+            try
+            {
+                var resp = server.Execute("MULTI");
+                ClassicAssert.AreEqual("OK", (string)resp);
+
+                foreach (var key in keys)
+                {
+                    resp = server.Execute("GET", key);
+                    ClassicAssert.AreEqual("QUEUED", (string)resp);
+                }
+
+                resp = server.Execute("EXEC");
+                return (string[])resp;
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail(ex.Message);
+            }
+            return null;
+        }
+
+        public static void ExecuteStoredProcBulkIncrement(IServer server, string[] keys, string[] values)
+        {
+            try
+            {
+                var args = new object[1 + (keys.Length * 2)];
+                args[0] = keys.Length;
+                for (var i = 0; i < keys.Length; i++)
+                {
+                    args[1 + (i * 2)] = keys[i];
+                    args[1 + (i * 2) + 1] = values[i];
+                }
+                var resp = server.Execute("BULKINCRBY", args);
+                ClassicAssert.AreEqual("OK", (string)resp);
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail(ex.Message);
+            }
+        }
+
+        public static string[] ExecuteBulkReadStoredProc(IServer server, string[] keys)
+        {
+            try
+            {
+                var args = new object[1 + keys.Length];
+                args[0] = keys.Length;
+                for (var i = 0; i < keys.Length; i++)
+                    args[1 + i] = keys[i];
+                var resp = server.Execute("BULKREAD", args);
+                var result = (string[])resp;
+                ClassicAssert.AreEqual(keys.Length, result.Length);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail(ex.Message);
+            }
+            return null;
+        }
     }
 }

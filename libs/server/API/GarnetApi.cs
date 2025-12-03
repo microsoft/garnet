@@ -1,6 +1,49 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+global using BasicGarnetApi = Garnet.server.GarnetApi<
+        Tsavorite.core.BasicContext<Garnet.server.RawStringInput, Tsavorite.core.SpanByteAndMemory, long, Garnet.server.MainSessionFunctions,
+            /* MainStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>,
+        Tsavorite.core.BasicContext<Garnet.server.ObjectInput, Garnet.server.GarnetObjectStoreOutput, long, Garnet.server.ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>,
+        Tsavorite.core.BasicContext<Garnet.server.UnifiedStoreInput, Garnet.server.GarnetUnifiedStoreOutput, long, Garnet.server.UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>>;
+global using ConsistentReadGarnetApi = Garnet.server.GarnetApi<
+        Tsavorite.core.ConsistentReadContext<Garnet.server.RawStringInput, Tsavorite.core.SpanByteAndMemory, long, Garnet.server.MainSessionFunctions,
+            /* MainStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>,
+        Tsavorite.core.ConsistentReadContext<Garnet.server.ObjectInput, Garnet.server.GarnetObjectStoreOutput, long, Garnet.server.ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>,
+        Tsavorite.core.ConsistentReadContext<Garnet.server.UnifiedStoreInput, Garnet.server.GarnetUnifiedStoreOutput, long, Garnet.server.UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>>;
+global using StoreAllocator = Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>;
+global using StoreFunctions = Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>;
+global using TransactionalConsistentReadGarnetApi = Garnet.server.GarnetApi<
+        Tsavorite.core.TransactionalConsistentReadContext<Garnet.server.RawStringInput, Tsavorite.core.SpanByteAndMemory, long, Garnet.server.MainSessionFunctions,
+            /* MainStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>,
+        Tsavorite.core.TransactionalConsistentReadContext<Garnet.server.ObjectInput, Garnet.server.GarnetObjectStoreOutput, long, Garnet.server.ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>,
+        Tsavorite.core.TransactionalConsistentReadContext<Garnet.server.UnifiedStoreInput, Garnet.server.GarnetUnifiedStoreOutput, long, Garnet.server.UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>>;
+global using TransactionalGarnetApi = Garnet.server.GarnetApi<
+        Tsavorite.core.TransactionalContext<Garnet.server.RawStringInput, Tsavorite.core.SpanByteAndMemory, long, Garnet.server.MainSessionFunctions,
+            /* MainStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>,
+        Tsavorite.core.TransactionalContext<Garnet.server.ObjectInput, Garnet.server.GarnetObjectStoreOutput, long, Garnet.server.ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>,
+        Tsavorite.core.TransactionalContext<Garnet.server.UnifiedStoreInput, Garnet.server.GarnetUnifiedStoreOutput, long, Garnet.server.UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+            Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>>;
+
 using System;
 using System.Collections.Generic;
 using Garnet.common;
@@ -8,9 +51,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     // See TransactionManager.cs for aliases BasicGarnetApi and TransactionalGarnetApi
 
     /// <summary>

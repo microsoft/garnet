@@ -44,7 +44,6 @@ namespace Garnet.cluster
                     clusterProvider.clusterManager.TryResetReplica();
                     clusterProvider.replicationManager.TryUpdateForFailover();
                     clusterProvider.replicationManager.ResetReplicaReplayGroup();
-                    clusterProvider.replicationManager.ToggleConsistentReadDatabaseSessionForAllActiveSessions();
                     UnsafeBumpAndWaitForEpochTransition();
                 }
                 finally

@@ -20,25 +20,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
-            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
-    using TransactionalGarnetApi = GarnetApi<ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
-            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
-
     /// <summary>
     /// RESP server session
     /// </summary>
@@ -108,6 +89,8 @@ namespace Garnet.server
         internal BasicGarnetApi basicGarnetApi;
         internal TransactionalGarnetApi transactionalGarnetApi;
         internal TransactionManager txnManager;
+        internal ConsistentReadGarnetApi consistentReadGarnetApi;
+        internal TransactionalConsistentReadGarnetApi txnConsistentReadApi;
 
         readonly IGarnetAuthenticator _authenticator;
 
@@ -122,6 +105,9 @@ namespace Garnet.server
 
         // Map of all active database sessions (default of size 1, containing DB 0 session)
         private ExpandableMap<GarnetDatabaseSession> databaseSessions;
+
+        // Consistent database read session
+        private GarnetDatabaseSession consistentReadDBSession;
 
         /// <summary>
         /// The user currently authenticated in this session
@@ -154,7 +140,6 @@ namespace Garnet.server
                 }
             }
         }
-
 
         // Track whether the incoming network batch contains slow commands that should not be counter in NET_RS histogram
         bool containsSlowCommand;
@@ -287,23 +272,12 @@ namespace Garnet.server
             if (!databaseSessions.TrySetValue(0, dbSession))
                 throw new GarnetException("Failed to set initialize database session in database sessions map!");
 
-            // Create a dbsession for consistent reads if sharde-log based AOF is used in cluster mode
+            // Create consistent read APIs and storageSession
             if (storeWrapper.serverOptions.EnableCluster && storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.AofSublogCount > 1)
-            {
-                // NOTE:
-                // The consistent read db session is tied to db = 0.
-                // However, it is mapped at dbId = 1 in the databaseSessions map to differentiate from the regular session.
-                // This should be fine given that we only support a single database in cluster mode.
-                var consistentReadDatabaseSession = CreateConsistentReadDatabaseSession();
-                if (!databaseSessions.TrySetValue(1, consistentReadDatabaseSession))
-                    throw new GarnetException("Failed to set initialize consistent read database session in database sessions map!");
-            }
+                consistentReadDBSession = CreateConsistentReadApi();
 
             // Set the current active session to the default session
             SwitchActiveDatabaseSession(dbSession);
-
-            // Setup this session for consistent read if necessary
-            ToggleConsistentReadSession();
 
             // Associate new session with default user and automatically authenticate, if possible
             this.AuthenticateUser(Encoding.ASCII.GetBytes(this.storeWrapper.accessControlList.GetDefaultUserHandle().User.Name));
@@ -397,6 +371,9 @@ namespace Garnet.server
                 try { if (recvHandle.IsAllocated) recvHandle.Free(); } catch { }
             }
 
+            // Dispose special consistent read database session
+            consistentReadDBSession?.Dispose();
+
             // Dispose all database sessions
             foreach (var dbSession in databaseSessions.Map)
                 dbSession?.Dispose();
@@ -470,10 +447,12 @@ namespace Garnet.server
                     networkSender.IsLocalConnection());
         }
 
+        bool txnSkip = false;
+
         public override int TryConsumeMessages(byte* reqBuffer, int bytesReceived)
         {
             bytesRead = bytesReceived;
-            if (!txnManager.IsSkippingOperations())
+            if (!txnSkip)
                 readHead = 0;
             try
             {
@@ -485,8 +464,31 @@ namespace Garnet.server
                 clusterSession?.AcquireCurrentEpoch();
                 recvBufferPtr = reqBuffer;
                 networkSender.EnterAndGetResponseObject(out dcurr, out dend);
-                //ToggleConsistentReadSession();
-                ProcessMessages();
+
+                if (storeWrapper.PerformConsistentRead())
+                {
+                    try
+                    {
+                        // We actively switch session because we aim to avoid performing any additional checks or switches on the normal processing path
+                        // This requires us to cache txnSkip result since the txnManager instance will change when the following finally executes
+                        txnSkip = false;
+                        Debug.Assert(consistentReadDBSession != null);
+                        SwitchActiveDatabaseSession(consistentReadDBSession);
+                        ProcessMessages(ref consistentReadGarnetApi, ref txnConsistentReadApi);
+                        txnSkip = txnManager.IsSkippingOperations();
+                    }
+                    finally
+                    {
+                        // Switch back to normal session in the event a failover results in this node to become a primary
+                        SwitchActiveDatabaseSession(databaseSessions.Map[0]);
+                    }
+                }
+                else
+                {
+                    txnSkip = false;
+                    ProcessMessages(ref basicGarnetApi, ref transactionalGarnetApi);
+                    txnSkip = txnManager.IsSkippingOperations();
+                }
                 recvBufferPtr = null;
             }
             catch (RespParsingException ex)
@@ -548,7 +550,7 @@ namespace Garnet.server
                 scratchBufferAllocator.Reset();
             }
 
-            if (txnManager.IsSkippingOperations())
+            if (txnSkip)
                 return 0; // so that network does not try to shift the byte array
 
             // If server processed input data successfully, update tracked metrics
@@ -590,7 +592,9 @@ namespace Garnet.server
         internal void SetTransactionMode(bool enable)
             => txnManager.state = enable ? TxnState.Running : TxnState.None;
 
-        private void ProcessMessages()
+        private void ProcessMessages<TBasicApi, TTxnApi>(ref TBasicApi basicApi, ref TTxnApi txnApi)
+            where TBasicApi : IGarnetApi
+            where TTxnApi : IGarnetApi
         {
             // #if DEBUG
             // logger?.LogTrace("RECV: [{recv}]", Encoding.UTF8.GetString(new Span<byte>(recvBufferPtr, bytesRead)).Replace("\n", "|").Replace("\r", ""));
@@ -604,7 +608,7 @@ namespace Garnet.server
                 // First, parse the command, making sure we have the entire command available
                 // We use endReadHead to track the end of the current command
                 // On success, readHead is left at the start of the command payload for legacy operators
-                var cmd = ParseCommand(writeErrorOnFailure: true, out bool commandReceived);
+                var cmd = ParseCommand(writeErrorOnFailure: true, out var commandReceived);
 
                 // If the command was not fully received, reset addresses and break out
                 if (!commandReceived)
@@ -624,7 +628,7 @@ namespace Garnet.server
                         {
                             if (txnManager.state == TxnState.Running)
                             {
-                                _ = ProcessBasicCommands(cmd, ref transactionalGarnetApi);
+                                _ = ProcessBasicCommands(cmd, ref txnApi);
                             }
                             else _ = cmd switch
                             {
@@ -638,7 +642,7 @@ namespace Garnet.server
                         else
                         {
                             if (clusterSession == null || CanServeSlot(cmd))
-                                _ = ProcessBasicCommands(cmd, ref basicGarnetApi);
+                                _ = ProcessBasicCommands(cmd, ref basicApi);
                         }
                     }
                     else
@@ -1539,39 +1543,67 @@ namespace Garnet.server
                 dbStorageSession.unifiedStoreTransactionalContext);
 
             var transactionManager = new TransactionManager(storeWrapper, this, dbGarnetApi, dbLockableGarnetApi,
-                dbStorageSession, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger, dbId);
+                dbStorageSession, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger: logger, dbId: dbId);
             dbStorageSession.txnManager = transactionManager;
 
             return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi, transactionManager);
         }
 
         /// <summary>
-        /// Special session used for consistent read protocol
+        /// Create consistent read API
         /// </summary>
-        /// <returns>New database session</returns>
-        private GarnetDatabaseSession CreateConsistentReadDatabaseSession()
+        private GarnetDatabaseSession CreateConsistentReadApi()
         {
+            // NOTE:
+            // Consistent read session should point to dbId = 0 (because dbId is used to identify working database),
+            // though its session id = 1 to differentiate between normal session.
+            // Session id is set at the caller.
             var dbId = 0;
+
+            // NOTE: We need to create storage session to tie it to the consistent read API
             var dbStorageSession = new StorageSession(
                 storeWrapper,
                 scratchBufferBuilder,
                 sessionMetrics,
                 LatencyMetrics,
-                dbId,
+                dbId: dbId, // NOTE: only for cluster need to retrieve default database
                 consistentReadContextCallbacks: new(ConsistentReadKeyPrepareCallback, ConsistentReadSequenceNumberUpdate),
                 logger,
                 respProtocolVersion);
-            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.consistentReadContext,
-                dbStorageSession.objectStoreConsistentReadContext, dbStorageSession.unifiedStoreConsistentReadContext);
+
+            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext,
+                dbStorageSession.objectStoreBasicContext, dbStorageSession.unifiedStoreBasicContext);
             var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession,
+                dbStorageSession.transactionalContext, dbStorageSession.objectStoreTransactionalContext,
+                dbStorageSession.unifiedStoreTransactionalContext);
+
+            var consistentReadGarnetApi = new ConsistentReadGarnetApi(dbStorageSession, dbStorageSession.consistentReadContext,
+                dbStorageSession.objectStoreConsistentReadContext, dbStorageSession.unifiedStoreConsistentReadContext);
+            var txnConsistentReadApi = new TransactionalConsistentReadGarnetApi(dbStorageSession,
                 dbStorageSession.transactionalConsistentReadContext, dbStorageSession.objectStoreTransactionalConsistentReadContext,
                 dbStorageSession.unifiedStoreTransactionalConsistentReadContext);
 
-            var transactionManager = new TransactionManager(storeWrapper, this, dbGarnetApi, dbLockableGarnetApi,
-                dbStorageSession, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger, dbId);
-            dbStorageSession.txnManager = transactionManager;
+            var consistentReadTransactionManager = new TransactionManager(
+                storeWrapper,
+                this,
+                dbGarnetApi,
+                dbLockableGarnetApi,
+                dbStorageSession,
+                scratchBufferAllocator,
+                storeWrapper.serverOptions.EnableCluster,
+                enableConsistentRead: true,
+                garnetConsistentApi: consistentReadGarnetApi,
+                transactionalConsistentGarnetApi: txnConsistentReadApi,
+                logger: logger,
+                dbId: dbId);
 
-            return new GarnetDatabaseSession(dbId, dbStorageSession, dbGarnetApi, dbLockableGarnetApi, transactionManager);
+            return new GarnetDatabaseSession(id: dbId, // NOTE: sessionID 1 to differentiate from default session
+                dbStorageSession,
+                dbGarnetApi,
+                dbLockableGarnetApi,
+                consistentReadTransactionManager,
+                consistentReadGarnetApi,
+                txnConsistentReadApi);
         }
 
         /// <summary>
@@ -1585,37 +1617,9 @@ namespace Garnet.server
             this.storageSession = dbSession.StorageSession;
             this.basicGarnetApi = dbSession.GarnetApi;
             this.transactionalGarnetApi = dbSession.TransactionalGarnetApi;
-
+            this.consistentReadGarnetApi = dbSession.ConsistentGarnetApi;
+            this.txnConsistentReadApi = dbSession.TransactionalConsistentGarnetApi;
             this.storageSession.UpdateRespProtocolVersion(this.respProtocolVersion);
-        }
-
-        /// <summary>
-        /// Toggle consistent read session when using sharded-log based AOF
-        /// </summary>
-        public override void ToggleConsistentReadSession()
-        {
-            // Do not need to enforce consistent read
-            // 1. On non-cluster deployments or
-            // 2. Deployments without AOF
-            // 3. Deployments with single log
-            if (storeWrapper.clusterProvider == null || !storeWrapper.serverOptions.EnableCluster || !storeWrapper.serverOptions.EnableAOF || storeWrapper.serverOptions.AofSublogCount == 1)
-                return;
-
-            // Switch to consistent read session if this is a replica and we are using default db session
-            if (storeWrapper.clusterProvider.IsReplica() && !IsConsistentReadSessionActive)
-            {
-                IsConsistentReadSessionActive = true;
-                SwitchActiveDatabaseSession(databaseSessions.Map[1]);
-                return;
-            }
-
-            // Switch to default session if this is a primary and we are using non-default session
-            if (storeWrapper.clusterProvider.IsPrimary() && IsConsistentReadSessionActive)
-            {
-                IsConsistentReadSessionActive = false;
-                SwitchActiveDatabaseSession(databaseSessions.Map[0]);
-                return;
-            }
         }
     }
 }

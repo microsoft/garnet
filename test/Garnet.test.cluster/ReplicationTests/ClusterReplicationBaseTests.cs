@@ -92,7 +92,8 @@ namespace Garnet.test.cluster
         {
             {"ClusterReplicationSimpleFailover", LogLevel.Warning},
             {"ClusterReplicationMultiRestartRecover", LogLevel.Trace},
-            {"ClusterFailoverAttachReplicas", LogLevel.Error}
+            {"ClusterFailoverAttachReplicas", LogLevel.Error},
+            {"ClusterReplicationSimpleTransactionTest", LogLevel.Trace}
         };
 
         [SetUp]
@@ -2024,6 +2025,86 @@ namespace Garnet.test.cluster
                 for (var i = 0; i < resp.Length; i++)
                     ClassicAssert.AreEqual(resp[i], resp2[i]);
             }
+        }
+
+        [Test, Order(28)]
+        [Category("REPLICATION")]
+        public void ClusterReplicationSimpleTransactionTest([Values] bool storedProcedure)
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
+            context.CreateConnection(useTLS: useTLS);
+
+            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
+
+            // Register custom procedure
+            if (storedProcedure)
+            {
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKREAD", () => new BulkRead(), BulkRead.CommandInfo);
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKREAD", () => new BulkRead(), BulkRead.CommandInfo);
+            }
+
+            // Setup cluster
+            context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, primaryNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaNodeIndex, replicaNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+
+            // Attach replica
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            string[] keys = ["{_}a", "{_}b", "{_}c"];
+            string[] increment = ["10", "15", "20"];
+
+            // Run multiple iterations to ensure replay at the replica does not diverge
+            // Implicit check on the txnManager
+            var iter = 10;
+            for (var i = 0; i < iter; i++)
+            {
+                if (storedProcedure)
+                    ClusterTestContext.ExecuteStoredProcBulkIncrement(primaryServer, keys, increment);
+                else
+                    context.ExecuteTxnBulkIncrement(keys, increment);
+            }
+            var values = increment.Select(x => (int.Parse(x) * iter).ToString()).ToArray();
+
+            // Check keys at primary
+            for (var i = 0; i < keys.Length; i++)
+            {
+                resp = context.clusterTestUtils.GetKey(primaryNodeIndex, Encoding.ASCII.GetBytes(keys[i]), out _, out _, out _);
+                ClassicAssert.AreEqual(values[i], resp);
+            }
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
+
+            // Check keys at replica
+            for (var i = 0; i < keys.Length; i++)
+            {
+                resp = context.clusterTestUtils.GetKey(replicaNodeIndex, Encoding.ASCII.GetBytes(keys[i]), out _, out _, out _);
+                ClassicAssert.AreEqual(values[i], resp);
+            }
+
+            string[] result = null;
+            if (storedProcedure)
+                result = ClusterTestContext.ExecuteBulkReadStoredProc(replicaServer, keys);
+            else
+                result = context.ExecuteTxnBulkRead(replicaServer, keys);
+            ClassicAssert.AreEqual(values, result);
+
+            var primaryPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
+            var replicaPInfo = context.clusterTestUtils.GetPersistenceInfo(replicaNodeIndex, context.logger);
+            ClassicAssert.AreEqual(primaryPInfo.TailAddress, replicaPInfo.TailAddress);
         }
     }
 }

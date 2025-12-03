@@ -88,14 +88,25 @@ namespace Tsavorite.core
             TsavoriteKV<TStoreFunctions, TAllocator> store,
             TsavoriteKV<TStoreFunctions, TAllocator>.TsavoriteExecutionContext<TInput, TOutput, TContext> ctx,
             TFunctions functions,
+            bool enableConsistentRead = false,
             ILoggerFactory loggerFactory = null)
         {
-            bContext = new(this);
-            uContext = new(this);
-            lContext = new(this);
-            luContext = new(this);
-            crContext = new(this);
-            tcrContext = new(this);
+            if (enableConsistentRead)
+            {
+                crContext = new(this);
+                tcrContext = new(this);
+                bContext = crContext.BasicContext;
+                uContext = new(this);
+                lContext = tcrContext.TransactionalContext;
+                luContext = new(this);
+            }
+            else
+            {
+                bContext = new(this);
+                uContext = new(this);
+                lContext = new(this);
+                luContext = new(this);
+            }
 
             this.loggerFactory = loggerFactory;
             logger = loggerFactory?.CreateLogger($"ClientSession-{GetHashCode():X8}");

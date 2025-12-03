@@ -11,27 +11,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
-            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-    using TransactionalGarnetApi = GarnetApi<ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
-        ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions,
-            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
-            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
-
     [Flags]
     public enum TransactionStoreTypes : byte
     {
@@ -80,10 +59,21 @@ namespace Garnet.server
         GarnetWatchApi<BasicGarnetApi> garnetTxPrepareApi;
 
         // Not readonly to avoid defensive copy
-        TransactionalGarnetApi garnetTxMainApi;
+        TransactionalGarnetApi garnetTxRunApi;
 
         // Not readonly to avoid defensive copy
         BasicGarnetApi garnetTxFinalizeApi;
+
+        // Not readonly to avoid defensive copy
+        GarnetWatchApi<ConsistentReadGarnetApi> garnetConsistentTxPrepareApi;
+
+        // Not readonly to avoid defensive copy
+        TransactionalConsistentReadGarnetApi garnetConsistentTxRunApi;
+
+        // Not readonly to avoid defensive copy
+        ConsistentReadGarnetApi garnetConsistentTxFinalizeApi;
+
+        readonly bool enableConsistentRead;
 
         private readonly RespServerSession respSession;
         readonly FunctionsState functionsState;
@@ -93,6 +83,9 @@ namespace Garnet.server
         private readonly StateMachineDriver stateMachineDriver;
         internal int txnStartHead;
         internal int operationCntTxn;
+
+        // Track whether transaction contains write operations
+        internal bool PerformWrites;
 
         /// <summary>
         /// State
@@ -125,6 +118,9 @@ namespace Garnet.server
             StorageSession storageSession,
             ScratchBufferAllocator scratchBufferAllocator,
             bool clusterEnabled,
+            bool enableConsistentRead = false,
+            ConsistentReadGarnetApi garnetConsistentApi = default,
+            TransactionalConsistentReadGarnetApi transactionalConsistentGarnetApi = default,
             ILogger logger = null,
             int dbId = 0)
         {
@@ -154,9 +150,17 @@ namespace Garnet.server
             Debug.Assert(dbFound);
             this.stateMachineDriver = db.StateMachineDriver;
 
-            garnetTxMainApi = transactionalGarnetApi;
+            garnetTxRunApi = transactionalGarnetApi;
             garnetTxPrepareApi = new GarnetWatchApi<BasicGarnetApi>(garnetApi);
             garnetTxFinalizeApi = garnetApi;
+
+            this.enableConsistentRead = enableConsistentRead;
+            if (enableConsistentRead)
+            {
+                garnetConsistentTxPrepareApi = new GarnetWatchApi<ConsistentReadGarnetApi>(garnetConsistentApi);
+                garnetConsistentTxRunApi = transactionalConsistentGarnetApi;
+                garnetConsistentTxFinalizeApi = garnetConsistentApi;
+            }
 
             this.clusterEnabled = clusterEnabled;
             if (clusterEnabled)
@@ -193,6 +197,7 @@ namespace Garnet.server
             this.state = TxnState.None;
             this.storeTypes = TransactionStoreTypes.None;
             functionsState.StoredProcMode = false;
+            this.PerformWrites = false;
 
             // Reset cluster variables used for slot verification
             this.saveKeyRecvBufferPtr = null;
@@ -200,6 +205,46 @@ namespace Garnet.server
         }
 
         internal bool RunTransactionProc(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc, ref MemoryResult<byte> output, bool isRecovering = false)
+        {
+            if (enableConsistentRead)
+            {
+                return RunTransactionProcInternal(
+                    ref garnetConsistentTxPrepareApi,
+                    ref garnetConsistentTxRunApi,
+                    ref garnetConsistentTxFinalizeApi,
+                    id,
+                    ref procInput,
+                    proc,
+                    ref output,
+                    isRecovering);
+            }
+            else
+            {
+                return RunTransactionProcInternal(
+                    ref garnetTxPrepareApi,
+                    ref garnetTxRunApi,
+                    ref garnetTxFinalizeApi,
+                    id,
+                    ref procInput,
+                    proc,
+                    ref output,
+                    isRecovering
+                    );
+            }
+        }
+
+        private bool RunTransactionProcInternal<TPrepareApi, TRunApi, TFinalizeApi>(
+            ref TPrepareApi garnetTxPrepareApi,
+            ref TRunApi garnetTxRunApi,
+            ref TFinalizeApi garnetTxFinalizeApi,
+            byte id,
+            ref CustomProcedureInput procInput,
+            CustomTransactionProcedure proc,
+            ref MemoryResult<byte> output,
+            bool isRecovering = false)
+            where TPrepareApi : IGarnetReadApi
+            where TRunApi : IGarnetApi
+            where TFinalizeApi : IGarnetApi
         {
             var running = false;
             scratchBufferAllocator.Reset();
@@ -212,6 +257,7 @@ namespace Garnet.server
                 proc.logAccessMap = 0UL;
 
                 functionsState.StoredProcMode = true;
+
                 // Prepare phase
                 if (!proc.Prepare(garnetTxPrepareApi, ref procInput))
                 {
@@ -236,7 +282,7 @@ namespace Garnet.server
                 running = true;
 
                 // Run main procedure on locked data
-                proc.Main(garnetTxMainApi, ref procInput, ref output);
+                proc.Main(garnetTxRunApi, ref procInput, ref output);
 
                 // Log the transaction to AOF
                 Log(id, ref procInput, proc.logAccessMap);
@@ -276,7 +322,7 @@ namespace Garnet.server
         {
             Debug.Assert(functionsState.StoredProcMode);
 
-            if (appendOnlyFile != null)
+            if (PerformWrites && appendOnlyFile != null)
             {
                 if (appendOnlyFile.Log.Size == 1)
                 {
@@ -330,10 +376,8 @@ namespace Garnet.server
 
         internal void Commit(bool internal_txn = false)
         {
-            if (appendOnlyFile != null && !functionsState.StoredProcMode)
+            if (PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                ComputeShardedLogAccess(out var logAccessMap);
-
                 if (appendOnlyFile.Log.Size == 1)
                 {
                     var aofHeader = new AofHeader
@@ -346,6 +390,8 @@ namespace Garnet.server
                 }
                 else
                 {
+                    ComputeShardedLogAccess(out var logAccessMap);
+
                     try
                     {
                         appendOnlyFile.Log.LockSublogs(logAccessMap);
@@ -476,10 +522,8 @@ namespace Garnet.server
             LocksAcquired(txnVersion);
 
             // Add TxnStart Marker
-            if (appendOnlyFile != null && !functionsState.StoredProcMode)
+            if (PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                ComputeShardedLogAccess(out var logAccessMap);
-
                 if (appendOnlyFile.Log.Size == 1)
                 {
                     var aofHeader = new AofHeader
@@ -492,16 +536,21 @@ namespace Garnet.server
                 }
                 else
                 {
+                    ComputeShardedLogAccess(out var logAccessMap);
+
                     try
                     {
                         appendOnlyFile.Log.LockSublogs(logAccessMap);
                         var _logAccessBitmap = logAccessMap;
-                        var extendedAofHeader = new AofExtendedHeader(new AofHeader
-                        {
-                            opType = AofEntryType.TxnStart,
-                            storeVersion = txnVersion,
-                            txnID = basicContext.Session.ID
-                        }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), (byte)BitOperations.PopCount(logAccessMap));
+                        var extendedAofHeader = new AofExtendedHeader(
+                            new AofHeader
+                            {
+                                opType = AofEntryType.TxnStart,
+                                storeVersion = txnVersion,
+                                txnID = basicContext.Session.ID
+                            },
+                            functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
+                            (byte)BitOperations.PopCount(logAccessMap));
 
                         while (_logAccessBitmap > 0)
                         {

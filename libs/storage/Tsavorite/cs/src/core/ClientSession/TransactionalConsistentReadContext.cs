@@ -16,26 +16,26 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        readonly TransactionalContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> transactionalContext;
+        public readonly TransactionalContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> TransactionalContext { get; }
 
         /// <inheritdoc/>
-        public bool IsNull => transactionalContext.IsNull;
+        public bool IsNull => TransactionalContext.IsNull;
 
         internal TransactionalConsistentReadContext(ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> clientSession)
         {
-            transactionalContext = new TransactionalContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(clientSession);
+            TransactionalContext = new TransactionalContext<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(clientSession);
         }
 
         #region Begin/EndTransaction
 
         /// <inheritdoc/>
-        public void BeginTransaction() => transactionalContext.BeginTransaction();
+        public void BeginTransaction() => TransactionalContext.BeginTransaction();
 
         /// <inheritdoc/>
-        public void LocksAcquired(long txnVersion) => transactionalContext.LocksAcquired(txnVersion);
+        public void LocksAcquired(long txnVersion) => TransactionalContext.LocksAcquired(txnVersion);
 
         /// <inheritdoc/>
-        public void EndTransaction() => transactionalContext.EndTransaction();
+        public void EndTransaction() => TransactionalContext.EndTransaction();
 
         #endregion Begin/EndTransaction
 
@@ -43,60 +43,60 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public int CompareKeyHashes<TTransactionalKey>(TTransactionalKey key1, TTransactionalKey key2) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.CompareKeyHashes(key1, key2);
+            => TransactionalContext.CompareKeyHashes(key1, key2);
 
         /// <inheritdoc/>
         public int CompareKeyHashes<TTransactionalKey>(ref TTransactionalKey key1, ref TTransactionalKey key2) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.CompareKeyHashes(ref key1, ref key2);
+            => TransactionalContext.CompareKeyHashes(ref key1, ref key2);
 
         /// <inheritdoc/>
         public void SortKeyHashes<TTransactionalKey>(Span<TTransactionalKey> keys) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.SortKeyHashes(keys);
+            => TransactionalContext.SortKeyHashes(keys);
 
         /// <inheritdoc/>
         public void Lock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.Lock(keys);
+            => TransactionalContext.Lock(keys);
 
         /// <inheritdoc/>
         public bool TryLock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.TryLock(keys);
+            => TransactionalContext.TryLock(keys);
 
         /// <inheritdoc/>
         public bool TryLock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys, TimeSpan timeout) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.TryLock(keys, timeout);
+            => TransactionalContext.TryLock(keys, timeout);
 
         /// <inheritdoc/>
         public bool TryLock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys, CancellationToken cancellationToken) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.TryLock(keys, cancellationToken);
+            => TransactionalContext.TryLock(keys, cancellationToken);
 
         /// <inheritdoc/>
         public bool TryLock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys, TimeSpan timeout, CancellationToken cancellationToken) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.TryLock(keys, timeout, cancellationToken);
+            => TransactionalContext.TryLock(keys, timeout, cancellationToken);
 
         /// <inheritdoc/>
         public bool TryPromoteLock<TTransactionalKey>(TTransactionalKey key) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.TryPromoteLock(key);
+            => TransactionalContext.TryPromoteLock(key);
 
         /// <inheritdoc/>
         public bool TryPromoteLock<TTransactionalKey>(TTransactionalKey key, TimeSpan timeout) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.TryPromoteLock(key, timeout);
+            => TransactionalContext.TryPromoteLock(key, timeout);
 
         /// <inheritdoc/>
         public bool TryPromoteLock<TTransactionalKey>(TTransactionalKey key, CancellationToken cancellationToken) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.TryPromoteLock(key, cancellationToken);
+            => TransactionalContext.TryPromoteLock(key, cancellationToken);
 
         /// <inheritdoc/>
         public bool TryPromoteLock<TTransactionalKey>(TTransactionalKey key, TimeSpan timeout, CancellationToken cancellationToken) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.TryPromoteLock(key, timeout, cancellationToken);
+            => TransactionalContext.TryPromoteLock(key, timeout, cancellationToken);
 
         /// <inheritdoc/>
         public void Unlock<TTransactionalKey>(ReadOnlySpan<TTransactionalKey> keys) where TTransactionalKey : ITransactionalKey
-            => transactionalContext.Unlock(keys);
+            => TransactionalContext.Unlock(keys);
 
         /// <summary>
         /// The id of the current Tsavorite Session
         /// </summary>
-        public int SessionID => transactionalContext.SessionID;
+        public int SessionID => TransactionalContext.SessionID;
 
         #endregion Key Locking
 
@@ -108,7 +108,7 @@ namespace Tsavorite.core
         {
             var callbacks = Session.functions.GetContextCallbacks();
             callbacks.consistentReadKeyPrepareCallback.Invoke(PinnedSpanByte.FromPinnedSpan(key));
-            var status = transactionalContext.Read(key, ref input, ref output, userContext);
+            var status = TransactionalContext.Read(key, ref input, ref output, userContext);
             if (status.Found)
                 callbacks.consistentReadKeyUpdateCallback.Invoke();
             return status;
@@ -159,7 +159,7 @@ namespace Tsavorite.core
         {
             var callbacks = Session.functions.GetContextCallbacks();
             callbacks.consistentReadKeyPrepareCallback.Invoke(PinnedSpanByte.FromPinnedSpan(key));
-            var status = transactionalContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
+            var status = TransactionalContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
             if (status.Found)
                 callbacks.consistentReadKeyUpdateCallback.Invoke();
             return status;
@@ -180,26 +180,26 @@ namespace Tsavorite.core
         #region ITsavoriteContext
 
         /// <inheritdoc/>
-        public ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => transactionalContext.Session;
+        public ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> Session => TransactionalContext.Session;
 
         /// <inheritdoc/>
-        public long GetKeyHash(ReadOnlySpan<byte> key) => transactionalContext.GetKeyHash(key);
+        public long GetKeyHash(ReadOnlySpan<byte> key) => TransactionalContext.GetKeyHash(key);
 
         /// <inheritdoc/>
         public bool CompletePending(bool wait = false, bool spinWaitForCommit = false)
-            => transactionalContext.CompletePending(wait, spinWaitForCommit);
+            => TransactionalContext.CompletePending(wait, spinWaitForCommit);
 
         /// <inheritdoc/>
         public bool CompletePendingWithOutputs(out CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, bool wait = false, bool spinWaitForCommit = false)
-            => transactionalContext.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
+            => TransactionalContext.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
 
         /// <inheritdoc/>
         public ValueTask CompletePendingAsync(bool waitForCommit = false, CancellationToken token = default)
-            => transactionalContext.CompletePendingAsync(waitForCommit, token);
+            => TransactionalContext.CompletePendingAsync(waitForCommit, token);
 
         /// <inheritdoc/>
         public ValueTask<CompletedOutputIterator<TInput, TOutput, TContext>> CompletePendingWithOutputsAsync(bool waitForCommit = false, CancellationToken token = default)
-            => transactionalContext.CompletePendingWithOutputsAsync(waitForCommit, token);
+            => TransactionalContext.CompletePendingWithOutputsAsync(waitForCommit, token);
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

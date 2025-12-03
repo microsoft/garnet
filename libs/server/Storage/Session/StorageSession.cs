@@ -95,13 +95,14 @@ namespace Garnet.server
             Debug.Assert(dbFound);
 
             this.stateMachineDriver = db.StateMachineDriver;
-            var session = db.Store.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions);
+            var enableConsistentRead = consistentReadContextCallbacks != null;
+            var session = db.Store.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions, enableConsistentRead);
 
             var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
-            var objectStoreSession = db.Store.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
+            var objectStoreSession = db.Store.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions, enableConsistentRead);
 
             var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState);
-            var unifiedStoreSession = db.Store.NewSession<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions);
+            var unifiedStoreSession = db.Store.NewSession<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions, enableConsistentRead);
 
             basicContext = session.BasicContext;
             transactionalContext = session.TransactionalContext;

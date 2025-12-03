@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -46,7 +45,8 @@ namespace Garnet.test.cluster
             {"ClusterReplicationMultiRestartRecover", true},
             {"ReplicasRestartAsReplicasAsync", true},
             {"PrimaryUnavailableRecoveryAsync", true},
-            {"ClusterReplicationDivergentHistoryWithoutCheckpoint", true}
+            {"ClusterReplicationDivergentHistoryWithoutCheckpoint", true},
+            {"ClusterReplicationSimpleTransactionTest", true}
         };
 
         [OneTimeSetUp]
@@ -100,8 +100,11 @@ namespace Garnet.test.cluster
             // Register custom procedure
             if (storedProcedure)
             {
-                context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), new RespCommandsInfo { Arity = -4 });
-                context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), new RespCommandsInfo { Arity = -4 });
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKREAD", () => new BulkRead(), BulkRead.CommandInfo);
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKREAD", () => new BulkRead(), BulkRead.CommandInfo);
             }
 
             // Setup cluster
@@ -119,13 +122,9 @@ namespace Garnet.test.cluster
             string[] keys = ["{_}a", "{_}b", "{_}c"];
             string[] values = ["10", "15", "20"];
             if (storedProcedure)
-            {
-                ExecuteStoredProcBulkIncrement(primaryServer, keys, values);
-            }
+                ClusterTestContext.ExecuteStoredProcBulkIncrement(primaryServer, keys, values);
             else
-            {
-                ExecuteTxnBulkIncrement(keys, values);
-            }
+                context.ExecuteTxnBulkIncrement(keys, values);
 
             // Check keys at primary
             for (var i = 0; i < keys.Length; i++)
@@ -142,41 +141,19 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(values[i], resp);
             }
 
-            void ExecuteStoredProcBulkIncrement(IServer server, string[] keys, string[] values)
+            if (storedProcedure)
             {
-                try
-                {
-                    var args = new object[1 + (keys.Length * 2)];
-                    args[0] = keys.Length;
-                    for (var i = 0; i < keys.Length; i++)
-                    {
-                        args[1 + (i * 2)] = keys[i];
-                        args[1 + (i * 2) + 1] = values[i];
-                    }
-                    var resp = server.Execute("BULKINCRBY", args);
-                    ClassicAssert.AreEqual("OK", (string)resp);
-                }
-                catch (Exception ex)
-                {
-                    Assert.Fail(ex.Message);
-                }
+                var result = ClusterTestContext.ExecuteBulkReadStoredProc(replicaServer, keys);
+                ClassicAssert.AreEqual(values, result);
+            }
+            else
+            {
+                context.ExecuteTxnBulkRead(replicaServer, keys);
             }
 
-            void ExecuteTxnBulkIncrement(string[] keys, string[] values)
-            {
-                try
-                {
-                    var db = context.clusterTestUtils.GetDatabase();
-                    var txn = db.CreateTransaction();
-                    for (var i = 0; i < keys.Length; i++)
-                        txn.StringIncrementAsync(keys[i], long.Parse(values[i]));
-                    txn.Execute();
-                }
-                catch (Exception ex)
-                {
-                    Assert.Fail(ex.Message);
-                }
-            }
+            var primaryPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
+            var replicaPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
+            ClassicAssert.AreEqual(primaryPInfo.TailAddress, replicaPInfo.TailAddress);
         }
 
         [Test, Order(2)]

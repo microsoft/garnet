@@ -11,16 +11,19 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        internal Dictionary<int, SessionInfo> _activeSessions = new();
+        internal Dictionary<int, SessionInfo> _activeSessions = [];
 
         /// <summary>
         /// Start a new client session with Tsavorite.
         /// </summary>
         /// <param name="functions">Callback functions</param>
+        /// <param name="enableConsistentRead">Enable consistent read context</param>
         /// <param name="readCopyOptions"><see cref="ReadCopyOptions"/> for this session; override those specified at TsavoriteKV level, and may be overridden on individual Read operations</param>
         /// <returns>Session instance</returns>
-        public ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> NewSession<TInput, TOutput, TContext, TFunctions>(TFunctions functions,
-                ReadCopyOptions readCopyOptions = default)
+        public ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator> NewSession<TInput, TOutput, TContext, TFunctions>(
+            TFunctions functions,
+            bool enableConsistentRead = false,
+            ReadCopyOptions readCopyOptions = default)
             where TFunctions : ISessionFunctions<TInput, TOutput, TContext>
         {
             if (functions == null)
@@ -35,7 +38,7 @@ namespace Tsavorite.core
                 if (_activeSessions == null)
                     _ = Interlocked.CompareExchange(ref _activeSessions, [], null);
             }
-            var session = new ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions);
+            var session = new ClientSession<TInput, TOutput, TContext, TFunctions, TStoreFunctions, TAllocator>(this, ctx, functions, enableConsistentRead);
             lock (_activeSessions)
                 _activeSessions.Add(sessionID, new SessionInfo { session = session, isActive = true });
             return session;

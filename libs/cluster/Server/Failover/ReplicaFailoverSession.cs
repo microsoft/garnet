@@ -137,9 +137,6 @@ namespace Garnet.cluster
                     return false;
                 }
 
-                // Switch all sessions to consistent read protocol
-                clusterProvider.replicationManager.ToggleConsistentReadDatabaseSessionForAllActiveSessions();
-
                 // Update replicationIds and replicationOffset2
                 clusterProvider.replicationManager.TryUpdateForFailover();
 
@@ -159,10 +156,6 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, "{method}", nameof(TakeOverAsPrimary));
-
-                // In the event the failover process fails this resets the default dbSession
-                // for all active sessions according to the node's role when sharded-log based AOF is used
-                clusterProvider.replicationManager.ToggleConsistentReadDatabaseSessionForAllActiveSessions();
             }
             finally
             {

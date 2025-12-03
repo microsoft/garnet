@@ -15,6 +15,8 @@ namespace Garnet.server
         /// <param name="type"></param>
         public void SaveKeyEntryToLock(PinnedSpanByte key, LockType type)
         {
+            // Indicate whether transaction has to perform a write operation (used to skip writing to AOF otherwise)
+            PerformWrites |= type == LockType.Exclusive;
             keyEntries.AddKey(key, type);
         }
 

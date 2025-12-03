@@ -897,6 +897,13 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Check whether to perform consistent read
+        /// </summary>
+        /// <returns></returns>
+        public bool PerformConsistentRead()
+            => serverOptions.EnableCluster && serverOptions.EnableAOF && serverOptions.AofSublogCount > 1 && clusterProvider.IsReplica();
+
+        /// <summary>
         /// Dispose
         /// </summary>
         public void Dispose()
