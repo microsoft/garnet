@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Garnet.common;
 using Garnet.networking;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -97,9 +98,12 @@ namespace Garnet.server
                         continue;
                     }
 
-                    // TODO: this doesn't work with multi-db setups
                     // TODO: this doesn't work with non-RESP impls... which maybe we don't care about?
                     using var cleanupSession = (RespServerSession)getCleanupSession();
+                    if (cleanupSession.activeDbId != dbId && !cleanupSession.TrySwitchActiveDatabaseSession(dbId))
+                    {
+                        throw new GarnetException($"Could not switch VectorManager cleanup session to {dbId}, initialization failed");
+                    }
 
                     PostDropCleanupFunctions callbacks = new(cleanupSession.storageSession, needCleanup);
 
