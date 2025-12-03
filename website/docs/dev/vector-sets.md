@@ -117,11 +117,11 @@ Removal works much the same as insertion, using shared locks so it can proceed i
 
 Searching is a pure read operation, and so holds shared locks and proceeds in parallel like insertions and removals.
 
-Great care is taken to avoid copying during `VSIM`.  In particular, values and element ids are passed directly from the receive buffer for all encodings except `VALUES`.  Callbacks from DiskANN to Garnet likewise take great care to avoid copying, and are detailed below.
+Great care is taken to avoid copying during `VSIM`.  In particular, values and element ids are passed directly from the receive buffer for all encodings except `VALUES`.  Callbacks from DiskANN to Garnet likewise take great care to avoid copying, and are [detailed below](#diskann-integration).
 
 ## Element Data (via `VEMB` and `VGETATTR`)
 
-This operations are handled purely on the Garnet side by first reading out the [`Index`](#indexes) structure, and then using the context value to look for data in the appropriate namespaces.
+These operations are handled purely on the Garnet side by first reading out the [`Index`](#indexes) structure, and then using the context value to look for data in the appropriate namespaces.
 
 > [!NOTE]
 > Strictly speaking we don't need the DiskANN index to access this data, but the current implementation does make sure the index is valid.
@@ -180,7 +180,7 @@ Whenever we read or write a key/value pair in the main store, we acquire locks i
 
 ## `ReadOptimizedLock`
 
-As noted above, to prevent `DEL` from clobbering in use Vector Sets and concurrent `VADD`s from calling `create_index` multiple times we have to hold locks based on the vector set key.  As every Vector Set operations starts by taking these locks, we have sharded them into separate locks.  To derive many related keys from a single key, we mangle the low bits of a key's hash value - this is implemented in new (but not bound to Vector Sets) type `ReadOptimizedLock`.
+As noted above, to prevent `DEL` from clobbering in use Vector Sets and concurrent `VADD`s from calling `create_index` multiple times we have to hold locks based on the Vector Set key.  As every Vector Set operations starts by taking these locks, we have sharded them into separate locks.  To derive many related keys from a single key, we mangle the low bits of a key's hash value - this is implemented in the new (but not bound to Vector Sets) type `ReadOptimizedLock`.
 
 For operations which remain reads, we only acquire a single shared lock (based on the current thread) to prevent destructive operations.
 
@@ -190,9 +190,9 @@ For operations which might be either (like `VADD`) we first acquire the usual si
 
 ## `VectorManager` Lock Around `ContextMetadata`
 
-Whenever we need to allocate a new context or mark an old one for cleanup, we need to modify the cached `ContextMetadata` and write the new value to Tsavorite.  To simplify this, we take a simple `lock` around `VectorManager` while preparing a new `ContextMetadata`.
+Whenever we need to allocate a new context or mark an old one for cleanup, we need to modify the cached `ContextMetadata` and write the new value to Tsavorite.  To simplify this, we take a plain `lock` around `VectorManager` while preparing a new `ContextMetadata`.
 
-The `RMW` into Tsavorite still proceeds in parallel, outside of the lock, but a simple version counter in `ContextMetadata` allows us to keep only the latest version in the store.
+The `RMW` into Tsavorite still proceeds in parallel, outside of the lock, but a version counter in `ContextMetadata` allows us to keep only the latest version in the store.
 
 > [!NOTE]
 > Rapid creation or deletion of Vector Sets is expected to perform poorly due to this lock.
@@ -236,11 +236,11 @@ While a `VADD` can proceed in parallel with respect to other `VADD`s, that is no
 
 Migrating a Vector Set between two primaries (either as part of a `MIGRATE ... KEYS` or migration of a whole hash slot) is complicated by storing element data in namespaces.
 
-Namespaces (intentionally) do not participate in hash slots or clustering, and are a node specific idea.  This means that migration must also update the namespaces of elements as they are migrated.
+Namespaces (intentionally) do not participate in hash slots or clustering, and are a node specific concept.  This means that migration must also update the namespaces of elements as they are migrated.
 
 At a high level, migration between the originating primary a destination primary behaves as follows:
  1. Once target slots transition to `MIGRATING`...
-    * An addition to `ClusterSession.SingleKeySlotVerify` causes all WRITE Vector Set commands to pause once a slot is `MIGRATING` or `IMPORTING` - this is necessary because we cannot block based on the key as Vector Sets are composed of many keys
+    * An addition to `ClusterSession.SingleKeySlotVerify` causes all WRITE Vector Set commands to pause once a slot is `MIGRATING` or `IMPORTING` - this is necessary because we cannot block based on the key as Vector Sets are composed of many key-value pairs across several namespaces
  2. `VectorManager` on the originating primary enumerates all _namespaces_ and Vector Sets that are covered by those slots
  3. The originating primary contacts the destination primary and reserves enough new Vector Set contexts to handled those found in step 2
     * These Vector Sets are "in use" but also in a migrating state in `ContextMetadata`
@@ -290,7 +290,7 @@ During startup we read any old `ContextMetadata` out of the Main Store, cache it
 
 While reading out [`Index`](#indexes) before performing a DiskANN function call, we check the stored `ProcessInstanceId` against the (randomly generated) one in our `VectorManager` instance.  If they do not match, we know that the DiskANN `IndexPtr` is dangling and we need to recreate the index.
 
-To recreate, we simply acquire exclusive locks (in the same way we would for `VADD` or `DEL`) and invoke `create_index` again.  From DiskANN's perspective, there's no difference between creating a new empty index and recreating an old one which has existing data.
+To recreate, we acquire exclusive locks (in the same way we would for `VADD` or `DEL`) and invoke `create_index` again.  From DiskANN's perspective, there's no difference between creating a new empty index and recreating an old one which has existing data.
 
 This means we recreate indexes lazily after recovery.  Consequently the _first_ command (regardless of if it's a `VADD`, a `VSIM`, or whatever) against an index after recovery will be slower since it needs to do extra work, and will block other commands since it needs exclusive locking.
 
@@ -302,7 +302,7 @@ This means we recreate indexes lazily after recovery.  Consequently the _first_ 
 
 # DiskANN Integration
 
-Almost all of how Vector Sets actually function is handled by DiskANN.  Garnet simply embeds it, translates between RESP commands and DiskANN functions, and manages storage.
+Almost all of how Vector Sets actually function is handled by DiskANN.  Garnet just embeds it, translates between RESP commands and DiskANN functions, and manages storage.
 
 In order for DiskANN to access and store data in Garnet, we provide a set of callbacks.  All callbacks are `[UnmanagedCallersOnly]` and converted to function pointers before they are passed to Garnet.
 
@@ -311,7 +311,7 @@ All callbacks take a `ulong context` parameter which identifies the Vector Set i
 > [!IMPORTANT]
 > As noted elsewhere, we only have a byte's worth of namespaces today - so although `context` could handle quintillions of Vector Sets, today we're limited to just 31.
 >
-> This restriction will go away with Store V2, but we expect "lower" Vector Sets to out perform "higher" ones due to the need for copies at longer namespaces.
+> This restriction will go away with Store V2, but we expect "lower" Vector Sets to out perform "higher" ones due to the need for intermediate data copies with longer namespaces.
 
 ## Read Callback
 
@@ -327,7 +327,7 @@ In the `Span<byte>` defined by `keysData` and `keysLength` the keys are length p
 > [!NOTE]
 > Once variable sized namespaces are supported we'll have to handle the case where the namespace can't fit in 4 bytes.  However, we expect that to be rare (4-bytes would give us ~53,000,000 Vector Sets) and the performance benefits of _not_ copying during querying are very large.
 
-As we find keys, we invoke `dataCallback(index, dataCallbackContext, keyPointer, keyLength)`.  If a key is not found, it's index is simply skipped.  The benefits of this is that we don't copy data out of the Tsavorite log as part of reads, DiskANN is able to do distance calculations and traversal over in-place data.
+As we find keys, we invoke `dataCallback(index, dataCallbackContext, keyPointer, keyLength)`.  If a key is not found, its index is simply skipped.  The benefits of this is that we don't copy data out of the Tsavorite log as part of reads, DiskANN is able to do distance calculations and traversal over in-place data.
 
 > [!NOTE]
 > Each invocation of `dataCallback` is a managed -&gt; native transition, which can add up very quickly.  We've reduced that as much as possible with function points and `SuppressGCTransition`, but that comes with risks.
@@ -335,13 +335,13 @@ As we find keys, we invoke `dataCallback(index, dataCallbackContext, keyPointer,
 > In particular if DiskANN raises an error or blocks in the `dataCallback` expect very bad things to happen, up to the runtime corrupting itself.  Great care must be taken to keep the DiskANN side of this call cheap and reliable.
 
 > [!IMPORTANT]
-> Tsavorite has been extended with a `ContextReadWithPrefetch` method to accommodate this pattern, which also employs prefetching when we have batches of keys to lookup.  This needs to be upstreamed before Vector Set work lands.
+> Tsavorite has been extended with a `ContextReadWithPrefetch` method to accommodate this pattern, which also employs prefetching when we have batches of keys to lookup.
 >
 > Additionally, some experimentation to figure out good prefetch sizes (and if [AMAC](https://dl.acm.org/doi/10.14778/2856318.2856321) is useful) based on hardware is merited.  Right now we've chosen 12 based on testing with some 96-core Intel machines, but that is unlikely to be correct in all interesting circumstances.
 
 ## Write Callback
 
-A relatively simple callback, the signature is:
+A simpler callback, the signature is:
 ```csharp
 byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
 ```
@@ -367,22 +367,22 @@ This callback returns 1 if the key was found and removed, and 0 otherwise.
 
 ## Read Modify Write Callback
 
-A slightly more complicated callback, the signature is:
+A more complicated callback, the signature is:
 ```csharp
 byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
 ```
 
 `context` identifies which Vector Set is being operated on AND the associated namespace,  and `keyData` and `keyLength` represent a `Span<byte>` of the key to create, read, or update.
 
-`writeLength` is the desired number of bytes, this is only used used if we must allocate a new block.
+`writeLength` is the desired number of bytes, this is only used used if we are creating a new key-value pair.
 
 As with the write and delete callbacks, DiskANN guarantees an extra 4-bytes BEFORE `keyData` that we use to store a namespace, and thus avoid copying the key value before invoking Tsavorite's `RMW`.
 
-After we allocate a new block or find an existing one, `dataCallback(nint dataCallbackContext, nint dataPointer, nuint dataLength)`.  Changes made to data in this callback are persisted.  This needs to be _fast_ to prevent gumming up Tsavorite, as we are under epoch protection.
+After we allocate a new key-value pair or find an existing one, `dataCallback(nint dataCallbackContext, nint dataPointer, nuint dataLength)` is called.  Changes made to data in this callback are persisted.  This needs to be _fast_ to prevent gumming up Tsavorite, as we are under epoch protection.
 
-Newly allocated blocks are guaranteed to be all zeros.
+Newly allocated values are guaranteed to be all zeros.
 
-The callback returns 1 if key was found or created, and 0 if some error was encountered.
+The callback returns 1 if the key-value pair was found or created, and 0 if some error occurred.
 
 ## DiskANN Functions
 
