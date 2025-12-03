@@ -4,8 +4,10 @@ using System.Diagnostics;
 using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using Garnet.common;
+using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
@@ -17,6 +19,8 @@ namespace Garnet.test
         private readonly LightClientRequest lightClientRequest;
 
         public ConfigurationOptions Options { get; }
+
+        public StringBuilder OutputLog { get; }
 
         internal GarnetServerTestProcess(Dictionary<string, string> env, int port = 7000)
         {
@@ -64,7 +68,8 @@ namespace Garnet.test
             {
                 CreateNoWindow = true,
                 RedirectStandardInput = true,
-                RedirectStandardOutput = true
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
             };
 
             if (env != null)
@@ -76,21 +81,67 @@ namespace Garnet.test
             process = Process.Start(psi);
             ClassicAssert.NotNull(process);
 
+            var released = false;
             using var waitFor = new SemaphoreSlim(0, 1);
+
+            OutputLog = new();
+            _ = OutputLog.AppendLine($"Started PID: {process.Id}");
+            foreach (var arg in psi.ArgumentList)
+            {
+                _ = OutputLog.AppendLine($"Arg: {arg}");
+            }
+
+            foreach (var (k, v) in psi.Environment)
+            {
+                _ = OutputLog.AppendLine($"Env: {k}={v}");
+            }
 
             process.OutputDataReceived +=
                 (obj, lineArgs) =>
                 {
-                    if (lineArgs.Data.Equals("* Ready to accept connections", StringComparison.Ordinal))
+                    if (lineArgs.Data == null)
+                    {
+                        return;
+                    }
+
+                    lock (OutputLog)
+                    {
+                        _ = OutputLog.AppendLine($"[>OUT] {lineArgs.Data}");
+                    }
+
+                    if (!released && lineArgs.Data.Equals("* Ready to accept connections", StringComparison.Ordinal))
                     {
                         _ = waitFor.Release();
-                        process.CancelOutputRead();
+                        released = true;
+                    }
+                };
+            process.ErrorDataReceived +=
+                (obj, lineArgs) =>
+                {
+                    if (lineArgs.Data == null)
+                    {
+                        return;
+                    }
+
+                    lock (OutputLog)
+                    {
+                        _ = OutputLog.AppendLine($"[!ERR] {lineArgs.Data}");
                     }
                 };
             process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
 
             // Block until the startup message to ensure process is up.
-            waitFor.Wait(cts.Token);
+            try
+            {
+                waitFor.Wait(cts.Token);
+            }
+            catch
+            {
+                RecordTestOutput(OutputLog);
+
+                throw;
+            }
 
             lightClientRequest = new LightClientRequest(endPoint, 0);
         }
@@ -98,58 +149,95 @@ namespace Garnet.test
         ~GarnetServerTestProcess()
         {
             // If somehow we leak this, still try and kill the process
-            KillProcess(process, lightClientRequest);
+            KillProcess(process, null, lightClientRequest);
             process = null;
         }
+
+        private static void RecordTestOutput(StringBuilder outputLog)
+        {
+            lock (outputLog)
+            {
+                TestContext.Write(outputLog.ToString());
+            }
+        }
+
+        public void RecordTestOutput()
+        => RecordTestOutput(OutputLog);
 
         public void Dispose()
         {
             GC.SuppressFinalize(this);
 
-            KillProcess(process, lightClientRequest);
+            KillProcess(process, OutputLog, lightClientRequest);
             process = null;
         }
 
-        private static void KillProcess(Process process, LightClientRequest lightClientRequest)
+        private static void KillProcess(Process process, StringBuilder outputLog, LightClientRequest lightClientRequest)
         {
             if (process != null)
             {
                 try
                 {
-                    if (process.HasExited)
-                    {
-                        return;
-                    }
-
                     using (process)
                     {
+                        if (process.HasExited)
+                        {
+                            return;
+                        }
+
                         // We want to be sure the process is down, otherwise it may conflict
                         // with a future run. First, we'll ask nicely and then kill it.
-                        using (lightClientRequest)
+                        try
                         {
-                            try
+                            using (lightClientRequest)
                             {
                                 // More reliable than QUIT.
                                 _ = lightClientRequest.SendCommand("DEBUG PANIC");
+
                             }
-                            catch { }
+                        }
+                        catch
+                        {
+                            // LightClientRequest might already be disposed or collected, ignore any errors
                         }
 
                         try
                         {
                             process.Kill();
                         }
-                        catch { }
+                        catch
+                        {
+                            // Process might be disposed or collected, ignore any errors
+                        }
 
                         if (!process.WaitForExit(10_000))
                         {
-                            Console.WriteLine($"PID: {process.Id} did not exit when expected");
+                            if (outputLog != null)
+                            {
+                                // If we have an output log, we're not on the finalizer thread - so try and write results to test log
+
+                                lock (outputLog)
+                                {
+                                    _ = outputLog.AppendLine("!!Process did not exit when expected!!");
+                                }
+
+                                RecordTestOutput(outputLog);
+                            }
+                            else
+                            {
+                                // No output log implies bad things are happening, so just go straight to standard out
+
+                                Console.WriteLine($"PID: {process.Id} did not exit when expected");
+                            }
                         }
 
                         process.Close();
                     }
                 }
-                catch { }
+                catch
+                {
+                    // Best effort
+                }
             }
         }
     }

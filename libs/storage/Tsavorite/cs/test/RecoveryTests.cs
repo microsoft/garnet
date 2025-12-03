@@ -45,7 +45,7 @@ namespace Tsavorite.test.recovery.sumstore
             DeleteDirectory(MethodTestDir, true);
         }
 
-        private void Setup(DeviceType deviceType)
+        private void Setup(TestDeviceType deviceType)
         {
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, "Test.log"));
             store = new(new()
@@ -74,7 +74,7 @@ namespace Tsavorite.test.recovery.sumstore
                 DeleteDirectory(MethodTestDir);
         }
 
-        private void PrepareToRecover(DeviceType deviceType)
+        private void PrepareToRecover(TestDeviceType deviceType)
         {
             TearDown(deleteDir: false);
             Setup(deviceType);
@@ -83,7 +83,7 @@ namespace Tsavorite.test.recovery.sumstore
         [Test]
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
-        public async ValueTask RecoveryTestSeparateCheckpoint([Values] bool isAsync, [Values] DeviceType deviceType)
+        public async ValueTask RecoveryTestSeparateCheckpoint([Values] bool isAsync, [Values] TestDeviceType deviceType)
         {
             Setup(deviceType);
             Populate(SeparateCheckpointAction);
@@ -100,7 +100,7 @@ namespace Tsavorite.test.recovery.sumstore
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
         [Category("Smoke")]
-        public async ValueTask RecoveryTestFullCheckpoint([Values] bool isAsync, [Values] DeviceType deviceType)
+        public async ValueTask RecoveryTestFullCheckpoint([Values] bool isAsync, [Values] TestDeviceType deviceType)
         {
             Setup(deviceType);
             Populate(FullCheckpointAction);
