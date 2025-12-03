@@ -19,9 +19,9 @@ jobs:
       fail-fast: false
       matrix:
         #test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
-        test: [ 'Tsavorite.test' ]
+        test: [  'Garnet.test', 'Tsavorite.test' ]
         #os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
-        os: [ ubuntu-22.04, ubuntu-24.04 ]
+        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022 ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
 
@@ -196,7 +196,8 @@ jobs:
             Write-Host "Source path $source not found, skipping copy"
           }
         if: ${{ always() }}
-
+     
+      # NOTE - need this to get the results names properly categorized in Allure report at Suite level 
       - name: Upload Allure Results to artifacts
         uses: actions/upload-artifact@v4
         with:
