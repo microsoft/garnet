@@ -82,12 +82,10 @@ namespace Tsavorite.core
                     return false;
                 beginAddress = nextAddress = SnapToLogicalAddressBoundary(ref cursor, headAddress, currentPage);
             }
-            catch
+            finally
             {
                 epoch?.Suspend();
-                throw;
             }
-
             return true;
         }
 

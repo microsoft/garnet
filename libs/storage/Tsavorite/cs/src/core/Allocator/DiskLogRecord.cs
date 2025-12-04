@@ -31,7 +31,7 @@ namespace Tsavorite.core
         internal Action<IHeapObject> objectDisposer;
 
         public override readonly string ToString()
-            => $"logRec [{logRecord}], recordBuffer [{recordBuffer}], objDisp [{objectDisposer}]";
+            => $"logRec [{logRecord}], recordBuffer [{(recordBuffer.ToString() ?? "<null>")}], objDisp [{(objectDisposer.ToString() ?? "<null>")}]";
 
         /// <summary>
         /// Constructor taking the record buffer and out-of-line objects. Private; use either CopyFrom or TransferFrom.
@@ -49,6 +49,8 @@ namespace Tsavorite.core
             this.recordBuffer = recordBuffer;
             this.objectDisposer = objectDisposer;
             logRecord = new((long)recordBuffer.GetValidPointer(), transientObjectIdMap);
+
+            // Assign any out-of-line fields. This will put them into transientObjectIdMap.
             if (!keyOverflow.IsEmpty)
                 logRecord.KeyOverflow = keyOverflow;
             if (!valueOverflow.IsEmpty)
@@ -94,7 +96,13 @@ namespace Tsavorite.core
         /// <param name="objectDisposer">The action to invoke when disposing the value object if it is present when we dispose the <see cref="LogRecord"/></param>
         internal static DiskLogRecord CopyFrom(in LogRecord logRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap, Action<IHeapObject> objectDisposer)
         {
-            var recordBuffer = AllocateBuffer(in logRecord, bufferPool);
+            // Allocate from ActualSize roundup here because the value may have been shrunk.
+            var allocatedSize = RoundUp(logRecord.ActualSize, Constants.kRecordAlignment);
+            var recordBuffer = bufferPool.Get(allocatedSize);
+
+            // Copy the inline portion of the logRecord.
+            logRecord.RecordSpan.CopyTo(recordBuffer.RequiredValidSpan);
+
             return new DiskLogRecord(recordBuffer, transientObjectIdMap,
                 logRecord.Info.KeyIsOverflow ? logRecord.KeyOverflow : default,
                 logRecord.Info.ValueIsOverflow ? logRecord.ValueOverflow : default,
@@ -118,10 +126,19 @@ namespace Tsavorite.core
             return diskLogRecord;
         }
 
-        internal static DiskLogRecord TransferFrom(ref DiskLogRecord src)
+        internal static DiskLogRecord TransferFrom(ref DiskLogRecord srcDiskLogRecord, SectorAlignedBufferPool bufferPool)
         {
-            var diskLogRecord = new DiskLogRecord(in src.logRecord, src.objectDisposer) { recordBuffer = src.recordBuffer };
-            src = default; // Transfer ownership to us, and make sure we don't try to clear the logRecord
+            DiskLogRecord diskLogRecord;
+            if (srcDiskLogRecord.recordBuffer is not null)
+                diskLogRecord = new DiskLogRecord(in srcDiskLogRecord.logRecord, srcDiskLogRecord.objectDisposer) { recordBuffer = srcDiskLogRecord.recordBuffer };
+            else
+            {
+                // Deep copy. This is necessary when srcDiskLogRecord does not own its recordBuffer, because the underlying memory
+                // may be freed or reused--e.g. if it is from an iterator frame.
+                diskLogRecord = CopyFrom(in srcDiskLogRecord.logRecord, bufferPool, srcDiskLogRecord.logRecord.objectIdMap, srcDiskLogRecord.objectDisposer);
+            }
+
+            srcDiskLogRecord = default;              // Transfer ownership to us, and make sure we don't try to clear the logRecord
             return diskLogRecord;
         }
 
@@ -137,17 +154,10 @@ namespace Tsavorite.core
             return diskLogRecord;
         }
 
-        private static SectorAlignedMemory AllocateBuffer(in LogRecord logRecord, SectorAlignedBufferPool bufferPool)
-        {
-            var allocatedSize = RoundUp(logRecord.ActualSize, Constants.kRecordAlignment);
-            var recordBuffer = bufferPool.Get(allocatedSize);
-            logRecord.RecordSpan.CopyTo(recordBuffer.RequiredValidSpan);
-            return recordBuffer;
-        }
-
         public void Dispose()
         {
-            logRecord.Dispose(objectDisposer);
+            if (logRecord.IsSet)
+                logRecord.Dispose(objectDisposer);
             logRecord = default;
 
             recordBuffer?.Return();

@@ -884,7 +884,8 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            if (disposed) return;
+            if (disposed)
+                return;
             disposed = true;
 
             itemBroker?.Dispose();

@@ -313,6 +313,12 @@ namespace Tsavorite.core
         {
             Debug.Assert(objectLogDevice is not null, "GetHighestObjectLogSegmentToRemove should not be called if there is no objectLogDevice");
             var objectLogSegment = -1;
+
+            // If we're on the first main-log page, we won't be able to remove any object log segments.
+            // If we're not past the PageHeader of the second page, then the PageHeader probably hasn't been written, so we can't read it.
+            if (addressOfStartOfMainLogPage <= PageSize + PageHeader.Size)
+                return objectLogSegment;
+
             var buffer = bufferPool.Get(sectorSize);
             PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
             try

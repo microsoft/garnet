@@ -1073,13 +1073,12 @@ namespace Tsavorite.core
             long recordOffset = PageHeader.Size;
             while (recordOffset < untilLogicalAddressInPage)
             {
-                // DiskLogRecord ctor calls ClearBitsForDiskImages(), and then we use its size to move to the next record.
                 var logRecord = new LogRecord(physicalAddress + recordOffset);
                 logRecord.InfoRef.ClearBitsForDiskImages();
 
-                long size = logRecord.AllocatedSize;
-                Debug.Assert(size <= hlogBase.GetPageSize());
-                recordOffset += size;
+                long recordSize = logRecord.AllocatedSize;
+                Debug.Assert(recordSize > 0 && recordSize <= hlogBase.GetPageSize() - PageHeader.Size, $"recordSize {recordSize} must be > 0 and <= available page space {hlogBase.GetPageSize() - PageHeader.Size}");
+                recordOffset += recordSize;
             }
         }
 

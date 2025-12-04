@@ -137,6 +137,8 @@ namespace Tsavorite.core
 
             // Read from the circular buffer.
             var buffer = readBuffers.GetCurrentBuffer();
+            if (buffer is null || !buffer.HasData)
+                return 0;
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();   // IDevice does not support cancellation, so just check this here

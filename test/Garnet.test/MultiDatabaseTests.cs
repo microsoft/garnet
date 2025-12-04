@@ -24,6 +24,13 @@ namespace Garnet.test
             server.Start();
         }
 
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+        }
+
         [Test]
         public void MultiDatabaseBasicSelectTestSE()
         {
@@ -1149,7 +1156,8 @@ namespace Garnet.test
                 var garnetServer = redis.GetServer(TestUtils.EndPoint);
                 db1.Execute("SAVE");
                 //garnetServer.Save(SaveType.BackgroundSave);
-                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) 
+                    Thread.Sleep(10);
             }
 
             server.Dispose(false);
@@ -1630,13 +1638,6 @@ namespace Garnet.test
                 ClassicAssert.IsFalse(db1.KeyExists(db2Key3));
                 ClassicAssert.IsFalse(db1.KeyExists(db2Key4));
             }
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         private (int, int, string, string)[] GenerateDataset(int dbCount, int keyCount)

@@ -9,6 +9,7 @@ namespace Tsavorite.core
 {
 #pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
+    using static Utility;
 
     public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
@@ -18,6 +19,7 @@ namespace Tsavorite.core
         {
             // User provided information
             internal OperationType type;
+            internal readonly bool IsConditionalOp => type is OperationType.CONDITIONAL_INSERT or OperationType.CONDITIONAL_SCAN_PUSH;
 
             /// <summary>
             /// DiskLogRecord carries a log record image. It is used for:
@@ -82,6 +84,14 @@ namespace Tsavorite.core
 
             internal ScanCursorState scanCursorState;
 
+            /// <inheritdoc/>
+            public override string ToString()
+            {
+                var keyStr = request_key is null ? SpanByte.ToShortString(request_key.Get(), 12) : "<null>";
+                var keyHashStr = GetHashString(keyHash);
+                return $"Type={type}, id={id}, reqKey={keyStr}, keyHash={keyHashStr}, IsSet={diskLogRecord.IsSet}, LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, MinA={minAddress}, MaxA={maxAddress}, ETag={eTag}, ReadCopyOpt={readCopyOptions}";
+            }
+
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             internal PendingContext(long keyHash) => this.keyHash = keyHash;
 
@@ -111,7 +121,8 @@ namespace Tsavorite.core
 
             public void Dispose()
             {
-                diskLogRecord.Dispose();
+                if (diskLogRecord.IsSet)
+                    diskLogRecord.Dispose();
                 diskLogRecord = default;
                 request_key?.Dispose();
                 request_key = default;
@@ -134,8 +145,7 @@ namespace Tsavorite.core
                     TSessionFunctionsWrapper sessionFunctions, SectorAlignedBufferPool bufferPool)
                 where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             {
-                request_key?.Dispose();
-                request_key = new(key, bufferPool);
+                CopyKey(key, bufferPool);
 
                 if (this.input == default)
                 {
@@ -149,6 +159,13 @@ namespace Tsavorite.core
                 this.userContext = userContext;
             }
 
+            /// <summary>Copy the passed key into our <see cref="request_key"/></summary>
+            internal void CopyKey(ReadOnlySpan<byte> key, SectorAlignedBufferPool bufferPool)
+            {
+                request_key?.Dispose();
+                request_key = new(key, bufferPool);
+            }
+
             /// <summary>
             /// Does an in-memory transfer of a record into the pending context. The transfer operates based on the implementation of the <typeparamref name="TSourceLogRecord"/>:
             /// <list type="bullet">
@@ -159,11 +176,11 @@ namespace Tsavorite.core
             /// </list>
             /// </summary>
             /// <param name="srcLogRecord">The log record to be copied into the <see cref="PendingContext{TInput, TOutput, TContext}"/>. This may be either in-memory or from disk IO</param>
-            /// <param name="bufferPool"></param>
-            /// <param name="transientObjectIdMap"></param>
-            /// <param name="objectDisposer"></param>
+            /// <param name="bufferPool">The memory pool used for allocating the space for inline data to be copied</param>
+            /// <param name="transientObjectIdMap">The objectIdMap to reassign the objectIds to</param>
+            /// <param name="objectDisposer">The object disposer function to call</param>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            internal void TransferFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap, Action<IHeapObject> objectDisposer)
+            internal void CopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, SectorAlignedBufferPool bufferPool, ObjectIdMap transientObjectIdMap, Action<IHeapObject> objectDisposer)
                 where TSourceLogRecord : ISourceLogRecord
             {
                 Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
@@ -174,16 +191,16 @@ namespace Tsavorite.core
                     return;
                 }
 
-                // If the inputDiskLogRecord owns its memory, transfer it to the local diskLogRecord; otherwise we need to deep copy.
                 Debug.Assert(srcLogRecord.IsDiskLogRecord, $"Unknown SrcLogRecord implementation: {srcLogRecord}");
                 ref var inputDiskLogRecord = ref srcLogRecord.AsDiskLogRecordRef();
-                diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord);
+                // If the inputDiskLogRecord owns its memory this will efficiently transfer it to the local diskLogRecord; otherwise it will deep copy.
+                diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord, bufferPool);
             }
 
-            internal void TransferFrom(ref DiskLogRecord inputDiskLogRecord)
+            internal void TransferFrom(ref DiskLogRecord inputDiskLogRecord, SectorAlignedBufferPool bufferPool)
             {
                 Debug.Assert(!diskLogRecord.IsSet, "Should not try to reset PendingContext.diskLogRecord");
-                diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord);
+                diskLogRecord = DiskLogRecord.TransferFrom(ref inputDiskLogRecord, bufferPool);
             }
 
             #endregion // Serialized Record Creation
@@ -194,20 +211,17 @@ namespace Tsavorite.core
             {
                 get
                 {
-                    Debug.Assert(IsSet, "PendingContext.diskLogRecord must be set for 'Info'");
+                    Debug.Assert(diskLogRecord.IsSet, "PendingContext.diskLogRecord must be set for 'Info'");
                     return diskLogRecord.Info;
                 }
             }
-
-            /// <inheritdoc/>
-            public readonly bool IsSet => diskLogRecord.IsSet;
 
             /// <inheritdoc/>
             public readonly ReadOnlySpan<byte> Key
             {
                 get
                 {
-                    Debug.Assert(IsSet, "PendingContext.diskLogRecord must be set for 'Key'");
+                    Debug.Assert(diskLogRecord.IsSet, "PendingContext.diskLogRecord must be set for 'Key'");
                     return diskLogRecord.Key;
                 }
             }

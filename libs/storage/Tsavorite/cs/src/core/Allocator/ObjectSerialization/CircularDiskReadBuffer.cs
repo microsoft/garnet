@@ -49,6 +49,13 @@ namespace Tsavorite.core
             return index >= buffers.Length ? 0 : index;
         }
 
+        private DiskReadBuffer CreateBuffer(int bufferIndex)
+        {
+            DiskReadBuffer buffer = new(bufferPool.Get(bufferSize), objectLogDevice, logger);
+            buffers[bufferIndex] = buffer;
+            return buffer;
+        }
+
         /// <summary>
         /// Prepare the <see cref="DiskReadBuffer"/> and local variables to read the next buffer (or as much of it as we need) and issue the read.
         /// This is called by OnBeginReadRecords and when we are leaving a buffer with more data, to fill that buffer so it is available when we
@@ -61,10 +68,7 @@ namespace Tsavorite.core
         {
             var buffer = buffers[bufferIndex];
             if (buffer is null)
-            {
-                buffer = new(bufferPool.Get(bufferSize), objectLogDevice, logger);
-                buffers[bufferIndex] = buffer;
-            }
+                buffer = CreateBuffer(bufferIndex);
             else
             {
                 Debug.Assert(buffer.countdownEvent.CurrentCount == 0, $"Unexpected countdownEvent.CurrentCount ({buffer.countdownEvent.CurrentCount}) when preparing to read into buffer");

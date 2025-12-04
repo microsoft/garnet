@@ -117,6 +117,7 @@ namespace Tsavorite.core
                                         ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, OperationType opType = OperationType.CONDITIONAL_INSERT)
             where TSourceLogRecord : ISourceLogRecord
         {
+            pendingContext.CopyKey(srcLogRecord.Key, hlogBase.bufferPool);
             pendingContext.type = opType;
             pendingContext.minAddress = minAddress;
             pendingContext.maxAddress = maxAddress;
@@ -125,10 +126,13 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
             // Transfer the log record to the pending context. We do not want to dispose memory log records; those objects are still alive in the log.
-            if (!pendingContext.IsSet)
-                pendingContext.TransferFrom(in srcLogRecord, hlogBase.bufferPool, hlogBase.transientObjectIdMap,
-                    srcLogRecord.IsMemoryLogRecord ? obj => { }
-                : obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
+            if (!pendingContext.diskLogRecord.IsSet)
+            {
+                pendingContext.CopyFrom(in srcLogRecord, hlogBase.bufferPool, hlogBase.transientObjectIdMap,
+                    srcLogRecord.IsMemoryLogRecord
+                        ? obj => { }
+                        : obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk));
+            }
             return OperationStatus.RECORD_ON_DISK;
         }
     }

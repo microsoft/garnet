@@ -430,16 +430,9 @@ namespace Tsavorite.core
             return new((byte*)dataAddress, length);
         }
 
-        public readonly Span<byte> RecordSpan
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                return Info.RecordIsInline
-                    ? new((byte*)physicalAddress, ActualSize)
-                    : throw new TsavoriteException("RecordSpan is not valid for non-inline records");
-            }
-        }
+        /// <summary>Get the span of the inline portion of the record. Following this, the caller should be sure the objectIds are remapped
+        ///     to a transient ObjectIdMap if necessary.</summary>
+        public readonly Span<byte> RecordSpan => new((byte*)physicalAddress, ActualSize);
 
         /// <summary>
         /// Tries to set the length of the value field, as well as verifying there is also space for the optionals (ETag, Expiration, ObjectLogPosition) as 
