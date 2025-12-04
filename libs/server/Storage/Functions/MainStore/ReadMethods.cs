@@ -44,6 +44,17 @@ namespace Garnet.server
                 }
             }
 
+            // GET is used in a number of non-RESP contexts, which messes up existing logic
+            //
+            // Easiest to mark the actually-RESP commands with a < 0 arg1 and roll back to old logic
+            // after the Vector Set checks
+            //
+            // TODO: This is quite hacky, but requires a bunch of non-Vector Set changes - do those and remove
+            if (input.arg1 < 0 && cmd == RespCommand.GET)
+            {
+                cmd = RespCommand.NONE;
+            }
+
             if (cmd == RespCommand.GETIFNOTMATCH)
             {
                 if (handleGetIfNotMatch(ref input, ref value, ref dst, ref readInfo))
@@ -131,6 +142,17 @@ namespace Garnet.server
                     readInfo.Action = ReadAction.CancelOperation;
                     return false;
                 }
+            }
+
+            // GET is used in a number of non-RESP contexts, which messes up existing logic
+            //
+            // Easiest to mark the actually-RESP commands with a < 0 arg1 and roll back to old logic
+            // after the Vector Set checks
+            //
+            // TODO: This is quite hacky, but requires a bunch of non-Vector Set changes - do those and remove
+            if (input.arg1 < 0 && cmd == RespCommand.GET)
+            {
+                cmd = RespCommand.NONE;
             }
 
             if (cmd == RespCommand.GETIFNOTMATCH)

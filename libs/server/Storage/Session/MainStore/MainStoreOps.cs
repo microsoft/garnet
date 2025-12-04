@@ -111,7 +111,7 @@ namespace Garnet.server
         public unsafe GarnetStatus GET<TContext>(ArgSlice key, out MemoryResult<byte> value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var input = new RawStringInput(RespCommand.GET);
+            var input = new RawStringInput(RespCommand.GET, arg1: -1);
 
             var _key = key.SpanByte;
             var _output = new SpanByteAndMemory();
