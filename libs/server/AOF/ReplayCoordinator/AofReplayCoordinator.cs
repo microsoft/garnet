@@ -205,7 +205,11 @@ namespace Garnet.server
                     // Process in parallel transaction group
                     ProcessTransactionGroupOperations(aofProcessor, txnManager.LockableContext, txnManager.ObjectStoreLockableContext, txnGroup, asReplica);
 
-                    // Commit (NOTE: need to ensure that we do not write to log here)
+                    // NOTE:
+                    // This txnManager instance is taken from a session with StoreWrapper(recordToAof=false).
+                    // For this reason its internal appendOnlyFile instance is null.
+                    // Hence this commit will not write into the replica's Aof file as it is required.
+                    txnManager.AssertCannotLogToAof();
                     txnManager.Commit(true);
                 }
 
