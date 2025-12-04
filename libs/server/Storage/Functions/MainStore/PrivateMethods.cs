@@ -643,27 +643,6 @@ namespace Garnet.server
             resp.CopyTo(dst.Memory.Memory.Span);
         }
 
-        void CopyRespError(ReadOnlySpan<byte> errMsg, ref SpanByteAndMemory dst)
-        {
-            if (errMsg.Length + 3 < dst.SpanByte.Length)
-            {
-                var into = dst.SpanByte.AsSpan();
-
-                into[0] = (byte)'-';
-                errMsg.CopyTo(into[1..]);
-                "\r\n"u8.CopyTo(into[(1 + errMsg.Length)..]);
-                dst.SpanByte.Length = errMsg.Length + 3;
-                return;
-            }
-
-            dst.ConvertToHeap();
-            dst.Length = errMsg.Length + 3;
-            dst.Memory = functionsState.memoryPool.Rent(errMsg.Length + 3);
-            dst.Memory.Memory.Span[0] = (byte)'-';
-            errMsg.CopyTo(dst.Memory.Memory.Span[1..]);
-            "\r\n"u8.CopyTo(dst.Memory.Memory.Span[(1 + errMsg.Length)..]);
-        }
-
         void CopyRespNumber(long number, ref SpanByteAndMemory dst)
         {
             byte* curr = dst.SpanByte.ToPointer();

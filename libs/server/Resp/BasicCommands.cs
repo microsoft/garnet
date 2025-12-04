@@ -29,7 +29,7 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ref storageApi);
 
-            RawStringInput input = default;
+            RawStringInput input = new(RespCommand.GET);
 
             ref var key = ref parseState.GetArgSliceByRef(0);
             var o = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
@@ -38,6 +38,8 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.WRONGTYPE:
+                    WriteError(CmdStrings.RESP_ERR_WRONG_TYPE);
+                    break;
                 case GarnetStatus.OK:
                     if (!o.IsSpanByte)
                         SendAndReset(o.Memory, o.Length);
@@ -176,7 +178,7 @@ namespace Garnet.server
             where TGarnetApi : IGarnetAdvancedApi
         {
             var key = parseState.GetArgSliceByRef(0).SpanByte;
-            RawStringInput input = default;
+            RawStringInput input = new(RespCommand.GET);
             var firstPending = -1;
             (GarnetStatus, SpanByteAndMemory)[] outputArr = null;
             SpanByteAndMemory o = new(dcurr, (int)(dend - dcurr));

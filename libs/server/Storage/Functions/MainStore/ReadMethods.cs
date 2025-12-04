@@ -25,20 +25,23 @@ namespace Garnet.server
 
             var cmd = input.header.cmd;
 
-            // Vector sets are reachable (key not mangled) and hidden.
-            // So we can use that to detect type mismatches.
-            if (readInfo.RecordInfo.VectorSet && !cmd.IsLegalOnVectorSet())
+            // Ignore special Vector Set logic if we're scanning, detected with cmd == NONE
+            if (cmd != RespCommand.NONE)
             {
-                // Attempted an illegal op on a VectorSet
-                CopyRespError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dst);
-                readInfo.Action = ReadAction.CancelOperation;
-                return true;
-            }
-            else if (!readInfo.RecordInfo.VectorSet && cmd.IsLegalOnVectorSet())
-            {
-                // Attempted a vector set op on a non-VectorSet
-                readInfo.Action = ReadAction.CancelOperation;
-                return false;
+                // Vector sets are reachable (key not mangled) and hidden.
+                // So we can use that to detect type mismatches.
+                if (readInfo.RecordInfo.VectorSet && !cmd.IsLegalOnVectorSet())
+                {
+                    // Attempted an illegal op on a VectorSet
+                    readInfo.Action = ReadAction.CancelOperation;
+                    return false;
+                }
+                else if (!readInfo.RecordInfo.VectorSet && cmd.IsLegalOnVectorSet())
+                {
+                    // Attempted a vector set op on a non-VectorSet
+                    readInfo.Action = ReadAction.CancelOperation;
+                    return false;
+                }
             }
 
             if (cmd == RespCommand.GETIFNOTMATCH)
@@ -111,20 +114,23 @@ namespace Garnet.server
 
             var cmd = input.header.cmd;
 
-            // Vector sets are reachable (key not mangled) and hidden.
-            // So we can use that to detect type mismatches.
-            if (recordInfo.VectorSet && !cmd.IsLegalOnVectorSet())
+            // Ignore special Vector Set logic if we're scanning, detected with cmd == NONE
+            if (cmd != RespCommand.NONE)
             {
-                // Attempted an illegal op on a VectorSet
-                CopyRespError(CmdStrings.RESP_ERR_WRONG_TYPE, ref dst);
-                readInfo.Action = ReadAction.CancelOperation;
-                return true;
-            }
-            else if (!recordInfo.VectorSet && cmd.IsLegalOnVectorSet())
-            {
-                // Attempted a vector set op on a non-VectorSet
-                readInfo.Action = ReadAction.CancelOperation;
-                return false;
+                // Vector sets are reachable (key not mangled) and hidden.
+                // So we can use that to detect type mismatches.
+                if (recordInfo.VectorSet && !cmd.IsLegalOnVectorSet())
+                {
+                    // Attempted an illegal op on a VectorSet
+                    readInfo.Action = ReadAction.CancelOperation;
+                    return false;
+                }
+                else if (!recordInfo.VectorSet && cmd.IsLegalOnVectorSet())
+                {
+                    // Attempted a vector set op on a non-VectorSet
+                    readInfo.Action = ReadAction.CancelOperation;
+                    return false;
+                }
             }
 
             if (cmd == RespCommand.GETIFNOTMATCH)
