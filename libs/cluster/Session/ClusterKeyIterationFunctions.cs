@@ -22,7 +22,7 @@ namespace Garnet.cluster
                 internal KeyIterationInfo(int slot) => this.slot = slot;
             }
 
-            internal sealed class MainStoreCountKeys : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal sealed class CountKeys : IScanIteratorFunctions
             {
                 private readonly KeyIterationInfo info;
                 // This must be a class as it is passed through pending IO operations
@@ -30,98 +30,44 @@ namespace Garnet.cluster
                 internal int KeyCount { get => info.keyCount; set => info.keyCount = value; }
                 internal int Slot => info.slot;
 
-                internal MainStoreCountKeys(int slot) => info = new(slot);
+                internal CountKeys(int slot) => info = new(slot);
 
-                public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    if (HashSlotUtils.HashSlot(ref key) == Slot && !Expired(ref value))
+                    if (HashSlotUtils.HashSlot(srcLogRecord.Key) == Slot && !Expired(in srcLogRecord))
                         KeyCount++;
                     return true;
                 }
-                public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
+
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }
             }
 
-            internal sealed class ObjectStoreCountKeys : IScanIteratorFunctions<byte[], IGarnetObject>
-            {
-                private readonly KeyIterationInfo info;
-                // This must be a class as it is passed through pending IO operations
-
-                internal int KeyCount { get => info.keyCount; set => info.keyCount = value; }
-                internal int Slot => info.slot;
-
-                internal ObjectStoreCountKeys(int slot) => info = new(slot);
-
-                public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                {
-                    cursorRecordResult = CursorRecordResult.Accept; // default; not used here , out CursorRecordResult cursorRecordResult
-                    fixed (byte* keyPtr = key)
-                    {
-                        if (HashSlotUtils.HashSlot(keyPtr, key.Length) == Slot && !Expired(ref value))
-                            KeyCount++;
-                    }
-                    return true;
-                }
-                public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-                public bool OnStart(long beginAddress, long endAddress) => true;
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
-            }
-
-            internal readonly struct MainStoreGetKeysInSlot : IScanIteratorFunctions<SpanByte, SpanByte>
+            internal readonly struct GetKeysInSlot : IScanIteratorFunctions
             {
                 readonly List<byte[]> keys;
                 readonly int slot, maxKeyCount;
 
-                internal MainStoreGetKeysInSlot(List<byte[]> keys, int slot, int maxKeyCount)
+                internal GetKeysInSlot(List<byte[]> keys, int slot, int maxKeyCount)
                 {
                     this.keys = keys;
                     this.slot = slot;
                     this.maxKeyCount = maxKeyCount;
                 }
 
-                public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                    where TSourceLogRecord : ISourceLogRecord
                 {
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here, out CursorRecordResult cursorRecordResult
-                    if (HashSlotUtils.HashSlot(ref key) == slot && !Expired(ref value))
-                        keys.Add(key.ToByteArray());
+                    var key = srcLogRecord.Key;
+                    if (HashSlotUtils.HashSlot(key) == slot && !Expired(in srcLogRecord))
+                        keys.Add(key.ToArray());
                     return keys.Count < maxKeyCount;
                 }
-                public bool ConcurrentReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
-                public bool OnStart(long beginAddress, long endAddress) => true;
-                public void OnStop(bool completed, long numberOfRecords) { }
-                public void OnException(Exception exception, long numberOfRecords) { }
-            }
 
-            internal readonly struct ObjectStoreGetKeysInSlot : IScanIteratorFunctions<byte[], IGarnetObject>
-            {
-                readonly List<byte[]> keys;
-                readonly int slot;
-
-                internal ObjectStoreGetKeysInSlot(List<byte[]> keys, int slot)
-                {
-                    this.keys = keys;
-                    this.slot = slot;
-                }
-
-                public bool SingleReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                {
-                    cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                    fixed (byte* keyPtr = key)
-                    {
-                        if (HashSlotUtils.HashSlot(keyPtr, key.Length) == slot && !Expired(ref value))
-                            keys.Add(key);
-                    }
-                    return true;
-                }
-                public bool ConcurrentReader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
-                    => SingleReader(ref key, ref value, recordMetadata, numberOfRecords, out cursorRecordResult);
                 public bool OnStart(long beginAddress, long endAddress) => true;
                 public void OnStop(bool completed, long numberOfRecords) { }
                 public void OnException(Exception exception, long numberOfRecords) { }

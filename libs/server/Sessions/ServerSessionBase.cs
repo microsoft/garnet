@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Garnet.networking;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -38,7 +39,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="value"></param>
-        public abstract unsafe void Publish(ArgSlice key, ArgSlice value);
+        public abstract unsafe void Publish(PinnedSpanByte key, PinnedSpanByte value);
 
         /// <summary>
         /// Publish an update to a key to all the (pattern) subscribers of the key
@@ -46,7 +47,7 @@ namespace Garnet.server
         /// <param name="pattern"></param>
         /// <param name="key"></param>
         /// <param name="value"></param>
-        public abstract unsafe void PatternPublish(ArgSlice pattern, ArgSlice key, ArgSlice value);
+        public abstract unsafe void PatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value);
 
         /// <summary>
         /// Dispose

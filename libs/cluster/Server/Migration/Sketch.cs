@@ -15,7 +15,7 @@ namespace Garnet.cluster
         readonly int size;
         public readonly ArgSliceVector argSliceVector;
 
-        public List<(ArgSlice, bool)> Keys { private set; get; }
+        public List<(PinnedSpanByte, bool)> Keys { private set; get; }
         public SketchStatus Status { private set; get; }
 
         public Sketch(int keyCount = 1 << 20)
@@ -31,7 +31,7 @@ namespace Garnet.cluster
 
         #region sketchMethods
 
-        public bool TryHashAndStore(Span<byte> key)
+        public bool TryHashAndStore(ReadOnlySpan<byte> key)
         {
             if (!argSliceVector.TryAddItem(key))
                 return false;
@@ -48,9 +48,9 @@ namespace Garnet.cluster
         /// Hash key to bloomfilter and store it for future use (NOTE: Use only with KEYS option)
         /// </summary>
         /// <param name="key"></param>
-        public unsafe void HashAndStore(ref ArgSlice key)
+        public unsafe void HashAndStore(PinnedSpanByte key)
         {
-            var slot = (int)HashUtils.MurmurHash2x64A(key.Span) & (size - 1);
+            var slot = (int)HashUtils.MurmurHash2x64A(key.ReadOnlySpan) & (size - 1);
             var byteOffset = slot >> 3;
             var bitOffset = slot & 7;
             bitmap[byteOffset] = (byte)(bitmap[byteOffset] | (1UL << bitOffset));
@@ -63,7 +63,7 @@ namespace Garnet.cluster
         /// <param name="key"></param>
         /// <param name="status"></param>
         /// <returns></returns>
-        public unsafe bool Probe(SpanByte key, out SketchStatus status)
+        public unsafe bool Probe(PinnedSpanByte key, out SketchStatus status)
         {
             var slot = (int)HashUtils.MurmurHash2x64A(key.ToPointer(), key.Length) & (size - 1);
             var byteOffset = slot >> 3;

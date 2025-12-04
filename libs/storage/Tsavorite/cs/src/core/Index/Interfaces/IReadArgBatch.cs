@@ -6,10 +6,9 @@ namespace Tsavorite.core
     /// <summary>
     /// Batch of arguments to a read operation, including key, input and output
     /// </summary>
-    /// <typeparam name="TKey">Type of key</typeparam>
     /// <typeparam name="TInput">Type of input</typeparam>
     /// <typeparam name="TOutput">Type of output</typeparam>
-    public interface IReadArgBatch<TKey, TInput, TOutput>
+    public interface IReadArgBatch<TInput, TOutput>
     {
         /// <summary>
         /// Count of keys/args/outputs.
@@ -19,7 +18,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Get <paramref name="i"/>th key.
         /// </summary>
-        void GetKey(int i, out TKey key);
+        void GetKey(int i, out PinnedSpanByte key);
 
         /// <summary>
         /// Get <paramref name="i"/>th input.

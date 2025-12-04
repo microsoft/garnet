@@ -17,14 +17,6 @@ namespace Resp.benchmark
             this.randomGen = randomGen;
             this.DbSize = DbSize;
             this.zipf = zipf;
-            if (objectDbSize == -1)
-            {
-                this.ObjectDbSize = DbSize;
-            }
-            else
-            {
-                this.ObjectDbSize = objectDbSize;
-            }
 
             this.keyLen = Math.Max(NumUtils.NumDigits(DbSize), keyLen);
             this.valueLen = valueLen == default ? 8 : valueLen;

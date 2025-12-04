@@ -10,20 +10,20 @@ namespace Tsavorite.core
     /// <summary>
     /// Wrapper to process log-related commands
     /// </summary>
-    public sealed class LogAccessor<TKey, TValue, TStoreFunctions, TAllocator> : IObservable<ITsavoriteScanIterator<TKey, TValue>>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public sealed class LogAccessor<TStoreFunctions, TAllocator> : IObservable<ITsavoriteScanIterator>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        private readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
+        private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         private readonly TAllocator allocator;
-        private readonly AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> allocatorBase;
+        private readonly AllocatorBase<TStoreFunctions, TAllocator> allocatorBase;
 
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="store"></param>
         /// <param name="allocator"></param>
-        internal LogAccessor(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, TAllocator allocator)
+        internal LogAccessor(TsavoriteKV<TStoreFunctions, TAllocator> store, TAllocator allocator)
         {
             this.store = store;
             this.allocator = allocator;
@@ -56,14 +56,6 @@ namespace Tsavorite.core
         public long BeginAddress => allocatorBase.BeginAddress;
 
         /// <summary>
-        /// Get the bytes used on the primary log by every record. Does not include
-        /// the size of variable-length inline data. Note that class objects occupy
-        /// 8 bytes (reference) on the main log (i.e., the heap space occupied by
-        /// class objects is not included in the result of this call).
-        /// </summary>
-        public int FixedRecordSize => allocator.GetFixedRecordSize();
-
-        /// <summary>
         /// Number of pages left empty or unallocated in the in-memory buffer (between 0 and BufferSize-1)
         /// </summary>
         public int EmptyPageCount
@@ -87,6 +79,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// <see cref="ObjectIdMap"/> for serializing/deserializing <see cref="DiskLogRecord"/>.
+        /// </summary>
+        public ObjectIdMap TransientObjectIdMap => allocatorBase.transientObjectIdMap;
+
+        /// <summary>
         /// Set empty page count in allocator
         /// </summary>
         /// <param name="pageCount">New empty page count</param>
@@ -96,7 +93,7 @@ namespace Tsavorite.core
             allocatorBase.EmptyPageCount = pageCount;
             if (wait)
             {
-                long newHeadAddress = (allocatorBase.GetTailAddress() & ~allocatorBase.PageSizeMask) - allocatorBase.HeadAddressLagOffset;
+                long newHeadAddress = allocatorBase.GetAddressOfStartOfPageOfAddress(allocatorBase.GetTailAddress()) - allocatorBase.HeadAddressLagOffset;
                 ShiftHeadAddress(newHeadAddress, wait);
             }
         }
@@ -109,7 +106,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Actual memory used by log (not including heap objects) and overflow pages
         /// </summary>
-        public long MemorySizeBytes => ((long)(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount)) << allocatorBase.LogPageSizeBits;
+        public long MemorySizeBytes => allocatorBase.GetLogicalAddressOfStartOfPage((long)(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount));
 
         /// <summary>
         /// Maximum memory size in bytes
@@ -132,7 +129,7 @@ namespace Tsavorite.core
         public void ShiftBeginAddress(long untilAddress, bool snapToPageStart = false, bool truncateLog = false)
         {
             if (snapToPageStart)
-                untilAddress &= ~allocatorBase.PageSizeMask;
+                untilAddress = allocatorBase.GetAddressOfStartOfPageOfAddress(untilAddress);
 
             var epochProtected = store.epoch.ThisInstanceProtected();
             try
@@ -203,7 +200,7 @@ namespace Tsavorite.core
         /// To scan the historical part of the log, use the Scan(...) method
         /// </summary>
         /// <param name="readOnlyObserver">Observer to which scan iterator is pushed</param>
-        public IDisposable Subscribe(IObserver<ITsavoriteScanIterator<TKey, TValue>> readOnlyObserver)
+        public IDisposable Subscribe(IObserver<ITsavoriteScanIterator> readOnlyObserver)
         {
             allocatorBase.OnReadOnlyObserver = readOnlyObserver;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: true);
@@ -216,13 +213,13 @@ namespace Tsavorite.core
         /// To scan the historical part of the log, use the Scan(...) method
         /// </summary>
         /// <param name="evictionObserver">Observer to which scan iterator is pushed</param>
-        public IDisposable SubscribeEvictions(IObserver<ITsavoriteScanIterator<TKey, TValue>> evictionObserver)
+        public IDisposable SubscribeEvictions(ITsavoriteRecordObserver<ITsavoriteScanIterator> evictionObserver)
         {
             allocatorBase.OnEvictionObserver = evictionObserver;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
         }
 
-        public IDisposable SubscribeDeserializations(IObserver<ITsavoriteScanIterator<TKey, TValue>> deserializationObserver)
+        public IDisposable SubscribeDeserializations(ITsavoriteRecordObserver<ITsavoriteScanIterator> deserializationObserver)
         {
             allocatorBase.OnDeserializationObserver = deserializationObserver;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
@@ -233,10 +230,10 @@ namespace Tsavorite.core
         /// </summary>
         class LogSubscribeDisposable : IDisposable
         {
-            private readonly AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> allocator;
+            private readonly AllocatorBase<TStoreFunctions, TAllocator> allocator;
             private readonly bool readOnly;
 
-            public LogSubscribeDisposable(AllocatorBase<TKey, TValue, TStoreFunctions, TAllocator> allocator, bool isReadOnly)
+            public LogSubscribeDisposable(AllocatorBase<TStoreFunctions, TAllocator> allocator, bool isReadOnly)
             {
                 this.allocator = allocator;
                 readOnly = isReadOnly;
@@ -289,114 +286,57 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>Scan iterator instance</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ITsavoriteScanIterator<TKey, TValue> Scan(long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool includeClosedRecords = false)
+        public ITsavoriteScanIterator Scan(long beginAddress, long endAddress, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool includeClosedRecords = false)
             => allocatorBase.Scan(store: null, beginAddress, endAddress, scanBufferingMode, includeClosedRecords);
 
         /// <summary>
         /// Push-scan the log given address range; returns all records with address less than endAddress
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        public bool Scan<TScanFunctions>(ref TScanFunctions scanFunctions, long beginAddress, long endAddress, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering)
-            where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
+        public bool Scan<TScanFunctions>(ref TScanFunctions scanFunctions, long beginAddress, long endAddress, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering)
+            where TScanFunctions : IScanIteratorFunctions
             => allocatorBase.Scan(store, beginAddress, endAddress, ref scanFunctions, scanBufferingMode);
 
         /// <summary>
         /// Iterate versions of the specified key, starting with most recent
         /// </summary>
         /// <returns>True if Scan completed; false if Scan ended early due to one of the TScanIterator reader functions returning false</returns>
-        public bool IterateKeyVersions<TScanFunctions>(ref TScanFunctions scanFunctions, ref TKey key)
-            where TScanFunctions : IScanIteratorFunctions<TKey, TValue>
-            => allocatorBase.IterateKeyVersions(store, ref key, ref scanFunctions);
+        public bool IterateKeyVersions<TScanFunctions>(ref TScanFunctions scanFunctions, ReadOnlySpan<byte> key)
+            where TScanFunctions : IScanIteratorFunctions
+            => allocatorBase.IterateKeyVersions(store, key, ref scanFunctions);
 
         /// <summary>
         /// Flush log until current tail (records are still retained in memory)
         /// </summary>
         /// <param name="wait">Synchronous wait for operation to complete</param>
-        public void Flush(bool wait)
-        {
-            ShiftReadOnlyAddress(allocatorBase.GetTailAddress(), wait);
-        }
+        public void Flush(bool wait) => ShiftReadOnlyAddress(allocatorBase.GetTailAddress(), wait);
 
         /// <summary>
         /// Flush log and evict all records from memory
         /// </summary>
         /// <param name="wait">Wait for operation to complete</param>
-        public void FlushAndEvict(bool wait)
-        {
-            ShiftHeadAddress(allocatorBase.GetTailAddress(), wait);
-        }
-
-        /// <summary>
-        /// Delete log entirely from memory. Cannot allocate on the log
-        /// after this point. This is a synchronous operation.
-        /// </summary>
-        public void DisposeFromMemory()
-        {
-            // Ensure we have flushed and evicted
-            FlushAndEvict(true);
-
-            // Delete from memory
-            allocatorBase.DeleteFromMemory();
-        }
+        public void FlushAndEvict(bool wait) => ShiftHeadAddress(allocatorBase.GetTailAddress(), wait);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
-        /// <param name="functions">Functions used to manage key-values during compaction</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<TInput, TOutput, TContext, TFunctions>(TFunctions functions, long untilAddress, CompactionType compactionType)
-            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            => Compact<TInput, TOutput, TContext, TFunctions, DefaultCompactionFunctions<TKey, TValue>>(functions, default, untilAddress, compactionType);
+        public long Compact<TInput, TOutput, TContext>(long untilAddress, CompactionType compactionType)
+            => Compact<TInput, TOutput, TContext, DefaultCompactionFunctions>(default, untilAddress, compactionType);
 
         /// <summary>
         /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
         /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
         /// </summary>
-        /// <param name="functions">Functions used to manage key-values during compaction</param>
-        /// <param name="input">Input for SingleWriter</param>
-        /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
+        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions"/>)</param>
         /// <param name="untilAddress">Compact log until this address</param>
         /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
         /// <returns>Address until which compaction was done</returns>
-        public long Compact<TInput, TOutput, TContext, TFunctions>(TFunctions functions, ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType)
-            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            => Compact<TInput, TOutput, TContext, TFunctions, DefaultCompactionFunctions<TKey, TValue>>(functions, default, ref input, ref output, untilAddress, compactionType);
-
-        /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
-        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
-        /// </summary>
-        /// <param name="functions">Functions used to manage key-values during compaction</param>
-        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>)</param>
-        /// <param name="untilAddress">Compact log until this address</param>
-        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <returns>Address until which compaction was done</returns>
-        public long Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(TFunctions functions, TCompactionFunctions cf, long untilAddress, CompactionType compactionType)
-            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            where TCompactionFunctions : ICompactionFunctions<TKey, TValue>
-        {
-            TInput input = default;
-            TOutput output = default;
-            return Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType);
-        }
-
-        /// <summary>
-        /// Compact the log until specified address, moving active records to the tail of the log. BeginAddress is shifted, but the physical log
-        /// is not deleted from disk. Caller is responsible for truncating the physical log on disk by taking a checkpoint or calling Log.Truncate
-        /// </summary>
-        /// <param name="functions">Functions used to manage key-values during compaction</param>
-        /// <param name="cf">User provided compaction functions (see <see cref="ICompactionFunctions{Key, Value}"/>)</param>
-        /// <param name="input">Input for SingleWriter</param>
-        /// <param name="output">Output from SingleWriter; it will be called all records that are moved, before Compact() returns, so the user must supply buffering or process each output completely</param>
-        /// <param name="untilAddress">Compact log until this address</param>
-        /// <param name="compactionType">Compaction type (whether we lookup records or scan log for liveness checking)</param>
-        /// <returns>Address until which compaction was done</returns>
-        public long Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(TFunctions functions, TCompactionFunctions cf, ref TInput input, ref TOutput output, long untilAddress, CompactionType compactionType)
-            where TFunctions : ISessionFunctions<TKey, TValue, TInput, TOutput, TContext>
-            where TCompactionFunctions : ICompactionFunctions<TKey, TValue>
-            => store.Compact<TInput, TOutput, TContext, TFunctions, TCompactionFunctions>(functions, cf, ref input, ref output, untilAddress, compactionType);
+        public long Compact<TInput, TOutput, TContext, TCompactionFunctions>(TCompactionFunctions cf, long untilAddress, CompactionType compactionType)
+            where TCompactionFunctions : ICompactionFunctions
+            => store.Compact<TInput, TOutput, TContext, TCompactionFunctions>(cf, untilAddress, compactionType);
     }
 }

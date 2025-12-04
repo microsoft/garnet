@@ -3,10 +3,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using System.Text;
-using System.Threading;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -15,139 +12,36 @@ namespace Garnet.server
     /// <summary>
     /// Base class for Garnet heap objects
     /// </summary>
-    public abstract class GarnetObjectBase : IGarnetObject
+    public abstract class GarnetObjectBase : HeapObjectBase, IGarnetObject
     {
-        int serializationState;
-        public byte[] serialized;
-
         /// <inheritdoc />
         public abstract byte Type { get; }
 
-        /// <inheritdoc />
-        public long Expiration { get; set; }
-
-        /// <inheritdoc />
-        public long Size { get; set; }
-
-        protected GarnetObjectBase(long expiration, long size)
+        protected GarnetObjectBase(long heapMemorySize)
         {
-            Debug.Assert(size >= 0);
-            this.Expiration = expiration;
-            this.Size = size;
+            HeapMemorySize = heapMemorySize;
         }
 
-        protected GarnetObjectBase(BinaryReader reader, long size)
-            : this(expiration: reader.ReadInt64(), size: size)
+        protected GarnetObjectBase(BinaryReader reader, long heapMemorySize)
+            : this(heapMemorySize)
         {
+            // Add anything here that should match DoSerialize()
         }
 
         /// <inheritdoc />
-        public void Serialize(BinaryWriter writer)
-        {
-            while (true)
-            {
-                if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
-                {
-                    // Directly serialize to wire, do not cache serialized state
-                    writer.Write(Type);
-                    DoSerialize(writer);
-                    serializationState = (int)SerializationPhase.REST;
-                    return;
-                }
-
-                if (serializationState == (int)SerializationPhase.SERIALIZED)
-                {
-                    // If serialized state is cached, use that
-                    var _serialized = serialized;
-                    if (_serialized != null)
-                    {
-                        writer.Write(Type);
-                        writer.Write(_serialized);
-                    }
-                    else
-                    {
-                        // Write null object to stream
-                        writer.Write((byte)GarnetObjectType.Null);
-                    }
-                    return;
-                }
-
-                Thread.Yield();
-            }
-        }
-
-        /// <inheritdoc />
-        public void CopyUpdate(ref IGarnetObject oldValue, ref IGarnetObject newValue, bool isInNewVersion)
-        {
-            newValue = Clone();
-            newValue.Expiration = Expiration;
-
-            // If we are not currently taking a checkpoint, we can delete the old version
-            // since the new version of the object is already created.
-            if (!isInNewVersion)
-            {
-                // Wait for any concurrent ongoing serialization of oldValue to complete
-                while (true)
-                {
-                    if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZED))
-                        break;
-
-                    if (serializationState >= (int)SerializationPhase.SERIALIZED)
-                        break;
-
-                    _ = Thread.Yield();
-                }
-                oldValue = null;
-                return;
-            }
-
-            // Create a serialized version for checkpoint version (v)
-            while (true)
-            {
-                if (serializationState == (int)SerializationPhase.REST && MakeTransition(SerializationPhase.REST, SerializationPhase.SERIALIZING))
-                {
-                    using var ms = new MemoryStream();
-                    using var writer = new BinaryWriter(ms, Encoding.UTF8);
-                    DoSerialize(writer);
-                    serialized = ms.ToArray();
-
-                    serializationState = (int)SerializationPhase.SERIALIZED;
-                    return;
-                }
-
-                if (serializationState >= (int)SerializationPhase.SERIALIZED)
-                    return;
-
-                Thread.Yield();
-            }
-        }
-
-        /// <summary>
-        /// Clone object (shallow copy)
-        /// </summary>
-        /// <returns></returns>
-        public abstract GarnetObjectBase Clone();
-
-        /// <inheritdoc />
-        public abstract bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion, out long sizeChange);
-
-        /// <inheritdoc />
-        public abstract void Dispose();
+        public abstract bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, out long sizeChange);
 
         /// <summary>
         /// Serialize to given writer
         /// NOTE: Make sure to first call base.DoSerialize(writer) in all derived classes.
         /// </summary>
-        public virtual void DoSerialize(BinaryWriter writer)
+        public override void DoSerialize(BinaryWriter writer)
         {
-            writer.Write(Expiration);
+            // Add anything here that needs to be in front of the derived object data
         }
 
-        private bool MakeTransition(SerializationPhase expectedPhase, SerializationPhase nextPhase)
-        {
-            if (Interlocked.CompareExchange(ref serializationState, (int)nextPhase, (int)expectedPhase) != (int)expectedPhase) return false;
-            return true;
-        }
+        /// <inheritdoc />
+        public override void WriteType(BinaryWriter writer, bool isNull) => writer.Write(isNull ? (byte)GarnetObjectType.Null : Type);
 
         /// <summary>
         /// Scan the items of the collection
@@ -167,7 +61,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <param name="respProtocolVersion"></param>
-        protected unsafe void Scan(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        protected unsafe void Scan(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -253,7 +147,7 @@ namespace Garnet.server
                 if (sbParam.EqualsUpperCaseSpanIgnoringCase(CmdStrings.MATCH))
                 {
                     // Read pattern for keys filter
-                    var sbPattern = input.parseState.GetArgSliceByRef(currTokenIdx++).SpanByte;
+                    var sbPattern = input.parseState.GetArgSliceByRef(currTokenIdx++);
                     pattern = sbPattern.ToPointer();
                     patternLength = sbPattern.Length;
                 }

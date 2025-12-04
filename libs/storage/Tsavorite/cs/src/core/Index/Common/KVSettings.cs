@@ -10,7 +10,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Configuration settings for hybrid log. Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
     /// </summary>
-    public sealed class KVSettings<TKey, TValue> : IDisposable
+    public sealed class KVSettings : IDisposable
     {
         readonly bool disposeDevices = false;
         readonly bool deleteDirOnDispose = false;
@@ -37,9 +37,14 @@ namespace Tsavorite.core
         public long PageSize = 1 << 25;
 
         /// <summary>
-        /// Size of a segment (group of pages), in bytes. Rounds down to power of 2.
+        /// Size of a main log segment (group of pages), in bytes. Rounds down to power of 2.
         /// </summary>
         public long SegmentSize = 1L << 30;
+
+        /// <summary>
+        /// Size of an object log segment (group of pages), in bytes. Rounds down to power of 2.
+        /// </summary>
+        public long ObjectLogSegmentSize = 1L << 30;
 
         /// <summary>
         /// Total size of in-memory part of log, in bytes. Rounds down to power of 2.
@@ -82,9 +87,7 @@ namespace Tsavorite.core
         public long ReadCacheMemorySize = 1L << 34;
 
         /// <summary>
-        /// Fraction of log head (in memory) used for second chance 
-        /// copy to tail. This is (1 - MutableFraction) for the 
-        /// underlying log.
+        /// Fraction of log head (in memory) used for second chance copy to tail. This is (1 - MutableFraction) for the underlying log.
         /// </summary>
         public double ReadCacheSecondChanceFraction = 0.1;
 
@@ -130,6 +133,16 @@ namespace Tsavorite.core
         public StateMachineDriver StateMachineDriver = null;
 
         /// <summary>
+        /// Maximum size of a key stored inline in the in-memory portion of the main log for both allocators.
+        /// </summary>
+        public int MaxInlineKeySize = 1 << LogSettings.kDefaultMaxInlineKeySizeBits;
+
+        /// <summary>
+        /// Maximum size of a value stored inline in the in-memory portion of the main log for <see cref="SpanByteAllocator{TStoreFunctions}"/>.
+        /// </summary>
+        public int MaxInlineValueSize = 1 << LogSettings.kDefaultMaxInlineValueSizeBits;
+
+        /// <summary>
         /// Create default configuration settings for TsavoriteKV. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").
@@ -157,9 +170,6 @@ namespace Tsavorite.core
             this.baseDir = baseDir;
 
             LogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.log", deleteOnClose: deleteDirOnDispose);
-            if (!Utility.IsBlittable<TKey>() || !Utility.IsBlittable<TValue>())
-                ObjectLogDevice = baseDir == null ? new NullDevice() : Devices.CreateLogDevice(baseDir + "/hlog.obj.log", deleteOnClose: deleteDirOnDispose);
-
             CheckpointDir = baseDir == null ? null : baseDir + "/checkpoints";
         }
 
@@ -214,10 +224,13 @@ namespace Tsavorite.core
                 MemorySizeBits = Utility.NumBitsPreviousPowerOf2(MemorySize),
                 PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
+                ObjectLogSegmentSizeBits = Utility.NumBitsPreviousPowerOf2(ObjectLogSegmentSize),
                 MutableFraction = MutableFraction,
                 MinEmptyPageCount = MinEmptyPageCount,
                 PreallocateLog = PreallocateLog,
-                ReadCacheSettings = GetReadCacheSettings()
+                ReadCacheSettings = GetReadCacheSettings(),
+                MaxInlineKeySizeBits = Utility.NumBitsPreviousPowerOf2(MaxInlineKeySize),
+                MaxInlineValueSizeBits = Utility.NumBitsPreviousPowerOf2(MaxInlineValueSize)
             };
         }
 

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Threading;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -12,12 +13,15 @@ namespace Garnet.cluster
     internal sealed unsafe class SnapshotIteratorManager
     {
         public readonly ReplicationSyncManager replicationSyncManager;
-        public readonly TimeSpan timeout;
         public readonly CancellationToken cancellationToken;
         public readonly ILogger logger;
 
-        public MainStoreSnapshotIterator mainStoreSnapshotIterator;
-        public ObjectStoreSnapshotIterator objectStoreSnapshotIterator;
+        public StoreSnapshotIterator StoreSnapshotIterator;
+
+        // For serialization from LogRecord to DiskLogRecord
+        SpanByteAndMemory serializationOutput;
+        GarnetObjectSerializer valueObjectSerializer;
+        MemoryPool<byte> memoryPool;
 
         readonly ReplicaSyncSession[] sessions;
         readonly int numSessions;
@@ -44,9 +48,10 @@ namespace Garnet.cluster
                 sessions[i].checkpointCoveredAofAddress = CheckpointCoveredAddress;
             }
 
-            mainStoreSnapshotIterator = new MainStoreSnapshotIterator(this);
-            if (!replicationSyncManager.ClusterProvider.serverOptions.DisableObjects)
-                objectStoreSnapshotIterator = new ObjectStoreSnapshotIterator(this);
+            StoreSnapshotIterator = new StoreSnapshotIterator(this);
+
+            memoryPool = MemoryPool<byte>.Shared;
+            valueObjectSerializer = new(customCommandManager: default);
         }
 
         /// <summary>
@@ -67,7 +72,7 @@ namespace Garnet.cluster
             }
         }
 
-        public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion, bool isMainStore)
+        public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion)
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -80,27 +85,32 @@ namespace Garnet.cluster
 
             for (var i = 0; i < numSessions; i++)
             {
-                if (!replicationSyncManager.IsActive(i)) continue;
+                if (!replicationSyncManager.IsActive(i))
+                    continue;
                 sessions[i].InitializeIterationBuffer();
-                if (isMainStore)
-                    sessions[i].currentStoreVersion = targetVersion;
-                else
-                    sessions[i].currentObjectStoreVersion = targetVersion;
+                sessions[i].currentStoreVersion = targetVersion;
             }
 
-            logger?.LogTrace("{OnStart} {store} {token} {currentVersion} {targetVersion}",
-                nameof(OnStart), isMainStore ? "MAIN STORE" : "OBJECT STORE", checkpointToken, currentVersion, targetVersion);
+            logger?.LogTrace("{OnStart} {token} {currentVersion} {targetVersion}",
+                nameof(OnStart), checkpointToken, currentVersion, targetVersion);
 
             return true;
         }
 
-        public bool Reader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords)
+        public bool StringReader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
+            where TSourceLogRecord : ISourceLogRecord
         {
             if (!firstRead)
             {
+                var key = srcLogRecord.Key;
+                var value = srcLogRecord.ValueSpan;
                 logger?.LogTrace("Start Streaming {key} {value}", key.ToString(), value.ToString());
                 firstRead = true;
             }
+
+            // Note: We may be sending to multiple replicas, so serialize LogRecords to a local then copy to the multiple network buffers
+            // rather than issuing multiple serialization calls.
+            _ = DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize: -1, valueObjectSerializer: default, memoryPool, ref serializationOutput);
 
             var needToFlush = false;
             while (true)
@@ -114,20 +124,22 @@ namespace Garnet.cluster
                 // Write key value pair to network buffer
                 for (var i = 0; i < numSessions; i++)
                 {
-                    if (!replicationSyncManager.IsActive(i)) continue;
+                    if (!replicationSyncManager.IsActive(i))
+                        continue;
 
                     // Initialize header if necessary
-                    sessions[i].SetClusterSyncHeader(isMainStore: true);
+                    sessions[i].SetClusterSyncHeader();
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteKeyValueSpanByte(ref key, ref value, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan, out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
                     }
                 }
 
-                if (!needToFlush) break;
+                if (!needToFlush)
+                    break;
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
                 replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
@@ -138,16 +150,22 @@ namespace Garnet.cluster
             return true;
         }
 
-        public bool Reader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords)
+        public bool ObjectReader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
+            where TSourceLogRecord : ISourceLogRecord
         {
             if (!firstRead)
             {
+                var key = srcLogRecord.Key;
+                var value = srcLogRecord.ValueObject;
                 logger?.LogTrace("Start Streaming {key} {value}", key.ToString(), value.ToString());
                 firstRead = true;
             }
 
+            // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
+            var maxHeapAllocationSize = replicationSyncManager.ClusterProvider.replicationManager.networkBufferSettings.sendBufferSize;
+            var recordSize = DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize, valueObjectSerializer, memoryPool, ref serializationOutput);
+
             var needToFlush = false;
-            var objectData = GarnetObjectSerializer.Serialize(value);
             while (true)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -159,20 +177,22 @@ namespace Garnet.cluster
                 // Write key value pair to network buffer
                 for (var i = 0; i < numSessions; i++)
                 {
-                    if (!replicationSyncManager.IsActive(i)) continue;
+                    if (!replicationSyncManager.IsActive(i))
+                        continue;
 
                     // Initialize header if necessary
-                    sessions[i].SetClusterSyncHeader(isMainStore: false);
+                    sessions[i].SetClusterSyncHeader();
 
                     // Try to write to network buffer. If failed we need to retry
-                    if (!sessions[i].TryWriteKeyValueByteArray(key, objectData, value.Expiration, out var task))
+                    if (!sessions[i].TryWriteRecordSpan(serializationOutput.MemorySpan.Slice(0, recordSize), out var task))
                     {
                         sessions[i].SetFlushTask(task);
                         needToFlush = true;
                     }
                 }
 
-                if (!needToFlush) break;
+                if (!needToFlush)
+                    break;
 
                 // Wait for flush to complete for all and retry to enqueue previous keyValuePair above
                 replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
@@ -182,67 +202,51 @@ namespace Garnet.cluster
             return true;
         }
 
-        public void OnStop(bool completed, long numberOfRecords, bool isMainStore, long targetVersion)
+        public void OnStop(bool completed, long numberOfRecords, long targetVersion)
         {
             // Flush remaining data
             for (var i = 0; i < numSessions; i++)
             {
-                if (!replicationSyncManager.IsActive(i)) continue;
-                sessions[i].SendAndResetIterationBuffer();
+                if (replicationSyncManager.IsActive(i))
+                    sessions[i].SendAndResetIterationBuffer();
             }
 
             // Wait for flush and response to complete
             replicationSyncManager.WaitForFlush().GetAwaiter().GetResult();
 
-            logger?.LogTrace("{OnStop} {store} {numberOfRecords} {targetVersion}",
-                nameof(OnStop), isMainStore ? "MAIN STORE" : "OBJECT STORE", numberOfRecords, targetVersion);
+            logger?.LogTrace("{OnStop} {numberOfRecords} {targetVersion}",
+                nameof(OnStop), numberOfRecords, targetVersion);
 
             // Reset read marker
             firstRead = false;
+
+            serializationOutput.Dispose();
         }
     }
 
-    internal sealed unsafe class MainStoreSnapshotIterator(SnapshotIteratorManager snapshotIteratorManager) :
-        IStreamingSnapshotIteratorFunctions<SpanByte, SpanByte>
+    internal sealed unsafe class StoreSnapshotIterator(SnapshotIteratorManager snapshotIteratorManager) :
+        IStreamingSnapshotIteratorFunctions
     {
-        readonly SnapshotIteratorManager snapshotIteratorManager = snapshotIteratorManager;
         long targetVersion;
 
         public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion)
         {
             this.targetVersion = targetVersion;
-            return snapshotIteratorManager.OnStart(checkpointToken, currentVersion, targetVersion, isMainStore: true);
+            return snapshotIteratorManager.OnStart(checkpointToken, currentVersion, targetVersion);
         }
 
-        public bool Reader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords)
-            => snapshotIteratorManager.Reader(ref key, ref value, recordMetadata, numberOfRecords);
-
-        public void OnException(Exception exception, long numberOfRecords)
-            => snapshotIteratorManager.logger?.LogError(exception, $"{nameof(MainStoreSnapshotIterator)}");
-
-        public void OnStop(bool completed, long numberOfRecords)
-            => snapshotIteratorManager.OnStop(completed, numberOfRecords, isMainStore: true, targetVersion);
-    }
-
-    internal sealed unsafe class ObjectStoreSnapshotIterator(SnapshotIteratorManager snapshotIteratorManager) :
-        IStreamingSnapshotIteratorFunctions<byte[], IGarnetObject>
-    {
-        readonly SnapshotIteratorManager snapshotIteratorManager = snapshotIteratorManager;
-        long targetVersion;
-
-        public bool OnStart(Guid checkpointToken, long currentVersion, long targetVersion)
+        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, RecordMetadata recordMetadata, long numberOfRecords)
+            where TSourceLogRecord : ISourceLogRecord
         {
-            this.targetVersion = targetVersion;
-            return snapshotIteratorManager.OnStart(checkpointToken, currentVersion, targetVersion, isMainStore: false);
+            return srcLogRecord.Info.ValueIsObject
+                ? snapshotIteratorManager.ObjectReader(in srcLogRecord, recordMetadata, numberOfRecords)
+                : snapshotIteratorManager.StringReader(in srcLogRecord, recordMetadata, numberOfRecords);
         }
 
-        public bool Reader(ref byte[] key, ref IGarnetObject value, RecordMetadata recordMetadata, long numberOfRecords)
-            => snapshotIteratorManager.Reader(ref key, ref value, recordMetadata, numberOfRecords);
-
         public void OnException(Exception exception, long numberOfRecords)
-            => snapshotIteratorManager.logger?.LogError(exception, $"{nameof(ObjectStoreSnapshotIterator)}");
+            => snapshotIteratorManager.logger?.LogError(exception, $"{nameof(StoreSnapshotIterator)}");
 
         public void OnStop(bool completed, long numberOfRecords)
-            => snapshotIteratorManager.OnStop(completed, numberOfRecords, isMainStore: false, targetVersion);
+            => snapshotIteratorManager.OnStop(completed, numberOfRecords, targetVersion);
     }
 }

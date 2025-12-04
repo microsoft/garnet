@@ -277,7 +277,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="value"></param>
         /// <param name="vlen"></param>
-        public void Init(ref RawStringInput input, byte* value, int vlen)
+        public void Init(ref StringInput input, byte* value, int vlen)
         {
             var dense = vlen == this.DenseBytes;
 
@@ -323,7 +323,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input"></param>
         /// <returns></returns>
-        public int SparseInitialLength(ref RawStringInput input)
+        public int SparseInitialLength(ref StringInput input)
         {
             var count = input.parseState.Count;
             return SparseInitialLength(count);
@@ -369,7 +369,7 @@ namespace Garnet.server
         /// <summary>
         /// Return length of new value
         /// </summary>        
-        public int UpdateGrow(ref RawStringInput input, byte* value)
+        public int UpdateGrow(ref StringInput input, byte* value)
         {
             var count = input.parseState.Count;
 
@@ -383,7 +383,8 @@ namespace Garnet.server
             if (IsDense(value))
                 return this.DenseBytes;
 
-            throw new GarnetException("HyperLogLog UpdateGrowV2 invalid data structure type");
+            // This is called during GetRMWModifiedFieldInfo so be consistent between this and the actual updaters
+            throw new GarnetException(CmdStrings.RESP_ERR_WRONG_TYPE_HLL);
         }
 
         /// <summary>
@@ -439,7 +440,7 @@ namespace Garnet.server
         /// <param name="newValue"></param>
         /// <param name="newValueLen"></param>
         /// <returns></returns>
-        public bool CopyUpdate(ref RawStringInput input, byte* oldValue, byte* newValue, int newValueLen)
+        public bool CopyUpdate(ref StringInput input, byte* oldValue, byte* newValue, int newValueLen)
         {
             var fUpdated = false;
 
@@ -527,7 +528,7 @@ namespace Garnet.server
         /// <param name="valueLen"></param>
         /// <param name="updated"></param>
         /// <returns></returns>           
-        public bool Update(ref RawStringInput input, byte* value, int valueLen, ref bool updated)
+        public bool Update(ref StringInput input, byte* value, int valueLen, ref bool updated)
         {
             var count = input.parseState.Count;
 
@@ -599,13 +600,13 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void SetNonZero(byte* p, byte cnt) => *p = (byte)(cnt - 1); // 0vvv vvvv        
 
-        private bool IterateUpdate(ref RawStringInput input, byte* value, bool dense)
+        private bool IterateUpdate(ref StringInput input, byte* value, bool dense)
         {
             var updated = false;
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var currElement = input.parseState.GetArgSliceByRef(i);
-                var hashValue = (long)HashUtils.MurmurHash2x64A(currElement.ptr, currElement.Length);
+                var hashValue = (long)HashUtils.MurmurHash2x64A(currElement.ToPointer(), currElement.Length);
                 updated |= (dense ? UpdateDense(value, hashValue) : UpdateSparse(value, hashValue));
             }
             return updated;

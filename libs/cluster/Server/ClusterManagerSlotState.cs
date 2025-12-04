@@ -12,12 +12,15 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
+    using BasicGarnetApi = GarnetApi<BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
     /// <summary>
     /// Cluster manager
@@ -470,37 +473,19 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Methods used to cleanup keys for given slot collection in main store
+        /// Methods used to cleanup keys for given slot collection
         /// </summary>
-        /// <param name="BasicGarnetApi"></param>
+        /// <param name="basicGarnetApi"></param>
         /// <param name="slots">Slot list</param>
-        public static unsafe void DeleteKeysInSlotsFromMainStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
+        public static unsafe void DeleteKeysInSlots(BasicGarnetApi basicGarnetApi, HashSet<int> slots)
         {
-            using var iter = BasicGarnetApi.IterateMainStore();
-            while (iter.GetNext(out _))
+            using var iter = basicGarnetApi.IterateStore();
+            while (iter.GetNext())
             {
-                ref var key = ref iter.GetKey();
-                var s = HashSlotUtils.HashSlot(ref key);
-                if (slots.Contains(s))
-                    _ = BasicGarnetApi.DELETE(ref key, StoreType.Main);
-            }
-        }
-
-        /// <summary>
-        /// Methods used to cleanup keys for given slot collection in object store
-        /// </summary>
-        /// <param name="BasicGarnetApi"></param>
-        /// <param name="slots">Slot list</param>
-        public static unsafe void DeleteKeysInSlotsFromObjectStore(BasicGarnetApi BasicGarnetApi, HashSet<int> slots)
-        {
-            using var iterObject = BasicGarnetApi.IterateObjectStore();
-            while (iterObject.GetNext(out _))
-            {
-                ref var key = ref iterObject.GetKey();
-                ref var value = ref iterObject.GetValue();
+                var key = iter.Key;
                 var s = HashSlotUtils.HashSlot(key);
                 if (slots.Contains(s))
-                    _ = BasicGarnetApi.DELETE(key, StoreType.Object);
+                    _ = basicGarnetApi.DELETE(PinnedSpanByte.FromPinnedSpan(key));
             }
         }
     }

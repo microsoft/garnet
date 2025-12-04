@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
@@ -11,37 +11,29 @@ namespace Tsavorite.test
     // Extension class for SpanByte to wrap a non-byte Span
     internal static unsafe class VLVector
     {
-        // Wrap a SpanByte around a Span of (usually) non-byte type, e.g.:
+        // Wrap a SpanByte around a Span of non-byte type, e.g.:
         //      Span<int> valueSpan = stackalloc int[numElem];
         //      for (var ii = 0; ii < numElem; ++ii) valueSpan[ii] = someInt;
         //      var valueSpanByte = valueSpan.AsSpanByte();
-        public static SpanByte AsSpanByte<T>(this Span<T> span) where T : unmanaged
-            => new SpanByte(span.Length * sizeof(T), (IntPtr)Unsafe.AsPointer(ref span[0]));
+        public static PinnedSpanByte FromPinnedSpan<T>(Span<T> span) where T : unmanaged
+            => PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<T, byte>(span));
 
-        public static SpanByte AsSpanByte<T>(this ReadOnlySpan<T> span) where T : unmanaged
-        {
-            fixed (T* ptr = span)
-            {
-                return new SpanByte(span.Length * sizeof(T), (IntPtr)ptr);
-            }
-        }
+        internal static T[] ToArray<T>(this Span<byte> byteSpan) where T : unmanaged
+            => MemoryMarshal.Cast<byte, T>(byteSpan).ToArray();
 
-        public static Span<T> AsSpan<T>(this ref SpanByte sb) where T : unmanaged
-            => new Span<T>(sb.MetadataSize + sb.ToPointer(), (sb.Length - sb.MetadataSize) / sizeof(T));
-
-        internal static T[] ToArray<T>(this ref SpanByte spanByte) where T : unmanaged
-            => AsSpan<T>(ref spanByte).ToArray();
+        internal static T[] ToArray<T>(this ReadOnlySpan<byte> byteSpan) where T : unmanaged
+            => MemoryMarshal.Cast<byte, T>(byteSpan).ToArray();
     }
 
-    public class VLVectorFunctions : SpanByteFunctions<int[], Empty>
+    public class VLVectorFunctions : SessionFunctionsBase<PinnedSpanByte, int[], Empty>
     {
-        public override void RMWCompletionCallback(ref SpanByte key, ref SpanByte input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref PinnedSpanByte input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
             ClassicAssert.IsTrue(status.Record.CopyUpdated);
         }
 
-        public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
+        public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref PinnedSpanByte input, ref int[] output, Empty ctx, Status status, RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(status.Found);
             for (int i = 0; i < output.Length; i++)
@@ -49,27 +41,12 @@ namespace Tsavorite.test
         }
 
         // Read functions
-        public override bool SingleReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref int[] dst, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref int[] output, ref ReadInfo readInfo)
         {
-            dst = value.ToArray<int>();
+            output = srcLogRecord.ValueSpan.ToArray<int>();
             return true;
         }
 
-        public override bool ConcurrentReader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref int[] dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-        {
-            dst = value.ToArray<int>();
-            return true;
-        }
-
-        // Upsert functions
-        public override bool SingleWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref int[] output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
-            => base.SingleWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, reason, ref recordInfo);
-
-        public override bool ConcurrentWriter(ref SpanByte key, ref SpanByte input, ref SpanByte src, ref SpanByte dst, ref int[] output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-        {
-            if (src.Length != dst.Length)
-                return false;
-            return base.ConcurrentWriter(ref key, ref input, ref src, ref dst, ref output, ref upsertInfo, ref recordInfo);
-        }
+        // Upsert functions are unchanged from SessionFunctionsBase
     }
 }

@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using Garnet.networking;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -32,7 +33,7 @@ namespace Garnet.server
             scratchBufferBuilder = new();
         }
 
-        public ArgSlice GetResponse()
+        public PinnedSpanByte GetResponse()
             => scratchBufferBuilder.ViewFullArgSlice();
 
         public void Reset()

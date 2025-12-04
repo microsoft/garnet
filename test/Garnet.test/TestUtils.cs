@@ -226,7 +226,6 @@ namespace Garnet.test
             bool tryRecover = false,
             bool lowMemory = false,
             string memorySize = default,
-            string objectStoreLogMemorySize = default,
             string pageSize = default,
             bool enableAOF = false,
             bool enableTLS = false,
@@ -239,11 +238,8 @@ namespace Garnet.test
             string defaultPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
-            string objectStorePageSize = default,
-            string objectStoreHeapMemorySize = default,
-            string objectStoreIndexSize = "16k",
-            string objectStoreIndexMaxSize = default,
-            string objectStoreReadCacheHeapMemorySize = default,
+            string heapMemorySize = default,
+            string readCacheHeapMemorySize = default,
             string indexSize = "1m",
             string indexMaxSize = default,
             string[] extensionBinPaths = null,
@@ -255,7 +251,6 @@ namespace Garnet.test
             ConnectionProtectionOption enableModuleCommand = ConnectionProtectionOption.No,
             bool enableLua = false,
             bool enableReadCache = false,
-            bool enableObjectStoreReadCache = false,
             ILogger logger = null,
             IEnumerable<string> loadModulePaths = null,
             string pubSubPageSize = null,
@@ -323,7 +318,6 @@ namespace Garnet.test
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexSize = indexSize,
-                ObjectStoreIndexSize = objectStoreIndexSize,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
                 CommitFrequencyMs = commitFrequencyMs,
@@ -354,7 +348,6 @@ namespace Garnet.test
                 EnableDebugCommand = enableDebugCommand,
                 EnableModuleCommand = enableModuleCommand,
                 EnableReadCache = enableReadCache,
-                EnableObjectStoreReadCache = enableObjectStoreReadCache,
                 ReplicationOffsetMaxLag = asyncReplay ? -1 : 0,
                 LuaOptions = enableLua ? new LuaOptions(luaMemoryMode, luaMemoryLimit, luaTimeout ?? Timeout.InfiniteTimeSpan, luaLoggingMode, luaAllowedFunctions ?? [], logger) : null,
                 UnixSocketPath = unixSocketPath,
@@ -366,41 +359,28 @@ namespace Garnet.test
             if (!string.IsNullOrEmpty(memorySize))
                 opts.MemorySize = memorySize;
 
-            if (!string.IsNullOrEmpty(objectStoreLogMemorySize))
-                opts.ObjectStoreLogMemorySize = objectStoreLogMemorySize;
-
             if (!string.IsNullOrEmpty(pageSize))
                 opts.PageSize = pageSize;
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
                 opts.PubSubPageSize = pubSubPageSize;
 
-            if (!string.IsNullOrEmpty(objectStorePageSize))
-                opts.ObjectStorePageSize = objectStorePageSize;
+            if (!string.IsNullOrEmpty(heapMemorySize))
+                opts.HeapMemorySize = heapMemorySize;
 
-            if (!string.IsNullOrEmpty(objectStoreHeapMemorySize))
-                opts.ObjectStoreHeapMemorySize = objectStoreHeapMemorySize;
-
-            if (!string.IsNullOrEmpty(objectStoreReadCacheHeapMemorySize))
-                opts.ObjectStoreReadCacheHeapMemorySize = objectStoreReadCacheHeapMemorySize;
+            if (!string.IsNullOrEmpty(readCacheHeapMemorySize))
+                opts.ReadCacheHeapMemorySize = readCacheHeapMemorySize;
 
             if (indexMaxSize != default) opts.IndexMaxSize = indexMaxSize;
-            if (objectStoreIndexMaxSize != default) opts.ObjectStoreIndexMaxSize = objectStoreIndexMaxSize;
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = memorySize == default ? "1024" : memorySize;
-                opts.PageSize = opts.ObjectStorePageSize = pageSize == default ? "512" : pageSize;
+                opts.MemorySize = memorySize == default ? "1024" : memorySize;
+                opts.PageSize = pageSize == default ? "512" : pageSize;
                 if (enableReadCache)
                 {
                     opts.ReadCacheMemorySize = opts.MemorySize;
                     opts.ReadCachePageSize = opts.PageSize;
-                }
-
-                if (enableObjectStoreReadCache)
-                {
-                    opts.ObjectStoreReadCacheLogMemorySize = opts.MemorySize;
-                    opts.ObjectStoreReadCachePageSize = opts.PageSize;
                 }
             }
 
@@ -432,7 +412,6 @@ namespace Garnet.test
                 opts.RevivInChainOnly = false;
                 opts.RevivBinRecordCounts = [];
                 opts.RevivBinRecordSizes = [];
-                opts.RevivObjBinRecordCount = 256;
             }
 
             if (useInChainRevivOnly)
@@ -702,7 +681,6 @@ namespace Garnet.test
             {
                 ThreadPoolMinThreads = 100,
                 SegmentSize = segmentSize,
-                ObjectStoreSegmentSize = segmentSize,
                 EnableStorageTier = useAzureStorage || (!disableStorageTier && logDir != null),
                 LogDir = disableStorageTier ? null : logDir,
                 CheckpointDir = checkpointDir,
@@ -713,7 +691,6 @@ namespace Garnet.test
                 EnableModuleCommand = ConnectionProtectionOption.Yes,
                 Recover = tryRecover,
                 IndexSize = "1m",
-                ObjectStoreIndexSize = "16k",
                 EnableCluster = enableCluster,
                 CleanClusterConfig = cleanClusterConfig,
                 ClusterTimeout = timeout,
@@ -779,8 +756,8 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.MemorySize = opts.ObjectStoreLogMemorySize = memorySize == default ? "1024" : memorySize;
-                opts.PageSize = opts.ObjectStorePageSize = pageSize == default ? "512" : pageSize;
+                opts.MemorySize = memorySize == default ? "1024" : memorySize;
+                opts.PageSize = pageSize == default ? "512" : pageSize;
             }
 
             return opts;
@@ -982,6 +959,8 @@ namespace Garnet.test
                 {
                     if (!Directory.Exists(path))
                         return;
+
+                    // Recursively delete subdirectories, then fall through to delete this directory.
                     foreach (string directory in Directory.GetDirectories(path))
                         DeleteDirectory(directory, wait);
                     break;
@@ -991,7 +970,7 @@ namespace Garnet.test
                 }
             }
 
-            bool retry = true;
+            var retry = true;
             while (retry)
             {
                 // Exceptions may happen due to a handle briefly remaining held after Dispose().
@@ -1001,9 +980,9 @@ namespace Garnet.test
                     if (Directory.Exists(path))
                         Directory.Delete(path, true);
                 }
-                catch (Exception ex) when (ex is IOException ||
-                                           ex is UnauthorizedAccessException)
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
+                    // If we're not waiting, try once more then give up.
                     if (!wait)
                     {
                         try { Directory.Delete(path, true); }
@@ -1011,6 +990,7 @@ namespace Garnet.test
                         return;
                     }
                     retry = true;
+                    _ = Thread.Yield();
                 }
             }
         }
@@ -1104,10 +1084,10 @@ using System.Threading.Tasks;
             }
         }
 
-        public static StoreAddressInfo GetStoreAddressInfo(IServer server, bool includeReadCache = false, bool isObjectStore = false)
+        public static StoreAddressInfo GetStoreAddressInfo(IServer server, bool includeReadCache = false)
         {
             StoreAddressInfo result = default;
-            var info = isObjectStore ? server.Info("OBJECTSTORE") : server.Info("STORE");
+            var info = server.Info("STORE");
             foreach (var section in info)
             {
                 foreach (var entry in section)

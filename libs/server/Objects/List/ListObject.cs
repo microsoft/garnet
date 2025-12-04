@@ -64,8 +64,8 @@ namespace Garnet.server
         /// <summary>
         /// Constructor
         /// </summary>
-        public ListObject(long expiration = 0)
-            : base(expiration, MemoryUtils.ListOverhead)
+        public ListObject()
+            : base(MemoryUtils.ListOverhead)
         {
             list = new LinkedList<byte[]>();
         }
@@ -78,21 +78,20 @@ namespace Garnet.server
         {
             list = new LinkedList<byte[]>();
 
-            int count = reader.ReadInt32();
-            for (int i = 0; i < count; i++)
+            var count = reader.ReadInt32();
+            for (var i = 0; i < count; i++)
             {
                 var item = reader.ReadBytes(reader.ReadInt32());
-                list.AddLast(item);
-
-                this.UpdateSize(item);
+                _ = list.AddLast(item);
+                UpdateSize(item);
             }
         }
 
         /// <summary>
         /// Copy constructor
         /// </summary>
-        public ListObject(LinkedList<byte[]> list, long expiration, long size)
-            : base(expiration, size)
+        public ListObject(LinkedList<byte[]> list, long heapMemorySize)
+            : base(heapMemorySize)
         {
             this.list = list;
         }
@@ -110,7 +109,7 @@ namespace Garnet.server
         {
             base.DoSerialize(writer);
 
-            int count = list.Count;
+            var count = list.Count;
             writer.Write(count);
             foreach (var item in list)
             {
@@ -125,23 +124,23 @@ namespace Garnet.server
         public override void Dispose() { }
 
         /// <inheritdoc />
-        public override GarnetObjectBase Clone() => new ListObject(list, Expiration, Size);
+        public override GarnetObjectBase Clone() => new ListObject(list, HeapMemorySize);
 
         /// <inheritdoc />
-        public override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
-                                     byte respProtocolVersion, out long sizeChange)
+        public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
+                                     byte respProtocolVersion, out long memorySizeChange)
         {
-            sizeChange = 0;
+            memorySizeChange = 0;
 
             if (input.header.type != GarnetObjectType.List)
             {
                 // Indicates an incorrect type of key
-                output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                output.OutputFlags |= OutputFlags.WrongType;
                 output.SpanByteAndMemory.Length = 0;
                 return true;
             }
 
-            var previousSize = this.Size;
+            var previousMemorySize = HeapMemorySize;
             switch (input.header.ListOp)
             {
                 case ListOperation.LPUSH:
@@ -187,19 +186,25 @@ namespace Garnet.server
                     throw new GarnetException($"Unsupported operation {input.header.ListOp} in ListObject.Operate");
             }
 
-            sizeChange = this.Size - previousSize;
+            memorySizeChange = HeapMemorySize - previousMemorySize;
 
             if (list.Count == 0)
-                output.OutputFlags |= ObjectStoreOutputFlags.RemoveKey;
+                output.OutputFlags |= OutputFlags.RemoveKey;
 
             return true;
         }
 
         internal void UpdateSize(byte[] item, bool add = true)
         {
-            var size = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.ListEntryOverhead;
-            this.Size += add ? size : -size;
-            Debug.Assert(this.Size >= MemoryUtils.ListOverhead);
+            var memorySize = Utility.RoundUp(item.Length, IntPtr.Size) + MemoryUtils.ByteArrayOverhead + MemoryUtils.ListEntryOverhead;
+
+            if (add)
+                HeapMemorySize += memorySize;
+            else
+            {
+                HeapMemorySize -= memorySize;
+                Debug.Assert(HeapMemorySize >= MemoryUtils.ListOverhead);
+            }
         }
 
         /// <inheritdoc />

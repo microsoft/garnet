@@ -1,14 +1,15 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
         /// if reset is true it simply resets the modified bit for the key
@@ -18,24 +19,23 @@ namespace Tsavorite.core
         /// <param name="modifiedInfo">RecordInfo of the key for checkModified.</param>
         /// <param name="reset">Operation Type, whether it is reset or check</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal OperationStatus InternalModifiedBitOperation(ref TKey key, out RecordInfo modifiedInfo, bool reset = true)
+        internal OperationStatus InternalModifiedBitOperation(ReadOnlySpan<byte> key, out RecordInfo modifiedInfo, bool reset = true)
         {
             Debug.Assert(epoch.ThisInstanceProtected());
 
-            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(ref key)); ;
+            HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(key)); ;
 
             #region Trace back for record in in-memory HybridLog
             _ = FindTag(ref hei);
             var logicalAddress = hei.Address;
-            var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
 
             if (logicalAddress >= hlogBase.HeadAddress)
             {
-                ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
-                if (recordInfo.Invalid || !storeFunctions.KeysEqual(ref key, ref hlog.GetKey(physicalAddress)))
+                var logRecord = hlog.CreateLogRecord(logicalAddress);
+                if (logRecord.Info.Invalid || !storeFunctions.KeysEqual(key, logRecord.Key))
                 {
-                    logicalAddress = recordInfo.PreviousAddress;
-                    TraceBackForKeyMatch(ref key, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out physicalAddress);
+                    logicalAddress = logRecord.Info.PreviousAddress;
+                    TraceBackForKeyMatch(key, logicalAddress, hlogBase.HeadAddress, out logicalAddress, out _);
                 }
             }
             #endregion
@@ -43,7 +43,7 @@ namespace Tsavorite.core
             modifiedInfo = default;
             if (logicalAddress >= hlogBase.HeadAddress)
             {
-                ref RecordInfo recordInfo = ref hlog.GetInfo(physicalAddress);
+                ref var recordInfo = ref LogRecord.GetInfoRef(hlogBase.GetPhysicalAddress(logicalAddress));
                 if (reset)
                 {
                     if (!recordInfo.TryResetModifiedAtomic())

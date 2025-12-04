@@ -21,11 +21,11 @@ namespace Garnet
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             int offset = 0;
-            api.GET(GetNextArg(ref procInput, ref offset), out var key1);
+            api.GET(GetNextArg(ref procInput, ref offset), out PinnedSpanByte key1);
             if (key1.ReadOnlySpan.SequenceEqual("wrong_string"u8))
                 return false;
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, false);
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, false);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Main);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Main);
             return true;
         }
 
@@ -36,7 +36,7 @@ namespace Garnet
             var key2 = GetNextArg(ref procInput, ref offset);
             var key3 = GetNextArg(ref procInput, ref offset);
 
-            var status = api.GET(key1, out var result);
+            var status = api.GET(key1, out PinnedSpanByte result);
             if (status == GarnetStatus.OK)
             {
                 api.SET(key2, result);

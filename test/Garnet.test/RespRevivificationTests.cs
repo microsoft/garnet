@@ -184,7 +184,8 @@ namespace Garnet.test
 
             await db.ExecuteAsync("SET", "foo", "c", "PX", 500);
             await db.ExecuteAsync("SET", "michael", "jordan");
-            await db.ExecuteAsync("SET", "johnny", "x", "PX", 500); // big record, that we need to make sure active exp picks up for revivification
+            // A big record that is above minRevivifiable address; after active exp tombstones it, revivification should pick it up
+            await db.ExecuteAsync("SET", "arnold", "schwarzenegger", "PX", 500);
 
             await Task.Delay(600); // wait for the keys to expire
 
@@ -193,17 +194,17 @@ namespace Garnet.test
             // when deleting via above, are we potentially resetting the value and it's metadata and stuff?
             ClassicAssert.IsTrue(exec.Resp2Type != ResultType.Error);
 
-            // attempt to do an RCU operation that will reuse the tombstoned record via Recordpool
-            await db.ExecuteAsync("SETIFGREATER", "michael", "j", 23);
+            // Do a new-record operation that will reuse a tombstoned record via FreeRecordPool
+            await db.ExecuteAsync("SETIFGREATER", "the", "terminator", 23);
 
             // confirm we did indeed use a reviv record
             var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
-            ClassicAssert.IsTrue(stats.ToString().Contains("Successful Takes: 1"), "Expected in-chain revivification to happen, but it did not.");
+            ClassicAssert.IsTrue(stats.ToString().Contains("Successful Takes: 1"), "Expected FreeRecord revivification to happen, but it did not.");
 
-            var res = (RedisResult[])await db.ExecuteAsync("GETWITHETAG", "michael");
+            var res = (RedisResult[])await db.ExecuteAsync("GETWITHETAG", "the");
 
             ClassicAssert.AreEqual(23, (long)res[0], "Incorrect Etag.");
-            ClassicAssert.AreEqual("j", res[1].ToString(), "Expected the value to be updated via RMW operation, but it was not.");
+            ClassicAssert.AreEqual("terminator", res[1].ToString(), "Expected the value to be updated via RMW operation, but it was not.");
         }
 
         [Test]

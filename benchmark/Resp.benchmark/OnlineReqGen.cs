@@ -20,7 +20,7 @@ namespace Resp.benchmark
         /// <summary>
         /// DbSize, ObjectDbSize, NumBuffs
         /// </summary>
-        public readonly int DbSize, ObjectDbSize, NumBuffs;
+        public readonly int DbSize, NumBuffs;
 
         readonly byte[] ascii_chars = Encoding.ASCII.GetBytes("abcdefghijklmnopqrstvuwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
         readonly byte[] number_chars = Encoding.ASCII.GetBytes("0123456789");
@@ -35,19 +35,11 @@ namespace Resp.benchmark
 
         public readonly int keyLen, valueLen;
 
-        public OnlineReqGen(int thread_id, int DbSize, bool randomGen = true, bool zipf = false, int keyLen = default, int valueLen = default, int objectDbSize = -1)
+        public OnlineReqGen(int thread_id, int DbSize, bool randomGen = true, bool zipf = false, int keyLen = default, int valueLen = default)
         {
             this.randomGen = randomGen;
             this.DbSize = DbSize;
             this.zipf = zipf;
-            if (objectDbSize == -1)
-            {
-                this.ObjectDbSize = DbSize;
-            }
-            else
-            {
-                this.ObjectDbSize = objectDbSize;
-            }
 
             this.keyLen = Math.Max(NumUtils.NumDigits(DbSize), keyLen);
             this.valueLen = valueLen == default ? 8 : valueLen;
@@ -113,7 +105,8 @@ namespace Resp.benchmark
         {
             uint key = (uint)(randomGen ? (zipf ? zipfg.Next() : keyRandomGen.Next(DbSize)) : (keyIndex++ % DbSize));
             key *= 20323;
-            for (int i = 0; i < keyLen; i++)
+            keyBuffer[0] = (byte)'S';   // Uniquifier to avoid collisions with object keys.
+            for (int i = 1; i < keyLen; i++)
             {
                 keyBuffer[i] = ascii_chars[key % ascii_chars.Length];
                 key *= 3;
@@ -188,8 +181,9 @@ namespace Resp.benchmark
         /// </summary>
         public Memory<byte> GenerateObjectKeyBytesRandom()
         {
-            uint key = (uint)(randomGen ? (zipf ? zipfg.Next() : keyRandomGen.Next(ObjectDbSize)) : (keyIndex++ % ObjectDbSize));
-            for (int i = 0; i < keyLen; i++)
+            uint key = (uint)(randomGen ? (zipf ? zipfg.Next() : keyRandomGen.Next(DbSize)) : (keyIndex++ % DbSize));
+            keyBuffer[0] = (byte)'O';   // Uniquifier to avoid collisions with string keys.
+            for (int i = 1; i < keyLen; i++)
             {
                 keyBuffer[i] = ascii_chars[key % ascii_chars.Length];
                 key *= 3;

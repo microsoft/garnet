@@ -77,8 +77,6 @@ namespace Tsavorite.core
         /// <summary>
         /// Previous power of 2
         /// </summary>
-        /// <param name="v"></param>
-        /// <returns></returns>
         internal static long PreviousPowerOf2(long v)
         {
             v |= v >> 1;
@@ -89,6 +87,11 @@ namespace Tsavorite.core
             v |= v >> 32;
             return v - (v >> 1);
         }
+
+        /// <summary>
+        /// Next power of 2
+        /// </summary>
+        internal static long NextPowerOf2(long v) => (long)BitOperations.RoundUpToPowerOf2((nuint)v);
 
         /// <summary>
         /// Pretty print value
@@ -124,24 +127,84 @@ namespace Tsavorite.core
             return v.ToString() + "B";
         }
 
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static bool IsReadCache(long address) => (address & Constants.kReadCacheBitMask) != 0;
+        public static int RoundUp(int value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(int) alignment must be a power of two");
+            return (value + (alignment - 1)) & ~(alignment - 1);
+        }
 
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal static long AbsoluteAddress(long address) => address & ~Constants.kReadCacheBitMask;
+        public static uint RoundUp(uint value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(uint) alignment must be a power of two");
+            return (value + ((uint)alignment - 1)) & ~((uint)alignment - 1);
+        }
 
-        /// <summary>Rounds up value to alignment</summary>
-        /// <param name="value">Value to be aligned</param>
-        /// <param name="alignment">Align to this</param>
-        /// <returns>Aligned value</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int RoundUp(int value, int alignment) => (value + (alignment - 1)) & ~(alignment - 1);
-
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long RoundUp(long value, int alignment)
         {
-            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp alignment must be a power of two");
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(long) alignment must be a power of two");
             return (value + (alignment - 1)) & ~(alignment - 1);
+        }
+
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ulong RoundUp(ulong value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundUp(ulong) alignment must be a power of two");
+            return (value + ((uint)alignment - 1)) & ~((uint)alignment - 1);
+        }
+
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static int RoundDown(int value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown(int) alignment must be a power of two");
+            return value & ~(alignment - 1);
+        }
+
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static uint RoundDown(uint value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown(uint) alignment must be a power of two");
+            return value & ~((uint)alignment - 1);
+        }
+
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static long RoundDown(long value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown(long) alignment must be a power of two");
+            return value & ~(alignment - 1);
+        }
+
+        /// <summary>Rounds up <paramref name="value"/> to <paramref name="alignment"/> (which must be a power of two)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static ulong RoundDown(ulong value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "RoundDown(ulong) alignment must be a power of two");
+            return value & ~((uint)alignment - 1);
+        }
+
+        /// <summary>Verifies that <paramref name="value"/> is aligned to <paramref name="alignment"/> (which must be a power of two)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool IsAligned(long value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "IsAligned(long) alignment must be a power of two");
+            return (value & (alignment - 1)) == 0;
+        }
+
+        /// <summary>Verifies that <paramref name="value"/> is aligned to <paramref name="alignment"/> (which must be a power of two)</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static bool IsAligned(ulong value, int alignment)
+        {
+            Debug.Assert(IsPowerOfTwo(alignment), "IsAligned(ulong) alignment must be a power of two");
+            return (value & ((uint)alignment - 1)) == 0;
         }
 
         /// <summary>
@@ -172,27 +235,25 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Get 64-bit hash code for a byte array
+        /// Get 64-bit hash code for a byte array. The array does not have to be pinned.
         /// </summary>
-        /// <param name="pbString"></param>
-        /// <param name="len"></param>
-        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static unsafe long HashBytes(byte* pbString, int len)
+        public static long HashBytes(ReadOnlySpan<byte> byteSpan)
         {
             const long magicno = 40343;
-            char* pwString = (char*)pbString;
-            int cbBuf = len / 2;
-            ulong hashState = (ulong)len;
 
-            for (int i = 0; i < cbBuf; i++, pwString++)
-                hashState = magicno * hashState + *pwString;
+            // Convert to char for faster enumeration (two bytes per iteration)
+            var charSpan = byteSpan.UncheckedCast<char>();
+            var hashState = (ulong)byteSpan.Length;
 
-            if ((len & 1) > 0)
-            {
-                byte* pC = (byte*)pwString;
-                hashState = magicno * hashState + *pC;
-            }
+            // Explicit enumerator calls are faster than foreach
+            var charEnumerator = charSpan.GetEnumerator();
+            while (charEnumerator.MoveNext())
+                hashState = (magicno * hashState) + charEnumerator.Current;
+
+            // If we had an odd number of bytes, get the last byte
+            if ((byteSpan.Length & 1) > 0)
+                hashState = magicno * hashState + byteSpan[^1];
 
             return (long)Rotr64(magicno * hashState, 4);
         }
@@ -243,6 +304,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLogBase2(int x) => BitOperations.Log2((uint)x);
 
+        /// <inheritdoc cref="BitOperations.Log2(uint)"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int GetLogBase2(long x) => BitOperations.Log2((ulong)x);
+
         /// <inheritdoc cref="BitOperations.Log2(ulong)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLogBase2(ulong value) => BitOperations.Log2(value);
@@ -288,7 +353,27 @@ namespace Tsavorite.core
             do
             {
                 oldValue = variable;
-                if (oldValue >= newValue) return false;
+                if (oldValue >= newValue)
+                    return false;
+            } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
+            return true;
+        }
+
+        /// <summary>
+        /// Updates the variable to newValue only if the current value is smaller than the new value.
+        /// </summary>
+        /// <param name="variable">The variable to possibly replace</param>
+        /// <param name="newValue">The value that replaces the variable if successful</param>
+        /// <param name="oldValue">The orignal value in the variable</param>
+        /// <returns> if oldValue less than newValue </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool MonotonicUpdate(ref ulong variable, ulong newValue, out ulong oldValue)
+        {
+            do
+            {
+                oldValue = variable;
+                if (oldValue >= newValue)
+                    return false;
             } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
             return true;
         }
@@ -306,7 +391,8 @@ namespace Tsavorite.core
             do
             {
                 oldValue = variable;
-                if (oldValue >= newValue) return false;
+                if (oldValue >= newValue)
+                    return false;
             } while (Interlocked.CompareExchange(ref variable, newValue, oldValue) != oldValue);
             return true;
         }
@@ -383,5 +469,11 @@ namespace Tsavorite.core
 
         [DllImport("libc")]
         private static extern IntPtr strerror(int errnum);
+
+        /// <summary>
+        /// Should only be called in Debug.Assert or other DEBUG-conditional code
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static string GetCurrentMethodName([CallerMemberName] string memberName = "") => memberName;
     }
 }

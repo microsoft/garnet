@@ -39,25 +39,13 @@ namespace Garnet.common
         /// </summary>
         STORE,
         /// <summary>
-        /// Object store info
-        /// </summary>
-        OBJECTSTORE,
-        /// <summary>
         /// Store hash table info
         /// </summary>
         STOREHASHTABLE,
         /// <summary>
-        /// Object store hash table info
-        /// </summary>
-        OBJECTSTOREHASHTABLE,
-        /// <summary>
         /// Store revivification info
         /// </summary>
         STOREREVIV,
-        /// <summary>
-        /// Object store hash table info
-        /// </summary>
-        OBJECTSTOREREVIV,
         /// <summary>
         /// Persistence information
         /// </summary>
@@ -83,7 +71,7 @@ namespace Garnet.common
         /// </summary>
         CINFO,
         /// <summary>
-        /// Scan and return distribution of in-memory portion of hybrid logs for main store and object store
+        /// Scan and return distribution of in-memory portion of hybrid logs
         /// </summary>
         HLOGSCAN,
     }
