@@ -209,7 +209,7 @@ namespace Garnet.server
                     // This txnManager instance is taken from a session with StoreWrapper(recordToAof=false).
                     // For this reason its internal appendOnlyFile instance is null.
                     // Hence this commit will not write into the replica's Aof file as it is required.
-                    txnManager.AssertCannotLogToAof();
+                    Debug.Assert(!txnManager.AofEnabled);
                     txnManager.Commit(true);
                 }
 

@@ -34,9 +34,7 @@ namespace Garnet.server
     /// </summary>
     public sealed unsafe partial class TransactionManager
     {
-        [Conditional("DEBUG")]
-        internal void AssertCannotLogToAof()
-            => Debug.Assert(appendOnlyFile == null);
+        internal bool AofEnabled => appendOnlyFile != null;
 
         /// <summary>
         /// Basic context for main store
