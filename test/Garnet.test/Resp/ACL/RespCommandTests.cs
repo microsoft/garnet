@@ -2034,6 +2034,35 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClusterReserveACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER RESERVE",
+                [DoClusterReserveAsync]
+            );
+
+            static async Task DoClusterReserveAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["RESERVE", "VECTOR_SET_CONTEXTS", "16"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
         public async Task ClusterResetACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled
@@ -7481,6 +7510,209 @@ namespace Garnet.test.Resp.ACL
             {
                 string val = await client.ExecuteForStringResultAsync("UNWATCH");
                 ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task VAddACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VADD",
+                [DoVAddAsync]
+            );
+
+            static async Task DoVAddAsync(GarnetClient client)
+            {
+                var elem = Encoding.ASCII.GetString("\x0\x1\x2\x3"u8);
+
+                long val = await client.ExecuteForLongResultAsync("VADD", ["foo", "REDUCE", "50", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", elem, "CAS", "Q8", "EF", "16", "SETATTR", "{ 'hello': 'world' }", "M", "32"]);
+                ClassicAssert.AreEqual(1, val);
+            }
+        }
+
+        [Test]
+        public async Task VCardACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VCARD",
+                [DoVCardAsync]
+            );
+
+            static async Task DoVCardAsync(GarnetClient client)
+            {
+                // TODO: this is a placeholder implementation
+
+                string val = await client.ExecuteForStringResultAsync("VCARD", ["foo"]);
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task VDimACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VDIM",
+                [DoVDimAsync]
+            );
+
+            static async Task DoVDimAsync(GarnetClient client)
+            {
+                try
+                {
+                    _ = await client.ExecuteForStringResultAsync("VDIM", ["foo"]);
+                    ClassicAssert.Fail("Shouldn't be reachable");
+                }
+                catch (Exception e) when (e.Message.Equals("ERR Key not found"))
+                {
+                    // Excepted
+                }
+            }
+        }
+
+        [Test]
+        public async Task VEmbACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VEMB",
+                [DoVEmbAsync]
+            );
+
+            static async Task DoVEmbAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("VEMB", ["foo", "bar"]);
+                ClassicAssert.AreEqual(0, val.Length);
+            }
+        }
+
+        [Test]
+        public async Task VGetAttrACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VGETATTR",
+                [DoVGetAttrAsync]
+            );
+
+            static async Task DoVGetAttrAsync(GarnetClient client)
+            {
+                // TODO: this is a placeholder implementation
+
+                string val = await client.ExecuteForStringResultAsync("VGETATTR", ["foo"]);
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task VInfoACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VINFO",
+                [DoVInfoAsync]
+            );
+
+            static async Task DoVInfoAsync(GarnetClient client)
+            {
+                // TODO: this is a placeholder implementation
+
+                string val = await client.ExecuteForStringResultAsync("VINFO", ["foo"]);
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task VIsMemberACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VISMEMBER",
+                [DoVIsMemberAsync]
+            );
+
+            static async Task DoVIsMemberAsync(GarnetClient client)
+            {
+                // TODO: this is a placeholder implementation
+
+                string val = await client.ExecuteForStringResultAsync("VISMEMBER", ["foo"]);
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task VLinksACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VLINKS",
+                [DoVLinksAsync]
+            );
+
+            static async Task DoVLinksAsync(GarnetClient client)
+            {
+                // TODO: this is a placeholder implementation
+
+                string val = await client.ExecuteForStringResultAsync("VLINKS", ["foo"]);
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task VRandMemberACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VRANDMEMBER",
+                [DoVRandMemberAsync]
+            );
+
+            static async Task DoVRandMemberAsync(GarnetClient client)
+            {
+                // TODO: this is a placeholder implementation
+
+                string val = await client.ExecuteForStringResultAsync("VRANDMEMBER", ["foo"]);
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task VRemACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VREM",
+                [DoVRemAsync]
+            );
+
+            static async Task DoVRemAsync(GarnetClient client)
+            {
+                long val = await client.ExecuteForLongResultAsync("VREM", ["foo", Encoding.UTF8.GetString("\0\0\0\0"u8)]);
+                ClassicAssert.AreEqual(0, val);
+            }
+        }
+
+        [Test]
+        public async Task VSetAttrACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VSETATTR",
+                [DoVSetAttrAsync]
+            );
+
+            static async Task DoVSetAttrAsync(GarnetClient client)
+            {
+                // TODO: this is a placeholder implementation
+
+                string val = await client.ExecuteForStringResultAsync("VSETATTR", ["foo"]);
+                ClassicAssert.AreEqual("OK", val);
+            }
+        }
+
+        [Test]
+        public async Task VSimACLsAsync()
+        {
+            await CheckCommandsAsync(
+                "VSIM",
+                [DoVSimAsync]
+            );
+
+            static async Task DoVSimAsync(GarnetClient client)
+            {
+                string[] val = await client.ExecuteForStringArrayResultAsync("VSIM", ["foo", "ELE", "bar"]);
+                ClassicAssert.AreEqual(0, val.Length);
             }
         }
 

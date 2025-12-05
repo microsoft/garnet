@@ -34,6 +34,7 @@ namespace Garnet.server
         private readonly SessionParseState parseState;
 
         int activeDbId;
+        VectorManager activeVectorManager;
 
         /// <summary>
         /// Set ReadWriteSession on the cluster session (NOTE: used for replaying stored procedures only)
@@ -57,6 +58,9 @@ namespace Garnet.server
 
         readonly ILogger logger;
 
+        readonly StoreWrapper replayAofStoreWrapper;
+        readonly IClusterProvider clusterProvider;
+
         MemoryResult<byte> output;
 
         /// <summary>
@@ -70,10 +74,11 @@ namespace Garnet.server
         {
             this.storeWrapper = storeWrapper;
 
-            var replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
+            replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
+            this.clusterProvider = clusterProvider;
 
             this.activeDbId = 0;
-            this.respServerSession = new RespServerSession(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
+            this.respServerSession = ObtainServerSession();
 
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
@@ -89,6 +94,9 @@ namespace Garnet.server
             bufferPtr = (byte*)handle.AddrOfPinnedObject();
             this.logger = logger;
         }
+
+        private RespServerSession ObtainServerSession()
+        => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
         /// <summary>
         /// Dispose
@@ -190,6 +198,12 @@ namespace Garnet.server
         {
             AofHeader header = *(AofHeader*)ptr;
             isCheckpointStart = false;
+
+            // Aggressively do not move data if VADD are being replayed
+            if (header.opType != AofEntryType.StoreRMW)
+            {
+                activeVectorManager.WaitForVectorOperationsToComplete();
+            }
 
             if (inflightTxns.ContainsKey(header.sessionID))
             {
@@ -332,6 +346,14 @@ namespace Garnet.server
         {
             AofHeader header = *(AofHeader*)entryPtr;
 
+            // StoreRMW can queue VADDs onto different threads
+            // but everything else needs to WAIT for those to complete
+            // otherwise we might loose consistency
+            if (header.opType != AofEntryType.StoreRMW)
+            {
+                activeVectorManager.WaitForVectorOperationsToComplete();
+            }
+
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
             if (SkipRecord(entryPtr, length, replayAsReplica)) return false;
 
@@ -341,10 +363,10 @@ namespace Garnet.server
                     StoreUpsert(basicContext, storeInput, entryPtr);
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(basicContext, storeInput, entryPtr);
+                    StoreRMW(basicContext, storeInput, activeVectorManager, respServerSession, ObtainServerSession, entryPtr);
                     break;
                 case AofEntryType.StoreDelete:
-                    StoreDelete(basicContext, entryPtr);
+                    StoreDelete(basicContext, activeVectorManager, respServerSession.storageSession, entryPtr);
                     break;
                 case AofEntryType.ObjectStoreRMW:
                     ObjectStoreRMW(objectStoreBasicContext, objectStoreInput, entryPtr, bufferPtr, buffer.Length);
@@ -396,6 +418,8 @@ namespace Garnet.server
                     objectStoreBasicContext = objectStoreSession.BasicContext;
                 this.activeDbId = db.Id;
             }
+
+            activeVectorManager = db.VectorManager;
         }
 
         static void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
@@ -419,7 +443,14 @@ namespace Garnet.server
                 output.Memory.Dispose();
         }
 
-        static void StoreRMW(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, RawStringInput storeInput, byte* ptr)
+        static void StoreRMW(
+            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+            RawStringInput storeInput,
+            VectorManager vectorManager,
+            RespServerSession currentSession,
+            Func<RespServerSession> obtainServerSession,
+            byte* ptr
+        )
         {
             var curr = ptr + sizeof(AofHeader);
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
@@ -428,21 +459,52 @@ namespace Garnet.server
             // Reconstructing RawStringInput
 
             // input
-            storeInput.DeserializeFrom(curr);
+            _ = storeInput.DeserializeFrom(curr);
+
+            // VADD requires special handling, shove it over to the VectorManager
+            if (storeInput.header.cmd == RespCommand.VADD)
+            {
+                vectorManager.HandleVectorSetAddReplication(currentSession.storageSession, obtainServerSession, ref key, ref storeInput);
+                return;
+            }
+            else
+            {
+                // Any other op (include other vector ops) need to wait for pending VADDs to complete
+                vectorManager.WaitForVectorOperationsToComplete();
+
+                // VREM is also read-like, so requires special handling - shove it over to the VectorManager
+                if (storeInput.header.cmd == RespCommand.VREM)
+                {
+                    vectorManager.HandleVectorSetRemoveReplication(currentSession.storageSession, ref key, ref storeInput);
+                    return;
+                }
+            }
 
             var pbOutput = stackalloc byte[32];
             var output = new SpanByteAndMemory(pbOutput, 32);
 
             if (basicContext.RMW(ref key, ref storeInput, ref output).IsPending)
-                basicContext.CompletePending(true);
+                _ = basicContext.CompletePending(true);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }
 
-        static void StoreDelete(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext, byte* ptr)
+        static void StoreDelete(
+            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+            VectorManager vectorManager,
+            StorageSession storageSession,
+            byte* ptr)
         {
             ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
-            basicContext.Delete(ref key);
+            var res = basicContext.Delete(ref key);
+
+            if (res.IsCanceled)
+            {
+                // Might be a vector set
+                res = vectorManager.TryDeleteVectorSet(storageSession, ref key);
+                if (res.IsPending)
+                    _ = basicContext.CompletePending(true);
+            }
         }
 
         static void ObjectStoreUpsert(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,

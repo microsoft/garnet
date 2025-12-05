@@ -44,7 +44,7 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public readonly void GetInput(int i, out RawStringInput input)
-        => input = default;
+        => input = new(RespCommand.GET, arg1: -1);
 
         /// <inheritdoc/>
         public readonly void GetKey(int i, out SpanByte key)
@@ -132,10 +132,10 @@ namespace Garnet.server
         /// <inheritdoc/>
         public readonly void GetInput(int i, out RawStringInput input)
         {
-            input = default;
-
             // Save the index so we can order async completions correctly in the response
-            input.arg1 = i;
+            // 
+            // Use a - so we get "include RESP protocol"-behavior
+            input = new(RespCommand.GET, arg1: -(i + 1));
         }
 
         /// <inheritdoc/>
@@ -277,7 +277,7 @@ namespace Garnet.server
 
                             while (iter.Next())
                             {
-                                var rawIndex = (int)iter.Current.Input.arg1;
+                                var rawIndex = -(int)iter.Current.Input.arg1 - 1;
                                 var shiftedIndex = rawIndex - asyncOffset;
 
                                 var asyncStatus = iter.Current.Status;
