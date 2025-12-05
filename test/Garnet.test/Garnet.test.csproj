@@ -9,7 +9,7 @@
   <PropertyGroup>
     <NoWarn>1701;1702;1591</NoWarn>
   </PropertyGroup>
-
+	
   <ItemGroup>
     <Compile Include="..\..\benchmark\BDN.benchmark\Embedded\EmbeddedNetworkSender.cs" Link="EmbeddedNetworkSender.cs" />
   </ItemGroup>
@@ -25,6 +25,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Allure.Net.Commons" />
+    <PackageReference Include="Allure.NUnit" />
     <PackageReference Include="CommandLineParser" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
@@ -67,4 +69,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+	<PropertyGroup>
+		<!-- Nuget package used by Allure.NUnit that fails to build using .NET Core. This package is only needed if use attribute-based steps (the [AllureStep] attribute)   -->
+		<AspectInjector_Enabled>false</AspectInjector_Enabled>
+	</PropertyGroup>
+
 </Project>

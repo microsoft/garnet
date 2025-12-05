@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.IO;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -11,6 +12,7 @@ namespace Tsavorite.test.ReadCacheTests
     using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
     using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
 
+    [AllureNUnit]
     [TestFixture]
     internal class ObjectReadCacheTests
     {

@@ -4,6 +4,7 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -73,6 +74,7 @@ namespace Tsavorite.test.recovery
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheck1Tests : RecoveryCheckBase
     {
@@ -175,6 +177,7 @@ namespace Tsavorite.test.recovery
 
     }
 
+    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheck2Tests : RecoveryCheckBase
     {
@@ -475,6 +478,7 @@ namespace Tsavorite.test.recovery
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheck3Tests : RecoveryCheckBase
     {
@@ -577,6 +581,7 @@ namespace Tsavorite.test.recovery
 
     }
 
+    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheck4Tests : RecoveryCheckBase
     {
@@ -682,6 +687,7 @@ namespace Tsavorite.test.recovery
 
     }
 
+    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheck5Tests : RecoveryCheckBase
     {
@@ -796,6 +802,7 @@ namespace Tsavorite.test.recovery
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheckSnapshotTests : RecoveryCheckBase
     {
@@ -935,6 +942,7 @@ namespace Tsavorite.test.recovery
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
     public class RecoveryCheckStreamingSnapshotTests : RecoveryCheckBase
     {

@@ -6,6 +6,8 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -38,8 +40,9 @@ namespace Tsavorite.test.recovery.sumstore
         public override byte[] GetCookie() => Cookie;
     }
 
+    [AllureNUnit]
     [TestFixture]
-    class RecoveryTests
+    class RecoveryTests : AllureTestBase
     {
         const int NumOps = 5000;
         AdId[] inputArray;

@@ -3,6 +3,8 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -25,8 +27,9 @@ namespace Tsavorite.test.ModifiedBit
     using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, ModifiedBitTestComparer, DefaultRecordDisposer<int, int>>>;
     using IntStoreFunctions = StoreFunctions<int, int, ModifiedBitTestComparer, DefaultRecordDisposer<int, int>>;
 
+    [AllureNUnit]
     [TestFixture]
-    class ModifiedBitTests
+    class ModifiedBitTests : AllureTestBase
     {
         const int NumRecords = 1000;
         const int ValueMult = 1_000_000;

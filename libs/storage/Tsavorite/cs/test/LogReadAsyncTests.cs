@@ -4,12 +4,14 @@
 using System.Buffers;
 using System.IO;
 using System.Threading;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
     internal class LogReadAsyncTests
     {

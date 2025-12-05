@@ -5,6 +5,8 @@ using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -36,8 +38,9 @@ namespace Tsavorite.test.spanbyte
 {
     using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparerModulo, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class SpanByteLogScanTests
+    internal class SpanByteLogScanTests : AllureTestBase
     {
         private TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;
