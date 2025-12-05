@@ -2,9 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -132,14 +135,142 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// After an index is dropped, called to start the process of removing ancillary data (elements, neighbor lists, attributes, etc.).
+        /// Called in response to <see cref="TryMarkDeleteInProgress{TContext}(ref TContext, ref SpanByte, ulong)"/> or <see cref="ClearDeleteInProgress{TContext}(ref TContext, ref SpanByte, ulong)"/> to update metadata in Tsavorite.
         /// </summary>
-        internal void CleanupDroppedIndex<TContext>(ref TContext ctx, ReadOnlySpan<byte> index)
+        internal static void UpdateInProgressDeletes(Span<byte> updateMessage, ref SpanByte inLogValue, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        {
+            var context = BinaryPrimitives.ReadUInt64LittleEndian(updateMessage);
+            var len = BinaryPrimitives.ReadInt32LittleEndian(updateMessage[sizeof(ulong)..]);
+            var isAdding = len > 0;
+            var key = updateMessage[(sizeof(ulong) + sizeof(int))..];
+
+            Debug.Assert(key.Length == (isAdding ? len : -len), "Key length not expected");
+            Debug.Assert(context is >= ContextStep, "Special context not allowed");
+
+            var remaining = inLogValue.AsSpan();
+            while (!remaining.IsEmpty)
+            {
+                var curCtx = BinaryPrimitives.ReadUInt64LittleEndian(remaining);
+
+                if (curCtx == 0)
+                {
+                    // Reached uninitialized data
+                    break;
+                }
+
+                var curLen = BinaryPrimitives.ReadInt32LittleEndian(remaining[sizeof(ulong)..]);
+                if (curCtx == context)
+                {
+                    if (isAdding)
+                    {
+                        // Already added, ignore and make no other changes
+                        return;
+                    }
+
+                    // Copy later values to cover the one we're removing
+                    var afterCur = remaining[(sizeof(ulong) + sizeof(int) + curLen)..];
+                    afterCur.CopyTo(remaining);
+
+                    // Clear everything after that so we won't think it's valid
+                    remaining[^(sizeof(ulong) + sizeof(int) + curLen)..].Clear();
+
+                    return;
+                }
+
+                remaining = remaining[(sizeof(ulong) + sizeof(int) + curLen)..];
+            }
+
+            // Not already added, so slap it in
+            BinaryPrimitives.WriteUInt64LittleEndian(remaining, context);
+            BinaryPrimitives.WriteInt32LittleEndian(remaining[sizeof(ulong)..], len);
+
+            key.CopyTo(remaining[(sizeof(ulong) + sizeof(int))..]);
+        }
+
+        /// <summary>
+        /// Before we start smashing a <see cref="Index"/> for deletion, records that we started to delete it so we can recover from crashes.
+        /// </summary>
+        internal bool TryMarkDeleteInProgress<TContext>(ref TContext ctx, ref SpanByte key, ulong context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            ReadIndex(index, out var context, out _, out _, out _, out _, out _, out _, out _);
+            Span<byte> keySpan = stackalloc byte[2];
 
-            CleanupDroppedIndex(ref ctx, context);
+            Span<byte> dataSpan = stackalloc byte[sizeof(ulong) + sizeof(int) + key.Length];
+            BinaryPrimitives.WriteUInt64LittleEndian(dataSpan, context);
+
+            // Positive length indicates we're adding this to the list
+            BinaryPrimitives.WriteInt32LittleEndian(dataSpan[sizeof(ulong)..], key.LengthWithoutMetadata);
+            key.AsReadOnlySpan().CopyTo(dataSpan[(sizeof(ulong) + sizeof(int))..]);
+
+            // 0:0 is ContextMetadata
+            // 0:1 is InProgressDeletes
+            var inProgressDeletesKey = SpanByte.FromPinnedSpan(keySpan);
+
+            inProgressDeletesKey.MarkNamespace();
+            inProgressDeletesKey.SetNamespaceInPayload(0);
+            inProgressDeletesKey.AsSpan()[0] = 1;
+
+            VectorInput input = default;
+            input.Callback = 0;
+
+            // Negative to indicate dynamic-ness
+            input.WriteDesiredSize = -(sizeof(ulong) + sizeof(int) + key.Length);
+            unsafe
+            {
+                input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
+            }
+
+            var status = ctx.RMW(ref inProgressDeletesKey, ref input);
+
+            if (status.IsPending)
+            {
+                SpanByte ignored = default;
+                CompletePending(ref status, ref ignored, ref ctx);
+            }
+
+            return status.IsCompletedSuccessfully;
+        }
+
+        /// <summary>
+        /// After a delete has completed, removes the given key from metadata.
+        /// </summary>
+        internal void ClearDeleteInProgress<TContext>(ref TContext ctx, ref SpanByte key, ulong context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            Span<byte> keySpan = stackalloc byte[2];
+
+            Span<byte> dataSpan = stackalloc byte[sizeof(ulong) + sizeof(int) + key.Length];
+            BinaryPrimitives.WriteUInt64LittleEndian(dataSpan, context);
+
+            // Negative length indicates we're adding this to the list
+            BinaryPrimitives.WriteInt32LittleEndian(dataSpan[sizeof(ulong)..], -key.LengthWithoutMetadata);
+            key.AsReadOnlySpan().CopyTo(dataSpan[(sizeof(ulong) + sizeof(int))..]);
+
+            // 0:0 is ContextMetadata
+            // 0:1 is InProgressDeletes
+            var inProgressDeletesKey = SpanByte.FromPinnedSpan(keySpan);
+
+            inProgressDeletesKey.MarkNamespace();
+            inProgressDeletesKey.SetNamespaceInPayload(0);
+            inProgressDeletesKey.AsSpan()[0] = 1;
+
+            VectorInput input = default;
+            input.Callback = 0;
+
+            // Negative to indicate dynamic-ness
+            input.WriteDesiredSize = -(sizeof(ulong) + sizeof(int) + key.Length);
+            unsafe
+            {
+                input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
+            }
+
+            var status = ctx.RMW(ref inProgressDeletesKey, ref input);
+
+            if (status.IsPending)
+            {
+                SpanByte ignored = default;
+                CompletePending(ref status, ref ignored, ref ctx);
+            }
         }
 
         /// <summary>

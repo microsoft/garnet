@@ -318,12 +318,18 @@ namespace Garnet.server
                     return Status.CreateNotFound();
                 }
 
+                ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
+
+                if (!TryMarkDeleteInProgress(ref storageSession.vectorContext, ref key, context))
+                {
+                    // We can't recover from a crash or error, so fail the delete for safety
+                    return Status.CreateError();
+                }
+
                 DropIndex(indexSpan);
 
                 // Update the index to be delete-able
-                var updateToDroppableVectorSet = new RawStringInput();
-                updateToDroppableVectorSet.arg1 = DeleteAfterDropArg;
-                updateToDroppableVectorSet.header.cmd = RespCommand.VADD;
+                RawStringInput updateToDroppableVectorSet = new(RespCommand.VADD, arg1: DeleteAfterDropArg);
 
                 var update = storageSession.basicContext.RMW(ref key, ref updateToDroppableVectorSet);
                 if (!update.IsCompletedSuccessfully)
@@ -343,7 +349,13 @@ namespace Garnet.server
                 // Cleanup incidental additional state
                 DropVectorSetReplicationKey(key, ref storageSession.basicContext);
 
-                CleanupDroppedIndex(ref storageSession.vectorContext, indexSpan);
+                // Schedule cleanup of element data
+                CleanupDroppedIndex(ref storageSession.vectorContext, context);
+
+                // Delete has finished, so remove the in progress metadata
+                //
+                // A crash or error here will cause some work to be retried, but no correctness issues
+                ClearDeleteInProgress(ref storageSession.vectorContext, ref key, context);
 
                 return Status.CreateFound();
             }
