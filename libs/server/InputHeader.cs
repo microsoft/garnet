@@ -373,7 +373,7 @@ namespace Garnet.server
             len = metaCmdParseState.DeserializeFrom(curr);
             curr += len;
 
-            return (int)(src - curr);
+            return (int)(curr - src);
         }
     }
 
