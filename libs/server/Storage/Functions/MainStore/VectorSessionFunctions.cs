@@ -26,6 +26,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool SingleDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
         {
+            Debug.Assert(key.MetadataSize == 1, "Should never delete a non-namespaced value with VectorSessionFunctions");
+
             recordInfo.ClearHasETag();
             functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             return true;
@@ -33,6 +35,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ConcurrentDeleter(ref SpanByte key, ref SpanByte value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo)
         {
+            Debug.Assert(key.MetadataSize == 1, "Should never delete a non-namespaced value with VectorSessionFunctions");
+
             recordInfo.ClearHasETag();
             if (!deleteInfo.RecordInfo.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
@@ -92,12 +96,16 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool NeedInitialUpdate(ref SpanByte key, ref VectorInput input, ref SpanByte output, ref RMWInfo rmwInfo)
         {
+            Debug.Assert(key.MetadataSize == 1, "Should never write a non-namespaced value with VectorSessionFunctions");
+
             // Only needed when updating ContextMetadata via RMW or the DiskANN RMW callback, both of which set WriteDesiredSize
             return input.WriteDesiredSize > 0;
         }
         /// <inheritdoc />
         public bool InitialUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
+            Debug.Assert(key.MetadataSize == 1, "Should never write a non-namespaced value with VectorSessionFunctions");
+
             if (input.Callback == 0)
             {
                 Debug.Assert(key.LengthWithoutMetadata == 0 && key.GetNamespaceInPayload() == 0, "Should only be updating ContextMetadata");
@@ -145,7 +153,11 @@ namespace Garnet.server
         public void PostSingleWriter(ref SpanByte key, ref VectorInput input, ref SpanByte src, ref SpanByte dst, ref SpanByte output, ref UpsertInfo upsertInfo, WriteReason reason) { }
         /// <inheritdoc />
         public bool ConcurrentWriter(ref SpanByte key, ref VectorInput input, ref SpanByte src, ref SpanByte dst, ref SpanByte output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-        => SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, 0);
+        {
+            Debug.Assert(key.MetadataSize == 1, "Should never write a non-namespaced value with VectorSessionFunctions");
+
+            return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, 0);
+        }
 
         #endregion
 
@@ -164,6 +176,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool InPlaceUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
+            Debug.Assert(key.MetadataSize == 1, "Should never write a non-namespaced value with VectorSessionFunctions");
+
             if (input.Callback == 0)
             {
                 // We're doing a Metadata update
@@ -212,6 +226,8 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool CopyUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
+            Debug.Assert(key.MetadataSize == 1, "Should never write a non-namespaced value with VectorSessionFunctions");
+
             if (input.Callback == 0)
             {
                 // We're doing a Metadata update
