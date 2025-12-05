@@ -765,7 +765,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void ExecuteTxnBulkRead(IServer server, string[] keys)
+        public string[] ExecuteTxnBulkRead(IServer server, string[] keys)
         {
             try
             {
@@ -779,11 +779,13 @@ namespace Garnet.test.cluster
                 }
 
                 resp = server.Execute("EXEC");
+                return (string[])resp;
             }
             catch (Exception ex)
             {
                 Assert.Fail(ex.Message);
             }
+            return null;
         }
 
         public static void ExecuteStoredProcBulkIncrement(IServer server, string[] keys, string[] values)

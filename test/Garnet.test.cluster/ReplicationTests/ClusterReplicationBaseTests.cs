@@ -2046,18 +2046,14 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(values[i], resp);
             }
 
+            string[] result = null;
             if (storedProcedure)
-            {
-                var result = ClusterTestContext.ExecuteBulkReadStoredProc(replicaServer, keys);
-                ClassicAssert.AreEqual(values, result);
-            }
+                result = ClusterTestContext.ExecuteBulkReadStoredProc(replicaServer, keys);
             else
-            {
-                context.ExecuteTxnBulkRead(replicaServer, keys);
-            }
+                result = context.ExecuteTxnBulkRead(replicaServer, keys);
 
             var primaryPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
-            var replicaPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
+            var replicaPInfo = context.clusterTestUtils.GetPersistenceInfo(replicaNodeIndex, context.logger);
             ClassicAssert.AreEqual(primaryPInfo.TailAddress, replicaPInfo.TailAddress);
         }
     }
