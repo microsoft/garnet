@@ -260,35 +260,37 @@ namespace Garnet.server
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
 
-        tryAgain:
-            VectorInput input = new();
-            input.ReadDesiredSize = -1;
-            fixed (byte* ptr = value.AsSpan())
+            while (true)
             {
-                SpanByte asSpanByte = new(value.Length, (nint)ptr);
-
-                var status = ctx.Read(ref keyWithNamespace, ref input, ref asSpanByte);
-                if (status.IsPending)
+                VectorInput input = new();
+                input.ReadDesiredSize = -1;
+                fixed (byte* ptr = value.AsSpan())
                 {
-                    CompletePending(ref status, ref asSpanByte, ref ctx);
-                }
+                    SpanByte asSpanByte = new(value.Length, (nint)ptr);
 
-                if (!status.Found)
-                {
-                    value.Length = 0;
-                    return false;
-                }
+                    var status = ctx.Read(ref keyWithNamespace, ref input, ref asSpanByte);
+                    if (status.IsPending)
+                    {
+                        CompletePending(ref status, ref asSpanByte, ref ctx);
+                    }
 
-                if (input.ReadDesiredSize > asSpanByte.Length)
-                {
-                    value.Memory?.Dispose();
-                    var newAlloc = MemoryPool<byte>.Shared.Rent(input.ReadDesiredSize);
-                    value = new(newAlloc, newAlloc.Memory.Length);
-                    goto tryAgain;
-                }
+                    if (!status.Found)
+                    {
+                        value.Length = 0;
+                        return false;
+                    }
 
-                value.Length = asSpanByte.Length;
-                return true;
+                    if (input.ReadDesiredSize > asSpanByte.Length)
+                    {
+                        value.Memory?.Dispose();
+                        var newAlloc = MemoryPool<byte>.Shared.Rent(input.ReadDesiredSize);
+                        value = new(newAlloc, newAlloc.Memory.Length);
+                        continue;
+                    }
+
+                    value.Length = asSpanByte.Length;
+                    return true;
+                }
             }
         }
 
