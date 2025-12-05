@@ -71,6 +71,7 @@ namespace Garnet.server
         private readonly TsavoriteLog appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
         private readonly StateMachineDriver stateMachineDriver;
+        readonly IClusterProvider clusterProvider;
         internal int txnStartHead;
         internal int operationCntTxn;
 
@@ -96,7 +97,8 @@ namespace Garnet.server
         /// </summary>
         private TxnKeyEntries keyEntries;
 
-        internal TransactionManager(StoreWrapper storeWrapper,
+        internal TransactionManager(
+            StoreWrapper storeWrapper,
             RespServerSession respSession,
             BasicGarnetApi garnetApi,
             LockableGarnetApi lockableGarnetApi,
@@ -106,6 +108,8 @@ namespace Garnet.server
             ILogger logger = null,
             int dbId = 0)
         {
+            clusterProvider = storeWrapper.clusterProvider;
+
             var session = storageSession.basicContext.Session;
             basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
@@ -263,15 +267,30 @@ namespace Garnet.server
         {
             Debug.Assert(functionsState.StoredProcMode);
 
-            appendOnlyFile?.Enqueue(
-                new AofHeader { opType = AofEntryType.StoredProcedure, procedureId = id, storeVersion = txnVersion, sessionID = basicContext.Session.ID },
-                ref procInput,
-                out _);
+            // NOTE:
+            //  Replicas can still execute ReadOnly transactions
+            //  therefore we need to avoid writing into the AOF
+            //  without making the appendOnlyFile == null
+            //  because a replica can always become a primary through failover
+            var runAsReplica = clusterProvider != null && clusterProvider.IsReplica();
+            if (!runAsReplica)
+            {
+                appendOnlyFile?.Enqueue(
+                    new AofHeader { opType = AofEntryType.StoredProcedure, procedureId = id, storeVersion = txnVersion, sessionID = basicContext.Session.ID },
+                    ref procInput,
+                    out _);
+            }
         }
 
         internal void Commit(bool internal_txn = false)
         {
-            if (appendOnlyFile != null && !functionsState.StoredProcMode)
+            // NOTE:
+            //  Replicas can still execute ReadOnly transactions
+            //  therefore we need to avoid writing into the AOF
+            //  without making the appendOnlyFile == null
+            //  because a replica can always become a primary through failover
+            var runAsReplica = clusterProvider != null && clusterProvider.IsReplica();
+            if (!runAsReplica && appendOnlyFile != null && !functionsState.StoredProcMode)
             {
                 appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnCommit, storeVersion = txnVersion, sessionID = basicContext.Session.ID }, out _);
             }
@@ -390,7 +409,13 @@ namespace Garnet.server
             // Update sessions with transaction version
             LocksAcquired(transactionStoreType, txnVersion);
 
-            if (appendOnlyFile != null && !functionsState.StoredProcMode)
+            // NOTE:
+            //  Replicas can still execute ReadOnly transactions
+            //  therefore we need to avoid writing into the AOF
+            //  without making the appendOnlyFile == null
+            //  because a replica can always become a primary through failover
+            var runAsReplica = clusterProvider != null && clusterProvider.IsReplica();
+            if (!runAsReplica && appendOnlyFile != null && !functionsState.StoredProcMode)
             {
                 appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.TxnStart, storeVersion = txnVersion, sessionID = basicContext.Session.ID }, out _);
             }

@@ -1980,7 +1980,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(28)]
         [Category("REPLICATION")]
-        public void ClusterReplicationSimpleTransactionTest()
+        public void ClusterReplicationSimpleTransactionTest([Values] bool storedProcedure)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -1993,6 +1993,16 @@ namespace Garnet.test.cluster
 
             var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
             var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
+
+            // Register custom procedure
+            if (storedProcedure)
+            {
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKREAD", () => new BulkRead(), BulkRead.CommandInfo);
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKREAD", () => new BulkRead(), BulkRead.CommandInfo);
+            }
 
             // Setup cluster
             context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
@@ -2013,7 +2023,12 @@ namespace Garnet.test.cluster
             // Implicit check on the txnManager
             var iter = 10;
             for (var i = 0; i < iter; i++)
-                ExecuteTxnBulkIncrement(keys, increment);
+            {
+                if (storedProcedure)
+                    ClusterTestContext.ExecuteStoredProcBulkIncrement(primaryServer, keys, increment);
+                else
+                    context.ExecuteTxnBulkIncrement(keys, increment);
+            }
             var values = increment.Select(x => (int.Parse(x) * iter).ToString()).ToArray();
 
             // Check keys at primary
@@ -2031,21 +2046,19 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(values[i], resp);
             }
 
-            void ExecuteTxnBulkIncrement(string[] keys, string[] values)
+            if (storedProcedure)
             {
-                try
-                {
-                    var db = context.clusterTestUtils.GetDatabase();
-                    var txn = db.CreateTransaction();
-                    for (var i = 0; i < keys.Length; i++)
-                        txn.StringIncrementAsync(keys[i], long.Parse(values[i]));
-                    txn.Execute();
-                }
-                catch (Exception ex)
-                {
-                    Assert.Fail(ex.Message);
-                }
+                var result = ClusterTestContext.ExecuteBulkReadStoredProc(replicaServer, keys);
+                ClassicAssert.AreEqual(values, result);
             }
+            else
+            {
+                context.ExecuteTxnBulkRead(replicaServer, keys);
+            }
+
+            var primaryPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
+            var replicaPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
+            ClassicAssert.AreEqual(primaryPInfo.TailAddress, replicaPInfo.TailAddress);
         }
     }
 }
