@@ -62,33 +62,17 @@ namespace Garnet.server
             keyWithNamespace.SetNamespaceInPayload(0);
             key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
 
-            Span<byte> dummyBytes = stackalloc byte[4];
-            var dummy = SpanByteAndMemory.FromPinnedSpan(dummyBytes);
-
-            var res = context.RMW(ref keyWithNamespace, ref inputCopy, ref dummy);
+            var res = context.RMW(ref keyWithNamespace, ref inputCopy);
 
             if (res.IsPending)
             {
-                CompletePending(ref res, ref dummy, ref context);
+                CompletePending(ref res, ref context);
             }
 
             if (!res.IsCompletedSuccessfully)
             {
                 logger?.LogCritical("Failed to inject replication write for VADD into log, result was {res}", res);
                 throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
-            }
-
-            // Helper to complete read/writes during vector set synthetic op goes async
-            static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref TContext context)
-            {
-                _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                var more = completedOutputs.Next();
-                Debug.Assert(more);
-                status = completedOutputs.Current.Status;
-                output = completedOutputs.Current.Output;
-                more = completedOutputs.Next();
-                Debug.Assert(!more);
-                completedOutputs.Dispose();
             }
         }
 
@@ -115,35 +99,19 @@ namespace Garnet.server
             keyWithNamespace.SetNamespaceInPayload(0);
             key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
 
-            Span<byte> dummyBytes = stackalloc byte[4];
-            var dummy = SpanByteAndMemory.FromPinnedSpan(dummyBytes);
-
             inputCopy.parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(element.AsReadOnlySpan()));
 
-            var res = context.RMW(ref keyWithNamespace, ref inputCopy, ref dummy);
+            var res = context.RMW(ref keyWithNamespace, ref inputCopy);
 
             if (res.IsPending)
             {
-                CompletePending(ref res, ref dummy, ref context);
+                CompletePending(ref res, ref context);
             }
 
             if (!res.IsCompletedSuccessfully)
             {
                 logger?.LogCritical("Failed to inject replication write for VREM into log, result was {res}", res);
                 throw new GarnetException("Couldn't synthesize Vector Set remove operation for replication, data loss will occur");
-            }
-
-            // Helper to complete read/writes during vector set synthetic op goes async
-            static void CompletePending(ref Status status, ref SpanByteAndMemory output, ref TContext context)
-            {
-                _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                var more = completedOutputs.Next();
-                Debug.Assert(more);
-                status = completedOutputs.Current.Status;
-                output = completedOutputs.Current.Output;
-                more = completedOutputs.Next();
-                Debug.Assert(!more);
-                completedOutputs.Dispose();
             }
         }
 
@@ -162,7 +130,6 @@ namespace Garnet.server
             key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
 
             Span<byte> dummyBytes = stackalloc byte[4];
-            var dummy = SpanByteAndMemory.FromPinnedSpan(dummyBytes);
 
             var res = context.Delete(ref keyWithNamespace);
 
@@ -174,18 +141,6 @@ namespace Garnet.server
             if (!res.IsCompletedSuccessfully)
             {
                 throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
-            }
-
-            // Helper to complete read/writes during vector set synthetic op goes async
-            static void CompletePending(ref Status status, ref TContext context)
-            {
-                _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
-                var more = completedOutputs.Next();
-                Debug.Assert(more);
-                status = completedOutputs.Current.Status;
-                more = completedOutputs.Next();
-                Debug.Assert(!more);
-                completedOutputs.Dispose();
             }
         }
 
@@ -536,6 +491,18 @@ namespace Garnet.server
                 //
                 // Dispose already takes pains to drain everything before disposing, so this is safe to ignore
             }
+        }
+        // Helper to complete read/writes during vector set synthetic op goes async
+        private static void CompletePending<TContext>(ref Status status, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            _ = context.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+            var more = completedOutputs.Next();
+            Debug.Assert(more);
+            status = completedOutputs.Current.Status;
+            more = completedOutputs.Next();
+            Debug.Assert(!more);
+            completedOutputs.Dispose();
         }
     }
 }
