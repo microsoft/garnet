@@ -358,6 +358,7 @@ namespace Garnet.fuzz.Targets
             {
                 ThreadPoolMinThreads = 100,
                 SegmentSize = "1g",
+                ObjSegmentSize = "1g",
                 EnableStorageTier = true,
                 LogDir = LogDir.FullName,
                 CheckpointDir = CheckpointDir.FullName,

@@ -168,6 +168,8 @@ namespace Tsavorite.core
             Offset = 0;
         }
 
+        public readonly ulong CurrentAddress => ((ulong)SegmentId << SegmentSizeBits) | Offset;
+
         public static ulong operator -(ObjectLogFilePositionInfo left, ObjectLogFilePositionInfo right)
         {
             Debug.Assert(left.SegmentSizeBits == right.SegmentSizeBits, "Segment size bits must match to compute distance");

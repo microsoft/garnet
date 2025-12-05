@@ -546,7 +546,7 @@ namespace Tsavorite.core
 
         internal long GetReadOnlyAddressLagOffset() => ReadOnlyAddressLagOffset;
 
-        protected readonly ILogger logger;
+        internal readonly ILogger logger;
 
         /// <summary>Instantiate base allocator implementation</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1788,8 +1788,8 @@ namespace Tsavorite.core
         /// <param name="completedSemaphore"></param>
         /// <param name="throttleCheckpointFlushDelayMs"></param>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        public void AsyncFlushPagesForSnapshot(long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, IDevice device, IDevice objectLogDevice,
-            out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+        public void AsyncFlushPagesForSnapshot(CircularDiskWriteBuffer flushBuffers, long startPage, long endPage, long endLogicalAddress, long fuzzyStartLogicalAddress, 
+            IDevice device, IDevice objectLogDevice, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async full log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
@@ -1810,9 +1810,6 @@ namespace Tsavorite.core
                 var localSegmentOffsets = new long[SegmentBufferSize];
 
                 // Create the buffers we will use for all ranges of the flush (if we are ObjectAllocator). This calls our callback when the last write of a partial flush completes.
-                using var flushBuffers = CreateCircularFlushBuffers(objectLogDevice, logger);
-                flushBuffers?.InitializeOwnObjectLogFilePosition(objectLogDevice.SegmentSize);
-
                 for (long flushPage = startPage; flushPage < endPage; flushPage++)
                 {
                     long flushPageAddress = GetLogicalAddressOfStartOfPage(flushPage);

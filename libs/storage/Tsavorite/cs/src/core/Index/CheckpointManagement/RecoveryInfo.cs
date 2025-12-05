@@ -36,44 +36,39 @@ namespace Tsavorite.core
         /// </summary>
         public long nextVersion;
         /// <summary>
-        /// Flushed logical address; indicates the latest immutable (flushed) address on the main Tsavorite log at checkpoint commit time.
+        /// FlushedUntilAddress at the PERSISTENCE_CALLBACK phase; indicates the latest immutable (flushed) address on the main Tsavorite log at checkpoint commit time.
         /// </summary>
         public long flushedLogicalAddress;
         /// <summary>
-        /// Flushed logical address at snapshot start; indicates device offset for snapshot file
+        /// FlushedUntilAddress at the start of the WAIT_FLUSH phase; indicates device offset for snapshot file
         /// </summary>
         public long snapshotStartFlushedLogicalAddress;
         /// <summary>
-        /// Start logical address
+        /// Start logical address; the tail address at PREPARE phase, which is the start of the "fuzzy region"
         /// </summary>
         public long startLogicalAddress;
         /// <summary>
-        /// Final logical address
+        /// Final logical address; the tail address at WAIT_FLUSH phase, which is the the end of the "fuzzy region"
         /// </summary>
         public long finalLogicalAddress;
         /// <summary>
         /// Snapshot end logical address: snapshot is [startLogicalAddress, snapshotFinalLogicalAddress)
-        /// Note that finalLogicalAddress may be higher due to delta records
+        /// Note that this is initially set to finalLogicalAddress at the start of WAIT_FLUSH, but finalLogicalAddress may be higher due to delta records
         /// </summary>
         public long snapshotFinalLogicalAddress;
         /// <summary>
-        /// Head address
+        /// Head address at the start of the WAIT_FLUSH phase
         /// </summary>
         public long headAddress;
         /// <summary>
-        /// Begin address
+        /// Begin address at the start of the PREPARE phase
         /// </summary>
         public long beginAddress;
 
         /// <summary>
-        /// Object log tail (where the next record will be written) at the start of the checkpoint.
-        /// </summary>
-        internal ObjectLogFilePositionInfo startObjectLogTail;
-
-        /// <summary>
         /// Object log tail (where the next record will be written) at the end of the checkpoint.
         /// </summary>
-        internal ObjectLogFilePositionInfo finalObjectLogTail;
+        internal ObjectLogFilePositionInfo snapshotEndObjectLogTail;
 
         /// <summary>
         /// Tail address of delta file: -1 indicates this is not a delta checkpoint metadata
@@ -111,11 +106,8 @@ namespace Tsavorite.core
             deltaTailAddress = -1; // indicates this is not a delta checkpoint metadata
             headAddress = 0;
 
-            startObjectLogTail = new();  // Marks as "unset"
-            finalObjectLogTail = new();
+            snapshotEndObjectLogTail = new(); // Marks as "unset"
         }
-
-        const int checkpointTokenCount = 0;  // Temporary to keep compatibility with previous checkpoint versions
 
         /// <summary>
         /// Initialize from stream
@@ -123,7 +115,7 @@ namespace Tsavorite.core
         /// <param name="reader"></param>
         public void Initialize(StreamReader reader)
         {
-            string value = reader.ReadLine();
+            var value = reader.ReadLine();
             var cversion = int.Parse(value);
 
             if (cversion != CheckpointVersion)
@@ -170,41 +162,22 @@ namespace Tsavorite.core
             value = reader.ReadLine();
             deltaTailAddress = long.Parse(value);
 
+            snapshotEndObjectLogTail.Deserialize(reader);
+
+            // Read user cookie
             value = reader.ReadLine();
-            var numSessions = int.Parse(value);
-
-            // Temporary for backward compatibility
-            for (int i = 0; i < numSessions; i++)
+            var cookieSize = int.Parse(value);
+            if (cookieSize > 0)
             {
-                _ /*var sessionID*/ = int.Parse(reader.ReadLine());
-                _ /*var sessionName*/ = reader.ReadLine();
-                _ /*var serialno*/ = long.Parse(reader.ReadLine());
-
-                var exclusionCount = int.Parse(reader.ReadLine());
-                for (int j = 0; j < exclusionCount; j++)
-                    _ = reader.ReadLine();
-            }
-
-            startObjectLogTail.Deserialize(reader);
-            finalObjectLogTail.Deserialize(reader);
-
-            if (cversion >= 6)
-            {
-                // Read user cookie
-                value = reader.ReadLine();
-                var cookieSize = int.Parse(value);
-                if (cookieSize > 0)
+                cookie = new byte[cookieSize];
+                for (var i = 0; i < cookieSize; i++)
                 {
-                    cookie = new byte[cookieSize];
-                    for (var i = 0; i < cookieSize; i++)
-                    {
-                        value = reader.ReadLine();
-                        cookie[i] = byte.Parse(value);
-                    }
+                    value = reader.ReadLine();
+                    cookie[i] = byte.Parse(value);
                 }
             }
 
-            if (checksum != Checksum(numSessions))
+            if (checksum != Checksum())
                 throw new TsavoriteException("Invalid checksum for checkpoint");
 
             Deserialized = true;
@@ -223,9 +196,8 @@ namespace Tsavorite.core
         /// <param name="recoverTo"> specific version to recover to, if using delta log</param>
         internal void Recover(Guid token, ICheckpointManager checkpointManager, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
-            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
-            if (metadata == null)
-                throw new TsavoriteException("Invalid log commit metadata for ID " + token.ToString());
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo)
+                ?? throw new TsavoriteException("Invalid log commit metadata for ID " + token.ToString());
             using StreamReader s = new(new MemoryStream(metadata));
             Initialize(s);
         }
@@ -245,9 +217,8 @@ namespace Tsavorite.core
 
         internal void Recover(Guid token, ICheckpointManager checkpointManager, out byte[] commitCookie, DeltaLog deltaLog = null, bool scanDelta = false, long recoverTo = -1)
         {
-            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo);
-            if (metadata == null)
-                throw new TsavoriteException("Invalid log commit metadata for ID " + token.ToString());
+            var metadata = checkpointManager.GetLogCheckpointMetadata(token, deltaLog, scanDelta, recoverTo)
+                ?? throw new TsavoriteException("Invalid log commit metadata for ID " + token.ToString());
             using StreamReader s = new(new MemoryStream(metadata));
             Initialize(s);
             if (scanDelta && deltaLog != null && deltaTailAddress >= 0)
@@ -261,14 +232,14 @@ namespace Tsavorite.core
         /// <summary>
         /// Write info to byte array
         /// </summary>
-        public byte[] ToByteArray()
+        public readonly byte[] ToByteArray()
         {
             using (MemoryStream ms = new())
             {
                 using (StreamWriter writer = new(ms))
                 {
                     writer.WriteLine(CheckpointVersion); // checkpoint version
-                    writer.WriteLine(Checksum(checkpointTokenCount)); // checksum
+                    writer.WriteLine(Checksum());
 
                     writer.WriteLine(guid);
                     writer.WriteLine(useSnapshotFile);
@@ -283,12 +254,9 @@ namespace Tsavorite.core
                     writer.WriteLine(beginAddress);
                     writer.WriteLine(deltaTailAddress);
 
-                    writer.WriteLine(checkpointTokenCount);
+                    snapshotEndObjectLogTail.Serialize(writer);
 
-                    startObjectLogTail.Serialize(writer);
-                    finalObjectLogTail.Serialize(writer);
-
-                    // User cookie write
+                    // Write user cookie
                     var cookieSize = cookie == null ? 0 : cookie.Length;
                     writer.WriteLine(cookieSize);
                     if (cookieSize > 0)
@@ -301,13 +269,13 @@ namespace Tsavorite.core
             }
         }
 
-        private readonly long Checksum(int checkpointTokensCount)
+        private readonly long Checksum()
         {
             var bytes = guid.ToByteArray();
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
-            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress ^ headAddress ^ beginAddress
-                ^ checkpointTokensCount ^ (long)startObjectLogTail.word ^ (long)finalObjectLogTail.word;
+            return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress
+                ^ headAddress ^ beginAddress ^ (long)snapshotEndObjectLogTail.word;
         }
 
         /// <summary>
@@ -326,8 +294,7 @@ namespace Tsavorite.core
             logger?.LogInformation("Snapshot Final Logical Address: {snapshotFinalLogicalAddress}", snapshotFinalLogicalAddress);
             logger?.LogInformation("Head Address: {headAddress}", headAddress);
             logger?.LogInformation("Begin Address: {beginAddress}", beginAddress);
-            logger?.LogInformation("Start Object Log Tail Position: {startObjectLogTail}", startObjectLogTail);
-            logger?.LogInformation("Final Object Log Tail Position: {finalOtLogTail}", finalObjectLogTail);
+            logger?.LogInformation("Final Object Log Tail Position: {finalOtLogTail}", snapshotEndObjectLogTail);
             logger?.LogInformation("Delta Tail Address: {deltaTailAddress}", deltaTailAddress);
         }
     }
@@ -341,6 +308,7 @@ namespace Tsavorite.core
         public DeltaLog deltaLog;
         public SemaphoreSlim flushedSemaphore;
         public long prevVersion;
+        internal CircularDiskWriteBuffer objectLogFlushBuffers;
 
         public void Initialize(Guid token, long _version, ICheckpointManager checkpointManager)
         {
@@ -404,10 +372,7 @@ namespace Tsavorite.core
             info.Recover(token, checkpointManager, out commitCookie);
         }
 
-        public bool IsDefault()
-        {
-            return info.guid == default;
-        }
+        public readonly bool IsDefault => info.guid == default;
     }
 
     internal struct IndexRecoveryInfo
@@ -434,7 +399,7 @@ namespace Tsavorite.core
 
         public void Initialize(StreamReader reader)
         {
-            string value = reader.ReadLine();
+            var value = reader.ReadLine();
             var cversion = int.Parse(value);
 
             value = reader.ReadLine();
@@ -510,8 +475,8 @@ namespace Tsavorite.core
         {
             logger?.LogInformation("******** Index Checkpoint Info for {token} ********", token);
             logger?.LogInformation("Table Size: {table_size}", table_size);
-            logger?.LogInformation("Main Table Size (in GB): {num_ht_bytes}", ((double)num_ht_bytes) / 1000.0 / 1000.0 / 1000.0);
-            logger?.LogInformation("Overflow Table Size (in GB): {num_ofb_bytes}", ((double)num_ofb_bytes) / 1000.0 / 1000.0 / 1000.0);
+            logger?.LogInformation("Main Table Size (in GB): {num_ht_bytes}", num_ht_bytes / 1000.0 / 1000.0 / 1000.0);
+            logger?.LogInformation("Overflow Table Size (in GB): {num_ofb_bytes}", num_ofb_bytes / 1000.0 / 1000.0 / 1000.0);
             logger?.LogInformation("Num Buckets: {num_buckets}", num_buckets);
             logger?.LogInformation("Start Logical Address: {startLogicalAddress}", startLogicalAddress);
             logger?.LogInformation("Final Logical Address: {finalLogicalAddress}", finalLogicalAddress);
@@ -553,9 +518,6 @@ namespace Tsavorite.core
             main_ht_device = null;
         }
 
-        public bool IsDefault()
-        {
-            return info.token == default;
-        }
+        public readonly bool IsDefault => info.token == default;
     }
 }

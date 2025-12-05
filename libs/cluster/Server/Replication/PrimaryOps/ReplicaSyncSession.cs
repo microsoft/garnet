@@ -151,7 +151,7 @@ namespace Garnet.cluster
                     // 2.Send index file segments
                     await SendFileSegments(gcs, localEntry.metadata.storeIndexToken, CheckpointFileType.STORE_INDEX, 0, index_size);
 
-                    // 3. Send object store snapshot files
+                    // 3. Send snapshot files
                     if (hlog_size.snapshotFileEndAddress > PageHeader.Size)
                     {
                         //send snapshot file segments and object file segments
@@ -429,8 +429,9 @@ namespace Garnet.cluster
             var device = clusterProvider.replicationManager.GetInitializedSegmentFileDevice(token, type);
 
             Debug.Assert(device != null);
-            batchSize = !ReplicationManager.ShouldInitialize(type) ?
-                batchSize : (int)Math.Min(batchSize, 1L << clusterProvider.serverOptions.SegmentSizeBits());
+            var (shouldInitialize, segmentSizeBits) = ReplicationManager.ShouldInitialize(type, clusterProvider.serverOptions);
+            if (shouldInitialize) 
+                batchSize = (int)Math.Min(batchSize, 1L << segmentSizeBits);
             string resp;
 
             logger?.LogInformation("<Begin sending checkpoint file segments {guid} {type} {startAddress} {endAddress} {batchSize}", token, type, startAddress, endAddress, batchSize);
@@ -438,9 +439,7 @@ namespace Garnet.cluster
             {
                 while (startAddress < endAddress)
                 {
-                    var num_bytes = startAddress + batchSize < endAddress ?
-                        batchSize :
-                        (int)(endAddress - startAddress);
+                    var num_bytes = startAddress + batchSize < endAddress ? batchSize : (int)(endAddress - startAddress);
                     var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes).ConfigureAwait(false);
 
                     resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes)).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
@@ -468,54 +467,6 @@ namespace Garnet.cluster
             logger?.LogInformation("<Complete sending checkpoint file segments {guid} {type} {startAddress} {endAddress}", token, type, startAddress, endAddress);
         }
 
-        private async Task SendObjectFiles(GarnetClientSession gcs, Guid token, CheckpointFileType type, int segmentCount, int batchSize = 1 << 17)
-        {
-            var fileTokenBytes = token.ToByteArray();
-            IDevice device = null;
-            string resp;
-            try
-            {
-                for (var segment = 0; segment < segmentCount; segment++)
-                {
-                    device = clusterProvider.replicationManager.GetInitializedSegmentFileDevice(token, type);
-                    Debug.Assert(device != null);
-                    device.Initialize(-1);
-                    var size = device.GetFileSize(segment);
-                    var startAddress = 0L;
-
-                    while (startAddress < size)
-                    {
-                        var num_bytes = startAddress + batchSize < size ? batchSize : (int)(size - startAddress);
-                        var (pbuffer, readBytes) = await ReadInto(device, (ulong)startAddress, num_bytes, segment).ConfigureAwait(false);
-
-                        resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, startAddress, pbuffer.GetSlice(readBytes), segment).
-                            WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
-                        if (!resp.Equals("OK"))
-                        {
-                            logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
-                            throw new Exception($"Primary error at SendFileSegments {type} {resp}");
-                        }
-
-                        pbuffer.Return();
-                        startAddress += readBytes;
-                    }
-
-                    resp = await gcs.ExecuteSendFileSegments(fileTokenBytes, (int)type, 0L, []).WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
-                    if (!resp.Equals("OK"))
-                    {
-                        logger?.LogError("Primary error at SendFileSegments {type} {resp}", type, resp);
-                        throw new Exception($"Primary error at SendFileSegments {type} {resp}");
-                    }
-                    device.Dispose();
-                    device = null;
-                }
-            }
-            finally
-            {
-                device?.Dispose();
-            }
-        }
-
         /// <summary>
         /// Note: will read potentially more data (based on sector alignment)
         /// </summary>
@@ -528,7 +479,7 @@ namespace Garnet.cluster
             bufferPool ??= new SectorAlignedBufferPool(1, (int)device.SectorSize);
 
             long numBytesToRead = size;
-            numBytesToRead = ((numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1));
+            numBytesToRead = (numBytesToRead + (device.SectorSize - 1)) & ~(device.SectorSize - 1);
 
             var pbuffer = bufferPool.Get((int)numBytesToRead);
             unsafe
@@ -538,7 +489,7 @@ namespace Garnet.cluster
                 else
                     device.ReadAsync(segmentId, address, (IntPtr)pbuffer.aligned_pointer, (uint)numBytesToRead, IOCallback, null);
             }
-            await signalCompletion.WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
+            _ = await signalCompletion.WaitAsync(storeWrapper.serverOptions.ReplicaSyncTimeout, cts.Token).ConfigureAwait(false);
             return (pbuffer, (int)numBytesToRead);
         }
 
@@ -549,7 +500,7 @@ namespace Garnet.cluster
                 var errorMessage = Tsavorite.core.Utility.GetCallbackErrorMessage(errorCode, numBytes, context);
                 logger?.LogError("[ReplicaSyncSession] OverlappedStream GetQueuedCompletionStatus error: {errorCode} msg: {errorMessage}", errorCode, errorMessage);
             }
-            signalCompletion.Release();
+            _ = signalCompletion.Release();
         }
     }
 

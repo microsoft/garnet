@@ -34,7 +34,6 @@ namespace Tsavorite.core
             {
                 case Phase.PREPARE:
                     // Capture state before checkpoint starts
-                    CollectMetadata(next, store, isPrepare: true);
                     lastVersion = store._hybridLogCheckpoint.info.version = next.Version;
                     store._hybridLogCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
                     store._hybridLogCheckpoint.info.beginAddress = store.hlogBase.BeginAddress;
@@ -59,7 +58,6 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:
-                    CollectMetadata(next, store, isPrepare: false);
                     store.WriteHybridLogMetaInfo();
                     store.lastVersion = lastVersion;
                     break;
@@ -74,13 +72,22 @@ namespace Tsavorite.core
             }
         }
 
-        protected static void CollectMetadata(SystemState next, TsavoriteKV<TStoreFunctions, TAllocator> store, bool isPrepare)
+        protected CircularDiskWriteBuffer PrepareObjectLogSnapshotBuffers()
         {
-            // Collect object log tail at start and after flushes are completed; having both is necessary to provide a segment count for replication.
-            if (isPrepare)
-                store._hybridLogCheckpoint.info.startObjectLogTail = store.hlogBase.GetObjectLogTail();
-            else
-                store._hybridLogCheckpoint.info.finalObjectLogTail = store.hlogBase.GetObjectLogTail();
+            store._hybridLogCheckpoint.objectLogFlushBuffers = store.hlogBase.CreateCircularFlushBuffers(store._hybridLogCheckpoint.snapshotFileObjectLogDevice, store.hlogBase.logger);
+            store._hybridLogCheckpoint.objectLogFlushBuffers?.InitializeOwnObjectLogFilePosition(store._hybridLogCheckpoint.snapshotFileObjectLogDevice.SegmentSize);
+            return store._hybridLogCheckpoint.objectLogFlushBuffers;
+        }
+
+        protected void CompleteObjectLogSnapshotBuffers()
+        {
+            store._hybridLogCheckpoint.info.finalObjectLogTail
+
+            if (store._hybridLogCheckpoint.objectLogFlushBuffers is not null)
+            {
+                store._hybridLogCheckpoint.info.snapshotEndObjectLogTail = store._hybridLogCheckpoint.objectLogFlushBuffers.filePosition;
+                store._hybridLogCheckpoint.objectLogFlushBuffers = null;
+            }
         }
 
         /// <inheritdoc />

@@ -62,8 +62,12 @@ namespace Garnet
         public string PageSize { get; set; }
 
         [MemorySizeValidation]
-        [Option('s', "segment", Required = false, HelpText = "Size of each log segment in bytes on disk (rounds down to power of 2)")]
+        [Option('s', "segment", Required = false, HelpText = "Size of each main-log segment in bytes on disk (rounds down to power of 2)")]
         public string SegmentSize { get; set; }
+
+        [MemorySizeValidation]
+        [Option("obj-segment", Required = false, HelpText = "Size of each object-log segment in bytes on disk (rounds down to power of 2)")]
+        public string ObjSegmentSize { get; set; }
 
         [MemorySizeValidation]
         [Option('i', "index", Required = false, HelpText = "Start size of hash index in bytes (rounds down to power of 2)")]
@@ -781,6 +785,7 @@ namespace Garnet
                 MemorySize = MemorySize,
                 PageSize = PageSize,
                 SegmentSize = SegmentSize,
+                ObjSegmentSize = ObjSegmentSize,
                 IndexSize = IndexSize,
                 IndexMaxSize = IndexMaxSize,
                 MutablePercent = MutablePercent,

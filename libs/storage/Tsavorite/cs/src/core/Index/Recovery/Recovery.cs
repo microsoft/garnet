@@ -190,7 +190,7 @@ namespace Tsavorite.core
                 storeVersion = current.info.nextVersion;
 
                 GetClosestIndexCheckpointInfo(ref recoveredHlcInfo, out indexToken, out var recoveredICInfo);
-                if (recoveredICInfo.IsDefault())
+                if (recoveredICInfo.IsDefault)
                     logger?.LogInformation("No index checkpoint found, returning default index token in GetLatestCheckpointTokens");
             }
             finally
@@ -223,15 +223,39 @@ namespace Tsavorite.core
             using var current = new HybridLogCheckpointInfo();
             // We find the latest checkpoint metadata for the given token, including scanning the delta log for the latest metadata
             current.Recover(token, checkpointManager, hlogBase.LogPageSizeBits, out var _, true, version);
+            var hasObjects = current.info.endObjectLogTail.HasData;
             var snapshotDeviceOffset = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.snapshotStartFlushedLogicalAddress));
             return new LogFileInfo
             {
-                snapshotFileEndAddress = current.info.snapshotFinalLogicalAddress - snapshotDeviceOffset,
+                // Hybrid (main log file) info:
+                //   - The main log address range is from BeginAddress at PREPARE to the FlushedUntilAddress at PERSISTENCE_CALLBACK.
+                //   - The snapshot address range is from the FlushedUntilAddress to the TailAddress, both taken at the start of WAIT_FLUSH. TailAddress
+                //     here is the maximum logical address that will be written to the snapshot.
+                // The overlap between the FlushedUntilAddress for the main log being recorded after the flush completes and the FlushedUntilAddress for the snapshot 
+                // being recorded before the flush starts ensures there is no gap.
                 hybridLogFileStartAddress = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.beginAddress)),
                 hybridLogFileEndAddress = current.info.flushedLogicalAddress,
+                snapshotFileEndAddress = current.info.snapshotFinalLogicalAddress - snapshotDeviceOffset,
+
+                // Object log file info:
+                //   - The object log address range is from the start of the in-use object segment corresponding to main-log BeginAddress at PREPARE to the endObjectLogTail
+                //     taken at PERSISTENCE_CALLBACK.
+                //   - The snapshot address range is from the objectLogTail (taken at the start of WAIT_FLUSH as snapshotStartObjectLogTail, corresponding to the main log's
+                //     FlushedUntilAddress at that point) to the snapshotEndObjectLogTail taken at PERSISTENCE_CALLBACK. The snapshotEndObjectLogTail grows during the Flush,
+                //     so is not final until PERSISTENCE_CALLBACK; but it will only be written for records up to the TailAddress at the start of WAIT_FLUSH.
+                // Note that there are no object-log segments for the mutable region of the hybrid log; they are not written until ReadOnlyAddress growth triggers
+                // a main-log Flush. However the snapshot does cause object-log segments for the mutable range to be written.
+                hybridLogObjectFileStartAddress = hasObjects ? current.info.lowestObjectLogSegmentInUse << current.info.endObjectLogTail.SegmentSizeBits,
+                hybridLogObjectFileEndAddress = hasObjects ? current.info.snapshotStartObjectLogTail.CurrentAddress : 0,
+                snapshotObjectFileEndAddress = hasObjects ? current.info.snapshotEndObjectLogTail.CurrentAddress : 0,
+
+                // Delta log info
                 deltaLogTailAddress = current.info.deltaTailAddress,
-                hybridLogObjectSegmentCount = current.info.startObjectLogTail.HasData ? current.info.startObjectLogTail.SegmentId + 1 : 0,   // +1 as it's a 0-based ordinal
-                snapshotObjectSegmentCount = current.info.finalObjectLogTail.HasData ? current.info.finalObjectLogTail.SegmentId - current.info.startObjectLogTail.SegmentId + 1 : 0
+
+
+
+                //hybridLogObjectSegmentCount = current.info.startObjectLogTail.HasData ? current.info.startObjectLogTail.SegmentId + 1 : 0,   // +1 as it's a 0-based ordinal
+                //snapshotObjectSegmentCount = current.info.snapshotEndObjectLogTail.HasData ? current.info.snapshotEndObjectLogTail.SegmentId - current.info.startObjectLogTail.SegmentId + 1 : 0
             };
         }
 
@@ -340,7 +364,7 @@ namespace Tsavorite.core
             logger?.LogInformation("********* Primary Recovery Information ********");
 
             GetClosestHybridLogCheckpointInfo(requestedVersion, out var closestToken, out recoveredHlcInfo, out recoveredCommitCookie);
-            if (recoveredHlcInfo.IsDefault())
+            if (recoveredHlcInfo.IsDefault)
                 throw new TsavoriteNoHybridLogException("Unable to find valid HybridLog token");
 
             if (recoveredHlcInfo.deltaLog != null)
@@ -352,7 +376,7 @@ namespace Tsavorite.core
             recoveredHlcInfo.info.DebugPrint(logger);
 
             GetClosestIndexCheckpointInfo(ref recoveredHlcInfo, out _, out recoveredICInfo);
-            if (recoveredICInfo.IsDefault())
+            if (recoveredICInfo.IsDefault)
                 logger?.LogInformation("No index checkpoint found, recovering from beginning of log");
         }
 
@@ -385,7 +409,7 @@ namespace Tsavorite.core
             }
 
             // Verify that the index and log checkpoints are compatible for recovery
-            if (recoveredICInfo.IsDefault())
+            if (recoveredICInfo.IsDefault)
                 logger?.LogInformation("Invalid index checkpoint token, recovering from beginning of log");
             else if (!IsCompatible(recoveredICInfo.info, recoveredHLCInfo.info))
                 throw new TsavoriteException("Cannot recover from (" + indexToken.ToString() + "," + hybridLogToken.ToString() + ") checkpoint pair!\n");
@@ -562,13 +586,13 @@ namespace Tsavorite.core
             // Set new system state after recovery
             stateMachineDriver.SetSystemState(SystemState.Make(Phase.REST, recoveredHLCInfo.info.version + 1));
 
-            if (!recoveredICInfo.IsDefault() && recoveryCountdown != null)
+            if (!recoveredICInfo.IsDefault && recoveryCountdown != null)
             {
                 Debug.WriteLine("Ignoring index checkpoint as we have already recovered index previously");
                 recoveredICInfo = default;
             }
 
-            if (recoveredICInfo.IsDefault())
+            if (recoveredICInfo.IsDefault)
             {
                 // No index checkpoint - recover from begin of log
                 recoverFromAddress = recoveredHLCInfo.info.beginAddress;
@@ -637,7 +661,7 @@ namespace Tsavorite.core
         private void RestoreMetadata(HybridLogCheckpointInfo recoveredHLCInfo)
         {
             // Recover object log tail position
-            hlogBase.SetObjectLogTail(recoveredHLCInfo.info.finalObjectLogTail);
+            hlogBase.SetObjectLogTail(recoveredHLCInfo.info.snapshotEndObjectLogTail);
         }
 
         /// <summary>

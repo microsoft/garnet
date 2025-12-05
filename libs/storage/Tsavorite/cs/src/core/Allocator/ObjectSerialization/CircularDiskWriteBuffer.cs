@@ -242,8 +242,9 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
-            // If we are here, then we have returned from the partial-flush loop and will not be incrementing numInFlightRangeBatches again, so if it is 0
-            // we are done and can free the buffers.
+            // If we are here, then we have returned from the partial-flush loop and will not be incrementing numInFlightRangeBatches again, so if it is 0 we are
+            // done and can free the buffers. If numInFlightWrites > 0, then we have pending writes and will free the buffers when they complete, but will not initiate
+            // any further writes. For this class, "disposed" means "we're done issuing writes". And filePosition must be preserved; checkpoints will retrieve it later.
             disposed = true;
             if (numInFlightWrites == 0)
                 ClearBuffers();

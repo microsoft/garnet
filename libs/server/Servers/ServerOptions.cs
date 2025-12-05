@@ -35,9 +35,14 @@ namespace Garnet.server
         public string PageSize = "32m";
 
         /// <summary>
-        /// Size of each log segment in bytes on disk (rounds down to power of 2).
+        /// Size of each main-log segment in bytes on disk (rounds down to power of 2).
         /// </summary>
         public string SegmentSize = "1g";
+
+        /// <summary>
+        /// Size of each object-log segment in bytes on disk (rounds down to power of 2).
+        /// </summary>
+        public string ObjSegmentSize = "1g";
 
         /// <summary>
         /// Size of hash index in bytes (rounds down to power of 2).
@@ -63,11 +68,6 @@ namespace Garnet.server
         /// When records are read from the main store's in-memory immutable region or storage device, copy them to the tail of the log.
         /// </summary>
         public bool CopyReadsToTail = false;
-
-        /// <summary>
-        /// When records are read from the object store's in-memory immutable region or storage device, copy them to the tail of the log.
-        /// </summary>
-        public bool ObjectStoreCopyReadsToTail = false;
 
         /// <summary>
         /// Storage directory for tiered records (hybrid log), if storage tiering (UseStorage) is enabled. Uses current directory if unspecified.
@@ -157,15 +157,15 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get segment size
+        /// Get segment size bits for either the main log or object log
         /// </summary>
         /// <returns></returns>
-        public int SegmentSizeBits()
+        public int SegmentSizeBits(bool isObj)
         {
-            long size = ParseSize(SegmentSize, out _);
+            long size = ParseSize(isObj? ObjSegmentSize : SegmentSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
-                logger?.LogInformation("Warning: using lower disk segment size than specified (power of 2)");
+                logger?.LogInformation("Warning: using lower {SegmentType} than specified (power of 2)", isObj ? "ObjSegmentSize" : "SegmentSize");
             return (int)Math.Log(adjustedSize, 2);
         }
 

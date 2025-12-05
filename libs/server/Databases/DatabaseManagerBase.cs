@@ -439,12 +439,12 @@ namespace Garnet.server
 
             var storeLog = db.Store.Log;
 
-            var mainStoreMaxLogSize = (1L << StoreWrapper.serverOptions.SegmentSizeBits()) * mainStoreMaxSegments;
+            var mainStoreMaxLogSize = (1L << StoreWrapper.serverOptions.SegmentSizeBits(isObj: false)) * mainStoreMaxSegments;
 
             if (storeLog.ReadOnlyAddress - storeLog.BeginAddress > mainStoreMaxLogSize)
             {
                 var readOnlyAddress = storeLog.ReadOnlyAddress;
-                var compactLength = (1L << StoreWrapper.serverOptions.SegmentSizeBits()) * (mainStoreMaxSegments - numSegmentsToCompact);
+                var compactLength = (1L << StoreWrapper.serverOptions.SegmentSizeBits(isObj: false)) * (mainStoreMaxSegments - numSegmentsToCompact);
                 var untilAddress = readOnlyAddress - compactLength;
                 Logger?.LogInformation(
                     "Begin main store compact until {untilAddress}, Begin = {beginAddress}, ReadOnly = {readOnlyAddress}, Tail = {tailAddress}",

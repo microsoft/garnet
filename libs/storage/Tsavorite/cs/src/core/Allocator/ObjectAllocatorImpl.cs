@@ -35,6 +35,9 @@ namespace Tsavorite.core
         /// <summary>The position information for the next write to the object log.</summary>
         ObjectLogFilePositionInfo objectLogTail;
 
+        /// <summary>The lowest object-log segment in use; adjusted with Truncate to remain consistent with BeginAddress.</summary>
+        int lowestObjectLogSegmentInUse = 0;
+
         // Default to max sizes so testing a size as "greater than" will always be false
         readonly int maxInlineKeySize;
         readonly int maxInlineValueSize;
@@ -286,7 +289,10 @@ namespace Tsavorite.core
             // Now do the actual truncations.
             base.TruncateUntilAddressBlocking(toAddress);
             if (objectLogSegment >= 0)
+            {
                 objectLogDevice.TruncateUntilSegment(objectLogSegment);
+                _ = MonotonicUpdate(ref lowestObjectLogSegmentInUse, objectLogSegment, out _);
+            }
         }
 
         protected override void RemoveSegment(int segment)
@@ -306,7 +312,10 @@ namespace Tsavorite.core
             // Now do the actual truncations; TruncateUntilSegment does not remove the passed segment.
             base.RemoveSegment(segment);
             if (objectLogSegment >= 0)
+            {
                 objectLogDevice.TruncateUntilSegment(objectLogSegment);
+                _ = MonotonicUpdate(ref lowestObjectLogSegmentInUse, objectLogSegment, out _);
+            }
         }
 
         private int GetLowestObjectLogSegmentInUse(long addressOfStartOfMainLogPage)
