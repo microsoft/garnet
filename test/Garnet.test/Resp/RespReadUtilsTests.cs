@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Text;
+using Allure.NUnit;
 using Garnet.common;
 using Garnet.common.Parsing;
 using NUnit.Framework;
@@ -12,7 +13,9 @@ namespace Garnet.test.Resp
     /// <summary>
     /// Tests for RespReadUtils parsing functions.
     /// </summary>
-    unsafe class RespReadUtilsTests
+    [AllureNUnit]
+    [TestFixture]
+    unsafe class RespReadUtilsTests : AllureTestBase
     {
         /// <summary>
         /// Tests that ReadLengthHeader successfully parses valid numbers.

@@ -12,7 +12,6 @@ using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
-
 namespace Garnet.test
 {
     [AllureNUnit]

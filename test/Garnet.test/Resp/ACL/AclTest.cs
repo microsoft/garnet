@@ -9,7 +9,7 @@ namespace Garnet.test.Resp.ACL
     /// <summary>
     /// Base class used for all RESP ACL tests
     /// </summary>
-    abstract class AclTest
+    abstract class AclTest : AllureTestBase
     {
         /// <summary>
         /// Dummy password used by some of the tests.

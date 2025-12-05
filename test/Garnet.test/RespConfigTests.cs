@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -19,9 +20,10 @@ namespace Garnet.test
     /// <summary>
     /// Test dynamically changing server configuration using CONFIG SET command.
     /// </summary>
+    [AllureNUnit]
     [TestFixture(false)]
     [TestFixture(true)]
-    public class RespConfigTests
+    public class RespConfigTests : AllureTestBase
     {
         GarnetServer server;
         private string memorySize = "17g";

@@ -13,7 +13,7 @@ namespace Garnet.test
 {
     [AllureNUnit]
     [TestFixture]
-    public class RespModuleTests
+    public class RespModuleTests : AllureTestBase
     {
         GarnetServer server;
         private string testModuleDir;

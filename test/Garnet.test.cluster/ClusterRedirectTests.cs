@@ -4,6 +4,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Allure.NUnit;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -11,8 +12,9 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test.cluster
 {
+    [AllureNUnit]
     [TestFixture, NonParallelizable]
-    public unsafe class ClusterRedirectTests
+    public unsafe class ClusterRedirectTests : AllureTestBase
     {
         ClusterTestContext context;
 
