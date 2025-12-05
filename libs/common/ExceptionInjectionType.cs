@@ -64,6 +64,10 @@ namespace Garnet.common
         /// <summary>
         /// Replication diskless sync reset cts
         /// </summary>
-        Replication_Diskless_Sync_Reset_Cts
+        Replication_Diskless_Sync_Reset_Cts,
+        /// <summary>
+        /// During deletion of a Vector Set, leaving it partially deleted
+        /// </summary>
+        VectorSet_Interrupt_Delete,
     }
 }

@@ -6,6 +6,7 @@ using System.Buffers;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -522,6 +523,32 @@ namespace Garnet.test
             var res5 = db.KeyDelete(["fizz", "buzz"]);
             ClassicAssert.AreEqual(2, res5);
         }
+
+        [Test]
+        public void InterruptedVectorSetDelete()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            ExceptionInjectionHelper.EnableException(ExceptionInjectionType.VectorSet_Interrupt_Delete);
+            try
+            {
+                _ = ClassicAssert.Throws<RedisServerException>(() => db.KeyDelete("foo"));
+            }
+            finally
+            {
+                ExceptionInjectionHelper.DisableException(ExceptionInjectionType.VectorSet_Interrupt_Delete);
+            }
+
+            // Any access after a delete should finish the cleanup, not just Vector Set ops
+            var res2 = (string)db.StringGet("foo");
+            ClassicAssert.IsNull(res2);
+        }
+
+        // TODO: InterruptedVectorSetDelete, but we restart before the key access
 
         [Test]
         public void RepeatedVectorSetDeletes()

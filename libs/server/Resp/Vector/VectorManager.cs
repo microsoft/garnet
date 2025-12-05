@@ -331,6 +331,8 @@ namespace Garnet.server
                     throw new GarnetException("Failed to make Vector Set delete-able, this should never happen but will leave vector sets corrupted");
                 }
 
+                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete);
+
                 // Actually delete the value
                 var del = storageSession.basicContext.Delete(ref key);
                 if (!del.IsCompletedSuccessfully)
