@@ -373,7 +373,7 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | XRANGE | ➕ |  |
 |  | XREAD | ➖ |  |
 |  | XREADGROUP | ➖ |  |
-|  | XREVRANGE | ➖ |  |
+|  | XREVRANGE | + |  |
 |  | XSETID | ➖ |  |
 |  | XTRIM | ➕ | Does not support near-exact trimming |
 | <span id="string">**STRING**</span> | [APPEND](raw-string.md#append) | ➕ |  |
