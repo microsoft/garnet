@@ -19,13 +19,13 @@ namespace Tsavorite.core
     /// </summary>
     public class TsavoriteLogScanIterator : ScanIteratorBase, IDisposable
     {
+        internal readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
+        internal readonly BlittableFrame frame;
+        internal readonly int headerSize;
         protected readonly TsavoriteLog tsavoriteLog;
-        private readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
-        private readonly BlittableFrame frame;
-        private readonly GetMemory getMemory;
-        private readonly int headerSize;
         protected readonly bool scanUncommitted;
         protected bool disposed = false;
+        private readonly GetMemory getMemory;
 
         /// <summary>
         /// Whether iteration has ended, either because we reached the end address of iteration, or because
@@ -242,6 +242,7 @@ namespace Tsavorite.core
                 nextAddress = default;
                 return false;
             }
+
             epoch.Resume();
             // Continue looping until we find a record that is not a commit record
             while (true)
@@ -679,7 +680,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int Align(int length)
+        internal static int Align(int length)
         {
             return (length + 3) & ~3;
         }
@@ -735,7 +736,7 @@ namespace Tsavorite.core
         /// <param name="commitRecord"></param>
         /// <param name="onFrame"></param>
         /// <returns></returns>
-        private unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long outNextAddress, out bool commitRecord, out bool onFrame)
+        protected virtual unsafe bool GetNextInternal(out long physicalAddress, out int entryLength, out long currentAddress, out long outNextAddress, out bool commitRecord, out bool onFrame)
         {
             while (true)
             {

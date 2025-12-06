@@ -112,6 +112,28 @@ class Program
         if (verbose)
             Console.WriteLine("Range query check passed ");
 
+        sw.Start();
+        // now do a reverse range query from streamIDs[N-1] to streamIDs[N-500], but lim
+        int count_rev = tree.Get(
+            start: (byte*)Unsafe.AsPointer(ref streamIDs[N - 1].idBytes[0]), // start is ahead of end, but that is okay because we have reverse
+            end: (byte*)Unsafe.AsPointer(ref streamIDs[N - 500].idBytes[0]),
+            startVal: out Value startVal_rev,
+            endVal: out Value endVal_rev,
+            tombstones: out List<Value> tombstones_rev,
+            limit: 250,
+            reverse: true);
+
+        sw.Stop();
+        long reverse_query_time = (long)(sw.ElapsedTicks * nanosecondsPerTick);
+        if (verbose)
+        {
+            Console.WriteLine("Time for reverse range query = " + reverse_query_time + " ns");
+        }
+        Debug.Assert(count_rev == 250);
+        Debug.Assert(startVal_rev.address == N); // address for streamIDs[N-1] is N (since we inserted i+1)
+        Debug.Assert(endVal_rev.address == N - 249); // we go back 249 positions from N (limit 250 means 250 items: N, N-1, ..., N-249)
+        Console.WriteLine("Reverse range query check passed ");
+
         // tree.TrimByID((byte*)Unsafe.AsPointer(ref streamIDs[500].idBytes[0]), out var validKeysRemoved, out var headValue, out var headValidKey, out var numLeavesDeleted);
         // Console.WriteLine("Trimmed by ID: validKeysRemoved = " + validKeysRemoved);
         // Console.WriteLine("num leaves deleted = " + numLeavesDeleted);

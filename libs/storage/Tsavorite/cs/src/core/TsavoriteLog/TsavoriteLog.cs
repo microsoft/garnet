@@ -28,7 +28,7 @@ namespace Tsavorite.core
         readonly bool disposeLogCommitManager;
         readonly GetMemory getMemory;
         readonly int headerSize;
-        readonly LogChecksumType logChecksum;
+        internal readonly LogChecksumType logChecksum;
         readonly WorkQueueLIFO<CommitInfo> commitQueue;
 
         internal readonly bool readOnlyMode;
@@ -168,6 +168,9 @@ namespace Tsavorite.core
         /// Actual memory used by log
         /// </summary>
         public long MemorySizeBytes => ((long)(allocator.AllocatedPageCount + allocator.OverflowPageCount)) << allocator.LogPageSizeBits;
+
+        // Only used by Stream TsavoriteLog to chain for efficient reverse iteration
+        private long LastEnqueuedStreamEntryAddress = -1;
 
         /// <summary>
         /// Create new log instance
@@ -847,7 +850,7 @@ namespace Tsavorite.core
         public unsafe bool TryEnqueueStreamEntry(byte* id, int idLength, int numPairs, ReadOnlySpan<byte> entry, int entryLength, out long logicalAddress)
         {
             logicalAddress = 0;
-            var length = idLength + sizeof(int) + entryLength;
+            var length = sizeof(long) + idLength + sizeof(int) + entryLength;
             int allocatedLength = headerSize + Align(length);
             ValidateAllocatedLength(allocatedLength);
 
@@ -863,18 +866,26 @@ namespace Tsavorite.core
                 return false;
             }
 
+            // since each stream owns it's own tsavorite log, and no 2 enqueues can happen concurrently on the same log
+            // we can safely use the header to store the previous entry address for this stream.
             var physicalAddress = allocator.GetPhysicalAddress(logicalAddress);
-            // start writing 
+
+            // start writing at physicalAddress + headerSize
+            // This let's us read previousEntryAt directly from header and iterate backwards.
+            // we will be adding {previousEntryAt, id, numPairs, entry}.
+            *(long*)(headerSize + physicalAddress) = LastEnqueuedStreamEntryAddress;
             // copy the id
-            *(long*)(headerSize + physicalAddress) = *(long*)id;
-            *(long*)(headerSize + physicalAddress + 8) = *(long*)(id + sizeof(long));
+            *(long*)(headerSize + physicalAddress + sizeof(long)) = *(long*)id;
+            *(long*)(headerSize + physicalAddress + sizeof(long) + sizeof(long)) = *(long*)(id + sizeof(long));
+
             // copy the number of pairs
-            *(int*)(headerSize + physicalAddress + idLength) = numPairs;
+            *(int*)(headerSize + physicalAddress + sizeof(long) + idLength) = numPairs;
             // copy the entry
             fixed (byte* bp = &entry.GetPinnableReference())
-                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress + idLength + sizeof(int)), entryLength, entryLength);
+                Buffer.MemoryCopy(bp, (void*)(headerSize + physicalAddress + sizeof(long) + idLength + sizeof(int)), entryLength, entryLength);
 
             SetHeader(length, (byte*)physicalAddress);
+            LastEnqueuedStreamEntryAddress = logicalAddress;
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (AutoCommit) Commit();
@@ -2115,11 +2126,12 @@ namespace Tsavorite.core
         /// <param name="beginAddress">Begin address for scan.</param>
         /// <param name="endAddress">End address for scan (or long.MaxValue for tailing).</param>
         /// <param name="recover">Whether to recover named iterator from latest commit (if exists). If false, iterator starts from beginAddress.</param>
-        /// <param name="scanBufferingMode">Use single or double buffering</param>
+        /// <param name="scanBufferingMode">Use single or double buffering. Reverse stream iterator always uses single buffering.</param>
         /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
         /// <param name="logger"></param>
+        /// <param name="isReverseStreamIter">Whether to create a reverse stream iterator</param>
         /// <returns></returns>
-        public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        public TsavoriteLogScanIterator Scan(long beginAddress, long endAddress, bool recover = true, ScanBufferingMode scanBufferingMode = ScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null, bool isReverseStreamIter = false)
         {
             if (readOnlyMode)
             {
@@ -2132,7 +2144,9 @@ namespace Tsavorite.core
             if (scanUncommitted && SafeTailRefreshFrequencyMs < 0)
                 throw new TsavoriteException("Cannot use scanUncommitted without setting SafeTailRefreshFrequencyMs to a non-negative value in TsavoriteLog settings");
 
-            var iter = new TsavoriteLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
+            var iter = isReverseStreamIter ?
+                new TsavoriteStreamLogReverseIterator(this, allocator, beginAddress, endAddress, getMemory, ScanBufferingMode.SinglePageBuffering, epoch, headerSize, scanUncommitted, logger: logger) :
+                new TsavoriteLogScanIterator(this, allocator, beginAddress, endAddress, getMemory, scanBufferingMode, epoch, headerSize, scanUncommitted, logger: logger);
 
             if (Interlocked.Increment(ref logRefCount) == 1)
                 throw new TsavoriteException("Cannot scan disposed log instance");

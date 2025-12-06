@@ -198,6 +198,7 @@ namespace Garnet.server
         XADD,
         XLEN,
         XRANGE,
+        XREVRANGE,
         XDEL,
         XTRIM,
         ZADD,
@@ -1580,6 +1581,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZEXPIREA"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("AT\r\n"u8))
                                 {
                                     return RespCommand.ZEXPIREAT;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("XREVRANG"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("GE\r\n"u8))
+                                {
+                                    return RespCommand.XREVRANGE;
                                 }
                                 break;
                             case 10:

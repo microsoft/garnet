@@ -218,9 +218,89 @@ namespace Garnet.test
             ClassicAssert.GreaterOrEqual(count - trimCount, maxLen);
         }
 
+        [Test]
+        [Category("XRANGE_XREVRANGE")]
+        public void StreamRangeAndRevRangeTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var streamKey = "rangeScan1";
+
+            // first add to stream
+            for (int i = 0; i < 10; i++)
+            {
+                var entryKey = GenerateRandomString(4); // generate random ascii string of length 4
+                var entryValue = GenerateRandomString(4); // generate random ascii string of length 4
+                var retId = db.StreamAdd(streamKey, entryKey, entryValue);
+            }
+
+            // Full range tests
+            var range = db.StreamRange(streamKey, "-", "+");
+            ClassicAssert.AreEqual(range.Length, 10);
+            // Verify forward range is in ascending order
+            for (int i = 0; i < range.Length - 1; i++)
+            {
+                ClassicAssert.IsTrue(string.Compare(range[i].Id.ToString(), range[i + 1].Id.ToString()) < 0);
+            }
+
+            var revRange = db.StreamRange(streamKey, "+", "-", messageOrder: Order.Descending);
+            ClassicAssert.AreEqual(revRange.Length, 10);
+            // Verify reverse range is in descending order
+            for (int i = 0; i < revRange.Length - 1; i++)
+            {
+                ClassicAssert.IsTrue(string.Compare(revRange[i].Id.ToString(), revRange[i + 1].Id.ToString()) > 0);
+            }
+
+            // Verify reverse range has same IDs as forward range (just reversed)
+            for (int i = 0; i < range.Length; i++)
+            {
+                ClassicAssert.AreEqual(range[i].Id, revRange[range.Length - 1 - i].Id);
+            }
+
+            // Partial range tests
+            var startId = range[2].Id;
+            var endId = range[5].Id;
+            var partialRange = db.StreamRange(streamKey, startId, endId);
+            ClassicAssert.AreEqual(partialRange.Length, 4);
+            // Verify partial range starts and ends with correct IDs
+            ClassicAssert.AreEqual(partialRange[0].Id, startId);
+            ClassicAssert.AreEqual(partialRange[3].Id, endId);
+            // Verify entries match the corresponding entries from full range
+            for (int i = 0; i < 4; i++)
+            {
+                ClassicAssert.AreEqual(partialRange[i].Id, range[2 + i].Id);
+            }
+
+            // reverse partial range
+            var partialRevRange = db.StreamRange(streamKey, endId, startId, messageOrder: Order.Descending);
+            ClassicAssert.AreEqual(partialRevRange.Length, 4);
+            // Verify reverse partial range is reversed
+            for (int i = 0; i < 4; i++)
+            {
+                ClassicAssert.AreEqual(partialRevRange[i].Id, partialRange[3 - i].Id);
+            }
+
+            // limit tests
+            int limit = 3;
+            var limitedRange = db.StreamRange(streamKey, "-", "+", limit);
+            ClassicAssert.AreEqual(limitedRange.Length, limit);
+            // Verify limited range returns first N entries
+            for (int i = 0; i < limit; i++)
+            {
+                ClassicAssert.AreEqual(limitedRange[i].Id, range[i].Id);
+            }
+
+            // reverse limit tests
+            var limitedRevRange = db.StreamRange(streamKey, "+", "-", limit, messageOrder: Order.Descending);
+            ClassicAssert.AreEqual(limitedRevRange.Length, limit);
+            // Verify limited reverse range returns last N entries in reverse order
+            for (int i = 0; i < limit; i++)
+            {
+                ClassicAssert.AreEqual(limitedRevRange[i].Id, range[range.Length - 1 - i].Id);
+            }
+        }
 
         #endregion
-
 
         #region StreamCompatabilityTests
         // check if common things like KEYS, and SCAN work with streams
@@ -274,24 +354,24 @@ namespace Garnet.test
             {
                 var result = server.Execute("SCAN", cursor.ToString(), "MATCH", "scan:stream:*", "COUNT", "5");
                 var scanResult = (RedisResult[])result;
-                
+
                 cursor = long.Parse((string)scanResult[0]);
                 var keys = (RedisResult[])scanResult[1];
-                
+
                 foreach (var key in keys)
                 {
                     scannedKeys.Add((string)key);
                 }
-                
+
                 iterations++;
             } while (cursor != 0 && iterations < maxIterations);
 
             // Verify cursor eventually returns to 0
             ClassicAssert.AreEqual(0, cursor, "SCAN cursor should eventually return to 0");
-            
+
             // Verify all keys were found
             ClassicAssert.AreEqual(20, scannedKeys.Count, "All stream keys should be returned by SCAN");
-            
+
             // Verify specific keys exist
             for (int i = 0; i < 20; i++)
             {
@@ -315,7 +395,7 @@ namespace Garnet.test
             var cursor = 0L;
             var result = server.Execute("SCAN", cursor.ToString(), "MATCH", "count:stream:*", "COUNT", "10");
             var scanResult = (RedisResult[])result;
-            
+
             var newCursor = long.Parse((string)scanResult[0]);
             var keys = (RedisResult[])scanResult[1];
 
@@ -342,14 +422,14 @@ namespace Garnet.test
             // Scan for all keys with type prefix
             var allKeys = new HashSet<string>();
             var cursor = 0L;
-            
+
             do
             {
                 var result = server.Execute("SCAN", cursor.ToString(), "MATCH", "type:*");
                 var scanResult = (RedisResult[])result;
                 cursor = long.Parse((string)scanResult[0]);
                 var keys = (RedisResult[])scanResult[1];
-                
+
                 foreach (var key in keys)
                 {
                     allKeys.Add((string)key);
@@ -362,14 +442,14 @@ namespace Garnet.test
             // Now scan with TYPE filter for streams only
             var streamKeys = new HashSet<string>();
             cursor = 0L;
-            
+
             do
             {
                 var result = server.Execute("SCAN", cursor.ToString(), "MATCH", "type:*", "TYPE", "stream");
                 var scanResult = (RedisResult[])result;
                 cursor = long.Parse((string)scanResult[0]);
                 var keys = (RedisResult[])scanResult[1];
-                
+
                 foreach (var key in keys)
                 {
                     streamKeys.Add((string)key);
@@ -386,14 +466,14 @@ namespace Garnet.test
             // Verify TYPE string filter doesn't return streams
             var stringKeys = new HashSet<string>();
             cursor = 0L;
-            
+
             do
             {
                 var result = server.Execute("SCAN", cursor.ToString(), "MATCH", "type:*", "TYPE", "string");
                 var scanResult = (RedisResult[])result;
                 cursor = long.Parse((string)scanResult[0]);
                 var keys = (RedisResult[])scanResult[1];
-                
+
                 foreach (var key in keys)
                 {
                     stringKeys.Add((string)key);
@@ -415,7 +495,7 @@ namespace Garnet.test
                 var scanResult = (RedisResult[])result;
                 cursor = long.Parse((string)scanResult[0]);
                 var keys = (RedisResult[])scanResult[1];
-                
+
                 foreach (var key in keys)
                 {
                     fullScanKeys.Add((string)key);
@@ -423,7 +503,7 @@ namespace Garnet.test
             } while (cursor != 0);
 
             ClassicAssert.AreEqual(5, fullScanKeys.Count);
-        
+
             ClassicAssert.IsTrue(fullScanKeys.Contains("type:string:1"));
             ClassicAssert.IsTrue(fullScanKeys.Contains("type:hash:1"));
             ClassicAssert.IsTrue(fullScanKeys.Contains("type:list:1"));
@@ -432,6 +512,5 @@ namespace Garnet.test
         }
 
         #endregion
-
     }
 }

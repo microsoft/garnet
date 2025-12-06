@@ -40,6 +40,23 @@ namespace Garnet.server
         long totalEntriesAdded;
         SingleWriterMultiReaderLock _lock;
 
+        public StreamID LastId
+        {
+            get
+            {
+                // Need locking to prevent torn reads from AddEntry
+                _lock.ReadLock();
+                try
+                {
+                    return lastId;
+                }
+                finally
+                {
+                    _lock.ReadUnlock();
+                }
+            }
+        }
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -314,7 +331,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Deletes an entry fromt the stream
+        /// Deletes an entry from the stream
         /// </summary>
         /// <param name="idSlice">id of the stream entry to delete</param>
         /// <returns>true if entry was deleted successfully</returns>
@@ -339,49 +356,6 @@ namespace Garnet.server
             return deleted;
         }
 
-        public bool ParseCompleteStreamIDFromString(string idString, out StreamID id)
-        {
-            id = default;
-            string[] parts = idString.Split('-');
-            if (parts.Length != 2)
-            {
-                return false;
-            }
-            if (!ulong.TryParse(parts[0], out ulong timestamp))
-            {
-                return false;
-            }
-            if (!ulong.TryParse(parts[1], out ulong seq))
-            {
-                return false;
-            }
-
-            id.setMS(timestamp);
-            id.setSeq(seq);
-            return true;
-        }
-
-        public bool ParseStreamIDFromString(string idString, out StreamID id)
-        {
-            id = default;
-            if (idString == "-" || idString == "+")
-            {
-                return false;
-            }
-            if (!idString.Contains('-'))
-            {
-
-                if (!ulong.TryParse(idString, out ulong ms))
-                {
-                    return false;
-                }
-                id.setMS(ms);
-                id.setSeq(0);
-                return true;
-            }
-            return ParseCompleteStreamIDFromString(idString, out id);
-        }
-
         /// <summary>
         /// Read entries from the stream from given range
         /// </summary>
@@ -389,7 +363,7 @@ namespace Garnet.server
         /// <param name="max">end of range</param>
         /// <param name="limit">threshold to scanning</param>
         /// <param name="output"></param>
-        public unsafe void ReadRange(string min, string max, int limit, ref SpanByteAndMemory output, byte respProtocolVersion)
+        public unsafe void ReadRange(string min, string max, int limit, ref SpanByteAndMemory output, byte respProtocolVersion, bool isReverse = false)
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
             _lock.ReadLock();
@@ -407,210 +381,280 @@ namespace Garnet.server
                     byte[] idBytes = index.First().Key;
                     startID = new StreamID(idBytes);
                 }
+                else if (min == "+") // this can happen in reverse range queries
+                {
+                    byte[] idBytes = index.Last().Key;
+                    startID = new StreamID(idBytes);
+                }
                 else if (!ParseStreamIDFromString(min, out startID))
                 {
                     return;
                 }
+
                 if (max == "+")
                 {
                     byte[] idBytes = index.Last().Key;
                     endID = new StreamID(idBytes);
                 }
-                else
+                else if (max == "-") // this can happen in reverse range queries
                 {
-                    if (!ParseStreamIDFromString(max, out endID))
-                    {
-                        return;
-                    }
-                    endID.setSeq(long.MaxValue);
+                    byte[] idBytes = index.First().Key;
+                    endID = new StreamID(idBytes);
+                }
+                else if (!ParseStreamIDFromString(max, out endID))
+                {
+                    return;
                 }
 
-                int count = index.Get((byte*)Unsafe.AsPointer(ref startID.idBytes[0]), (byte*)Unsafe.AsPointer(ref endID.idBytes[0]), out Value startVal, out Value endVal, out var tombstones, limit);
+                int count = index.Get((byte*)Unsafe.AsPointer(ref startID.idBytes[0]), (byte*)Unsafe.AsPointer(ref endID.idBytes[0]), out Value startVal, out Value endVal, out var tombstones, limit, isReverse);
+
+            // HK TODO: check what this looks like in reverse mode?
+            if (isReverse)
+            {
+                startAddr = (long)startVal.address;
+                endAddr = (long)endVal.address;
+            }
+            else
+            {
                 startAddr = (long)startVal.address;
                 endAddr = (long)endVal.address + 1;
+            }
 
-                byte* tmpPtr = null;
-                int tmpSize = 0;
-                long readCount = 0;
-
-                try
+            byte* tmpPtr = null;
+            int tmpSize = 0;
+            long readCount = 0;
+            try
+            {
+                using (var iter = log.Scan(startAddr, endAddr, scanUncommitted: true, isReverseStreamIter: isReverse))
                 {
-                    using (var iter = log.Scan(startAddr, endAddr, scanUncommitted: true))
+                    writer.WriteArrayLength(count);
+
+                    byte* e;
+                    while (iter.GetNext(out var entry, out _, out long currentAddress, out long nextAddress))
                     {
-
-                        writer.WriteArrayLength(count);
-
-                        byte* e;
-                        while (iter.GetNext(out var entry, out _, out long currentAddress, out long nextAddress))
+                        var current = new Value((ulong)currentAddress);
+                        // check if any tombstone t.address matches current
+                        var tombstoneFound = false;
+                        foreach (var tombstone in tombstones)
                         {
-
-                            var current = new Value((ulong)currentAddress);
-                            // check if any tombstone t.address matches current
-                            var tombstoneFound = false;
-                            foreach (var tombstone in tombstones)
+                            if (tombstone.address == current.address)
                             {
-                                if (tombstone.address == current.address)
-                                {
-                                    tombstoneFound = true;
-                                    break;
-                                }
-                            }
-                            if (tombstoneFound)
-                            {
-                                continue;
-                            }
-
-                            var entryBytes = entry.AsSpan();
-                            // check if the entry is actually one of the qualified keys 
-                            // parse ID for the entry which is the first 16 bytes
-                            var idBytes = entryBytes.Slice(0, 16);
-                            var ts = BinaryPrimitives.ReadUInt64BigEndian(idBytes.Slice(0, 8));
-                            var seq = BinaryPrimitives.ReadUInt64BigEndian(idBytes.Slice(8, 8));
-
-                            string idString = $"{ts}-{seq}";
-                            Span<byte> numPairsBytes = entryBytes.Slice(16, 4);
-                            int numPairs = BitConverter.ToInt32(numPairsBytes);
-                            Span<byte> value = entryBytes.Slice(20);
-
-                            // we can already write back the ID that we read 
-                            writer.WriteArrayLength(2);
-
-                            writer.WriteAsciiBulkString(idString);
-
-                            // print array length for the number of key-value pairs in the entry
-                            writer.WriteArrayLength(numPairs);
-
-                            // write key-value pairs
-                            fixed (byte* p = value)
-                            {
-                                e = p;
-                                int read = 0;
-                                read += (int)(e - p);
-                                while (value.Length - read >= 4)
-                                {
-                                    var orig = e;
-                                    if (!RespReadUtils.TryReadPtrWithLengthHeader(ref tmpPtr, ref tmpSize, ref e, e + entry.Length))
-                                    {
-                                        return;
-                                    }
-                                    var o = new Span<byte>(tmpPtr, tmpSize).ToArray();
-                                    writer.WriteBulkString(o);
-                                    read += (int)(e - orig);
-                                }
-                            }
-                            readCount++;
-                            if (limit != -1 && readCount == limit)
-                            {
+                                tombstoneFound = true;
                                 break;
                             }
                         }
+                        if (tombstoneFound)
+                        {
+                            continue;
+                        }
+
+                        var entryBytes = entry.AsSpan(start: sizeof(long)); // skip the previousEntryAddress part
+
+                        // check if the entry is actually one of the qualified keys 
+                        // parse ID for the entry which is the first 16 bytes
+                        Span<byte> idBytes = entryBytes.Slice(0, 16);
+                        ulong ts = BinaryPrimitives.ReadUInt64BigEndian(idBytes.Slice(0, 8));
+                        ulong seq = BinaryPrimitives.ReadUInt64BigEndian(idBytes.Slice(8, 8));
+
+                        string idString = $"{ts}-{seq}";
+                        Span<byte> numPairsBytes = entryBytes.Slice(16, 4);
+                        int numPairs = BitConverter.ToInt32(numPairsBytes);
+                        Span<byte> value = entryBytes.Slice(20);
+
+                        // we can already write back the ID that we read 
+                        writer.WriteArrayLength(2);
+
+                        writer.WriteAsciiBulkString(idString);
+
+                        // print array length for the number of key-value pairs in the entry
+                        writer.WriteArrayLength(numPairs);
+
+                        // write key-value pairs
+                        fixed (byte* p = value)
+                        {
+                            e = p;
+                            int read = 0;
+                            read += (int)(e - p);
+                            while (value.Length - read >= 4)
+                            {
+                                var orig = e;
+                                if (!RespReadUtils.TryReadPtrWithLengthHeader(ref tmpPtr, ref tmpSize, ref e, e + entry.Length))
+                                {
+                                    return;
+                                }
+                                var o = new Span<byte>(tmpPtr, tmpSize).ToArray();
+                                writer.WriteBulkString(o);
+                                read += (int)(e - orig);
+                            }
+                        }
+                        readCount++;
+                        if (limit != -1 && readCount == limit)
+                        {
+                            break;
+                        }
                     }
                 }
-                finally
-                { }
-            }
-            finally
-            {
-                _lock.ReadUnlock();
-            }
-        }
-
-        /// <summary>
-        /// Trims the stream based on the specified options.
-        /// </summary>
-        /// <param name="trimArg">length or ID specifying the threshold</param>
-        /// <param name="optType">MAXLEN or MINID</param>
-        /// <param name="entriesTrimmed">number of keys trimmed</param>
-        /// <returns></returns>
-        public unsafe bool Trim(ArgSlice trimArg, StreamTrimOpts optType, out ulong entriesTrimmed, bool approximate = false)
-        {
-            uint numLeavesDeleted = 0;
-            Value headValue = default;
-            _lock.WriteLock();
-            try
-            {
-                switch (optType)
-                {
-                    case StreamTrimOpts.MAXLEN:
-                        if (!RespReadUtils.ReadUlong(out ulong maxLen, ref trimArg.ptr, trimArg.ptr + trimArg.length))
-                        {
-                            entriesTrimmed = 0;
-                            return false;
-                        }
-                        index.TrimByLength(maxLen, out entriesTrimmed, out headValue, out var headValidKey, out numLeavesDeleted, approximate);
-                        break;
-                    case StreamTrimOpts.MINID:
-                        if (!parseCompleteID(trimArg, out StreamID minID))
-                        {
-                            entriesTrimmed = 0;
-                            return false;
-                        }
-                        index.TrimByID((byte*)Unsafe.AsPointer(ref minID.idBytes[0]), out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted);
-                        break;
-                    default:
-                        entriesTrimmed = 0;
-                        break;
-                }
-
-                if (numLeavesDeleted == 0)
-                {
-                    // didn't delete any leaf nodes so done here 
-                    return true;
-                }
-                // truncate log to new head 
-                var newHeadAddress = (long)headValue.address;
-                log.TruncateUntil(newHeadAddress);
-            }
-            finally
-            {
-                _lock.WriteUnlock();
-            }
-            return true;
-        }
-
-
-        unsafe bool parseCompleteID(ArgSlice idSlice, out StreamID streamID)
-        {
-            streamID = default;
-            // complete ID is of the format ts-seq in input where both ts and seq are ulong
-            // find the index of '-' in the id
-            int index = -1;
-            for (int i = 0; i < idSlice.length; i++)
-            {
-                if (*(idSlice.ptr + i) == '-')
-                {
-                    index = i;
-                    break;
-                }
-            }
-            // parse the timestamp
-            if (!RespReadUtils.ReadUlong(out ulong timestamp, ref idSlice.ptr, idSlice.ptr + index))
-            {
-                return false;
-            }
-
-            // after reading the timestamp, the pointer will be at the '-' character
-            var seqBegin = idSlice.ptr + 1;
-            // parse the sequence number
-            if (!RespReadUtils.ReadUlong(out ulong seq, ref seqBegin, idSlice.ptr + idSlice.length - 1))
-            {
-                return false;
-            }
-            streamID.setMS(timestamp);
-            streamID.setSeq(seq);
-            return true;
-        }
-
-        /// <inheritdoc/>
-        public void Dispose()
-        {
-            try
-            {
-                log.Dispose();
-                device.Dispose();
             }
             finally
             { }
         }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
+}
+
+/// <summary>
+/// Trims the stream based on the specified options.
+/// </summary>
+/// <param name="trimArg">length or ID specifying the threshold</param>
+/// <param name="optType">MAXLEN or MINID</param>
+/// <param name="entriesTrimmed">number of keys trimmed</param>
+/// <returns></returns>
+public unsafe bool Trim(ArgSlice trimArg, StreamTrimOpts optType, out ulong entriesTrimmed, bool approximate = false)
+{
+    uint numLeavesDeleted = 0;
+    Value headValue = default;
+    _lock.WriteLock();
+    try
+    {
+        switch (optType)
+        {
+            case StreamTrimOpts.MAXLEN:
+                if (!RespReadUtils.ReadUlong(out ulong maxLen, ref trimArg.ptr, trimArg.ptr + trimArg.length))
+                {
+                    entriesTrimmed = 0;
+                    return false;
+                }
+                index.TrimByLength(maxLen, out entriesTrimmed, out headValue, out var headValidKey, out numLeavesDeleted, approximate);
+                break;
+            case StreamTrimOpts.MINID:
+                if (!parseCompleteID(trimArg, out StreamID minID))
+                {
+                    entriesTrimmed = 0;
+                    return false;
+                }
+                index.TrimByID((byte*)Unsafe.AsPointer(ref minID.idBytes[0]), out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted);
+                break;
+            default:
+                entriesTrimmed = 0;
+                break;
+        }
+
+        if (numLeavesDeleted == 0)
+        {
+            // didn't delete any leaf nodes so done here 
+            return true;
+        }
+        // truncate log to new head 
+        var newHeadAddress = (long)headValue.address;
+        log.TruncateUntil(newHeadAddress);
+    }
+    finally
+    {
+        _lock.WriteUnlock();
+    }
+    return true;
+}
+
+
+unsafe bool parseCompleteID(ArgSlice idSlice, out StreamID streamID)
+{
+    streamID = default;
+    // complete ID is of the format ts-seq in input where both ts and seq are ulong
+    // find the index of '-' in the id
+    int index = -1;
+    for (int i = 0; i < idSlice.length; i++)
+    {
+        if (*(idSlice.ptr + i) == '-')
+        {
+            index = i;
+            break;
+        }
+    }
+    // parse the timestamp
+    if (!RespReadUtils.ReadUlong(out ulong timestamp, ref idSlice.ptr, idSlice.ptr + index))
+    {
+        return false;
+    }
+
+    // after reading the timestamp, the pointer will be at the '-' character
+    var seqBegin = idSlice.ptr + 1;
+    // parse the sequence number
+    if (!RespReadUtils.ReadUlong(out ulong seq, ref seqBegin, idSlice.ptr + idSlice.length - 1))
+    {
+        return false;
+    }
+    streamID.setMS(timestamp);
+    streamID.setSeq(seq);
+    return true;
+}
+
+public static bool ParseCompleteStreamIDFromString(ReadOnlySpan<char> idString, out StreamID id)
+{
+    id = default;
+    int hyphenIdx = -1;
+    for (int i = 0; i < idString.Length; i++)
+    {
+        if (idString[i] == '-')
+        {
+            if (hyphenIdx != -1)
+            {
+                // more than 1 occurence of hypen
+                return false;
+            }
+            hyphenIdx = i;
+        }
+    }
+
+    // no occurence of hypen
+    if (hyphenIdx == -1)
+        return false;
+
+    if (!ulong.TryParse(idString.Slice(0, hyphenIdx), out ulong timestamp))
+    {
+        return false;
+    }
+    if (!ulong.TryParse(idString.Slice(hyphenIdx + 1), out ulong seq))
+    {
+        return false;
+    }
+
+    id.setMS(timestamp);
+    id.setSeq(seq);
+    return true;
+}
+
+public static bool ParseStreamIDFromString(ReadOnlySpan<char> idString, out StreamID id)
+{
+    id = default;
+    if (idString == "-" || idString == "+")
+    {
+        return false;
+    }
+    if (!idString.Contains('-'))
+    {
+        if (!ulong.TryParse(idString, out ulong ms))
+        {
+            return false;
+        }
+        id.setMS(ms);
+        id.setSeq(0);
+        return true;
+    }
+    return ParseCompleteStreamIDFromString(idString, out id);
+}
+
+/// <inheritdoc/>
+public void Dispose()
+{
+    try
+    {
+        log.Dispose();
+        device.Dispose();
+    }
+    finally
+    { }
+}
     }
 }

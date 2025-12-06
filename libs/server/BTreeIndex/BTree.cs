@@ -26,6 +26,7 @@ namespace Garnet.server.BTreeIndex
         /// </summary>
         public BTree(uint sectorSize)
         {
+            // HK TODO: This lives in memory always, so why allocate on native heap?
             var memoryBlock = (IntPtr*)NativeMemory.AlignedAlloc((nuint)BTreeNode.PAGE_SIZE, (nuint)BTreeNode.PAGE_SIZE);
             root = BTreeNode.Create(BTreeNodeType.Leaf, memoryBlock);
             head = tail = root;

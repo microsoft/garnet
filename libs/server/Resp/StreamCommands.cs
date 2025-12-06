@@ -10,6 +10,7 @@ namespace Garnet.server
     internal sealed unsafe partial class RespServerSession : ServerSessionBase
     {
         readonly StreamManager streamManager;
+
         /// <summary>
         /// Adds a new entry to the stream.
         /// </summary>
@@ -114,9 +115,11 @@ namespace Garnet.server
         ///  Retrieves a range of stream entries.
         /// </summary>
         /// <returns>true if range of stream entries were retrieved successfully; error otherwise</returns>
-        public unsafe bool StreamRange(byte respProtocolVersion)
+        public bool StreamRange(byte respProtocolVersion, bool isReverse = false)
         {
             // command is of format: XRANGE key start end [COUNT count]
+            // and for XREVRANGE key end start [COUNT count]
+
             // we expect at least 3 arguments
             if (parseState.Count < 3)
             {
@@ -129,6 +132,13 @@ namespace Garnet.server
             // parse start and end IDs
             var startId = parseState.GetArgSliceByRef(1).ToString();
             var endId = parseState.GetArgSliceByRef(2).ToString();
+
+            if (isReverse)
+            {
+                var temp = startId;
+                startId = endId;
+                endId = temp;
+            }
 
             int count = -1;
             if (parseState.Count > 3)
@@ -152,16 +162,15 @@ namespace Garnet.server
             }
 
             bool success = false;
-
             // check if the stream exists in cache
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
             {
-                cachedStream.ReadRange(startId, endId, count, ref _output, respProtocolVersion);
+                cachedStream.ReadRange(startId, endId, count, ref _output, respProtocolVersion, isReverse);
                 success = true;
             }
             else
             {
-                success = streamManager.StreamRange(key, startId, endId, count, ref _output, respProtocolVersion);
+                success = streamManager.StreamRange(key, startId, endId, count, ref _output, respProtocolVersion, isReverse);
             }
             if (success)
             {
@@ -296,6 +305,5 @@ namespace Garnet.server
                 SendAndReset();
             return true;
         }
-
     }
 }

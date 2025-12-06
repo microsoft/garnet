@@ -45,8 +45,9 @@ namespace Garnet.server.BTreeIndex
         public int Get(byte* start, byte* end, out Value startVal, out Value endVal, out List<Value> tombstones, long limit = -1, bool reverse = false)
         {
             Debug.Assert(reverse ?
-            BTreeNode.Compare(start, end) >= 0 : BTreeNode.Compare(start, end) <= 0,
-            "Start key should be less than or equal to end key");
+                BTreeNode.Compare(start, end) >= 0 : BTreeNode.Compare(start, end) <= 0,
+                "Start key should be less than or equal to end key");
+
             int count = 0;
             tombstones = new List<Value>();
             BTreeNode* startLeaf = null, endLeaf = null;
@@ -111,15 +112,8 @@ namespace Garnet.server.BTreeIndex
                         count++;
                         if (limit != -1 && count >= limit)
                         {
-                            // update address as required
-                            if (reverse)
-                            {
-                                startVal = value;
-                            }
-                            else
-                            {
-                                endVal = value;
-                            }
+                            // update address of the last key we iterated till
+                            endVal = value;
                             scanComplete = true;
                             break;
                         }
@@ -150,6 +144,7 @@ namespace Garnet.server.BTreeIndex
 
                 leaf = reverse ? leaf->info->previous : leaf->info->next;
             }
+
             return count;
         }
     }

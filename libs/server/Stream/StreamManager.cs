@@ -3,14 +3,15 @@
 
 using System;
 using System.Collections.Generic;
-    using Garnet.common;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
     public sealed class StreamManager : IDisposable
     {
-        private Dictionary<byte[], StreamObject> streams;
+        private readonly Dictionary<byte[], StreamObject> streams;
+
         long defPageSize;
         long defMemorySize;
         int safeTailRefreshFreqMs;
@@ -123,12 +124,11 @@ namespace Garnet.server
         /// <param name="streamKey">key of last stream accessed (for cache)</param>
         /// <param name="lastStream">reference to last stream accessed (for cache)</param>
         /// <param name="respProtocolVersion">RESP protocol version</param>
-        public unsafe void StreamAdd(ArgSlice keySlice, ArgSlice idSlice, bool noMkStream, ReadOnlySpan<byte> value, int valueLength, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream, byte respProtocolVersion)
+        public void StreamAdd(ArgSlice keySlice, ArgSlice idSlice, bool noMkStream, ReadOnlySpan<byte> value, int valueLength, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream, byte respProtocolVersion)
         {
             // copy key store this key in the dictionary
-            byte[] key = new byte[keySlice.Length];
-            fixed (byte* keyPtr = key)
-                Buffer.MemoryCopy(keySlice.ptr, keyPtr, keySlice.Length, keySlice.Length);
+            byte[] key = keySlice.ToArray();
+
             bool foundStream = false;
             StreamObject stream;
             lastStream = null;
@@ -194,7 +194,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="keySlice">key of the stream we want to obtain the length</param>
         /// <returns>length of the stream</returns>
-        public unsafe ulong StreamLength(ArgSlice keySlice)
+        public ulong StreamLength(ArgSlice keySlice)
         {
             var key = keySlice.ToArray();
             if (streams != null)
@@ -222,7 +222,7 @@ namespace Garnet.server
         /// <param name="count">threshold to limit scanning</param>
         /// <param name="output"></param>
         /// <param name="respProtocolVersion">RESP protocol version</param>
-        public unsafe bool StreamRange(ArgSlice keySlice, string start, string end, int count, ref SpanByteAndMemory output, byte respProtocolVersion)
+        public bool StreamRange(ArgSlice keySlice, string start, string end, int count, ref SpanByteAndMemory output, byte respProtocolVersion, bool isReverse)
         {
             var key = keySlice.ToArray();
             if (streams != null && streams.Count > 0)
@@ -230,7 +230,7 @@ namespace Garnet.server
                 bool foundStream = streams.TryGetValue(key, out StreamObject stream);
                 if (foundStream)
                 {
-                    stream.ReadRange(start, end, count, ref output, respProtocolVersion);
+                    stream.ReadRange(start, end, count, ref output, respProtocolVersion, isReverse);
                     return true;
                 }
             }
@@ -298,7 +298,6 @@ namespace Garnet.server
                     _lock.WriteUnlock();
                 }
             }
-
         }
     }
 }

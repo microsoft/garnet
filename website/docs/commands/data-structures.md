@@ -1023,6 +1023,18 @@ Returns stream entries matching a given range of IDs.
 The IDs provided can also be incomplete (i.e., with only the first part of the ID).
 Using the `COUNT` option reduces the number of entries returned. 
 
+### XREVRANGE
+
+#### Syntax
+
+```bash
+    XRANGE key end start [COUNT count]
+```
+Returns stream entries in the order from end to start matching a given range of IDs.
+`start` and `end` can be special IDs (i.e, `-` and `+`) to specify the minimum possible ID and the maximum possible ID inside a stream respectively. 
+The IDs provided can also be incomplete (i.e., with only the first part of the ID).
+Using the `COUNT` option reduces the number of entries returned. 
+
 ---
 
 ### XDEL
