@@ -29,7 +29,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(offset, setValSlice);
 
-            var input = new StringInput(RespCommand.SETBIT, ref parseState, arg1: ParseUtils.ReadLong(offset));
+            var input = new StringInput(RespCommand.SETBIT, RespMetaCommand.None, ref parseState, arg1: ParseUtils.ReadLong(offset));
 
             SpanByteAndMemory output = new(null);
             RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
@@ -47,7 +47,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArgument(offset);
 
-            var input = new StringInput(RespCommand.GETBIT, ref parseState, arg1: ParseUtils.ReadLong(offset));
+            var input = new StringInput(RespCommand.GETBIT, RespMetaCommand.None, ref parseState, arg1: ParseUtils.ReadLong(offset));
 
             SpanByteAndMemory output = new(null);
             var status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
@@ -185,7 +185,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(args);
 
-            var input = new StringInput(RespCommand.BITOP, ref parseState);
+            var input = new StringInput(RespCommand.BITOP, RespMetaCommand.None, ref parseState);
 
             return StringBitOperation(ref input, bitOp, out result);
         }
@@ -233,7 +233,7 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(startSlice, endSlice, useBitIntervalSlice);
 
-            var input = new StringInput(RespCommand.BITCOUNT, ref parseState);
+            var input = new StringInput(RespCommand.BITCOUNT, RespMetaCommand.None, ref parseState);
 
             scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
 

@@ -34,8 +34,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set, metaCommand) { SetOp = SetOperation.SADD };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
+            var input = new ObjectInput(GarnetObjectType.Set, metaCommand, ref parseState, startIdx: 1) { SetOp = SetOperation.SADD };
 
             var status = storageApi.SetAdd(key, ref input, out var output);
 
@@ -320,8 +319,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set, metaCommand) { SetOp = SetOperation.SREM };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
+            var input = new ObjectInput(GarnetObjectType.Set, metaCommand, ref parseState, startIdx: 1) { SetOp = SetOperation.SREM };
 
             var status = storageApi.SetRemove(key, ref input, out var output);
 
@@ -363,8 +361,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Set, metaCommand, ref parseState) { SetOp = SetOperation.SCARD };
 
             var status = storageApi.SetLength(key, ref input, out var output);
 
@@ -406,8 +403,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Set, metaCommand, ref parseState) { SetOp = SetOperation.SMEMBERS };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -457,8 +453,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set, metaCommand) { SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
+            var input = new ObjectInput(GarnetObjectType.Set, metaCommand, ref parseState, startIdx: 1) { SetOp = isSingle ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -535,8 +530,7 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
-            var input = new ObjectInput(header, countParameter);
+            var input = new ObjectInput(GarnetObjectType.Set, metaCommand, ref parseState, arg1: countParameter) { SetOp = SetOperation.SPOP };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -648,8 +642,7 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SRANDMEMBER };
-            var input = new ObjectInput(header, countParameter, seed);
+            var input = new ObjectInput(GarnetObjectType.Set, metaCommand, ref parseState, arg1: countParameter, arg2: seed) { SetOp = SetOperation.SRANDMEMBER };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));

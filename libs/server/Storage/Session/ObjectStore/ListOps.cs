@@ -37,8 +37,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(elements);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.List, RespMetaCommand.None, ref parseState) { ListOp = lop };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -69,8 +68,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(element);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.List, RespMetaCommand.None, ref parseState) { ListOp = lop };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;
@@ -112,8 +110,7 @@ namespace Garnet.server
                  where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = lop };
-            var input = new ObjectInput(header, count);
+            var input = new ObjectInput(GarnetObjectType.List, RespMetaCommand.None, ref parseState) { ListOp = lop };
 
             var output = new ObjectOutput();
 
@@ -183,8 +180,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LLEN };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.List, RespMetaCommand.None, ref parseState) { ListOp = ListOperation.LLEN };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -339,8 +335,7 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.List) { ListOp = ListOperation.LTRIM };
-            var input = new ObjectInput(header, start, stop);
+            var input = new ObjectInput(GarnetObjectType.List, arg1: start, arg2: stop) { ListOp = ListOperation.LTRIM };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out _, ref objectContext);
 

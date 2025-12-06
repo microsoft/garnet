@@ -27,9 +27,19 @@ namespace Garnet.server
         public int Count;
 
         /// <summary>
+        /// Count of accessible meta arguments for the command
+        /// </summary>
+        public int MetaArgCount;
+
+        /// <summary>
         /// Pointer to the slice of <see cref="rootBuffer"/> (which is always pinned) that is accessible within the range of this instance's arguments.
         /// </summary>
         PinnedSpanByte* bufferPtr;
+
+        /// <summary>
+        /// Pointer to the slice of <see cref="rootBuffer"/> (which is always pinned) that is accessible within the range of this instance's meta arguments.
+        /// </summary>
+        PinnedSpanByte* metaArgBufferPtr;
 
         /// <summary>
         /// Count of arguments in the original buffer
@@ -46,12 +56,14 @@ namespace Garnet.server
         /// </summary>
         public ReadOnlySpan<PinnedSpanByte> Parameters => new(bufferPtr, Count);
 
-        private SessionParseState(ref PinnedSpanByte[] rootBuffer, int rootCount, ref PinnedSpanByte* bufferPtr, int count) : this()
+        private SessionParseState(ref PinnedSpanByte[] rootBuffer, int rootCount, ref PinnedSpanByte* bufferPtr, int count, ref PinnedSpanByte* metaArgBufferPtr, int metaArgCount) : this()
         {
             this.rootBuffer = rootBuffer;
             this.rootCount = rootCount;
             this.bufferPtr = bufferPtr;
             this.Count = count;
+            this.metaArgBufferPtr = metaArgBufferPtr;
+            this.MetaArgCount = metaArgCount;
         }
 
         /// <summary>
@@ -60,26 +72,34 @@ namespace Garnet.server
         public void Initialize()
         {
             Count = 0;
+            MetaArgCount = 0;
             rootCount = 0;
             rootBuffer = GC.AllocateArray<PinnedSpanByte>(MinParams, true);
             bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]);
+            metaArgBufferPtr = bufferPtr;
         }
 
         /// <summary>
         /// Initialize the parse state with a given count of arguments
         /// </summary>
-        /// <param name="count">Size of argument array to allocate</param>
+        /// <param name="count">Number of arguments</param>
+        /// <param name="metaArgCount">Number of meta arguments</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Initialize(int count)
+        public void Initialize(int count, int metaArgCount = 0)
         {
             Count = count;
-            rootCount = count;
+            MetaArgCount = metaArgCount;
+            rootCount = count + metaArgCount;
 
-            if (rootBuffer != null && (count <= MinParams || count <= rootBuffer.Length))
+            if (rootBuffer != null && (rootCount <= MinParams || rootCount <= rootBuffer.Length))
+            {
+                bufferPtr = metaArgBufferPtr + metaArgCount;
                 return;
+            }
 
-            rootBuffer = GC.AllocateArray<PinnedSpanByte>(count <= MinParams ? MinParams : count, true);
-            bufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]);
+            rootBuffer = GC.AllocateArray<PinnedSpanByte>(rootCount <= MinParams ? MinParams : rootCount, true);
+            metaArgBufferPtr = (PinnedSpanByte*)Unsafe.AsPointer(ref rootBuffer[0]);
+            bufferPtr = metaArgBufferPtr + metaArgCount;
         }
 
         /// <summary>
@@ -183,11 +203,11 @@ namespace Garnet.server
         /// <param name="idxOffset">Offset value to the underlying buffer</param>
         public SessionParseState Slice(int idxOffset)
         {
-            Debug.Assert(idxOffset - 1 < rootCount);
+            Debug.Assert(idxOffset - 1 < rootCount - MetaArgCount);
 
             var count = rootCount - idxOffset;
             var offsetBuffer = bufferPtr + idxOffset;
-            return new SessionParseState(ref rootBuffer, rootCount, ref offsetBuffer, count);
+            return new SessionParseState(ref rootBuffer, rootCount, ref offsetBuffer, count, ref metaArgBufferPtr, MetaArgCount);
         }
 
         /// <summary>
@@ -201,7 +221,7 @@ namespace Garnet.server
             Debug.Assert(idxOffset + count - 1 < rootCount);
 
             var offsetBuffer = bufferPtr + idxOffset;
-            return new SessionParseState(ref rootBuffer, rootCount, ref offsetBuffer, count);
+            return new SessionParseState(ref rootBuffer, rootCount, ref offsetBuffer, count, ref metaArgBufferPtr, MetaArgCount);
         }
 
         /// <summary>
@@ -224,34 +244,37 @@ namespace Garnet.server
         /// </summary>
         /// <param name="i">Index of buffer at which to set argument</param>
         /// <param name="arg">Argument to set</param>
-        public void SetArgument(int i, PinnedSpanByte arg)
+        /// <param name="isMetaArg">True if argument is a meta argument</param>
+        public void SetArgument(int i, PinnedSpanByte arg, bool isMetaArg = false)
         {
-            Debug.Assert(i < Count);
-            *(bufferPtr + i) = arg;
+            Debug.Assert(i < (isMetaArg ? MetaArgCount : Count));
+            *(isMetaArg ? metaArgBufferPtr : bufferPtr + i) = arg;
         }
 
         /// <summary>
         /// Set arguments starting at a specific index
         /// </summary>
         /// <param name="i">Index of buffer at which to start setting arguments</param>
+        /// <param name="isMetaArg">True if arguments are meta arguments</param>
         /// <param name="args">Arguments to set</param>
-        public void SetArguments(int i, params PinnedSpanByte[] args)
+        public void SetArguments(int i, bool isMetaArg = false, params PinnedSpanByte[] args)
         {
-            Debug.Assert(i + args.Length - 1 < Count);
+            Debug.Assert(i + args.Length - 1 < (isMetaArg ? MetaArgCount : Count));
             for (var j = 0; j < args.Length; j++)
-                *(bufferPtr + i + j) = args[j];
+                *(isMetaArg ? metaArgBufferPtr : bufferPtr + i + j) = args[j];
         }
 
         /// <summary>
         /// Set arguments starting at a specific index
         /// </summary>
         /// <param name="i">Index of buffer at which to start setting arguments</param>
+        /// <param name="isMetaArg">True if arguments are meta arguments</param>
         /// <param name="args">Arguments to set</param>
-        public void SetArguments(int i, params ReadOnlySpan<PinnedSpanByte> args)
+        public void SetArguments(int i, bool isMetaArg = false, params ReadOnlySpan<PinnedSpanByte> args)
         {
-            Debug.Assert(i + args.Length - 1 < Count);
+            Debug.Assert(i + args.Length - 1 < (isMetaArg ? MetaArgCount : Count));
             for (var j = 0; j < args.Length; j++)
-                *(bufferPtr + i + j) = args[j];
+                *(isMetaArg ? metaArgBufferPtr : bufferPtr + i + j) = args[j];
         }
 
         /// <summary>
@@ -260,10 +283,14 @@ namespace Garnet.server
         /// <returns>The serialized length</returns>
         public int GetSerializedLength()
         {
-            var serializedLength = sizeof(int);
+            var serializedLength = 2 * sizeof(int);
+
+            for (var i = 0; i < MetaArgCount; i++)
+                serializedLength += (*(metaArgBufferPtr + i)).TotalSize;
 
             for (var i = 0; i < Count; i++)
                 serializedLength += (*(bufferPtr + i)).TotalSize;
+
             return serializedLength;
         }
 
@@ -278,9 +305,21 @@ namespace Garnet.server
         {
             var curr = dest;
 
+            // Serialize meta argument count
+            *(int*)curr = MetaArgCount;
+            curr += sizeof(int);
+
             // Serialize argument count
             *(int*)curr = Count;
             curr += sizeof(int);
+
+            // Serialize meta arguments
+            for (var i = 0; i < MetaArgCount; i++)
+            {
+                var argument = *(metaArgBufferPtr + i);
+                argument.SerializeTo(curr);
+                curr += argument.TotalSize;
+            }
 
             // Serialize arguments
             for (var i = 0; i < Count; i++)
@@ -302,10 +341,20 @@ namespace Garnet.server
         {
             var curr = src;
 
+            var metaArgCount = *(int*)curr;
+            curr += sizeof(int);
+
             var argCount = *(int*)curr;
             curr += sizeof(int);
 
-            Initialize(argCount);
+            Initialize(argCount, metaArgCount);
+
+            for (var i = 0; i < metaArgCount; i++)
+            {
+                var argument = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
+                *(metaArgBufferPtr + i) = argument;
+                curr += argument.TotalSize;
+            }
 
             for (var i = 0; i < argCount; i++)
             {
@@ -321,10 +370,11 @@ namespace Garnet.server
         /// Read the next argument from the input buffer
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Read(int i, ref byte* ptr, byte* end)
+        public bool Read(int i, ref byte* ptr, byte* end, bool isMetaArg = false)
         {
-            Debug.Assert(i < Count);
-            ref var slice = ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i);
+            Debug.Assert(i < (isMetaArg ? MetaArgCount : Count));
+            var dstBufferPtr = isMetaArg ? metaArgBufferPtr : bufferPtr;
+            ref var slice = ref Unsafe.AsRef<PinnedSpanByte>(dstBufferPtr + i);
 
             // Parse RESP string header
             if (!RespReadUtils.TryReadUnsignedLengthHeader(out var length, ref ptr, end))
@@ -346,10 +396,10 @@ namespace Garnet.server
         /// Get the argument at the given index
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref PinnedSpanByte GetArgSliceByRef(int i)
+        public ref PinnedSpanByte GetArgSliceByRef(int i, bool isMetaArg = false)
         {
-            Debug.Assert(i < Count);
-            return ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i);
+            Debug.Assert(i < (isMetaArg ? MetaArgCount : Count));
+            return ref Unsafe.AsRef<PinnedSpanByte>((isMetaArg ? metaArgBufferPtr : bufferPtr) + i);
         }
 
         /// <summary>
@@ -357,10 +407,10 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetInt(int i)
+        public int GetInt(int i, bool isMetaArg = false)
         {
-            Debug.Assert(i < Count);
-            return ParseUtils.ReadInt(*(bufferPtr + i));
+            Debug.Assert(i < (isMetaArg ? MetaArgCount : Count));
+            return ParseUtils.ReadInt(*((isMetaArg ? metaArgBufferPtr : bufferPtr) + i));
         }
 
         /// <summary>
@@ -368,10 +418,10 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if integer parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetInt(int i, out int value)
+        public bool TryGetInt(int i, out int value, bool isMetaArg = false)
         {
-            Debug.Assert(i < Count);
-            return ParseUtils.TryReadInt(*(bufferPtr + i), out value);
+            Debug.Assert(i < (isMetaArg ? MetaArgCount : Count));
+            return ParseUtils.TryReadInt(*((isMetaArg ? metaArgBufferPtr : bufferPtr) + i), out value);
         }
 
         /// <summary>
@@ -379,10 +429,10 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetLong(int i)
+        public long GetLong(int i, bool isMetaArg = false)
         {
-            Debug.Assert(i < Count);
-            return ParseUtils.ReadLong(*(bufferPtr + i));
+            Debug.Assert(i < (isMetaArg ? MetaArgCount : Count));
+            return ParseUtils.ReadLong(*((isMetaArg ? metaArgBufferPtr : bufferPtr) + i));
         }
 
         /// <summary>
@@ -390,10 +440,10 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if long parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetLong(int i, out long value)
+        public bool TryGetLong(int i, out long value, bool isMetaArg = false)
         {
-            Debug.Assert(i < Count);
-            return ParseUtils.TryReadLong(*(bufferPtr + i), out value);
+            Debug.Assert(i < (isMetaArg ? MetaArgCount : Count));
+            return ParseUtils.TryReadLong(*((isMetaArg ? metaArgBufferPtr : bufferPtr) + i), out value);
         }
 
         /// <summary>
@@ -401,10 +451,10 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public double GetDouble(int i, bool canBeInfinite = true)
+        public double GetDouble(int i, bool canBeInfinite = true, bool isMetaArg = false)
         {
-            Debug.Assert(i < Count);
-            return ParseUtils.ReadDouble(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), canBeInfinite);
+            Debug.Assert(i < (isMetaArg ? MetaArgCount : Count));
+            return ParseUtils.ReadDouble(Unsafe.AsRef<PinnedSpanByte>((isMetaArg ? metaArgBufferPtr : bufferPtr) + i), canBeInfinite);
         }
 
         /// <summary>
@@ -412,10 +462,10 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if double parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetDouble(int i, out double value, bool canBeInfinite = true)
+        public bool TryGetDouble(int i, out double value, bool canBeInfinite = true, bool isMetaArg = false)
         {
-            Debug.Assert(i < Count);
-            return ParseUtils.TryReadDouble(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value, canBeInfinite);
+            Debug.Assert(i < (isMetaArg ? MetaArgCount : Count));
+            return ParseUtils.TryReadDouble(Unsafe.AsRef<PinnedSpanByte>((isMetaArg ? metaArgBufferPtr : bufferPtr) + i), out value, canBeInfinite);
         }
 
         /// <summary>
@@ -423,10 +473,10 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public string GetString(int i)
+        public string GetString(int i, bool isMetaArg = false)
         {
-            Debug.Assert(i < Count);
-            return ParseUtils.ReadString(*(bufferPtr + i));
+            Debug.Assert(i < (isMetaArg ? MetaArgCount : Count));
+            return ParseUtils.ReadString(*((isMetaArg ? metaArgBufferPtr : bufferPtr) + i));
         }
 
         /// <summary>
@@ -434,10 +484,10 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool GetBool(int i)
+        public bool GetBool(int i, bool isMetaArg = false)
         {
-            Debug.Assert(i < Count);
-            return ParseUtils.ReadBool(*(bufferPtr + i));
+            Debug.Assert(i < (isMetaArg ? MetaArgCount : Count));
+            return ParseUtils.ReadBool(*((isMetaArg ? metaArgBufferPtr : bufferPtr) + i));
         }
 
         /// <summary>
@@ -445,10 +495,10 @@ namespace Garnet.server
         /// </summary>
         /// <returns>True if boolean parsed successfully</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetBool(int i, out bool value)
+        public bool TryGetBool(int i, out bool value, bool isMetaArg = false)
         {
-            Debug.Assert(i < Count);
-            return ParseUtils.TryReadBool(*(bufferPtr + i), out value);
+            Debug.Assert(i < (isMetaArg ? MetaArgCount : Count));
+            return ParseUtils.TryReadBool(*((isMetaArg ? metaArgBufferPtr : bufferPtr) + i), out value);
         }
     }
 }

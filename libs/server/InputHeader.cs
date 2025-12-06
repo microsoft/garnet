@@ -139,7 +139,7 @@ namespace Garnet.server
         /// <param name="cmd">Command</param>
         /// <param name="metaCmd">Meta command</param>
         /// <param name="flags">Flags</param>
-        public RespInputHeader(RespCommand cmd, RespMetaCommand metaCmd = RespMetaCommand.None, RespInputFlags flags = 0)
+        public RespInputHeader(RespCommand cmd, RespMetaCommand metaCmd, RespInputFlags flags = 0)
         {
             this.cmd = cmd;
             this.metaCmd = metaCmd;
@@ -152,7 +152,7 @@ namespace Garnet.server
         /// <param name="type">Object type</param>
         /// <param name="metaCmd">Meta command</param>
         /// <param name="flags">Flags</param>
-        public RespInputHeader(GarnetObjectType type, RespMetaCommand metaCmd = RespMetaCommand.None, RespInputFlags flags = 0)
+        public RespInputHeader(GarnetObjectType type, RespMetaCommand metaCmd, RespInputFlags flags = 0)
         {
             this.type = type;
             this.metaCmd = metaCmd;
@@ -249,33 +249,68 @@ namespace Garnet.server
         public SessionParseState parseState;
 
         /// <summary>
-        /// Meta command parse state
+        /// Setter for <see cref="RespInputHeader.SortedSetOp"/> in <see cref="header"/>
         /// </summary>
-        public SessionParseState metaCmdParseState;
+        public SortedSetOperation SortedSetOp
+        {
+            set { header.SortedSetOp = value; }
+        }
 
         /// <summary>
-        /// Create a new instance of ObjectInput
+        /// Setter for <see cref="RespInputHeader.HashOp"/> in <see cref="header"/>
         /// </summary>
-        /// <param name="header">Input header</param>
-        /// <param name="arg1">First general-purpose argument</param>
-        /// <param name="arg2">Second general-purpose argument</param>
-        public ObjectInput(RespInputHeader header, int arg1 = 0, int arg2 = 0)
+        public HashOperation HashOp
         {
-            this.header = header;
-            this.arg1 = arg1;
-            this.arg2 = arg2;
+            set { header.HashOp = value; }
+        }
+
+        /// <summary>
+        /// Setter for <see cref="RespInputHeader.SetOp"/> in <see cref="header"/>
+        /// </summary>
+        public SetOperation SetOp
+        {
+            set { header.SetOp = value; }
+        }
+
+        /// <summary>
+        /// Setter for <see cref="RespInputHeader.ListOp"/> in <see cref="header"/>
+        /// </summary>
+        public ListOperation ListOp
+        {
+            set { header.ListOp = value; }
+        }
+
+        /// <summary>
+        /// Setter for <see cref="RespInputHeader.SubId"/> in <see cref="header"/>
+        /// </summary>
+        public byte SubId
+        {
+            set { header.SubId = value; }
         }
 
         /// <summary>
         /// Create a new instance of ObjectInput
         /// </summary>
-        /// <param name="header">Input header</param>
-        /// <param name="parseState">Parse state</param>
-        /// <param name="metaCmdParseState">Meta command parse state</param>
+        /// <param name="type">Object type</param>
         /// <param name="arg1">First general-purpose argument</param>
         /// <param name="arg2">Second general-purpose argument</param>
-        public ObjectInput(RespInputHeader header, ref SessionParseState parseState, ref SessionParseState metaCmdParseState, int arg1 = 0, int arg2 = 0)
-            : this(header, ref metaCmdParseState, arg1, arg2)
+        /// <param name="flags">Flags</param>
+        public ObjectInput(GarnetObjectType type, int arg1 = 0, int arg2 = 0, RespInputFlags flags = RespInputFlags.None)
+            : this(type, RespMetaCommand.None, arg1, arg2, flags)
+        {
+        }
+
+        /// <summary>
+        /// Create a new instance of ObjectInput
+        /// </summary>
+        /// <param name="type">Object type</param>
+        /// <param name="metaCmd">Meta command</param>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="arg1">First general-purpose argument</param>
+        /// <param name="arg2">Second general-purpose argument</param>
+        /// <param name="flags">Flags</param>
+        public ObjectInput(GarnetObjectType type, RespMetaCommand metaCmd, ref SessionParseState parseState, int arg1 = 0, int arg2 = 0, RespInputFlags flags = RespInputFlags.None)
+            : this(type, metaCmd, arg1, arg2, flags)
         {
             this.parseState = parseState;
         }
@@ -283,35 +318,30 @@ namespace Garnet.server
         /// <summary>
         /// Create a new instance of ObjectInput
         /// </summary>
-        /// <param name="header">Input header</param>
+        /// <param name="type">Object type</param>
+        /// <param name="metaCmd">Meta command</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="startIdx">First command argument index in parse state</param>
-        /// <param name="metaCmdParseState">Meta command parse state</param>
         /// <param name="arg1">First general-purpose argument</param>
         /// <param name="arg2">Second general-purpose argument</param>
-        public ObjectInput(RespInputHeader header, ref SessionParseState parseState, int startIdx, ref SessionParseState metaCmdParseState, int arg1 = 0, int arg2 = 0)
-            : this(header, ref metaCmdParseState, arg1, arg2)
+        /// <param name="flags">Flags</param>
+        public ObjectInput(GarnetObjectType type, RespMetaCommand metaCmd, ref SessionParseState parseState, int startIdx, int arg1 = 0, int arg2 = 0, RespInputFlags flags = RespInputFlags.None)
+            : this(type, metaCmd, arg1, arg2, flags)
         {
             this.parseState = parseState.Slice(startIdx);
         }
 
-        /// <summary>
-        /// Create a new instance of ObjectInput
-        /// </summary>
-        /// <param name="header">Input header</param>
-        /// <param name="metaCmdParseState">Meta command parse state</param>
-        /// <param name="arg1">First general-purpose argument</param>
-        /// <param name="arg2">Second general-purpose argument</param>
-        public ObjectInput(RespInputHeader header, ref SessionParseState metaCmdParseState, int arg1 = 0, int arg2 = 0) : this(header, arg1, arg2)
+        private ObjectInput(GarnetObjectType type, RespMetaCommand metaCmd, int arg1 = 0, int arg2 = 0, RespInputFlags flags = RespInputFlags.None)
         {
-            this.metaCmdParseState = metaCmdParseState;
+            this.header = new RespInputHeader(type, metaCmd, flags);
+            this.arg1 = arg1;
+            this.arg2 = arg2;
         }
 
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + (2 * sizeof(int)) // arg1 + arg2
-                                       + parseState.GetSerializedLength()
-                                       + metaCmdParseState.GetSerializedLength();
+                                       + parseState.GetSerializedLength();
 
         /// <inheritdoc />
         public unsafe int CopyTo(byte* dest, int length)
@@ -335,11 +365,6 @@ namespace Garnet.server
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
             var len = parseState.SerializeTo(curr, remainingLength);
-            curr += len;
-
-            // Serialize meta command parse state
-            remainingLength = length - (int)(curr - dest);
-            len = metaCmdParseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Number of serialized bytes
@@ -369,10 +394,6 @@ namespace Garnet.server
             var len = parseState.DeserializeFrom(curr);
             curr += len;
 
-            // Deserialize meta command parse state
-            len = metaCmdParseState.DeserializeFrom(curr);
-            curr += len;
-
             return (int)(curr - src);
         }
     }
@@ -398,101 +419,66 @@ namespace Garnet.server
         public SessionParseState parseState;
 
         /// <summary>
-        /// Meta command parse state
+        /// Create a new instance of StringInput
         /// </summary>
-        public SessionParseState metaCmdParseState;
+        /// <param name="cmd">Command</param>
+        /// <param name="flags">Flags</param>
+        /// <param name="arg1">General-purpose argument</param>
+        public StringInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
+        : this(cmd, RespMetaCommand.None, arg1, flags)
+        {
+        }
+
+        /// <summary>
+        /// Create a new instance of StringInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="flags">Flags</param>
+        /// <param name="arg1">General-purpose argument</param>
+        public StringInput(ushort cmd, byte flags = 0, long arg1 = 0) :
+            this((RespCommand)cmd, RespMetaCommand.None, arg1, (RespInputFlags)flags)
+        {
+        }
 
         /// <summary>
         /// Create a new instance of StringInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="metaCmd">Meta command</param>
-        /// <param name="flags">Flags</param>
+        /// <param name="parseState">Parse state</param>
         /// <param name="arg1">General-purpose argument</param>
-        public StringInput(RespCommand cmd, RespMetaCommand metaCmd = RespMetaCommand.None, RespInputFlags flags = 0, long arg1 = 0)
+        /// <param name="flags">Flags</param>
+        public StringInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, metaCmd, arg1, flags)
+        {
+            this.parseState = parseState;
+        }
+
+        /// <summary>
+        /// Create a new instance of StringInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="metaCmd">Meta command</param>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="startIdx">First command argument index in parse state</param>
+        /// <param name="arg1">General-purpose argument</param>
+        /// <param name="flags">Flags</param>
+        public StringInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, metaCmd, arg1, flags)
+        {
+            this.parseState = parseState.Slice(startIdx);
+        }
+
+        private StringInput(RespCommand cmd, RespMetaCommand metaCmd, long arg1 = 0, RespInputFlags flags = 0)
         {
             this.header = new RespInputHeader(cmd, metaCmd, flags);
             this.arg1 = arg1;
         }
 
-        /// <summary>
-        /// Create a new instance of StringInput
-        /// </summary>
-        /// <param name="cmd">Command</param>
-        /// <param name="metaCmd">Meta command</param>
-        /// <param name="flags">Flags</param>
-        /// <param name="arg1">General-purpose argument</param>
-        public StringInput(ushort cmd, byte metaCmd = 0, byte flags = 0, long arg1 = 0) :
-            this((RespCommand)cmd, (RespMetaCommand)metaCmd, (RespInputFlags)flags, arg1)
-
-        {
-        }
-
-        /// <summary>
-        /// Create a new instance of RawStringInput
-        /// </summary>
-        /// <param name="cmd">Command</param>
-        /// <param name="metaCmd">Meta command</param>
-        /// <param name="metaCmdParseState">Meta command parse state</param>
-        /// <param name="flags">Flags</param>
-        /// <param name="arg1">General-purpose argument</param>
-        public StringInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState metaCmdParseState, RespInputFlags flags = 0, long arg1 = 0)
-            : this(cmd, metaCmd, flags, arg1)
-        {
-            this.metaCmdParseState = metaCmdParseState;
-        }
-
-        /// <summary>
-        /// Create a new instance of RawStringInput
-        /// </summary>
-        /// <param name="cmd">Command</param>
-        /// <param name="parseState">Parse state</param>
-        /// <param name="arg1">General-purpose argument</param>
-        /// <param name="flags">Flags</param>
-        public StringInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0)
-            : this(cmd, RespMetaCommand.None, flags, arg1)
-        {
-            this.parseState = parseState;
-        }
-
-        /// <summary>
-        /// Create a new instance of StringInput
-        /// </summary>
-        /// <param name="cmd">Command</param>
-        /// <param name="parseState">Parse state</param>
-        /// <param name="metaCmd">Meta command</param>
-        /// <param name="metaCmdParseState">Meta command parse state</param>
-        /// <param name="arg1">General-purpose argument</param>
-        /// <param name="flags">Flags</param>
-        public StringInput(RespCommand cmd, ref SessionParseState parseState,
-            RespMetaCommand metaCmd, ref SessionParseState metaCmdParseState, long arg1 = 0, RespInputFlags flags = 0)
-            : this(cmd, metaCmd, ref metaCmdParseState, flags, arg1)
-        {
-            this.parseState = parseState;
-        }
-
-        /// <summary>
-        /// Create a new instance of StringInput
-        /// </summary>
-        /// <param name="cmd">Command</param>
-        /// <param name="parseState">Parse state</param>
-        /// <param name="startIdx">First command argument index in parse state</param>
-        /// <param name="metaCmd">Meta command</param>
-        /// <param name="metaCmdParseState">Meta command parse state</param>
-        /// <param name="arg1">General-purpose argument</param>
-        /// <param name="flags">Flags</param>
-        public StringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, RespMetaCommand metaCmd,
-            ref SessionParseState metaCmdParseState, long arg1 = 0, RespInputFlags flags = 0)
-            : this(cmd, metaCmd, ref metaCmdParseState, flags, arg1)
-        {
-            this.parseState = parseState.Slice(startIdx);
-        }
-
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
-                                       + parseState.GetSerializedLength()
-                                       + metaCmdParseState.GetSerializedLength();
+                                       + parseState.GetSerializedLength();
 
         /// <inheritdoc />
         public unsafe int CopyTo(byte* dest, int length)
@@ -512,11 +498,6 @@ namespace Garnet.server
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
             var len = parseState.SerializeTo(curr, remainingLength);
-            curr += len;
-
-            // Serialize meta command parse state
-            remainingLength = length - (int)(curr - dest);
-            len = metaCmdParseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Serialize length
@@ -540,10 +521,6 @@ namespace Garnet.server
 
             // Deserialize parse state
             var len = parseState.DeserializeFrom(curr);
-            curr += len;
-
-            // Deserialize meta command parse state
-            len = metaCmdParseState.DeserializeFrom(curr);
             curr += len;
 
             return (int)(curr - src);
@@ -571,32 +548,24 @@ namespace Garnet.server
         public SessionParseState parseState;
 
         /// <summary>
-        /// Meta command parse state
-        /// </summary>
-        public SessionParseState metaCmdParseState;
-
-        /// <summary>
         /// Create a new instance of UnifiedInput
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="metaCmd">Meta command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public UnifiedInput(RespCommand cmd, RespMetaCommand metaCmd = RespMetaCommand.None, RespInputFlags flags = 0, long arg1 = 0)
+        public UnifiedInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
+            : this(cmd, RespMetaCommand.None, flags, arg1)
         {
-            this.header = new RespInputHeader(cmd, metaCmd, flags);
-            this.arg1 = arg1;
         }
 
         /// <summary>
         /// Create a new instance of UnifiedInput
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="metaCmd">Meta command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public UnifiedInput(ushort cmd, byte metaCmd = 0, byte flags = 0, long arg1 = 0) :
-            this((RespCommand)cmd, (RespMetaCommand)metaCmd, (RespInputFlags)flags, arg1)
+        public UnifiedInput(ushort cmd, byte flags = 0, long arg1 = 0) :
+            this((RespCommand)cmd, RespMetaCommand.None, (RespInputFlags)flags, arg1)
         {
         }
 
@@ -605,27 +574,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="metaCmd">Meta command</param>
-        /// <param name="metaCmdParseState">Meta command parse state</param>
-        /// <param name="flags">Flags</param>
-        /// <param name="arg1">General-purpose argument</param>
-        public UnifiedInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState metaCmdParseState, RespInputFlags flags = 0, long arg1 = 0)
-            : this(cmd, metaCmd, flags, arg1)
-        {
-            this.metaCmdParseState = metaCmdParseState;
-        }
-
-        /// <summary>
-        /// Create a new instance of UnifiedInput
-        /// </summary>
-        /// <param name="cmd">Command</param>
         /// <param name="parseState">Parse state</param>
-        /// <param name="metaCmd">Meta command</param>
-        /// <param name="metaCmdParseState">Meta command parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public UnifiedInput(RespCommand cmd, ref SessionParseState parseState, RespMetaCommand metaCmd,
-            ref SessionParseState metaCmdParseState, long arg1 = 0, RespInputFlags flags = 0) 
-            : this(cmd, metaCmd, ref metaCmdParseState, flags, arg1)
+        public UnifiedInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) 
+            : this(cmd, metaCmd, flags, arg1)
         {
             this.parseState = parseState;
         }
@@ -634,24 +587,27 @@ namespace Garnet.server
         /// Create a new instance of UnifiedInput
         /// </summary>
         /// <param name="cmd">Command</param>
+        /// <param name="metaCmd">Meta command</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="startIdx">First command argument index in parse state</param>
-        /// <param name="metaCmd">Meta command</param>
-        /// <param name="metaCmdParseState">Meta command parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public UnifiedInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, 
-            RespMetaCommand metaCmd, ref SessionParseState metaCmdParseState, long arg1 = 0, RespInputFlags flags = 0) 
-            : this(cmd, metaCmd, ref metaCmdParseState, flags, arg1)
+        public UnifiedInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) 
+            : this(cmd, metaCmd, flags, arg1)
         {
             this.parseState = parseState.Slice(startIdx);
+        }
+
+        private UnifiedInput(RespCommand cmd, RespMetaCommand metaCmd, RespInputFlags flags = 0, long arg1 = 0)
+        {
+            this.header = new RespInputHeader(cmd, metaCmd, flags);
+            this.arg1 = arg1;
         }
 
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
-                                       + parseState.GetSerializedLength()
-                                       + metaCmdParseState.GetSerializedLength();
+                                       + parseState.GetSerializedLength();
 
         /// <inheritdoc />
         public unsafe int CopyTo(byte* dest, int length)
@@ -671,11 +627,6 @@ namespace Garnet.server
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
             var len = parseState.SerializeTo(curr, remainingLength);
-            curr += len;
-
-            // Serialize meta command parse state
-            remainingLength = length - (int)(curr - dest);
-            len = metaCmdParseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Serialize length
@@ -699,10 +650,6 @@ namespace Garnet.server
 
             // Deserialize parse state
             var len = parseState.DeserializeFrom(curr);
-            curr += len;
-
-            // Deserialize meta command parse state
-            len = metaCmdParseState.DeserializeFrom(curr);
             curr += len;
 
             return (int)(curr - src);

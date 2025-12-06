@@ -40,8 +40,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(score, member);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZADD };
 
             var output = new ObjectOutput();
 
@@ -76,12 +75,11 @@ namespace Garnet.server
 
             for (var i = 0; i < inputs.Length; i++)
             {
-                parseState.SetArguments(2 * i, inputs[i].score, inputs[i].member);
+                parseState.SetArguments(2 * i, isMetaArg: false, inputs[i].score, inputs[i].member);
             }
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZADD };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZADD };
 
             var output = new ObjectOutput();
 
@@ -119,8 +117,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(member);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREM };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZREM };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -149,8 +146,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREM };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZREM };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -194,8 +190,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(minSlice, maxSlice);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             countRemoved = output.result1;
@@ -241,8 +236,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(minSlice, maxSlice);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREMRANGEBYSCORE };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZREMRANGEBYSCORE };
 
             var output = new ObjectOutput();
 
@@ -301,8 +295,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(startSlice, stopSlice);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZREMRANGEBYRANK };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZREMRANGEBYRANK };
 
             var output = new ObjectOutput();
 
@@ -338,8 +331,7 @@ namespace Garnet.server
 
             // Prepare the input
             var op = lowScoresFirst ? SortedSetOperation.ZPOPMIN : SortedSetOperation.ZPOPMAX;
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, count, 2);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, arg1: count, arg2: 2) { SortedSetOp = op };
 
             var output = new ObjectOutput();
 
@@ -381,8 +373,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(incrSlice, member);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZINCRBY };
-            var input = new ObjectInput(header, ref parseState, arg2: 2);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState, arg2: 2) { SortedSetOp = SortedSetOperation.ZINCRBY };
 
             var output = new ObjectOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext,
@@ -420,8 +411,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCARD };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCARD };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -494,8 +484,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments([.. arguments]);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZRANGE };
-            var input = new ObjectInput(header, ref parseState, arg2: (int)rangeOpts);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState, arg2: (int)rangeOpts) { SortedSetOp = SortedSetOperation.ZRANGE };
 
             var output = new ObjectOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
@@ -646,8 +635,7 @@ namespace Garnet.server
 
             // Prepare the input
             var op = reverse ? SortedSetOperation.ZREVRANK : SortedSetOperation.ZRANK;
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = op };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = op };
 
             const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
             var outputContainer = stackalloc byte[outputContainerSize];
@@ -771,11 +759,7 @@ namespace Garnet.server
                             parseState.Read(2 * j, ref currOutPtr, endOutPtr);
                         }
 
-                        var zAddInput = new ObjectInput(new RespInputHeader
-                        {
-                            type = GarnetObjectType.SortedSet,
-                            SortedSetOp = SortedSetOperation.ZADD,
-                        }, ref parseState);
+                        var zAddInput = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZADD };
 
                         var zAddOutput = new ObjectOutput();
                         RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref ssObjectTransactionalContext, ref zAddOutput);
@@ -900,8 +884,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(minScore, maxScore);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOUNT };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZCOUNT };
 
             const int outputContainerSize = 32; // 3 for HEADER + CRLF + 20 for ascii long
             var outputContainer = stackalloc byte[outputContainerSize];
@@ -1572,8 +1555,8 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(members);
 
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZEXPIRE };
-            var innerInput = new ObjectInput(header, ref parseState, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
+            var innerInput = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState, 
+                arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail) { SortedSetOp = SortedSetOperation.ZEXPIRE };
 
             var output = new ObjectOutput();
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref output);
@@ -1612,12 +1595,11 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             expireIn = default;
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZTTL };
             parseState.Initialize(members.Length);
-            parseState.SetArguments(0, members);
+            parseState.SetArguments(0, isMetaArg: false, members);
             var isMilliseconds = 1;
             var isTimestamp = 0;
-            var innerInput = new ObjectInput(header, ref parseState, arg1: isMilliseconds, arg2: isTimestamp);
+            var innerInput = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState, arg1: isMilliseconds, arg2: isTimestamp) { SortedSetOp = SortedSetOperation.ZTTL };
 
             var output = new ObjectOutput();
             var status = ReadObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref output);
@@ -1653,10 +1635,9 @@ namespace Garnet.server
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             results = default;
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZPERSIST };
             parseState.Initialize(members.Length);
-            parseState.SetArguments(0, members);
-            var innerInput = new ObjectInput(header, ref parseState);
+            parseState.SetArguments(0, isMetaArg: false, members);
+            var innerInput = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZPERSIST };
             var output = new ObjectOutput();
 
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref output);
@@ -1727,8 +1708,7 @@ namespace Garnet.server
         public GarnetStatus SortedSetCollect<TObjectContext>(ReadOnlySpan<PinnedSpanByte> keys, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var header = new RespInputHeader(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOLLECT };
-            var innerInput = new ObjectInput(header);
+            var innerInput = new ObjectInput(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOLLECT };
 
             if (keys.IsEmpty)
             {

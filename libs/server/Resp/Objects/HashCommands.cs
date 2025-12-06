@@ -43,9 +43,7 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash, metaCommand) { HashOp = hop };
-
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: 1) { HashOp = hop };
 
             var status = storageApi.HashSet(key, ref input, out var output);
 
@@ -88,8 +86,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash, metaCommand) { HashOp = HashOperation.HGET };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: 1) { HashOp = HashOperation.HGET };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -130,8 +127,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGETALL };
-            var input = new ObjectInput(header, respProtocolVersion);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, arg1: respProtocolVersion) { HashOp = HashOperation.HGETALL }; ;
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -172,9 +168,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash, metaCommand) { HashOp = HashOperation.HMGET };
-
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: 1) { HashOp = HashOperation.HMGET };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -251,8 +245,7 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
-            var input = new ObjectInput(header, countWithMetadata, seed);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, arg1: countWithMetadata, arg2: seed) { HashOp = HashOperation.HRANDFIELD };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -310,8 +303,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HLEN };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState) { HashOp = HashOperation.HLEN };
 
             var status = storageApi.HashLength(key, ref input, out var output);
 
@@ -352,8 +344,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash, metaCommand) { HashOp = HashOperation.HSTRLEN };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: 1) { HashOp = HashOperation.HSTRLEN };
 
             var status = storageApi.HashStrLength(key, ref input, out var output);
 
@@ -394,8 +385,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash, metaCommand) { HashOp = HashOperation.HDEL };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: 1) { HashOp = HashOperation.HDEL };
 
             var status = storageApi.HashDelete(key, ref input, out var output);
 
@@ -434,8 +424,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash, metaCommand) { HashOp = HashOperation.HEXISTS };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: 1) { HashOp = HashOperation.HEXISTS };
 
             var status = storageApi.HashExists(key, ref input, out var output);
 
@@ -485,8 +474,7 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = op };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState) { HashOp = op };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -542,8 +530,7 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash, metaCommand) { HashOp = op };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: 1) { HashOp = op };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -625,8 +612,7 @@ namespace Garnet.server
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXPIRE };
-            var input = new ObjectInput(header, ref parseState, startIdx: currIdx, ref metaCommandParseState, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: currIdx, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail) { HashOp = HashOperation.HEXPIRE };
 
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
@@ -712,8 +698,7 @@ namespace Garnet.server
             var fieldsParseState = parseState.Slice(3, numFields);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HTTL };
-            var input = new ObjectInput(header, ref fieldsParseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref fieldsParseState) { HashOp = HashOperation.HTTL };
 
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
@@ -771,8 +756,7 @@ namespace Garnet.server
             var fieldsParseState = parseState.Slice(3, numFields);
 
             // Prepare input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HPERSIST };
-            var input = new ObjectInput(header, ref fieldsParseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref fieldsParseState) { HashOp = HashOperation.HPERSIST };
 
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 

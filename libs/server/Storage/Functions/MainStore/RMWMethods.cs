@@ -70,8 +70,8 @@ namespace Garnet.server
                 updatedEtag = metaCmd switch 
                 {
                     RespMetaCommand.ExecWithEtag => LogRecord.NoETag + 1,
-                    RespMetaCommand.ExecIfMatch => input.metaCmdParseState.GetLong(0) + 1,
-                    RespMetaCommand.ExecIfGreater => input.metaCmdParseState.GetLong(0),
+                    RespMetaCommand.ExecIfMatch => input.parseState.GetLong(0, isMetaArg: true) + 1,
+                    RespMetaCommand.ExecIfGreater => input.parseState.GetLong(0, isMetaArg: true),
                     _ => throw new Exception($"Unexpected meta command: {metaCmd}"),
                 };
             }
@@ -405,7 +405,7 @@ namespace Garnet.server
             {
                 if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater)
                 {
-                    var inputEtag = input.metaCmdParseState.GetLong(0);
+                    var inputEtag = input.parseState.GetLong(0, isMetaArg: true);
                     var comparisonResult = inputEtag.CompareTo(functionsState.etagState.ETag);
                     var expectedResult = metaCmd == RespMetaCommand.ExecIfMatch ? 0 : 1;
                     execCmd = comparisonResult == expectedResult;
@@ -416,8 +416,8 @@ namespace Garnet.server
                     updatedEtag = metaCmd switch
                     {
                         RespMetaCommand.ExecWithEtag => functionsState.etagState.ETag + 1,
-                        RespMetaCommand.ExecIfMatch => input.metaCmdParseState.GetLong(0) + 1,
-                        RespMetaCommand.ExecIfGreater => input.metaCmdParseState.GetLong(0),
+                        RespMetaCommand.ExecIfMatch => input.parseState.GetLong(0, isMetaArg: true) + 1,
+                        RespMetaCommand.ExecIfGreater => input.parseState.GetLong(0, isMetaArg: true),
                         _ => throw new Exception($"Unexpected meta command: {metaCmd}"),
                     };
                 }
@@ -842,7 +842,7 @@ namespace Garnet.server
             {
                 if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater)
                 {
-                    var inputEtag = input.metaCmdParseState.GetLong(0);
+                    var inputEtag = input.parseState.GetLong(0, isMetaArg: true);
                     var comparisonResult = inputEtag.CompareTo(functionsState.etagState.ETag);
                     var expectedResult = metaCmd == RespMetaCommand.ExecIfMatch ? 0 : 1;
                     execCmd = comparisonResult == expectedResult;
@@ -853,8 +853,8 @@ namespace Garnet.server
                     updatedEtag = metaCmd switch
                     {
                         RespMetaCommand.ExecWithEtag => functionsState.etagState.ETag + 1,
-                        RespMetaCommand.ExecIfMatch => input.metaCmdParseState.GetLong(0) + 1,
-                        RespMetaCommand.ExecIfGreater => input.metaCmdParseState.GetLong(0),
+                        RespMetaCommand.ExecIfMatch => input.parseState.GetLong(0, isMetaArg: true) + 1,
+                        RespMetaCommand.ExecIfGreater => input.parseState.GetLong(0, isMetaArg: true),
                         _ => throw new Exception($"Unexpected meta command: {metaCmd}"),
                     };
                 }
@@ -989,8 +989,8 @@ namespace Garnet.server
                 updatedEtag = metaCmd switch
                 {
                     RespMetaCommand.ExecWithEtag => functionsState.etagState.ETag + 1,
-                    RespMetaCommand.ExecIfMatch => input.metaCmdParseState.GetLong(0) + 1,
-                    RespMetaCommand.ExecIfGreater => input.metaCmdParseState.GetLong(0),
+                    RespMetaCommand.ExecIfMatch => input.parseState.GetLong(0, isMetaArg: true) + 1,
+                    RespMetaCommand.ExecIfGreater => input.parseState.GetLong(0, isMetaArg: true),
                     _ => throw new Exception($"Unexpected meta command: {metaCmd}"),
                 };
             }

@@ -183,7 +183,7 @@ namespace Garnet.server
         {
             SessionParseState parseState = default;
 
-            var input = new StringInput(RespCommand.INCRBYFLOAT, ref parseState, arg1: BitConverter.DoubleToInt64Bits(val));
+            var input = new StringInput(RespCommand.INCRBYFLOAT, RespMetaCommand.None, ref parseState, arg1: BitConverter.DoubleToInt64Bits(val));
             _ = Increment(key, ref input, ref output);
 
             if (output.Length != NumUtils.MaximumFormatDoubleLength + 1)

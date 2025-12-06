@@ -83,7 +83,7 @@ namespace Garnet.server
             where TSourceLogRecord : ISourceLogRecord
         {
             // Any value without an etag is treated the same as a value with an etag
-            long etagToMatchAgainst = input.metaCmdParseState.GetLong(0);
+            long etagToMatchAgainst = input.parseState.GetLong(0, isMetaArg: true);
 
             long existingEtag = srcLogRecord.ETag;
 

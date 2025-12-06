@@ -44,8 +44,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(field, value);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HSET };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HSET };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;
@@ -77,12 +76,11 @@ namespace Garnet.server
 
             for (var i = 0; i < elements.Length; i++)
             {
-                parseState.SetArguments(2 * i, elements[i].field, elements[i].value);
+                parseState.SetArguments(2 * i, isMetaArg: false, elements[i].field, elements[i].value);
             }
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HSET };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HSET };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;
@@ -125,8 +123,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(fields);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HDEL };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HDEL };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;
@@ -155,8 +152,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(field, value);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGET };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HGET };
 
             var output = new ObjectOutput();
 
@@ -190,8 +186,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(fields);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HMGET };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HMGET };
 
             var output = new ObjectOutput();
 
@@ -221,8 +216,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGETALL };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HGETALL };
 
             var output = new ObjectOutput();
 
@@ -253,8 +247,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HLEN };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HLEN };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -283,8 +276,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(field);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXISTS };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HEXISTS };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -313,8 +305,7 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
-            var input = new ObjectInput(header, 1 << 2, seed);
+            var input = new ObjectInput(GarnetObjectType.Hash, arg1: 1 << 2, arg2: seed) { HashOp = HashOperation.HRANDFIELD };
 
             var output = new ObjectOutput();
 
@@ -351,9 +342,8 @@ namespace Garnet.server
             var seed = Random.Shared.Next();
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
             var inputArg = (((count << 1) | 1) << 1) | (withValues ? 1 : 0);
-            var input = new ObjectInput(header, inputArg, seed);
+            var input = new ObjectInput(GarnetObjectType.Hash, arg1: inputArg, arg2: seed) { HashOp = HashOperation.HRANDFIELD };
 
             var output = new ObjectOutput();
             var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
@@ -567,7 +557,7 @@ namespace Garnet.server
         public GarnetStatus HashTimeToLive<TObjectContext>(PinnedSpanByte key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var innerInput = new ObjectInput(input.header, ref input.parseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
+            var innerInput = new ObjectInput(input.header.type, input.header.metaCmd, ref input.parseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
 
             return ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref innerInput, ref objectContext, ref output);
         }

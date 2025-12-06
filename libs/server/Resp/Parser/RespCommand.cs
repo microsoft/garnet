@@ -2759,21 +2759,22 @@ namespace Garnet.server
                 if (!success) return cmd;
             }
 
+            var metaCmdArgCount = 0;
             if (cmd.IsMetaCommand())
             {
                 // Get the meta command argument count (including the command itself)
-                var metaCmdArgCount = UpdateMetaOpAndGetArgumentCount(cmd);
+                metaCmdArgCount = UpdateMetaOpAndGetArgumentCount(cmd);
                 count -= metaCmdArgCount;
 
                 // Set up meta command parse state (to temporarily hold arguments until setting up the main parse state)
                 if (metaCmdArgCount > 0)
                 {
-                    metaCommandParseState.Initialize(metaCmdArgCount);
+                    metaParseState.Initialize(metaCmdArgCount);
                     var currPtr = recvBufferPtr + readHead;
 
                     for (var i = 0; i < metaCmdArgCount; i++)
                     {
-                        if (!metaCommandParseState.Read(i, ref currPtr, recvBufferPtr + bytesRead))
+                        if (!metaParseState.Read(i, ref currPtr, recvBufferPtr + bytesRead))
                             return RespCommand.INVALID;
                     }
 
@@ -2793,9 +2794,18 @@ namespace Garnet.server
                     if (!success) return cmd;
                 }
             }
+            else
+            {
+                metaCommand = RespMetaCommand.None;
+            }
 
             // Set up parse state
-            parseState.Initialize(count);
+            parseState.Initialize(count, metaCmdArgCount);
+
+            // Set meta command arguments if any
+            if (metaCmdArgCount > 0)
+                parseState.SetArguments(0, isMetaArg: true, metaParseState.Parameters);
+
             var ptr = recvBufferPtr + readHead;
 
             // Read main command arguments

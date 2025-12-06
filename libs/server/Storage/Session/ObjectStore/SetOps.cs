@@ -36,8 +36,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(member);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = SetOperation.SADD };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -68,8 +67,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SADD };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = SetOperation.SADD };
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
 
@@ -99,8 +97,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(member);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = SetOperation.SREM };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             sremCount = output.result1;
@@ -132,8 +129,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SREM };
-            var input = new ObjectInput(header, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = SetOperation.SREM };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -158,8 +154,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = SetOperation.SCARD };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -184,8 +179,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = SetOperation.SMEMBERS };
 
             var output = new ObjectOutput();
 
@@ -234,8 +228,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var header = new RespInputHeader(GarnetObjectType.Set) { SetOp = SetOperation.SPOP };
-            var input = new ObjectInput(header, count);
+            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = SetOperation.SPOP };
 
             var output = new ObjectOutput();
 
@@ -733,11 +726,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var input = new ObjectInput(new RespInputHeader
-            {
-                type = GarnetObjectType.Set,
-                SetOp = SetOperation.SMISMEMBER,
-            }, ref parseState);
+            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = SetOperation.SISMEMBER };
 
             var output = new ObjectOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);

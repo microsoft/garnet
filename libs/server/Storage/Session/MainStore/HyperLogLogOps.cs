@@ -22,7 +22,7 @@ namespace Garnet.server
 
             parseState.Initialize(1);
 
-            var input = new StringInput(RespCommand.PFADD, ref parseState);
+            var input = new StringInput(RespCommand.PFADD, RespMetaCommand.None, ref parseState);
 
             var output = stackalloc byte[1];
             byte pfaddUpdated = 0;
@@ -72,7 +72,7 @@ namespace Garnet.server
                 parseState.SetArgument(i, keys[i]);
             }
 
-            var input = new StringInput(RespCommand.PFCOUNT, ref parseState);
+            var input = new StringInput(RespCommand.PFCOUNT, RespMetaCommand.None, ref parseState);
 
             return HyperLogLogLength(ref input, out count, out _, ref context);
         }

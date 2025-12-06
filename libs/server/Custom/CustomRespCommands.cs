@@ -94,7 +94,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             var inputArg = expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + expirationTicks : expirationTicks;
-            var input = new StringInput(cmd, ref parseState, startIdx: 1, metaCommand, ref metaCommandParseState, arg1: inputArg);
+            var input = new StringInput(cmd, metaCommand, ref parseState, startIdx: 1, arg1: inputArg);
 
             var output = new SpanByteAndMemory(null);
             if (type == CommandType.ReadModifyWrite)
@@ -141,8 +141,7 @@ namespace Garnet.server
 
             // Prepare input
 
-            var header = new RespInputHeader(objType, metaCommand) { SubId = subid };
-            var input = new ObjectInput(header, ref parseState, startIdx: 1, ref metaCommandParseState);
+            var input = new ObjectInput(objType, metaCommand, ref parseState, startIdx: 1) { SubId = subid };
 
             var output = new ObjectOutput();
 
@@ -226,7 +225,7 @@ namespace Garnet.server
             var inputArg = customCommand.expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + customCommand.expirationTicks : customCommand.expirationTicks;
             customCommandParseState.InitializeWithArguments(args);
             var cmd = customCommandManagerSession.GetCustomRespCommand(customCommand.id);
-            var stringInput = new StringInput(cmd, ref customCommandParseState, metaCommand, ref metaCommandParseState, arg1: inputArg);
+            var stringInput = new StringInput(cmd, metaCommand, ref customCommandParseState, arg1: inputArg);
 
             var _output = new SpanByteAndMemory(null);
             if (customCommand.type == CommandType.ReadModifyWrite)
@@ -291,9 +290,8 @@ namespace Garnet.server
 
             // Prepare input
             var type = customCommandManagerSession.GetCustomGarnetObjectType(customObjCommand.id);
-            var header = new RespInputHeader(type) { SubId = customObjCommand.subid };
             customCommandParseState.InitializeWithArguments(args);
-            var input = new ObjectInput(header, ref customCommandParseState);
+            var input = new ObjectInput(type, metaCommand, ref customCommandParseState) { SubId = customObjCommand.subid };
 
             var _output = new ObjectOutput();
             GarnetStatus status;
