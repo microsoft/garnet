@@ -639,7 +639,7 @@ namespace Garnet.common
             return true;
         }
 
-         /// <summary>
+        /// <summary>
         /// Tries to read a Ulong from the given ASCII-encoded RESP string. 
         /// Note: this does not check for any length headers and is simply an accessor to TryReadUlong.
         /// </summary>

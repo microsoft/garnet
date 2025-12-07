@@ -146,6 +146,47 @@ namespace Garnet.test
         }
 
         [Test]
+        public void StreamMultipleValuesTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var streamKey = "x1";
+            var entryKey = GenerateRandomString(4); // generate random ascii string of length 4
+            var entryValue = GenerateRandomString(4); // generate random ascii string of length 4
+            var retId = db.StreamAdd(streamKey, entryKey, entryValue, $"{1}-0"); // currently all 3 pairs are put on the log. each pair is ctrl metadata followed by string atm
+
+            var res = db.StreamRange(streamKey, "-", "+");
+            ClassicAssert.AreEqual(res.Length, 1);
+            foreach (var entry in res)
+            {
+                ClassicAssert.AreEqual(entry.Id.ToString(), retId.ToString());
+                ClassicAssert.AreEqual(entry.Values.Length, 1);
+                ClassicAssert.AreEqual(entry.Values[0].Name.ToString(), entryKey);
+                ClassicAssert.AreEqual(entry.Values[0].Value.ToString(), entryValue);
+            }
+
+            var delCount = db.StreamDelete(streamKey, [retId]);
+            ClassicAssert.AreEqual(delCount, 1);
+
+            // just for messing around, let's add multiple key value pairs for this id?
+            retId = db.StreamAdd(streamKey, [ new NameValueEntry("field1", "value1"), new NameValueEntry("field2", "value2") ], messageId: $"{2}-0");
+
+            // check if all the values are there
+            res = db.StreamRange(streamKey, "-", "+");
+            ClassicAssert.AreEqual(res.Length, 1);
+            foreach (var entry in res)
+            {
+                ClassicAssert.AreEqual(entry.Id.ToString(), retId.ToString());
+                ClassicAssert.AreEqual(entry.Values.Length, 2);
+                ClassicAssert.AreEqual(entry.Values[0].Name.ToString(), "field1");
+                ClassicAssert.AreEqual(entry.Values[0].Value.ToString(), "value1");
+                ClassicAssert.AreEqual(entry.Values[1].Name.ToString(), "field2");
+                ClassicAssert.AreEqual(entry.Values[1].Value.ToString(), "value2");
+            }
+        }
+
+        [Test]
         public void StreamDeleteSingleTest()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -226,11 +267,15 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var streamKey = "rangeScan1";
 
-            // first add to stream
+            // Store field-value pairs for verification
+            var expectedEntries = new List<(string field, string value)>();
+
+            // first add to stream with known field-value pairs
             for (int i = 0; i < 10; i++)
             {
-                var entryKey = GenerateRandomString(4); // generate random ascii string of length 4
-                var entryValue = GenerateRandomString(4); // generate random ascii string of length 4
+                var entryKey = $"field{i}";
+                var entryValue = $"value{i}";
+                expectedEntries.Add((entryKey, entryValue));
                 var retId = db.StreamAdd(streamKey, entryKey, entryValue);
             }
 
@@ -242,13 +287,28 @@ namespace Garnet.test
             {
                 ClassicAssert.IsTrue(string.Compare(range[i].Id.ToString(), range[i + 1].Id.ToString()) < 0);
             }
+            // Verify field-value pairs are in expected order
+            for (int i = 0; i < range.Length; i++)
+            {
+                ClassicAssert.AreEqual(1, range[i].Values.Length);
+                ClassicAssert.AreEqual(expectedEntries[i].field, (string)range[i].Values[0].Name);
+                ClassicAssert.AreEqual(expectedEntries[i].value, (string)range[i].Values[0].Value);
+            }
 
-            var revRange = db.StreamRange(streamKey, "+", "-", messageOrder: Order.Descending);
+            var revRange = db.StreamRange(streamKey, "-", "+", messageOrder: Order.Descending);
             ClassicAssert.AreEqual(revRange.Length, 10);
             // Verify reverse range is in descending order
             for (int i = 0; i < revRange.Length - 1; i++)
             {
                 ClassicAssert.IsTrue(string.Compare(revRange[i].Id.ToString(), revRange[i + 1].Id.ToString()) > 0);
+            }
+            // Verify field-value pairs are in reversed order
+            for (int i = 0; i < revRange.Length; i++)
+            {
+                ClassicAssert.AreEqual(1, revRange[i].Values.Length);
+                var expectedIndex = revRange.Length - 1 - i;
+                ClassicAssert.AreEqual(expectedEntries[expectedIndex].field, (string)revRange[i].Values[0].Name);
+                ClassicAssert.AreEqual(expectedEntries[expectedIndex].value, (string)revRange[i].Values[0].Value);
             }
 
             // Verify reverse range has same IDs as forward range (just reversed)
@@ -269,15 +329,21 @@ namespace Garnet.test
             for (int i = 0; i < 4; i++)
             {
                 ClassicAssert.AreEqual(partialRange[i].Id, range[2 + i].Id);
+                // Verify field-value pairs match expected
+                ClassicAssert.AreEqual(expectedEntries[2 + i].field, (string)partialRange[i].Values[0].Name);
+                ClassicAssert.AreEqual(expectedEntries[2 + i].value, (string)partialRange[i].Values[0].Value);
             }
 
             // reverse partial range
-            var partialRevRange = db.StreamRange(streamKey, endId, startId, messageOrder: Order.Descending);
+            var partialRevRange = db.StreamRange(streamKey, startId, endId, messageOrder: Order.Descending);
             ClassicAssert.AreEqual(partialRevRange.Length, 4);
             // Verify reverse partial range is reversed
             for (int i = 0; i < 4; i++)
             {
                 ClassicAssert.AreEqual(partialRevRange[i].Id, partialRange[3 - i].Id);
+                // Verify field-value pairs are reversed
+                ClassicAssert.AreEqual(expectedEntries[5 - i].field, (string)partialRevRange[i].Values[0].Name);
+                ClassicAssert.AreEqual(expectedEntries[5 - i].value, (string)partialRevRange[i].Values[0].Value);
             }
 
             // limit tests
@@ -288,15 +354,22 @@ namespace Garnet.test
             for (int i = 0; i < limit; i++)
             {
                 ClassicAssert.AreEqual(limitedRange[i].Id, range[i].Id);
+                // Verify field-value pairs match expected
+                ClassicAssert.AreEqual(expectedEntries[i].field, (string)limitedRange[i].Values[0].Name);
+                ClassicAssert.AreEqual(expectedEntries[i].value, (string)limitedRange[i].Values[0].Value);
             }
 
             // reverse limit tests
-            var limitedRevRange = db.StreamRange(streamKey, "+", "-", limit, messageOrder: Order.Descending);
+            var limitedRevRange = db.StreamRange(streamKey, "-", "+", limit, messageOrder: Order.Descending);
             ClassicAssert.AreEqual(limitedRevRange.Length, limit);
             // Verify limited reverse range returns last N entries in reverse order
             for (int i = 0; i < limit; i++)
             {
                 ClassicAssert.AreEqual(limitedRevRange[i].Id, range[range.Length - 1 - i].Id);
+                // Verify field-value pairs match expected (from end, reversed)
+                var expectedIndex = range.Length - 1 - i;
+                ClassicAssert.AreEqual(expectedEntries[expectedIndex].field, (string)limitedRevRange[i].Values[0].Name);
+                ClassicAssert.AreEqual(expectedEntries[expectedIndex].value, (string)limitedRevRange[i].Values[0].Value);
             }
         }
 

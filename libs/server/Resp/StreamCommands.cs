@@ -15,7 +15,7 @@ namespace Garnet.server
         /// Adds a new entry to the stream.
         /// </summary>
         /// <returns>true if stream was added successfully; error otherwise</returns> 
-        private unsafe bool StreamAdd(byte respProtocolVersion)
+        private bool StreamAdd(byte respProtocolVersion)
         {
             if (parseState.Count < 4)
             {
@@ -37,6 +37,9 @@ namespace Garnet.server
 
             // Parse the id. We parse as string for easy pattern matching.
             var idGiven = parseState.GetArgSliceByRef(argsParsed);
+
+            // parse past the ID
+            argsParsed++;
 
             // get the number of the remaining key-value pairs
             var numPairs = parseState.Count - argsParsed;
@@ -132,13 +135,6 @@ namespace Garnet.server
             // parse start and end IDs
             var startId = parseState.GetArgSliceByRef(1).ToString();
             var endId = parseState.GetArgSliceByRef(2).ToString();
-
-            if (isReverse)
-            {
-                var temp = startId;
-                startId = endId;
-                endId = temp;
-            }
 
             int count = -1;
             if (parseState.Count > 3)
