@@ -165,7 +165,7 @@ public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeC
 
 * As a good practice, follow the <b>camel case C# naming convention.</b>
 
-## Structure of the Garnet.sln Visual Studio Solution File
+## Garnet project structure
 
 * Refer to the Code Structure page for details [here](../dev/code-structure.md).
 
