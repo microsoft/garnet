@@ -120,6 +120,9 @@ namespace Garnet.server
         public abstract IDatabaseManager Clone(bool enableAof);
 
         /// <inheritdoc/>
+        public abstract void RecoverVectorSets();
+
+        /// <inheritdoc/>
         public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> MainStore => DefaultDatabase.MainStore;
 
         /// <inheritdoc/>

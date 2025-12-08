@@ -1058,6 +1058,21 @@ namespace Garnet.server
             }
         }
 
+        /// <inheritdoc/>
+        public override void RecoverVectorSets()
+        {
+            var databasesMapSnapshot = databases.Map;
+
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var dbId = activeDbIdsMapSnapshot[i];
+                databasesMapSnapshot[dbId].VectorManager.ResumePostRecovery();
+            }
+        }
+
         public override void Dispose()
         {
             if (Disposed) return;

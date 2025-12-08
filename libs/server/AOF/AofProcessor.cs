@@ -501,7 +501,7 @@ namespace Garnet.server
             if (res.IsCanceled)
             {
                 // Might be a vector set
-                res = vectorManager.TryDeleteVectorSet(storageSession, ref key);
+                res = vectorManager.TryDeleteVectorSet(storageSession, ref key, out _);
                 if (res.IsPending)
                     _ = basicContext.CompletePending(true);
             }

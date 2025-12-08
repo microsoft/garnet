@@ -440,6 +440,12 @@ namespace Garnet.server
             }
         }
 
+        /// <inheritdoc/>
+        public override void RecoverVectorSets()
+        {
+            defaultDatabase.VectorManager.ResumePostRecovery();
+        }
+
         public override void Dispose()
         {
             if (Disposed) return;

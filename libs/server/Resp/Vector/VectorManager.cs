@@ -145,6 +145,17 @@ namespace Garnet.server
                 }
             }
 
+        }
+
+        /// <summary>
+        /// Restart or update any pending work that was discovered as part of recovery.
+        /// </summary>
+        public void ResumePostRecovery()
+        {
+            using var session = (RespServerSession)getCleanupSession();
+
+            ref var ctx = ref session.storageSession.vectorContext;
+
             // If we come up and contexts are marked for migration, that means the migration FAILED
             // and we'd like those contexts back ASAP
             lock (this)
@@ -178,9 +189,11 @@ namespace Garnet.server
 
                         try
                         {
-                            if (TryDeleteVectorSet(session.storageSession, ref toDeleteKeySpanByte).IsCompletedSuccessfully)
+                            if (TryDeleteVectorSet(session.storageSession, ref toDeleteKeySpanByte, out var garnetStatus).IsCompletedSuccessfully && garnetStatus != GarnetStatus.BADSTATE)
                             {
                                 // Normal delete worked, easy enough
+                                //
+                                // This happens if we fail between the "remember we're deleting" and "zero everything out" steps
                                 logger?.LogInformation("Vector Set under {key} (context: {ctx}) deleted normally", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
                                 continue;
                             }
@@ -197,7 +210,7 @@ namespace Garnet.server
                         //   4. Mark the context as needing cleanup
 
                         RawStringInput updateToDroppableVectorSet = new(RespCommand.VADD, arg1: DeleteAfterDropArg);
-                        var update = session.storageSession.basicContext.RMW(ref key, ref updateToDroppableVectorSet);
+                        var update = session.storageSession.basicContext.RMW(ref toDeleteKeySpanByte, ref updateToDroppableVectorSet);
                         if (!update.IsCompletedSuccessfully)
                         {
                             throw new GarnetException("Failed to make Vector Set delete-able, this should never happen but will leave vector sets corrupted");
@@ -206,7 +219,7 @@ namespace Garnet.server
                         ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete);
 
                         // Actually delete the value
-                        var del = session.storageSession.basicContext.Delete(ref key);
+                        var del = session.storageSession.basicContext.Delete(ref toDeleteKeySpanByte);
                         if (!(del.Found || del.NotFound))
                         {
                             logger?.LogCritical("Failed to cleanup delete dropped Vector Set {key} (context: {ctx}), Vector Set will remain corrupted", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
@@ -215,7 +228,7 @@ namespace Garnet.server
                         }
 
                         // Cleanup incidental additional state
-                        if (!TryDropVectorSetReplicationKey(key, ref session.storageSession.basicContext))
+                        if (!TryDropVectorSetReplicationKey(toDeleteKeySpanByte, ref session.storageSession.basicContext))
                         {
                             logger?.LogCritical("Failed to cleanup delete dropped Vector Set {key} (context: {ctx}), Vector Set will remain corrupted", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
                             clearInProgressDeletes = false;
@@ -384,7 +397,7 @@ namespace Garnet.server
         /// 
         /// This is called by DEL and UNLINK after a naive delete fails for us to _try_ and delete a Vector Set.
         /// </summary>
-        internal Status TryDeleteVectorSet(StorageSession storageSession, ref SpanByte key)
+        internal Status TryDeleteVectorSet(StorageSession storageSession, ref SpanByte key, out GarnetStatus status)
         {
             storageSession.parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
 
@@ -392,7 +405,7 @@ namespace Garnet.server
 
             Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
 
-            using (ReadForDeleteVectorIndex(storageSession, ref key, ref input, indexSpan, out var status))
+            using (ReadForDeleteVectorIndex(storageSession, ref key, ref input, indexSpan, out status))
             {
                 if (status != GarnetStatus.OK)
                 {

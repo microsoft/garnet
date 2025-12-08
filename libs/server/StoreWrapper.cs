@@ -358,6 +358,8 @@ namespace Garnet.server
                     _ = ReplayAOF();
                 }
             }
+
+            databaseManager.RecoverVectorSets();
         }
 
         /// <summary>
