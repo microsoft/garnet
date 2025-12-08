@@ -117,6 +117,27 @@ namespace Garnet.server
                     // We don't really have a choice here, just do it
                     _ = ctx.Session.Iterate(ref callbacks);
 
+                    // Key is mostly ignored when deleting from InProgressDeletes
+                    // So we just need a non-empty one to use with the context
+                    Span<byte> basicKeySpan = new byte[1];
+                    unsafe
+                    {
+                        fixed (byte* basicKeyPtr = basicKeySpan)
+                        {
+                            var basicKey = SpanByte.FromPinnedPointer(basicKeyPtr, basicKeySpan.Length);
+
+                            // Generally there will already be removed, but if deletes fail in odd spots there can
+                            // be a little bit to cleanup - so go ahead and do it.
+                            //
+                            // Not really worth optimizing given that we just scanned the whole key space to remove elements
+                            // and that will dominate.
+                            foreach (var cleanedUp in needCleanup)
+                            {
+                                ClearDeleteInProgress(ref ctx, ref basicKey, cleanedUp);
+                            }
+                        }
+                    }
+
                     lock (this)
                     {
                         foreach (var cleanedUp in needCleanup)
@@ -180,11 +201,14 @@ namespace Garnet.server
                 remaining = remaining[(sizeof(ulong) + sizeof(int) + curLen)..];
             }
 
-            // Not already added, so slap it in
-            BinaryPrimitives.WriteUInt64LittleEndian(remaining, context);
-            BinaryPrimitives.WriteInt32LittleEndian(remaining[sizeof(ulong)..], len);
+            if (isAdding)
+            {
+                // Not already added, so slap it in
+                BinaryPrimitives.WriteUInt64LittleEndian(remaining, context);
+                BinaryPrimitives.WriteInt32LittleEndian(remaining[sizeof(ulong)..], len);
 
-            key.CopyTo(remaining[(sizeof(ulong) + sizeof(int))..]);
+                key.CopyTo(remaining[(sizeof(ulong) + sizeof(int))..]);
+            }
         }
 
         /// <summary>
@@ -236,7 +260,7 @@ namespace Garnet.server
         /// 
         /// Used with <see cref="TryMarkDeleteInProgress{TContext}(ref TContext, ref SpanByte, ulong)"/> and <see cref="ClearDeleteInProgress{TContext}(ref TContext, ref SpanByte, ulong)"/> to recover from interrupted deletes.
         /// </summary>
-        internal List<(ReadOnlyMemory<byte> Key, ulong Context)> GetInDeletesInProgress(StorageSession storageSession)
+        internal List<(ReadOnlyMemory<byte> Key, ulong Context)> GetDeletesInProgress(StorageSession storageSession)
         {
             Span<byte> keySpan = stackalloc byte[1];
 
@@ -264,7 +288,7 @@ namespace Garnet.server
                 }
 
                 var remaining = readValue.AsReadOnlySpan();
-                while (remaining.Length >= sizeof(ulong) + sizeof(uint))
+                while (remaining.Length >= sizeof(ulong) + sizeof(int))
                 {
                     var ctx = BinaryPrimitives.ReadUInt64LittleEndian(remaining);
                     if (ctx == 0)
@@ -275,7 +299,7 @@ namespace Garnet.server
 
                     var len = BinaryPrimitives.ReadInt32LittleEndian(remaining[sizeof(ulong)..]);
 
-                    var key = remaining.Slice(sizeof(ulong) + sizeof(uint), len);
+                    var key = remaining.Slice(sizeof(ulong) + sizeof(int), len);
 
                     ret.Add((key.ToArray(), ctx));
 
@@ -301,7 +325,7 @@ namespace Garnet.server
             Span<byte> dataSpan = stackalloc byte[sizeof(ulong) + sizeof(int) + key.Length];
             BinaryPrimitives.WriteUInt64LittleEndian(dataSpan, context);
 
-            // Negative length indicates we're adding this to the list
+            // Negative length indicates we're removing this from the list
             BinaryPrimitives.WriteInt32LittleEndian(dataSpan[sizeof(ulong)..], -key.LengthWithoutMetadata);
             key.AsReadOnlySpan().CopyTo(dataSpan[(sizeof(ulong) + sizeof(int))..]);
 

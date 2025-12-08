@@ -135,7 +135,7 @@ namespace Garnet.server
 
                     unsafe
                     {
-                        var len = BinaryPrimitives.ReadInt32LittleEndian(new Span<byte>(((byte*)input.CallbackContext + sizeof(long)), sizeof(int)));
+                        var len = BinaryPrimitives.ReadInt32LittleEndian(new Span<byte>((byte*)input.CallbackContext + sizeof(long), sizeof(int)));
                         adding = len > 0;
                         if (!adding)
                         {
@@ -145,8 +145,12 @@ namespace Garnet.server
                         inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
                     }
 
-                    // If we're CREATING we should be adding... ignore any trailing deletes
-                    Debug.Assert(adding, "Initial create should be adding something to InProgressDeletes");
+                    if (!adding)
+                    {
+                        // We may be recovering and doing some optimistic deletes, but since we're creating... just ignore the op, it does nothing
+                        rmwInfo.Action = RMWAction.CancelOperation;
+                        return false;
+                    }
 
                     VectorManager.UpdateInProgressDeletes(inProgressDeleteUpdateData, ref value, ref recordInfo, ref rmwInfo);
                     return true;

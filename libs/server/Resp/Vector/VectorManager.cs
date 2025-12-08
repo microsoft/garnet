@@ -174,8 +174,10 @@ namespace Garnet.server
                 }
             }
 
+            Span<byte> indexSpan = stackalloc byte[Index.Size];
+
             // Finish any deletes that were in progress before we restarted
-            var failedDeletes = GetInDeletesInProgress(session.storageSession);
+            var failedDeletes = GetDeletesInProgress(session.storageSession);
             var clearInProgressDeletes = true;
             foreach (var (toDeleteKey, toDeleteCtx) in failedDeletes)
             {
@@ -186,6 +188,18 @@ namespace Garnet.server
                     fixed (byte* toDeleteKeyPtr = toDeleteKey.Span)
                     {
                         var toDeleteKeySpanByte = SpanByte.FromPinnedPointer(toDeleteKeyPtr, toDeleteKey.Span.Length);
+
+                        RawStringInput input = new(RespCommand.VADD);
+
+                        // Check if delete got far enough that we should re-apply it
+                        using (ReadForDeleteVectorIndex(session.storageSession, ref toDeleteKeySpanByte, ref input, indexSpan, out var garnetStatus))
+                        {
+                            if (garnetStatus is not (GarnetStatus.BADSTATE or GarnetStatus.NOTFOUND))
+                            {
+                                // It didn't - so don't re-apply (But do remove the "we're deleting"-entry later)
+                                continue;
+                            }
+                        }
 
                         try
                         {
@@ -209,6 +223,7 @@ namespace Garnet.server
                         //   3. Try to drop the replication key
                         //   4. Mark the context as needing cleanup
 
+                        // Zero out the index (which may already be zero'd, but that's fine to redo)
                         RawStringInput updateToDroppableVectorSet = new(RespCommand.VADD, arg1: DeleteAfterDropArg);
                         var update = session.storageSession.basicContext.RMW(ref toDeleteKeySpanByte, ref updateToDroppableVectorSet);
                         if (!update.IsCompletedSuccessfully)
@@ -216,7 +231,7 @@ namespace Garnet.server
                             throw new GarnetException("Failed to make Vector Set delete-able, this should never happen but will leave vector sets corrupted");
                         }
 
-                        ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete);
+                        // Note that we don't need to DROP the index because we know we haven't re-created it yet
 
                         // Actually delete the value
                         var del = session.storageSession.basicContext.Delete(ref toDeleteKeySpanByte);
@@ -421,7 +436,7 @@ namespace Garnet.server
                     return Status.CreateError();
                 }
 
-                DropIndex(indexSpan);
+                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_0);
 
                 // Update the index to be delete-able
                 RawStringInput updateToDroppableVectorSet = new(RespCommand.VADD, arg1: DeleteAfterDropArg);
@@ -432,7 +447,10 @@ namespace Garnet.server
                     throw new GarnetException("Failed to make Vector Set delete-able, this should never happen but will leave vector sets corrupted");
                 }
 
-                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete);
+                // Drop the native side of the index now - we can't fault between the two unless the process is torn down
+                DropIndex(indexSpan);
+
+                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_1);
 
                 // Actually delete the value
                 var del = storageSession.basicContext.Delete(ref key);
@@ -441,10 +459,12 @@ namespace Garnet.server
                     throw new GarnetException("Failed to delete dropped Vector Set, this should never happen but will leave vector sets corrupted");
                 }
 
+                ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete_2);
+
                 // Cleanup incidental additional state
                 if (!TryDropVectorSetReplicationKey(key, ref storageSession.basicContext))
                 {
-                    throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
+                    logger?.LogCritical("Couldn't synthesize Vector Set delete operation for replication, data loss will occur");
                 }
 
                 // Schedule cleanup of element data

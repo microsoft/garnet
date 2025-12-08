@@ -476,13 +476,6 @@ namespace Garnet.server
                     status = GarnetStatus.BADSTATE;
                 }
             }
-            else
-            {
-                // This can happen if something else successfully deleted before we acquired the lock
-
-                acquiredLock.Dispose();
-                return default;
-            }
 
             return acquiredLock;
         }
