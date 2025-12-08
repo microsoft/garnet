@@ -594,7 +594,52 @@ namespace Garnet.test
             ClassicAssert.IsNull(res2);
         }
 
-        // TODO: InterruptedVectorSetDelete, but we restart before the key access
+        [Test]
+        public void InterruptedVectorSetDeleteRecovery()
+        {
+            // Create a partially deleted Vector Set, then take a checkpoint and shutdown
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var s = redis.GetServers()[0];
+                var db = redis.GetDatabase(0);
+
+                var res = db.Execute("VADD", ["foo", "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+                ClassicAssert.AreEqual(1, (int)res);
+
+                ExceptionInjectionHelper.EnableException(ExceptionInjectionType.VectorSet_Interrupt_Delete);
+                try
+                {
+                    _ = ClassicAssert.Throws<RedisServerException>(() => db.KeyDelete("foo"));
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.DisableException(ExceptionInjectionType.VectorSet_Interrupt_Delete);
+                }
+
+#pragma warning disable CS0618 // Intentionally doing bad things
+                s.Save(SaveType.ForegroundSave);
+#pragma warning restore CS0618
+
+                var commit = server.Store.WaitForCommit();
+                ClassicAssert.IsTrue(commit);
+            }
+
+            // Restart Garnet, which should block applying any pending Vector Set deletes
+            server.Dispose(deleteDir: false);
+
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, enableAOF: true);
+            server.Start();
+
+            // Validate that Vector Set index key is gone, even if no Vector Set command ran
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+
+                // Now accessing the key should give a null
+                var res = (string)db.StringGet("foo");
+                ClassicAssert.IsNull(res);
+            }
+        }
 
         [Test]
         public void RepeatedVectorSetDeletes()

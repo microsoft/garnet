@@ -148,7 +148,7 @@ namespace Garnet.server
             Debug.Assert(context is >= ContextStep, "Special context not allowed");
 
             var remaining = inLogValue.AsSpan();
-            while (!remaining.IsEmpty)
+            while (remaining.Length >= sizeof(ulong) + sizeof(int))
             {
                 var curCtx = BinaryPrimitives.ReadUInt64LittleEndian(remaining);
 
@@ -264,7 +264,7 @@ namespace Garnet.server
                 }
 
                 var remaining = readValue.AsReadOnlySpan();
-                while (!remaining.IsEmpty)
+                while (remaining.Length >= sizeof(ulong) + sizeof(uint))
                 {
                     var ctx = BinaryPrimitives.ReadUInt64LittleEndian(remaining);
                     if (ctx == 0)
@@ -279,7 +279,7 @@ namespace Garnet.server
 
                     ret.Add((key.ToArray(), ctx));
 
-                    remaining = remaining[(sizeof(ulong) + sizeof(uint) + len)..];
+                    remaining = remaining[(sizeof(ulong) + sizeof(int) + len)..];
                 }
 
                 return ret;
