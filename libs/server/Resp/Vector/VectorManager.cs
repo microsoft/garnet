@@ -163,6 +163,88 @@ namespace Garnet.server
                 }
             }
 
+            // Finish any deletes that were in progress before we restarted
+            var failedDeletes = GetInDeletesInProgress(session.storageSession);
+            var clearInProgressDeletes = true;
+            foreach (var (toDeleteKey, toDeleteCtx) in failedDeletes)
+            {
+                logger?.LogInformation("Cleaning up in progress Vector Set delete of {key} (context: {ctx})", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
+
+                unsafe
+                {
+                    fixed (byte* toDeleteKeyPtr = toDeleteKey.Span)
+                    {
+                        var toDeleteKeySpanByte = SpanByte.FromPinnedPointer(toDeleteKeyPtr, toDeleteKey.Span.Length);
+
+                        try
+                        {
+                            if (TryDeleteVectorSet(session.storageSession, ref toDeleteKeySpanByte).IsCompletedSuccessfully)
+                            {
+                                // Normal delete worked, easy enough
+                                logger?.LogInformation("Vector Set under {key} (context: {ctx}) deleted normally", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
+                                continue;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            logger?.LogError(ex, "Attempt at normal cleanup of {key} failed", Encoding.UTF8.GetString(toDeleteKey.Span));
+                        }
+
+                        // Partial delete, do these bits directly
+                        //   1. Try to zero out the index key
+                        //   2. Try to delete the index key
+                        //   3. Try to drop the replication key
+                        //   4. Mark the context as needing cleanup
+
+                        RawStringInput updateToDroppableVectorSet = new(RespCommand.VADD, arg1: DeleteAfterDropArg);
+                        var update = session.storageSession.basicContext.RMW(ref key, ref updateToDroppableVectorSet);
+                        if (!update.IsCompletedSuccessfully)
+                        {
+                            throw new GarnetException("Failed to make Vector Set delete-able, this should never happen but will leave vector sets corrupted");
+                        }
+
+                        ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.VectorSet_Interrupt_Delete);
+
+                        // Actually delete the value
+                        var del = session.storageSession.basicContext.Delete(ref key);
+                        if (!(del.Found || del.NotFound))
+                        {
+                            logger?.LogCritical("Failed to cleanup delete dropped Vector Set {key} (context: {ctx}), Vector Set will remain corrupted", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
+                            clearInProgressDeletes = false;
+                            continue;
+                        }
+
+                        // Cleanup incidental additional state
+                        if (!TryDropVectorSetReplicationKey(key, ref session.storageSession.basicContext))
+                        {
+                            logger?.LogCritical("Failed to cleanup delete dropped Vector Set {key} (context: {ctx}), Vector Set will remain corrupted", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
+                            clearInProgressDeletes = false;
+                            continue;
+                        }
+
+                        // Schedule cleanup of element data
+                        CleanupDroppedIndex(ref session.storageSession.vectorContext, toDeleteCtx);
+
+                        logger?.LogInformation("Vector Set under {key} (context: {ctx}) deleted normally", Encoding.UTF8.GetString(toDeleteKey.Span), toDeleteCtx);
+                    }
+                }
+            }
+
+            if (clearInProgressDeletes)
+            {
+                // We successfully dealt with all pending deletes, we can delete the metadata key
+                Span<byte> toDeleteKeySpan = stackalloc byte[2];
+                var toDeleteKey = SpanByte.FromPinnedSpan(toDeleteKeySpan);
+
+                // 0:1 is InProgressDeletes
+                toDeleteKey.MarkNamespace();
+                toDeleteKey.SetNamespaceInPayload(0);
+                toDeleteKey.AsSpan()[0] = 1;
+
+                var deleteStatus = session.storageSession.vectorContext.Delete(ref toDeleteKey);
+                Debug.Assert(!deleteStatus.IsPending, "Delete shouldn't go async");
+            }
+
             // Resume any cleanups we didn't complete before recovery
             _ = cleanupTaskChannel.Writer.TryWrite(null);
         }
@@ -347,14 +429,17 @@ namespace Garnet.server
                 }
 
                 // Cleanup incidental additional state
-                DropVectorSetReplicationKey(key, ref storageSession.basicContext);
+                if (!TryDropVectorSetReplicationKey(key, ref storageSession.basicContext))
+                {
+                    throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
+                }
 
                 // Schedule cleanup of element data
                 CleanupDroppedIndex(ref storageSession.vectorContext, context);
 
                 // Delete has finished, so remove the in progress metadata
                 //
-                // A crash or error here will cause some work to be retried, but no correctness issues
+                // A crash or error before this will cause some work to be retried, but no correctness issues
                 ClearDeleteInProgress(ref storageSession.vectorContext, ref key, context);
 
                 return Status.CreateFound();

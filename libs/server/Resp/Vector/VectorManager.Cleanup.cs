@@ -232,6 +232,65 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Enumerate any deletes of Vector Sets that are in progress.
+        /// 
+        /// Used with <see cref="TryMarkDeleteInProgress{TContext}(ref TContext, ref SpanByte, ulong)"/> and <see cref="ClearDeleteInProgress{TContext}(ref TContext, ref SpanByte, ulong)"/> to recover from interrupted deletes.
+        /// </summary>
+        internal List<(ReadOnlyMemory<byte> Key, ulong Context)> GetInDeletesInProgress(StorageSession storageSession)
+        {
+            Span<byte> keySpan = stackalloc byte[1];
+
+            // 0:1 is InProgressDeletes, but ReadSizeUnknown will attach the context for us
+            var inProgressDeletesKey = SpanByte.FromPinnedSpan(keySpan);
+
+            inProgressDeletesKey.AsSpan()[0] = 1;
+
+            SpanByteAndMemory readValue = default;
+
+            List<(ReadOnlyMemory<byte> Key, ulong Context)> ret = [];
+            try
+            {
+                ActiveThreadSession = storageSession;
+                try
+                {
+                    if (!ReadSizeUnknown(context: 0, keySpan, ref readValue))
+                    {
+                        return ret;
+                    }
+                }
+                finally
+                {
+                    ActiveThreadSession = null;
+                }
+
+                var remaining = readValue.AsReadOnlySpan();
+                while (!remaining.IsEmpty)
+                {
+                    var ctx = BinaryPrimitives.ReadUInt64LittleEndian(remaining);
+                    if (ctx == 0)
+                    {
+                        // Encountered uninitialized data
+                        break;
+                    }
+
+                    var len = BinaryPrimitives.ReadInt32LittleEndian(remaining[sizeof(ulong)..]);
+
+                    var key = remaining.Slice(sizeof(ulong) + sizeof(uint), len);
+
+                    ret.Add((key.ToArray(), ctx));
+
+                    remaining = remaining[(sizeof(ulong) + sizeof(uint) + len)..];
+                }
+
+                return ret;
+            }
+            finally
+            {
+                readValue.Memory?.Dispose();
+            }
+        }
+
+        /// <summary>
         /// After a delete has completed, removes the given key from metadata.
         /// </summary>
         internal void ClearDeleteInProgress<TContext>(ref TContext ctx, ref SpanByte key, ulong context)

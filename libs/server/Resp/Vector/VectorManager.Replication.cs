@@ -120,7 +120,7 @@ namespace Garnet.server
         /// 
         /// Amounts to delete a synthetic key in namespace 0.
         /// </summary>
-        internal void DropVectorSetReplicationKey<TContext>(SpanByte key, ref TContext context)
+        internal bool TryDropVectorSetReplicationKey<TContext>(SpanByte key, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
             Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
@@ -138,10 +138,7 @@ namespace Garnet.server
                 CompletePending(ref res, ref context);
             }
 
-            if (!res.IsCompletedSuccessfully)
-            {
-                throw new GarnetException("Couldn't synthesize Vector Set add operation for replication, data loss will occur");
-            }
+            return res.IsCompletedSuccessfully;
         }
 
         /// <summary>
