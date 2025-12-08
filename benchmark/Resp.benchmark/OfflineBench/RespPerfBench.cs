@@ -295,7 +295,7 @@ namespace Resp.benchmark
                 rg = run_rg;
             else
             {
-                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, ttl: ttl, shardedKeys: opts.ShardedKeys);
+                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, ttl: ttl);
                 rg.Generate();
             }
 
@@ -341,7 +341,7 @@ namespace Resp.benchmark
         {
             if (rg == null)
             {
-                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, numericValue, verbose, flatBufferClient: (opts.Client == ClientType.SERedis || opts.Client == ClientType.GarnetClientSession), ttl: opts.Ttl, shardedKeys: opts.ShardedKeys);
+                rg = new ReqGen(Start, opts.DbSize, TotalOps, BatchSize, opType, randomGen, randomServe, keyLen, valueLen, numericValue, verbose, flatBufferClient: (opts.Client == ClientType.SERedis || opts.Client == ClientType.GarnetClientSession), ttl: opts.Ttl);
                 rg.Generate();
             }
 

@@ -353,27 +353,19 @@ namespace Resp.benchmark
 
         private bool WriteKey(int bufferOffset, ref byte* curr, byte* vend, out byte[] keyData)
         {
-            if (shardedKeys > 0)
+            int key;
+            if (randomGen)
             {
-                keyData = slotKeys[bufferOffset % slotKeys.Count];
-                return WriteStringBytes(ref curr, vend, keyData);
+                if (zipf)
+                    key = Start + zipfg.Next();
+                else
+                    key = Start + keyRandomGen.Next(DbSize);
             }
             else
-            {
-                int key;
-                if (randomGen)
-                {
-                    if (zipf)
-                        key = Start + zipfg.Next();
-                    else
-                        key = Start + keyRandomGen.Next(DbSize);
-                }
-                else
-                    key = Start + keyIndex++;
+                key = Start + keyIndex++;
 
-                keyData = Encoding.ASCII.GetBytes(key.ToString().PadLeft(keyLen, numericValue ? '1' : 'X'));
-                return WriteStringBytes(ref curr, vend, keyData);
-            }
+            keyData = Encoding.ASCII.GetBytes(key.ToString().PadLeft(keyLen, numericValue ? '1' : 'X'));
+            return WriteStringBytes(ref curr, vend, keyData);
         }
 
         private bool WriteKey(ref byte* curr, byte* vend, int key)

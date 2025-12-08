@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Text;
 using Garnet.common;
 
 namespace Resp.benchmark
@@ -44,8 +43,6 @@ namespace Resp.benchmark
 
         public int BatchCount;
 
-        int shardedKeys;
-
         List<byte[]> slotKeys = [];
 
         public ReqGen(
@@ -62,8 +59,7 @@ namespace Resp.benchmark
             bool verbose = true,
             bool zipf = false,
             bool flatBufferClient = false,
-            int ttl = 0,
-            int shardedKeys = -1)
+            int ttl = 0)
         {
             NumBuffs = NumOps / BatchSize;
             if (NumBuffs > MaxBatches && verbose)
@@ -84,7 +80,6 @@ namespace Resp.benchmark
             this.Start = Start;
             this.flatBufferClient = flatBufferClient;
             this.ttl = ttl;
-            this.shardedKeys = shardedKeys;
 
             if (zipf)
             {
@@ -104,26 +99,6 @@ namespace Resp.benchmark
                 hllDstMergeKeyCount = _hllDstMergeKeyCount;
 
             this.ttl = ttl;
-
-            if (shardedKeys > 0)
-                GenerateSlotKeys(shardedKeys);
-        }
-
-        public void GenerateSlotKeys(int shards)
-        {
-            if (shards == -1) return;
-            slotKeys = [];
-            for (var i = 0; i < shards; i++)
-            {
-                byte[] keyData;
-                long slot;
-                do
-                {
-                    keyData = Encoding.ASCII.GetBytes(Generator.CreateHexId(size: Math.Max(keyLen, 8)));
-                    slot = HashSlotUtils.Hash(keyData.AsSpan());
-                } while ((slot % shards) != i);
-                slotKeys.Add(keyData);
-            }
         }
 
         public int GetBufferSize()
@@ -139,23 +114,15 @@ namespace Resp.benchmark
         /// <returns></returns>
         public byte[] GetRequest(out int len, int slot = -1)
         {
-            if (shardedKeys > 0 && slot != -1)
-            {
-                len = lens[slot % shardedKeys];
-                return buffers[slot % shardedKeys];
-            }
+            int offset;
+
+            if (randomServe)
+                offset = r.Next(NumBuffs);
             else
-            {
-                int offset;
+                offset = (Interlocked.Increment(ref seqNo) - 1) % NumBuffs;
 
-                if (randomServe)
-                    offset = r.Next(NumBuffs);
-                else
-                    offset = (Interlocked.Increment(ref seqNo) - 1) % NumBuffs;
-
-                len = lens[offset];
-                return buffers[offset];
-            }
+            len = lens[offset];
+            return buffers[offset];
         }
 
         public List<string> GetRequestArgs()
