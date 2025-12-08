@@ -21,6 +21,7 @@ namespace Garnet.client
         static ReadOnlySpan<byte> begin_replica_recover => "BEGIN_REPLICA_RECOVER"u8;
         static ReadOnlySpan<byte> attach_sync => "ATTACH_SYNC"u8;
         static ReadOnlySpan<byte> sync => "SYNC"u8;
+        static ReadOnlySpan<byte> sharded_log_key_sequence_vector => "SHARDED_LOG_KEY_SEQUENCE_VECTOR"u8;
 
         /// <summary>
         /// Initiate checkpoint retrieval from replica by sending replica checkpoint information and AOF address range
@@ -461,6 +462,45 @@ namespace Garnet.client
             }
             head = curr;
             curr += ExtraSpace;
+        }
+
+        /// <summary>
+        /// Issue CLUSTER SHARDED_LOG_KEY_SEQUENCE_VECTOR
+        /// </summary>
+        /// <returns></returns>
+        public Task<string> ExecuteClusterShardedLogKeySequenceVector()
+        {
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            tcsQueue.Enqueue(tcs);
+            var curr = offset;
+            var arraySize = 2;
+
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //1
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //2
+            while (!RespWriteUtils.TryWriteBulkString(sharded_log_key_sequence_vector, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            Flush();
+            Interlocked.Increment(ref numCommands);
+            return tcs.Task;
         }
     }
 }

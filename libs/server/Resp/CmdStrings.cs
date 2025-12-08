@@ -451,6 +451,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
         public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
         public static ReadOnlySpan<byte> cluster_sync => "SYNC"u8;
+        public static ReadOnlySpan<byte> cluster_sharded_log_key_sequence_vector => "SHARDED_LOG_KEY_SEQUENCE_VECTOR"u8;
 
         // Lua scripting strings
         public static ReadOnlySpan<byte> LUA_OK => "OK"u8;

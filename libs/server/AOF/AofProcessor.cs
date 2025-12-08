@@ -249,7 +249,7 @@ namespace Garnet.server
                     if (shardedLog)
                     {
                         extendedHeader = *(AofExtendedHeader*)ptr;
-                        storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                        storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
                     }
                     break;
                 case AofEntryType.CheckpointEndCommit:
@@ -328,7 +328,7 @@ namespace Garnet.server
                     if (shardedLog)
                     {
                         extendedHeader = *(AofExtendedHeader*)ptr;
-                        storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                        storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
                     }
                     break;
                 case AofEntryType.FlushAll:
@@ -362,7 +362,7 @@ namespace Garnet.server
                 case AofEntryType.RefreshSublogTail:
                     extendedHeader = *(AofExtendedHeader*)ptr;
                     //logger?.LogDebug("RefreshSublogTail {sublogIdx} {idx}", sublogIdx, extendedHeader.sequenceNumber);
-                    storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                    storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
                     break;
                 default:
                     _ = ReplayOp(sublogIdx, basicContext, objectStoreBasicContext, unifiedStoreBasicContext, ptr, length, asReplica);
@@ -463,7 +463,7 @@ namespace Garnet.server
             var extendedHeader = *(AofExtendedHeader*)ptr;
             var curr = ptr + sizeof(AofExtendedHeader);
             var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
-            storeWrapper.appendOnlyFile.replayTimestampManager.UpdateKeySequenceNumber(sublogIdx, ref key, extendedHeader.sequenceNumber);
+            storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateKeySequenceNumber(sublogIdx, ref key, extendedHeader.sequenceNumber);
         }
 
         static void StoreUpsert<TContext>(

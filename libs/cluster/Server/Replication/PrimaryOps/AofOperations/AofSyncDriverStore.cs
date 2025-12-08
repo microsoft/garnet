@@ -187,8 +187,7 @@ namespace Garnet.cluster
                         port = port,
                         replication_state = cr.IsConnected ? "online" : "offline",
                         replication_offset = cr.PreviousAddress,
-                        replication_lag = cr.PreviousAddress.Diff(PrimaryReplicationOffset),
-                        maxSendTimestamp = cr.MaxSendSequenceNumber
+                        replication_lag = cr.PreviousAddress.Diff(PrimaryReplicationOffset)
                     });
                 }
             }

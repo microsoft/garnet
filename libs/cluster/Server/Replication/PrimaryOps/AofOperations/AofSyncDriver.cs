@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.client;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -65,18 +66,9 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Max send sublog timestamp
+        /// Replica endpoint
         /// </summary>
-        public AofAddress MaxSendSequenceNumber
-        {
-            get
-            {
-                var maxSendSublogTimestamp = AofAddress.Create(aofSyncTasks.Length, 0);
-                for (var i = 0; i < aofSyncTasks.Length; i++)
-                    maxSendSublogTimestamp[i] = aofSyncTasks[i].MaxSendSequenceNumbder;
-                return maxSendSublogTimestamp;
-            }
-        }
+        readonly IPEndPoint endPoint;
 
         public AofSyncDriver(
             ClusterProvider clusterProvider,
@@ -91,6 +83,7 @@ namespace Garnet.cluster
             this.aofSyncDriverStore = aofSyncDriverStore;
             this.localNodeId = localNodeId;
             this.remoteNodeId = remoteNodeId;
+            this.endPoint = endPoint;
             cts = new();
             this.logger = logger;
 
@@ -165,11 +158,23 @@ namespace Garnet.cluster
         async Task RefreshSublogTail()
         {
             var acquireReadLock = false;
+            var client = new GarnetClientSession(
+                        endPoint,
+                        clusterProvider.replicationManager.GetAofSyncNetworkBufferSettings,
+                        clusterProvider.replicationManager.GetNetworkPool,
+                        tlsOptions: this.clusterProvider.serverOptions.TlsOptions?.TlsClientOptions,
+                        authUsername: this.clusterProvider.ClusterUsername,
+                        authPassword: this.clusterProvider.ClusterPassword,
+                        logger: logger);
+
             try
             {
                 acquireReadLock = dispose.TryReadLock();
                 if (!acquireReadLock)
                     throw new GarnetException($"Failed to acquire read lock at {nameof(RefreshSublogTail)}");
+
+                // Connect to replica
+                client.Connect((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token);
 
                 while (true)
                 {
@@ -177,8 +182,10 @@ namespace Garnet.cluster
 
                     var tailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
                     var previousAddress = PreviousAddress;
-                    var maxSublogSeqNumber = MaxSendSequenceNumber;
-                    // Maximum Send Sequence Number (MSSN)
+
+                    // Acquire key sequence number vector from the replica
+                    var resp = await client.ExecuteClusterShardedLogKeySequenceVector().WaitAsync(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token);
+                    var maxSublogSeqNumber = AofAddress.FromString(resp);
                     var mssn = maxSublogSeqNumber.Max();
 
                     // At least one sublog has stalled if both of the following conditions hold
@@ -201,6 +208,7 @@ namespace Garnet.cluster
             {
                 if (acquireReadLock)
                     dispose.ReadUnlock();
+                client?.Dispose();
             }
         }
 

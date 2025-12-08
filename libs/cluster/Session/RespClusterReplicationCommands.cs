@@ -482,5 +482,29 @@ namespace Garnet.cluster
                 SendAndReset();
             return true;
         }
+
+        /// <summary>
+        /// Implements CLUSTER_SHARDED_LOG_KEY_SEQUENCE_VECTOR
+        /// </summary>
+        /// <param name="invalidParameters"></param>
+        /// <returns></returns>
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterShardedLogKeySequenceVector"/>
+        private bool NetworkShardedLogKeySequenceVector(out bool invalidParameters)
+        {
+            invalidParameters = false;
+
+            // Expecting exactly 0 arguments
+            if (parseState.Count != 0)
+            {
+                invalidParameters = true;
+                return true;
+            }
+
+            var maxKeySeqNumVector = clusterProvider.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.GetSublogMaxKeySequenceNumber();
+            while (!RespWriteUtils.TryWriteAsciiBulkString(maxKeySeqNumVector.ToString(), ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
     }
 }

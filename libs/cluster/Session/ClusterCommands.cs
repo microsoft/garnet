@@ -157,6 +157,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_SETCONFIGEPOCH => NetworkClusterSetConfigEpoch(out invalidParameters),
                 RespCommand.CLUSTER_SETSLOT => NetworkClusterSetSlot(out invalidParameters),
                 RespCommand.CLUSTER_SETSLOTSRANGE => NetworkClusterSetSlotsRange(out invalidParameters),
+                RespCommand.CLUSTER_SHARDED_LOG_KEY_SEQUENCE_VECTOR => NetworkShardedLogKeySequenceVector(out invalidParameters),
                 RespCommand.CLUSTER_SHARDS => NetworkClusterShards(out invalidParameters),
                 RespCommand.CLUSTER_SLOTS => NetworkClusterSlots(out invalidParameters),
                 RespCommand.CLUSTER_SLOTSTATE => NetworkClusterSlotState(out invalidParameters),

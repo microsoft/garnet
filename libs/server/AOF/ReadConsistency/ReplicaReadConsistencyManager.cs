@@ -31,10 +31,24 @@ namespace Garnet.server
     {
         public long CurrentVersion { get; private set; } = nextVersion;
         public const int KeyOffsetCount = (1 << 15) + 1;
-        const int MaxSublogTimestampOffset = KeyOffsetCount - 1;
+        const int SublogMaxKeySequenceNumberOffset = KeyOffsetCount - 1;
         readonly GarnetAppendOnlyFile appendOnlyFile = appendOnlyFile;
         readonly GarnetServerOptions serverOptions = serverOptions;
         readonly ILogger logger = logger;
+
+        long[][] activeSequenceNumbers = InitializeTimestamps(appendOnlyFile.Log.Size, KeyOffsetCount);
+
+        /// <summary>
+        /// Get snapshot of maximum replayed timestamp for all sublogs
+        /// </summary>
+        /// <returns></returns>
+        public AofAddress GetSublogMaxKeySequenceNumber()
+        {
+            var maxKeySeqNumVector = AofAddress.Create(appendOnlyFile.Log.Size, 0);
+            for (var i = 0; i < maxKeySeqNumVector.Length; i++)
+                maxKeySeqNumVector[i] = activeSequenceNumbers[i][SublogMaxKeySequenceNumberOffset];
+            return maxKeySeqNumVector;
+        }
 
         static ReplicaReadConsistencyManager()
         {
@@ -47,8 +61,6 @@ namespace Garnet.server
 
         static ConcurrentQueue<ReadSessionWaiter>[] InitializeWaitQs(int aofSublogCount)
             => [.. Enumerable.Range(0, aofSublogCount).Select(_ => new ConcurrentQueue<ReadSessionWaiter>())];
-
-        long[][] activeSequenceNumbers = InitializeTimestamps(appendOnlyFile.Log.Size, KeyOffsetCount);
 
         private static long[][] InitializeTimestamps(int aofSublogCount, int size)
             => [.. Enumerable.Range(0, aofSublogCount).Select(_ =>
@@ -65,7 +77,7 @@ namespace Garnet.server
         /// <param name="keyOffset"></param>
         /// <returns></returns>
         long GetFrontierSequenceNumber(int sublogIdx, int keyOffset)
-            => Math.Max(activeSequenceNumbers[sublogIdx][keyOffset], activeSequenceNumbers[sublogIdx][MaxSublogTimestampOffset]);
+            => Math.Max(activeSequenceNumbers[sublogIdx][keyOffset], activeSequenceNumbers[sublogIdx][SublogMaxKeySequenceNumberOffset]);
 
         /// <summary>
         /// Get sequence number for provided key offset
@@ -94,7 +106,7 @@ namespace Garnet.server
         public void UpdateSublogSequencenumber(int sublogIdx, long sequenceNumber)
         {
             // logger?.LogError("+sn: {sn} idx: {sublogIdx}", sequenceNumber, sublogIdx);
-            _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][MaxSublogTimestampOffset], sequenceNumber, out _);
+            _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][SublogMaxKeySequenceNumberOffset], sequenceNumber, out _);
             SignalWaiters(sublogIdx);
         }
 
@@ -110,7 +122,7 @@ namespace Garnet.server
             Debug.Assert(sublogIdx == _sublogIdx);
             // logger?.LogError("*sn: {sn} idx: {sublogIdx} key: {keyOffset}", sequenceNumber, sublogIdx, keyOffset);
             _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][keyOffset], sequenceNumber, out _);
-            _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][MaxSublogTimestampOffset], sequenceNumber, out _);
+            _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][SublogMaxKeySequenceNumberOffset], sequenceNumber, out _);
             SignalWaiters(sublogIdx);
         }
 
@@ -123,7 +135,7 @@ namespace Garnet.server
         public void UpdateKeySequenceNumber(int sublogIdx, int keyOffset, long sequenceNumber)
         {
             _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][keyOffset], sequenceNumber, out _);
-            _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][MaxSublogTimestampOffset], sequenceNumber, out _);
+            _ = Utility.MonotonicUpdate(ref activeSequenceNumbers[sublogIdx][SublogMaxKeySequenceNumberOffset], sequenceNumber, out _);
             SignalWaiters(sublogIdx);
         }
 

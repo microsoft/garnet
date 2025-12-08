@@ -26,19 +26,6 @@
     "KeySpecifications": null,
     "SubCommands": [
       {
-        "Command": "CLUSTER_AOFSYNC",
-        "Name": "CLUSTER|AOFSYNC",
-        "IsInternal": true,
-        "Arity": 3,
-        "Flags": "Admin, NoScript, NoMulti",
-        "FirstKey": 0,
-        "LastKey": 0,
-        "Step": 0,
-        "AclCategories": "Admin, Dangerous, Slow, Garnet",
-        "KeySpecifications": null,
-        "SubCommands": null
-      },
-      {
         "Command": "CLUSTER_APPENDLOG",
         "Name": "CLUSTER|APPENDLOG",
         "IsInternal": true,

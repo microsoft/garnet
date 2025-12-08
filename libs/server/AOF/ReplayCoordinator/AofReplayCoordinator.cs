@@ -121,7 +121,7 @@ namespace Garnet.server
                         case AofEntryType.TxnAbort:
                             ClearSessionTxn();
                             extendedHeader = *(AofExtendedHeader*)ptr;
-                            aofProcessor.storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                            aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
                             break;
                         case AofEntryType.TxnCommit:
                             if (replayContext.inFuzzyRegion)
@@ -169,7 +169,7 @@ namespace Garnet.server
                         // after a checkpoint, and the transaction belonged to the previous version. It can safely
                         // be ignored.
                         extendedHeader = *(AofExtendedHeader*)ptr;
-                        aofProcessor.storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                        aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
                         break;
                     default:
                         // Continue processing
@@ -408,7 +408,7 @@ namespace Garnet.server
                     throw removeBarrierException;
 
                 // Update timestamp
-                aofProcessor.storeWrapper.appendOnlyFile.replayTimestampManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
             }
         }
     }

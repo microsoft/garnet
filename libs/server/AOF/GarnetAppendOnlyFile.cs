@@ -16,7 +16,7 @@ namespace Garnet.server
 
         public long TotalSize() => Log.TailAddress.AggregateDiff(Log.BeginAddress);
 
-        public ReplicaReadConsistencyManager replayTimestampManager = null;
+        public ReplicaReadConsistencyManager replicaReadConsistencyManager = null;
 
         public SequenceNumberGenerator seqNumGen = null;
 
@@ -57,9 +57,9 @@ namespace Garnet.server
         {
             // Create manager only if sharded log is enabled
             if (Log.Size == 1) return;
-            var currentVersion = replayTimestampManager?.CurrentVersion ?? 0L;
+            var currentVersion = replicaReadConsistencyManager?.CurrentVersion ?? 0L;
             var _replayTimestampManager = new ReplicaReadConsistencyManager(currentVersion + 1, this, serverOptions, logger);
-            _ = Interlocked.CompareExchange(ref replayTimestampManager, _replayTimestampManager, replayTimestampManager);
+            _ = Interlocked.CompareExchange(ref replicaReadConsistencyManager, _replayTimestampManager, replicaReadConsistencyManager);
         }
 
         /// <summary>
@@ -70,7 +70,7 @@ namespace Garnet.server
         /// <param name="csvi"></param>
         /// <param name="readSessionWaiter"></param>
         public void MultiKeyConsistentRead(ref ReplicaReadSessionContext replicaReadSessionContext, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ReadSessionWaiter readSessionWaiter)
-            => replayTimestampManager.MultiKeyConsistentRead(ref replicaReadSessionContext, ref parseState, ref csvi, readSessionWaiter);
+            => replicaReadConsistencyManager.MultiKeyConsistentRead(ref replicaReadSessionContext, ref parseState, ref csvi, readSessionWaiter);
 
         /// <summary>
         /// Implements read protocol for consistent reads when sharded-log AOF is used
@@ -79,7 +79,7 @@ namespace Garnet.server
         /// <param name="replicaReadSessionContext"></param>
         /// <param name="readSessionWaiter"></param>
         public void MultiKeyConsistentRead(List<byte[]> keys, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
-            => replayTimestampManager.MultiKeyConsistentRead(keys, ref replicaReadSessionContext, readSessionWaiter);
+            => replicaReadConsistencyManager.MultiKeyConsistentRead(keys, ref replicaReadSessionContext, readSessionWaiter);
 
         /// <summary>
         /// Invoke the prepare phase of the consistent read protocol
@@ -88,21 +88,21 @@ namespace Garnet.server
         /// <param name="replicaReadSessionContext"></param>
         /// <param name="readSessionWaiter"></param>
         public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
-            => replayTimestampManager.ConsistentReadKeyPrepare(key, ref replicaReadSessionContext, readSessionWaiter);
+            => replicaReadConsistencyManager.ConsistentReadKeyPrepare(key, ref replicaReadSessionContext, readSessionWaiter);
 
         /// <summary>
         /// Invoke the update phase of the consistent read protocol
         /// </summary>
         /// <param name="replicaReadSessionContext"></param>
         public void ConsistentReadSequenceNumberUpdate(ref ReplicaReadSessionContext replicaReadSessionContext)
-            => replayTimestampManager.ConsistentReadSequenceNumberUpdate(ref replicaReadSessionContext);
+            => replicaReadConsistencyManager.ConsistentReadSequenceNumberUpdate(ref replicaReadSessionContext);
 
         /// <summary>
         /// Reset sequence number generator
         /// </summary>
         public void ResetSeqNumberGen()
         {
-            var start = replayTimestampManager.GetMaximumSequenceNumber();
+            var start = replicaReadConsistencyManager.GetMaximumSequenceNumber();
             var newSeqNumGen = new SequenceNumberGenerator(start);
             _ = Interlocked.CompareExchange(ref seqNumGen, newSeqNumGen, seqNumGen);
         }

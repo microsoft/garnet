@@ -1860,6 +1860,35 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClusterShardedLogKeySequenceVectorACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER SHARDED_LOG_KEY_SEQUENCE_VECTOR",
+                [DoClusterShardedLogKeySequenceVectorAsync]
+            );
+
+            static async Task DoClusterShardedLogKeySequenceVectorAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["SHARDED_LOG_KEY_SEQUENCE_VECTOR"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
         public async Task ClusterMyIdACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled

@@ -789,6 +789,13 @@
         "AclCategories": "Slow"
       },
       {
+        "Command": "CLUSTER_SHARDED_LOG_KEY_SEQUENCE_VECTOR",
+        "Name": "CLUSTER|SHARDED_LOG_KEY_SEQUENCE_VECTOR",
+        "Arity": 2,
+        "Flags": "Stale",
+        "AclCategories": "Slow"
+      },
+      {
         "Command": "CLUSTER_MEET",
         "Name": "CLUSTER|MEET",
         "Arity": -4,

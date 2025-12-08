@@ -341,7 +341,6 @@ namespace Garnet.server
         CLUSTER,
         CLUSTER_ADDSLOTS, // Note: Update IsClusterSubCommand if adding new cluster subcommands before this
         CLUSTER_ADDSLOTSRANGE,
-        CLUSTER_AOFSYNC,
         CLUSTER_APPENDLOG,
         CLUSTER_ATTACH_SYNC,
         CLUSTER_BANLIST,
@@ -364,6 +363,7 @@ namespace Garnet.server
         CLUSTER_INFO,
         CLUSTER_INITIATE_REPLICA_SYNC,
         CLUSTER_KEYSLOT,
+        CLUSTER_SHARDED_LOG_KEY_SEQUENCE_VECTOR,
         CLUSTER_MEET,
         CLUSTER_MIGRATE,
         CLUSTER_MTASKS,
@@ -2256,6 +2256,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.cluster_sync))
                 {
                     return RespCommand.CLUSTER_SYNC;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.cluster_sharded_log_key_sequence_vector))
+                {
+                    return RespCommand.CLUSTER_SHARDED_LOG_KEY_SEQUENCE_VECTOR;
                 }
 
                 string errMsg = string.Format(CmdStrings.GenericErrUnknownSubCommand,
