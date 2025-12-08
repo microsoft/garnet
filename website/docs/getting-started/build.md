@@ -15,7 +15,7 @@ git clone git@github.com:microsoft/garnet.git
 
 ## Build the Project
 
-Make sure .NET 9 SDK is installed, following instructions [here](https://dotnet.microsoft.com/en-us/download). You can use either Linux or Windows; Garnet works equally well on both platforms.
+Make sure .NET 10 SDK is installed, following instructions [here](https://dotnet.microsoft.com/en-us/download). You can use either Linux or Windows; Garnet works equally well on both platforms.
 
 Go to the root folder of the repo and build using .NET CLI, or open `Garnet.slnx` and build using latest Visual Studio 2022 (17.14 at minimum, we recommend using latest Visual Studio 2026 Insiders).
 
@@ -26,7 +26,7 @@ dotnet build -c Release
 
 # Run our Test Suite
 
-As a sanity check, you can run our test suite. The command to run tests in Release mode for .NET 9 with verbose output to console is shown below (make sure you are in the root folder of the repo).
+As a sanity check, you can run our test suite. The command to run tests in Release mode for .NET 9 target with verbose output to console is shown below (make sure you are in the root folder of the repo).
 
 ```bash
 dotnet test -c Release -f net9.0 -l "console;verbosity=detailed"
