@@ -350,6 +350,10 @@ namespace Garnet.server
                         return AbortWithErrorMessage(customErrMsg);
                     }
                 }
+                else if (res == GarnetStatus.BADSTATE)
+                {
+                    return AbortVectorSetPartiallyDeleted(ref key);
+                }
                 else
                 {
                     return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
@@ -810,6 +814,10 @@ namespace Garnet.server
                             throw new GarnetException($"Unexpected {nameof(VectorManagerResult)}: {vectorRes}");
                         }
                     }
+                    else if (res == GarnetStatus.BADSTATE)
+                    {
+                        return AbortVectorSetPartiallyDeleted(ref key);
+                    }
                     else
                     {
                         throw new GarnetException($"Unexpected {nameof(GarnetStatus)}: {res}");
@@ -891,6 +899,10 @@ namespace Garnet.server
                             SendAndReset();
                     }
                 }
+                else if (res == GarnetStatus.BADSTATE)
+                {
+                    return AbortVectorSetPartiallyDeleted(ref key);
+                }
                 else
                 {
                     while (!RespWriteUtils.TryWriteEmptyArray(ref dcurr, dend))
@@ -948,6 +960,10 @@ namespace Garnet.server
             {
                 while (!RespWriteUtils.TryWriteError("ERR Not a Vector Set"u8, ref dcurr, dend))
                     SendAndReset();
+            }
+            else if (res == GarnetStatus.BADSTATE)
+            {
+                return AbortVectorSetPartiallyDeleted(ref key);
             }
             else
             {
@@ -1054,10 +1070,17 @@ namespace Garnet.server
 
             var res = storageApi.VectorSetRemove(key, elem);
 
-            var resp = res == GarnetStatus.OK ? 1 : 0;
+            if (res == GarnetStatus.BADSTATE)
+            {
+                return AbortVectorSetPartiallyDeleted(ref key);
+            }
+            else
+            {
+                var resp = res == GarnetStatus.OK ? 1 : 0;
 
-            while (!RespWriteUtils.TryWriteInt32(resp, ref dcurr, dend))
-                SendAndReset();
+                while (!RespWriteUtils.TryWriteInt32(resp, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }
@@ -1073,6 +1096,17 @@ namespace Garnet.server
             // TODO: implement!
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        private bool AbortVectorSetPartiallyDeleted(ref ArgSlice key)
+        {
+            // TODO: We could _finish_ the delete here... though if we do that we should do it for ALL commands, not just Vector Set commands
+            //       That's more intrusive, and is more of a V2 thing... so lets just give a workaround for now
+
+            while (!RespWriteUtils.TryWriteError("ERR Vector Set is in a partially deleted state - re-execute DEL to complete deletion"u8, ref dcurr, dend))
                 SendAndReset();
 
             return true;

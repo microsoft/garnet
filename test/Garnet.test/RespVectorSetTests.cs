@@ -543,7 +543,53 @@ namespace Garnet.test
                 ExceptionInjectionHelper.DisableException(ExceptionInjectionType.VectorSet_Interrupt_Delete);
             }
 
-            // Any access after a delete should finish the cleanup, not just Vector Set ops
+            var vectorSetCommands = Enum.GetValues<RespCommand>().Where(static x => x.IsLegalOnVectorSet() && x is not (RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG)).OrderBy(static x => x);
+
+            // Check that all Vector Set commands on a partially deleted vector set give a reasonable error message
+            foreach (var cmd in vectorSetCommands)
+            {
+                RedisServerException exc;
+                switch (cmd)
+                {
+                    case RespCommand.VADD: exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "VALUES", "1", "1.0", new byte[] { 0, 0, 0, 0 }])); break;
+                    case RespCommand.VCARD:
+                        // TODO: Implement once VCARD is implemented
+                        continue;
+                    case RespCommand.VDIM: exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VDIM", ["foo"])); break;
+                    case RespCommand.VEMB: exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }])); break;
+                    case RespCommand.VGETATTR:
+                        // TODO: Implement once VGETATTR is implemented
+                        continue;
+                    case RespCommand.VINFO:
+                        // TODO: Implement once VINFO is implemented
+                        continue;
+                    case RespCommand.VISMEMBER:
+                        // TODO: Implement once VISMEMBER is implemented
+                        continue;
+                    case RespCommand.VLINKS:
+                        // TODO: Implement once VLINKS is implemented
+                        continue;
+                    case RespCommand.VRANDMEMBER:
+                        // TODO: Implement once VRANDMEMBER is implemented
+                        continue;
+                    case RespCommand.VREM: exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VREM", ["foo", new byte[] { 0, 0, 0, 0 }])); break;
+                    case RespCommand.VSETATTR:
+                        // TODO: Implement once VSETATTR is implemented
+                        continue;
+                    case RespCommand.VSIM: exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "ELE", new byte[] { 0, 0, 0, 0 }])); break;
+                    default:
+                        Assert.Fail($"No test for command: {cmd}");
+                        return;
+                }
+
+                ClassicAssert.AreEqual("ERR Vector Set is in a partially deleted state - re-execute DEL to complete deletion", exc.Message);
+            }
+
+            // Delete again, this time we'll succeed
+            var delRes = db.KeyDelete("foo");
+            ClassicAssert.IsTrue(delRes);
+
+            // Now accessing the key should give a null
             var res2 = (string)db.StringGet("foo");
             ClassicAssert.IsNull(res2);
         }

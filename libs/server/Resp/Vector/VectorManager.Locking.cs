@@ -133,7 +133,23 @@ namespace Garnet.server
                     throw;
                 }
 
-                var needsRecreate = readRes == GarnetStatus.OK && NeedsRecreate(indexConfig.AsReadOnlySpan());
+                bool needsRecreate;
+                if (readRes == GarnetStatus.OK)
+                {
+                    if (PartiallyDeleted(indexConfig.AsReadOnlySpan()))
+                    {
+                        status = GarnetStatus.BADSTATE;
+
+                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                        return default;
+                    }
+
+                    needsRecreate = NeedsRecreate(indexConfig.AsReadOnlySpan());
+                }
+                else
+                {
+                    needsRecreate = false;
+                }
 
                 if (needsRecreate)
                 {
@@ -259,7 +275,24 @@ namespace Garnet.server
                     throw;
                 }
 
-                var needsRecreate = readRes == GarnetStatus.OK && storageSession.vectorManager.NeedsRecreate(indexSpan);
+                bool needsRecreate;
+                if (readRes == GarnetStatus.OK)
+                {
+                    if (PartiallyDeleted(indexConfig.AsReadOnlySpan()))
+                    {
+                        status = GarnetStatus.BADSTATE;
+
+                        vectorSetLocks.ReleaseSharedLock(sharedLockToken);
+                        return default;
+                    }
+
+                    needsRecreate = NeedsRecreate(indexConfig.AsReadOnlySpan());
+                }
+                else
+                {
+                    needsRecreate = false;
+                }
+
                 if (readRes == GarnetStatus.NOTFOUND || needsRecreate)
                 {
                     if (!vectorSetLocks.TryPromoteSharedLock(keyHash, sharedLockToken, out var exclusiveLockToken))
@@ -410,6 +443,8 @@ namespace Garnet.server
 
         /// <summary>
         /// Utility method that will read vector set index out, and acquire exclusive locks to allow it to be deleted.
+        /// 
+        /// If the index is partially deleted, <paramref name="status"/> will be set to <see cref="GarnetStatus.BADSTATE"/> but the locks will be still acquired.
         /// </summary>
         internal ExclusiveVectorLock ReadForDeleteVectorIndex(StorageSession storageSession, ref SpanByte key, ref RawStringInput input, scoped Span<byte> indexSpan, out GarnetStatus status)
         {
@@ -433,7 +468,15 @@ namespace Garnet.server
                 throw;
             }
 
-            if (status != GarnetStatus.OK)
+            if (status == GarnetStatus.OK)
+            {
+                // Even if we read the value, it might be in a bad state due to a prior delete
+                if (PartiallyDeleted(indexConfig.AsReadOnlySpan()))
+                {
+                    status = GarnetStatus.BADSTATE;
+                }
+            }
+            else
             {
                 // This can happen if something else successfully deleted before we acquired the lock
 
