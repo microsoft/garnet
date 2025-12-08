@@ -11,12 +11,12 @@ namespace Tsavorite.core
     /// <summary>
     /// Context callbacks
     /// </summary>
-    /// <param name="ConsistentReadKeyPrepareCallback">Callback used to implement prepare phase of the consistent read protocol</param>
-    /// <param name="ConsistentReadKeyUpdateCallback">Callback used to implement update phase of the consistent read protocol</param>
-    public class ConsistentReadContextCallbacks(Action<PinnedSpanByte> ConsistentReadKeyPrepareCallback, Action ConsistentReadKeyUpdateCallback)
+    /// <param name="ValidateKeySequenceNumber">Callback used to implement prepare phase of the consistent read protocol</param>
+    /// <param name="UpdateKeySequenceNumber">Callback used to implement update phase of the consistent read protocol</param>
+    public class ConsistentReadContextCallbacks(Action<PinnedSpanByte> ValidateKeySequenceNumber, Action UpdateKeySequenceNumber)
     {
-        public readonly Action<PinnedSpanByte> consistentReadKeyPrepareCallback = ConsistentReadKeyPrepareCallback;
-        public readonly Action consistentReadKeyUpdateCallback = ConsistentReadKeyUpdateCallback;
+        public readonly Action<PinnedSpanByte> validateKeySequenceNumber = ValidateKeySequenceNumber;
+        public readonly Action updateKeySequenceNumber = UpdateKeySequenceNumber;
     }
 
     /// <summary>
@@ -51,10 +51,10 @@ namespace Tsavorite.core
         public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
             var callbacks = Session.functions.GetContextCallbacks();
-            callbacks.consistentReadKeyPrepareCallback.Invoke(PinnedSpanByte.FromPinnedSpan(key));
+            callbacks.validateKeySequenceNumber.Invoke(PinnedSpanByte.FromPinnedSpan(key));
             var status = BasicContext.Read(key, ref input, ref output, userContext);
             if (status.Found)
-                callbacks.consistentReadKeyUpdateCallback.Invoke();
+                callbacks.updateKeySequenceNumber.Invoke();
             return status;
         }
 
@@ -102,10 +102,10 @@ namespace Tsavorite.core
         public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             var callbacks = Session.functions.GetContextCallbacks();
-            callbacks.consistentReadKeyPrepareCallback.Invoke(PinnedSpanByte.FromPinnedSpan(key));
+            callbacks.validateKeySequenceNumber.Invoke(PinnedSpanByte.FromPinnedSpan(key));
             var status = BasicContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
             if (status.Found)
-                callbacks.consistentReadKeyUpdateCallback.Invoke();
+                callbacks.updateKeySequenceNumber.Invoke();
             return status;
         }
 
@@ -128,7 +128,7 @@ namespace Tsavorite.core
         {
             var callbacks = Session.functions.GetContextCallbacks();
             var status = BasicContext.CompletePending(wait, spinWaitForCommit);
-            callbacks.consistentReadKeyUpdateCallback.Invoke();
+            callbacks.updateKeySequenceNumber.Invoke();
             return status;
         }
 
@@ -137,7 +137,7 @@ namespace Tsavorite.core
         {
             var callbacks = Session.functions.GetContextCallbacks();
             var status = BasicContext.CompletePendingWithOutputs(out completedOutputs, wait, spinWaitForCommit);
-            callbacks.consistentReadKeyUpdateCallback.Invoke();
+            callbacks.updateKeySequenceNumber.Invoke();
             return status;
         }
 
@@ -146,7 +146,7 @@ namespace Tsavorite.core
         {
             var callbacks = Session.functions.GetContextCallbacks();
             await BasicContext.CompletePendingAsync(waitForCommit, token);
-            callbacks.consistentReadKeyUpdateCallback.Invoke();
+            callbacks.updateKeySequenceNumber.Invoke();
         }
 
         /// <inheritdoc/>
@@ -154,7 +154,7 @@ namespace Tsavorite.core
         {
             var callbacks = Session.functions.GetContextCallbacks();
             var status = BasicContext.CompletePendingWithOutputsAsync(waitForCommit, token);
-            callbacks.consistentReadKeyUpdateCallback.Invoke();
+            callbacks.updateKeySequenceNumber.Invoke();
             return await status;
         }
 

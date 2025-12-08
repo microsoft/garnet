@@ -232,9 +232,9 @@ namespace Garnet.server
 
                 public override bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
-                    callbacks.consistentReadKeyPrepareCallback.Invoke(PinnedSpanByte.FromPinnedSpan(logRecord.Key));
+                    callbacks.validateKeySequenceNumber.Invoke(PinnedSpanByte.FromPinnedSpan(logRecord.Key));
                     var status = base.Reader(in logRecord, recordMetadata, numberOfRecords, out cursorRecordResult);
-                    callbacks.consistentReadKeyUpdateCallback.Invoke();
+                    callbacks.updateKeySequenceNumber.Invoke();
                     return status;
                 }
             }

@@ -235,7 +235,10 @@ namespace Resp.benchmark
                                     opType = AofEntryType.StoreUpsert,
                                     storeVersion = 1,
                                     sessionID = threadId,
-                                }, aofGen.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
+                                },
+                                aofGen.appendOnlyFile.seqNumGen.GetSequenceNumber(),
+                                0);
+
                                 aofGen.appendOnlyFile.Log.GetSubLog(key).Enqueue(
                                     extendedAofHeader,
                                     key,

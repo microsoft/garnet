@@ -107,10 +107,10 @@ namespace Tsavorite.core
         public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, TContext userContext = default)
         {
             var callbacks = Session.functions.GetContextCallbacks();
-            callbacks.consistentReadKeyPrepareCallback.Invoke(PinnedSpanByte.FromPinnedSpan(key));
+            callbacks.validateKeySequenceNumber.Invoke(PinnedSpanByte.FromPinnedSpan(key));
             var status = TransactionalContext.Read(key, ref input, ref output, userContext);
             if (status.Found)
-                callbacks.consistentReadKeyUpdateCallback.Invoke();
+                callbacks.updateKeySequenceNumber.Invoke();
             return status;
         }
 
@@ -158,10 +158,10 @@ namespace Tsavorite.core
         public Status Read(ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
         {
             var callbacks = Session.functions.GetContextCallbacks();
-            callbacks.consistentReadKeyPrepareCallback.Invoke(PinnedSpanByte.FromPinnedSpan(key));
+            callbacks.validateKeySequenceNumber.Invoke(PinnedSpanByte.FromPinnedSpan(key));
             var status = TransactionalContext.Read(key, ref input, ref output, ref readOptions, out recordMetadata, userContext);
             if (status.Found)
-                callbacks.consistentReadKeyUpdateCallback.Invoke();
+                callbacks.updateKeySequenceNumber.Invoke();
             return status;
         }
 

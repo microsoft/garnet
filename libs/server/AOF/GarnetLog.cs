@@ -190,6 +190,11 @@ namespace Garnet.server
             shardedLog.UnlockSublogs(logAccessBitmap);
         }
 
+        /// <summary>
+        /// Get sublog instance indicated by the provided index
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <returns></returns>
         public TsavoriteLog GetSubLog(int sublogIdx)
         {
             if (singleLog != null)
@@ -204,6 +209,11 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Get sublog instance indicated by the hash of the provided key
+        /// </summary>
+        /// <param name="key"></param>
+        /// <returns></returns>
         public TsavoriteLog GetSubLog(ReadOnlySpan<byte> key)
         {
             var _sublogIdx = HashKey(key);

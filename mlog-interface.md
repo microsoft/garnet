@@ -18,17 +18,17 @@ Every sublog replay task will have to be able to signal and cancel other tasks f
 This requires a mechanism to inform other sublog replay tasks and ensure that they are shutdown or reset before making any new attempts to re-establish the replication stream 
 </ul></ul>
 
-- [ ] Ensure that the timestampTracker that is used for the read protocol is reset appropriately when a node change its state.
+- [X] Ensure that the timestampTracker that is used for the read protocol is reset appropriately when a node change its state.
 <ul><ul>
 This happens in the event a replica starts replicating a new primary
 </ul></ul>
 
-- [ ] Ensure timestamp tracker recovers correctly alongside the sequence number generator
+- [X] Ensure timestamp tracker recovers correctly alongside the sequence number generator
 <ul><ul></ul></ul> 
-- [ ] Validate diskless replication tests and add new tests for replay coordination.
+- [X] Validate diskless replication tests and add new tests for replay coordination.
 <ul><ul></ul></ul> 
 
-- [ ] Implement read protocol
+- [X] Implement read protocol
 <ul><ul>
 The protocol needs to ensure prefix consistency for every session running on the replica.
 This is achieved by waiting until the sequence number of the key being read is greater or equal to the maximum session sequence number.

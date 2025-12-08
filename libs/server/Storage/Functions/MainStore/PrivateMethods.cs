@@ -794,6 +794,7 @@ namespace Garnet.server
                     storeVersion = version,
                     sessionID = sessionId,
                 };
+
                 functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
                     aofHeader,
                     key,
@@ -803,12 +804,16 @@ namespace Garnet.server
             }
             else
             {
-                var extendedAofHeader = new AofExtendedHeader(new AofHeader
-                {
-                    opType = AofEntryType.StoreUpsert,
-                    storeVersion = version,
-                    sessionID = sessionId,
-                }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
+                var extendedAofHeader = new AofExtendedHeader(
+                    new AofHeader
+                    {
+                        opType = AofEntryType.StoreUpsert,
+                        storeVersion = version,
+                        sessionID = sessionId,
+                    },
+                    functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
+                    0);
+
                 functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(
                     extendedAofHeader,
                     key,
@@ -837,6 +842,7 @@ namespace Garnet.server
                     storeVersion = version,
                     sessionID = sessionId
                 };
+
                 functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
                     aofHeader,
                     key,
@@ -845,12 +851,16 @@ namespace Garnet.server
             }
             else
             {
-                var extendedAofHeader = new AofExtendedHeader(new AofHeader
-                {
-                    opType = AofEntryType.StoreRMW,
-                    storeVersion = version,
-                    sessionID = sessionId
-                }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
+                var extendedAofHeader = new AofExtendedHeader(
+                    new AofHeader
+                    {
+                        opType = AofEntryType.StoreRMW,
+                        storeVersion = version,
+                        sessionID = sessionId
+                    },
+                    functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
+                    0);
+
                 functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(
                     extendedAofHeader,
                     key,
@@ -876,6 +886,7 @@ namespace Garnet.server
                     storeVersion = version,
                     sessionID = sessionID
                 };
+
                 functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
                     aofHeader,
                     key,
@@ -884,12 +895,16 @@ namespace Garnet.server
             }
             else
             {
-                var extendedAofHeader = new AofExtendedHeader(new AofHeader
-                {
-                    opType = AofEntryType.StoreDelete,
-                    storeVersion = version,
-                    sessionID = sessionID
-                }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), 0);
+                var extendedAofHeader = new AofExtendedHeader(
+                    new AofHeader
+                    {
+                        opType = AofEntryType.StoreDelete,
+                        storeVersion = version,
+                        sessionID = sessionID
+                    },
+                    functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
+                    0);
+
                 functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(
                     extendedAofHeader,
                     key,

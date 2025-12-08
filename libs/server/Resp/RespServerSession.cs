@@ -471,6 +471,7 @@ namespace Garnet.server
                     {
                         // We actively switch session because we aim to avoid performing any additional checks or switches on the normal processing path
                         // This requires us to cache txnSkip result since the txnManager instance will change when the following finally executes
+                        // Switching is required because we cannot guaranttee the role of the node outside the epoch protection
                         txnSkip = false;
                         Debug.Assert(consistentReadDBSession != null);
                         SwitchActiveDatabaseSession(consistentReadDBSession);
@@ -1567,7 +1568,7 @@ namespace Garnet.server
                 sessionMetrics,
                 LatencyMetrics,
                 dbId: dbId, // NOTE: only for cluster need to retrieve default database
-                consistentReadContextCallbacks: new(ConsistentReadKeyPrepareCallback, ConsistentReadSequenceNumberUpdate),
+                consistentReadContextCallbacks: new(ValidateKeySequenceNumber, UpdateKeySequenceNumber),
                 logger,
                 respProtocolVersion);
 

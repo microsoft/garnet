@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using Tsavorite.core;
 
@@ -60,47 +59,16 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Multi key consistent read protocol implementation for list of keys
-        /// TODO: remove since we capture
-        /// </summary>
-        /// <param name="keys"></param>
-        public void MultiKeyConsistentRead(List<byte[]> keys)
-        {
-            if (SkipConsistentRead)
-                return;
-
-            storeWrapper.appendOnlyFile.MultiKeyConsistentRead(keys, ref replicaReadContext, readSessionWaiter);
-        }
-
-        /// <summary>
-        /// When to skip evaluation of the consistent read protocol
-        /// 1. No cluster or AOF enabled
-        /// 2. SingleLog AOF is used
-        /// 3. Node is not a REPLICA
-        /// 4. Optional: use ASKING to force skip (for performance reasons)
-        /// </summary>
-        /// <returns></returns>
-        public bool SkipConsistentRead
-            => !storeWrapper.serverOptions.EnableCluster ||
-            !storeWrapper.serverOptions.EnableAOF ||
-            storeWrapper.serverOptions.AofSublogCount == 1 ||
-            !storeWrapper.clusterProvider.IsReplica() ||
-            csvi.Asking;
-
-        public bool EnsureConsistentRead
-            => storeWrapper.serverOptions.EnableCluster && storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.AofSublogCount == 1 && storeWrapper.clusterProvider.IsReplica();
-
-        /// <summary>
         /// Consistent read key prepare callback
         /// </summary>
         /// <param name="key"></param>
-        public void ConsistentReadKeyPrepareCallback(PinnedSpanByte key)
+        public void ValidateKeySequenceNumber(PinnedSpanByte key)
             => storeWrapper.appendOnlyFile.ConsistentReadKeyPrepare(key, ref replicaReadContext, readSessionWaiter);
 
         /// <summary>
         /// Consistent read key update callback
         /// </summary>
-        public void ConsistentReadSequenceNumberUpdate()
+        public void UpdateKeySequenceNumber()
             => storeWrapper.appendOnlyFile.ConsistentReadSequenceNumberUpdate(ref replicaReadContext);
     }
 }
