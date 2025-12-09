@@ -3,7 +3,6 @@
 
 using System;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.X86;
 
 namespace Garnet.server
@@ -234,21 +233,17 @@ namespace Garnet.server
         /// <returns>The standard textual representation of the given 52-bit GeoHash integer</returns>
         public static string GetGeoHashCode(long hash)
         {
-            return string.Create(CodeLength, state: hash, static (chars, hashState) =>
+            return string.Create(CodeLength, state: hash, static (chars, hash) =>
             {
-                // Reference to the start of the base-32 char table, which is stored as constant data.
-                ref var base32CharsBase = ref MemoryMarshal.GetReference("0123456789bcdefghjkmnpqrstuvwxyz"u8);
+                var base32Chars = "0123456789bcdefghjkmnpqrstuvwxyz"u8;
 
                 for (var i = 0; i < chars.Length; i++)
                 {
-                    // Shift and mask the five most significant bits.
-                    var tableIndex = (nuint)(hashState >> (BitsOfPrecision - 5)) & 0x1F;
-
-                    // By masking the five bits, the tableIndex is now guaranteed to be <= 31 so this is safe.
-                    chars[i] = (char)Unsafe.Add(ref base32CharsBase, tableIndex);
+                    // Shift and mask the five most significant bits for index to the base-32 table.
+                    chars[i] = (char)base32Chars[(int)(hash >> (BitsOfPrecision - 5)) & 0x1F];
 
                     // Shift the encoded bits out.
-                    hashState <<= 5;
+                    hash <<= 5;
                 }
             });
         }
