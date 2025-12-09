@@ -91,17 +91,18 @@ namespace Garnet.cluster
         /// <param name="keys"></param>
         /// <param name="readOnly"></param>
         /// <param name="sessionAsking"></param>
+        /// <param name="waitForStableSlot"></param>
         /// <param name="dcurr"></param>
         /// <param name="dend"></param>
         /// <param name="count"></param>
         /// <returns></returns>
-        public bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, byte sessionAsking, bool isVectorSetWriteCommand, ref byte* dcurr, ref byte* dend, int count = -1)
+        public bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, byte sessionAsking, bool waitForStableSlot, ref byte* dcurr, ref byte* dend, int count = -1)
         {
             // If cluster is not enabled or a transaction is running skip slot check
             if (!clusterProvider.serverOptions.EnableCluster || txnManager.state == TxnState.Running) return false;
 
             var config = clusterProvider.clusterManager.CurrentConfig;
-            var vres = MultiKeySlotVerify(config, ref keys, readOnly, sessionAsking, isVectorSetWriteCommand, count);
+            var vres = MultiKeySlotVerify(config, ref keys, readOnly, sessionAsking, waitForStableSlot, count);
 
             if (vres.state == SlotVerifiedState.OK)
                 return false;

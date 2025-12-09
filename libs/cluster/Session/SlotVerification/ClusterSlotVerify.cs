@@ -24,11 +24,11 @@ namespace Garnet.cluster
             }
         }
 
-        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref ArgSlice keySlice, bool readOnly, byte SessionAsking, bool isVectorSetWriteCommand, int slot = -1)
+        private ClusterSlotVerificationResult SingleKeySlotVerify(ref ClusterConfig config, ref ArgSlice keySlice, bool readOnly, byte SessionAsking, bool waitForStableSlot, int slot = -1)
         {
-            Debug.Assert(!isVectorSetWriteCommand || (isVectorSetWriteCommand && !readOnly), "Shouldn't see Vector Set writes and readonly at same time");
+            Debug.Assert(!waitForStableSlot || (waitForStableSlot && !readOnly), "Shouldn't see Vector Set writes and readonly at same time");
 
-            var ret = readOnly ? SingleKeyReadSlotVerify(ref config, ref keySlice) : SingleKeyReadWriteSlotVerify(isVectorSetWriteCommand, ref config, ref keySlice);
+            var ret = readOnly ? SingleKeyReadSlotVerify(ref config, ref keySlice) : SingleKeyReadWriteSlotVerify(waitForStableSlot, ref config, ref keySlice);
 
             return ret;
 
@@ -74,7 +74,7 @@ namespace Garnet.cluster
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(bool isVectorSetWriteCommand, ref ClusterConfig config, ref ArgSlice keySlice)
+            ClusterSlotVerificationResult SingleKeyReadWriteSlotVerify(bool waitForStableSlot, ref ClusterConfig config, ref ArgSlice keySlice)
             {
                 var _slot = slot == -1 ? ArgSliceUtils.HashSlot(ref keySlice) : (ushort)slot;
 
@@ -82,7 +82,7 @@ namespace Garnet.cluster
                 var IsLocal = config.IsLocal(_slot, readWriteSession: readWriteSession);
                 var state = config.GetState(_slot);
 
-                if (isVectorSetWriteCommand && state is SlotState.IMPORTING or SlotState.MIGRATING)
+                if (waitForStableSlot && state is SlotState.IMPORTING or SlotState.MIGRATING)
                 {
                     WaitForSlotToStabalize(_slot, ref keySlice, ref config);
                     goto tryAgain;
@@ -155,16 +155,16 @@ namespace Garnet.cluster
             }
         }
 
-        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref Span<ArgSlice> keys, bool readOnly, byte sessionAsking, bool isVectorSetWriteCommand, int count)
+        ClusterSlotVerificationResult MultiKeySlotVerify(ClusterConfig config, ref Span<ArgSlice> keys, bool readOnly, byte sessionAsking, bool waitForStableSlot, int count)
         {
             var _end = count < 0 ? keys.Length : count;
             var slot = ArgSliceUtils.HashSlot(ref keys[0]);
-            var verifyResult = SingleKeySlotVerify(ref config, ref keys[0], readOnly, sessionAsking, isVectorSetWriteCommand, slot);
+            var verifyResult = SingleKeySlotVerify(ref config, ref keys[0], readOnly, sessionAsking, waitForStableSlot, slot);
 
             for (var i = 1; i < _end; i++)
             {
                 var _slot = ArgSliceUtils.HashSlot(ref keys[i]);
-                var _verifyResult = SingleKeySlotVerify(ref config, ref keys[i], readOnly, sessionAsking, isVectorSetWriteCommand, _slot);
+                var _verifyResult = SingleKeySlotVerify(ref config, ref keys[i], readOnly, sessionAsking, waitForStableSlot, _slot);
 
                 // Check if slot changes between keys
                 if (_slot != slot)
@@ -182,7 +182,7 @@ namespace Garnet.cluster
         {
             ref var key = ref parseState.GetArgSliceByRef(csvi.firstKey);
             var slot = ArgSliceUtils.HashSlot(ref key);
-            var verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, csvi.isVectorSetWriteCommand, slot);
+            var verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, csvi.waitForStableSlot, slot);
             var secondKey = csvi.firstKey + csvi.step;
 
             for (var i = secondKey; i < csvi.lastKey; i += csvi.step)
@@ -191,7 +191,7 @@ namespace Garnet.cluster
                     continue;
                 key = ref parseState.GetArgSliceByRef(i);
                 var _slot = ArgSliceUtils.HashSlot(ref key);
-                var _verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, csvi.isVectorSetWriteCommand, _slot);
+                var _verifyResult = SingleKeySlotVerify(ref config, ref key, csvi.readOnly, csvi.sessionAsking, csvi.waitForStableSlot, _slot);
 
                 // Check if slot changes between keys
                 if (_slot != slot)

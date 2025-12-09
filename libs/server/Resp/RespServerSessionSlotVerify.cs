@@ -17,10 +17,10 @@ namespace Garnet.server
         /// <param name="keys">Array of key ArgSlice</param>
         /// <param name="readOnly">Whether caller is going to perform a readonly or read/write operation</param>
         /// <param name="count">Key count if different than keys array length</param>
-        /// <param name="isVectorSetWriteCommand">Whether the executing command performs a write against a Vector Set.</param>
+        /// <param name="waitForStableSlot">Whether the executing command requires the containing slot be STABLE.</param>
         /// <returns>True when ownership is verified, false otherwise</returns>
-        bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, bool isVectorSetWriteCommand, int count = -1)
-            => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking, isVectorSetWriteCommand, ref dcurr, ref dend, count);
+        bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, bool waitForStableSlot, int count = -1)
+            => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking, waitForStableSlot, ref dcurr, ref dend, count);
 
         bool CanServeSlot(RespCommand cmd)
         {
@@ -44,7 +44,7 @@ namespace Garnet.server
             storeWrapper.clusterProvider.ExtractKeySpecs(commandInfo, cmd, ref parseState, ref csvi);
             csvi.readOnly = cmd.IsReadOnly();
             csvi.sessionAsking = SessionAsking;
-            csvi.isVectorSetWriteCommand = cmd is RespCommand.VADD or RespCommand.VREM or RespCommand.VSETATTR;
+            csvi.waitForStableSlot = cmd is RespCommand.VADD or RespCommand.VREM or RespCommand.VSETATTR;
             return !clusterSession.NetworkMultiKeySlotVerify(ref parseState, ref csvi, ref dcurr, ref dend);
         }
     }
