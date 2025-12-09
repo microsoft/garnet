@@ -147,10 +147,18 @@ We cope with this by _cancelling_ the Tsavorite delete operation once we have a 
 
 `VectorManager` performs the delete in five steps:
  - Acquire exclusive locks covering the Vector Set ([more locking details](#locking))
+ - Add the key to an `InProgressDeletes` key (namespace 0, key=0x01)
  - If the index was initialized in the current process ([see recovery for more details](#recovery)), call DiskANN's `drop_index` function
  - Perform a write to zero out the index key in Tsavorite
  - Reattempt the Tsavorite delete
  - Cleanup ancillary metadata and schedule element data for cleanup ([more details below](#cleanup))
+ - Remove the key from the `InProgressDeletes` key
+
+The `InProgressDeletes` key is necessary to recover from interrupted deletes.  At process start, `VectorManager` consults the `InProgressDeletes` key and completes any deletes that got as far as zero-ing out the index key.
+
+> [!IMPORTANT] Interrupted deletes are expected only during process exits, but if they occur without the process exiting they will leave the Vector Set in a partially deleted state.  We detect that and return a new `GarnetStatus.BADSTATE` which returns an explanatory error.
+>
+> We _could_ resume the delete on `GarnetStatus.BADSTATE`, but like `GarnetStatus.WRONGTYPE` that needs to be done for _all_ commands not just Vector Set commands.  This work is likewise left for the future.
 
 ## FlushDB
 
