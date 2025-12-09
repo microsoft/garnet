@@ -63,18 +63,7 @@ namespace Garnet.server
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
             var metaCmd = input.header.metaCmd;
-            long updatedEtag = LogRecord.NoETag;
-            if (metaCmd != RespMetaCommand.None)
-            {
-                Debug.Assert(sizeInfo.FieldInfo.HasETag, $"Expected {nameof(sizeInfo.FieldInfo.HasETag)} to be true");
-                updatedEtag = metaCmd switch 
-                {
-                    RespMetaCommand.ExecWithEtag => LogRecord.NoETag + 1,
-                    RespMetaCommand.ExecIfMatch => input.parseState.GetLong(0, isMetaArg: true) + 1,
-                    RespMetaCommand.ExecIfGreater => input.parseState.GetLong(0, isMetaArg: true),
-                    _ => throw new Exception($"Unexpected meta command: {metaCmd}"),
-                };
-            }
+            var updatedEtag = functionsState.GetUpdatedEtag(metaCmd, ref input.parseState, isInitUpdate: true, out _);
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
             var cmd = input.header.cmd;
@@ -399,29 +388,7 @@ namespace Garnet.server
             bool shouldCheckExpiration = true;
 
             var metaCmd = input.header.metaCmd;
-            long updatedEtag = LogRecord.NoETag;
-            var execCmd = true;
-            if (metaCmd != RespMetaCommand.None)
-            {
-                if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater)
-                {
-                    var inputEtag = input.parseState.GetLong(0, isMetaArg: true);
-                    var comparisonResult = inputEtag.CompareTo(functionsState.etagState.ETag);
-                    var expectedResult = metaCmd == RespMetaCommand.ExecIfMatch ? 0 : 1;
-                    execCmd = comparisonResult == expectedResult;
-                }
-
-                if (execCmd)
-                {
-                    updatedEtag = metaCmd switch
-                    {
-                        RespMetaCommand.ExecWithEtag => functionsState.etagState.ETag + 1,
-                        RespMetaCommand.ExecIfMatch => input.parseState.GetLong(0, isMetaArg: true) + 1,
-                        RespMetaCommand.ExecIfGreater => input.parseState.GetLong(0, isMetaArg: true),
-                        _ => throw new Exception($"Unexpected meta command: {metaCmd}"),
-                    };
-                }
-            }
+            var updatedEtag = functionsState.GetUpdatedEtag(metaCmd, ref input.parseState, isInitUpdate: false, out var execCmd);
 
             switch (cmd)
             {
@@ -836,29 +803,7 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
             var metaCmd = input.header.metaCmd;
-            long updatedEtag = LogRecord.NoETag;
-            var execCmd = true;
-            if (metaCmd != RespMetaCommand.None)
-            {
-                if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater)
-                {
-                    var inputEtag = input.parseState.GetLong(0, isMetaArg: true);
-                    var comparisonResult = inputEtag.CompareTo(functionsState.etagState.ETag);
-                    var expectedResult = metaCmd == RespMetaCommand.ExecIfMatch ? 0 : 1;
-                    execCmd = comparisonResult == expectedResult;
-                }
-
-                if (execCmd)
-                {
-                    updatedEtag = metaCmd switch
-                    {
-                        RespMetaCommand.ExecWithEtag => functionsState.etagState.ETag + 1,
-                        RespMetaCommand.ExecIfMatch => input.parseState.GetLong(0, isMetaArg: true) + 1,
-                        RespMetaCommand.ExecIfGreater => input.parseState.GetLong(0, isMetaArg: true),
-                        _ => throw new Exception($"Unexpected meta command: {metaCmd}"),
-                    };
-                }
-            }
+            var updatedEtag = functionsState.GetUpdatedEtag(metaCmd, ref input.parseState, isInitUpdate: false, out var execCmd);
 
             switch (input.header.cmd)
             {
@@ -983,17 +928,7 @@ namespace Garnet.server
             }
 
             var metaCmd = input.header.metaCmd;
-            long updatedEtag = LogRecord.NoETag;
-            if (metaCmd != RespMetaCommand.None)
-            {
-                updatedEtag = metaCmd switch
-                {
-                    RespMetaCommand.ExecWithEtag => functionsState.etagState.ETag + 1,
-                    RespMetaCommand.ExecIfMatch => input.parseState.GetLong(0, isMetaArg: true) + 1,
-                    RespMetaCommand.ExecIfGreater => input.parseState.GetLong(0, isMetaArg: true),
-                    _ => throw new Exception($"Unexpected meta command: {metaCmd}"),
-                };
-            }
+            var updatedEtag = functionsState.GetUpdatedEtag(metaCmd, ref input.parseState, isInitUpdate: false, out _);
 
             switch (cmd)
             {

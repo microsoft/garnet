@@ -2790,7 +2790,7 @@ namespace Garnet.server
                 // If we have not found a command, continue parsing on slow path
                 if (cmd == RespCommand.NONE)
                 {
-                    cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success);
+                    cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success, skipReadCount: true);
                     if (!success) return cmd;
                 }
             }
@@ -2867,7 +2867,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private RespCommand ArrayParseCommand(bool writeErrorOnFailure, ref int count, ref bool success)
+        private RespCommand ArrayParseCommand(bool writeErrorOnFailure, ref int count, ref bool success, bool skipReadCount = false)
         {
             RespCommand cmd;
             ReadOnlySpan<byte> specificErrorMessage = default;
@@ -2885,23 +2885,26 @@ namespace Garnet.server
                 }
             }
 
-            // Ensure we are attempting to read a RESP array header
-            if (recvBufferPtr[readHead] != '*')
+            if (!skipReadCount)
             {
-                // We might have received an inline command package. Skip until the end of the line in the input package.
-                success = AttemptSkipLine();
-                return RespCommand.INVALID;
-            }
+                // Ensure we are attempting to read a RESP array header
+                if (recvBufferPtr[readHead] != '*')
+                {
+                    // We might have received an inline command package. Skip until the end of the line in the input package.
+                    success = AttemptSkipLine();
+                    return RespCommand.INVALID;
+                }
 
-            // Read the array length
-            if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
-            {
-                success = false;
-                return RespCommand.INVALID;
-            }
+                // Read the array length
+                if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
+                {
+                    success = false;
+                    return RespCommand.INVALID;
+                }
 
-            // Move readHead to start of command payload
-            readHead = (int)(ptr - recvBufferPtr);
+                // Move readHead to start of command payload
+                readHead = (int)(ptr - recvBufferPtr);
+            }
 
             // Try parsing the most important variable-length commands
             cmd = FastParseArrayCommand(ref count, ref specificErrorMessage);

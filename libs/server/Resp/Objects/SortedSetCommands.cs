@@ -30,12 +30,11 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(currIdx++);
             var options = SortedSetAddOption.None;
             ReadOnlySpan<byte> error = default;
-            long etag;
 
             // If the first argument is not a score field - parse and validate options
             if (!parseState.TryGetDouble(currIdx, out _))
             {
-                options = parseState.GetSortedSetAddOptions(currIdx, out var nextIdxStep, out etag);
+                options = parseState.GetSortedSetAddOptions(currIdx, out var nextIdxStep);
 
                 // No options were parsed - invalid Score encountered
                 if (nextIdxStep == 0)
@@ -61,16 +60,6 @@ namespace Garnet.server
                           (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) &&
                          (options & SortedSetAddOption.NX) == SortedSetAddOption.NX))
                         error = CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE;
-
-                    // IFETAGGREATER & IFETAGMATCH are mutually exclusive
-                    if ((options & SortedSetAddOption.IFETAGGREATER) == SortedSetAddOption.IFETAGGREATER &&
-                        (options & SortedSetAddOption.IFETAGMATCH) == SortedSetAddOption.IFETAGMATCH)
-                        error = CmdStrings.RESP_ERR_IFETAGGREATER_IFETAGMATCH_NOT_COMPATIBLE;
-
-                    // IFETAGGREATER or IFETAGMATCH has an invalid or missing etag value
-                    if (((options & SortedSetAddOption.IFETAGGREATER) == SortedSetAddOption.IFETAGGREATER ||
-                         (options & SortedSetAddOption.IFETAGMATCH) == SortedSetAddOption.IFETAGMATCH) && etag == -1)
-                        error = CmdStrings.RESP_ERR_INVALID_OR_MISSING_ETAG;
 
                     // INCR supports only one score-element pair
                     if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR &&

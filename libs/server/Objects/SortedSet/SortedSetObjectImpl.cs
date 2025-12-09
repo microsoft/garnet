@@ -36,8 +36,7 @@ namespace Garnet.server
             InfiniteMax = 2
         }
 
-        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion,
-            long etag)
+        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             DeleteExpiredItems();
 
@@ -46,7 +45,6 @@ namespace Garnet.server
 
             var options = SortedSetAddOption.None;
             var currTokenIdx = 0;
-            long inputEtag = -1;
 
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -58,19 +56,8 @@ namespace Garnet.server
                 if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
                 {
                     // Try to get and validate options before the Score field, if any
-                    options = input.parseState.GetSortedSetAddOptions(currTokenIdx, out var nextIdxStep, out inputEtag);
+                    options = input.parseState.GetSortedSetAddOptions(currTokenIdx, out var nextIdxStep);
                     currTokenIdx += nextIdxStep;
-
-                    if ((options & SortedSetAddOption.IFETAGGREATER) == SortedSetAddOption.IFETAGGREATER)
-                    {
-                        if (etag >= inputEtag)
-                            continueProcessingInput = false;
-                    }
-                    else if ((options & SortedSetAddOption.IFETAGMATCH) == SortedSetAddOption.IFETAGMATCH)
-                    {
-                        if (etag != inputEtag)
-                            continueProcessingInput = false;
-                    }
                 }
                 else
                 {
@@ -169,11 +156,10 @@ namespace Garnet.server
                 {
                     writer.WriteDoubleNumeric(incrResult);
                 }
-                else if ((options & (SortedSetAddOption.WITHETAG | SortedSetAddOption.IFETAGGREATER |
-                                     SortedSetAddOption.IFETAGMATCH)) != 0)
+                else if (input.header.metaCmd == RespMetaCommand.ExecWithEtag)
                 {
                     writer.WriteArrayLength(2);
-                    writer.WriteInt64(addedOrChanged > 0 ? etag + 1 : etag);
+                    //writer.WriteInt64(addedOrChanged > 0 ? etag + 1 : etag);
                     writer.WriteInt32(addedOrChanged);
                 }
                 else

@@ -57,6 +57,41 @@ namespace Garnet.server
         public CustomObjectFunctions GetCustomObjectSubCommandFunctions(int id, int subId)
             => customCommandManager.TryGetCustomObjectSubCommand(id, subId, out var cmd) ? cmd.functions : null;
 
+        public long GetUpdatedEtag(RespMetaCommand metaCmd, ref SessionParseState parseState, bool isInitUpdate, out bool execCmd)
+        {
+            execCmd = true;
+            long updatedEtag = LogRecord.NoETag;
+            long inputEtag = LogRecord.NoETag;
+
+            if (metaCmd == RespMetaCommand.None)
+                return updatedEtag;
+
+            if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater or RespMetaCommand.ExecIfNotMatch)
+            {
+                inputEtag = parseState.GetLong(0, isMetaArg: true);
+
+                if (!isInitUpdate)
+                {
+                    var comparisonResult = inputEtag.CompareTo(this.etagState.ETag);
+                    var expectedResult = metaCmd == RespMetaCommand.ExecIfMatch ? 0 : 1;
+                    execCmd = comparisonResult == expectedResult;
+                }
+            }
+
+            if (execCmd)
+            {
+                updatedEtag = metaCmd switch
+                {
+                    RespMetaCommand.None or RespMetaCommand.ExecWithEtag => this.etagState.ETag + 1,
+                    RespMetaCommand.ExecIfMatch => inputEtag + 1,
+                    RespMetaCommand.ExecIfGreater => inputEtag,
+                    _ => throw new Exception($"Unexpected meta command: {metaCmd}"),
+                };
+            }
+
+            return updatedEtag;
+        }
+
         /// <summary>
         /// Copies the specified RESP response bytes into the destination <see cref="SpanByteAndMemory"/> buffer.
         /// If the response fits within the stack-allocated buffer, it is copied directly; otherwise, the buffer is converted to heap allocation and the response is copied there.

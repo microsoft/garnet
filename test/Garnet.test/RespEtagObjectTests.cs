@@ -175,35 +175,35 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // Add new sorted set with Etag when etag matches 0
-            var results = (string[])db.Execute("ZADD", "key1", "IFETAGMATCH", "0", "1", "a", "2", "b");
+            var results = (string[])db.Execute("EXECIFMATCH", "0", "ZADD", "key1", "1", "a", "2", "b");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
             ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // 2 elements added
 
             // Add new sorted set with Etag when etag matches 1
-            results = (string[])db.Execute("ZADD", "key2", "IFETAGMATCH", "1", "1", "a", "2", "b");
+            results = (string[])db.Execute("EXECIFMATCH", "1", "ZADD", "key2", "1", "a", "2", "b");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(0, long.Parse(results[0]!)); // Etag 0
             ClassicAssert.AreEqual(0, long.Parse(results[1]!)); // 0 elements added
 
             // Add non-existing field to sorted set when etag < 1
-            results = (string[])db.Execute("ZADD", "key1", "IFETAGGREATER", "1", "3", "c");
+            results = (string[])db.Execute("EXECIFGREATER", "1", "ZADD", "key1", "3", "c");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
             ClassicAssert.AreEqual(0, long.Parse(results[1]!)); // 0 element added
 
             // Add non-existing field to sorted set when etag < 2
-            results = (string[])db.Execute("ZADD", "key1", "IFETAGGREATER", "2", "3", "c");
+            results = (string[])db.Execute("EXECIFGREATER", "2", "ZADD", "key1", "3", "c");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // Etag 2
             ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // 1 element added
 
             // Add new sorted set with Etag when etag matches 2
-            results = (string[])db.Execute("ZADD", "key1", "IFETAGMATCH", "2", "4", "d");
+            results = (string[])db.Execute("EXECIFMATCH", "2", "ZADD", "key1", "4", "d");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(3, long.Parse(results[0]!)); // Etag 3
