@@ -289,6 +289,11 @@ namespace Garnet.server
 
             static void StartReplicationReplayTasks(VectorManager self, Func<RespServerSession> obtainServerSession)
             {
+                if (self.dbId != 0)
+                {
+                    throw new GarnetException($"Unexpected DB ({self.dbId}) in cluster mode, expected 0");
+                }
+
                 self.logger?.LogInformation("Starting {numTasks} replication tasks for VADDs", self.replicationReplayTasks.Length);
 
                 for (var i = 0; i < self.replicationReplayTasks.Length; i++)
