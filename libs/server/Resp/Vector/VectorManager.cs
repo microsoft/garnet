@@ -84,7 +84,7 @@ namespace Garnet.server
             // Include DB and id so we correlate to what's actually stored in the log
             logger = loggerFactory?.CreateLogger($"{nameof(VectorManager)}:{dbId}:{processInstanceId}");
 
-            replicationBlockEvent = new(true);
+            replicationBlockEvent = CountingEventSlim.Create();
             replicationReplayChannel = Channel.CreateUnbounded<VADDReplicationState>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
 
             // TODO: Pull this off a config or something
