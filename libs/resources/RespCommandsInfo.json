@@ -1318,6 +1318,31 @@
     "AclCategories": "Slow, Transaction"
   },
   {
+    "Command": "EXECIFGREATER",
+    "Name": "EXECIFGREATER",
+    "Arity": -4,
+    "AclCategories": "Garnet, Meta"
+  },
+  {
+    "Command": "EXECIFMATCH",
+    "Name": "EXECIFMATCH",
+    "Arity": -4,
+    "AclCategories": "Garnet, Meta"
+  },
+  {
+    "Command": "EXECIFNOTMATCH",
+    "Name": "EXECIFNOTMATCH",
+    "Arity": -4,
+    "AclCategories": "Garnet, Meta"
+  },
+  {
+    "Command": "EXECWITHETAG",
+    "Name": "EXECWITHETAG",
+    "Arity": -3,
+    "Flags": "ReadOnly",
+    "AclCategories": "Read, Garnet, Meta"
+  },
+  {
     "Command": "EXISTS",
     "Name": "EXISTS",
     "Arity": -2,

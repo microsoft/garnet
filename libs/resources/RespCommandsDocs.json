@@ -2036,6 +2036,112 @@
     "Complexity": "Depends on commands in the transaction"
   },
   {
+    "Command": "EXECIFGREATER",
+    "Name": "EXECIFGREATER",
+    "Summary": "Executes a command if the key(s) etag is greater than the etag specified.",
+    "Group": "Meta",
+    "Complexity": "Depends on the command executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COMMAND",
+        "DisplayText": "command",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "EXECIFMATCH",
+    "Name": "EXECIFMATCH",
+    "Summary": "Executes a command if the key(s) etag matches the etag specified.",
+    "Group": "Meta",
+    "Complexity": "Depends on the command executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COMMAND",
+        "DisplayText": "command",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "EXECIFNOTMATCH",
+    "Name": "EXECIFNOTMATCH",
+    "Summary": "Executes a command if the key(s) etag does not match the etag specified.",
+    "Group": "Meta",
+    "Complexity": "Depends on the command executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COMMAND",
+        "DisplayText": "command",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "EXECWITHETAG",
+    "Name": "EXECWITHETAG",
+    "Summary": "Executes a command and adds the key(s) etag(s) at time of execution.",
+    "Group": "Meta",
+    "Complexity": "Depends on the command executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COMMAND",
+        "DisplayText": "command",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
     "Command": "EXISTS",
     "Name": "EXISTS",
     "Summary": "Determines whether one or more keys exist.",

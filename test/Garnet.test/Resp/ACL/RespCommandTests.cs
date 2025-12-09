@@ -90,13 +90,14 @@ namespace Garnet.test.Resp.ACL
             // TODO: See if these commands could be identified programmatically
             IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "PUBSUB", "SCRIPT", "SLOWLOG"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
+            IEnumerable<string> metaCommands = allInfo.Where(static x => (x.Value.AclCategories & RespAclCategories.Meta) == RespAclCategories.Meta)
+                .Select(static x => x.Key);
 
             // Check tests against RespCommandsInfo
             {
                 // Exclude things like ACL, CLIENT, CLUSTER which are "commands" but only their sub commands can be run
                 IEnumerable<string> subCommands = allInfo.Where(static x => x.Value.SubCommands != null).SelectMany(static x => x.Value.SubCommands).Select(static x => x.Name);
-                var x = advertisedCommands.Except(withOnlySubCommands).Union(subCommands);
-                IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Union(subCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
+                IEnumerable<string> deSubCommanded = advertisedCommands.Except(withOnlySubCommands).Except(metaCommands).Union(subCommands).Select(static x => x.Replace("|", "").Replace("_", "").Replace("-", ""));
                 IEnumerable<string> notCovered = deSubCommanded.Except(covered, StringComparer.OrdinalIgnoreCase).Except(notCoveredByACLs, StringComparer.OrdinalIgnoreCase);
 
                 ClassicAssert.IsEmpty(notCovered, $"Commands in RespCommandsInfo not covered by ACL Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
@@ -109,7 +110,8 @@ namespace Garnet.test.Resp.ACL
                     allValues
                     .Except([RespCommand.NONE, RespCommand.INVALID, RespCommand.DELIFEXPIM])
                     .Where(cmd => !withOnlySubCommands.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase))
-                    .Where(cmd => !notCoveredByACLs.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
+                    .Where(cmd => !notCoveredByACLs.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase))
+                    .Where(cmd => !metaCommands.Contains(cmd.ToString(), StringComparer.OrdinalIgnoreCase));
                 IEnumerable<RespCommand> notCovered = testableValues.Where(cmd => !covered.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
 
                 ClassicAssert.IsEmpty(notCovered, $"Commands in RespCommand not covered by ACL Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
@@ -3041,21 +3043,6 @@ namespace Garnet.test.Resp.ACL
 
                     throw;
                 }
-            }
-        }
-
-        [Test]
-        public async Task ExecWithEtagACLsAsync()
-        {
-            await CheckCommandsAsync(
-                "EXECWITHETAG",
-                [DoExecWithEtagAsync]
-            );
-
-            static async Task DoExecWithEtagAsync(GarnetClient client)
-            {
-                var val = await client.ExecuteForStringResultAsync("EXECWITHETAG", ["GET", "foo"]);
-                ClassicAssert.IsNull(val);
             }
         }
 

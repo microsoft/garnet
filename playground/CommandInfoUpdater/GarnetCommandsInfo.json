@@ -428,7 +428,7 @@
     "IsInternal": false,
     "Arity": -4,
     "Flags": "NONE",
-    "AclCategories": "Garnet",
+    "AclCategories": "Garnet, Meta",
     "KeySpecifications": null
   },
   {
@@ -437,7 +437,7 @@
     "IsInternal": false,
     "Arity": -4,
     "Flags": "NONE",
-    "AclCategories": "Garnet",
+    "AclCategories": "Garnet, Meta",
     "KeySpecifications": null
   },
   {
@@ -446,7 +446,7 @@
     "IsInternal": false,
     "Arity": -4,
     "Flags": "NONE",
-    "AclCategories": "Garnet",
+    "AclCategories": "Garnet, Meta",
     "KeySpecifications": null
   },
   {
@@ -455,7 +455,7 @@
     "IsInternal": false,
     "Arity": -3,
     "Flags": "ReadOnly",
-    "AclCategories": "Garnet, Read",
+    "AclCategories": "Garnet, Meta, Read",
     "KeySpecifications": null
   },
   {
