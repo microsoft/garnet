@@ -148,6 +148,8 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetAddReplication(StorageSession currentSession, Func<RespServerSession> obtainServerSession, ref SpanByte keyWithNamespace, ref RawStringInput input)
         {
+            const long HoldForSetValue = long.MinValue / 2;
+
             if (input.arg1 == MigrateElementKeyLogArg)
             {
                 // These are special, injecting by a PRIMARY applying migration operations
@@ -274,16 +276,33 @@ namespace Garnet.server
             }
 
             // We need a running count of pending VADDs so WaitForVectorOperationsToComplete can work
-            _ = Interlocked.Increment(ref replicationReplayPendingVAdds);
-            replicationBlockEvent.Reset();
+
+            while (true)
+            {
+                var addRes = Interlocked.Increment(ref replicationReplayPendingVAdds);
+                if (addRes <= 0)
+                {
+                    _ = Interlocked.Decrement(ref replicationReplayPendingVAdds);
+                    _ = Thread.Yield();
+                }
+                else
+                {
+                    replicationBlockEvent.Reset();
+                    break;
+                }
+            }
+
             var queued = replicationReplayChannel.Writer.TryWrite(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks));
             if (!queued)
             {
                 // Can occur if we're being Disposed
                 var pending = Interlocked.Decrement(ref replicationReplayPendingVAdds);
-                if (pending == 0)
+                if (pending == 0 && Interlocked.CompareExchange(ref replicationReplayPendingVAdds, HoldForSetValue, 0) == 0)
                 {
                     replicationBlockEvent.Set();
+
+                    var unlockRes = Interlocked.Add(ref replicationReplayPendingVAdds, -HoldForSetValue);
+                    Debug.Assert(unlockRes >= 0, "Unlock resulted in incoherent replicationReplayPendingVAdds");
                 }
             }
 
@@ -331,9 +350,12 @@ namespace Garnet.server
                                                 var pending = Interlocked.Decrement(ref self.replicationReplayPendingVAdds);
                                                 Debug.Assert(pending >= 0, "Pending VADD ops has fallen below 0 after processing op");
 
-                                                if (pending == 0)
+                                                if (pending == 0 && Interlocked.CompareExchange(ref self.replicationReplayPendingVAdds, HoldForSetValue, 0) == 0)
                                                 {
                                                     self.replicationBlockEvent.Set();
+
+                                                    var unlockRes = Interlocked.Add(ref self.replicationReplayPendingVAdds, -HoldForSetValue);
+                                                    Debug.Assert(unlockRes >= 0, "Unlock resulted in incoherent replicationReplayPendingVAdds");
                                                 }
                                             }
                                         }
