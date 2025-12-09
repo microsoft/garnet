@@ -23,13 +23,6 @@ namespace Garnet.server
     public sealed unsafe partial class AofProcessor
     {
         readonly StoreWrapper storeWrapper;
-        //readonly RespServerSession respServerSession;
-
-        //private readonly RawStringInput storeInput;
-        //private readonly ObjectInput objectStoreInput;
-        //private readonly UnifiedStoreInput unifiedStoreInput;
-        //private readonly CustomProcedureInput customProcInput;
-        //private readonly SessionParseState parseState;
         readonly RespServerSession[] respServerSessions;
         readonly AofReplayCoordinator aofReplayCoordinator;
 
