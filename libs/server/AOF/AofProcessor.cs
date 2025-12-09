@@ -3,12 +3,10 @@
 
 using System;
 using System.Buffers;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
+using System.Threading;
 using Garnet.common;
-using Garnet.networking;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -27,11 +25,7 @@ namespace Garnet.server
     {
         readonly StoreWrapper storeWrapper;
         readonly RespServerSession respServerSession;
-
-        private readonly RawStringInput storeInput;
-        private readonly ObjectInput objectStoreInput;
-        private readonly CustomProcedureInput customProcInput;
-        private readonly SessionParseState parseState;
+        readonly AofReplayCoordinator aofReplayCoordinator;
 
         int activeDbId;
         VectorManager activeVectorManager;
@@ -39,7 +33,10 @@ namespace Garnet.server
         /// <summary>
         /// Set ReadWriteSession on the cluster session (NOTE: used for replaying stored procedures only)
         /// </summary>
-        public void SetReadWriteSession() => respServerSession.clusterSession.SetReadWriteSession();
+        public void SetReadWriteSession()
+        {
+            respServerSession.clusterSession.SetReadWriteSession();
+        }
 
         /// <summary>
         /// Session for main store
@@ -51,17 +48,10 @@ namespace Garnet.server
         /// </summary>
         BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
 
-        readonly Dictionary<int, List<byte[]>> inflightTxns;
-        readonly byte[] buffer;
-        readonly GCHandle handle;
-        readonly byte* bufferPtr;
-
-        readonly ILogger logger;
-
         readonly StoreWrapper replayAofStoreWrapper;
         readonly IClusterProvider clusterProvider;
 
-        MemoryResult<byte> output;
+        readonly ILogger logger;
 
         /// <summary>
         /// Create new AOF processor
@@ -74,8 +64,8 @@ namespace Garnet.server
         {
             this.storeWrapper = storeWrapper;
 
-            replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
             this.clusterProvider = clusterProvider;
+            replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
 
             this.activeDbId = 0;
             this.respServerSession = ObtainServerSession();
@@ -83,20 +73,12 @@ namespace Garnet.server
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
 
-            parseState.Initialize();
-            storeInput.parseState = parseState;
-            objectStoreInput.parseState = parseState;
-            customProcInput.parseState = parseState;
-
-            inflightTxns = new Dictionary<int, List<byte[]>>();
-            buffer = new byte[BufferSizeUtils.ServerBufferSize(new MaxSizeSettings())];
-            handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-            bufferPtr = (byte*)handle.AddrOfPinnedObject();
+            aofReplayCoordinator = new AofReplayCoordinator(this, logger);
             this.logger = logger;
         }
 
         private RespServerSession ObtainServerSession()
-        => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
+            => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
         /// <summary>
         /// Dispose
@@ -109,8 +91,6 @@ namespace Garnet.server
                 dbSession.StorageSession.basicContext.Session?.Dispose();
                 dbSession.StorageSession.objectStoreBasicContext.Session?.Dispose();
             }
-
-            handle.Free();
         }
 
         /// <summary>
@@ -121,82 +101,103 @@ namespace Garnet.server
         /// <returns>Tail address</returns>
         public long Recover(GarnetDatabase db, long untilAddress = -1)
         {
-            logger?.LogInformation("Begin AOF recovery for DB ID: {id}", db.Id);
-            return RecoverReplay(db, untilAddress);
-        }
-
-        private long RecoverReplay(GarnetDatabase db, long untilAddress)
-        {
-            // Begin replay for specified database
-            logger?.LogInformation("Begin AOF replay for DB ID: {id}", db.Id);
+            var start = Stopwatch.GetTimestamp();
+            var total_number_of_replayed_records = 0L;
             try
             {
-                int count = 0;
-
-                // Fetch the database AOF and update the current database context for the processor
-                var appendOnlyFile = db.AppendOnlyFile;
-                SwitchActiveDatabaseContext(db);
-
-                // Set the tail address for replay recovery to the tail address of the AOF if none specified
-                if (untilAddress == -1) untilAddress = appendOnlyFile.TailAddress;
-
-                // Scan the AOF up to the tail address
-                using var scan = appendOnlyFile.Scan(appendOnlyFile.BeginAddress, untilAddress);
-
-                // Replay each AOF record in the current database context
-                while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))
-                {
-                    count++;
-                    ProcessAofRecord(entry, length);
-                    if (count % 100_000 == 0)
-                        logger?.LogInformation("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", count, nextAofAddress, db.Id);
-                }
-
-                logger?.LogInformation("Completed full AOF log replay of {count} records (DB ID: {id})", count, db.Id);
-                return untilAddress;
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "An error occurred AofProcessor.RecoverReplay");
-
-                if (storeWrapper.serverOptions.FailOnRecoveryError)
-                    throw;
+                logger?.LogInformation("Begin AOF recovery for DB ID: {id}", db.Id);
+                return RecoverReplay(db, untilAddress);
             }
             finally
             {
-                output.MemoryOwner?.Dispose();
-                respServerSession.Dispose();
+                var end = Stopwatch.GetTimestamp();
+                var elapsed = Stopwatch.GetElapsedTime(start, end);
+                var seconds = elapsed.TotalMilliseconds / 1000.0;
+                var aofSize = db.AppendOnlyFile.TailAddress - db.AppendOnlyFile.BeginAddress;
+                var recordsPerSec = total_number_of_replayed_records / seconds;
+                var gigabytesPerSec = (aofSize / seconds) / (double)1_000_000_000;
+
+                logger?.LogInformation("AOF Recovery in {seconds} secs", seconds);
+                logger?.LogInformation("Total number of replayed records {total_number_of_replayed_records:N0} bytes", total_number_of_replayed_records);
+                logger?.LogInformation("Throughput {recordsPerSec:N2} records/sec", recordsPerSec);
+                logger?.LogInformation("AOF Recovery size {aofSize:N0}", aofSize);
+                logger?.LogInformation("AOF Recovery throughput {GiBperSecs:N2} GiB/secs", gigabytesPerSec);
             }
 
-            return -1;
-        }
-
-        internal unsafe void ProcessAofRecord(IMemoryOwner<byte> entry, int length)
-        {
-            fixed (byte* ptr = entry.Memory.Span)
+            long RecoverReplay(GarnetDatabase db, long untilAddress)
             {
-                ProcessAofRecordInternal(ptr, length, false, out _);
+                // Begin replay for specified database
+                logger?.LogInformation("Begin AOF replay for DB ID: {id}", db.Id);
+                try
+                {
+                    // Fetch the database AOF and update the current database context for the processor
+                    var appendOnlyFile = db.AppendOnlyFile;
+                    SwitchActiveDatabaseContext(db);
+
+                    // Set the tail address for replay recovery to the tail address of the AOF if none specified
+                    if (untilAddress == -1)
+                        untilAddress = appendOnlyFile.TailAddress;
+
+                    // Run recover replay task
+                    RecoverReplayTask(untilAddress);
+
+                    void RecoverReplayTask(long untilAddress)
+                    {
+                        var count = 0;
+                        using var scan = appendOnlyFile.Scan(appendOnlyFile.BeginAddress, untilAddress);
+
+                        // Replay each AOF record in the current database context
+                        while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))
+                        {
+                            count++;
+                            ProcessAofRecord(entry, length);
+                            if (count % 100_000 == 0)
+                                logger?.LogTrace("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", count, nextAofAddress, db.Id);
+                        }
+
+                        logger?.LogInformation("Completed full AOF sublog replay of {count:N0} records (DB ID: {id})", count, db.Id);
+                        _ = Interlocked.Add(ref total_number_of_replayed_records, count);
+                    }
+
+                    unsafe void ProcessAofRecord(IMemoryOwner<byte> entry, int length)
+                    {
+                        fixed (byte* ptr = entry.Memory.Span)
+                        {
+                            ProcessAofRecordInternal(ptr, length, asReplica: false, out _);
+                        }
+                        entry.Dispose();
+                    }
+
+                    return untilAddress;
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "An error occurred AofProcessor.RecoverReplay");
+
+                    if (storeWrapper.serverOptions.FailOnRecoveryError)
+                        throw;
+                }
+                finally
+                {
+                    aofReplayCoordinator.Dispose();
+                    respServerSession.Dispose();
+                }
+
+                return -1;
             }
-            entry.Dispose();
         }
 
         /// <summary>
-        /// Fuzzy region of AOF is the region between the checkpoint start and end commit markers.
-        /// This regions can contain entries in both (v) and (v+1) versions. The processing logic is:
-        /// 1) Process (v) entries as is.
-        /// 2) Store aware the (v+1) entries in a buffer.
-        /// 3) At the end of the fuzzy region, take a checkpoint
-        /// 4) Finally, replay the buffered (v+1) entries.
+        /// Process AOF record internal
         /// </summary>
-        bool inFuzzyRegion = false;
-        List<byte[]> fuzzyRegionBuffer = new();
-
-        /// <summary>
-        /// Process AOF record
-        /// </summary>
+        /// <param name="ptr"></param>
+        /// <param name="length"></param>
+        /// <param name="asReplica"></param>
+        /// <param name="isCheckpointStart"></param>
         public unsafe void ProcessAofRecordInternal(byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
         {
-            AofHeader header = *(AofHeader*)ptr;
+            var header = *(AofHeader*)ptr;
+            var replayContext = aofReplayCoordinator.GetReplayContext();
             isCheckpointStart = false;
 
             // Aggressively do not move data if VADD are being replayed
@@ -205,112 +206,66 @@ namespace Garnet.server
                 activeVectorManager.WaitForVectorOperationsToComplete();
             }
 
-            if (inflightTxns.ContainsKey(header.sessionID))
-            {
-                switch (header.opType)
-                {
-                    case AofEntryType.TxnAbort:
-                        inflightTxns[header.sessionID].Clear();
-                        inflightTxns.Remove(header.sessionID);
-                        break;
-                    case AofEntryType.TxnCommit:
-                        if (inFuzzyRegion)
-                        {
-                            fuzzyRegionBuffer.Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
-                        }
-                        else
-                        {
-                            ProcessTxn(inflightTxns[header.sessionID], asReplica);
-                            inflightTxns[header.sessionID].Clear();
-                            inflightTxns.Remove(header.sessionID);
-                        }
-                        break;
-                    case AofEntryType.StoredProcedure:
-                        throw new GarnetException($"Unexpected AOF header operation type {header.opType} within transaction");
-                    default:
-                        inflightTxns[header.sessionID].Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
-                        break;
-                }
+            // Handle transactions
+            if (aofReplayCoordinator.AddOrReplayTransactionOperation(ptr, length, asReplica))
                 return;
-            }
 
             switch (header.opType)
             {
-                case AofEntryType.TxnStart:
-                    inflightTxns[header.sessionID] = [];
-                    break;
-                case AofEntryType.TxnAbort:
-                case AofEntryType.TxnCommit:
-                    // We encountered a transaction end without start - this could happen because we truncated the AOF
-                    // after a checkpoint, and the transaction belonged to the previous version. It can safely
-                    // be ignored.
-                    break;
                 case AofEntryType.CheckpointStartCommit:
                     // Inform caller that we processed a checkpoint start marker so that it can record ReplicationCheckpointStartOffset if this is a replica replay
                     isCheckpointStart = true;
                     if (header.aofHeaderVersion > 1)
                     {
-                        if (inFuzzyRegion)
+                        if (replayContext.inFuzzyRegion)
                         {
-                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", fuzzyRegionBuffer.Count);
-                            fuzzyRegionBuffer.Clear();
+                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region",
+                                aofReplayCoordinator.FuzzyRegionBufferCount());
+                            aofReplayCoordinator.ClearFuzzyRegionBuffer();
                         }
-                        inFuzzyRegion = true;
+                        Debug.Assert(!replayContext.inFuzzyRegion);
+                        replayContext.inFuzzyRegion = true;
                     }
-                    else
-                    {
-                        // We are parsing the old AOF format: take checkpoint immediately as we do not have a fuzzy region
-                        // Note: we will not truncate the AOF as ReplicationCheckpointStartOffset is not set
-                        // Once a new checkpoint is transferred, the replica will truncate the AOF.
-                        if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
-                            _ = storeWrapper.TakeCheckpoint(false, logger);
-                    }
-                    break;
-                case AofEntryType.ObjectStoreCheckpointStartCommit:
-                    // With unified checkpoint, we do not need to handle object store checkpoint separately
                     break;
                 case AofEntryType.CheckpointEndCommit:
                     if (header.aofHeaderVersion > 1)
                     {
-                        if (!inFuzzyRegion)
+                        if (!replayContext.inFuzzyRegion)
                         {
                             logger?.LogInformation("Encountered CheckpointEndCommit without a prior CheckpointStartCommit - ignoring");
                         }
                         else
                         {
-                            inFuzzyRegion = false;
+                            replayContext.inFuzzyRegion = false;
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
-                                _ = storeWrapper.TakeCheckpoint(false, logger);
+                            {
+                                _ = storeWrapper.TakeCheckpoint(background: false, logger);
+                            }
+
                             // Process buffered records
-                            if (fuzzyRegionBuffer.Count > 0)
-                            {
-                                logger?.LogInformation("Replaying {fuzzyRegionBufferCount} records from fuzzy region for checkpoint {newVersion}", fuzzyRegionBuffer.Count, storeWrapper.store.CurrentVersion);
-                            }
-                            foreach (var entry in fuzzyRegionBuffer)
-                            {
-                                fixed (byte* entryPtr = entry)
-                                    ReplayOp(entryPtr, entry.Length, asReplica);
-                            }
-                            fuzzyRegionBuffer.Clear();
+                            aofReplayCoordinator.ProcessFuzzyRegionOperations(storeWrapper.store.CurrentVersion, asReplica);
+                            aofReplayCoordinator.ClearFuzzyRegionBuffer();
                         }
                     }
-                    break;
-                case AofEntryType.ObjectStoreCheckpointEndCommit:
-                    // With unified checkpoint, we do not need to handle object store checkpoint separately
                     break;
                 case AofEntryType.MainStoreStreamingCheckpointStartCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
+                    {
                         storeWrapper.store.SetVersion(header.storeVersion);
-                    break;
-                case AofEntryType.MainStoreStreamingCheckpointEndCommit:
-                    Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
+                    }
                     break;
                 case AofEntryType.ObjectStoreStreamingCheckpointStartCommit:
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
+                    {
                         storeWrapper.objectStore.SetVersion(header.storeVersion);
+                    }
+                    break;
+                case AofEntryType.MainStoreStreamingCheckpointEndCommit:
+                case AofEntryType.ObjectStoreStreamingCheckpointEndCommit:
+                    Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     break;
                 case AofEntryType.FlushAll:
                     storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1);
@@ -318,33 +273,18 @@ namespace Garnet.server
                 case AofEntryType.FlushDb:
                     storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId);
                     break;
-                case AofEntryType.ObjectStoreStreamingCheckpointEndCommit:
-                    Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
-                    break;
                 default:
-                    ReplayOp(ptr, length, asReplica);
+                    _ = ReplayOp(basicContext, objectStoreBasicContext, ptr, length, asReplica);
                     break;
             }
         }
 
-        /// <summary>
-        /// Method to process a batch of entries as a single txn.
-        /// Assumes that operations arg does not contain transaction markers (i.e. TxnStart,TxnCommit,TxnAbort)
-        /// </summary>
-        /// <param name="operations"></param>
-        /// <param name="asReplica"></param>
-        private unsafe void ProcessTxn(List<byte[]> operations, bool asReplica)
+        private unsafe bool ReplayOp<TContext, TObjectContext>(TContext storeContext, TObjectContext objectStoreContext, byte* entryPtr, int length, bool asReplica)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            foreach (byte[] entry in operations)
-            {
-                fixed (byte* ptr = entry)
-                    ReplayOp(ptr, entry.Length, asReplica);
-            }
-        }
-
-        private unsafe bool ReplayOp(byte* entryPtr, int length, bool replayAsReplica)
-        {
-            AofHeader header = *(AofHeader*)entryPtr;
+            var header = *(AofHeader*)entryPtr;
+            var replayContext = aofReplayCoordinator.GetReplayContext();
 
             // StoreRMW can queue VADDs onto different threads
             // but everything else needs to WAIT for those to complete
@@ -355,48 +295,42 @@ namespace Garnet.server
             }
 
             // Skips (1) entries with versions that were part of prior checkpoint; and (2) future entries in fuzzy region
-            if (SkipRecord(entryPtr, length, replayAsReplica)) return false;
+            if (SkipRecord(replayContext.inFuzzyRegion, entryPtr, length, asReplica))
+                return false;
 
+            var bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
+            var bufferLength = replayContext.objectOutputBuffer.Length;
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    StoreUpsert(basicContext, storeInput, entryPtr);
+                    StoreUpsert(storeContext, replayContext.storeInput, entryPtr + sizeof(AofHeader));
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(basicContext, storeInput, activeVectorManager, respServerSession, ObtainServerSession, entryPtr);
+                    StoreRMW(storeContext, replayContext.storeInput, activeVectorManager, respServerSession, ObtainServerSession, entryPtr + sizeof(AofHeader));
                     break;
                 case AofEntryType.StoreDelete:
-                    StoreDelete(basicContext, activeVectorManager, respServerSession.storageSession, entryPtr);
+                    StoreDelete(storeContext, activeVectorManager, respServerSession.storageSession, entryPtr + sizeof(AofHeader));
                     break;
                 case AofEntryType.ObjectStoreRMW:
-                    ObjectStoreRMW(objectStoreBasicContext, objectStoreInput, entryPtr, bufferPtr, buffer.Length);
+                    ObjectStoreRMW(objectStoreContext, replayContext.objectStoreInput, entryPtr + sizeof(AofHeader), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
-                    ObjectStoreUpsert(objectStoreBasicContext, storeWrapper.GarnetObjectSerializer, entryPtr, bufferPtr, buffer.Length);
+                    ObjectStoreUpsert(objectStoreContext, storeWrapper.GarnetObjectSerializer, entryPtr + sizeof(AofHeader), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreDelete:
-                    ObjectStoreDelete(objectStoreBasicContext, entryPtr);
+                    ObjectStoreDelete(objectStoreContext, entryPtr + sizeof(AofHeader));
                     break;
                 case AofEntryType.StoredProcedure:
-                    RunStoredProc(header.procedureId, customProcInput, entryPtr);
+                    aofReplayCoordinator.ReplayStoredProc(header.procedureId, entryPtr);
+                    break;
+                case AofEntryType.TxnCommit:
+                    aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(entryPtr, asReplica);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
+
             return true;
-
-            void RunStoredProc(byte id, CustomProcedureInput customProcInput, byte* ptr)
-            {
-                var curr = ptr + sizeof(AofHeader);
-
-                // Reconstructing CustomProcedureInput
-
-                // input
-                customProcInput.DeserializeFrom(curr);
-
-                // Run the stored procedure with the reconstructed input
-                respServerSession.RunTransactionProc(id, ref customProcInput, ref output, isRecovering: true);
-            }
         }
 
         private void SwitchActiveDatabaseContext(GarnetDatabase db, bool initialSetup = false)
@@ -422,10 +356,13 @@ namespace Garnet.server
             activeVectorManager = db.VectorManager;
         }
 
-        static void StoreUpsert(BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
-            RawStringInput storeInput, byte* ptr)
+        static void StoreUpsert<TContext>(
+            TContext context,
+            RawStringInput storeInput,
+            byte* ptr)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var curr = ptr + sizeof(AofHeader);
+            var curr = ptr;
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
             curr += key.TotalSize;
 
@@ -433,35 +370,31 @@ namespace Garnet.server
             curr += value.TotalSize;
 
             // Reconstructing RawStringInput
-
-            // input
-            storeInput.DeserializeFrom(curr);
+            _ = storeInput.DeserializeFrom(curr);
 
             SpanByteAndMemory output = default;
-            basicContext.Upsert(ref key, ref storeInput, ref value, ref output);
+            context.Upsert(ref key, ref storeInput, ref value, ref output);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }
 
-        static void StoreRMW(
-            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+        static void StoreRMW<TContext>(
+            TContext context,
             RawStringInput storeInput,
             VectorManager vectorManager,
             RespServerSession currentSession,
             Func<RespServerSession> obtainServerSession,
-            byte* ptr
-        )
+            byte* ptr)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var curr = ptr + sizeof(AofHeader);
+            var curr = ptr;
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
             curr += key.TotalSize;
 
             // Reconstructing RawStringInput
-
-            // input
             _ = storeInput.DeserializeFrom(curr);
 
-            // VADD requires special handling, shove it over to the VectorManager
+             // VADD requires special handling, shove it over to the VectorManager
             if (storeInput.header.cmd == RespCommand.VADD)
             {
                 vectorManager.HandleVectorSetAddReplication(currentSession.storageSession, obtainServerSession, ref key, ref storeInput);
@@ -483,137 +416,151 @@ namespace Garnet.server
             var pbOutput = stackalloc byte[32];
             var output = new SpanByteAndMemory(pbOutput, 32);
 
-            if (basicContext.RMW(ref key, ref storeInput, ref output).IsPending)
-                _ = basicContext.CompletePending(true);
+            if (context.RMW(ref key, ref storeInput, ref output).IsPending)
+                _ = context.CompletePending(true);
+
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
         }
 
-        static void StoreDelete(
-            BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> basicContext,
+        static void StoreDelete<TContext>(
+            TContext context,
             VectorManager vectorManager,
             StorageSession storageSession,
             byte* ptr)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
-            var res = basicContext.Delete(ref key);
+            ref var key = ref Unsafe.AsRef<SpanByte>(ptr);
+            var res = context.Delete(ref key);
 
             if (res.IsCanceled)
             {
                 // Might be a vector set
                 res = vectorManager.TryDeleteVectorSet(storageSession, ref key, out _);
                 if (res.IsPending)
-                    _ = basicContext.CompletePending(true);
+                    _ = context.CompletePending(true);
             }
         }
 
-        static void ObjectStoreUpsert(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
-                GarnetObjectSerializer garnetObjectSerializer, byte* ptr, byte* outputPtr, int outputLength)
+        static void ObjectStoreUpsert<TObjectContext>(
+            TObjectContext objectContext,
+            GarnetObjectSerializer garnetObjectSerializer,
+            byte* ptr,
+            byte* outputPtr,
+            int outputLength)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
+            ref var key = ref Unsafe.AsRef<SpanByte>(ptr);
             var keyB = key.ToByteArray();
 
-            ref var value = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader) + key.TotalSize);
+            ref var value = ref Unsafe.AsRef<SpanByte>(ptr + key.TotalSize);
             var valB = garnetObjectSerializer.Deserialize(value.ToByteArray());
 
             var output = new GarnetObjectStoreOutput(new(outputPtr, outputLength));
-            basicContext.Upsert(ref keyB, ref valB);
+            _ = objectContext.Upsert(ref keyB, ref valB);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Memory.Dispose();
         }
 
-        static void ObjectStoreRMW(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext,
-            ObjectInput objectStoreInput, byte* ptr, byte* outputPtr, int outputLength)
+        static void ObjectStoreRMW<TObjectContext>(
+            TObjectContext objectContext,
+            ObjectInput objectStoreInput,
+            byte* ptr,
+            byte* outputPtr,
+            int outputLength)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            var curr = ptr + sizeof(AofHeader);
+            var curr = ptr;
             ref var key = ref Unsafe.AsRef<SpanByte>(curr);
             curr += key.TotalSize;
             var keyB = key.ToByteArray();
 
             // Reconstructing ObjectInput
-
-            // input
-            objectStoreInput.DeserializeFrom(curr);
+            _ = objectStoreInput.DeserializeFrom(curr);
 
             // Call RMW with the reconstructed key & ObjectInput
             var output = new GarnetObjectStoreOutput(new(outputPtr, outputLength));
-            if (basicContext.RMW(ref keyB, ref objectStoreInput, ref output).IsPending)
-                basicContext.CompletePending(true);
+            if (objectContext.RMW(ref keyB, ref objectStoreInput, ref output).IsPending)
+                _ = objectContext.CompletePending(true);
 
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Memory.Dispose();
         }
 
-        static void ObjectStoreDelete(BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> basicContext, byte* ptr)
+        static void ObjectStoreDelete<TObjectContext>(
+            TObjectContext objectContext,
+            byte* ptr)
+            where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
-            ref var key = ref Unsafe.AsRef<SpanByte>(ptr + sizeof(AofHeader));
+            ref var key = ref Unsafe.AsRef<SpanByte>(ptr);
             var keyB = key.ToByteArray();
-            basicContext.Delete(ref keyB);
+            _ = objectContext.Delete(ref keyB);
         }
 
         /// <summary>
         /// On recovery apply records with header.version greater than CurrentVersion.
         /// </summary>
+        /// <param name="inFuzzyRegion"></param>
         /// <param name="entryPtr"></param>
         /// <param name="length"></param>
         /// <param name="asReplica"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        bool SkipRecord(byte* entryPtr, int length, bool asReplica)
+        bool SkipRecord(bool inFuzzyRegion, byte* entryPtr, int length, bool asReplica)
         {
             var header = *(AofHeader*)entryPtr;
             return (asReplica && inFuzzyRegion) ? // Buffer logic only for AOF version > 1
                 BufferNewVersionRecord(header, entryPtr, length) :
                 IsOldVersionRecord(header);
-        }
 
-        bool BufferNewVersionRecord(AofHeader header, byte* entryPtr, int length)
-        {
-            if (IsNewVersionRecord(header))
+            bool BufferNewVersionRecord(AofHeader header, byte* entryPtr, int length)
             {
-                fuzzyRegionBuffer.Add(new ReadOnlySpan<byte>(entryPtr, length).ToArray());
-                return true;
+                if (IsNewVersionRecord(header))
+                {
+                    aofReplayCoordinator.AddFuzzyRegionOperation(new ReadOnlySpan<byte>(entryPtr, length));
+                    return true;
+                }
+                return false;
             }
-            return false;
-        }
 
-        bool IsOldVersionRecord(AofHeader header)
-        {
-            var storeType = ToAofStoreType(header.opType);
-
-            return storeType switch
+            bool IsOldVersionRecord(AofHeader header)
             {
-                AofStoreType.MainStoreType => header.storeVersion < storeWrapper.store.CurrentVersion,
-                AofStoreType.ObjectStoreType => header.storeVersion < storeWrapper.objectStore.CurrentVersion,
-                AofStoreType.TxnType => header.storeVersion < storeWrapper.objectStore.CurrentVersion,
-                _ => throw new GarnetException($"Unexpected AOF header store type {storeType}"),
-            };
-        }
+                var storeType = ToAofStoreType(header.opType);
 
-        bool IsNewVersionRecord(AofHeader header)
-        {
-            var storeType = ToAofStoreType(header.opType);
-            return storeType switch
-            {
-                AofStoreType.MainStoreType => header.storeVersion > storeWrapper.store.CurrentVersion,
-                AofStoreType.ObjectStoreType => header.storeVersion > storeWrapper.objectStore.CurrentVersion,
-                AofStoreType.TxnType => header.storeVersion > storeWrapper.objectStore.CurrentVersion,
-                _ => throw new GarnetException($"Unknown AOF header store type {storeType}"),
-            };
-        }
+                return storeType switch
+                {
+                    AofStoreType.MainStoreType => header.storeVersion < storeWrapper.store.CurrentVersion,
+                    AofStoreType.ObjectStoreType => header.storeVersion < storeWrapper.objectStore.CurrentVersion,
+                    AofStoreType.TxnType => header.storeVersion < storeWrapper.objectStore.CurrentVersion,
+                    _ => throw new GarnetException($"Unexpected AOF header store type {storeType}"),
+                };
+            }
 
-        static AofStoreType ToAofStoreType(AofEntryType type)
-        {
-            return type switch
+            bool IsNewVersionRecord(AofHeader header)
             {
-                AofEntryType.StoreUpsert or AofEntryType.StoreRMW or AofEntryType.StoreDelete => AofStoreType.MainStoreType,
-                AofEntryType.ObjectStoreUpsert or AofEntryType.ObjectStoreRMW or AofEntryType.ObjectStoreDelete => AofStoreType.ObjectStoreType,
-                AofEntryType.TxnStart or AofEntryType.TxnCommit or AofEntryType.TxnAbort or AofEntryType.StoredProcedure => AofStoreType.TxnType,
-                AofEntryType.CheckpointStartCommit or AofEntryType.ObjectStoreCheckpointStartCommit or AofEntryType.MainStoreStreamingCheckpointStartCommit or AofEntryType.ObjectStoreStreamingCheckpointStartCommit => AofStoreType.CheckpointType,
-                AofEntryType.CheckpointEndCommit or AofEntryType.ObjectStoreCheckpointEndCommit or AofEntryType.MainStoreStreamingCheckpointEndCommit or AofEntryType.ObjectStoreStreamingCheckpointEndCommit => AofStoreType.CheckpointType,
-                AofEntryType.FlushAll or AofEntryType.FlushDb => AofStoreType.FlushDbType,
-                _ => throw new GarnetException($"Conversion to AofStoreType not possible for {type}"),
-            };
+                var storeType = ToAofStoreType(header.opType);
+                return storeType switch
+                {
+                    AofStoreType.MainStoreType => header.storeVersion > storeWrapper.store.CurrentVersion,
+                    AofStoreType.ObjectStoreType => header.storeVersion > storeWrapper.objectStore.CurrentVersion,
+                    AofStoreType.TxnType => header.storeVersion > storeWrapper.objectStore.CurrentVersion,
+                    _ => throw new GarnetException($"Unknown AOF header store type {storeType}"),
+                };
+            }
+
+            static AofStoreType ToAofStoreType(AofEntryType type)
+            {
+                return type switch
+                {
+                    AofEntryType.StoreUpsert or AofEntryType.StoreRMW or AofEntryType.StoreDelete => AofStoreType.MainStoreType,
+                    AofEntryType.ObjectStoreUpsert or AofEntryType.ObjectStoreRMW or AofEntryType.ObjectStoreDelete => AofStoreType.ObjectStoreType,
+                    AofEntryType.TxnStart or AofEntryType.TxnCommit or AofEntryType.TxnAbort or AofEntryType.StoredProcedure => AofStoreType.TxnType,
+                    AofEntryType.CheckpointStartCommit or AofEntryType.ObjectStoreStreamingCheckpointStartCommit => AofStoreType.CheckpointType,
+                    AofEntryType.CheckpointEndCommit or AofEntryType.MainStoreStreamingCheckpointEndCommit or AofEntryType.ObjectStoreStreamingCheckpointEndCommit => AofStoreType.CheckpointType,
+                    AofEntryType.FlushAll or AofEntryType.FlushDb => AofStoreType.FlushDbType,
+                    _ => throw new GarnetException($"Conversion to AofStoreType not possible for {type}"),
+                };
+            }
         }
     }
 }

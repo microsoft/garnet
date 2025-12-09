@@ -1,5 +1,5 @@
 ARG TAG=ltsc2022
-FROM mcr.microsoft.com/dotnet/sdk:9.0-nanoserver-$TAG AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-nanoserver-$TAG AS build
 
 ENV NUGET_PACKAGES=/src/pkg
 
