@@ -394,7 +394,7 @@ namespace Garnet.server
             // Reconstructing RawStringInput
             _ = storeInput.DeserializeFrom(curr);
 
-             // VADD requires special handling, shove it over to the VectorManager
+            // VADD requires special handling, shove it over to the VectorManager
             if (storeInput.header.cmd == RespCommand.VADD)
             {
                 vectorManager.HandleVectorSetAddReplication(currentSession.storageSession, obtainServerSession, ref key, ref storeInput);
