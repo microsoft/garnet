@@ -423,6 +423,42 @@
     "SubCommands": null
   },
   {
+    "Command": "EXECIFGREATER",
+    "Name": "EXECIFGREATER",
+    "IsInternal": false,
+    "Arity": -4,
+    "Flags": "NONE",
+    "AclCategories": "Garnet",
+    "KeySpecifications": null
+  },
+  {
+    "Command": "EXECIFMATCH",
+    "Name": "EXECIFMATCH",
+    "IsInternal": false,
+    "Arity": -4,
+    "Flags": "NONE",
+    "AclCategories": "Garnet",
+    "KeySpecifications": null
+  },
+  {
+    "Command": "EXECIFNOTMATCH",
+    "Name": "EXECIFNOTMATCH",
+    "IsInternal": false,
+    "Arity": -4,
+    "Flags": "NONE",
+    "AclCategories": "Garnet",
+    "KeySpecifications": null
+  },
+  {
+    "Command": "EXECWITHETAG",
+    "Name": "EXECWITHETAG",
+    "IsInternal": false,
+    "Arity": -3,
+    "Flags": "ReadOnly",
+    "AclCategories": "Garnet, Read",
+    "KeySpecifications": null
+  },
+  {
     "Command": "FORCEGC",
     "Name": "FORCEGC",
     "Arity": -1,
@@ -602,32 +638,6 @@
         "Tips": null,
         "KeySpecifications": null,
         "SubCommands": null
-      }
-    ]
-  },
-  {
-    "Command": "GETIFNOTMATCH",
-    "Name": "GETIFNOTMATCH",
-    "IsInternal": false,
-    "Arity": 3,
-    "Flags": "NONE",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Fast, String, Read",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RO, Access"
       }
     ]
   },

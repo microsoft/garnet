@@ -110,7 +110,7 @@ namespace Garnet.server
                  where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.List, RespMetaCommand.None, ref parseState) { ListOp = lop };
+            var input = new ObjectInput(GarnetObjectType.List, arg1: count) { ListOp = lop };
 
             var output = new ObjectOutput();
 
@@ -180,7 +180,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.List, RespMetaCommand.None, ref parseState) { ListOp = ListOperation.LLEN };
+            var input = new ObjectInput(GarnetObjectType.List) { ListOp = ListOperation.LLEN };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 

@@ -1810,12 +1810,10 @@ namespace Garnet.server
         /// Returns the time to live for a hash key.
         /// </summary>
         /// <param name="key">The key of the hash.</param>
-        /// <param name="isMilliseconds">Indicates if the time to live is in milliseconds.</param>
-        /// <param name="isTimestamp">Indicates if the time to live is a timestamp.</param>
         /// <param name="input">The input object containing additional parameters.</param>
         /// <param name="output">The output object to store the result.</param>
         /// <returns>The status of the operation.</returns>
-        GarnetStatus HashTimeToLive(PinnedSpanByte key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref ObjectOutput output);
+        GarnetStatus HashTimeToLive(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         #endregion
 

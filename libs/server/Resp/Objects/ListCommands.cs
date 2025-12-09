@@ -91,7 +91,7 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.List, metaCommand, ref parseState, arg1: opCount) { ListOp = lop };
+            var input = new ObjectInput(GarnetObjectType.List, metaCommand, ref parseState, arg1: popCount) { ListOp = lop };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));

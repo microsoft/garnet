@@ -695,14 +695,13 @@ namespace Garnet.server
                     break;
             }
 
-            var fieldsParseState = parseState.Slice(3, numFields);
-
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref fieldsParseState) { HashOp = HashOperation.HTTL };
+            var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: 3,
+                arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0) { HashOp = HashOperation.HTTL };
 
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref output);
+            var status = storageApi.HashTimeToLive(key, ref input, ref output);
 
             switch (status)
             {

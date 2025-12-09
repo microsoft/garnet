@@ -85,7 +85,7 @@ namespace Garnet.test
             await db.KeyDeleteAsync("foo");
 
             // now originally the key held a 1 byte value and 8 byte metadata, so inchain revivification of the exact same size should work
-            await db.ExecuteAsync("SETIFGREATER", "foo", "b", "1");
+            await db.ExecuteAsync("EXECIFGREATER", 1, "SET", "foo", "b");
 
             // check for revivification stats
             var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
@@ -100,7 +100,7 @@ namespace Garnet.test
             {
 
                 // should be able to reuse the tombstoned record value is 1 byte and etag space is 8 bytes == 9 bytes
-                var res = (RedisResult[])await db.ExecuteAsync("SETIFGREATER", "foo", "c", "5");
+                var res = (RedisResult[])await db.ExecuteAsync("EXECIFGREATER", 5, "SET", "foo", "c");
                 ClassicAssert.AreEqual(5, (long)res[0]);
                 ClassicAssert.IsTrue(res[1].IsNull);
             };
@@ -195,7 +195,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(exec.Resp2Type != ResultType.Error);
 
             // Do a new-record operation that will reuse a tombstoned record via FreeRecordPool
-            await db.ExecuteAsync("SETIFGREATER", "the", "terminator", 23);
+            await db.ExecuteAsync("EXECIFGREATER", 23, "SET", "the", "terminator");
 
             // confirm we did indeed use a reviv record
             var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
@@ -232,8 +232,8 @@ namespace Garnet.test
             long tailAddrAfterDelete = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
             ClassicAssert.IsTrue(tailAddrAfterDelete > tailAddrAfterInsert2, "Expected AOF tail address to move forward on DELETE");
 
-            // inchain revivification of the exact same key should take place 
-            await db.ExecuteAsync("SETIFGREATER", "hoo", "b", "1");
+            // inchain revivification of the exact same key should take place
+            await db.ExecuteAsync("EXECIFGREATER", 1, "SET", "hoo", "b");
             long tailAddrAfterRevivifyRmw = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
             ClassicAssert.IsTrue(tailAddrAfterRevivifyRmw > tailAddrAfterDelete, "Expected AOF tail address to move forward on revivification RMW");
 

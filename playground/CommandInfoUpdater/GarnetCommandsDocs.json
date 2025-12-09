@@ -240,6 +240,112 @@
     ]
   },
   {
+    "Command": "EXECIFGREATER",
+    "Name": "EXECIFGREATER",
+    "Group": "Meta",
+    "Summary": "Executes a command if the key(s) etag is greater than the etag specified.",
+    "Complexity": "Depends on the command executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COMMAND",
+        "DisplayText": "command",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "EXECIFMATCH",
+    "Name": "EXECIFMATCH",
+    "Group": "Meta",
+    "Summary": "Executes a command if the key(s) etag matches the etag specified.",
+    "Complexity": "Depends on the command executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COMMAND",
+        "DisplayText": "command",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "EXECIFNOTMATCH",
+    "Name": "EXECIFNOTMATCH",
+    "Group": "Meta",
+    "Summary": "Executes a command if the key(s) etag does not match the etag specified.",
+    "Complexity": "Depends on the command executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COMMAND",
+        "DisplayText": "command",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "EXECWITHETAG",
+    "Name": "EXECWITHETAG",
+    "Group": "Meta",
+    "Summary": "Executes a command and adds the key(s) etag(s) at time of execution.",
+    "Complexity": "Depends on the command executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COMMAND",
+        "DisplayText": "command",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
     "Command": "FORCEGC",
     "Name": "FORCEGC",
     "Summary": "Forces garbage collection.",

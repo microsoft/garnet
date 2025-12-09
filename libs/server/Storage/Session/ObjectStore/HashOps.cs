@@ -216,7 +216,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HGETALL };
+            var input = new ObjectInput(GarnetObjectType.Hash) { HashOp = HashOperation.HGETALL };
 
             var output = new ObjectOutput();
 
@@ -247,7 +247,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HLEN };
+            var input = new ObjectInput(GarnetObjectType.Hash) { HashOp = HashOperation.HLEN };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -548,18 +548,14 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TObjectContext">The type of the object context.</typeparam>
         /// <param name="key">The key of the hash.</param>
-        /// <param name="isMilliseconds">Indicates whether the TTL is in milliseconds.</param>
-        /// <param name="isTimestamp">Indicates whether the TTL is a timestamp.</param>
         /// <param name="input">The input object containing the operation details.</param>
         /// <param name="output">The output  object to store the result.</param>
         /// <param name="objectContext">The object context for the operation.</param>
         /// <returns>The status of the operation.</returns>
-        public GarnetStatus HashTimeToLive<TObjectContext>(PinnedSpanByte key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
+        public GarnetStatus HashTimeToLive<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var innerInput = new ObjectInput(input.header.type, input.header.metaCmd, ref input.parseState, arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0);
-
-            return ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref innerInput, ref objectContext, ref output);
+            return ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
         }
 
         /// <summary>

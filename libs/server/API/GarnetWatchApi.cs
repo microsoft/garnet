@@ -504,10 +504,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashTimeToLive(PinnedSpanByte key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref ObjectOutput output)
+        public GarnetStatus HashTimeToLive(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref output);
+            return garnetApi.HashTimeToLive(key, ref input, ref output);
         }
 
         #endregion

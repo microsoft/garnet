@@ -154,7 +154,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = SetOperation.SCARD };
+            var input = new ObjectInput(GarnetObjectType.Set) { SetOp = SetOperation.SCARD };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -179,7 +179,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = SetOperation.SMEMBERS };
+            var input = new ObjectInput(GarnetObjectType.Set) { SetOp = SetOperation.SMEMBERS };
 
             var output = new ObjectOutput();
 
@@ -228,7 +228,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = SetOperation.SPOP };
+            var input = new ObjectInput(GarnetObjectType.Set, arg1: count) { SetOp = SetOperation.SPOP };
 
             var output = new ObjectOutput();
 
@@ -726,7 +726,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = SetOperation.SISMEMBER };
+            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = members.Length == 1 ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
 
             var output = new ObjectOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
