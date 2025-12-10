@@ -1015,11 +1015,47 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments("VDIM");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+            var res = storageApi.VectorSetInfo(key, out VectorQuantType quantType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numLinks, out long size);
+            if (res == GarnetStatus.NOTFOUND)
+            {
+                WriteNull();
+                return true;
+            }
+            
+            if (res == GarnetStatus.WRONGTYPE)
+            {
+                WriteError("ERR Not a Vector Set"u8);
+                return true;
+            }
 
+            string quantTypeStr = quantType switch
+            {
+                VectorQuantType.NoQuant => "no-quant",
+                VectorQuantType.Bin => "bin",
+                VectorQuantType.Q8 => "q8",
+                VectorQuantType.XPreQ8 => "xpreq8",
+                _ => "invalid",
+            };
+
+            WriteArrayLength(12);
+            WriteSimpleString("quant-type");
+            WriteSimpleString($"{quantTypeStr}");
+            WriteSimpleString("input-vector-dimensions");
+            WriteSimpleString($"{vectorDimensions}");
+            WriteSimpleString("reduced-dimensions");
+            WriteSimpleString($"{reducedDimensions}");
+            WriteSimpleString("build-exploration-factor");
+            WriteSimpleString($"{buildExplorationFactor}");
+            WriteSimpleString("num-links");
+            WriteSimpleString($"{numLinks}");
+            WriteSimpleString("size");
+            WriteSimpleString($"{size}");
             return true;
         }
 
