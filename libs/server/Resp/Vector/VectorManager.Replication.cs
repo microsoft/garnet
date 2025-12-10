@@ -38,6 +38,8 @@ namespace Garnet.server
         private readonly Channel<VADDReplicationState> replicationReplayChannel;
         private readonly Task[] replicationReplayTasks;
 
+        private CancellationTokenSource replicationReplayTasksCts;
+
         /// <summary>
         /// For replication purposes, we need a write against the main log.
         /// 
@@ -288,6 +290,9 @@ namespace Garnet.server
                     throw new GarnetException($"Unexpected DB ({self.dbId}) in cluster mode, expected 0");
                 }
 
+                self.replicationReplayTasksCts = new();
+                var cancellationToken = self.replicationReplayTasksCts.Token;
+
                 self.logger?.LogInformation("Starting {numTasks} replication tasks for VADDs", self.replicationReplayTasks.Length);
 
                 for (var i = 0; i < self.replicationReplayTasks.Length; i++)
@@ -312,7 +317,7 @@ namespace Garnet.server
                                     SessionParseState reusableParseState = default;
                                     reusableParseState.Initialize(11);
 
-                                    await foreach (var entry in reader.ReadAllAsync())
+                                    await foreach (var entry in reader.ReadAllAsync(cancellationToken))
                                     {
                                         try
                                         {
@@ -345,6 +350,10 @@ namespace Garnet.server
                                         }
                                     }
                                 }
+                            }
+                            catch (TaskCanceledException cancelEx)
+                            {
+                                self.logger?.LogInformation(cancelEx, "ReplicationReplayTask cancelled");
                             }
                             catch (Exception e)
                             {
@@ -433,6 +442,31 @@ namespace Garnet.server
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Cancels replication tasks, resetting enough state that they can be resumed by a future call to <see cref="HandleVectorSetAddReplication"/>.
+        /// 
+        /// Returns the number of abanded VADDs.
+        /// </summary>
+        internal int ResetReplayTasks()
+        {
+            replicationReplayTasksCts?.Cancel();
+            replicationReplayTasksCts = null;
+
+            Task.WaitAll(replicationReplayTasks);
+            Array.Fill(replicationReplayTasks, Task.CompletedTask);
+
+            _ = Interlocked.Exchange(ref replicationReplayStarted, 0);
+
+            var abandoned = 0;
+            while (replicationReplayChannel.Reader.TryRead(out _))
+            {
+                replicationBlockEvent.Decrement();
+                abandoned++;
+            }
+
+            return abandoned;
         }
 
         /// <summary>

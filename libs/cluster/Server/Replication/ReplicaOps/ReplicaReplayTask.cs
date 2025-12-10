@@ -33,6 +33,7 @@ namespace Garnet.cluster
                 else
                 {
                     replicaReplayTaskCts.Cancel();
+                    aofProcessor.ResetVectorSetReplication(wait: false);
                     try
                     {
                         activeReplay.WriteLock();
