@@ -2790,6 +2790,7 @@ namespace Garnet.server
                 // If we have not found a command, continue parsing on slow path
                 if (cmd == RespCommand.NONE)
                 {
+                    count++;
                     cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success, skipReadCount: true);
                     if (!success) return cmd;
                 }

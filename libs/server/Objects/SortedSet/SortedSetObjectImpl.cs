@@ -36,7 +36,7 @@ namespace Garnet.server
             InfiniteMax = 2
         }
 
-        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, long etag, byte respProtocolVersion)
         {
             DeleteExpiredItems();
 
@@ -156,10 +156,10 @@ namespace Garnet.server
                 {
                     writer.WriteDoubleNumeric(incrResult);
                 }
-                else if (input.header.metaCmd == RespMetaCommand.ExecWithEtag)
+                else if (input.header.metaCmd.IsEtagCommand())
                 {
                     writer.WriteArrayLength(2);
-                    //writer.WriteInt64(addedOrChanged > 0 ? etag + 1 : etag);
+                    writer.WriteInt64(addedOrChanged > 0 ? etag + 1 : etag);
                     writer.WriteInt32(addedOrChanged);
                 }
                 else

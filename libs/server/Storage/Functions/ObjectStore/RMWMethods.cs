@@ -45,12 +45,14 @@ namespace Garnet.server
             IGarnetObject value;
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
+                var updatedEtag = functionsState.GetUpdatedEtag(input.header.metaCmd, ref input.parseState, isInitUpdate: true, out _);
+
                 value = GarnetObject.Create(type);
                 _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, logRecord.ETag, out _);
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
 
                 // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
-                if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(LogRecord.NoETag + 1))
+                if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(updatedEtag))
                 {
                     functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
                     return false;
@@ -145,26 +147,35 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, logRecord.ETag, out sizeChange);
-                if (output.HasWrongType)
-                    return true;
-                if (output.HasRemoveKey)
-                {
-                    functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
+                var updatedEtag = functionsState.GetUpdatedEtag(input.header.metaCmd, ref input.parseState, isInitUpdate: false, out var execCmd);
 
-                    // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
-                    functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                    logRecord.ClearValueIfHeap(obj => { });
-                    rmwInfo.Action = RMWAction.ExpireAndStop;
-                    logRecord.RemoveETag();
-                    return false;
+                var operateSuccessful = true;
+
+                if (execCmd)
+                {
+                    operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, logRecord.ETag, out sizeChange);
+                    if (output.HasWrongType)
+                        return true;
+                    if (output.HasRemoveKey)
+                    {
+                        functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
+
+                        // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
+                        functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
+                        logRecord.ClearValueIfHeap(obj => { });
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                        logRecord.RemoveETag();
+                        return false;
+                    }
                 }
 
-                // Advance etag if the object was not explicitly marked as unchanged or if called with withetag and no previous etag was present.
-                if (!output.IsObjectUnchanged && hadETagPreMutation)
-                    logRecord.TrySetETag(output.IsObjectUnchanged ? this.functionsState.etagState.ETag : this.functionsState.etagState.ETag + 1);
+                var isObjectUnchanged = !execCmd || output.IsObjectUnchanged;
 
-                if (!output.IsObjectUnchanged || hadETagPreMutation)
+                // Advance etag if the object was not explicitly marked as unchanged or if called with withetag and no previous etag was present.
+                if (!isObjectUnchanged && hadETagPreMutation)
+                    logRecord.TrySetETag(updatedEtag);
+
+                if (!isObjectUnchanged || hadETagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
 
                 sizeInfo.AssertOptionals(logRecord.Info);
@@ -248,19 +259,26 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                value.Operate(ref input, ref output, functionsState.respProtocolVersion, srcLogRecord.ETag, out _);
-                if (output.HasWrongType)
-                    return true;
-                if (output.HasRemoveKey)
+                var updatedEtag = functionsState.GetUpdatedEtag(input.header.metaCmd, ref input.parseState, isInitUpdate: false, out var execCmd);
+
+                if (execCmd)
                 {
-                    rmwInfo.Action = RMWAction.ExpireAndStop;
-                    return false;
+                    value.Operate(ref input, ref output, functionsState.respProtocolVersion, srcLogRecord.ETag, out _);
+                    if (output.HasWrongType)
+                        return true;
+                    if (output.HasRemoveKey)
+                    {
+                        rmwInfo.Action = RMWAction.ExpireAndStop;
+                        return false;
+                    }
                 }
 
-                if (!output.IsObjectUnchanged || (!recordHadEtagPreMutation && inputHeaderHasEtag))
-                    dstLogRecord.TrySetETag(output.IsObjectUnchanged ? this.functionsState.etagState.ETag : this.functionsState.etagState.ETag + 1);
+                var isObjectUnchanged = !execCmd || output.IsObjectUnchanged;
 
-                if (!output.IsObjectUnchanged || recordHadEtagPreMutation || inputHeaderHasEtag)
+                if (!isObjectUnchanged || (!recordHadEtagPreMutation && inputHeaderHasEtag))
+                    dstLogRecord.TrySetETag(isObjectUnchanged ? this.functionsState.etagState.ETag : updatedEtag);
+
+                if (!isObjectUnchanged || recordHadEtagPreMutation || inputHeaderHasEtag)
                     ETagState.ResetState(ref functionsState.etagState);
             }
             else

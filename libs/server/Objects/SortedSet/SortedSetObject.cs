@@ -338,7 +338,7 @@ namespace Garnet.server
             switch (op)
             {
                 case SortedSetOperation.ZADD:
-                    SortedSetAdd(ref input, ref output, respProtocolVersion);
+                    SortedSetAdd(ref input, ref output, etag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZREM:
                     SortedSetRemove(ref input, ref output);

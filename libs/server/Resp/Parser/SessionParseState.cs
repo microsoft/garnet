@@ -205,7 +205,7 @@ namespace Garnet.server
         {
             Debug.Assert(idxOffset - 1 < rootCount - MetaArgCount);
 
-            var count = rootCount - idxOffset;
+            var count = (rootCount - MetaArgCount) - idxOffset;
             var offsetBuffer = bufferPtr + idxOffset;
             return new SessionParseState(ref rootBuffer, rootCount, ref offsetBuffer, count, ref metaArgBufferPtr, MetaArgCount);
         }
@@ -218,7 +218,7 @@ namespace Garnet.server
         /// <param name="count">Argument count</param>
         public SessionParseState Slice(int idxOffset, int count)
         {
-            Debug.Assert(idxOffset + count - 1 < rootCount);
+            Debug.Assert(idxOffset + count - 1 < rootCount - MetaArgCount);
 
             var offsetBuffer = bufferPtr + idxOffset;
             return new SessionParseState(ref rootBuffer, rootCount, ref offsetBuffer, count, ref metaArgBufferPtr, MetaArgCount);
