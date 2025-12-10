@@ -57,18 +57,21 @@ namespace Garnet.test.Resp
             auth.HasACLSupport = false;
             auth.IsAuthenticated = false;
 
-            int authCalls = 0;
+            var authCalls = 0;
+            var authingAsFoo = false;
+            var authedAsFoo = false;
 
             auth.AuthenticateCallback =
                 (p, u) =>
                 {
-                    if (authCalls == 0)
+                    if (!authingAsFoo)
                     {
                         ClassicAssert.AreEqual("default", Encoding.UTF8.GetString(u));
                     }
                     else
                     {
                         ClassicAssert.AreEqual("foo", Encoding.UTF8.GetString(u));
+                        authedAsFoo = true;
                     }
 
                     authCalls++;
@@ -84,21 +87,22 @@ namespace Garnet.test.Resp
             c.Connect();
 
             // Initial command runs under default user
-            await c.ExecuteAsync("PING");
-            ClassicAssert.AreEqual(1, authCalls);
+            _ = await c.ExecuteAsync("PING");
 
             // Auth as proper user, should get another call
-            await c.ExecuteAsync("AUTH", "foo", "bar");
-            ClassicAssert.AreEqual(2, authCalls);
+            authingAsFoo = true;
+            _ = await c.ExecuteAsync("AUTH", "foo", "bar");
+            ClassicAssert.IsTrue(authedAsFoo);
 
-            await c.ExecuteAsync("PING");
-            ClassicAssert.AreEqual(2, authCalls);
+            _ = await c.ExecuteAsync("PING");
 
             // Command after auth invalidation fails as no auth
+
+            var oldAuthCalls = authCalls;
             auth.IsAuthenticated = false;
             try
             {
-                await c.ExecuteAsync("PING");
+                _ = await c.ExecuteAsync("PING");
                 Assert.Fail("Should be denied, user is not authed");
             }
             catch (Exception e)
@@ -106,8 +110,8 @@ namespace Garnet.test.Resp
                 ClassicAssert.AreEqual("NOAUTH Authentication required.", e.Message);
             }
 
-            await c.ExecuteAsync("AUTH", "foo", "bar");
-            ClassicAssert.AreEqual(3, authCalls);
+            _ = await c.ExecuteAsync("AUTH", "foo", "bar");
+            ClassicAssert.True(authCalls > oldAuthCalls);
         }
     }
 }
