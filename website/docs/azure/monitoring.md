@@ -1,5 +1,5 @@
 ---
-id: azure-monitoring
+id: monitoring
 sidebar_label: Monitoring
 title: Monitoring Azure Cosmos DB Garnet Cache
 ---

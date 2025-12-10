@@ -1,5 +1,5 @@
 ---
-id: azure-quickstart
+id: quickstart
 sidebar_label: Quick Start
 title: Create an Azure Cosmos DB Garnet Cache
 ---
@@ -91,10 +91,10 @@ az ad user show --id "user@company.com" --query id -o tsv
 
 ```bash
 # Set your parameters
-userObjectId = "your-object-id-from-step-1"
-subscriptionId = "your-subscription-id"
-resourceGroup = "your-garnet-cache-resource-group"
-cacheName = "your-garnet-cache-name"
+userObjectId="your-object-id-from-step-1"
+subscriptionId="your-subscription-id"
+resourceGroup="your-garnet-cache-resource-group"
+cacheName="your-garnet-cache-name"
 
 # Assign Garnet Data Contributor to yourself
 az role assignment create \

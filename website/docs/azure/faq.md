@@ -1,5 +1,5 @@
 ---
-id: azure-faq
+id: faq
 sidebar_label: FAQ
 title: Frequently Asked Questions
 ---

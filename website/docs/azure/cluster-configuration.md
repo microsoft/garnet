@@ -1,5 +1,5 @@
 ---
-id: azure-cluster-configuration
+id: cluster-configuration
 sidebar_label: Cluster Configuration
 title: Cluster Configuration for Azure Cosmos DB Garnet Cache 
 ---
@@ -10,7 +10,7 @@ title: Cluster Configuration for Azure Cosmos DB Garnet Cache
 
 Azure Cosmos DB Garnet Cache lets you choose the underlying [Azure Virtual Machine](https://learn.microsoft.com/azure/virtual-machines/sizes/overview) that your cache nodes will be provisioned on. The specs offered by cache nodes mirror the Azure virtual machine itself. Garnet doesn't limit the number of client connections that can be made on any node for any SKU. When choosing the right tier and SKU for your workload, consider that roughly 30% of memory on each node will be reserved for metadata and processing requests. Smaller SKUs in each tier are classified as [dev/test](#dev-test) while larger SKUs are designed for [production](#production) workloads.
 
-Every node also has a [Premium SSD Managed Disk](https://learn.microsoft.com/azure/virtual-machines/disks-types#premium-ssds) provisioned for [data persistence](./resiliency.md#data-persistence). The disk size is not configurable and represents 4x the total memory of each node. The Managed Disk SKU provisioned for each option is in the table below, and is priced at the [Azure Managed Disk price](https://azure.microsoft.com/pricing/details/managed-disks).
+Every node also has a [Premium SSD Managed Disk](https://learn.microsoft.com/azure/virtual-machines/disks-types#premium-ssds) provisioned for [data persistence](./resiliency.md#data-persistence). The disk size is not configurable and represents 2x the total memory of each node. The Managed Disk SKU provisioned for each option is in the table below, and is priced at the [Azure Managed Disk price](https://azure.microsoft.com/pricing/details/managed-disks).
 
 The pricing model for cache nodes is instance-based and there are no licensing fees. For information about pricing for specific SKUs, reach out to [ManagedGarnet@service.microsoft.com](mailto:ManagedGarnet@service.microsoft.com).
 
@@ -22,23 +22,23 @@ Balanced performance tier suitable for most caching workloads with a good balanc
 
 |SKU |vCPUs |Memory (GB) |Network bandwidth (MB/s) |Premium SSD Managed Disk |Cluster Type |
 |----|------|------------|-------------------------|-------------------------|-------------|
-|Standard_B2ls_v2 |2	|4   |6250  |P3  |Dev/ Test |
-|Standard_B2als_v2|2	|4   |6250  |P3  |Dev/ Test |
-|Standard_D2s_v5	|2  |8   |12500 |P4  |Dev/ Test |
-|Standard_D4s_v5	|4  |16  |12500 |P6  |Dev/ Test |
-|Standard_D8s_v5	|8	|32  |12500 |P10 |Production |
-|Standard_D16s_v5	|16 |64  |12500 |P15 |Production |
-|Standard_D32s_v5	|32 |128 |16000 |P20 |Production |
-|Standard_D2as_v5	|2	|8   |12500 |P4  |Dev/ Test |
-|Standard_D4as_v5	|4	|16  |12500 |P6  |Dev/ Test |
-|Standard_D8as_v5	|8	|32  |12500 |P10 |Production |
-|Standard_D16as_v5|16	|64  |12500 |P15 |Production |
-|Standard_D32as_v5|32	|128 |16000 |P20 |Production |
-|Standard_D2s_v4	|2	|8   |5000  |P4  |Dev/ Test |
-|Standard_D4s_v4	|4	|16  |10000 |P6  |Dev/ Test |
-|Standard_D8s_v4	|8	|32  |12500 |P10 |Production |
-|Standard_D16s_v4 |16	|64  |12500 |P15 |Production |
-|Standard_D32s_v4 |32	|128 |16000 |P20 |Production |
+|Standard_B2ls_v2 |2	|4   |6250  |P2  |Dev/ Test |
+|Standard_B2als_v2|2	|4   |6250  |P2  |Dev/ Test |
+|Standard_D2s_v5	|2  |8   |12500 |P3  |Dev/ Test |
+|Standard_D4s_v5	|4  |16  |12500 |P4  |Dev/ Test |
+|Standard_D8s_v5	|8	|32  |12500 |P6  |Production |
+|Standard_D16s_v5	|16 |64  |12500 |P10 |Production |
+|Standard_D32s_v5	|32 |128 |16000 |P15 |Production |
+|Standard_D2as_v5	|2	|8   |12500 |P3  |Dev/ Test |
+|Standard_D4as_v5	|4	|16  |12500 |P4  |Dev/ Test |
+|Standard_D8as_v5	|8	|32  |12500 |P6  |Production |
+|Standard_D16as_v5|16	|64  |12500 |P10 |Production |
+|Standard_D32as_v5|32	|128 |16000 |P15 |Production |
+|Standard_D2s_v4	|2	|8   |5000  |P3  |Dev/ Test |
+|Standard_D4s_v4	|4	|16  |10000 |P4  |Dev/ Test |
+|Standard_D8s_v4	|8	|32  |12500 |P6  |Production |
+|Standard_D16s_v4 |16	|64  |12500 |P10 |Production |
+|Standard_D32s_v4 |32	|128 |16000 |P15 |Production |
 
 ### Memory Optimized
 
@@ -48,38 +48,25 @@ High-memory tier designed for workloads requiring large in-memory datasets with 
 
 |SKU |vCPUs |Memory (GB) |Network bandwidth (MB/s) |Premium SSD Managed Disk |
 |----|------|------------|-------------------------|-------------------------|
-|Standard_E2s_v5	|2	|16  |12500 |P6  |Dev/ Test |
-|Standard_E4s_v5	|4	|32  |12500 |P10 |Dev/ Test |
-|Standard_E8s_v5  |8	|64  |12500 |P15 |Production |
-|Standard_E16s_v5	|16 |128 |12500 |P20 |Production |
-|Standard_E20s_v5	|20 |160 |12500 |P30 |Production |
-|Standard_E32s_v5	|32 |256 |16000 |P30 |Production |
-|Standard_E2as_v5	|2	|16  |12500 |P6  |Dev/ Test |
-|Standard_E4as_v5	|4	|32  |12500 |P10 |Dev/ Test |
-|Standard_E8as_v5	|8	|64  |12500 |P15 |Production |
-|Standard_E16as_v5|16	|128 |12500 |P20 |Production |
-|Standard_E20as_v5|20	|160 |12500 |P30 |Production |
-|Standard_E32as_v5|32	|256 |16000 |P30 |Production |
-|Standard_E2s_v4	|2	|16  |5000  |P6  |Dev/ Test |
-|Standard_E4s_v4	|4	|32  |10000 |P10 |Dev/ Test |
-|Standard_E8s_v4	|8	|64  |12500 |P15 |Production |
-|Standard_E16s_v4 |16	|128 |12500 |P20 |Production |
-|Standard_E20s_v4 |20	|160 |10000 |P30 |Production |
-|Standard_E32s_v4 |32	|256 |16000 |P30 |Production |
+|Standard_E2s_v5	|2	|16  |12500 |P4  |Dev/ Test |
+|Standard_E4s_v5	|4	|32  |12500 |P6  |Dev/ Test |
+|Standard_E8s_v5  |8	|64  |12500 |P10 |Production |
+|Standard_E16s_v5	|16 |128 |12500 |P15 |Production |
+|Standard_E20s_v5	|20 |160 |12500 |P20 |Production |
+|Standard_E32s_v5	|32 |256 |16000 |P20 |Production |
+|Standard_E2as_v5	|2	|16  |12500 |P4  |Dev/ Test |
+|Standard_E4as_v5	|4	|32  |12500 |P6  |Dev/ Test |
+|Standard_E8as_v5	|8	|64  |12500 |P10 |Production |
+|Standard_E16as_v5|16	|128 |12500 |P15 |Production |
+|Standard_E20as_v5|20	|160 |12500 |P20 |Production |
+|Standard_E32as_v5|32	|256 |16000 |P20 |Production |
+|Standard_E2s_v4	|2	|16  |5000  |P4  |Dev/ Test |
+|Standard_E4s_v4	|4	|32  |10000 |P6  |Dev/ Test |
+|Standard_E8s_v4	|8	|64  |12500 |P10 |Production |
+|Standard_E16s_v4 |16	|128 |12500 |P50 |Production |
+|Standard_E20s_v4 |20	|160 |10000 |P20 |Production |
+|Standard_E32s_v4 |32	|256 |16000 |P20 |Production |
 
-### Compute Optimized
-
-High-performance tier with enhanced CPU capabilities for compute-intensive caching operations.
-
-- **Use Cases**: CPU-intensive operations, complex computations, high-throughput scenarios
-
-|SKU |vCPUs |Memory (GB) |Network bandwidth (MB/s) |Premium SSD Managed Disk |
-|----|------|------------|-------------------------|-------------------------|
-|Standard_F2as_v6	|2	|8   |12500 |P4  |Dev/ Test |
-|Standard_F4as_v6	|4	|16  |12500 |P6  |Dev/ Test |
-|Standard_F8as_v6	|8	|32  |12500 |P10 |
-|Standard_F16as_v6|16	|64  |16000 |P15 |
-|Standard_F32as_v6|32	|128 |20000 |P20 |
 
 ### Cluster Types
 
@@ -146,7 +133,9 @@ We recommend beginning your deployment with a smaller tier that meets your initi
 
 ## Regional availability
 
-Each Azure Cosmos DB Garnet Cache can be provisioned in a single region. It is available in multiple Azure regions worldwide, with ongoing expansion to additional regions. Additionally, you can configure availability zones during provisioning in supported Azure regions where there is capacity for your chosen SKU. See the list of [Azure regions with availability zone support](https://learn.microsoft.com/azure/reliability/regions-list).
+Each Azure Cosmos DB Garnet Cache can be provisioned in a single region. It is available in multiple Azure regions worldwide, with ongoing expansion to additional regions. The availability of each SKU in a given region depends on the Azure Virtual Machine regional availability. You can verify which SKUs are available in each region [here](https://azure.microsoft.com/explore/global-infrastructure/products-by-region/table).
+
+ Additionally, you can configure availability zones during provisioning in supported Azure regions where there is capacity for your chosen SKU. See the list of [Azure regions with availability zone support](https://learn.microsoft.com/azure/reliability/regions-list).
 
 | Geography | Region | Region Name |
 |-----------|--------|-------------|

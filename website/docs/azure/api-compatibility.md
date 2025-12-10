@@ -1,5 +1,5 @@
 ---
-id: azure-api-compatibility
+id: api-compatibility
 sidebar_label: API Compatibility
 title: API compatibility for Azure Cosmos DB Garnet Cache
 ---
@@ -93,7 +93,7 @@ The Azure Cosmos DB Garnet Cache implements a growing subset of the [open-source
 |  | [PING](../commands/generic-commands.md#ping) | ➕ |  |
 |  | [QUIT](../commands/generic-commands.md#quit) | ➖ | (Deprecated) |
 |  | [SELECT](../commands/generic-commands.md#select) | ➖ |  |
-| <span id="generic">**GENERIC**</span> | [PERSIST](generic-commands.md#persist) | ➖ |  |
+| <span id="generic">**GENERIC**</span> | [PERSIST](../commands/generic-commands.md#persist) | ➖ |  |
 |  | [PEXPIRE](../commands/generic-commands.md#pexpire) | ➖ |  |
 |  | [PEXPIREAT](../commands/generic-commands.md#pexpireat) | ➖ |  |
 |  | [PEXPIRETIME](../commands/generic-commands.md#pexpiretime) | ➖ |  |
@@ -164,120 +164,120 @@ The Azure Cosmos DB Garnet Cache implements a growing subset of the [open-source
 |  | [PUNSUBSCRIBE](../commands/analytics.md#punsubscribe) | ➕ |  |
 |  | [SUBSCRIBE](../commands/analytics.md#subscribe) | ➕ |  |
 |  | [UNSUBSCRIBE](../commands/analytics.md#unsubscribe) | ➕ |  |
-| <span id="scripting">**SCRIPTING**</span> | [EVAL](scripting-and-functions.md#eval) | ➕ |  |
+| <span id="scripting">**SCRIPTING**</span> | [EVAL](../commands/scripting-and-functions.md#eval) | ➕ |  |
 |  | EVAL_RO | ➖ |  |
-|  | [EVALSHA](scripting-and-functions.md#evalsha) | ➕ |  |
+|  | [EVALSHA](../commands/scripting-and-functions.md#evalsha) | ➕ |  |
 |  | EVALSHA_RO | ➖ |  |
 |  | SCRIPT DEBUG | ➖ |  |
-|  | [SCRIPT EXISTS](scripting-and-functions.md#script-exists) | ➕ |  |
-|  | [SCRIPT FLUSH](scripting-and-functions.md#script-flush) | ➕ |  |
+|  | [SCRIPT EXISTS](../commands/scripting-and-functions.md#script-exists) | ➕ |  |
+|  | [SCRIPT FLUSH](../commands/scripting-and-functions.md#script-flush) | ➕ |  |
 |  | SCRIPT HELP | ➖ |  |
 |  | SCRIPT KILL | ➖ |  |
-|  | [SCRIPT LOAD](scripting-and-functions.md#script-load) | ➕ |  |
+|  | [SCRIPT LOAD](../commands/scripting-and-functions.md#script-load) | ➕ |  |
 | <span id="server">**SERVER**</span> | ACL | ➖ |  |
 |  | BGREWRITEAOF | ➖ |  |
-|  | [BGSAVE](checkpoint.md#bgsave) | ➖ |  |
-|  | [COMMITAOF](server.md#commitaof) | ➖ |  |
-|  | [CONFIG GET](server.md#config-get) | ➕ |  |
+|  | [BGSAVE](../commands/checkpoint.md#bgsave) | ➖ |  |
+|  | [COMMITAOF](../commands/server.md#commitaof) | ➖ |  |
+|  | [CONFIG GET](../commands/server.md#config-get) | ➕ |  |
 |  | CONFIG HELP | ➖ |  |
 |  | CONFIG RESETSTAT | ➖ |  |
 |  | CONFIG REWRITE | ➖ |  |
-|  | [CONFIG SET](server.md#config-set) | ➖ |  |
-|  | [DBSIZE](server.md#dbsize) | ➖ |  |
-|  | [DEBUG](server.md#debug) | ➖ | Internal command |
-|  | [FLUSHALL](server.md#flushall) | ➖ |  |
-|  | [FLUSHDB](server.md#flushdb) | ➕ |  |
-|  | [LASTSAVE](checkpoint.md#lastsave) | ➖ |  |
+|  | [CONFIG SET](../commands/server.md#config-set) | ➖ |  |
+|  | [DBSIZE](../commands/server.md#dbsize) | ➖ |  |
+|  | [DEBUG](../commands/server.md#debug) | ➖ | Internal command |
+|  | [FLUSHALL](../commands/server.md#flushall) | ➖ |  |
+|  | [FLUSHDB](../commands/server.md#flushdb) | ➕ |  |
+|  | [LASTSAVE](../commands/checkpoint.md#lastsave) | ➖ |  |
 |  | LOLWUT | ➖ |  |
-|  | [MONITOR](server.md#monitor) | ➖ |  |
+|  | [MONITOR](../commands/server.md#monitor) | ➖ |  |
 |  | PSYNC | ➖ |  |
 |  | REPLCONF | ➖ |  |
-|  | [REPLICAOF](server.md#replicaof) | ➖ |  |
+|  | [REPLICAOF](../commands/server.md#replicaof) | ➖ |  |
 |  | RESTORE-ASKING | ➖ |  |
-|  | [ROLE](server.md#role) | ➖ |  |
-|  | [SAVE](checkpoint.md#save) | ➖ |  |
+|  | [ROLE](../commands/server.md#role) | ➖ |  |
+|  | [SAVE](../commands/checkpoint.md#save) | ➖ |  |
 |  | SHUTDOWN | ➖ |  |
-|  | [SLAVEOF](server.md#slaveof) | ➖ | (Deprecated) |
-|  | [SWAPDB](server.md#swapdb) | ➖ |  |
+|  | [SLAVEOF](../commands/server.md#slaveof) | ➖ | (Deprecated) |
+|  | [SWAPDB](../commands/server.md#swapdb) | ➖ |  |
 |  | SYNC | ➖ |  |
-|  | [TIME](server.md#time) | ➖ |  |
-| <span id="set">**SET**</span> | [SADD](data-structures.md#sadd) | ➕ |  |
-|  | [SCARD](data-structures.md#scard) | ➕ |  |
-|  | [SDIFF](data-structures.md#sdiff) | ➕ |  |
-|  | [SDIFFSTORE](data-structures.md#sdiffstore) | ➕ |  |
-|  | [SINTER](data-structures.md#sinter) | ➕ |  |
-|  | [SINTERSTORE](data-structures.md#sinterstore) | ➕ |  |
-|  | [SINTERCARD](data-structures.md#sintercard) | ➕ |  |
-|  | [SISMEMBER](data-structures.md#sismember) | ➕ |  |
-|  | [SMEMBERS](data-structures.md#smembers) | ➕ |  |
-|  | [SMISMEMBER](data-structures.md#smismember) | ➕ |  |
-|  | [SMOVE](data-structures.md#smove) | ➕ |  |
-|  | [SPOP](data-structures.md#spop) | ➕ |  |
+|  | [TIME](../commands/server.md#time) | ➖ |  |
+| <span id="set">**SET**</span> | [SADD](../commands/data-structures.md#sadd) | ➕ |  |
+|  | [SCARD](../commands/data-structures.md#scard) | ➕ |  |
+|  | [SDIFF](../commands/data-structures.md#sdiff) | ➕ |  |
+|  | [SDIFFSTORE](../commands/data-structures.md#sdiffstore) | ➕ |  |
+|  | [SINTER](../commands/data-structures.md#sinter) | ➕ |  |
+|  | [SINTERSTORE](../commands/data-structures.md#sinterstore) | ➕ |  |
+|  | [SINTERCARD](../commands/data-structures.md#sintercard) | ➕ |  |
+|  | [SISMEMBER](../commands/data-structures.md#sismember) | ➕ |  |
+|  | [SMEMBERS](../commands/data-structures.md#smembers) | ➕ |  |
+|  | [SMISMEMBER](../commands/data-structures.md#smismember) | ➕ |  |
+|  | [SMOVE](../commands/data-structures.md#smove) | ➕ |  |
+|  | [SPOP](../commands/data-structures.md#spop) | ➕ |  |
 |  | SPUBLISH | ➖ |  |
-|  | [SRANDMEMBER](data-structures.md#srandmember) | ➕ |  |
-|  | [SREM](data-structures.md#srem) | ➕ |  |
-|  | [SSCAN](data-structures.md#sscan) | ➕ |  |
+|  | [SRANDMEMBER](../commands/data-structures.md#srandmember) | ➕ |  |
+|  | [SREM](../commands/data-structures.md#srem) | ➕ |  |
+|  | [SSCAN](../commands/data-structures.md#sscan) | ➕ |  |
 |  | SSUBSCRIBE | ➖ |  |
-|  | [SUNION](data-structures.md#sunion) | ➕ |  |
-|  | [SUNIONSTORE](data-structures.md#sunionstore) | ➕ |  |
+|  | [SUNION](../commands/data-structures.md#sunion) | ➕ |  |
+|  | [SUNIONSTORE](../commands/data-structures.md#sunionstore) | ➕ |  |
 |  | SUNSUBSCRIBE | ➖ |  |
-| <span id="sorted-set">**SORTED SET**</span> | [BZMPOP](data-structures.md#bzmpop) | ➕ |  |
-|  | [BZPOPMAX](data-structures.md#bzpopmax) | ➕ |  |
-|  | [BZPOPMIN](data-structures.md#bzpopmin) | ➕ |  |
-|  | [ZADD](data-structures.md#zadd) | ➕ |  |
-|  | [ZCARD](data-structures.md#zcard) | ➕ |  |
-|  | [ZCOUNT](data-structures.md#zcount) | ➕ |  |
-|  | [ZDIFF](data-structures.md#zdiff) | ➕ |  |
-|  | [ZDIFFSTORE](data-structures.md#zdiffstore) | ➕ |  |
-|  | [ZINCRBY](data-structures.md#zincrby) | ➕ |  |
-|  | [ZINTER](data-structures.md#zinter) | ➕ |  |
-|  | [ZINTERCARD](data-structures.md#zintercard) | ➕ |  |
-|  | [ZINTERSTORE](data-structures.md#zinterstore) | ➕ |  |
-|  | [ZLEXCOUNT](data-structures.md#zlexcount) | ➕ |  |
-|  | [ZMPOP](data-structures.md#zmpop) | ➕ |  |
-|  | [ZMSCORE](data-structures.md#zmscore) | ➕ |  |
-|  | [ZPOPMAX](data-structures.md#zpopmax) | ➕ |  |
-|  | [ZPOPMIN](data-structures.md#zpopmin) | ➕ |  |
-|  | [ZRANDMEMBER](data-structures.md#zrandmember) | ➕ |  |
-|  | [ZRANGE](data-structures.md#zrange) | ➕ |  |
-|  | [ZRANGEBYLEX](data-structures.md#zrangebylex) | ➕ | (Deprecated) |
-|  | [ZRANGEBYSCORE](data-structures.md#zrangebyscore) | ➕ | (Deprecated) |
-|  | [ZRANGESTORE](data-structures.md#zrangestore) | ➕ |  |
-|  | [ZRANK](data-structures.md#zrank) | ➕ |  |
-|  | [ZREM](data-structures.md#zrem) | ➕ |  |
-|  | [ZREMRANGEBYLEX](data-structures.md#zremrangebylex) | ➕ |  |
-|  | [ZREMRANGEBYRANK](data-structures.md#zremrangebyrank) | ➕ |  |
-|  | [ZREMRANGEBYSCORE](data-structures.md#zremrangebyscore) | ➕ |  |
-|  | [ZREVRANGE](data-structures.md#zrevrange) | ➕ | (Deprecated) |
-|  | [ZREVRANGEBYLEX](data-structures.md#zrevrangebylex) | ➕ | (Deprecated) |
-|  | [ZREVRANGEBYSCORE](data-structures.md#zrevrangebyscore) | ➕ | (Deprecated) |
-|  | [ZREVRANK](data-structures.md#zrevrank) | ➕ |  |
-|  | [ZSCAN](data-structures.md#zscan) | ➕ |  |
-|  | [ZSCORE](data-structures.md#zscore) | ➕ |  |
-|  | [ZUNION](data-structures.md#zunion) | ➕ |  |
-|  | [ZUNIONSTORE](data-structures.md#zunionstore) | ➕ |  |
-| <span id="string">**STRING**</span> | [APPEND](raw-string.md#append) | ➕ |  |
-|  | [DECR](raw-string.md#decr) | ➕ |  |
-|  | [DECRBY](raw-string.md#decrby) | ➕ |  |
-|  | [GET](raw-string.md#get) | ➕ |  |
-|  | [GETDEL](raw-string.md#getdel) | ➕ |  |
-|  | [GETEX](raw-string.md#getex) | ➕ |  |
-|  | [GETRANGE](raw-string.md#getrange) | ➕ |  |
-|  | [GETSET](raw-string.md#getset) | ➕ |  |
-|  | [INCR](raw-string.md#incr) | ➕ |  |
-|  | [INCRBY](raw-string.md#incrby) | ➕ |  |
-|  | [INCRBYFLOAT](raw-string.md#incrbyfloat) | ➕ |  |
-|  | [LCS](raw-string.md#lcs) | ➕ |  |
-|  | [MGET](raw-string.md#mget) | ➕ |  |
-|  | [MSET](raw-string.md#mset) | ➕ |  |
-|  | [MSETNX](raw-string.md#msetnx) | ➕ |  |
-|  | [PSETEX](raw-string.md#psetex) | ➕ | (Deprecated) |
-|  | [SET](raw-string.md#set) | ➕ |  |
-|  | [SETEX](raw-string.md#setex) | ➕ | (Deprecated) |
-|  | [SETNX](raw-string.md#setnx) | ➕ |  |
-|  | [SETRANGE](raw-string.md#setrange) | ➕ |  |
-|  | [STRLEN](raw-string.md#strlen) | ➕ |  |
-|  | [SUBSTR](raw-string.md#substr) | ➕ | (Deprecated) |
+| <span id="sorted-set">**SORTED SET**</span> | [BZMPOP](../commands/data-structures.md#bzmpop) | ➕ |  |
+|  | [BZPOPMAX](../commands/data-structures.md#bzpopmax) | ➕ |  |
+|  | [BZPOPMIN](../commands/data-structures.md#bzpopmin) | ➕ |  |
+|  | [ZADD](../commands/data-structures.md#zadd) | ➕ |  |
+|  | [ZCARD](../commands/data-structures.md#zcard) | ➕ |  |
+|  | [ZCOUNT](../commands/data-structures.md#zcount) | ➕ |  |
+|  | [ZDIFF](../commands/data-structures.md#zdiff) | ➕ |  |
+|  | [ZDIFFSTORE](../commands/data-structures.md#zdiffstore) | ➕ |  |
+|  | [ZINCRBY](../commands/data-structures.md#zincrby) | ➕ |  |
+|  | [ZINTER](../commands/data-structures.md#zinter) | ➕ |  |
+|  | [ZINTERCARD](../commands/data-structures.md#zintercard) | ➕ |  |
+|  | [ZINTERSTORE](../commands/data-structures.md#zinterstore) | ➕ |  |
+|  | [ZLEXCOUNT](../commands/data-structures.md#zlexcount) | ➕ |  |
+|  | [ZMPOP](../commands/data-structures.md#zmpop) | ➕ |  |
+|  | [ZMSCORE](../commands/data-structures.md#zmscore) | ➕ |  |
+|  | [ZPOPMAX](../commands/data-structures.md#zpopmax) | ➕ |  |
+|  | [ZPOPMIN](../commands/data-structures.md#zpopmin) | ➕ |  |
+|  | [ZRANDMEMBER](../commands/data-structures.md#zrandmember) | ➕ |  |
+|  | [ZRANGE](../commands/data-structures.md#zrange) | ➕ |  |
+|  | [ZRANGEBYLEX](../commands/data-structures.md#zrangebylex) | ➕ | (Deprecated) |
+|  | [ZRANGEBYSCORE](../commands/data-structures.md#zrangebyscore) | ➕ | (Deprecated) |
+|  | [ZRANGESTORE](../commands/data-structures.md#zrangestore) | ➕ |  |
+|  | [ZRANK](../commands/data-structures.md#zrank) | ➕ |  |
+|  | [ZREM](../commands/data-structures.md#zrem) | ➕ |  |
+|  | [ZREMRANGEBYLEX](../commands/data-structures.md#zremrangebylex) | ➕ |  |
+|  | [ZREMRANGEBYRANK](../commands/data-structures.md#zremrangebyrank) | ➕ |  |
+|  | [ZREMRANGEBYSCORE](../commands/data-structures.md#zremrangebyscore) | ➕ |  |
+|  | [ZREVRANGE](../commands/data-structures.md#zrevrange) | ➕ | (Deprecated) |
+|  | [ZREVRANGEBYLEX](../commands/data-structures.md#zrevrangebylex) | ➕ | (Deprecated) |
+|  | [ZREVRANGEBYSCORE](../commands/data-structures.md#zrevrangebyscore) | ➕ | (Deprecated) |
+|  | [ZREVRANK](../commands/data-structures.md#zrevrank) | ➕ |  |
+|  | [ZSCAN](../commands/data-structures.md#zscan) | ➕ |  |
+|  | [ZSCORE](../commands/data-structures.md#zscore) | ➕ |  |
+|  | [ZUNION](../commands/data-structures.md#zunion) | ➕ |  |
+|  | [ZUNIONSTORE](../commands/data-structures.md#zunionstore) | ➕ |  |
+| <span id="string">**STRING**</span> | [APPEND](../commands/raw-string.md#append) | ➕ |  |
+|  | [DECR](../commands/raw-string.md#decr) | ➕ |  |
+|  | [DECRBY](../commands/raw-string.md#decrby) | ➕ |  |
+|  | [GET](../commands/raw-string.md#get) | ➕ |  |
+|  | [GETDEL](../commands/raw-string.md#getdel) | ➕ |  |
+|  | [GETEX](../commands/raw-string.md#getex) | ➕ |  |
+|  | [GETRANGE](../commands/raw-string.md#getrange) | ➕ |  |
+|  | [GETSET](../commands/raw-string.md#getset) | ➕ |  |
+|  | [INCR](../commands/raw-string.md#incr) | ➕ |  |
+|  | [INCRBY](../commands/raw-string.md#incrby) | ➕ |  |
+|  | [INCRBYFLOAT](../commands/raw-string.md#incrbyfloat) | ➕ |  |
+|  | [LCS](../commands/raw-string.md#lcs) | ➕ |  |
+|  | [MGET](../commands/raw-string.md#mget) | ➕ |  |
+|  | [MSET](../commands/raw-string.md#mset) | ➕ |  |
+|  | [MSETNX](../commands/raw-string.md#msetnx) | ➕ |  |
+|  | [PSETEX](../commands/raw-string.md#psetex) | ➕ | (Deprecated) |
+|  | [SET](../commands/raw-string.md#set) | ➕ |  |
+|  | [SETEX](../commands/raw-string.md#setex) | ➕ | (Deprecated) |
+|  | [SETNX](../commands/raw-string.md#setnx) | ➕ |  |
+|  | [SETRANGE](../commands/raw-string.md#setrange) | ➕ |  |
+|  | [STRLEN](../commands/raw-string.md#strlen) | ➕ |  |
+|  | [SUBSTR](../commands/raw-string.md#substr) | ➕ | (Deprecated) |
 
 
 ## Learn More

@@ -1,5 +1,5 @@
 ---
-id: azure-security
+id: security
 sidebar_label: Security
 title: Secure your Azure Cosmos DB Garnet Cache
 ---
@@ -60,7 +60,7 @@ To see detailed permissions associated with each role, navigate to the **Access 
 
 ![Built-in Roles](../../static/img/azure/built-in-roles.png)
 
-The see a detailed list of allowed commands for each role under **Permissions > DataActions**.
+See a detailed list of allowed commands for each role under **Permissions > DataActions**.
 
 ![Garnet Data Contributor permissions](../../static/img/azure/garnet-data-contributor.png)
 

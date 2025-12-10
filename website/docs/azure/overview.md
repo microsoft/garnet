@@ -1,5 +1,5 @@
 ---
-id: azure-overview
+id: overview
 sidebar_label: Overview
 title: Azure Cosmos DB Garnet Cache Overview
 ---
@@ -64,7 +64,7 @@ Enable real-time communication between applications with Redis-compatible publis
 
 ### Available Tiers
 
-Azure Cosmos DB Garnet Cache offers three performance tiers to match your workload requirements. An overview of single-node specs is below for each tier based on the [available SKUs](./cluster-configuration.md#available-tiers). Each cluster can be scaled to have one or more nodes of the same SKU determined by the shard count and replication factor configured. This allows for custom cache sizes up to 5TB+ that match your specific workload needs.
+Azure Cosmos DB Garnet Cache offers two performance tiers to match your workload requirements. An overview of single-node specs is below for each tier based on the [available SKUs](./cluster-configuration.md#available-tiers). Each cluster can be scaled to have one or more nodes of the same SKU determined by the shard count and replication factor configured. This allows for custom cache sizes up to 5TB+ that match your specific workload needs.
 
 #### General Purpose
 Recommended for balanced workloads, general caching, development and testing. Single-node specs ranging from:
@@ -77,12 +77,6 @@ Recommended for in-memory databases, large datasets, gaming leaderboards, vector
 - **Memory**: 16 GB - 256 GB
 - **vCPUs**: 2-32 cores
 - **Network**: Up to 16 Gbps
-
-#### Compute Optimized
-Recommended for CPU-intensive operations, complex computations, high-throughput scenarios. Single-node specs ranging from:
-- **Memory**: 8 GB - 128 GB
-- **vCPUs**: 2-32 cores
-- **Network**: Up to 20 Gbps  
 
 
 ## Compatible with Redis clients

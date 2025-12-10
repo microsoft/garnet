@@ -1,5 +1,5 @@
 ---
-id: azure-resiliency
+id: resiliency
 sidebar_label: Resiliency
 title: Resiliency in Azure Cosmos DB Garnet Cache
 ---
@@ -41,7 +41,7 @@ Azure Cosmos DB Garnet Cache supports configurable replication factors to balanc
 | **High Availability** | 2x | 2, one replica per primary | Mission-critical applications |
 | **Optimized Read Performance** | 3x-5x* | 3-5, two to four replicas per primary | Mission-critical applications requiring high read throughput |
 
-*Higher replication factors can be supported upon request. Reach out to [ManagedGarnet@service.microsoft.com](mailto:ManagedGarnet@service.microsoft.com) for more information.
+*Reach out to [ManagedGarnet@service.microsoft.com](mailto:ManagedGarnet@service.microsoft.com) if you need a higher replication factor.
 
 The replication process is as follows
 
@@ -52,7 +52,7 @@ The replication process is as follows
 
 ### Automatic Failovers
 
-A failover can be either planned, such as system updates or management operations, or it can be unplanned, such as hardware failure or unexpected outages. The Azure Cosmos DB Garnet Cache automatically handles failovers for you and will promote a replica to primary after detecting one of these events. Recovery from planned failovers is typically 1s and recovery for unplanned failovers is typically upwards of 5s.
+A failover can be either planned, such as system updates or management operations, or it can be unplanned, such as hardware failure or unexpected outages. The Azure Cosmos DB Garnet Cache automatically handles failovers for you and will promote a replica to primary after detecting one of these events.
 
 ### Multi Availability Zone Deployment
 
@@ -62,7 +62,7 @@ If enabled, nodes are automatically distributed across multiple availability zon
 
 ## Data Persistence
 
-Azure Cosmos DB Garnet Cache uses append only file (AOF) persistence to ensure data durability. Every write operation is appended to a persistent log file stored on an attached locally redundant [Premium Managed Disk](https://learn.microsoft.com/azure/virtual-machines/disks-types#premium-ssds). Checkpoints are stored every second. The disk size is automatically provisioned for each node based on 4x the total amount of memory for the SKU. See the [disks provisioned for each SKU](./cluster-configuration.md#available-tiers).
+Azure Cosmos DB Garnet Cache uses append only file (AOF) persistence to ensure data durability. Every write operation is appended to a persistent log file stored on an attached locally redundant [Premium Managed Disk](https://learn.microsoft.com/azure/virtual-machines/disks-types#premium-ssds). Checkpoints are stored every second. The disk size is automatically provisioned for each node based on 2x the total amount of memory for the SKU. See the [disks provisioned for each SKU](./cluster-configuration.md#available-tiers).
 
 Data on nodes is restored from the latest data checkpoint upon restart, including from automatic failovers. It is possible to experience data loss after a failover for the portion of data that hasn't been replicated or wasn't included in the latest checkpoint.
 
