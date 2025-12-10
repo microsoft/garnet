@@ -78,7 +78,7 @@ namespace AofExplorer
             {
                 var ext = entry.ExtendedHeader.Value;
                 Console.WriteLine($"  Sequence Number: {ext.sequenceNumber}");
-                Console.WriteLine($"  Log Access Count: {ext.logAccessCount}");
+                Console.WriteLine($"  Log Access Count: {ext.sublogAccessCount}");
             }
 
             if (entry.Key.Length > 0)
@@ -125,7 +125,7 @@ namespace AofExplorer
             {
                 var ext = entry.ExtendedHeader.Value;
                 Console.WriteLine($"  Sequence Number: {ext.sequenceNumber}");
-                Console.WriteLine($"  Log Access Count: {ext.logAccessCount}");
+                Console.WriteLine($"  Log Access Count: {ext.sublogAccessCount}");
             }
 
             if (entry.Key.Length > 0)

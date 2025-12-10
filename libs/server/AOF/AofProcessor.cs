@@ -177,7 +177,7 @@ namespace Garnet.server
                     {
                         fixed (byte* ptr = entry.Memory.Span)
                         {
-                            ProcessAofRecordInternal(sublogIdx, ptr, length, asReplica: false, out _);
+                            ProcessAofRecordInternal(sublogIdx, 0, ptr, length, asReplica: false, out _);
                         }
                         entry.Dispose();
                     }
@@ -207,17 +207,27 @@ namespace Garnet.server
         /// NOTE: This method is shared between recover replay and replication replay
         /// </summary>
         /// <param name="sublogIdx"></param>
+        /// <param name="subtaskIdx"></param>
         /// <param name="ptr"></param>
         /// <param name="length"></param>
         /// <param name="asReplica"></param>
         /// <param name="isCheckpointStart"></param>
-        public unsafe void ProcessAofRecordInternal(int sublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
+        public void ProcessAofRecordInternal(int sublogIdx, int subtaskIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
         {
             var header = *(AofHeader*)ptr;
             var extendedHeader = default(AofExtendedHeader);
             var replayContext = aofReplayCoordinator.GetReplayContext(sublogIdx);
             isCheckpointStart = false;
             var shardedLog = storeWrapper.serverOptions.AofSublogCount > 1;
+            var subtaskReplay = storeWrapper.serverOptions.AofReplaySubtaskCount > 1;
+
+            if (subtaskReplay && shardedLog)
+            {
+                extendedHeader = *(AofExtendedHeader*)ptr;
+                // Skip records that will not be replayed by this subtask
+                if (extendedHeader.subtaskIdx != subtaskIdx)
+                    return;
+            }
 
             // Handle transactions
             if (aofReplayCoordinator.AddOrReplayTransactionOperation(sublogIdx, ptr, length, asReplica))

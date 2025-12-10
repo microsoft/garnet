@@ -11,7 +11,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Replica replay task group
         /// </summary>
-        public ReplicaReplayTaskGroup replicaReplayTaskGroup;
+        public ReplicaReplayDriverGroup replicaReplayTaskGroup;
 
         /// <summary>
         /// Initialize replica replay group
@@ -20,13 +20,13 @@ namespace Garnet.cluster
         /// <param name="networkSender"></param>
         /// <param name="replicaReplayTaskGroup"></param>
         /// <returns></returns>
-        public bool InitializeReplicaReplayGroup(int sublogIdx, INetworkSender networkSender, out ReplicaReplayTaskGroup replicaReplayTaskGroup)
+        public bool InitializeReplicaReplayGroup(int sublogIdx, INetworkSender networkSender, out ReplicaReplayDriverGroup replicaReplayTaskGroup)
         {
             replicaReplayTaskGroup = null;
-            if (this.replicaReplayTaskGroup[sublogIdx] != null)
+            if (this.replicaReplayTaskGroup.GetReplayDriver(sublogIdx) != null)
                 return false;
 
-            this.replicaReplayTaskGroup.AddReplicaReplayTask(sublogIdx, networkSender);
+            this.replicaReplayTaskGroup.AddReplicaReplayDriver(sublogIdx, networkSender);
             replicaReplayTaskGroup = this.replicaReplayTaskGroup;
 
             return true;
@@ -38,7 +38,7 @@ namespace Garnet.cluster
         public void ResetReplicaReplayGroup()
         {
             replicaReplayTaskGroup?.Dispose();
-            replicaReplayTaskGroup = new ReplicaReplayTaskGroup(clusterProvider, logger);
+            replicaReplayTaskGroup = new ReplicaReplayDriverGroup(clusterProvider, logger);
         }
     }
 }

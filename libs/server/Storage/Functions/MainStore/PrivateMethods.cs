@@ -814,7 +814,7 @@ namespace Garnet.server
                     functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                     0);
 
-                functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(
+                functionsState.appendOnlyFile.Log.Enqueue(
                     extendedAofHeader,
                     key,
                     value,
@@ -861,7 +861,7 @@ namespace Garnet.server
                     functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                     0);
 
-                functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(
+                functionsState.appendOnlyFile.Log.Enqueue(
                     extendedAofHeader,
                     key,
                     ref input,
@@ -905,10 +905,10 @@ namespace Garnet.server
                     functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                     0);
 
-                functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(
+                functionsState.appendOnlyFile.Log.Enqueue(
                     extendedAofHeader,
                     key,
-                    item2: default,
+                    value: default,
                     out _);
             }
         }

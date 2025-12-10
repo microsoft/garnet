@@ -14,8 +14,8 @@ namespace Garnet.server
 {
     public class GarnetLog(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
     {
-        const long kFirstValidAofAddress = 64;
-
+        readonly int subtaskReplayCount = serverOptions.AofReplaySubtaskCount;
+        readonly int aofSublogCount = serverOptions.AofSublogCount;
         readonly SingleLog singleLog = serverOptions.AofSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
         readonly ShardedLog shardedLog = serverOptions.AofSublogCount > 1 ? new ShardedLog(serverOptions.AofSublogCount, logSettings, logger) : null;
 
@@ -26,25 +26,18 @@ namespace Garnet.server
         public int Size => singleLog != null ? 1 : shardedLog.Length;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static unsafe long HASH(ReadOnlySpan<byte> key)
+        static long HASH(ReadOnlySpan<byte> key)
             => Utility.HashBytes(key);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe int HashKey(ref PinnedSpanByte key)
-        {
-            var hash = HASH(key.ReadOnlySpan);
-            return (int)(((ulong)hash) % (ulong)shardedLog.Length);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe int HashKey(ReadOnlySpan<byte> key)
+        public (int,int) HashKey(ReadOnlySpan<byte> key)
         {
             var hash = HASH(key);
-            return (int)(((ulong)hash) % (ulong)shardedLog.Length);
+            return ((int)(((ulong)hash) % (ulong)aofSublogCount), (int)(((ulong)hash) % (ulong)subtaskReplayCount));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public unsafe void Hash(ReadOnlySpan<byte> key, out long hash, out int sublogIdx, out int keyOffset)
+        public void HashKey(ReadOnlySpan<byte> key, out long hash, out int sublogIdx, out int keyOffset)
         {
             hash = HASH(key);
             sublogIdx = (int)(((ulong)hash) % (ulong)shardedLog.Length);
@@ -55,7 +48,7 @@ namespace Garnet.server
         public void HashKey(ref PinnedSpanByte key, out long hash, out int sublogIdx, out int keyOffset)
         {
             Debug.Assert(shardedLog != null);
-            Hash(key.Span, out hash, out sublogIdx, out keyOffset);
+            HashKey(key.Span, out hash, out sublogIdx, out keyOffset);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -209,17 +202,6 @@ namespace Garnet.server
             }
         }
 
-        /// <summary>
-        /// Get sublog instance indicated by the hash of the provided key
-        /// </summary>
-        /// <param name="key"></param>
-        /// <returns></returns>
-        public TsavoriteLog GetSubLog(ReadOnlySpan<byte> key)
-        {
-            var _sublogIdx = HashKey(key);
-            return shardedLog.sublog[_sublogIdx];
-        }
-
         public unsafe int UnsafeGetLength(int sublogIdx, byte* headerPtr)
             => GetSubLog(sublogIdx).UnsafeGetLength(headerPtr);
 
@@ -350,6 +332,42 @@ namespace Garnet.server
                 for (var i = 0; i < shardedLog.Length; i++)
                     shardedLog.sublog[i].TruncateUntil(untilAddress[i]);
             }
+        }
+
+        internal void Enqueue<TInput>(AofExtendedHeader extendedAofHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, out long logicalAddress)
+            where TInput : IStoreInput
+        {
+            var (_sublogIdx, _subtaskId) = HashKey(key);
+            extendedAofHeader.subtaskIdx = (byte)_subtaskId;
+            shardedLog.sublog[_sublogIdx].Enqueue(
+                extendedAofHeader,
+                key,
+                value,
+                ref input,
+                out logicalAddress);
+        }
+
+        internal void Enqueue<TInput>(AofExtendedHeader extendedAofHeader, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
+            where TInput : IStoreInput
+        {
+            var (_sublogIdx, _subtaskId) = HashKey(key);
+            extendedAofHeader.subtaskIdx = (byte)_subtaskId;
+            shardedLog.sublog[_sublogIdx].Enqueue(
+                extendedAofHeader,
+                key,
+                ref input,
+                out logicalAddress);
+        }
+
+        internal void Enqueue(AofExtendedHeader extendedAofHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out long logicalAddress)
+        {
+            var (_sublogIdx, _subtaskId) = HashKey(key);
+            extendedAofHeader.subtaskIdx = (byte)_subtaskId;
+            shardedLog.sublog[_sublogIdx].Enqueue(
+                extendedAofHeader,
+                key,
+                value,
+                out logicalAddress);
         }
     }
 }

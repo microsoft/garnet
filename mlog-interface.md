@@ -70,8 +70,56 @@ Good thing is that this is what currently happens on the complete pending callba
 
 </ul></ul> 
 
-- [ ] Re-design tail witness to avoid using enqueue.
-- [ ] Think about subtask parallel replay
+- [X] Re-design tail witness to avoid using enqueue.
+- [ ] Implement logical subtask replay (LSR)
+<ul><ul>
+Garnet replication can be configured to utilize multiple sublogs at the primary and many virtual replay tasks at the replica.
+In essence, the system will operate as if it uses many virtual sublogs backed by a fixed number of physical sublogs.
+The primary will write to a physical sublog by calculating the sublogIdx based on the command key specified at the operation.
+The operation key will also be used to generate a single byte hash which will be used to determine how work is assinged to virtual replay tasks in the replica
+
+Example:
+
+Primary Run:
+set foo 1
+set wxz 2
+
+hash1 = HashKey(foo)
+hash2 = HashKey(wxz)
+
+sublogIdx1 = hash1 % aofSublogCount
+sublogIdx2 = hash2 % aofSublogCount
+
+replayId1 = hash1 & 255
+replayId2 = hash2 & 255
+
+sublog[sublogIdx1].Enqueue(Header(replayIdx1),foo, 1)
+sublog[sublogIdx2].Enqueue(Header(replayIdx2),wxz, 2)
+
+Replica
+
+if(!replayTaskInitialized){
+  foreach(var taskId in range(replayTaskCount))
+    ReplayTask(taskId, replayTaskCount)
+}
+
+void ReplayTask(int taskId, int replayTaskCount)
+{
+  while(true){
+    var record = GetNext();
+    var header = record.Header;
+    if(header.replayIdx % replayTaskCount == taskId){
+      ProcessRecord(record);
+    }
+  }
+}
+
+
+- Support virtual sublog replay for a single log
+- Ensure that replay is possible with varying number of virtual sublogs (NOTE: physical sublogs should remain fixed)
+- Every enqueue operation adds hash value (single byte) to use with assigning work to each virtual subtask
+- Coordination for transactions adds a marker for every participating virtual sublog. That marker can be hashed to support varying number of virtual subtasks
+</ul></ul>
 
 - [ ] Role command does not work as expected with SE Redis.
 <ul><ul>

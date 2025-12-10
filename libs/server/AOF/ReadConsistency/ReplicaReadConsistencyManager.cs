@@ -209,7 +209,7 @@ namespace Garnet.server
         /// <param name="readSessionWaiter"></param>
         public void ConsistentReadKey(Span<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
         {
-            appendOnlyFile.Log.Hash(key, out _, out var sublogIdx, out var keyOffset);
+            appendOnlyFile.Log.HashKey(key, out _, out var sublogIdx, out var keyOffset);
 
             // If first time calling or version has been bumped reset read context
             // NOTE: version changes every time replica is reset and a attached to a new primary
@@ -262,7 +262,7 @@ namespace Garnet.server
         /// <param name="readSessionWaiter"></param>
         public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
         {
-            appendOnlyFile.Log.Hash(key, out _, out var sublogIdx, out var keyOffset);
+            appendOnlyFile.Log.HashKey(key, out _, out var sublogIdx, out var keyOffset);
 
             // If first time calling or version has been bumped reset read context
             // NOTE: version changes every time replica is reset and a attached to a new primary

@@ -239,7 +239,7 @@ namespace Resp.benchmark
                                 aofGen.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                                 0);
 
-                                aofGen.appendOnlyFile.Log.GetSubLog(key).Enqueue(
+                                aofGen.appendOnlyFile.Log.Enqueue(
                                     extendedAofHeader,
                                     key,
                                     value,

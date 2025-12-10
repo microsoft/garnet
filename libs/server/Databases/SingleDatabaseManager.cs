@@ -419,14 +419,17 @@ namespace Garnet.server
                     {
                         AppendOnlyFile.Log.LockSublogs(logAccessBitmap);
                         var _logAccessBitmap = logAccessBitmap;
-                        var extendedAofHeader = new AofExtendedHeader(new AofHeader
-                        {
-                            opType = entryType,
-                            storeVersion = 0,
-                            sessionID = -1,
-                            unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
-                            databaseId = (byte)defaultDatabase.Id
-                        }, storeWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber(), (byte)BitOperations.PopCount(ulong.MaxValue));
+                        var extendedAofHeader = new AofExtendedHeader(
+                            new AofHeader
+                            {
+                                opType = entryType,
+                                storeVersion = 0,
+                                sessionID = -1,
+                                unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
+                                databaseId = (byte)defaultDatabase.Id
+                            },
+                            storeWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber(),
+                            (byte)BitOperations.PopCount(ulong.MaxValue));
 
                         while (_logAccessBitmap > 0)
                         {

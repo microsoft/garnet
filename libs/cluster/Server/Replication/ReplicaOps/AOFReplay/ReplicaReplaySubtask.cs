@@ -1,4 +1,5 @@
-﻿// Copyright (c) Microsoft Corporation.
+
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System;
@@ -12,29 +13,35 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    /// <summary>
-    /// Replica replay task
-    /// </summary>
-    /// <param name="sublogIdx"></param>
-    /// <param name="clusterProvider"></param>
-    /// <param name="respSessionNetworkSender"></param>
-    /// <param name="cts"></param>
-    /// <param name="logger"></param>
-    internal sealed class ReplicaReplayTask(int sublogIdx, ClusterProvider clusterProvider, INetworkSender respSessionNetworkSender, CancellationTokenSource cts, ILogger logger = null) : IBulkLogEntryConsumer, IDisposable
+    internal sealed class ReplicaReplaySubtask(
+        int sublogIdx,
+        int subtaskIdx,
+        ReplicaReplayDriver replayDriver,
+        ClusterProvider clusterProvider,
+        INetworkSender respSessionNetworkSender,
+        CancellationTokenSource cts,
+        ILogger logger = null) : IBulkLogEntryConsumer, IDisposable
     {
         readonly int sublogIdx = sublogIdx;
+        readonly int subtaskIdx = subtaskIdx;
+        readonly ReplicaReplayDriver replayDriver = replayDriver;
         readonly ClusterProvider clusterProvider = clusterProvider;
         readonly CancellationTokenSource cts = cts;
         readonly INetworkSender respSessionNetworkSender = respSessionNetworkSender;
         readonly ILogger logger = logger;
         TsavoriteLogScanSingleIterator replayIterator = null;
-        public SingleWriterMultiReaderLock activeReplay;
 
         public void Dispose()
         {
-            activeReplay.WriteLock();
-            replayIterator?.Dispose();
             respSessionNetworkSender?.Dispose();
+            replayIterator?.Dispose();            
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ValidateSublogIndex(int sublogIdx)
+        {
+            if (sublogIdx != this.sublogIdx)
+                throw new GarnetException($"SublogIdx mismatch; expected:{this.sublogIdx} - received:{sublogIdx}");
         }
 
         #region IBulkLogEntryConsumer
@@ -51,10 +58,9 @@ namespace Garnet.cluster
                 var payloadLength = clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(sublogIdx).UnsafeGetLength(ptr);
                 if (payloadLength > 0)
                 {
-                    clusterProvider.replicationManager.AofProcessor.ProcessAofRecordInternal(sublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
+                    clusterProvider.replicationManager.AofProcessor.ProcessAofRecordInternal(sublogIdx, subtaskIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
                     // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                     // point when we take a checkpoint at the checkpoint end marker
-                    // FIXME: Do we need to coordinate between sublogs when updating this?
                     if (isCheckpointStart)
                     {
                         // logger?.LogError("[{sublogIdx}] CheckpointStart {address}", sublogIdx, clusterProvider.replicationManager.GetSublogReplicationOffset(sublogIdx));
@@ -88,14 +94,7 @@ namespace Garnet.cluster
         public void Throttle() { }
         #endregion
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ValidateSublogIndex(int sublogIdx)
-        {
-            if (sublogIdx != this.sublogIdx)
-                throw new GarnetException($"SublogIdx mismatch; expected:{this.sublogIdx} - received:{sublogIdx}");
-        }
-
-        public void InitialiazeBackgroundReplayTask(long startAddress)
+        internal void Run(long startAddress)
         {
             if (replayIterator == null)
             {
@@ -105,7 +104,7 @@ namespace Garnet.cluster
 
             async Task BackgroundReplayTask()
             {
-                var readLock = activeReplay.TryReadLock();
+                var readLock = replayDriver.ResumeReplay();
                 try
                 {
                     if (!readLock)
@@ -127,19 +126,8 @@ namespace Garnet.cluster
                 finally
                 {
                     if (readLock)
-                        activeReplay.ReadUnlock();
+                        replayDriver.SuspendReplay();
                 }
-            }
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ThrottlePrimary()
-        {
-            while (clusterProvider.serverOptions.ReplicationOffsetMaxLag != -1 && replayIterator != null &&
-                clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress.AggregateDiff(clusterProvider.replicationManager.ReplicationOffset) > clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag)
-            {
-                cts.Token.ThrowIfCancellationRequested();
-                Thread.Yield();
             }
         }
     }

@@ -43,7 +43,7 @@ namespace Garnet.server
         {
             readonly ConcurrentDictionary<int, EventBarrier> eventBarriers = [];
             readonly AofProcessor aofProcessor = aofProcessor;
-            readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(aofProcessor.storeWrapper.serverOptions.AofSublogCount);
+            readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(aofProcessor.storeWrapper.serverOptions.AofSublogCount, aofProcessor.storeWrapper.serverOptions.AofReplaySubtaskCount);
 
             /// <summary>
             /// Replay context for replay subtask
@@ -53,9 +53,9 @@ namespace Garnet.server
             public AofReplayContext GetReplayContext(int sublogIdx) => aofReplayContext[sublogIdx];
             readonly ILogger logger = logger;
 
-            internal static AofReplayContext[] InitializeReplayContext(int AofSublogCount)
+            internal static AofReplayContext[] InitializeReplayContext(int AofSublogCount, int AofReplaySubtaskCount)
             {
-                var sublogReplayBuffers = new AofReplayContext[AofSublogCount];
+                var sublogReplayBuffers = new AofReplayContext[AofSublogCount * AofReplaySubtaskCount];
                 for (var i = 0; i < sublogReplayBuffers.Length; i++)
                     sublogReplayBuffers[i] = new();
                 return sublogReplayBuffers;
@@ -160,7 +160,7 @@ namespace Garnet.server
                 switch (header.opType)
                 {
                     case AofEntryType.TxnStart:
-                        var logAccessCount = aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1 ? 0 : (*(AofExtendedHeader*)ptr).logAccessCount;
+                        var logAccessCount = aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1 ? 0 : (*(AofExtendedHeader*)ptr).sublogAccessCount;
                         aofReplayContext[sublogIdx].AddTransactionGroup(header.sessionID, sublogIdx, (byte)logAccessCount);
                         break;
                     case AofEntryType.TxnAbort:
@@ -364,7 +364,7 @@ namespace Garnet.server
                 extendedHeader.ThrowIfNotExtendedHeader();
 
                 // Synchronize execution across sublogs
-                var eventBarrier = GetBarrier(barrierId, extendedHeader.logAccessCount);
+                var eventBarrier = GetBarrier(barrierId, extendedHeader.sublogAccessCount);
                 var isLeader = eventBarrier.TrySignalAndWait(out var signalException, aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout);
                 Exception removeBarrierException = null;
 

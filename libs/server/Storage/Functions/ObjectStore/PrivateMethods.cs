@@ -48,7 +48,7 @@ namespace Garnet.server
                     functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                     0);
 
-                functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(
+                functionsState.appendOnlyFile.Log.Enqueue(
                     extendedAofHeader,
                     key,
                     value,
@@ -97,7 +97,7 @@ namespace Garnet.server
                         functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                         0);
 
-                    functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(
+                    functionsState.appendOnlyFile.Log.Enqueue(
                         extendedAofHeader,
                         key,
                         new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
@@ -149,7 +149,7 @@ namespace Garnet.server
                         functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                         0);
 
-                    functionsState.appendOnlyFile.Log.GetSubLog(sbKey).Enqueue(
+                    functionsState.appendOnlyFile.Log.Enqueue(
                         extendedAofHeader,
                         sbKey,
                         ref input,
@@ -196,10 +196,10 @@ namespace Garnet.server
                     functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                     0);
 
-                functionsState.appendOnlyFile.Log.GetSubLog(key).Enqueue(
+                functionsState.appendOnlyFile.Log.Enqueue(
                     extendedAofHeader,
                     key,
-                    item2: default,
+                    value: default,
                     out _);
             }
         }

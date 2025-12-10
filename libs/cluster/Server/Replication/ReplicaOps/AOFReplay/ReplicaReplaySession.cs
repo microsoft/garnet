@@ -11,7 +11,7 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
-        ReplicaReplayTaskGroup replicaReplayTaskGroup = null;
+        ReplicaReplayDriverGroup replicaReplayTaskGroup = null;
         TsavoriteLog sublog = null;
 
         /// <summary>
@@ -32,7 +32,7 @@ namespace Garnet.cluster
             // Need to ensure that this replay task is allowed to complete before the replicaReplayGroup is disposed
             // NOTE: this should not be expensive because every replay task has its own lock copy
             // Cache invalidation happens only on dispose which is rare operation
-            var failReplay = syncReplay && !replicaReplayTaskGroup[sublogIdx].activeReplay.TryReadLock();
+            var failReplay = syncReplay && !replicaReplayTaskGroup.GetReplayDriver(sublogIdx).ResumeReplay();
             try
             {
                 if (failReplay)
@@ -92,9 +92,6 @@ namespace Garnet.cluster
                     throw new GarnetException($"Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {clusterProvider.replicationManager.ReplicationOffset}, aof.TailAddress {tail}", LogLevel.Warning, clientResponse: false);
                 }
 
-                // Check that sublogIdx received is one expected
-                replicaReplayTaskGroup[sublogIdx].ValidateSublogIndex(sublogIdx);
-
                 // Initialize sublog ref if first time
                 sublog ??= clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(sublogIdx);
 
@@ -104,15 +101,18 @@ namespace Garnet.cluster
                 if (clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0)
                 {
                     // Synchronous replay
-                    replicaReplayTaskGroup[sublogIdx].Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
+                    // NOTE:
+                    //  Currently synchronous replay does not enable parallel background task replay
+                    //  because it will require us to scan, identify and copy the page level records to the right subtask replay queue, which we try to avoid
+                    replicaReplayTaskGroup.GetReplayDriver(sublogIdx).Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
                 }
                 else
                 {
                     // Initialize iterator and run background task once
-                    replicaReplayTaskGroup[sublogIdx].InitialiazeBackgroundReplayTask(previousAddress);
+                    replicaReplayTaskGroup.GetReplayDriver(sublogIdx).InitializeReplaySubtasks(previousAddress);
 
                     // Throttle to give the opportunity to the background replay task to catch up
-                    replicaReplayTaskGroup[sublogIdx].ThrottlePrimary();
+                    replicaReplayTaskGroup.GetReplayDriver(sublogIdx).ThrottlePrimary();
                 }
             }
             catch (Exception ex)
@@ -123,7 +123,7 @@ namespace Garnet.cluster
             finally
             {
                 if (syncReplay && !failReplay)
-                    replicaReplayTaskGroup[sublogIdx].activeReplay.ReadUnlock();
+                    replicaReplayTaskGroup.GetReplayDriver(sublogIdx).SuspendReplay();
             }
         }
     }

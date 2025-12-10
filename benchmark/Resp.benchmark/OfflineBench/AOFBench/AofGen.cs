@@ -92,7 +92,7 @@ namespace Resp.benchmark
             while (true)
             {
                 var keyData = Encoding.ASCII.GetBytes(Generator.CreateHexId(size: Math.Max(options.KeyLength, 8)));
-                garnetLog.Hash(keyData.AsSpan(), out _, out var sublogIdx, out _);
+                garnetLog.HashKey(keyData.AsSpan(), out _, out var sublogIdx, out _);
                 if (sublogIdx == threadId) return keyData;
             }
         }

@@ -56,10 +56,14 @@ namespace Garnet.server
         /// </summary>
         public bool EnableAOF = false;
 
-        // Enable Lua scripts on server
+        /// <summary>
+        /// Enable Lua scripts on server
+        /// </summary>
         public bool EnableLua = false;
 
-        // Run Lua scripts as a transaction (lock keys - run script - unlock keys)
+        /// <summary>
+        /// Run Lua scripts as a transaction (lock keys - run script - unlock keys)
+        /// </summary>
         public bool LuaTransactionMode = false;
 
         /// <summary>
@@ -81,6 +85,11 @@ namespace Garnet.server
         /// Number of AOF sublogs (=1 default single log, >1: multi-log)
         /// </summary>
         public int AofSublogCount = 1;
+
+        /// <summary>
+        /// Number of replica replay tasks
+        /// </summary>
+        public int AofReplaySubtaskCount = 1;
 
         /// <summary>
         /// Delay for background task used to refresh tail timestamp for stalled sublogs when SharedLog is used.

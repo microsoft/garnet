@@ -198,6 +198,10 @@ namespace Garnet
         [Option("aof-sublog-count", Required = false, HelpText = "Number of AOF sublogs (=1 default single log, >1: multi-log).")]
         public int AofSublogCount { get; set; }
 
+        [IntRangeValidation(1, 64)]
+        [Option("aof-replay-subtask-count", Required = false, HelpText = "Number of logical replay tasks per sublog at replica.")]
+        public int AofReplaySubtaskCount { get; set; }
+
         [IntRangeValidation(0, int.MaxValue)]
         [Option("aof-sublog-refresh-tail-freq", Required = false, HelpText = "Refresh sublog tail background task execution frequency.")]
         public int AofRefreshSublogTailFrequencyMs { get; set; }
@@ -806,6 +810,7 @@ namespace Garnet
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
                 AofSublogCount = AofSublogCount,
+                AofReplaySubtaskCount = AofReplaySubtaskCount,
                 AofRefreshSublogTailFrequencyMs = AofRefreshSublogTailFrequencyMs,
                 AofReplicationRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,
                 CommitFrequencyMs = CommitFrequencyMs,

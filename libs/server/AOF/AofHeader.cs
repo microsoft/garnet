@@ -9,9 +9,14 @@ namespace Garnet.server
     /// <summary>
     /// Used for sharded log to add a timestamp and logAccessCounter
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = 25)]
+    [StructLayout(LayoutKind.Explicit, Size = 26)]
     struct AofExtendedHeader
     {
+        /// <summary>
+        /// Reserved sublog replay task id for coordinated operations (i.e. txn, custom-txn, )
+        /// </summary>
+        internal const int RESERVED_SUBTASK_ID = 255;
+
         /// <summary>
         /// AofHeader used with singleLog
         /// </summary>
@@ -28,20 +33,26 @@ namespace Garnet.server
         /// Used for synchronizing sublog replay
         /// </summary>
         [FieldOffset(24)]
-        public byte logAccessCount;
+        public byte sublogAccessCount;
+
+        /// <summary>
+        /// Used for marking an entry for replay to a specific subtask
+        /// </summary>
+        [FieldOffset(25)]
+        public byte subtaskIdx;
 
         /// <summary>
         /// AofExtendedHeader constructor
         /// </summary>
         /// <param name="aofHeader"></param>
         /// <param name="sequenceNumber"></param>
-        /// <param name="logAccessCount"></param>
-        public AofExtendedHeader(AofHeader aofHeader, long sequenceNumber, byte logAccessCount)
+        /// <param name="sublogAccessCount"></param>
+        public AofExtendedHeader(AofHeader aofHeader, long sequenceNumber, byte sublogAccessCount)
         {
             header = aofHeader;
             header.padding = AofHeader.ShardedLogFlag;
             this.sequenceNumber = sequenceNumber;
-            this.logAccessCount = logAccessCount;
+            this.sublogAccessCount = sublogAccessCount;
         }
 
         /// <summary>
