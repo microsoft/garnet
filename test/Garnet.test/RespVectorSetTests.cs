@@ -1482,6 +1482,64 @@ namespace Garnet.test
         // TODO: FLUSHDB needs to cleanup too...
 
         [Test]
+        public void VINFO()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Create a vector set with known parameters
+            var res1 = db.Execute("VADD", ["foo", "REDUCE", "5", "VALUES", "10", "1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "7.0", "8.0", "9.0", "10.0", new byte[] { 0, 0, 0, 0 }, "Q8", "EF", "16", "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Get VINFO - should return an array of 12 elements (6 key-value pairs)
+            var res2 = (RedisValue[])db.Execute("VINFO", ["foo"]);
+            ClassicAssert.AreEqual(12, res2.Length);
+
+            // Verify the field names and values
+            ClassicAssert.AreEqual("quant-type", (string)res2[0]);
+            ClassicAssert.AreEqual("q8", (string)res2[1]);
+            ClassicAssert.AreEqual("input-vector-dimensions", (string)res2[2]);
+            ClassicAssert.AreEqual(10, (int)res2[3]);
+            ClassicAssert.AreEqual("reduced-dimensions", (string)res2[4]);
+            ClassicAssert.AreEqual(5, (int)res2[5]);
+            ClassicAssert.AreEqual("build-exploration-factor", (string)res2[6]);
+            ClassicAssert.AreEqual(16, (int)res2[7]);
+            ClassicAssert.AreEqual("num-links", (string)res2[8]);
+            ClassicAssert.AreEqual(32, (int)res2[9]);
+            ClassicAssert.AreEqual("size", (string)res2[10]);
+            ClassicAssert.AreEqual(0, (long)res2[11]);
+
+            // Add another element and try again
+            var res3 = db.Execute("VADD", ["foo", "REDUCE", "5", "VALUES", "10", "11.0", "12.0", "13.0", "14.0", "15.0", "16.0", "17.0", "18.0", "19.0", "20.0", new byte[] { 0, 0, 0, 1 }, "M", "32"]);
+            ClassicAssert.AreEqual(1, (int)res3);
+
+            var res4 = (RedisValue[])db.Execute("VINFO", ["foo"]);
+            ClassicAssert.AreEqual(12, res4.Length);
+            ClassicAssert.AreEqual("quant-type", (string)res2[0]);
+            ClassicAssert.AreEqual("q8", (string)res2[1]);
+            ClassicAssert.AreEqual("input-vector-dimensions", (string)res2[2]);
+            ClassicAssert.AreEqual(10, (int)res2[3]);
+            ClassicAssert.AreEqual("reduced-dimensions", (string)res2[4]);
+            ClassicAssert.AreEqual(5, (int)res2[5]);
+            ClassicAssert.AreEqual("build-exploration-factor", (string)res2[6]);
+            ClassicAssert.AreEqual(16, (int)res2[7]);
+            ClassicAssert.AreEqual("num-links", (string)res2[8]);
+            ClassicAssert.AreEqual(32, (int)res2[9]);
+            ClassicAssert.AreEqual("size", (string)res2[10]);
+            ClassicAssert.AreEqual(0, (long)res2[11]);
+
+            // VINFO on non-existent key returns null
+            var res5 = db.Execute("VINFO", ["nonexistent"]);
+            ClassicAssert.IsTrue(res5.IsNull);
+
+            // VINFO on wrong type returns error
+            // TODO: add WRONGTYPE test once implemented
+            //_ = db.StringSet("stringkey", "value");
+            //var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VINFO", ["stringkey"]));
+            //ClassicAssert.IsTrue(exc1.Message.StartsWith("WRONGTYPE"));
+        }
+
+        [Test]
         public void VREM()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
