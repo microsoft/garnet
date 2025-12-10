@@ -34,7 +34,7 @@ namespace Tsavorite.test
 
         public override void Dispose() { }
 
-        public override HeapObjectBase Clone() => throw new NotImplementedException();
+        public override HeapObjectBase Clone() => new TestObjectValue() { value = value };
         public override void DoSerialize(BinaryWriter writer) => throw new NotImplementedException();
         public override void WriteType(BinaryWriter writer, bool isNull) => throw new NotImplementedException();
 
