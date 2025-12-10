@@ -26,8 +26,8 @@ namespace Tsavorite.core
             {
                 case Phase.PREPARE:
                     // Capture state before checkpoint starts
-                    CollectMetadata(next, store, isPrepare: true);
                     store._hybridLogCheckpoint = store._lastSnapshotCheckpoint;
+                    ObjectLog_OnPrepare();
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._hybridLogCheckpoint.prevVersion = next.Version;
                     break;
@@ -50,7 +50,7 @@ namespace Tsavorite.core
                     // handle corrupted or unexpected concurrent page changes during the flush, e.g., by
                     // resuming epoch protection if necessary. Correctness is not affected as we will
                     // only read safe pages during recovery.
-                    store.hlogBase.AsyncFlushDeltaToDevice(
+                    store.hlogBase.AsyncFlushDeltaToDevice(ObjectLog_OnWaitFlush(),
                         store.hlogBase.FlushedUntilAddress,
                         store._hybridLogCheckpoint.info.finalLogicalAddress,
                         store._lastSnapshotCheckpoint.info.finalLogicalAddress,
@@ -63,7 +63,7 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:
-                    CollectMetadata(next, store, isPrepare: false);
+                    ObjectLog_OnPersistenceCallback();
                     store._hybridLogCheckpoint.info.deltaTailAddress = store._hybridLogCheckpoint.deltaLog.TailAddress;
                     store.WriteHybridLogIncrementalMetaInfo(store._hybridLogCheckpoint.deltaLog);
                     store._hybridLogCheckpoint.info.deltaTailAddress = store._hybridLogCheckpoint.deltaLog.TailAddress;

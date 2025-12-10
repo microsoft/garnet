@@ -214,7 +214,7 @@ namespace Tsavorite.test
             Object
         }
 
-        internal enum CompletionSyncMode { Sync, Async }
+        public enum CompletionSyncMode { Sync, Async }
 
         public enum ReadCopyDestination { Tail, ReadCache }
 

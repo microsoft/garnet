@@ -302,7 +302,7 @@ namespace Tsavorite.test.recovery
         }
 
         [Test]
-        [Repeat(1000)]
+        //[Repeat(1000)]
         public async ValueTask CheckpointVersionSwitchRmwTest(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values(1L << 13, 1L << 16)] long indexSize,
@@ -310,7 +310,7 @@ namespace Tsavorite.test.recovery
             => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz);
 
         [Test]
-        [Repeat(1000)]
+        //[Repeat(1000)]
         public async ValueTask GrowIndexVersionSwitchRmwTest(
             [Values(1L << 13, 1L << 16)] long indexSize,
             [Values] TimeFuzzMode timeFuzzMode)

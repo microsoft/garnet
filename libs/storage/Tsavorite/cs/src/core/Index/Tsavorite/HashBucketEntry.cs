@@ -32,6 +32,13 @@ namespace Tsavorite.core
         [FieldOffset(0)]
         public long word;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Set(long address, ushort tag)
+        {
+            word = (address & kAddressBitMask)
+                 | ((tag & kTagMask) << kTagShift);
+        }
+
         public long Address
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -44,7 +44,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Size of an object log segment (group of pages), in bytes. Rounds down to power of 2.
         /// </summary>
-        public long ObjSegmentSize = 1L << 30;
+        public long ObjectLogSegmentSize = 1L << 30;
 
         /// <summary>
         /// Total size of in-memory part of log, in bytes. Rounds down to power of 2.
@@ -224,7 +224,7 @@ namespace Tsavorite.core
                 MemorySizeBits = Utility.NumBitsPreviousPowerOf2(MemorySize),
                 PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
-                ObjectLogSegmentSizeBits = Utility.NumBitsPreviousPowerOf2(ObjSegmentSize),
+                ObjectLogSegmentSizeBits = Utility.NumBitsPreviousPowerOf2(ObjectLogSegmentSize),
                 MutableFraction = MutableFraction,
                 MinEmptyPageCount = MinEmptyPageCount,
                 PreallocateLog = PreallocateLog,

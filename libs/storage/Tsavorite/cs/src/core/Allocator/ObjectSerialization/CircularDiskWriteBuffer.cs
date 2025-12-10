@@ -82,14 +82,12 @@ namespace Tsavorite.core
             return GetAndInitializeCurrentBuffer();
         }
 
+        private DiskWriteBuffer GetOrAllocateCurrentBuffer()
+            => buffers[currentIndex] ?? (buffers[currentIndex] = new DiskWriteBuffer(bufferPool.Get(bufferSize), device, logger));
+
         internal DiskWriteBuffer GetAndInitializeCurrentBuffer()
         {
-            var buffer = GetCurrentBuffer();
-            if (buffer is null)
-            {
-                buffer = new DiskWriteBuffer(bufferPool.Get(bufferSize), device, logger);
-                buffers[currentIndex] = buffer;
-            }
+            var buffer = GetOrAllocateCurrentBuffer();
 
             // By this time the next device file write position has been updated, even if some of the preceding writes are still in-flight.
             var endPosition = filePosition.SegmentSize - filePosition.Offset;
@@ -119,7 +117,11 @@ namespace Tsavorite.core
         {
             // We start every partial flush with the first buffer, starting at position 0.
             if (!ownFilePosition)
+            {
                 filePosition = filePos;
+                Debug.Assert(IsAligned(filePosition.Offset, (int)device.SectorSize), $"OnBeginPartialFlush file flush position ({filePosition}) is not sector-aligned");
+            }
+
             currentIndex = 0;
             countdownCallbackAndContext = new();
             return GetAndInitializeCurrentBuffer();

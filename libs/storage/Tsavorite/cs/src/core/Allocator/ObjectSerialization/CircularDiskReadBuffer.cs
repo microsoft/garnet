@@ -211,7 +211,7 @@ namespace Tsavorite.core
             if (errorCode != 0)
                 logger?.LogError($"{nameof(ReadFromDeviceCallback)} error: {{errorCode}}", errorCode);
 
-            // Finish setting up the buffer, and extract optionals if this was the last buffer.
+            // Finish setting up the buffer
             var buffer = (DiskReadBuffer)context;
             buffer.endPosition += (int)numBytes;
             if (buffer.endPosition == 0)

@@ -29,6 +29,8 @@ namespace Tsavorite.core
         /// <summary>Create the circular flush buffers for object dexerialization from device. Only implemented by ObjectAllocator.</summary>
         internal virtual CircularDiskReadBuffer CreateCircularReadBuffers() => default;
 
+        /// <summary>Returns the lowest segment in use in the object log; will be zero unless the database has been truncated.</summary>
+        internal virtual int LowestObjectLogSegmentInUse => 0;
         /// <summary>Get the ObjectLog tail position, if this is ObjectAllocator.</summary>
         internal virtual ObjectLogFilePositionInfo GetObjectLogTail() => new();  // This marks it as "unset"
         /// <summary>Set the ObjectLog tail position, if this is ObjectAllocator.</summary>
@@ -243,7 +245,8 @@ namespace Tsavorite.core
 
         /// <summary>Flush checkpoint Delta to the Device</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal virtual unsafe void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+        internal virtual unsafe void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog,
+            out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
             logger?.LogTrace("Starting async delta log flush with throttling {throttlingEnabled}", throttleCheckpointFlushDelayMs >= 0 ? $"enabled ({throttleCheckpointFlushDelayMs}ms)" : "disabled");
 
@@ -284,9 +287,10 @@ namespace Tsavorite.core
                             continue;
 
                         var logicalAddress = GetLogicalAddressOfStartOfPage(p);
+                        var endLogicalAddress = logicalAddress + PageSize;
+                        logicalAddress += PageHeader.Size;
                         var physicalAddress = GetPhysicalAddress(logicalAddress);
 
-                        var endLogicalAddress = logicalAddress + PageSize;
                         if (endAddress < endLogicalAddress) endLogicalAddress = endAddress;
                         Debug.Assert(endLogicalAddress > logicalAddress);
                         var endPhysicalAddress = physicalAddress + (endLogicalAddress - logicalAddress);
@@ -432,10 +436,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal unsafe void ApplyDelta(DeltaLog log, long startPage, long endPage, long recoverTo)
         {
-            if (log == null) return;
+            if (log == null)
+                return;
 
-            long startLogicalAddress = GetLogicalAddressOfStartOfPage(startPage);
-            long endLogicalAddress = GetLogicalAddressOfStartOfPage(endPage);
+            long pageStartLogicalAddress = GetLogicalAddressOfStartOfPage(startPage);
+            long pageEndLogicalAddress = GetLogicalAddressOfStartOfPage(endPage);
 
             log.Reset();
             while (log.GetNext(out long physicalAddress, out int entryLength, out var type))
@@ -451,7 +456,7 @@ namespace Tsavorite.core
                             physicalAddress += sizeof(long);
                             var size = *(int*)physicalAddress;
                             physicalAddress += sizeof(int);
-                            if (address >= startLogicalAddress && address < endLogicalAddress)
+                            if (address >= pageStartLogicalAddress && address < pageEndLogicalAddress)
                             {
                                 var logRecord = _wrapper.CreateLogRecord(address);
                                 var destination = logRecord.physicalAddress;
@@ -486,7 +491,8 @@ namespace Tsavorite.core
                             using StreamReader s = new(new MemoryStream(metadata));
                             recoveryInfo.Initialize(s);
                             // Finish recovery if only specific versions are requested
-                            if (recoveryInfo.version == recoverTo) return;
+                            if (recoveryInfo.version == recoverTo)
+                                return;
                         }
 
                         break;
@@ -1755,10 +1761,7 @@ namespace Tsavorite.core
         /// <param name="context"></param>
         public void AsyncFlushPagesForRecovery<TContext>(long flushPageStart, int numPages, DeviceIOCompletionCallback callback, TContext context)
         {
-            // For OA, create the buffers we will use for all ranges of the flush. This calls our callback and disposes itself when the last write of a range completes.
-            using var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
-
-            for (long flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
+            for (var flushPage = flushPageStart; flushPage < (flushPageStart + numPages); flushPage++)
             {
                 var asyncResult = new PageAsyncFlushResult<TContext>()
                 {
@@ -1768,10 +1771,12 @@ namespace Tsavorite.core
                     partial = false,
                     fromAddress = GetLogicalAddressOfStartOfPage(flushPage),
                     untilAddress = GetLogicalAddressOfStartOfPage(flushPage + 1),
-                    flushBuffers = flushBuffers
+                    isForRecovery = true
                 };
 
-                WriteAsync(flushBuffers, flushPage, callback, asyncResult);
+                // For OA, we do not use FlushBuffers here; we set isForRecovery to reuse the stored lengths rather than re-serializing objects,
+                // using the lengths filled in during deserialization in RecoverHybridLog(Async), and when that is complete we fill in objectLogTail.
+                WriteAsync(flushBuffers: null, flushPage, callback, asyncResult);
             }
         }
 

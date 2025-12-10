@@ -144,8 +144,8 @@ namespace Garnet.cluster
                     {
                         //send hlog file segments and object file segments
                         await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_HLOG, hlog_size.hybridLogFileStartAddress, hlog_size.hybridLogFileEndAddress);
-                        if (hlog_size.hybridLogObjectSegmentCount > 0)
-                            await SendObjectFiles(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_HLOG_OBJ, hlog_size.hybridLogObjectSegmentCount);
+                        if (hlog_size.hasSnapshotObjects)
+                            await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_HLOG_OBJ, hlog_size.hybridLogObjectFileStartAddress, hlog_size.hybridLogObjectFileEndAddress);
                     }
 
                     // 2.Send index file segments
@@ -156,8 +156,8 @@ namespace Garnet.cluster
                     {
                         //send snapshot file segments and object file segments
                         await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT, 0, hlog_size.snapshotFileEndAddress);
-                        if (hlog_size.snapshotObjectSegmentCount > 0)
-                            await SendObjectFiles(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT_OBJ, hlog_size.snapshotObjectSegmentCount);
+                        if (hlog_size.hasSnapshotObjects)
+                            await SendFileSegments(gcs, localEntry.metadata.storeHlogToken, CheckpointFileType.STORE_SNAPSHOT_OBJ, 0, hlog_size.snapshotObjectFileEndAddress);
                     }
 
                     // 4. Send delta log segments

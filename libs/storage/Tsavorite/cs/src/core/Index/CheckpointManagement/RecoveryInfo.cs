@@ -32,7 +32,7 @@ namespace Tsavorite.core
         /// </summary>
         public long version;
         /// <summary>
-        /// Next Version
+        /// The next version of the database when the checkpoint flush was started
         /// </summary>
         public long nextVersion;
         /// <summary>
@@ -48,7 +48,7 @@ namespace Tsavorite.core
         /// </summary>
         public long startLogicalAddress;
         /// <summary>
-        /// Final logical address; the tail address at WAIT_FLUSH phase, which is the the end of the "fuzzy region"
+        /// Final logical address; initially the tail address at WAIT_FLUSH phase, which is the the end of the "fuzzy region". It may be increase beyond this due to delta records.
         /// </summary>
         public long finalLogicalAddress;
         /// <summary>
@@ -57,16 +57,33 @@ namespace Tsavorite.core
         /// </summary>
         public long snapshotFinalLogicalAddress;
         /// <summary>
-        /// Head address at the start of the WAIT_FLUSH phase
+        /// hlog HeadAddress at the start of the WAIT_FLUSH phase
         /// </summary>
         public long headAddress;
         /// <summary>
-        /// Begin address at the start of the PREPARE phase
+        /// hlog BeginAddress at the start of the PREPARE phase
         /// </summary>
         public long beginAddress;
 
         /// <summary>
-        /// Object log tail (where the next record will be written) at the end of the checkpoint.
+        /// The objectLog segment for hlog's BeginAddress (<see cref="ObjectAllocatorImpl{TStoreFunctions}.lowestObjectLogSegmentInUse"/>) at PREPARE;
+        /// corresponds to <see cref="beginAddress"/>. Will be zero unless the log has been truncated.
+        /// </summary>
+        internal int beginAddressObjectLogSegment;
+
+        /// <summary>
+        /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> taken at PERSISTENCE_CALLBACK (matching <see cref="flushedLogicalAddress"/>).
+        /// This is incremented for any flushes due to ReadOnlyAddress growth during the snapshot.
+        /// </summary>
+        internal ObjectLogFilePositionInfo hlogEndObjectLogTail;
+
+        /// <summary>
+        /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> at the start of the checkpoint (start of WAIT_FLUSH).
+        /// </summary>
+        internal ObjectLogFilePositionInfo snapshotStartObjectLogTail;
+
+        /// <summary>
+        /// The <see cref="ObjectAllocatorImpl{TStoreFunctions>.objectLogTail"/> at the end of the checkpoint (at PERSISTENCE_CALLBACK).
         /// </summary>
         internal ObjectLogFilePositionInfo snapshotEndObjectLogTail;
 
@@ -106,7 +123,9 @@ namespace Tsavorite.core
             deltaTailAddress = -1; // indicates this is not a delta checkpoint metadata
             headAddress = 0;
 
-            snapshotEndObjectLogTail = new(); // Marks as "unset"
+            hlogEndObjectLogTail = new();       // Marks as "unset"
+            snapshotStartObjectLogTail = new();
+            snapshotEndObjectLogTail = new();
         }
 
         /// <summary>
@@ -162,6 +181,11 @@ namespace Tsavorite.core
             value = reader.ReadLine();
             deltaTailAddress = long.Parse(value);
 
+            value = reader.ReadLine();
+            beginAddressObjectLogSegment = int.Parse(value);
+
+            hlogEndObjectLogTail.Deserialize(reader);
+            snapshotStartObjectLogTail.Deserialize(reader);
             snapshotEndObjectLogTail.Deserialize(reader);
 
             // Read user cookie
@@ -254,6 +278,10 @@ namespace Tsavorite.core
                     writer.WriteLine(beginAddress);
                     writer.WriteLine(deltaTailAddress);
 
+                    writer.WriteLine(beginAddressObjectLogSegment);
+
+                    hlogEndObjectLogTail.Serialize(writer);
+                    snapshotStartObjectLogTail.Serialize(writer);
                     snapshotEndObjectLogTail.Serialize(writer);
 
                     // Write user cookie
@@ -275,7 +303,7 @@ namespace Tsavorite.core
             var long1 = BitConverter.ToInt64(bytes, 0);
             var long2 = BitConverter.ToInt64(bytes, 8);
             return long1 ^ long2 ^ version ^ flushedLogicalAddress ^ snapshotStartFlushedLogicalAddress ^ startLogicalAddress ^ finalLogicalAddress ^ snapshotFinalLogicalAddress
-                ^ headAddress ^ beginAddress ^ (long)snapshotEndObjectLogTail.word;
+                ^ headAddress ^ beginAddress ^ beginAddressObjectLogSegment ^ (long)hlogEndObjectLogTail.word ^ (long)snapshotStartObjectLogTail.word ^ (long)snapshotEndObjectLogTail.word;
         }
 
         /// <summary>
@@ -294,7 +322,10 @@ namespace Tsavorite.core
             logger?.LogInformation("Snapshot Final Logical Address: {snapshotFinalLogicalAddress}", snapshotFinalLogicalAddress);
             logger?.LogInformation("Head Address: {headAddress}", headAddress);
             logger?.LogInformation("Begin Address: {beginAddress}", beginAddress);
-            logger?.LogInformation("Final Object Log Tail Position: {finalOtLogTail}", snapshotEndObjectLogTail);
+            logger?.LogInformation("Begin object log segment: {beginObjLogSegment}", beginAddressObjectLogSegment);
+            logger?.LogInformation("Hybrid Log End Object Tail Position: {hlogEndObjLogTail}", hlogEndObjectLogTail);
+            logger?.LogInformation("Snapshot Begin Object Log Tail Position: {snapshotStartObjLogTail}", snapshotStartObjectLogTail);
+            logger?.LogInformation("Snapshot End Object Log Tail Position: {snapshotEndObjLogTail}", snapshotEndObjectLogTail);
             logger?.LogInformation("Delta Tail Address: {deltaTailAddress}", deltaTailAddress);
         }
     }

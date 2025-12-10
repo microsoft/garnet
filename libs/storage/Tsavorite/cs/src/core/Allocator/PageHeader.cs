@@ -28,7 +28,7 @@ namespace Tsavorite.core
 
         /// <summary>The lowest object-log position on this main-log page, if ObjectAllocator. Contains both segmentId and offset on segment</summary>
         [FieldOffset(sizeof(long))]
-        internal ulong objectLogLowestPosition;
+        internal ulong objectLogLowestPositionWord;
 
         // Unused; as they become used, start with higher #
         [FieldOffset(sizeof(long) * 2)]
@@ -52,7 +52,7 @@ namespace Tsavorite.core
         {
             this = default;
             version = CurrentVersion;
-            objectLogLowestPosition = new();
+            objectLogLowestPositionWord = ObjectLogFilePositionInfo.NotSet;
         }
 
         internal static unsafe void Initialize(long physicalAddressOfStartOfPage) => (*(PageHeader*)physicalAddressOfStartOfPage).Initialize();
@@ -63,11 +63,18 @@ namespace Tsavorite.core
         /// <param name="position">The position in the object log.</param>
         internal void SetLowestObjectLogPosition(in ObjectLogFilePositionInfo position)
         {
-            if (objectLogLowestPosition == ObjectLogFilePositionInfo.NotSet)
-                objectLogLowestPosition = position.word;
+            if (objectLogLowestPositionWord == ObjectLogFilePositionInfo.NotSet)
+                objectLogLowestPositionWord = position.word;
         }
 
+        /// <summary>
+        /// Set the lowest object-log position on this main-log page, if ObjectAllocator.
+        /// </summary>
+        /// <param name="segmentBits">The number of bits in the object log's segments.</param>
+        internal ObjectLogFilePositionInfo GetLowestObjectLogPosition(int segmentBits) 
+            => objectLogLowestPositionWord == ObjectLogFilePositionInfo.NotSet ? new() : new(objectLogLowestPositionWord, segmentBits);
+
         public override readonly string ToString()
-            => $"ver {version}, lowObjLogPos {objectLogLowestPosition}, us1 {unusedUshort1}, ui1 {unusedInt1}, ul1 {unusedLong1}, ul2 {unusedLong2}, ul3 {unusedLong3}, ul4 {unusedLong4}, ul5 {unusedLong5}, ul6 {unusedLong6}";
+            => $"ver {version}, lowObjLogPos {objectLogLowestPositionWord}, us1 {unusedUshort1}, ui1 {unusedInt1}, ul1 {unusedLong1}, ul2 {unusedLong2}, ul3 {unusedLong3}, ul4 {unusedLong4}, ul5 {unusedLong5}, ul6 {unusedLong6}";
     }
 }

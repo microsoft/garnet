@@ -246,6 +246,27 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// We track the deserialized length of an object value in the ObjectLogPosition field after deserialization is complete. This allows
+        /// flushes during recovery to both avoid re-serializing the object and know how to reset the ObjectLogPosition.
+        /// </summary>
+        /// <param name="heapObject">The deserialized object</param>
+        /// <param name="deserializedLength">The deserialized length of the object</param>
+        internal void SetDeserializedValueObject(IHeapObject heapObject, ulong deserializedLength)
+        {
+            var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+
+            if (!Info.ValueIsObject)
+                throw new TsavoriteException("SetDeserializedValueObject should only be called by Deserialization with ValueIsObject==true");
+            Debug.Assert(valueLength == ObjectIdMap.ObjectIdSize, $"valueLength {valueLength} should be ObjectIdSize {ObjectIdMap.ObjectIdSize}");
+
+            *(int*)valueAddress = objectIdMap.AllocateAndSet(heapObject);
+
+            // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
+            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
+            *objectLogPositionPtr = deserializedLength;
+        }
+
         /// <summary>The span of the entire record, including the ObjectId space if the record has objects.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly ReadOnlySpan<byte> AsReadOnlySpan() => new((byte*)physicalAddress, ActualSize);
@@ -1049,8 +1070,9 @@ namespace Tsavorite.core
             }
             else if (Info.ValueIsObject)
             {
+                // Reuse the valueAddress space to store the low int of valueObjectLength, then store the high byte in the ObjectLogPosition
+                // (it is combined with the length that is stored in the ObjectId field data of the record).
                 *(uint*)valueAddress = (uint)(valueObjectLength & 0xFFFFFFFF);
-                // Update the high byte in the ObjectLogPosition (it is combined with the length that is stored in the ObjectId field data of the record).
                 ObjectLogFilePositionInfo.SetObjectSizeHighByte(objectLogPositionPtr, (int)(valueObjectLength >> 32));
             }
             else if (Info.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
@@ -1098,6 +1120,67 @@ namespace Tsavorite.core
             }
 
             return *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress());
+        }
+
+        /// <summary>
+        /// For recovery, we have already deserialized all objects and know their lengths: Overflow is in the Key or Value field,
+        /// and Object is in the ObjectLogPosition field. So we can set up the pagePositionInfo for this record directly rather than
+        /// re-serializing, which also keeps the objectLogTail consistent.
+        /// </summary>
+        /// <param name="pagePositionInfo">The cumulative position on the page (starting from the PageHeader)</param>
+        /// <remarks>
+        /// IMPORTANT: This is only to be called in the disk image copy of the log record, not in the actual log record itself.
+        /// </remarks>
+        /// <returns>The total "serialized" lengths from this LogRecord; will be 0 for inline records. Caller will adjust for
+        ///     segment boundaries.</returns>
+        internal readonly ulong SetRecoveredObjectLogRecordStartPosition(ObjectLogFilePositionInfo pagePositionInfo)
+        {
+            if (Info.RecordIsInline)
+            {
+                Debug.Fail("Cannot call SetRecoveredObjectLogRecordStartPositionAndLengths for an inline record");
+                return 0;
+            }
+
+            // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
+            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
+            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info);
+            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
+            ulong objectLengths = 0;
+
+            // In case we're a ValueObject, store off the ulong at objectLogPositionPtr before overwriting it with the position in the log file.
+            var valueObjectLength = *objectLogPositionPtr;  
+            *objectLogPositionPtr = pagePositionInfo.word;
+
+            if (Info.KeyIsOverflow)
+            {
+                var (_ /*keyLength*/, keyAddress) = dataHeader.GetKeyFieldInfo();
+                var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
+                objectLengths += (uint)overflow.Length;
+            }
+
+            if (Info.ValueIsOverflow)
+            {
+                var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
+                objectLengths += (uint)overflow.Length;
+            }
+            else if (Info.ValueIsObject)
+            {
+                objectLengths += valueObjectLength;
+
+                // Reuse the valueAddress space to store the low int of valueObjectLength, then store the high byte in the ObjectLogPosition
+                // (it is combined with the length that is stored in the ObjectId field data of the record).
+                *(uint*)valueAddress = (uint)(valueObjectLength & 0xFFFFFFFF);
+                ObjectLogFilePositionInfo.SetObjectSizeHighByte(objectLogPositionPtr, (int)(valueObjectLength >> 32));
+            }
+            else if (Info.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
+            {
+                Debug.Fail("Cannot call SetRecoveredObjectLogRecordStartPositionAndLengths for an inline record");
+                return 0;
+            }
+
+            // We no longer need the valueObjectLength in our objectLogPositionPtr, so now we overwrite that with the pagePositionInfo,
+            // then update pagePositionInfo.
+            return objectLengths;
         }
 
         internal void OnDeserializationError(bool keyWasSet)

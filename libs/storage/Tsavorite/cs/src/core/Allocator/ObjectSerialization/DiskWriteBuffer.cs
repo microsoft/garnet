@@ -89,7 +89,7 @@ namespace Tsavorite.core
             //   a. OnPartialFlushComplete, in which case the caller has sector-aligned it before calling this
             //   b. OverflowByteArray sector-aligning writes at the beginning or end, which means we copied a sector-aligned number of bytes to the buffer.
             Debug.Assert(IsAligned(currentPosition, (int)device.SectorSize), $"currentPosition ({currentPosition}) is not sector-aligned");
-            Debug.Assert(IsAligned(filePosition.Offset, (int)device.SectorSize), $"Starting file flush position ({filePosition}) is not sector-aligned");
+            Debug.Assert(IsAligned(filePosition.Offset, (int)device.SectorSize), $"FlushToDevice starting file flush position ({filePosition}) is not sector-aligned");
             pageWriteCallbackContext.SetBufferCountdownEvent(IncrementOrResetCountdown(ref countdownEvent));
 
             var flushLength = (uint)(currentPosition - flushedUntilPosition);

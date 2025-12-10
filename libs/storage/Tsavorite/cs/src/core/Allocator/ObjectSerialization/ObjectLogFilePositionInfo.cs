@@ -44,6 +44,9 @@ namespace Tsavorite.core
             word = NotSet;
         }
 
+        /// <summary>
+        /// Initialize the ObjectLogFilePositionInfo with the given word (containing segment and offset) and segment size bits.
+        /// </summary>
         internal ObjectLogFilePositionInfo(ulong word, int segSizeBits)
         {
             SegmentSizeBits = segSizeBits;

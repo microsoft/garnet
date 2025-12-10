@@ -42,7 +42,7 @@ namespace Garnet.server
         /// <summary>
         /// Size of each object-log segment in bytes on disk (rounds down to power of 2).
         /// </summary>
-        public string ObjSegmentSize = "1g";
+        public string ObjectLogSegmentSize = "1g";
 
         /// <summary>
         /// Size of hash index in bytes (rounds down to power of 2).
@@ -162,7 +162,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int SegmentSizeBits(bool isObj)
         {
-            long size = ParseSize(isObj? ObjSegmentSize : SegmentSize, out _);
+            long size = ParseSize(isObj? ObjectLogSegmentSize : SegmentSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower {SegmentType} than specified (power of 2)", isObj ? "ObjSegmentSize" : "SegmentSize");

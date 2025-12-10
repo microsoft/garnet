@@ -29,6 +29,7 @@ namespace Tsavorite.core
                     store._hybridLogCheckpointToken = guid;
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     store._hybridLogCheckpoint.info.useSnapshotFile = 1;
+                    ObjectLog_OnPrepare();
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     break;
 
@@ -50,8 +51,8 @@ namespace Tsavorite.core
                         break;
                     }
 
-                    long startPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress);
-                    long endPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.finalLogicalAddress);
+                    var startPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.snapshotStartFlushedLogicalAddress);
+                    var endPage = store.hlogBase.GetPage(store._hybridLogCheckpoint.info.finalLogicalAddress);
                     if (store._hybridLogCheckpoint.info.finalLogicalAddress > store.hlogBase.GetLogicalAddressOfStartOfPage(endPage))
                         endPage++;
 
@@ -59,7 +60,7 @@ namespace Tsavorite.core
                     // handle corrupted or unexpected concurrent page changes during the flush, e.g., by
                     // resuming epoch protection if necessary. Correctness is not affected as we will
                     // only read safe pages during recovery.
-                    store.hlogBase.AsyncFlushPagesForSnapshot(PrepareObjectLogSnapshotBuffers(),
+                    store.hlogBase.AsyncFlushPagesForSnapshot(ObjectLog_OnWaitFlush(),
                         startPage, endPage,
                         store._hybridLogCheckpoint.info.finalLogicalAddress,
                         store._hybridLogCheckpoint.info.startLogicalAddress,
@@ -74,7 +75,7 @@ namespace Tsavorite.core
                 case Phase.PERSISTENCE_CALLBACK:
                     // Set actual FlushedUntil to the latest possible data in main log that is on disk
                     // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
-                    CompleteObjectLogSnapshotBuffers();
+                    ObjectLog_OnPersistenceCallback();
                     store._hybridLogCheckpoint.info.flushedLogicalAddress = store.hlogBase.IsNullDevice ? store.hlogBase.HeadAddress : store.hlogBase.FlushedUntilAddress;
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._lastSnapshotCheckpoint = store._hybridLogCheckpoint.Transfer();

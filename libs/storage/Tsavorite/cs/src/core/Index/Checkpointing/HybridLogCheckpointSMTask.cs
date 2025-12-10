@@ -72,22 +72,27 @@ namespace Tsavorite.core
             }
         }
 
-        protected CircularDiskWriteBuffer PrepareObjectLogSnapshotBuffers()
+        protected void ObjectLog_OnPrepare()
         {
+            // This will be zero unless Truncate() has removed enough main-log segments to allow freeing one or more object-log segments.
+            store._hybridLogCheckpoint.info.beginAddressObjectLogSegment = store.hlogBase.LowestObjectLogSegmentInUse;
+        }
+
+        protected CircularDiskWriteBuffer ObjectLog_OnWaitFlush()
+        {
+            // GetObjectTail().HasData may be false if we have not flushed the main log (ReadOnlyAddress has not advanced).
+            store._hybridLogCheckpoint.info.snapshotStartObjectLogTail = store.hlogBase.GetObjectLogTail();
+
             store._hybridLogCheckpoint.objectLogFlushBuffers = store.hlogBase.CreateCircularFlushBuffers(store._hybridLogCheckpoint.snapshotFileObjectLogDevice, store.hlogBase.logger);
             store._hybridLogCheckpoint.objectLogFlushBuffers?.InitializeOwnObjectLogFilePosition(store._hybridLogCheckpoint.snapshotFileObjectLogDevice.SegmentSize);
             return store._hybridLogCheckpoint.objectLogFlushBuffers;
         }
 
-        protected void CompleteObjectLogSnapshotBuffers()
+        protected void ObjectLog_OnPersistenceCallback()
         {
-            store._hybridLogCheckpoint.info.finalObjectLogTail
-
-            if (store._hybridLogCheckpoint.objectLogFlushBuffers is not null)
-            {
-                store._hybridLogCheckpoint.info.snapshotEndObjectLogTail = store._hybridLogCheckpoint.objectLogFlushBuffers.filePosition;
-                store._hybridLogCheckpoint.objectLogFlushBuffers = null;
-            }
+            // GetObjectTail().HasData may be false if we have not flushed the main log (ReadOnlyAddress has not advanced).
+            store._hybridLogCheckpoint.info.hlogEndObjectLogTail = store.hlogBase.GetObjectLogTail();
+            store._hybridLogCheckpoint.info.snapshotEndObjectLogTail = store._hybridLogCheckpoint.objectLogFlushBuffers?.filePosition ?? new();
         }
 
         /// <inheritdoc />

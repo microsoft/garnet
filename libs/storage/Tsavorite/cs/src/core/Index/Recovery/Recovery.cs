@@ -141,7 +141,7 @@ namespace Tsavorite.core
     /// </summary>
     public struct LogFileInfo
     {
-        /// <summary>Snapshot file end address (start address is always 0) </summary>
+        /// <summary>Snapshot file end address (start address is always 0).</summary>
         public long snapshotFileEndAddress;
 
         /// <summary>Hybrid log file start address</summary>
@@ -153,11 +153,17 @@ namespace Tsavorite.core
         /// <summary>Delta log tail address</summary>
         public long deltaLogTailAddress;
 
-        /// <summary>Number of objectLog segments in the hybrid log</summary>
-        public int hybridLogObjectSegmentCount;
+        /// <summary>True if this snapshot had object log records</summary>
+        public bool hasSnapshotObjects;
 
-        /// <summary>Number of objectLog segments in the snapshot</summary>
-        public int snapshotObjectSegmentCount;
+        /// <summary>Address of <see cref="HybridLogRecoveryInfo.beginAddressObjectLogSegment"/>; the start of the lowest object log segment
+        /// in use by the hybrid log at snapshot PREPARE time</summary>
+        public long hybridLogObjectFileStartAddress;
+        /// <summary>The objectLogTail taken at the start of WAIT_FLUSH, corresponding to the hlog's FlushedUntilAddress at that point</summary>
+        public long hybridLogObjectFileEndAddress;
+        /// <summary>The snapshotEndObjectLogTail taken at PERSISTENCE_CALLBACK, which corresponds to the object log position for the final TailAddress
+        /// written by the checkpoint. (Start address is always 0.)</summary>
+        public long snapshotObjectFileEndAddress;
     }
 
     public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
@@ -223,14 +229,17 @@ namespace Tsavorite.core
             using var current = new HybridLogCheckpointInfo();
             // We find the latest checkpoint metadata for the given token, including scanning the delta log for the latest metadata
             current.Recover(token, checkpointManager, hlogBase.LogPageSizeBits, out var _, true, version);
-            var hasObjects = current.info.endObjectLogTail.HasData;
+            var hasSnapshotObjects = current.info.snapshotEndObjectLogTail.HasData;
             var snapshotDeviceOffset = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.snapshotStartFlushedLogicalAddress));
             return new LogFileInfo
             {
                 // Hybrid (main log file) info:
-                //   - The main log address range is from BeginAddress at PREPARE to the FlushedUntilAddress at PERSISTENCE_CALLBACK.
-                //   - The snapshot address range is from the FlushedUntilAddress to the TailAddress, both taken at the start of WAIT_FLUSH. TailAddress
-                //     here is the maximum logical address that will be written to the snapshot.
+                //   - The main log address range is from:
+                //     - BeginAddress at PREPARE to...
+                //     - FlushedUntilAddress at PERSISTENCE_CALLBACK.
+                //   - The snapshot address range starts at 0 in the snapshot files and includes all main-log data until the final TailAddress. In detail, it is from:
+                //     - 0, but the start offset is FlushedUntilAddress taken at the start of WAIT_FLUSH (which is used to calculate this.snapshotDeviceOffset) to...
+                //     - TailAddress taken at the start of WAIT_FLUSH minus the start offset. This TailAddress is the maximum logical address that will be written to the snapshot.
                 // The overlap between the FlushedUntilAddress for the main log being recorded after the flush completes and the FlushedUntilAddress for the snapshot 
                 // being recorded before the flush starts ensures there is no gap.
                 hybridLogFileStartAddress = hlogBase.GetLogicalAddressOfStartOfPage(hlogBase.GetPage(current.info.beginAddress)),
@@ -238,24 +247,24 @@ namespace Tsavorite.core
                 snapshotFileEndAddress = current.info.snapshotFinalLogicalAddress - snapshotDeviceOffset,
 
                 // Object log file info:
-                //   - The object log address range is from the start of the in-use object segment corresponding to main-log BeginAddress at PREPARE to the endObjectLogTail
-                //     taken at PERSISTENCE_CALLBACK.
-                //   - The snapshot address range is from the objectLogTail (taken at the start of WAIT_FLUSH as snapshotStartObjectLogTail, corresponding to the main log's
-                //     FlushedUntilAddress at that point) to the snapshotEndObjectLogTail taken at PERSISTENCE_CALLBACK. The snapshotEndObjectLogTail grows during the Flush,
-                //     so is not final until PERSISTENCE_CALLBACK; but it will only be written for records up to the TailAddress at the start of WAIT_FLUSH.
+                //   - The object log address range is from:
+                //     - The start of the in-use object segment corresponding to main-log BeginAddress at PREPARE (matching this.hybridLogFileStartAddress) to...
+                //     - The hLogEndObjectLogTail taken at PERSISTENCE_CALLBACK (matching this.hybridLogFileEndAddress).
+                //   - The snapshot address range starts at 0 in the snapshot file and includes all object-log data until the final TailAddress. In detail, it is from:
+                //     - The objectLogTail taken at the start of WAIT_FLUSH as info.snapshotStartObjectLogTail, corresponding to the main log's FlushedUntilAddress at
+                //       that point (which is used to calculate this.snapshotDeviceOffset) to...
+                //     - The snapshotEndObjectLogTail which is taken at PERSISTENCE_CALLBACK, which corresponds to the main-log TailAddress taken at WAIT_FLUSH.
+                //       The snapshotEndObjectLogTail grows during the Flush, so is not final until PERSISTENCE_CALLBACK; but it will only be written for records
+                //       up to the TailAddress at the start of WAIT_FLUSH.
                 // Note that there are no object-log segments for the mutable region of the hybrid log; they are not written until ReadOnlyAddress growth triggers
                 // a main-log Flush. However the snapshot does cause object-log segments for the mutable range to be written.
-                hybridLogObjectFileStartAddress = hasObjects ? current.info.lowestObjectLogSegmentInUse << current.info.endObjectLogTail.SegmentSizeBits,
-                hybridLogObjectFileEndAddress = hasObjects ? current.info.snapshotStartObjectLogTail.CurrentAddress : 0,
-                snapshotObjectFileEndAddress = hasObjects ? current.info.snapshotEndObjectLogTail.CurrentAddress : 0,
+                hasSnapshotObjects = hasSnapshotObjects,
+                hybridLogObjectFileStartAddress = hasSnapshotObjects ? (long)current.info.beginAddressObjectLogSegment << current.info.hlogEndObjectLogTail.SegmentSizeBits : 0,
+                hybridLogObjectFileEndAddress = hasSnapshotObjects ? (long)current.info.snapshotStartObjectLogTail.CurrentAddress : 0,
+                snapshotObjectFileEndAddress = hasSnapshotObjects ? (long)current.info.snapshotEndObjectLogTail.CurrentAddress : 0,
 
                 // Delta log info
-                deltaLogTailAddress = current.info.deltaTailAddress,
-
-
-
-                //hybridLogObjectSegmentCount = current.info.startObjectLogTail.HasData ? current.info.startObjectLogTail.SegmentId + 1 : 0,   // +1 as it's a 0-based ordinal
-                //snapshotObjectSegmentCount = current.info.snapshotEndObjectLogTail.HasData ? current.info.snapshotEndObjectLogTail.SegmentId - current.info.startObjectLogTail.SegmentId + 1 : 0
+                deltaLogTailAddress = current.info.deltaTailAddress
             };
         }
 
@@ -456,13 +465,15 @@ namespace Tsavorite.core
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
-            RecoveryOptions options = new(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
+            RecoveryOptions options = new(headAddress, fuzzyRegionStartAddress: recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
 
             // Make index consistent for version v
             long readOnlyAddress, lastFreedPage;
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
-                lastFreedPage = RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, options);
+                lastFreedPage = RecoverHybridLog(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.finalLogicalAddress,
+                        recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, options);
+
                 readOnlyAddress = tailAddress;
             }
             else
@@ -470,11 +481,17 @@ namespace Tsavorite.core
                 if (recoveredHLCInfo.info.flushedLogicalAddress < headAddress)
                     headAddress = recoveredHLCInfo.info.flushedLogicalAddress;
 
-                // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
-                lastFreedPage = RecoverHybridLog(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, options);
-                // Then recover snapshot into mutable region
-                var snapshotLastFreedPage = RecoverHybridLogFromSnapshotFile(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress,
-                                recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo);
+                // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress taken at PERSISTENCE_CALLBACK, so it includes
+                // any flushes to the hybrid log files due to OnPagesMarkedReadOnly while we were flushing to the snapshot files).
+                lastFreedPage = RecoverHybridLog(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.flushedLogicalAddress,
+                        recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot, options);
+
+                // Then recover snapshot into mutable region. Note that the ObjectAllocator will not write object log records for the mutable region;
+                // that only happens during flushes due to OnPagesMarkedReadOnly.
+                var snapshotLastFreedPage = RecoverHybridLogFromSnapshotFile(scanFromAddress: recoveredHLCInfo.info.flushedLogicalAddress,
+                        recoverFromAddress, untilAddress:recoveredHLCInfo.info.finalLogicalAddress,
+                        snapshotStartAddress: recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress, snapshotEndAddress: recoveredHLCInfo.info.snapshotFinalLogicalAddress,
+                        recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo);
 
                 if (snapshotLastFreedPage != NoPageFreed)
                     lastFreedPage = snapshotLastFreedPage;
@@ -509,14 +526,15 @@ namespace Tsavorite.core
 
             if (!SetRecoveryPageRanges(recoveredHLCInfo, numPagesToPreload, recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress))
                 return -1;
-            RecoveryOptions options = new(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
+            RecoveryOptions options = new(headAddress, fuzzyRegionStartAddress: recoveredHLCInfo.info.startLogicalAddress, undoNextVersion);
 
             // Make index consistent for version v
             long readOnlyAddress, lastFreedPage;
             if (recoveredHLCInfo.info.useSnapshotFile == 0)
             {
-                lastFreedPage = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver,
-                                            options, cancellationToken).ConfigureAwait(false);
+                lastFreedPage = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.finalLogicalAddress,
+                        recoveredHLCInfo.info.nextVersion, CheckpointType.FoldOver, options, cancellationToken).ConfigureAwait(false);
+
                 readOnlyAddress = tailAddress;
             }
             else
@@ -524,12 +542,18 @@ namespace Tsavorite.core
                 if (recoveredHLCInfo.info.flushedLogicalAddress < headAddress)
                     headAddress = recoveredHLCInfo.info.flushedLogicalAddress;
 
-                // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress)
-                lastFreedPage = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, recoveredHLCInfo.info.flushedLogicalAddress, recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot,
-                                           new RecoveryOptions(headAddress, recoveredHLCInfo.info.startLogicalAddress, undoNextVersion), cancellationToken).ConfigureAwait(false);
-                // Then recover snapshot into mutable region
-                var snapshotLastFreedPage = await RecoverHybridLogFromSnapshotFileAsync(recoveredHLCInfo.info.flushedLogicalAddress, recoverFromAddress, recoveredHLCInfo.info.finalLogicalAddress, recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress,
-                                        recoveredHLCInfo.info.snapshotFinalLogicalAddress, recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo, cancellationToken).ConfigureAwait(false);
+                // First recover from index starting point (fromAddress) to snapshot starting point (flushedLogicalAddress taken at PERSISTENCE_CALLBACK, so it includes
+                // any flushes to the hybrid log files due to OnPagesMarkedReadOnly while we were flushing to the snapshot files).
+                lastFreedPage = await RecoverHybridLogAsync(scanFromAddress, recoverFromAddress, untilAddress: recoveredHLCInfo.info.flushedLogicalAddress,
+                        recoveredHLCInfo.info.nextVersion, CheckpointType.Snapshot,
+                        new RecoveryOptions(headAddress, fuzzyRegionStartAddress: recoveredHLCInfo.info.startLogicalAddress, undoNextVersion), cancellationToken).ConfigureAwait(false);
+
+                // Then recover snapshot into mutable region. Note that the ObjectAllocator will not write object log records for the mutable region;
+                // that only happens during flushes due to OnPagesMarkedReadOnly.
+                var snapshotLastFreedPage = await RecoverHybridLogFromSnapshotFileAsync(scanFromAddress: recoveredHLCInfo.info.flushedLogicalAddress,
+                        recoverFromAddress, untilAddress: recoveredHLCInfo.info.finalLogicalAddress,
+                        snapshotStartAddress: recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress, snapshotEndAddress: recoveredHLCInfo.info.snapshotFinalLogicalAddress,
+                        recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo, cancellationToken).ConfigureAwait(false);
 
                 if (snapshotLastFreedPage != NoPageFreed)
                     lastFreedPage = snapshotLastFreedPage;
@@ -560,6 +584,7 @@ namespace Tsavorite.core
                 readOnlyAddress = headAddress;
 
             hlogBase.RecoveryReset(tailAddress, headAddress, recoveredHLCInfo.info.beginAddress, readOnlyAddress);
+            hlogBase.SetObjectLogTail(recoveredHLCInfo.info.hlogEndObjectLogTail);
             checkpointManager.OnRecovery(recoveredICInfo.info.token, recoveredHLCInfo.info.guid);
             recoveredHLCInfo.Dispose();
         }
@@ -575,11 +600,11 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Compute recovery address and determine where to recover to
+        /// Compute recovery address and determine where to recover from
         /// </summary>
         /// <param name="recoveredICInfo">IndexCheckpointInfo</param>
         /// <param name="recoveredHLCInfo">HybridLogCheckpointInfo</param>
-        /// <param name="recoverFromAddress">Address from which to perform recovery (undo v+1 records)</param>
+        /// <param name="recoverFromAddress">Address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
         /// <returns>Whether we are recovering to the initial page</returns>
         private bool GetInitialRecoveryAddress(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, out long recoverFromAddress)
         {
@@ -592,28 +617,25 @@ namespace Tsavorite.core
                 recoveredICInfo = default;
             }
 
+            // Initialize to recover from beginning of log
+            recoverFromAddress = recoveredHLCInfo.info.beginAddress;
+
             if (recoveredICInfo.IsDefault)
             {
-                // No index checkpoint - recover from begin of log
-                recoverFromAddress = recoveredHLCInfo.info.beginAddress;
-
-                // Unless we recovered previously until some hlog address
+                // No index checkpoint - recover from beginning of log unless we recovered previously until some hlog address
                 if (hlogBase.FlushedUntilAddress > recoverFromAddress)
                     recoverFromAddress = hlogBase.FlushedUntilAddress;
 
-                // Start recovery at least from beginning of fuzzy log region
-                // Needed if we are recovering to the same checkpoint a second time, with undo
-                // set to true during the second time.
+                // Start recovery at least from beginning of fuzzy log region. Needed if we are recovering to the same checkpoint
+                // a second time, with undo set to true during the second time.
                 if (recoveredHLCInfo.info.startLogicalAddress < recoverFromAddress)
                     recoverFromAddress = recoveredHLCInfo.info.startLogicalAddress;
             }
             else
             {
-                recoverFromAddress = recoveredHLCInfo.info.beginAddress;
-
                 if (recoveredICInfo.info.startLogicalAddress > recoverFromAddress)
                 {
-                    // Index checkpoint given - recover to that
+                    // Index checkpoint was given - recover to that
                     recoverFromAddress = recoveredICInfo.info.startLogicalAddress;
                     return false;
                 }
@@ -622,15 +644,13 @@ namespace Tsavorite.core
             return true;
         }
 
-        private bool SetRecoveryPageRanges(HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, long fromAddress, out long tailAddress, out long headAddress, out long scanFromAddress)
+        private bool SetRecoveryPageRanges(HybridLogCheckpointInfo recoveredHLCInfo, int numPagesToPreload, long recoverFromAddress, out long tailAddress, out long headAddress, out long scanFromAddress)
         {
             if ((recoveredHLCInfo.info.useSnapshotFile == 0) && (recoveredHLCInfo.info.finalLogicalAddress <= hlogBase.GetTailAddress()))
             {
                 tailAddress = headAddress = scanFromAddress = default;
                 return false;
             }
-
-            RestoreMetadata(recoveredHLCInfo);
 
             tailAddress = recoveredHLCInfo.info.finalLogicalAddress;
             headAddress = recoveredHLCInfo.info.headAddress;
@@ -642,8 +662,8 @@ namespace Tsavorite.core
             }
 
             scanFromAddress = headAddress;
-            if (fromAddress < scanFromAddress)
-                scanFromAddress = fromAddress;
+            if (recoverFromAddress < scanFromAddress)
+                scanFromAddress = recoverFromAddress;
 
             // Adjust head address if we need to anyway preload
             if (scanFromAddress < headAddress)
@@ -656,12 +676,6 @@ namespace Tsavorite.core
             if (hlogBase.FlushedUntilAddress > scanFromAddress)
                 scanFromAddress = hlogBase.FlushedUntilAddress;
             return true;
-        }
-
-        private void RestoreMetadata(HybridLogCheckpointInfo recoveredHLCInfo)
-        {
-            // Recover object log tail position
-            hlogBase.SetObjectLogTail(recoveredHLCInfo.info.snapshotEndObjectLogTail);
         }
 
         /// <summary>
@@ -779,12 +793,26 @@ namespace Tsavorite.core
             return lastFreedPage;
         }
 
-        private long RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, CheckpointType checkpointType, RecoveryOptions options)
+        /// <summary>
+        /// Synchronously recover the hybrid log from hybrid log files (not snapshot files). This also deserializes any objects or overflow and creates
+        /// entries for them in the <see cref="ObjectIdMap"/>.
+        /// </summary>
+        /// <param name="scanFromAddress">The address to start scanning from; either beginAddress if no recovery has yet been done, or FlushedUntilAddress if some recovery has already occurred</param>
+        /// <param name="recoverFromAddress">The address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
+        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, and may be higher due to delta records</param>
+        /// <param name="nextVersion">The next version of the database at the time of checkpoint flush</param>
+        /// <param name="checkpointType">The type of checkpoint</param>
+        /// <param name="options">The recovery options</param>
+        /// <returns>The last freed page, if it was necessary to free any to limit heap memory</returns>
+        private long RecoverHybridLog(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion,
+            CheckpointType checkpointType, RecoveryOptions options)
         {
             long lastFreedPage = NoPageFreed;
             if (untilAddress <= scanFromAddress)
                 return lastFreedPage;
-            var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadPerIteration);
+
+            var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage,
+                out int capacity, out int numPagesToReadPerIteration);
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
@@ -810,17 +838,32 @@ namespace Tsavorite.core
             return lastFreedPage;
         }
 
-        private async ValueTask<long> RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, CheckpointType checkpointType, RecoveryOptions options, CancellationToken cancellationToken)
+        /// <summary>
+        /// Synchronously recover the hybrid log from hybrid log files (not snapshot files). This also deserializes any objects or overflow and creates
+        /// entries for them in the <see cref="ObjectIdMap"/>.
+        /// </summary>
+        /// <param name="scanFromAddress">The address to start scanning from; either beginAddress if no recovery has yet been done, or FlushedUntilAddress if some recovery has already occurred</param>
+        /// <param name="recoverFromAddress">The address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
+        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, and may be higher due to delta records</param>
+        /// <param name="nextVersion">The next version of the database at the time of checkpoint flush</param>
+        /// <param name="checkpointType">The type of checkpoint</param>
+        /// <param name="options">The recovery options</param>
+        /// <param name="cancellationToken">The cancellation token</param>
+        /// <returns>The last freed page, if it was necessary to free any to limit heap memory</returns>
+        private async ValueTask<long> RecoverHybridLogAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion,
+            CheckpointType checkpointType, RecoveryOptions options, CancellationToken cancellationToken)
         {
             long lastFreedPage = NoPageFreed;
             if (untilAddress <= scanFromAddress)
                 return lastFreedPage;
 
-            var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadPerIteration);
+            var recoveryStatus = GetPageRangesToRead(scanFromAddress, untilAddress, checkpointType, out long startPage, out long endPage,
+                out int capacity, out int numPagesToReadPerIteration);
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                var end = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, capacity, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
+                var end = await ReadPagesForRecoveryAsync(untilAddress, recoveryStatus, endPage, capacity, numPagesToReadPerIteration, page,
+                    cancellationToken).ConfigureAwait(false);
 
                 for (var p = page; p < end; p++)
                 {
@@ -842,7 +885,19 @@ namespace Tsavorite.core
             return lastFreedPage;
         }
 
-        private RecoveryStatus GetPageRangesToRead(long scanFromAddress, long untilAddress, CheckpointType checkpointType, out long startPage, out long endPage, out int capacity, out int numPagesToReadPerIteration)
+        /// <summary>
+        /// Get the range of pages to read from the hybrid log file(s) for recovery
+        /// </summary>
+        /// <param name="scanFromAddress">The address to start scanning from; either beginAddress if no recovery has yet been done, or FlushedUntilAddress if some recovery has already occurred</param>
+        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, and may be higher due to delta records</param>
+        /// <param name="checkpointType">The <see cref="CheckpointType"/></param>
+        /// <param name="startPage">The first page to read</param>
+        /// <param name="endPage">The last page to read</param>
+        /// <param name="capacity">The capacity of the log: the number of pages in the circular buffer</param>
+        /// <param name="numPagesToReadPerIteration">The number of pages to read per iteration</param>
+        /// <returns>The allocated <see cref="RecoveryStatus"/> instance.</returns>
+        private RecoveryStatus GetPageRangesToRead(long scanFromAddress, long untilAddress, CheckpointType checkpointType,
+            out long startPage, out long endPage, out int capacity, out int numPagesToReadPerIteration)
         {
             startPage = hlogBase.GetPage(scanFromAddress);
             endPage = hlogBase.GetPage(untilAddress);
@@ -858,7 +913,18 @@ namespace Tsavorite.core
             return new RecoveryStatus(capacity, hlogBase.MinEmptyPageCount);
         }
 
-        private void ProcessReadPageAndFlush(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
+        /// <summary>
+        /// Process a page that has been read from the hybrid log file (not snapshot), and flush it if necessary
+        /// </summary>
+        /// <param name="recoverFromAddress">The address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
+        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, and may be higher due to delta records</param>
+        /// <param name="nextVersion">The next version of the database at the time of checkpoint flush</param>
+        /// <param name="options">The recovery options</param>
+        /// <param name="recoveryStatus">The <see cref="RecoveryStatus"/> instance</param>
+        /// <param name="page">The page number to process</param>
+        /// <param name="pageIndex">The index of <paramref name="page"/> in the allocator's circular page buffer</param>
+        private void ProcessReadPageAndFlush(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options,
+            RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
             if (ProcessReadPage(recoverFromAddress, untilAddress, nextVersion, options, recoveryStatus, page, pageIndex))
             {
@@ -871,25 +937,39 @@ namespace Tsavorite.core
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
         }
 
-        private bool ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
+        /// <summary>
+        /// Determine address ranges on a page that has been read from the hybrid log file (not snapshot), then recover from that page.
+        /// </summary>
+        /// <param name="recoverFromAddress">The address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
+        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, and may be higher due to delta records</param>
+        /// <param name="nextVersion">The next version of the database at the time of checkpoint flush</param>
+        /// <param name="options">The recovery options</param>
+        /// <param name="recoveryStatus">The <see cref="RecoveryStatus"/> instance</param>
+        /// <param name="page">The page number to process</param>
+        /// <param name="pageIndex">The index of <paramref name="page"/> in the allocator's circular page buffer</param>
+        /// <returns></returns>
+        private bool ProcessReadPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus,
+            long page, int pageIndex)
         {
-            var startLogicalAddress = hlogBase.GetFirstValidLogicalAddressOnPage(page);
-            var endLogicalAddress = hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
-            var physicalAddress = hlogBase.GetPhysicalAddress(startLogicalAddress);
+            var startLogicalAddressOfPage = hlogBase.GetLogicalAddressOfStartOfPage(page);    // Do not offset for page header; that's done below and in RecoverFromPage
+            var endLogicalAddressOfPage = hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
+            var startPhysicalAddressOfPage = hlogBase.GetPhysicalAddress(startLogicalAddressOfPage);
 
-            if (recoverFromAddress >= endLogicalAddress)
+            if (recoverFromAddress >= endLogicalAddressOfPage)
                 return false;
 
-            var pageFromAddress = 0L;
-            var pageUntilAddress = hlogBase.GetPageSize();
+            var pageFromAddressOffset = (long)PageHeader.Size;
+            var pageUntilAddressOffset = hlogBase.GetPageSize();
 
-            if (recoverFromAddress > startLogicalAddress)
-                pageFromAddress = hlogBase.GetOffsetOnPage(recoverFromAddress);
+            if (recoverFromAddress > startLogicalAddressOfPage)
+            {
+                pageFromAddressOffset = hlogBase.GetOffsetOnPage(recoverFromAddress);
+                Debug.Assert(pageFromAddressOffset >= PageHeader.Size, $"pageFromAddressOffset {pageFromAddressOffset} must be >= {PageHeader.Size}");
+            }
+            if (untilAddress < endLogicalAddressOfPage)
+                pageUntilAddressOffset = hlogBase.GetOffsetOnPage(untilAddress);
 
-            if (untilAddress < endLogicalAddress)
-                pageUntilAddress = hlogBase.GetOffsetOnPage(untilAddress);
-
-            if (RecoverFromPage(recoverFromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options))
+            if (RecoverFromPage(recoverFromAddress, pageFromAddressOffset, pageUntilAddressOffset, startLogicalAddressOfPage, startPhysicalAddressOfPage, options))
             {
                 // The current page was modified due to undoFutureVersion; caller will flush it to storage and issue a read request if necessary.
                 recoveryStatus.readStatus[pageIndex] = ReadStatus.Pending;
@@ -912,14 +992,30 @@ namespace Tsavorite.core
                 await recoveryStatus.WaitFlushAsync(hlogBase.GetPageIndexForPage(page), cancellationToken).ConfigureAwait(false);
         }
 
-        private long RecoverHybridLogFromSnapshotFile(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, RecoveryOptions options, DeltaLog deltaLog, long recoverTo)
+        /// <summary>
+        /// Synchronously recover the hybrid log from snapshot files
+        /// </summary>
+        /// <param name="scanFromAddress">The start of the mutable region</param>
+        /// <param name="recoverFromAddress">The address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
+        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, and may be higher due to delta records</param>
+        /// <param name="snapshotStartAddress">The start of the mutable region; the FlushedUntilAddress at the start of the WAIT_FLUSH phase</param>
+        /// <param name="snapshotEndAddress">The end of the snapshot; the tailAddress at the start of the WAIT_FLUSH phase</param>
+        /// <param name="nextVersion">The next version of the database at the time of checkpoint flush</param>
+        /// <param name="guid">The checkpoint token guid</param>
+        /// <param name="options">The recovery options</param>
+        /// <param name="deltaLog">The incremental checkpoint log, if any</param>
+        /// <param name="recoverTo">Specific version requested to recover to, or -1 for latest version</param>
+        /// <returns>The last freed page, if it was necessary to free any to limit heap memory</returns>
+        private long RecoverHybridLogFromSnapshotFile(long scanFromAddress, long recoverFromAddress, long untilAddress,
+            long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, RecoveryOptions options, DeltaLog deltaLog, long recoverTo)
         {
             long lastFreedPage = NoPageFreed;
-            GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity, out var recoveryStatus, out int numPagesToReadPerIteration);
+            GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage,
+                out long endPage, out long snapshotEndPage, out int capacity, out var recoveryStatus, out int numPagesToReadPerIteration);
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                ReadPagesForRecovery(snapshotEndAddress, recoveryStatus, snapshotEndPage, capacity, numPagesToReadPerIteration, page);
+                _ = ReadPagesForRecovery(snapshotEndAddress, recoveryStatus, snapshotEndPage, capacity, numPagesToReadPerIteration, page);
                 var end = Math.Min(page + numPagesToReadPerIteration, endPage);
                 for (long p = page; p < end; p++)
                 {
@@ -945,7 +1041,8 @@ namespace Tsavorite.core
                     }
                 }
 
-                ApplyDelta(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, options, deltaLog, recoverTo, endPage, snapshotEndPage, capacity, numPagesToReadPerIteration, recoveryStatus, page, end);
+                ApplyDeltaAndRecoverPages(recoverFromAddress, untilAddress, nextVersion, options, deltaLog, recoverTo,
+                    endPage, snapshotEndPage, capacity, numPagesToReadPerIteration, recoveryStatus, page, end);
             }
 
             WaitUntilAllPagesHaveBeenFlushed(startPage, endPage, recoveryStatus);
@@ -953,14 +1050,32 @@ namespace Tsavorite.core
             return lastFreedPage;
         }
 
-        private async ValueTask<long> RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, RecoveryOptions options, DeltaLog deltaLog, long recoverTo, CancellationToken cancellationToken)
+        /// <summary>
+        /// Asynchronously recover the hybrid log from snapshot files
+        /// </summary>
+        /// <param name="scanFromAddress">The start of the mutable region</param>
+        /// <param name="recoverFromAddress">The address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
+        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, and may be higher due to delta records</param>
+        /// <param name="snapshotStartAddress">The start of the mutable region; the FlushedUntilAddress at the start of the WAIT_FLUSH phase</param>
+        /// <param name="snapshotEndAddress">The end of the snapshot; the tailAddress at the start of the WAIT_FLUSH phase</param>
+        /// <param name="nextVersion">The next version of the database at the time of checkpoint flush</param>
+        /// <param name="guid">The checkpoint token guid</param>
+        /// <param name="options">The recovery options</param>
+        /// <param name="deltaLog">The incremental checkpoint log, if any</param>
+        /// <param name="recoverTo">Specific version requested to recover to, or -1 for latest version</param>
+        /// <returns>The last freed page, if it was necessary to free any to limit heap memory</returns>
+        private async ValueTask<long> RecoverHybridLogFromSnapshotFileAsync(long scanFromAddress, long recoverFromAddress, long untilAddress,
+            long snapshotStartAddress, long snapshotEndAddress, long nextVersion, Guid guid, RecoveryOptions options, DeltaLog deltaLog, long recoverTo,
+            CancellationToken cancellationToken)
         {
             long lastFreedPage = NoPageFreed;
-            GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity, out var recoveryStatus, out int numPagesToReadPerIteration);
+            GetSnapshotPageRangesToRead(scanFromAddress, untilAddress, snapshotStartAddress, snapshotEndAddress, guid, out long startPage,
+                out long endPage, out long snapshotEndPage, out int capacity, out var recoveryStatus, out int numPagesToReadPerIteration);
 
             for (long page = startPage; page < endPage; page += numPagesToReadPerIteration)
             {
-                await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, capacity, numPagesToReadPerIteration, page, cancellationToken).ConfigureAwait(false);
+                _ = await ReadPagesForRecoveryAsync(snapshotEndAddress, recoveryStatus, snapshotEndPage, capacity, numPagesToReadPerIteration, page,
+                    cancellationToken).ConfigureAwait(false);
 
                 var end = Math.Min(page + numPagesToReadPerIteration, endPage);
                 for (long p = page; p < end; p++)
@@ -987,7 +1102,8 @@ namespace Tsavorite.core
                     }
                 }
 
-                ApplyDelta(scanFromAddress, recoverFromAddress, untilAddress, nextVersion, options, deltaLog, recoverTo, endPage, snapshotEndPage, capacity, numPagesToReadPerIteration, recoveryStatus, page, end);
+                ApplyDeltaAndRecoverPages(recoverFromAddress, untilAddress, nextVersion, options, deltaLog, recoverTo,
+                    endPage, snapshotEndPage, capacity, numPagesToReadPerIteration, recoveryStatus, page, end);
             }
 
             await WaitUntilAllPagesHaveBeenFlushedAsync(startPage, endPage, recoveryStatus, cancellationToken).ConfigureAwait(false);
@@ -995,7 +1111,24 @@ namespace Tsavorite.core
             return lastFreedPage;
         }
 
-        private void ApplyDelta(long scanFromAddress, long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, DeltaLog deltaLog, long recoverTo, long endPage, long snapshotEndPage, int capacity, int numPagesToRead, RecoveryStatus recoveryStatus, long page, long end)
+        /// <summary>
+        /// Apply the delta log if we have one; then for each page in the snapshot from [page, end), process the page for recovery.
+        /// </summary>
+        /// <param name="recoverFromAddress">The address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
+        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, and may be higher due to delta records</param>
+        /// <param name="nextVersion">The next version of the database at the time of checkpoint flush</param>
+        /// <param name="options">The recovery options</param>
+        /// <param name="deltaLog">The incremental checkpoint log, if any</param>
+        /// <param name="recoverTo">Specific version requested to recover to, or -1 for latest version</param>
+        /// <param name="endPage">The last page to read; the page of <paramref name="untilAddress"/></param>
+        /// <param name="snapshotEndPage">The end page of the snapshot; the page of the tailAddress at the start of the WAIT_FLUSH phase</param>
+        /// <param name="capacity">The capacity of the log: the number of pages in the circular buffer</param>
+        /// <param name="numPagesToRead">Number of pages to read in this batch; may be greater than <paramref name="end"/> minus <paramref name="page"/> if it's the last partial batch</param>
+        /// <param name="recoveryStatus">The allocated <see cref="RecoveryStatus"/> instance</param>
+        /// <param name="page">The current page to read</param>
+        /// <param name="end">The last page to read</param>
+        private void ApplyDeltaAndRecoverPages(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, DeltaLog deltaLog,
+            long recoverTo, long endPage, long snapshotEndPage, int capacity, int numPagesToRead, RecoveryStatus recoveryStatus, long page, long end)
         {
             hlogBase.ApplyDelta(deltaLog, page, end, recoverTo);
 
@@ -1017,15 +1150,29 @@ namespace Tsavorite.core
             }
         }
 
-        private void GetSnapshotPageRangesToRead(long fromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, Guid guid, out long startPage, out long endPage, out long snapshotEndPage, out int capacity,
-                                                 out RecoveryStatus recoveryStatus, out int numPagesToReadPerIteration)
+        /// <summary>
+        /// Get the range of pages to read from the snapshot file(s) for recovery
+        /// </summary>
+        /// <param name="scanFromAddress">The address to start scanning from; either beginAddress if no recovery has yet been done, or FlushedUntilAddress if some recovery has already occurred</param>
+        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, and may be higher due to delta records</param>
+        /// <param name="snapshotStartAddress">The start of the mutable region; the FlushedUntilAddress at the start of the WAIT_FLUSH phase</param>
+        /// <param name="snapshotEndAddress">The end of the snapshot; the tailAddress at the start of the WAIT_FLUSH phase</param>
+        /// <param name="guid">The checkpoint token guid</param>
+        /// <param name="startPage">The first page to read; the page of <paramref name="scanFromAddress"/></param>
+        /// <param name="endPage">The last page to read; the page of <paramref name="untilAddress"/></param>
+        /// <param name="snapshotEndPage">The page of <paramref name="snapshotEndAddress"/></param>
+        /// <param name="capacity">The capacity of the log: the number of pages in the circular buffer</param>
+        /// <param name="recoveryStatus">The allocated <see cref="RecoveryStatus"/> instance</param>
+        /// <param name="numPagesToReadPerIteration">The number of pages to read per iteration</param>
+        private void GetSnapshotPageRangesToRead(long scanFromAddress, long untilAddress, long snapshotStartAddress, long snapshotEndAddress, Guid guid,
+            out long startPage, out long endPage, out long snapshotEndPage, out int capacity, out RecoveryStatus recoveryStatus, out int numPagesToReadPerIteration)
         {
             // Compute startPage and endPage
-            startPage = hlogBase.GetPage(fromAddress);
+            startPage = hlogBase.GetPage(scanFromAddress);
             endPage = hlogBase.GetPage(untilAddress);
-            if (untilAddress > hlogBase.GetFirstValidLogicalAddressOnPage(endPage) && untilAddress > fromAddress)
+            if (untilAddress > hlogBase.GetFirstValidLogicalAddressOnPage(endPage) && untilAddress > scanFromAddress)
                 endPage++;
-            long snapshotStartPage = hlogBase.GetPage(snapshotStartAddress);
+            var snapshotStartPage = hlogBase.GetPage(snapshotStartAddress);
             snapshotEndPage = hlogBase.GetPage(snapshotEndAddress);
             if (snapshotEndAddress > hlogBase.GetFirstValidLogicalAddressOnPage(snapshotEndPage) && snapshotEndAddress > snapshotStartAddress)
                 snapshotEndPage++;
@@ -1046,18 +1193,18 @@ namespace Tsavorite.core
 
             // Initially issue read request for all pages that can be held in memory
             // If heap memory is to be tracked, then read one page at a time to control memory usage
-            int totalPagesToRead = (int)(snapshotEndPage - startPage);
+            var totalPagesToRead = (int)(snapshotEndPage - startPage);
             numPagesToReadPerIteration = hlogBase.IsSizeBeyondLimit == null ? Math.Min(capacity - hlogBase.MinEmptyPageCount, totalPagesToRead) : 1;
         }
 
-        private void ProcessReadSnapshotPage(long fromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
+        private void ProcessReadSnapshotPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
         {
             // Page at hand
-            var startLogicalAddress = hlogBase.GetFirstValidLogicalAddressOnPage(page);
-            var endLogicalAddress = hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
+            var startLogicalAddressOfPage = hlogBase.GetLogicalAddressOfStartOfPage(page);    // Do not offset for page header; that's done below and in RecoverFromPage
+            var endLogicalAddressOfPage = hlogBase.GetLogicalAddressOfStartOfPage(page + 1);
 
             // Perform recovery if page is part of the re-do portion of log
-            if (fromAddress < endLogicalAddress && fromAddress < untilAddress)
+            if (recoverFromAddress < endLogicalAddressOfPage && recoverFromAddress < untilAddress)
             {
                 /*
                  * Handling corner-cases:
@@ -1067,16 +1214,16 @@ namespace Tsavorite.core
                  * offset. Otherwise, scan the entire page [0, PageSize)
                  */
 
-                long pageFromAddress = PageHeader.Size;
-                var pageUntilAddress = hlogBase.GetPageSize();
-                var physicalAddress = hlogBase.GetPhysicalAddress(startLogicalAddress);
+                long pageFromAddressOffset = PageHeader.Size;
+                var pageUntilAddressOffset = hlogBase.GetPageSize();
+                var startPhysicalAddressOfPage = hlogBase.GetPhysicalAddress(startLogicalAddressOfPage);
 
-                if (fromAddress > startLogicalAddress && fromAddress < endLogicalAddress)
-                    pageFromAddress = hlogBase.GetOffsetOnPage(fromAddress);
-                if (endLogicalAddress > untilAddress)
-                    pageUntilAddress = hlogBase.GetOffsetOnPage(untilAddress);
+                if (recoverFromAddress > startLogicalAddressOfPage && recoverFromAddress < endLogicalAddressOfPage)
+                    pageFromAddressOffset = hlogBase.GetOffsetOnPage(recoverFromAddress);
+                if (endLogicalAddressOfPage > untilAddress)
+                    pageUntilAddressOffset = hlogBase.GetOffsetOnPage(untilAddress);
 
-                _ = RecoverFromPage(fromAddress, pageFromAddress, pageUntilAddress, startLogicalAddress, physicalAddress, nextVersion, options);
+                _ = RecoverFromPage(recoverFromAddress, pageFromAddressOffset, pageUntilAddressOffset, startLogicalAddressOfPage, startPhysicalAddressOfPage, options);
             }
 
             recoveryStatus.flushStatus[pageIndex] = FlushStatus.Done;
@@ -1107,19 +1254,31 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Re-do the necessary log entries. We ensure that the InNewVersion test (to skip v+1 records) runs ONLY for the fuzzy region
-        /// (which has v and v+1 records) because the earlier parts may have a stale InNewVersion status.
+        /// Re-do the necessary log records:
+        /// <list>
+        ///     <item>If the record is in v+1 *and* is in the fuzzy region (which has v and v+1 records) and we are undoing nextVersion records, invalidate it.
+        ///         We do this only in the fuzzy region because the earlier records may have a stale InNewVersion status. </item>
+        ///     <item>Otherwise, update the tag chain for the record's hash and tag by inserting the record at the tail of the <see cref="HashBucketEntry"/></item>
+        /// </list>
         /// </summary>
-        private unsafe bool RecoverFromPage(long startRecoveryAddress, long fromLogicalAddressInPage, long untilLogicalAddressInPage,
-                                     long pageLogicalAddress, long pagePhysicalAddress, long nextVersion, RecoveryOptions options)
+        /// <param name="recoverFromAddress">The address from which to perform recovery (undo v+1 records and append to tag-chain tail)</param>
+        /// <param name="pageFromAddressOffset">The start address offset on the page to recover from (must be &gt;= <see cref="PageHeader.Size"/></param>
+        /// <param name="pageUntilAddressOffset">The end address offset on the page to recover from (must be &lt; PageSize)</param>
+        /// <param name="pageStartLogicalAddress">The logical address of the start of the page</param>
+        /// <param name="pageStartPhysicalAddress">The physical address of the start of the page</param>
+        /// <param name="options">Recovery options</param>
+        /// <returns>True if we touched the page (and thus it needs to be flushed), else false</returns>
+        private unsafe bool RecoverFromPage(long recoverFromAddress, long pageFromAddressOffset, long pageUntilAddressOffset,
+                                     long pageStartLogicalAddress, long pageStartPhysicalAddress, RecoveryOptions options)
         {
+            Debug.Assert(pageFromAddressOffset >= PageHeader.Size, $"fromLogicalAddressInPage {pageFromAddressOffset} must be >= PageHeader.Size {PageHeader.Size}");
+            Debug.Assert(pageUntilAddressOffset <= hlogBase.GetPageSize(), $"untilLogicalAddressInPage {pageUntilAddressOffset} must be <= PageSize {hlogBase.GetPageSize()}");
             var touched = false;
 
-            var recordOffset = 0;
-            while (recordOffset + PageHeader.Size < untilLogicalAddressInPage)
+            var recordOffset = pageFromAddressOffset;
+            while (recordOffset < pageUntilAddressOffset)
             {
-                var recordStart = pagePhysicalAddress + recordOffset;
-                var logRecord = new LogRecord(recordStart);
+                var logRecord = new LogRecord(pageStartPhysicalAddress + recordOffset);
                 ref var info = ref logRecord.InfoRef;
 
                 if (info.IsNull)
@@ -1133,12 +1292,10 @@ namespace Tsavorite.core
                     HashEntryInfo hei = new(storeFunctions.GetKeyHashCode64(logRecord.Key));
                     FindOrCreateTag(ref hei, hlogBase.BeginAddress);
 
-                    if ((pageLogicalAddress + recordOffset) < options.fuzzyRegionStartAddress || !info.IsInNewVersion || !options.undoNextVersion)
+                    if ((pageStartLogicalAddress + recordOffset) < options.fuzzyRegionStartAddress || !info.IsInNewVersion || !options.undoNextVersion)
                     {
                         // Update the hash table with this record
-                        hei.entry.Address = pageLogicalAddress + recordOffset;
-                        hei.entry.Tag = hei.tag;
-                        hei.entry.Tentative = false;
+                        hei.entry.Set(pageStartLogicalAddress + recordOffset, hei.tag);
                         hei.bucket->bucket_entries[hei.slot] = hei.entry.word;
                     }
                     else
@@ -1146,11 +1303,9 @@ namespace Tsavorite.core
                         // Ignore this record
                         touched = true;
                         info.SetInvalid();
-                        if (info.PreviousAddress < startRecoveryAddress)
+                        if (info.PreviousAddress < recoverFromAddress)
                         {
-                            hei.entry.Address = info.PreviousAddress;
-                            hei.entry.Tag = hei.tag;
-                            hei.entry.Tentative = false;
+                            hei.entry.Set(info.PreviousAddress, hei.tag);
                             hei.bucket->bucket_entries[hei.slot] = hei.entry.word;
                         }
                     }
@@ -1191,7 +1346,7 @@ namespace Tsavorite.core
         /// <param name="beginAddress"></param>
         /// <param name="headAddress"></param>
         /// <param name="fromAddress"></param>
-        /// <param name="untilAddress"></param>
+        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, and may be higher due to delta records</param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         public void RestoreHybridLog(long beginAddress, long headAddress, long fromAddress, long untilAddress, int numPagesToPreload = -1)
         {
@@ -1210,7 +1365,7 @@ namespace Tsavorite.core
         /// <param name="beginAddress"></param>
         /// <param name="headAddress"></param>
         /// <param name="fromAddress"></param>
-        /// <param name="untilAddress"></param>
+        /// <param name="untilAddress">The last address to scan; this is initially the tailAddress at the time of checkpoint flush, and may be higher due to delta records</param>
         /// <param name="numPagesToPreload">Number of pages to preload into memory after recovery</param>
         /// <param name="cancellationToken"></param>
         public async ValueTask RestoreHybridLogAsync(long beginAddress, long headAddress, long fromAddress, long untilAddress, int numPagesToPreload = -1, CancellationToken cancellationToken = default)
