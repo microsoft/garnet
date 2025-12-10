@@ -48,10 +48,11 @@ namespace Garnet.server
         /// </summary>
         BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
 
-        readonly StoreWrapper replayAofStoreWrapper;
         readonly IClusterProvider clusterProvider;
 
         readonly ILogger logger;
+
+        readonly Func<RespServerSession> obtainServerSession;
 
         /// <summary>
         /// Create new AOF processor
@@ -65,10 +66,12 @@ namespace Garnet.server
             this.storeWrapper = storeWrapper;
 
             this.clusterProvider = clusterProvider;
-            replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
+            var replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
+
+            obtainServerSession = () => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
             this.activeDbId = 0;
-            this.respServerSession = ObtainServerSession();
+            this.respServerSession = obtainServerSession();
 
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
@@ -76,9 +79,6 @@ namespace Garnet.server
             aofReplayCoordinator = new AofReplayCoordinator(this, logger);
             this.logger = logger;
         }
-
-        private RespServerSession ObtainServerSession()
-            => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
         /// <summary>
         /// Dispose
@@ -306,7 +306,7 @@ namespace Garnet.server
                     StoreUpsert(storeContext, replayContext.storeInput, entryPtr + sizeof(AofHeader));
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(storeContext, replayContext.storeInput, activeVectorManager, respServerSession, ObtainServerSession, entryPtr + sizeof(AofHeader));
+                    StoreRMW(storeContext, replayContext.storeInput, activeVectorManager, respServerSession, obtainServerSession, entryPtr + sizeof(AofHeader));
                     break;
                 case AofEntryType.StoreDelete:
                     StoreDelete(storeContext, activeVectorManager, respServerSession.storageSession, entryPtr + sizeof(AofHeader));
