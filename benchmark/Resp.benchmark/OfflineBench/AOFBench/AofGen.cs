@@ -207,12 +207,16 @@ namespace Resp.benchmark
                                 }
                                 else
                                 {
-                                    var extendedAofHeader = new AofExtendedHeader(new AofHeader
+                                    var extendedAofHeader = new AofShardedHeader
                                     {
-                                        opType = aofHeader.opType,
-                                        storeVersion = aofHeader.storeVersion,
-                                        sessionID = aofHeader.sessionID
-                                    }, seqNumGen.GetSequenceNumber(), 0);
+                                        basicHeader = new AofHeader
+                                        {
+                                            opType = aofHeader.opType,
+                                            storeVersion = aofHeader.storeVersion,
+                                            sessionID = aofHeader.sessionID
+                                        },
+                                        sequenceNumber = seqNumGen.GetSequenceNumber()
+                                    };
 
                                     if (!garnetLog.GetSubLog(threadId).DummyEnqueue(
                                         ref pageOffset,

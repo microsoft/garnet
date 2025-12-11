@@ -1,7 +1,7 @@
 
 // Use AOF types directly from Garnet.server via type aliases
 using AofHeader = Garnet.server.AofHeader;
-using AofExtendedHeader = Garnet.server.AofExtendedHeader;
+using AofShardedHeader = Garnet.server.AofShardedHeader;
 
 namespace AofExplorer
 {
@@ -12,7 +12,7 @@ namespace AofExplorer
     {
         public bool IsExtended { get; set; }
         public AofHeader Header { get; set; }
-        public AofExtendedHeader? ExtendedHeader { get; set; }
+        public AofShardedHeader? ExtendedHeader { get; set; }
         public byte[] Key { get; set; } = [];
         public byte[] Value { get; set; } = [];
         public byte[] Input { get; set; } = [];

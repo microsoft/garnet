@@ -30,10 +30,10 @@ namespace Garnet.server
             => Utility.HashBytes(key);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int,int) HashKey(ReadOnlySpan<byte> key)
+        public (int, int) HashKey(ReadOnlySpan<byte> key)
         {
             var hash = HASH(key);
-            return ((int)(((ulong)hash) % (ulong)aofSublogCount), (int)(((ulong)hash) % (ulong)subtaskReplayCount));
+            return ((int)(((ulong)hash) % (ulong)aofSublogCount), (int)(((ulong)hash) % 0xFF));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -334,37 +334,37 @@ namespace Garnet.server
             }
         }
 
-        internal void Enqueue<TInput>(AofExtendedHeader extendedAofHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, out long logicalAddress)
+        internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
             var (_sublogIdx, _subtaskId) = HashKey(key);
-            extendedAofHeader.subtaskIdx = (byte)_subtaskId;
+            shardedHeader.keyDigest = (byte)_subtaskId;
             shardedLog.sublog[_sublogIdx].Enqueue(
-                extendedAofHeader,
+                shardedHeader,
                 key,
                 value,
                 ref input,
                 out logicalAddress);
         }
 
-        internal void Enqueue<TInput>(AofExtendedHeader extendedAofHeader, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
+        internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
             var (_sublogIdx, _subtaskId) = HashKey(key);
-            extendedAofHeader.subtaskIdx = (byte)_subtaskId;
+            shardedHeader.keyDigest = (byte)_subtaskId;
             shardedLog.sublog[_sublogIdx].Enqueue(
-                extendedAofHeader,
+                shardedHeader,
                 key,
                 ref input,
                 out logicalAddress);
         }
 
-        internal void Enqueue(AofExtendedHeader extendedAofHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out long logicalAddress)
+        internal void Enqueue(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out long logicalAddress)
         {
             var (_sublogIdx, _subtaskId) = HashKey(key);
-            extendedAofHeader.subtaskIdx = (byte)_subtaskId;
+            shardedHeader.keyDigest = (byte)_subtaskId;
             shardedLog.sublog[_sublogIdx].Enqueue(
-                extendedAofHeader,
+                shardedHeader,
                 key,
                 value,
                 out logicalAddress);

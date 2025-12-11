@@ -109,7 +109,7 @@ namespace Garnet.server
             internal unsafe bool AddOrReplayTransactionOperation(int sublogIdx, byte* ptr, int length, bool asReplica)
             {
                 var header = *(AofHeader*)ptr;
-                var extendedHeader = default(AofExtendedHeader);
+                var shardedHeader = default(AofShardedHeader);
                 var replayContext = GetReplayContext(sublogIdx);
                 // First try to process this as an existing transaction
                 if (aofReplayContext[sublogIdx].activeTxns.TryGetValue(header.sessionID, out var group))
@@ -120,8 +120,8 @@ namespace Garnet.server
                             throw new GarnetException("No nested transactions expected");
                         case AofEntryType.TxnAbort:
                             ClearSessionTxn();
-                            extendedHeader = *(AofExtendedHeader*)ptr;
-                            aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                            shardedHeader = *(AofShardedHeader*)ptr;
+                            aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, shardedHeader.sequenceNumber);
                             break;
                         case AofEntryType.TxnCommit:
                             if (replayContext.inFuzzyRegion)
@@ -160,7 +160,7 @@ namespace Garnet.server
                 switch (header.opType)
                 {
                     case AofEntryType.TxnStart:
-                        var logAccessCount = aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1 ? 0 : (*(AofExtendedHeader*)ptr).sublogAccessCount;
+                        var logAccessCount = aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1 ? 0 : (*(AofTransactionHeader*)ptr).sublogAccessCount;
                         aofReplayContext[sublogIdx].AddTransactionGroup(header.sessionID, sublogIdx, (byte)logAccessCount);
                         break;
                     case AofEntryType.TxnAbort:
@@ -168,8 +168,8 @@ namespace Garnet.server
                         // We encountered a transaction end without start - this could happen because we truncated the AOF
                         // after a checkpoint, and the transaction belonged to the previous version. It can safely
                         // be ignored.
-                        extendedHeader = *(AofExtendedHeader*)ptr;
-                        aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                        shardedHeader = *(AofShardedHeader*)ptr;
+                        aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, shardedHeader.sequenceNumber);
                         break;
                     default:
                         // Continue processing
@@ -248,12 +248,12 @@ namespace Garnet.server
                     // Wait for all participating subtasks to complete replay unless singleLog
                     if (usingShardedLog)
                     {
-                        var extendedHeader = *(AofExtendedHeader*)ptr;
+                        var shardedHeader = *(AofShardedHeader*)ptr;
                         // Synchronize replay of txn
                         ProcessSynchronizedOperation(
                             sublogIdx,
                             ptr,
-                            extendedHeader.header.sessionID,
+                            shardedHeader.basicHeader.sessionID,
                             () => { });
                     }
 
@@ -268,7 +268,7 @@ namespace Garnet.server
                     {
                         fixed (byte* entryPtr = entry)
                         {
-                            var curr = entryPtr + HeaderSize(usingShardedLog);
+                            var curr = AofHeader.SkipHeader(entryPtr);
                             var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
                             txnManager.SaveKeyEntryToLock(key, LockType.Exclusive);
                         }
@@ -309,7 +309,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    var extendedHeader = *(AofExtendedHeader*)ptr;
+                    var shardedHeader = *(AofShardedHeader*)ptr;
                     // Initialize custom proc collection to keep track of hashes for keys for which their timestamp needs to be updated
                     CustomProcedureKeyHashCollection customProcKeyHashTracker = new(aofProcessor.storeWrapper.appendOnlyFile);
 
@@ -317,7 +317,7 @@ namespace Garnet.server
                     ProcessSynchronizedOperation(
                         sublogIdx,
                         ptr,
-                        extendedHeader.header.sessionID,
+                        shardedHeader.basicHeader.sessionID,
                         () => StoredProcRunnerWrapper(sublogIdx, id, ptr));
 
                     // Wrapper for store proc runner used for multi-log synchronization
@@ -330,14 +330,14 @@ namespace Garnet.server
                         StoredProcRunnerBase(sublogIdx, id, ptr, shardedLog: true, customProcKeyHashTracker);
 
                         // Update timestamps for associated keys
-                        customProcKeyHashTracker?.UpdateSequenceNumber(extendedHeader.sequenceNumber);
+                        customProcKeyHashTracker?.UpdateSequenceNumber(shardedHeader.sequenceNumber);
                     }
                 }
 
                 // Based run stored proc method used of legacy single log implementation
-                void StoredProcRunnerBase(int sublogIdx, byte id, byte* ptr, bool shardedLog, CustomProcedureKeyHashCollection customProcKeyHashTracker)
+                void StoredProcRunnerBase(int sublogIdx, byte id, byte* entryPtr, bool shardedLog, CustomProcedureKeyHashCollection customProcKeyHashTracker)
                 {
-                    var curr = ptr + HeaderSize(shardedLog);
+                    var curr = AofHeader.SkipHeader(entryPtr);
 
                     // Reconstructing CustomProcedureInput
                     _ = aofReplayContext[sublogIdx].customProcInput.DeserializeFrom(curr);
@@ -360,11 +360,10 @@ namespace Garnet.server
                 Debug.Assert(aofProcessor.storeWrapper.serverOptions.AofSublogCount > 1);
 
                 // Extract extended header info and validate header
-                var extendedHeader = *(AofExtendedHeader*)ptr;
-                extendedHeader.ThrowIfNotExtendedHeader();
+                var txnHeader = *(AofTransactionHeader*)ptr;
 
                 // Synchronize execution across sublogs
-                var eventBarrier = GetBarrier(barrierId, extendedHeader.sublogAccessCount);
+                var eventBarrier = GetBarrier(barrierId, txnHeader.sublogAccessCount);
                 var isLeader = eventBarrier.TrySignalAndWait(out var signalException, aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout);
                 Exception removeBarrierException = null;
 
@@ -408,7 +407,7 @@ namespace Garnet.server
                     throw removeBarrierException;
 
                 // Update timestamp
-                aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, txnHeader.shardedHeader.sequenceNumber);
             }
         }
     }

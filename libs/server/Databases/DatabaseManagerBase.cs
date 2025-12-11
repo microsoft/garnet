@@ -300,15 +300,15 @@ namespace Garnet.server
         {
             if (db.AppendOnlyFile == null) return;
 
-            AofHeader header = new()
-            {
-                opType = entryType,
-                storeVersion = version,
-                sessionID = -1
-            };
 
             if (db.AppendOnlyFile.Log.Size == 1)
             {
+                var header = new AofHeader()
+                {
+                    opType = entryType,
+                    storeVersion = version,
+                    sessionID = -1
+                };
                 db.AppendOnlyFile.Log.GetSubLog(0).Enqueue(header, out _);
             }
             else
@@ -318,17 +318,26 @@ namespace Garnet.server
                 {
                     db.AppendOnlyFile.Log.LockSublogs(bitmapLock);
                     var _logAccessBitmap = bitmapLock;
-                    var extendedAofHeader = new AofExtendedHeader(new AofHeader
+                    var txnHeader = new AofTransactionHeader
                     {
-                        opType = header.opType,
-                        storeVersion = header.storeVersion,
-                        sessionID = header.sessionID
-                    }, db.AppendOnlyFile.seqNumGen.GetSequenceNumber(), (byte)BitOperations.PopCount(bitmapLock));
+                        shardedHeader = new AofShardedHeader
+                        {
+                            basicHeader = new AofHeader
+                            {
+                                padding = (byte)AofHeaderType.TransactionHeader,
+                                opType = entryType,
+                                storeVersion = version,
+                                sessionID = -1
+                            },
+                            sequenceNumber = db.AppendOnlyFile.seqNumGen.GetSequenceNumber()
+                        },
+                        sublogAccessCount = (byte)BitOperations.PopCount(bitmapLock)
+                    };
 
                     while (_logAccessBitmap > 0)
                     {
                         var sublogIdx = _logAccessBitmap.GetNextOffset();
-                        db.AppendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(extendedAofHeader, out _);
+                        db.AppendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(txnHeader, out _);
                     }
                 }
                 finally

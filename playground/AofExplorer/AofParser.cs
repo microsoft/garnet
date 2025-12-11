@@ -7,7 +7,7 @@ using Garnet.server;
 using Tsavorite.core;
 // Use AOF types directly from Garnet.server
 using AofEntryType = Garnet.server.AofEntryType;
-using AofExtendedHeader = Garnet.server.AofExtendedHeader;
+using AofShardedHeader = Garnet.server.AofShardedHeader;
 using AofHeader = Garnet.server.AofHeader;
 
 namespace AofExplorer
@@ -142,8 +142,8 @@ namespace AofExplorer
                 if (hasExtendedHeader && data.Length >= 25)
                 {
                     entry.IsExtended = true;
-                    entry.ExtendedHeader = MemoryMarshal.Read<AofExtendedHeader>(data.Slice(offset, 25));
-                    entry.Header = entry.ExtendedHeader.Value.header;
+                    entry.ExtendedHeader = MemoryMarshal.Read<AofShardedHeader>(data.Slice(offset, 25));
+                    entry.Header = entry.ExtendedHeader.Value.basicHeader;
                     offset += 25;
                 }
                 else

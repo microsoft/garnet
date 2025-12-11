@@ -6,74 +6,82 @@ using Garnet.common;
 
 namespace Garnet.server
 {
-    /// <summary>
-    /// Used for sharded log to add a timestamp and logAccessCounter
-    /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = 26)]
-    struct AofExtendedHeader
+    internal enum AofHeaderType : byte
     {
+        BasicHeader,
+        ShardedHeader,
+        TransactionHeader
+    }
+
+    /// <summary>
+    /// Used for coordinated operations
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = AofTransactionHeader.TotalSize)]
+    struct AofTransactionHeader
+    {
+        public const int TotalSize = AofShardedHeader.TotalSize + 1;
+
         /// <summary>
-        /// Reserved sublog replay task id for coordinated operations (i.e. txn, custom-txn, )
+        /// AofShardedHeader used with multi-log
         /// </summary>
-        internal const int RESERVED_SUBTASK_ID = 255;
+        [FieldOffset(0)]
+        public AofShardedHeader shardedHeader;
+
+        /// <summary>
+        /// Used for synchronizing sublog replay
+        /// </summary>
+        [FieldOffset(AofShardedHeader.TotalSize)]
+        public byte sublogAccessCount;
+    }
+
+    /// <summary>
+    /// Used for sharded log to add a k
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = AofShardedHeader.TotalSize)]
+    struct AofShardedHeader
+    {
+        public const int TotalSize = AofHeader.TotalSize + 8 + 1;
 
         /// <summary>
         /// AofHeader used with singleLog
         /// </summary>
         [FieldOffset(0)]
-        public AofHeader header;
+        public AofHeader basicHeader;
 
         /// <summary>
         /// Used for multilog operations
         /// </summary>
-        [FieldOffset(16)]
+        [FieldOffset(AofHeader.TotalSize)]
         public long sequenceNumber;
-
-        /// <summary>
-        /// Used for synchronizing sublog replay
-        /// </summary>
-        [FieldOffset(24)]
-        public byte sublogAccessCount;
 
         /// <summary>
         /// Used for marking an entry for replay to a specific subtask
         /// </summary>
-        [FieldOffset(25)]
-        public byte subtaskIdx;
-
-        /// <summary>
-        /// AofExtendedHeader constructor
-        /// </summary>
-        /// <param name="aofHeader"></param>
-        /// <param name="sequenceNumber"></param>
-        /// <param name="sublogAccessCount"></param>
-        public AofExtendedHeader(AofHeader aofHeader, long sequenceNumber, byte sublogAccessCount)
-        {
-            header = aofHeader;
-            header.padding = AofHeader.ShardedLogFlag;
-            this.sequenceNumber = sequenceNumber;
-            this.sublogAccessCount = sublogAccessCount;
-        }
-
-        /// <summary>
-        /// Tests whether this is an extended header by looking at the padding first bit
-        /// </summary>
-        public readonly bool IsExtendedHeader => (header.padding & 0x1) == 0x1;
-
-        /// <summary>
-        /// Throws exception if AofHeader is not of AofExtendedType
-        /// </summary>
-        /// <exception cref="GarnetException"></exception>
-        public readonly void ThrowIfNotExtendedHeader()
-        {
-            if (!IsExtendedHeader)
-                throw new GarnetException("AofHeader not of AofExtendedHeader type!");
-        }
+        [FieldOffset(AofHeader.TotalSize + 8)]
+        public byte keyDigest;
     };
 
-    [StructLayout(LayoutKind.Explicit, Size = 16)]
+    /// <summary>
+    /// Basic AOF header
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
     struct AofHeader
     {
+        public static unsafe byte* SkipHeader(byte* entryPtr)
+        {
+            var header = *(AofHeader*)entryPtr;
+            var headerType = (AofHeaderType)header.padding;
+            return headerType switch
+            {
+                AofHeaderType.BasicHeader => entryPtr + TotalSize,
+                AofHeaderType.ShardedHeader => entryPtr + AofShardedHeader.TotalSize,
+                AofHeaderType.TransactionHeader => entryPtr + AofTransactionHeader.TotalSize,
+                _ => throw new GarnetException($"Type not supported {headerType}"),
+            };
+        }
+
+        public const int TotalSize = 16;
+
         // Important: Update version number whenever any of the following change:
         // * Layout, size, contents of this struct
         // * Any of the AofEntryType or AofStoreType enums' existing value mappings

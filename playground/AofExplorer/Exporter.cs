@@ -25,7 +25,8 @@ namespace AofExplorer
             foreach (var entry in entries)
             {
                 var sequenceNumber = entry.IsExtended && entry.ExtendedHeader.HasValue ? entry.ExtendedHeader.Value.sequenceNumber.ToString() : "";
-                var logAccessCount = entry.IsExtended && entry.ExtendedHeader.HasValue ? entry.ExtendedHeader.Value.sublogAccessCount.ToString() : "";
+                //var logAccessCount = entry.IsExtended && entry.ExtendedHeader.HasValue ? entry.ExtendedHeader.Value.sublogAccessCount.ToString() : "";
+                var logAccessCount = 0;
 
                 writer.WriteLine($"{entry.FileOffset},{entry.Header.opType},{entry.Header.storeVersion},{entry.Header.sessionID},{sequenceNumber},{logAccessCount},{entry.Key.Length},{entry.Value.Length},{entry.Input.Length},{entry.TotalLength}");
             }
@@ -61,7 +62,7 @@ namespace AofExplorer
                 {
                     var ext = entry.ExtendedHeader.Value;
                     writer.WriteLine($"    \"sequenceNumber\": {ext.sequenceNumber},");
-                    writer.WriteLine($"    \"logAccessCount\": {ext.sublogAccessCount},");
+                    //writer.WriteLine($"    \"logAccessCount\": {ext.sublogAccessCount},");
                 }
 
                 writer.WriteLine($"    \"keyLength\": {entry.Key.Length},");

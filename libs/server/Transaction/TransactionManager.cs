@@ -326,14 +326,14 @@ namespace Garnet.server
             {
                 if (appendOnlyFile.Log.Size == 1)
                 {
-                    var aofHeader = new AofHeader
+                    var header = new AofHeader
                     {
                         opType = AofEntryType.StoredProcedure,
                         procedureId = id,
                         storeVersion = txnVersion,
                         sessionID = basicContext.Session.ID,
                     };
-                    appendOnlyFile.Log.GetSubLog(0).Enqueue(aofHeader, ref procInput, out _);
+                    appendOnlyFile.Log.GetSubLog(0).Enqueue(header, ref procInput, out _);
                 }
                 else
                 {
@@ -341,21 +341,27 @@ namespace Garnet.server
                     {
                         appendOnlyFile.Log.LockSublogs(sublogAccessVector);
                         var _sublogAccessVector = sublogAccessVector;
-                        var extendedAofHeader = new AofExtendedHeader(new AofHeader
+                        var header = new AofTransactionHeader
                         {
-                            opType = AofEntryType.StoredProcedure,
-                            procedureId = id,
-                            storeVersion = txnVersion,
-                            sessionID = basicContext.Session.ID,
-                        }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), (byte)BitOperations.PopCount(sublogAccessVector))
-                        {
-                            subtaskIdx = AofExtendedHeader.RESERVED_SUBTASK_ID
+                            shardedHeader = new AofShardedHeader
+                            {
+                                basicHeader = new AofHeader
+                                {
+                                    padding = (byte)AofHeaderType.TransactionHeader,
+                                    opType = AofEntryType.StoredProcedure,
+                                    procedureId = id,
+                                    storeVersion = txnVersion,
+                                    sessionID = basicContext.Session.ID,
+                                },
+                                sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
+                            },
+                            sublogAccessCount = (byte)BitOperations.PopCount(sublogAccessVector)
                         };
 
                         while (_sublogAccessVector > 0)
                         {
                             var sublogIdx = _sublogAccessVector.GetNextOffset();
-                            appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(extendedAofHeader, ref procInput, out _);
+                            appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, ref procInput, out _);
                         }
                     }
                     finally
@@ -383,13 +389,13 @@ namespace Garnet.server
             {
                 if (appendOnlyFile.Log.Size == 1)
                 {
-                    var aofHeader = new AofHeader
+                    var header = new AofHeader
                     {
                         opType = AofEntryType.TxnCommit,
                         storeVersion = txnVersion,
                         txnID = basicContext.Session.ID,
                     };
-                    appendOnlyFile.Log.GetSubLog(0).Enqueue(aofHeader, out _);
+                    appendOnlyFile.Log.GetSubLog(0).Enqueue(header, out _);
                 }
                 else
                 {
@@ -399,20 +405,26 @@ namespace Garnet.server
                     {
                         appendOnlyFile.Log.LockSublogs(sublogAccessVector);
                         var _logAccessBitmap = sublogAccessVector;
-                        var extendedAofHeader = new AofExtendedHeader(new AofHeader
+                        var header = new AofTransactionHeader
                         {
-                            opType = AofEntryType.TxnCommit,
-                            storeVersion = txnVersion,
-                            txnID = basicContext.Session.ID,
-                        }, functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(), (byte)BitOperations.PopCount(sublogAccessVector))
-                        {
-                            subtaskIdx = AofExtendedHeader.RESERVED_SUBTASK_ID
+                            shardedHeader = new AofShardedHeader
+                            {
+                                basicHeader = new AofHeader
+                                {
+                                    padding = (byte)AofHeaderType.TransactionHeader,
+                                    opType = AofEntryType.TxnCommit,
+                                    storeVersion = txnVersion,
+                                    txnID = basicContext.Session.ID,
+                                },
+                                sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                            },
+                            sublogAccessCount = (byte)BitOperations.PopCount(sublogAccessVector)
                         };
 
                         while (_logAccessBitmap > 0)
                         {
                             var sublogIdx = _logAccessBitmap.GetNextOffset();
-                            appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(extendedAofHeader, out _);
+                            appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, out _);
                         }
                     }
                     finally
@@ -532,13 +544,13 @@ namespace Garnet.server
             {
                 if (appendOnlyFile.Log.Size == 1)
                 {
-                    var aofHeader = new AofHeader
+                    var header = new AofHeader
                     {
                         opType = AofEntryType.TxnStart,
                         storeVersion = txnVersion,
                         txnID = basicContext.Session.ID
                     };
-                    appendOnlyFile.Log.GetSubLog(0).Enqueue(aofHeader, out _);
+                    appendOnlyFile.Log.GetSubLog(0).Enqueue(header, out _);
                 }
                 else
                 {
@@ -548,23 +560,26 @@ namespace Garnet.server
                     {
                         appendOnlyFile.Log.LockSublogs(sublogAccessVector);
                         var _logAccessBitmap = sublogAccessVector;
-                        var extendedAofHeader = new AofExtendedHeader(
-                            new AofHeader
-                            {
-                                opType = AofEntryType.TxnStart,
-                                storeVersion = txnVersion,
-                                txnID = basicContext.Session.ID
-                            },
-                            functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
-                            (byte)BitOperations.PopCount(sublogAccessVector))
+                        var header = new AofTransactionHeader
                         {
-                            subtaskIdx = AofExtendedHeader.RESERVED_SUBTASK_ID
+                            shardedHeader = new AofShardedHeader
+                            {
+                                basicHeader = new AofHeader
+                                {
+                                    padding = (byte)AofHeaderType.TransactionHeader,
+                                    opType = AofEntryType.TxnStart,
+                                    storeVersion = txnVersion,
+                                    txnID = basicContext.Session.ID
+                                },
+                                sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                            },
+                            sublogAccessCount = (byte)BitOperations.PopCount(sublogAccessVector)
                         };
 
                         while (_logAccessBitmap > 0)
                         {
                             var sublogIdx = _logAccessBitmap.GetNextOffset();
-                            appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(extendedAofHeader, out _);
+                            appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, out _);
                         }
                     }
                     finally

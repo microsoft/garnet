@@ -74,6 +74,19 @@ Good thing is that this is what currently happens on the complete pending callba
 - [ ] Implement logical subtask replay (LSR)
 <ul><ul>
 Garnet replication can be configured to utilize multiple sublogs at the primary and many virtual replay tasks at the replica.
+At minimum one can deploy Garnet with single log and single virtual replay task.
+This case will be similar to what we have today and which does not need any additional information in the AofHeader.
+For AofSublogCount > 1 and/or AofReplaySubtaskCount > 1, we need to make use AofExtendedHeader to store the following additional information
+
+1. Timestamp/Sequence: Number for every record (long: 8 bytes).
+2. EntryDigest: A hash value used to map work (i.e. process record EntryDigest % AofReplaySubtaskCount == replayTaskId) to virtual replay tasks (byte: 1 byte)
+3. For coordinated operations (e.g. Checkpoint, CustomTxn, Txn), we need to indicate which physical sublogs and which virtual replay tasks participate in the operation
+   1. For physical sublog participation we simpley enqueue the corresponding marker to each physical sublog
+   2. For virtual replay tasks, we have two options:
+      1. Maintain a 256-bit map (i.e. 32 bytes) within the headers of the corresponding markers (i.e TxnStart, TxnCommit etc). For checkpointing all bits will be set since all tasks need to coordinate (i.e. wait for checkpoint to finish). This is probably the best option because it has a fixed overhead even when txn contains hundreds of keys.
+      2. Maintain entry digest values for all keys participating in the coordinated operation (mainly for transactions, checkpoint does not need to track the keys).
+   3. We also need a counter (virtualSublogAccessCount) to track total task participation across the physical sublogs to ensure all virtual replay task wait on barrier for all participants to complete the coordinated operation.
+
 In essence, the system will operate as if it uses many virtual sublogs backed by a fixed number of physical sublogs.
 The primary will write to a physical sublog by calculating the sublogIdx based on the command key specified at the operation.
 The operation key will also be used to generate a single byte hash which will be used to determine how work is assinged to virtual replay tasks in the replica

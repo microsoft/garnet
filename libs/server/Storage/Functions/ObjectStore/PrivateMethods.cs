@@ -25,31 +25,34 @@ namespace Garnet.server
 
             if (functionsState.appendOnlyFile.Log.Size == 1)
             {
+                var header = new AofHeader
+                {
+                    opType = AofEntryType.ObjectStoreUpsert,
+                    storeVersion = version,
+                    sessionID = sessionID
+                };
                 functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
-                    new AofHeader
-                    {
-                        opType = AofEntryType.ObjectStoreUpsert,
-                        storeVersion = version,
-                        sessionID = sessionID
-                    },
+                    header,
                     key,
                     value,
                     out _);
             }
             else
             {
-                var extendedAofHeader = new AofExtendedHeader(
-                    new AofHeader
+                var header = new AofShardedHeader
+                {
+                    basicHeader = new AofHeader
                     {
+                        padding = (byte)AofHeaderType.ShardedHeader,
                         opType = AofEntryType.ObjectStoreUpsert,
                         storeVersion = version,
                         sessionID = sessionID
                     },
-                    functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
-                    0);
+                    sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                };
 
                 functionsState.appendOnlyFile.Log.Enqueue(
-                    extendedAofHeader,
+                    header,
                     key,
                     value,
                     out _);
@@ -72,7 +75,7 @@ namespace Garnet.server
             {
                 if (functionsState.appendOnlyFile.Log.Size == 1)
                 {
-                    var aofHeader = new AofHeader
+                    var header = new AofHeader
                     {
                         opType = AofEntryType.ObjectStoreUpsert,
                         storeVersion = version,
@@ -80,25 +83,27 @@ namespace Garnet.server
                     };
 
                     functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
-                        aofHeader,
+                        header,
                         key,
                         new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
                         out _);
                 }
                 else
                 {
-                    var extendedAofHeader = new AofExtendedHeader(
-                        new AofHeader
+                    var header = new AofShardedHeader
+                    {
+                        basicHeader = new AofHeader
                         {
+                            padding = (byte)AofHeaderType.ShardedHeader,
                             opType = AofEntryType.ObjectStoreUpsert,
                             storeVersion = version,
                             sessionID = sessionID
                         },
-                        functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
-                        0);
+                        sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
+                    };
 
                     functionsState.appendOnlyFile.Log.Enqueue(
-                        extendedAofHeader,
+                        header,
                         key,
                         new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
                         out _);
@@ -124,7 +129,7 @@ namespace Garnet.server
 
                 if (functionsState.appendOnlyFile.Log.Size == 1)
                 {
-                    var aofHeader = new AofHeader
+                    var header = new AofHeader
                     {
                         opType = AofEntryType.ObjectStoreRMW,
                         storeVersion = version,
@@ -132,25 +137,27 @@ namespace Garnet.server
                     };
 
                     functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
-                        aofHeader,
+                        header,
                         sbKey,
                         ref input,
                         out _);
                 }
                 else
                 {
-                    var extendedAofHeader = new AofExtendedHeader(
-                        new AofHeader
+                    var header = new AofShardedHeader
+                    {
+                        basicHeader = new AofHeader
                         {
+                            padding = (byte)AofHeaderType.ShardedHeader,
                             opType = AofEntryType.ObjectStoreRMW,
                             storeVersion = version,
                             sessionID = sessionID
                         },
-                        functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
-                        0);
+                        sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
+                    };
 
                     functionsState.appendOnlyFile.Log.Enqueue(
-                        extendedAofHeader,
+                        header,
                         sbKey,
                         ref input,
                         out _);
@@ -171,7 +178,7 @@ namespace Garnet.server
 
             if (functionsState.appendOnlyFile.Log.Size == 1)
             {
-                var aofHeader = new AofHeader
+                var header = new AofHeader
                 {
                     opType = AofEntryType.ObjectStoreDelete,
                     storeVersion = version,
@@ -179,25 +186,27 @@ namespace Garnet.server
                 };
 
                 functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
-                    aofHeader,
+                    header,
                     key,
                     item2: default,
                     out _);
             }
             else
             {
-                var extendedAofHeader = new AofExtendedHeader(
-                    new AofHeader
+                var header = new AofShardedHeader
+                {
+                    basicHeader = new AofHeader
                     {
+                        padding = (byte)AofHeaderType.ShardedHeader,
                         opType = AofEntryType.ObjectStoreDelete,
                         storeVersion = version,
                         sessionID = sessionID
                     },
-                    functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
-                    0);
+                    sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
+                };
 
                 functionsState.appendOnlyFile.Log.Enqueue(
-                    extendedAofHeader,
+                    header,
                     key,
                     value: default,
                     out _);

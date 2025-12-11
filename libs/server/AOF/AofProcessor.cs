@@ -215,19 +215,10 @@ namespace Garnet.server
         public void ProcessAofRecordInternal(int sublogIdx, int subtaskIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
         {
             var header = *(AofHeader*)ptr;
-            var extendedHeader = default(AofExtendedHeader);
+            var shardedHeader = default(AofShardedHeader);
             var replayContext = aofReplayCoordinator.GetReplayContext(sublogIdx);
             isCheckpointStart = false;
             var shardedLog = storeWrapper.serverOptions.AofSublogCount > 1;
-            var subtaskReplay = storeWrapper.serverOptions.AofReplaySubtaskCount > 1;
-
-            if (subtaskReplay && shardedLog)
-            {
-                extendedHeader = *(AofExtendedHeader*)ptr;
-                // Skip records that will not be replayed by this subtask
-                if (extendedHeader.subtaskIdx != subtaskIdx)
-                    return;
-            }
 
             // Handle transactions
             if (aofReplayCoordinator.AddOrReplayTransactionOperation(sublogIdx, ptr, length, asReplica))
@@ -251,8 +242,8 @@ namespace Garnet.server
 
                     if (shardedLog)
                     {
-                        extendedHeader = *(AofExtendedHeader*)ptr;
-                        storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                        shardedHeader = *(AofShardedHeader*)ptr;
+                        storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, shardedHeader.sequenceNumber);
                     }
                     break;
                 case AofEntryType.CheckpointEndCommit:
@@ -330,8 +321,8 @@ namespace Garnet.server
                     Debug.Assert(storeWrapper.serverOptions.ReplicaDisklessSync);
                     if (shardedLog)
                     {
-                        extendedHeader = *(AofExtendedHeader*)ptr;
-                        storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                        shardedHeader = *(AofShardedHeader*)ptr;
+                        storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, shardedHeader.sequenceNumber);
                     }
                     break;
                 case AofEntryType.FlushAll:
@@ -363,9 +354,9 @@ namespace Garnet.server
                     }
                     break;
                 case AofEntryType.RefreshSublogTail:
-                    extendedHeader = *(AofExtendedHeader*)ptr;
+                    shardedHeader = *(AofShardedHeader*)ptr;
                     //logger?.LogDebug("RefreshSublogTail {sublogIdx} {idx}", sublogIdx, extendedHeader.sequenceNumber);
-                    storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, extendedHeader.sequenceNumber);
+                    storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, shardedHeader.sequenceNumber);
                     break;
                 default:
                     _ = ReplayOp(sublogIdx, basicContext, objectStoreBasicContext, unifiedStoreBasicContext, ptr, length, asReplica);
@@ -392,34 +383,34 @@ namespace Garnet.server
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    StoreUpsert(storeContext, replayContext.storeInput, entryPtr + HeaderSize(isSharded));
+                    StoreUpsert(storeContext, replayContext.storeInput, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoreRMW:
-                    StoreRMW(storeContext, replayContext.storeInput, entryPtr + HeaderSize(isSharded));
+                    StoreRMW(storeContext, replayContext.storeInput, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoreDelete:
-                    StoreDelete(storeContext, entryPtr + HeaderSize(isSharded));
+                    StoreDelete(storeContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.ObjectStoreRMW:
-                    ObjectStoreRMW(objectStoreContext, replayContext.objectStoreInput, entryPtr + HeaderSize(isSharded), bufferPtr, bufferLength);
+                    ObjectStoreRMW(objectStoreContext, replayContext.objectStoreInput, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
-                    ObjectStoreUpsert(objectStoreContext, storeWrapper.GarnetObjectSerializer, entryPtr + HeaderSize(isSharded), bufferPtr, bufferLength);
+                    ObjectStoreUpsert(objectStoreContext, storeWrapper.GarnetObjectSerializer, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreDelete:
-                    ObjectStoreDelete(objectStoreContext, entryPtr + HeaderSize(isSharded));
+                    ObjectStoreDelete(objectStoreContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.UnifiedStoreRMW:
-                    UnifiedStoreRMW(unifiedStoreContext, replayContext.unifiedStoreInput, entryPtr + HeaderSize(isSharded), bufferPtr, bufferLength);
+                    UnifiedStoreRMW(unifiedStoreContext, replayContext.unifiedStoreInput, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreStringUpsert:
-                    UnifiedStoreStringUpsert(unifiedStoreContext, replayContext.unifiedStoreInput, entryPtr + HeaderSize(isSharded), bufferPtr, bufferLength);
+                    UnifiedStoreStringUpsert(unifiedStoreContext, replayContext.unifiedStoreInput, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreObjectUpsert:
-                    UnifiedStoreObjectUpsert(unifiedStoreContext, storeWrapper.GarnetObjectSerializer, entryPtr + HeaderSize(isSharded), bufferPtr, bufferLength);
+                    UnifiedStoreObjectUpsert(unifiedStoreContext, storeWrapper.GarnetObjectSerializer, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreDelete:
-                    UnifiedStoreDelete(unifiedStoreContext, entryPtr + HeaderSize(isSharded));
+                    UnifiedStoreDelete(unifiedStoreContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoredProcedure:
                     updateKey = false;
@@ -458,15 +449,13 @@ namespace Garnet.server
             }
         }
 
-        static int HeaderSize(bool useShardedLog) => useShardedLog ? sizeof(AofExtendedHeader) : sizeof(AofHeader);
-
         void UpdateKeySequenceNumber(int sublogIdx, byte* ptr)
         {
             Debug.Assert(storeWrapper.serverOptions.AofSublogCount > 1);
-            var extendedHeader = *(AofExtendedHeader*)ptr;
-            var curr = ptr + sizeof(AofExtendedHeader);
+            var shardedHeader = *(AofShardedHeader*)ptr;
+            var curr = ptr + sizeof(AofShardedHeader);
             var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
-            storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateKeySequenceNumber(sublogIdx, ref key, extendedHeader.sequenceNumber);
+            storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateKeySequenceNumber(sublogIdx, ref key, shardedHeader.sequenceNumber);
         }
 
         static void StoreUpsert<TContext>(
@@ -682,36 +671,6 @@ namespace Garnet.server
 
             bool IsNewVersionRecord(AofHeader header)
                 => header.storeVersion > storeWrapper.store.CurrentVersion;
-        }
-
-        /// <summary>
-        /// This updates maxtimestamp seen in primary's shipped records
-        /// TODO: evaluate performance implications
-        /// </summary>
-        /// <param name="maxSendTimestamp"></param>
-        /// <param name="record"></param>
-        /// <param name="recordLength"></param>
-        /// <param name="storeWrapper"></param>
-        public static void UpdateMaxSequenceNumber(ref long maxSendTimestamp, byte* record, int recordLength, StoreWrapper storeWrapper)
-        {
-            var ptr = record;
-            while (ptr < record + recordLength)
-            {
-                var entryLength = storeWrapper.appendOnlyFile.HeaderSize;
-                var payloadLength = storeWrapper.appendOnlyFile.Log.GetSubLog(0).UnsafeGetLength(ptr);
-                if (payloadLength > 0)
-                {
-                    var header = *(AofExtendedHeader*)(ptr + entryLength);
-                    var timestamp = header.sequenceNumber;
-                    maxSendTimestamp = Math.Max(maxSendTimestamp, timestamp);
-                    entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
-                }
-                else
-                {
-                    entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
-                }
-                ptr += entryLength;
-            }
         }
     }
 }

@@ -220,6 +220,7 @@ namespace Resp.benchmark
                                     storeVersion = 1,
                                     sessionID = threadId,
                                 };
+
                                 aofGen.appendOnlyFile.Log.SigleLog.Enqueue(
                                     aofHeader,
                                     key,
@@ -230,22 +231,25 @@ namespace Resp.benchmark
                             }
                             else
                             {
-                                var extendedAofHeader = new AofExtendedHeader(new AofHeader
+                                var shardedHeader = new AofShardedHeader()
                                 {
-                                    opType = AofEntryType.StoreUpsert,
-                                    storeVersion = 1,
-                                    sessionID = threadId,
-                                },
-                                aofGen.appendOnlyFile.seqNumGen.GetSequenceNumber(),
-                                0);
+                                    basicHeader = new AofHeader
+                                    {
+                                        padding = (byte)AofHeaderType.ShardedHeader,
+                                        opType = AofEntryType.StoreUpsert,
+                                        storeVersion = 1,
+                                        sessionID = threadId
+                                    },
+                                    sequenceNumber = aofGen.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                                };
 
                                 aofGen.appendOnlyFile.Log.Enqueue(
-                                    extendedAofHeader,
+                                    shardedHeader,
                                     key,
                                     value,
                                     ref input,
                                     out _);
-                                bytesEnqueued += sizeof(AofExtendedHeader) + key.TotalSize() + value.TotalSize() + input.SerializedLength;
+                                bytesEnqueued += sizeof(AofShardedHeader) + key.TotalSize() + value.TotalSize() + input.SerializedLength;
                             }
                         }
                         recordsEnqueued++;

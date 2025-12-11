@@ -419,22 +419,28 @@ namespace Garnet.server
                     {
                         AppendOnlyFile.Log.LockSublogs(logAccessBitmap);
                         var _logAccessBitmap = logAccessBitmap;
-                        var extendedAofHeader = new AofExtendedHeader(
-                            new AofHeader
+                        var header = new AofTransactionHeader
+                        {
+                            shardedHeader = new AofShardedHeader
                             {
-                                opType = entryType,
-                                storeVersion = 0,
-                                sessionID = -1,
-                                unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
-                                databaseId = (byte)defaultDatabase.Id
+                                basicHeader = new AofHeader
+                                {
+                                    padding = (byte)AofHeaderType.TransactionHeader,
+                                    opType = entryType,
+                                    storeVersion = 0,
+                                    sessionID = -1,
+                                    unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
+                                    databaseId = (byte)defaultDatabase.Id
+                                },
+                                sequenceNumber = storeWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber()
                             },
-                            storeWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber(),
-                            (byte)BitOperations.PopCount(ulong.MaxValue));
+                            sublogAccessCount = (byte)BitOperations.PopCount(ulong.MaxValue)
+                        };
 
                         while (_logAccessBitmap > 0)
                         {
                             var sublogIdx = _logAccessBitmap.GetNextOffset();
-                            AppendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(extendedAofHeader, out _);
+                            AppendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, out _);
                         }
                     }
                     finally

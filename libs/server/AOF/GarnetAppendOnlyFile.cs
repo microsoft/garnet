@@ -129,7 +129,11 @@ namespace Garnet.server
 
         public void EnqueueRefreshSublogTail(int sublogIdx, long sequenceNumber)
         {
-            var refreshSublogTailHeader = new AofExtendedHeader(new AofHeader { opType = AofEntryType.RefreshSublogTail }, sequenceNumber: sequenceNumber, sublogAccessCount: 0);
+            var refreshSublogTailHeader = new AofShardedHeader
+            {
+                basicHeader = new AofHeader { opType = AofEntryType.RefreshSublogTail },
+                sequenceNumber = sequenceNumber
+            };
             Log.GetSubLog(sublogIdx).Enqueue(refreshSublogTailHeader, out _);
         }
 
