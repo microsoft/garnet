@@ -1156,7 +1156,7 @@ namespace Garnet.test
                 var garnetServer = redis.GetServer(TestUtils.EndPoint);
                 db1.Execute("SAVE");
                 //garnetServer.Save(SaveType.BackgroundSave);
-                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) 
+                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks)
                     Thread.Sleep(10);
             }
 

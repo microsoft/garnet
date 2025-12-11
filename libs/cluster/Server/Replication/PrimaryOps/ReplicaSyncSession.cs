@@ -430,7 +430,7 @@ namespace Garnet.cluster
 
             Debug.Assert(device != null);
             var (shouldInitialize, segmentSizeBits) = ReplicationManager.ShouldInitialize(type, clusterProvider.serverOptions);
-            if (shouldInitialize) 
+            if (shouldInitialize)
                 batchSize = (int)Math.Min(batchSize, 1L << segmentSizeBits);
             string resp;
 

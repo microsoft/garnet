@@ -489,7 +489,7 @@ namespace Tsavorite.core
                 // Then recover snapshot into mutable region. Note that the ObjectAllocator will not write object log records for the mutable region;
                 // that only happens during flushes due to OnPagesMarkedReadOnly.
                 var snapshotLastFreedPage = RecoverHybridLogFromSnapshotFile(scanFromAddress: recoveredHLCInfo.info.flushedLogicalAddress,
-                        recoverFromAddress, untilAddress:recoveredHLCInfo.info.finalLogicalAddress,
+                        recoverFromAddress, untilAddress: recoveredHLCInfo.info.finalLogicalAddress,
                         snapshotStartAddress: recoveredHLCInfo.info.snapshotStartFlushedLogicalAddress, snapshotEndAddress: recoveredHLCInfo.info.snapshotFinalLogicalAddress,
                         recoveredHLCInfo.info.nextVersion, recoveredHLCInfo.info.guid, options, recoveredHLCInfo.deltaLog, recoverTo);
 

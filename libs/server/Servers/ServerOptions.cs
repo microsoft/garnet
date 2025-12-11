@@ -162,7 +162,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int SegmentSizeBits(bool isObj)
         {
-            long size = ParseSize(isObj? ObjectLogSegmentSize : SegmentSize, out _);
+            long size = ParseSize(isObj ? ObjectLogSegmentSize : SegmentSize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower {SegmentType} than specified (power of 2)", isObj ? "ObjSegmentSize" : "SegmentSize");

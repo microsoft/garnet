@@ -71,7 +71,7 @@ namespace Tsavorite.core
         /// Set the lowest object-log position on this main-log page, if ObjectAllocator.
         /// </summary>
         /// <param name="segmentBits">The number of bits in the object log's segments.</param>
-        internal ObjectLogFilePositionInfo GetLowestObjectLogPosition(int segmentBits) 
+        internal ObjectLogFilePositionInfo GetLowestObjectLogPosition(int segmentBits)
             => objectLogLowestPositionWord == ObjectLogFilePositionInfo.NotSet ? new() : new(objectLogLowestPositionWord, segmentBits);
 
         public override readonly string ToString()

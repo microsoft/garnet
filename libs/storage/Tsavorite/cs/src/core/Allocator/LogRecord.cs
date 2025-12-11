@@ -1157,7 +1157,7 @@ namespace Tsavorite.core
             ulong objectLengths = 0;
 
             // In case we're a ValueObject, store off the ulong at objectLogPositionPtr before overwriting it with the position in the log file.
-            var valueObjectLength = *objectLogPositionPtr;  
+            var valueObjectLength = *objectLogPositionPtr;
             *objectLogPositionPtr = pagePositionInfo.word;
 
             if (Info.KeyIsOverflow)

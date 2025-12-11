@@ -160,7 +160,7 @@ namespace Tsavorite.core
         public override string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-            return $"page {page}, isRecov {isForRecovery}, ctx {context}, count {count}, partial {bstr(partial)}, fromAddr {fromAddress} ({fromAddress:X}), untilAddr {untilAddress} ({untilAddress:X})," 
+            return $"page {page}, isRecov {isForRecovery}, ctx {context}, count {count}, partial {bstr(partial)}, fromAddr {fromAddress} ({fromAddress:X}), untilAddr {untilAddress} ({untilAddress:X}),"
                  + $" flushCompTrack [{flushCompletionTracker}], circFlushBufs [{flushBuffers}]";
         }
 
