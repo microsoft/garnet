@@ -110,6 +110,16 @@ namespace Garnet.test.cluster
         RecoveredVersion
     }
 
+    public struct PersistencInfo
+    {
+        public long CommittedBeginAddress;
+        public long CommittedUntilAddress;
+        public long FlushedUntilAddress;
+        public long BeginAddress;
+        public long TailAddress;
+        public long SafeAofAddress;
+    };
+
     public static class EndpointExtensions
     {
         public static IPEndPoint ToIPEndPoint(this EndPoint endPoint)
@@ -2749,6 +2759,59 @@ namespace Garnet.test.cluster
                 Assert.Fail(ex.Message);
             }
             return null;
+        }
+
+        public PersistencInfo GetPersistenceInfo(int nodeIndex, ILogger logger = null)
+            => GetPersistenceInfo((IPEndPoint)endpoints[nodeIndex], logger);
+
+        private PersistencInfo GetPersistenceInfo(IPEndPoint endPoint, ILogger logger = null)
+        {
+            var server = redis.GetServer(endPoint);
+            try
+            {
+                var result = server.InfoRawAsync("persistence").Result;
+                return ProcessPersistenceInfo(result);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogError(ex, "An error has occured; GetReplicationInfo");
+                Assert.Fail(ex.Message);
+            }
+            return default;
+
+            PersistencInfo ProcessPersistenceInfo(string infoSection)
+            {
+                var pinfo = new PersistencInfo();
+                var data = infoSection.Split('\n');
+                foreach (var item in data)
+                {
+                    if (item.StartsWith("CommittedBeginAddress:"))
+                    {
+                        pinfo.CommittedBeginAddress = long.Parse(item.Split(":")[1].Trim());
+                    }
+                    else if (item.StartsWith("CommittedUntilAddress:"))
+                    {
+                        pinfo.CommittedUntilAddress = long.Parse(item.Split(":")[1].Trim());
+                    }
+                    else if (item.StartsWith("FlushedUntilAddress:"))
+                    {
+                        pinfo.FlushedUntilAddress = long.Parse(item.Split(":")[1].Trim());
+                    }
+                    else if (item.StartsWith("BeginAddress:"))
+                    {
+                        pinfo.BeginAddress = long.Parse(item.Split(":")[1].Trim());
+                    }
+                    else if (item.StartsWith("TailAddress:"))
+                    {
+                        pinfo.TailAddress = long.Parse(item.Split(":")[1].Trim());
+                    }
+                    else if (item.StartsWith("SafeAofAddress:"))
+                    {
+                        pinfo.SafeAofAddress = long.Parse(item.Split(":")[1].Trim());
+                    }
+                }
+                return pinfo;
+            }
         }
 
         private static List<(ReplicationInfoItem, string)> ProcessReplicationInfo(string infoSection, ReplicationInfoItem[] infoItem)
