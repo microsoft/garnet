@@ -45,7 +45,7 @@ jobs:
           
           echo "${HELM_DOCS_SHA256}  ${FILENAME}" | sha256sum -c -
           
-          tar -xvf helm-docs_"${HELM_DOCS_VERSION}"_Linux_x86_64.tar.gz
+          tar -xvf "${FILENAME}"
           sudo mv helm-docs /usr/local/bin
 
       - name: Set helm chart appVersion from Version.props
