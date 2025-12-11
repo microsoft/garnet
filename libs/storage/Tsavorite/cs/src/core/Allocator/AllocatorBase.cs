@@ -672,7 +672,8 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long GetPhysicalAddress(long logicalAddress)
         {
-            Debug.Assert(!disposed, "GetPhysicalAddress called when disposed");
+            if (disposed)
+                throw new TsavoriteException("GetPhysicalAddress called when disposed");
 
             // Index of page within the circular buffer, and offset on the page.
             var pageIndex = GetPageIndexForAddress(logicalAddress);

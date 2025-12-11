@@ -148,6 +148,8 @@ namespace Tsavorite.core
 
                 // Issue asynchronous I/O request
                 request.id = pendingContext.id;
+
+                // Copying the key is stable; the pendingContext.request_key will remain valid until it is freed (after the callback is invoked).
                 request.request_key = pendingContext.request_key is null ? default : pendingContext.request_key.Get();
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.minAddress = pendingContext.minAddress;

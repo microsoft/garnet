@@ -586,15 +586,14 @@ namespace Garnet.test.cluster
             this.certificates = certificates;
         }
 
-        public int HashSlot(RedisKey key)
-        => redis.HashSlot(key);
+        public int HashSlot(RedisKey key) => redis.HashSlot(key);
 
         public static void BackOff(TimeSpan timeSpan = default) => Thread.Sleep(timeSpan == default ? backoff : timeSpan);
 
         public static void BackOff(CancellationToken cancellationToken, TimeSpan timeSpan = default, string msg = null)
         {
             if (cancellationToken.IsCancellationRequested)
-                ClassicAssert.Fail(msg ?? "Cancellation Requested");
+                Assert.Fail(msg ?? "Cancellation Requested");
             Thread.Sleep(timeSpan == default ? backoff : timeSpan);
         }
 

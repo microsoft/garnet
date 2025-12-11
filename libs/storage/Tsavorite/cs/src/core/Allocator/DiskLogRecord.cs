@@ -322,11 +322,12 @@ namespace Tsavorite.core
                 {
                     // We don't know this size exactly so use a small value. Either we'll fit in inline and then have to adjust if we go beyond that, or we
                     // will just allocate max here and then if we go beyond that, we'll throw the capacity-exceeded exception. This is where "estimated" comes in.
-                    estimatedRecordHeapSize += 1 << 4;
+                    estimatedRecordHeapSize += 1 << 17; // Currently 128KB, matching the processing layer's BufferSizeUtils.MaxBatchSize
                 }
 
                 estimatedTotalSize += estimatedRecordHeapSize;
 
+                // DirectCopyInlinePortionOfRecord will allocate Memory in output if needed.
                 DirectCopyInlinePortionOfRecord(in logRecord, alignedInlineRecordSize, estimatedTotalSize, maxHeapAllocationSize, memoryPool, ref output);
                 heapSize = SerializeHeapObjects(in logRecord, alignedInlineRecordSize, estimatedRecordHeapSize, valueObjectSerializer, ref output);
             }
@@ -345,7 +346,7 @@ namespace Tsavorite.core
             // See if we have enough space in the SpanByte and, if not, if we would fit in maxHeapAllocationSize.
             // For SpanByte the recordSize must include the length prefix, which is included in the output stream
             // if we can write directly to the SpanByte, which is a span in the network buffer.
-            if (!output.IsSpanByte || estimatedTotalSize > output.SpanByte.Length + sizeof(int) || logRecord.Info.ValueIsObject)
+            if (!output.IsSpanByte || estimatedTotalSize + sizeof(int) > output.SpanByte.Length || logRecord.Info.ValueIsObject)
             {
                 var allocationSizeToUse = logRecord.Info.ValueIsObject ? maxHeapAllocationSize : estimatedTotalSize + sizeof(int);
                 if (estimatedTotalSize > allocationSizeToUse)
@@ -375,6 +376,15 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Serialize any Overflow Key and Overflow or Object Value into the output after the inline record portion.
+        /// </summary>
+        /// <param name="logRecord">The log record to serialize</param>
+        /// <param name="inlineRecordSize">The size of the inline portion of the log record (which includes the space for ObjectIds, but not the object/overflow data)</param>
+        /// <param name="heapSize"></param>
+        /// <param name="valueObjectSerializer"></param>
+        /// <param name="output"></param>
+        /// <returns></returns>
         private static int SerializeHeapObjects(in LogRecord logRecord, int inlineRecordSize, int heapSize, IObjectSerializer<IHeapObject> valueObjectSerializer, ref SpanByteAndMemory output)
         {
             if (logRecord.Info.RecordIsInline)
@@ -393,8 +403,8 @@ namespace Tsavorite.core
             if (logRecord.Info.ValueIsOverflow)
             {
                 var overflow = logRecord.ValueOverflow;
-                overflow.ReadOnlySpan.CopyTo(output.Span.Slice(inlineRecordSize + (int)outputOffset));
-                outputOffset += (ulong)overflow.Length;
+                overflow.ReadOnlySpan.CopyTo(output.Span.Slice((int)outputOffset));
+                valueObjectLength = (ulong)overflow.Length;
             }
             else
             {
@@ -403,11 +413,11 @@ namespace Tsavorite.core
                     valueObjectLength = DoSerialize(logRecord.ValueObject, valueObjectSerializer, output.SpanByte.ToPointer() + outputOffset, output.Length);
                 else
                 {
-                    fixed (byte* ptr = output.MemorySpan.Slice(inlineRecordSize))
+                    fixed (byte* ptr = output.MemorySpan.Slice((int)outputOffset))
                         valueObjectLength = DoSerialize(logRecord.ValueObject, valueObjectSerializer, ptr, output.Length);
                 }
-                outputOffset += valueObjectLength;
             }
+            outputOffset += valueObjectLength;
 
             // Create a temp LogRecord over the output data so we can store the lengths in serialized format, using the offset to the serialized
             // part of the buffer as a fake file offset (implicitly for segment 0).
@@ -472,7 +482,7 @@ namespace Tsavorite.core
                 {
                     // This assignment also allocates the slot in ObjectIdMap. The RecordDataHeader length info should be unchanged from ObjectIdSize.
                     serializedLogRecord.ValueOverflow = new OverflowByteArray((int)valueLength, startOffset: 0, endOffset: 0, zeroInit: false);
-                    recordSpan.ReadOnlySpan.Slice((int)offset, (int)valueLength).CopyTo(serializedLogRecord.KeyOverflow.Span);
+                    recordSpan.ReadOnlySpan.Slice((int)offset, (int)valueLength).CopyTo(serializedLogRecord.ValueOverflow.Span);
                 }
                 else
                 {

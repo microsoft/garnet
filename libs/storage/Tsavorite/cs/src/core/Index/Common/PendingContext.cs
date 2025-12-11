@@ -87,7 +87,7 @@ namespace Tsavorite.core
             /// <inheritdoc/>
             public override string ToString()
             {
-                var keyStr = request_key is null ? SpanByte.ToShortString(request_key.Get(), 12) : "<null>";
+                var keyStr = request_key is not null ? SpanByte.ToShortString(request_key.Get(), 12) : "<null>";
                 var keyHashStr = GetHashString(keyHash);
                 return $"Type={type}, id={id}, reqKey={keyStr}, keyHash={keyHashStr}, IsSet={diskLogRecord.IsSet}, LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, MinA={minAddress}, MaxA={maxAddress}, ETag={eTag}, ReadCopyOpt={readCopyOptions}";
             }

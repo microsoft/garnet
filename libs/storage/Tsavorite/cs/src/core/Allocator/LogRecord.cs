@@ -1046,6 +1046,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Sets the lengths of Overflow Keys and Values and Object values into the disk-image copy of the log record before the main-log page is flushed.
         /// </summary>
+        /// <param name="objectLogFilePosition">The starting position of the serialized key and value data in the object log.</param>
+        /// <param name="valueObjectLength">The serialized length of the value object if it is an object and not inline or overflow. Overflow
+        ///     fields have their length known from the <see cref="OverflowByteArray.Length"/> property.</param>
         /// <remarks>
         /// IMPORTANT: This is only to be called in the disk image copy of the log record, not in the actual log record itself.
         /// </remarks>
