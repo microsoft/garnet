@@ -60,11 +60,8 @@ namespace Garnet.server
         public long GetUpdatedEtag(RespMetaCommand metaCmd, ref SessionParseState parseState, bool isInitUpdate, out bool execCmd)
         {
             execCmd = true;
-            long updatedEtag = LogRecord.NoETag;
+            var updatedEtag = this.etagState.ETag;
             long inputEtag = LogRecord.NoETag;
-
-            if (metaCmd == RespMetaCommand.None)
-                return updatedEtag;
 
             if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater or RespMetaCommand.ExecIfNotMatch)
             {

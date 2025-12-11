@@ -19,7 +19,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = input.header.IsWithEtag()
+                HasETag = input.header.metaCmd.IsEtagCommand(),
                 // No object commands take an Expiration for InitialUpdater.
             };
         }
@@ -33,7 +33,7 @@ namespace Garnet.server
                 KeySize = srcLogRecord.Key.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = input.header.IsWithEtag() || srcLogRecord.Info.HasETag,
+                HasETag = srcLogRecord.Info.HasETag,
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
         }

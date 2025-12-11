@@ -37,7 +37,7 @@ namespace Garnet.server
                     if (srcLogRecord.Info.HasETag)
                         ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
-                    var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, srcLogRecord.ETag, out _);
+                    var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, execOp: true, out _);
 
                     if (srcLogRecord.Info.HasETag)
                         ETagState.ResetState(ref functionsState.etagState);

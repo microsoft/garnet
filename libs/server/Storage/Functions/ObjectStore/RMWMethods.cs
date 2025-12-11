@@ -45,10 +45,27 @@ namespace Garnet.server
             IGarnetObject value;
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var updatedEtag = functionsState.GetUpdatedEtag(input.header.metaCmd, ref input.parseState, isInitUpdate: true, out _);
+                var updatedEtag = functionsState.GetUpdatedEtag(input.header.metaCmd, ref input.parseState, isInitUpdate: true, out var execCmd);
 
                 value = GarnetObject.Create(type);
-                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, logRecord.ETag, out _);
+
+                var oOffset = 0;
+                if (input.header.metaCmd.IsEtagCommand())
+                {
+                    var oWriter = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                    try
+                    {
+                        oWriter.WriteArrayLength(2);
+                        oWriter.WriteInt64(updatedEtag);
+                        oOffset = oWriter.GetPosition();
+                    }
+                    finally
+                    {
+                        oWriter.Dispose();
+                    }
+                }
+
+                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out _, oOffset);
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
 
                 // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
@@ -151,31 +168,42 @@ namespace Garnet.server
 
                 var operateSuccessful = true;
 
-                if (execCmd)
+                var oOffset = 0;
+                if (input.header.metaCmd.IsEtagCommand())
                 {
-                    operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, logRecord.ETag, out sizeChange);
-                    if (output.HasWrongType)
-                        return true;
-                    if (output.HasRemoveKey)
+                    var oWriter = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                    try
                     {
-                        functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
-
-                        // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
-                        functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
-                        logRecord.ClearValueIfHeap(obj => { });
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                        logRecord.RemoveETag();
-                        return false;
+                        oWriter.WriteArrayLength(2);
+                        oWriter.WriteInt64(updatedEtag);
+                        oOffset = oWriter.GetPosition();
+                    }
+                    finally
+                    {
+                        oWriter.Dispose();
                     }
                 }
 
-                var isObjectUnchanged = !execCmd || output.IsObjectUnchanged;
+                operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out sizeChange, oOffset);
+                if (output.HasWrongType)
+                    return true;
+                if (output.HasRemoveKey)
+                {
+                    functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
+
+                    // Can't access 'this' in a lambda so dispose directly and pass a no-op lambda.
+                    functionsState.storeFunctions.DisposeValueObject(logRecord.ValueObject, DisposeReason.Deleted);
+                    logRecord.ClearValueIfHeap(obj => { });
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    logRecord.RemoveETag();
+                    return false;
+                }
 
                 // Advance etag if the object was not explicitly marked as unchanged or if called with withetag and no previous etag was present.
-                if (!isObjectUnchanged && hadETagPreMutation)
+                if (execCmd && hadETagPreMutation)
                     logRecord.TrySetETag(updatedEtag);
 
-                if (!isObjectUnchanged || hadETagPreMutation)
+                if (execCmd || hadETagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
 
                 sizeInfo.AssertOptionals(logRecord.Info);
@@ -263,7 +291,7 @@ namespace Garnet.server
 
                 if (execCmd)
                 {
-                    value.Operate(ref input, ref output, functionsState.respProtocolVersion, srcLogRecord.ETag, out _);
+                    value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out _);
                     if (output.HasWrongType)
                         return true;
                     if (output.HasRemoveKey)
@@ -273,12 +301,10 @@ namespace Garnet.server
                     }
                 }
 
-                var isObjectUnchanged = !execCmd || output.IsObjectUnchanged;
+                if (execCmd || (!recordHadEtagPreMutation && inputHeaderHasEtag))
+                    dstLogRecord.TrySetETag(updatedEtag);
 
-                if (!isObjectUnchanged || (!recordHadEtagPreMutation && inputHeaderHasEtag))
-                    dstLogRecord.TrySetETag(isObjectUnchanged ? this.functionsState.etagState.ETag : updatedEtag);
-
-                if (!isObjectUnchanged || recordHadEtagPreMutation || inputHeaderHasEtag)
+                if (execCmd || recordHadEtagPreMutation || inputHeaderHasEtag)
                     ETagState.ResetState(ref functionsState.etagState);
             }
             else

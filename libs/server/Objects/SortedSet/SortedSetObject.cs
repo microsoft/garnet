@@ -320,7 +320,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                     byte respProtocolVersion, long etag, out long memorySizeChange)
+                                     byte respProtocolVersion, bool execOp, out long memorySizeChange, int outputOffset = 0)
         {
             memorySizeChange = 0;
 
@@ -338,7 +338,7 @@ namespace Garnet.server
             switch (op)
             {
                 case SortedSetOperation.ZADD:
-                    SortedSetAdd(ref input, ref output, etag, respProtocolVersion);
+                    SortedSetAdd(ref input, ref output, outputOffset, execOp, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZREM:
                     SortedSetRemove(ref input, ref output);

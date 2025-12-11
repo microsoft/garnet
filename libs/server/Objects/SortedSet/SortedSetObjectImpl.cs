@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
-
 using Limit = (int offset, int count);
 
 namespace Garnet.server
@@ -36,7 +35,7 @@ namespace Garnet.server
             InfiniteMax = 2
         }
 
-        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, long etag, byte respProtocolVersion)
+        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, int outputOffset, bool execOp, byte respProtocolVersion)
         {
             DeleteExpiredItems();
 
@@ -46,7 +45,7 @@ namespace Garnet.server
             var options = SortedSetAddOption.None;
             var currTokenIdx = 0;
 
-            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory, outputOffset);
 
             try
             {
@@ -64,6 +63,9 @@ namespace Garnet.server
                     isFirstScoreParsed = true;
                     currTokenIdx++;
                 }
+
+                if  (!execOp)
+                    continueProcessingInput = false;
 
                 if (continueProcessingInput)
                 {
@@ -155,12 +157,6 @@ namespace Garnet.server
                 if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
                 {
                     writer.WriteDoubleNumeric(incrResult);
-                }
-                else if (input.header.metaCmd.IsEtagCommand())
-                {
-                    writer.WriteArrayLength(2);
-                    writer.WriteInt64(addedOrChanged > 0 ? etag + 1 : etag);
-                    writer.WriteInt32(addedOrChanged);
                 }
                 else
                 {
