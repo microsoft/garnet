@@ -71,6 +71,34 @@ storage layer is called Tsavorite, which supports for various backing storage de
 local SSD drives and Azure Storage. It has devices optimized for Windows and Linux as well. Finally, 
 Garnet supports TLS for secure connections.
 
+## Deployment Options
+
+### Azure Cosmos DB Garnet Cache (preview)
+For production workloads, **Azure Cosmos DB Garnet Cache** provides a fully managed experience with enterprise-grade security, 
+automatic scaling, global distribution, and comprehensive monitoring. This managed service eliminates infrastructure management 
+overhead while delivering the performance advantages of Garnet. It's currently in an expanded Private Preview.
+
+**Key benefits:**
+- Fully managed infrastructure and operations
+- High availability and seamless scaling
+- Enterprise security and compliance
+- Integration with Azure monitoring and diagnostics
+
+[Get started with Azure Cosmos DB Garnet Cache →](../azure/overview.md)
+
+### Self-Hosted Garnet
+For development, research, or custom deployments, the open-source Garnet server provides complete control over your 
+infrastructure. Garnet is a research project from Microsoft Research that has been deployed by several 
+first-party and platform teams at Microsoft for many months.
+
+**Key benefits:**
+- Complete control over infrastructure
+- Customizable configurations and extensions
+- Cost-effective for development and testing
+- Direct access to latest research features
+
+[Learn about self-hosted Garnet →](../getting-started/build.md)
+
 <sub>
 Redis is a registered trademark of Redis Ltd. Any rights therein are reserved to Redis Ltd. Any use by Microsoft is for referential purposes only and does not indicate any sponsorship, endorsement or affiliation between Redis and Microsoft.
 </sub>
