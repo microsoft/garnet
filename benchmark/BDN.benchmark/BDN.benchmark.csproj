@@ -23,7 +23,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Identity" VersionOverride="1.16.0" />
     <Compile Include="..\..\main\GarnetServer\Extensions\MyDictObject.cs" Link="Custom\MyDictObject.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\MyDictSet.cs" Link="Custom\MyDictSet.cs" />
     <Compile Include="..\..\main\GarnetServer\Extensions\MyDictGet.cs" Link="Custom\MyDictGet.cs" />
