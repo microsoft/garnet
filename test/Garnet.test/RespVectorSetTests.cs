@@ -538,6 +538,10 @@ namespace Garnet.test
 
         private void InterruptedVectorSetDelete(ExceptionInjectionType faultLocation)
         {
+#if !DEBUG
+            ClassicAssert.Ignore("Relies on ExceptionInjectionHelper, disable in non-DEBUG");
+#endif
+
             var key = $"{nameof(InterruptedVectorSetDelete)}_{faultLocation}";
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -691,6 +695,10 @@ namespace Garnet.test
 
         private void InterruptedVectorSetDeleteRecovery(ExceptionInjectionType faultLocation)
         {
+#if !DEBUG
+            ClassicAssert.Ignore("Relies on ExceptionInjectionHelper, disable in non-DEBUG");
+#endif
+
             var key = $"{nameof(InterruptedVectorSetDeleteRecovery)}_{faultLocation}";
 
             // Create a partially deleted Vector Set, then take a checkpoint and shutdown
