@@ -1,24 +1,22 @@
 <Solution>
-  <Folder Name="/.azure/" />
   <Folder Name="/.azure/pipelines/">
     <File Path=".azure/pipelines/azure-pipelines-compliance-policheck.yml" />
     <File Path=".azure/pipelines/azure-pipelines-compliance.yml" />
     <File Path=".azure/pipelines/azure-pipelines-external-release.yml" />
     <File Path=".azure/pipelines/azure-pipelines-internal-release.yml" />
     <File Path=".azure/pipelines/azure-pipelines-mirror.yml" />
-    <File Path=".azure/pipelines/azure-pipelines-tsavorite-codecoverage.yml" />
-    <File Path=".azure/pipelines/azure-pipelines-tsavorite.yml" />
+    <File Path=".azure/pipelines/azure-pipelines-nightly.yml" />
+    <File Path=".azure/pipelines/azure-pipelines-performance.yml" />
     <File Path=".azure/pipelines/azure-pipelines.yml" />
     <File Path=".azure/pipelines/CodeCoverage.runsettings" />
     <File Path=".azure/pipelines/credscan-exclusion.json" />
-    <File Path="policheck-exclusion.xml" />
+    <File Path=".azure/pipelines/policheck-exclusion.xml" />
   </Folder>
   <Folder Name="/benchmark/">
     <Project Path="benchmark/BDN.benchmark/BDN.benchmark.csproj" />
     <Project Path="benchmark/Device.benchmark/Device.benchmark.csproj" />
     <Project Path="benchmark/Resp.benchmark/Resp.benchmark.csproj" />
   </Folder>
-  <Folder Name="/hosting/" />
   <Folder Name="/hosting/Windows/">
     <Project Path="hosting/Windows/Garnet.worker/Garnet.worker.csproj" />
   </Folder>

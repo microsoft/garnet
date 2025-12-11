@@ -17,7 +17,7 @@ git clone git@github.com:microsoft/garnet.git
 
 Make sure .NET 10 SDK is installed, following instructions [here](https://dotnet.microsoft.com/en-us/download). You can use either Linux or Windows; Garnet works equally well on both platforms.
 
-Go to the root folder of the repo and build using .NET CLI, or open `Garnet.slnx` and build using latest Visual Studio 2022 (17.14 at minimum, we recommend using latest Visual Studio 2026 Insiders).
+Go to the root folder of the repo and build using .NET CLI, or open `Garnet.slnx` and build using latest Visual Studio 2026 (we recommend using latest Visual Studio 2026 Insiders).
 
 ```bash
 cd garnet
