@@ -17,6 +17,8 @@ Garnet is a new remote cache-store from Microsoft Research, that offers several 
 
 This repo contains the code to build and run Garnet. For more information and documentation, check out our website at [https://microsoft.github.io/garnet](https://microsoft.github.io/garnet).
 
+**Looking for a fully managed service?** [Azure Cosmos DB Garnet Cache](https://microsoft.github.io/garnet/docs/azure/overview) provides Garnet as a fully managed, enterprise-ready caching solution with built-in high availability, performance guarantees and zero infrastructure management.
+
 ## Feature Summary
 
 Garnet implements a wide range of APIs including raw strings (e.g., gets, sets, and key expiration), analytical (e.g., HyperLogLog and Bitmap), and object (e.g., sorted sets and lists)
