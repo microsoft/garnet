@@ -129,7 +129,7 @@ az login
 az ad signed-in-user show --query id -o tsv
 ```
 
-2. Get an access token. Save this for a future step.
+2. Get an access token, and save this for a future step. Access tokens have an expiry window. Regenerate the token if it has expired. You can learn more about access tokens [here](https://docs.azure.cn/entra/identity-platform/access-tokens#token-lifetime).
 
 ```bash
 az account get-access-token --scope https://cosmos.azure.com/.default --query accessToken -o tsv
@@ -142,7 +142,7 @@ az account get-access-token --scope https://cosmos.azure.com/.default --query ac
 
     ![Find Azure Cosmos DB Garnet Cache node IP addresses](../../static/img/azure/cluster-ip-addresses.png)
 
-4. Connect to a Redis client. You can use any Redis client of your choice to connect to the cluster.  Connecting with the [Redis CLI](https://redis.io/docs/latest/develop/tools/cli/) is optional, and it provides a quick way to test data access for your cache.
+4. Connect using a Redis client. You can use any Redis client of your choice to connect to the cluster. Connecting with the [Redis CLI](https://redis.io/docs/latest/develop/tools/cli/) is optional, and it provides a quick way to test data access for your cache.
     1. [Install the Redis CLI](https://redis.io/docs/latest/develop/tools/cli/#install-redis-cli) on your machine. If you're using a Linux machine, run the following command.
 
     ```bash
