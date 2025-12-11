@@ -80,11 +80,15 @@ namespace Tsavorite.core
 
         protected CircularDiskWriteBuffer ObjectLog_OnWaitFlush()
         {
-            // GetObjectTail().HasData may be false if we have not flushed the main log (ReadOnlyAddress has not advanced).
-            store._hybridLogCheckpoint.info.snapshotStartObjectLogTail = store.hlogBase.GetObjectLogTail();
+            if (store._hybridLogCheckpoint.info.useSnapshotFile != 0)
+            {
+                // GetObjectTail().HasData may be false if we have not flushed the main log (ReadOnlyAddress has not advanced).
+                store._hybridLogCheckpoint.info.snapshotStartObjectLogTail = store.hlogBase.GetObjectLogTail();
 
-            store._hybridLogCheckpoint.objectLogFlushBuffers = store.hlogBase.CreateCircularFlushBuffers(store._hybridLogCheckpoint.snapshotFileObjectLogDevice, store.hlogBase.logger);
-            store._hybridLogCheckpoint.objectLogFlushBuffers?.InitializeOwnObjectLogFilePosition(store._hybridLogCheckpoint.snapshotFileObjectLogDevice.SegmentSize);
+                // Flush buffers are only used for Snapshot checkpoints.
+                store._hybridLogCheckpoint.objectLogFlushBuffers = store.hlogBase.CreateCircularFlushBuffers(store._hybridLogCheckpoint.snapshotFileObjectLogDevice, store.hlogBase.logger);
+                store._hybridLogCheckpoint.objectLogFlushBuffers?.InitializeOwnObjectLogFilePosition(store._hybridLogCheckpoint.snapshotFileObjectLogDevice.SegmentSize);
+            }
             return store._hybridLogCheckpoint.objectLogFlushBuffers;
         }
 
@@ -92,7 +96,9 @@ namespace Tsavorite.core
         {
             // GetObjectTail().HasData may be false if we have not flushed the main log (ReadOnlyAddress has not advanced).
             store._hybridLogCheckpoint.info.hlogEndObjectLogTail = store.hlogBase.GetObjectLogTail();
-            store._hybridLogCheckpoint.info.snapshotEndObjectLogTail = store._hybridLogCheckpoint.objectLogFlushBuffers?.filePosition ?? new();
+
+            if (store._hybridLogCheckpoint.info.useSnapshotFile != 0)
+                store._hybridLogCheckpoint.info.snapshotEndObjectLogTail = store._hybridLogCheckpoint.objectLogFlushBuffers?.filePosition ?? new();
         }
 
         /// <inheritdoc />

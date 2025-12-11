@@ -227,24 +227,33 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                if (!Info.ValueIsObject)
-                    throw new TsavoriteException("ValueObject is not valid for Span values");
-                var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
-                return objectIdMap.GetHeapObject(*(int*)dataAddress);
+                if (Info.ValueIsObject)
+                {
+                    var (_ /*valueLength*/, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                    return objectIdMap.GetHeapObject(*(int*)valueAddress);
+                }
+                throw new TsavoriteException("ValueObject is not valid for Span values");
             }
             internal set
             {
-                var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                if (Info.ValueIsObject)
+                {
+                    var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                    Debug.Assert(valueLength == ObjectIdMap.ObjectIdSize, $"valueLength {valueLength} should be ObjectIdSize {ObjectIdMap.ObjectIdSize}");
+                    *(int*)valueAddress = objectIdMap.AllocateAndSet(value);
 
-                if (!Info.ValueIsObject)
-                    throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord or Deserialization with ValueIsObject==true");
-                Debug.Assert(valueLength == ObjectIdMap.ObjectIdSize, $"valueLength {valueLength} should be ObjectIdSize {ObjectIdMap.ObjectIdSize}");
-                *(int*)valueAddress = objectIdMap.AllocateAndSet(value);
-
-                // Clear the object log file position.
-                *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()) = ObjectLogFilePositionInfo.NotSet;
+                    // Clear the object log file position.
+                    *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()) = ObjectLogFilePositionInfo.NotSet;
+                    return;
+                }
+                throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord or Deserialization with ValueIsObject==true");
             }
         }
+
+        public readonly bool ValueObjectIsSet
+            => Info.ValueIsObject
+                  ? *(int*)new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info).valueAddress != ObjectIdMap.InvalidObjectId
+                  : throw new TsavoriteException("ValueObjectIsSet is not valid for Span values");
 
         /// <summary>
         /// We track the deserialized length of an object value in the ObjectLogPosition field after deserialization is complete. This allows

@@ -29,6 +29,7 @@ namespace Tsavorite.core
                     store._hybridLogCheckpointToken = guid;
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
+                    ObjectLog_OnPrepare();
                     break;
 
                 case Phase.WAIT_FLUSH:
@@ -42,11 +43,19 @@ namespace Tsavorite.core
 
                         // Update final logical address to the flushed tail - this may not be necessary
                         store._hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;
+                        _ = ObjectLog_OnWaitFlush();
                     }
                     finally
                     {
                         store.epoch.Suspend();
                     }
+                    break;
+
+                case Phase.PERSISTENCE_CALLBACK:
+                    // Set actual FlushedUntil to the latest possible data in main log that is on disk
+                    // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
+                    ObjectLog_OnPersistenceCallback();
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     break;
 
                 default:
