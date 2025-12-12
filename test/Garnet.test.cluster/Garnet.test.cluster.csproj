@@ -56,4 +56,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+	<PropertyGroup>
+		<!-- Nuget package used by Allure.NUnit that fails to build using .NET Core. This package is only needed if use attribute-based steps (the [AllureStep] attribute)   -->
+		<AspectInjector_Enabled>false</AspectInjector_Enabled>
+	</PropertyGroup>
 </Project>
