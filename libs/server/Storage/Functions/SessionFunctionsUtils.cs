@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+using System.Diagnostics;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -85,6 +87,67 @@ namespace Garnet.server
                 default:
                     throw new GarnetException($"{nameof(EvaluateExpire)} exception when HasExpiration is false. optionType: {optionType}");
             }
+        }
+
+        /// <summary>
+        /// Determine whether a modified log record should have an etag
+        /// </summary>
+        /// <param name="currEtag">Source record etag</param>
+        /// <param name="metaCmd">Input meta command</param>
+        /// <param name="parseState">Input parse state</param>
+        /// <returns>True if destination record should have an etag</returns>
+        internal static bool CheckModifiedRecordHasEtag(long currEtag, RespMetaCommand metaCmd, ref SessionParseState parseState)
+        {
+            // Source record has an etag or meta command is not a conditional execution etag command - destination record will have an etag
+            if (currEtag != LogRecord.NoETag || (metaCmd.IsEtagCommand() && !metaCmd.IsEtagCondExecCommand()))
+                return true;
+
+            // Source record does not have an etag and the current meta command is not an etag command - the destination record will not have an etag
+            if (!metaCmd.IsEtagCommand())
+                return false;
+
+            // Current meta command is a conditional execution etag command - check the condition to determine etag addition to the destination record
+            Debug.Assert(metaCmd.IsEtagCondExecCommand());
+            var inputEtag = parseState.GetLong(0, isMetaArg: true);
+
+            return metaCmd.CheckConditionalExecution(currEtag, inputEtag);
+        }
+
+        /// <summary>
+        /// Get the updated etag value for a log record
+        /// </summary>
+        /// <param name="currEtag">Current etag</param>
+        /// <param name="metaCmd">Input meta command</param>
+        /// <param name="parseState">Input parse state</param>
+        /// <param name="isInitUpdate">True if called from <see cref="ISessionFunctions{TInput,TOutput,TContext}.InitialUpdater"/></param>
+        /// <param name="execCmd">Execute command</param>
+        /// <returns>Updated etag</returns>
+        public static long GetUpdatedEtag(long currEtag, RespMetaCommand metaCmd, ref SessionParseState parseState, bool isInitUpdate, out bool execCmd)
+        {
+            execCmd = true;
+            var updatedEtag = currEtag;
+            long inputEtag = LogRecord.NoETag;
+
+            if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater or RespMetaCommand.ExecIfNotMatch)
+            {
+                inputEtag = parseState.GetLong(0, isMetaArg: true);
+
+                if (!isInitUpdate)
+                    execCmd = metaCmd.CheckConditionalExecution(currEtag, inputEtag);
+            }
+
+            if (execCmd)
+            {
+                updatedEtag = metaCmd switch
+                {
+                    RespMetaCommand.None or RespMetaCommand.ExecWithEtag => currEtag + 1,
+                    RespMetaCommand.ExecIfMatch => inputEtag + 1,
+                    RespMetaCommand.ExecIfGreater => inputEtag,
+                    _ => throw new ArgumentException($"Unexpected meta command: {metaCmd}", nameof(metaCmd)),
+                };
+            }
+
+            return updatedEtag;
         }
     }
 }

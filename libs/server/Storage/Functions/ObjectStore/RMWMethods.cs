@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using static Garnet.server.SessionFunctionsUtils;
 
 namespace Garnet.server
 {
@@ -47,7 +48,7 @@ namespace Garnet.server
             {
                 value = GarnetObject.Create(type);
 
-                var updatedEtag = GetUpdatedEtagAndHandleMetaCommand(ref input, ref output, out var execCmd, out var outputOffset);
+                var updatedEtag = GetUpdatedEtagAndHandleMetaCommand(LogRecord.NoETag, ref input, ref output, isInitUpdate: true, out var execCmd, out var outputOffset);
 
                 _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out _, outputOffset);
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
@@ -148,7 +149,7 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var updatedEtag = GetUpdatedEtagAndHandleMetaCommand(ref input, ref output, out var execCmd, out var outputOffset);
+                var updatedEtag = GetUpdatedEtagAndHandleMetaCommand(logRecord.ETag, ref input, ref output, isInitUpdate: false, out var execCmd, out var outputOffset);
 
                 var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out sizeChange, outputOffset);
                 if (output.HasWrongType)
@@ -253,7 +254,7 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var updatedEtag = GetUpdatedEtagAndHandleMetaCommand(ref input, ref output, out var execCmd, out var outputOffset);
+                var updatedEtag = GetUpdatedEtagAndHandleMetaCommand(srcLogRecord.ETag, ref input, ref output, isInitUpdate:false, out var execCmd, out var outputOffset);
 
                 value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out _, outputOffset);
                 if (output.HasWrongType)
@@ -305,12 +306,12 @@ namespace Garnet.server
             return true;
         }
 
-        private long GetUpdatedEtagAndHandleMetaCommand(ref ObjectInput input, ref ObjectOutput output, out bool execCmd, out int outputOffset)
+        private long GetUpdatedEtagAndHandleMetaCommand(long currEtag, ref ObjectInput input, ref ObjectOutput output, bool isInitUpdate, out bool execCmd, out int outputOffset)
         {
             outputOffset = 0;
 
             // Get the updated etag
-            var updatedEtag = functionsState.GetUpdatedEtag(input.header.metaCmd, ref input.parseState, isInitUpdate: true, out execCmd);
+            var updatedEtag = GetUpdatedEtag(currEtag, input.header.metaCmd, ref input.parseState, isInitUpdate: isInitUpdate, out execCmd);
 
             // Write the updated etag to the output if needed
             if (input.header.metaCmd.IsEtagCommand())

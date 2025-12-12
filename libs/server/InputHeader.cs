@@ -91,8 +91,32 @@ namespace Garnet.server
         public static bool IsEtagCommand(this RespMetaCommand metaCmd)
             => metaCmd is >= RespMetaCommand.ExecWithEtag and <= RespMetaCommand.ExecIfGreater;
 
+        /// <summary>
+        /// Check if meta command is an etag-related conditional execution meta-command
+        /// </summary>
+        /// <param name="metaCmd">Meta command</param>
+        /// <returns>True if etag meta-command</returns>
         public static bool IsEtagCondExecCommand(this RespMetaCommand metaCmd)
-        => metaCmd is >= RespMetaCommand.ExecIfMatch and <= RespMetaCommand.ExecIfGreater;
+            => metaCmd is >= RespMetaCommand.ExecIfMatch and <= RespMetaCommand.ExecIfGreater;
+
+        /// <summary>
+        /// Check conditional execution of command based on meta-command
+        /// </summary>
+        /// <param name="metaCmd">Meta command</param>
+        /// <param name="currEtag">Current etag record</param>
+        /// <param name="compEtag">Etag comparand</param>
+        /// <returns>True if command should execute</returns>
+        public static bool CheckConditionalExecution(this RespMetaCommand metaCmd, long currEtag, long compEtag)
+        {
+            var comparisonResult = compEtag.CompareTo(currEtag);
+            return metaCmd switch
+            {
+                RespMetaCommand.ExecIfMatch => comparisonResult == 0,
+                RespMetaCommand.ExecIfNotMatch => comparisonResult != 0,
+                RespMetaCommand.ExecIfGreater => comparisonResult == 1,
+                _ => throw new ArgumentException($"Unexpected meta command: {metaCmd}", nameof(metaCmd)),
+            };
+        }
     }
 
     /// <summary>
