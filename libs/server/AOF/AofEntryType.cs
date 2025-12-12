@@ -78,17 +78,6 @@ namespace Garnet.server
         /// Flush db
         /// </summary>
         FlushDb = 0x61,
-
-        #region Deprecated markers
-        /// <summary>
-        /// Deprecated with unified checkpointing: Checkpoint for object store start
-        /// </summary>
-        ObjectStoreCheckpointStartCommit = 0x31,
-        /// <summary>
-        /// Deprecated with unified checkpointing: Checkpoint for object store end
-        /// </summary>
-        ObjectStoreCheckpointEndCommit = 0x33,
-        #endregion
     }
 
     internal enum AofStoreType : byte

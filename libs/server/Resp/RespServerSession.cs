@@ -144,7 +144,6 @@ namespace Garnet.server
             }
         }
 
-
         // Track whether the incoming network batch contains slow commands that should not be counter in NET_RS histogram
         bool containsSlowCommand;
 
