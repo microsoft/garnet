@@ -40,7 +40,7 @@ namespace AofExplorer
             {
                 var serverOptions = new GarnetServerOptions
                 {
-                    AofSublogCount = 2,
+                    AofPhysicalSublogCount = 2,
                     EnableAOF = true,
                     CheckpointDir = opts.AofDir,
                     CommitFrequencyMs = -1,

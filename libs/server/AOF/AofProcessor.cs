@@ -68,7 +68,7 @@ namespace Garnet.server
             var replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
 
             this.activeDbId = 0;
-            this.respServerSessions = [ .. Enumerable.Range(0, storeWrapper.serverOptions.AofSublogCount).Select(
+            this.respServerSessions = [ .. Enumerable.Range(0, storeWrapper.serverOptions.AofVirtualSublogCount).Select(
                     _ => new RespServerSession(
                         0,
                         networkSender: null,
@@ -81,7 +81,7 @@ namespace Garnet.server
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
 
-            aofReplayCoordinator = new AofReplayCoordinator(this, logger);
+            aofReplayCoordinator = new AofReplayCoordinator(storeWrapper.serverOptions, this, logger);
             this.logger = logger;
         }
 
@@ -114,17 +114,17 @@ namespace Garnet.server
             var total_number_of_replayed_records = 0L;
             try
             {
-                storeWrapper.appendOnlyFile.CreateOrUpdateTimestampManager();
+                storeWrapper.appendOnlyFile.CreateOrUpdateKeySequenceManager();
                 logger?.LogInformation("Begin AOF recovery for DB ID: {id}", db.Id);
                 return RecoverReplay(db, untilAddress);
             }
             finally
             {
-                storeWrapper.appendOnlyFile.ResetSeqNumberGen();
+                storeWrapper.appendOnlyFile.ResetSequenceNumberGenerator();
                 var seconds = swatch.ElapsedMilliseconds / 1000.0;
                 var aofSize = db.AppendOnlyFile.TotalSize();
                 var recordsPerSec = total_number_of_replayed_records / seconds;
-                var GiBperSecs = (aofSize / seconds) / (double)1_000_000_000;
+                var GiBperSecs = aofSize / seconds / 1_000_000_000;
 
                 logger?.LogInformation("AOF Recovery in {seconds} secs", seconds);
                 logger?.LogInformation("Total number of replayed records {total_number_of_replayed_records:N0} bytes", total_number_of_replayed_records);
@@ -198,7 +198,7 @@ namespace Garnet.server
                         respServerSession.Dispose();
                 }
 
-                return AofAddress.Create(storeWrapper.serverOptions.AofSublogCount, -1);
+                return AofAddress.Create(storeWrapper.serverOptions.AofPhysicalSublogCount, -1);
             }
         }
 
@@ -218,7 +218,7 @@ namespace Garnet.server
             var shardedHeader = default(AofShardedHeader);
             var replayContext = aofReplayCoordinator.GetReplayContext(sublogIdx);
             isCheckpointStart = false;
-            var shardedLog = storeWrapper.serverOptions.AofSublogCount > 1;
+            var shardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1;
 
             // Handle transactions
             if (aofReplayCoordinator.AddOrReplayTransactionOperation(sublogIdx, ptr, length, asReplica))
@@ -378,7 +378,7 @@ namespace Garnet.server
 
             var bufferPtr = (byte*)Unsafe.AsPointer(ref replayContext.objectOutputBuffer[0]);
             var bufferLength = replayContext.objectOutputBuffer.Length;
-            var isSharded = storeWrapper.serverOptions.AofSublogCount > 1;
+            var isSharded = storeWrapper.serverOptions.AofPhysicalSublogCount > 1;
             var updateKey = true;
             switch (header.opType)
             {
@@ -451,7 +451,7 @@ namespace Garnet.server
 
         void UpdateKeySequenceNumber(int sublogIdx, byte* ptr)
         {
-            Debug.Assert(storeWrapper.serverOptions.AofSublogCount > 1);
+            Debug.Assert(storeWrapper.serverOptions.AofPhysicalSublogCount > 1);
             var shardedHeader = *(AofShardedHeader*)ptr;
             var curr = ptr + sizeof(AofShardedHeader);
             var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);

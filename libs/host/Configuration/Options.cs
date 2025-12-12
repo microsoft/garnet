@@ -195,8 +195,8 @@ namespace Garnet
         public string AofPageSize { get; set; }
 
         [IntRangeValidation(1, 64)]
-        [Option("aof-sublog-count", Required = false, HelpText = "Number of AOF sublogs (=1 default single log, >1: multi-log).")]
-        public int AofSublogCount { get; set; }
+        [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs used (=1 default single physical log, >1: many physical sublogs.")]
+        public int AofPhysicalSublogCount { get; set; }
 
         [IntRangeValidation(1, 64)]
         [Option("aof-replay-subtask-count", Required = false, HelpText = "Number of logical replay tasks per sublog at replica.")]
@@ -809,7 +809,7 @@ namespace Garnet
                 LuaTransactionMode = LuaTransactionMode.GetValueOrDefault(),
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
-                AofSublogCount = AofSublogCount,
+                AofPhysicalSublogCount = AofPhysicalSublogCount,
                 AofReplaySubtaskCount = AofReplaySubtaskCount,
                 AofRefreshSublogTailFrequencyMs = AofRefreshSublogTailFrequencyMs,
                 AofReplicationRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,

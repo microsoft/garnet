@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -36,10 +35,10 @@ namespace Garnet.server
         {
             Log = new(serverOptions, logSettings, logger);
             this.serverOptions = serverOptions;
-            InvalidAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: -1);
-            MaxAofAddress = AofAddress.Create(length: serverOptions.AofSublogCount, value: long.MaxValue);
-            CreateOrUpdateTimestampManager();
-            if (serverOptions.AofSublogCount > 1)
+            InvalidAofAddress = AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1);
+            MaxAofAddress = AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: long.MaxValue);
+            CreateOrUpdateKeySequenceManager();
+            if (!serverOptions.MultiLogEnabled)
                 seqNumGen = new SequenceNumberGenerator(0);
             this.logger = logger;
         }
@@ -53,33 +52,24 @@ namespace Garnet.server
         /// Create or update existing timestamp manager
         /// NOTE: We need to create a new version for consistency manager in order for running sessions to update their context on the next read
         /// </summary>
-        public void CreateOrUpdateTimestampManager()
+        public void CreateOrUpdateKeySequenceManager()
         {
             // Create manager only if sharded log is enabled
-            if (Log.Size == 1) return;
+            if (!serverOptions.MultiLogEnabled) return;
             var currentVersion = replicaReadConsistencyManager?.CurrentVersion ?? 0L;
             var _replayTimestampManager = new ReplicaReadConsistencyManager(currentVersion + 1, this, serverOptions, logger);
             _ = Interlocked.CompareExchange(ref replicaReadConsistencyManager, _replayTimestampManager, replicaReadConsistencyManager);
         }
 
         /// <summary>
-        /// Implements read protocol for consistent reads when sharded-log AOF is used
+        /// Reset sequence number generator
         /// </summary>
-        /// <param name="replicaReadSessionContext"></param>
-        /// <param name="parseState"></param>
-        /// <param name="csvi"></param>
-        /// <param name="readSessionWaiter"></param>
-        public void MultiKeyConsistentRead(ref ReplicaReadSessionContext replicaReadSessionContext, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ReadSessionWaiter readSessionWaiter)
-            => replicaReadConsistencyManager.MultiKeyConsistentRead(ref replicaReadSessionContext, ref parseState, ref csvi, readSessionWaiter);
-
-        /// <summary>
-        /// Implements read protocol for consistent reads when sharded-log AOF is used
-        /// </summary>
-        /// <param name="keys"></param>
-        /// <param name="replicaReadSessionContext"></param>
-        /// <param name="readSessionWaiter"></param>
-        public void MultiKeyConsistentRead(List<byte[]> keys, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
-            => replicaReadConsistencyManager.MultiKeyConsistentRead(keys, ref replicaReadSessionContext, readSessionWaiter);
+        public void ResetSequenceNumberGenerator()
+        {
+            var start = replicaReadConsistencyManager.GetMaximumSequenceNumber();
+            var newSeqNumGen = new SequenceNumberGenerator(start);
+            _ = Interlocked.CompareExchange(ref seqNumGen, newSeqNumGen, seqNumGen);
+        }
 
         /// <summary>
         /// Invoke the prepare phase of the consistent read protocol
@@ -96,16 +86,6 @@ namespace Garnet.server
         /// <param name="replicaReadSessionContext"></param>
         public void ConsistentReadSequenceNumberUpdate(ref ReplicaReadSessionContext replicaReadSessionContext)
             => replicaReadConsistencyManager.ConsistentReadSequenceNumberUpdate(ref replicaReadSessionContext);
-
-        /// <summary>
-        /// Reset sequence number generator
-        /// </summary>
-        public void ResetSeqNumberGen()
-        {
-            var start = replicaReadConsistencyManager.GetMaximumSequenceNumber();
-            var newSeqNumGen = new SequenceNumberGenerator(start);
-            _ = Interlocked.CompareExchange(ref seqNumGen, newSeqNumGen, seqNumGen);
-        }
 
         /// <summary>
         /// Set log shift tail callbacks
@@ -148,7 +128,7 @@ namespace Garnet.server
             ref AofAddress checkpointAofBeginAddress)
         {
             var replayAOFMap = 0UL;
-            for (var sublogIdx = 0; sublogIdx < serverOptions.AofSublogCount; sublogIdx++)
+            for (var sublogIdx = 0; sublogIdx < serverOptions.AofPhysicalSublogCount; sublogIdx++)
                 ComputeAofSubloSyncReplayAddress(sublogIdx, ref replayAOFMap, recoverFromRemote, sameMainStoreCheckpointHistory, sameHistory2, replicationOffset2, replicaAofBeginAddress, replicaAofTailAddress, beginAddress, ref checkpointAofBeginAddress);
 
             return replayAOFMap;

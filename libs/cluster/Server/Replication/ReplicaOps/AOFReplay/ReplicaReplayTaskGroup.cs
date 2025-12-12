@@ -33,12 +33,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Replay task instances per sublog (used with ShardedLog)
         /// </summary>
-        readonly ReplicaReplayDriver[] replicaReplayDrivers = new ReplicaReplayDriver[clusterProvider.serverOptions.AofSublogCount];
+        readonly ReplicaReplayDriver[] replicaReplayDrivers = new ReplicaReplayDriver[clusterProvider.serverOptions.AofPhysicalSublogCount];
 
         /// <summary>
         /// Replay barrier used to coordinate connection of replay tasks
         /// </summary>
-        readonly Barrier barrier = new(clusterProvider.serverOptions.AofSublogCount);
+        readonly Barrier barrier = new(clusterProvider.serverOptions.AofPhysicalSublogCount);
 
         /// <summary>
         /// Disposed lock

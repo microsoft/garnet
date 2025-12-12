@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -900,8 +901,9 @@ namespace Garnet.server
         /// Check whether to perform consistent read
         /// </summary>
         /// <returns></returns>
-        public bool PerformConsistentRead()
-            => serverOptions.EnableCluster && serverOptions.EnableAOF && serverOptions.AofSublogCount > 1 && clusterProvider.IsReplica();
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool EnforceConsistentRead()
+            => serverOptions.EnableCluster && serverOptions.EnableAOF && serverOptions.MultiLogEnabled && clusterProvider.IsReplica();
 
         /// <summary>
         /// Dispose

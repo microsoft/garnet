@@ -42,7 +42,7 @@ namespace Garnet.cluster
                     return false;
 
                 // Create or update timestamp manager for sharded log if needed
-                storeWrapper.appendOnlyFile.CreateOrUpdateTimestampManager();
+                storeWrapper.appendOnlyFile.CreateOrUpdateKeySequenceManager();
 
                 // Wait for threads to agree
                 session?.UnsafeBumpAndWaitForEpochTransition();
@@ -342,7 +342,7 @@ namespace Garnet.cluster
             {
                 logger?.LogError(ex, $"{nameof(TryReplicaDiskbasedRecovery)}");
                 errorMessage = Encoding.ASCII.GetBytes(ex.Message);
-                return AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, -1);
+                return AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, -1);
             }
             finally
             {

@@ -338,8 +338,8 @@ namespace Garnet
             var defaultNamingScheme = new DefaultCheckpointNamingScheme(baseName);
 
             kvSettings.CheckpointManager = opts.EnableCluster ?
-                clusterFactory.CreateCheckpointManager(opts.AofSublogCount, opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
-                new GarnetCheckpointManager(opts.AofSublogCount, opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
+                clusterFactory.CreateCheckpointManager(opts.AofPhysicalSublogCount, opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
+                new GarnetCheckpointManager(opts.AofPhysicalSublogCount, opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
             var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings
                 , Tsavorite.core.StoreFunctions.Create(new SpanByteComparer(),

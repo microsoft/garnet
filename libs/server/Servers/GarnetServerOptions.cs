@@ -84,7 +84,7 @@ namespace Garnet.server
         /// <summary>
         /// Number of AOF sublogs (=1 default single log, >1: multi-log)
         /// </summary>
-        public int AofSublogCount = 1;
+        public int AofPhysicalSublogCount = 1;
 
         /// <summary>
         /// Number of replica replay tasks
@@ -745,9 +745,9 @@ namespace Garnet.server
         /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
         public void GetAofSettings(int dbId, out TsavoriteLogSettings[] tsavoriteLogSettings)
         {
-            tsavoriteLogSettings = new TsavoriteLogSettings[AofSublogCount];
+            tsavoriteLogSettings = new TsavoriteLogSettings[AofPhysicalSublogCount];
 
-            for (var i = 0; i < AofSublogCount; i++)
+            for (var i = 0; i < AofPhysicalSublogCount; i++)
             {
 
                 tsavoriteLogSettings[i] = new TsavoriteLogSettings
@@ -855,5 +855,18 @@ namespace Garnet.server
                     .Get(new FileDescriptor(GetAppendOnlyFileDirectoryName(dbId), $"aof.{subLogIdx}.log"));
             }
         }
+
+        /// <summary>
+        /// Check if multi-log is enabled
+        /// </summary>
+        /// <returns></returns>
+        public bool MultiLogEnabled
+            => AofPhysicalSublogCount > 1 || AofReplaySubtaskCount > 1;
+
+        /// <summary>
+        /// Number of virtual sublogs expected
+        /// </summary>
+        public int AofVirtualSublogCount
+            => AofPhysicalSublogCount * AofReplaySubtaskCount;
     }
 }

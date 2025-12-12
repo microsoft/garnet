@@ -15,9 +15,9 @@ namespace Garnet.server
     public class GarnetLog(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
     {
         readonly int subtaskReplayCount = serverOptions.AofReplaySubtaskCount;
-        readonly int aofSublogCount = serverOptions.AofSublogCount;
-        readonly SingleLog singleLog = serverOptions.AofSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
-        readonly ShardedLog shardedLog = serverOptions.AofSublogCount > 1 ? new ShardedLog(serverOptions.AofSublogCount, logSettings, logger) : null;
+        readonly int aofSublogCount = serverOptions.AofPhysicalSublogCount;
+        readonly SingleLog singleLog = serverOptions.AofPhysicalSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
+        readonly ShardedLog shardedLog = serverOptions.AofPhysicalSublogCount > 1 ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger) : null;
 
         public TsavoriteLog SigleLog => singleLog.log;
 
@@ -337,9 +337,9 @@ namespace Garnet.server
         internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
-            var (_sublogIdx, _subtaskId) = HashKey(key);
-            shardedHeader.keyDigest = (byte)_subtaskId;
-            shardedLog.sublog[_sublogIdx].Enqueue(
+            var (sublogIdx, keyDigest) = HashKey(key);
+            shardedHeader.keyDigest = (byte)keyDigest;
+            shardedLog.sublog[sublogIdx].Enqueue(
                 shardedHeader,
                 key,
                 value,
@@ -350,9 +350,9 @@ namespace Garnet.server
         internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
-            var (_sublogIdx, _subtaskId) = HashKey(key);
-            shardedHeader.keyDigest = (byte)_subtaskId;
-            shardedLog.sublog[_sublogIdx].Enqueue(
+            var (sublogIdx, keyDigest) = HashKey(key);
+            shardedHeader.keyDigest = (byte)keyDigest;
+            shardedLog.sublog[sublogIdx].Enqueue(
                 shardedHeader,
                 key,
                 ref input,
@@ -361,9 +361,9 @@ namespace Garnet.server
 
         internal void Enqueue(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out long logicalAddress)
         {
-            var (_sublogIdx, _subtaskId) = HashKey(key);
-            shardedHeader.keyDigest = (byte)_subtaskId;
-            shardedLog.sublog[_sublogIdx].Enqueue(
+            var (sublogIdx, keyDigest) = HashKey(key);
+            shardedHeader.keyDigest = (byte)keyDigest;
+            shardedLog.sublog[sublogIdx].Enqueue(
                 shardedHeader,
                 key,
                 value,

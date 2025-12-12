@@ -35,7 +35,7 @@ namespace Resp.benchmark
                 AofMemorySize = options.AofMemorySize,
                 AofPageSize = options.AofPageSize,
                 CommitFrequencyMs = options.CommitFrequencyMs,
-                AofSublogCount = options.AofSublogCount,
+                AofPhysicalSublogCount = options.AofSublogCount,
                 ReplicationOffsetMaxLag = 0,
                 CheckpointDir = OperatingSystem.IsLinux() ? "/tmp" : null
             };

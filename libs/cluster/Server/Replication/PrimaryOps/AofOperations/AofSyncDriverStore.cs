@@ -65,14 +65,14 @@ namespace Garnet.cluster
                 TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetReadOnlyAddressLagOffset() - 2 * logPageSize;
                 if (clusterProvider.serverOptions.FastAofTruncate)
                 {
-                    for (var i = 0; i < clusterProvider.serverOptions.AofSublogCount; i++)
+                    for (var i = 0; i < clusterProvider.serverOptions.AofPhysicalSublogCount; i++)
                     {
                         var logShiftTailCallback = new LogShiftTailCallback(i, this);
                         clusterProvider.storeWrapper.appendOnlyFile.SetLogShiftTailCallback(i, logShiftTailCallback.SafeTailShiftCallback);
                     }
                 }
             }
-            TruncatedUntil = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, 0);
+            TruncatedUntil = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, 0);
         }
 
         /// <summary>

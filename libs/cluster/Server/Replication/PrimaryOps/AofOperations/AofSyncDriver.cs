@@ -87,7 +87,7 @@ namespace Garnet.cluster
             cts = new();
             this.logger = logger;
 
-            aofSyncTasks = new AofSyncTask[clusterProvider.serverOptions.AofSublogCount];
+            aofSyncTasks = new AofSyncTask[clusterProvider.serverOptions.AofPhysicalSublogCount];
             for (var sublogIdx = 0; sublogIdx < aofSyncTasks.Length; sublogIdx++)
                 aofSyncTasks[sublogIdx] = new AofSyncTask(clusterProvider, sublogIdx, endPoint, startAddress[sublogIdx], localNodeId, remoteNodeId, cts, logger);
         }
@@ -132,8 +132,8 @@ namespace Garnet.cluster
             {
                 var tasks = new List<Task>();
 
-                // Only add RefreshSublogTail task when using ShardedLog
-                if (aofSyncTasks.Length > 1)
+                // Add refresh sublog task only when using more than 1 physical sublog
+                if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1)
                     tasks.Add(RefreshSublogTail());
 
                 for (var i = 0; i < aofSyncTasks.Length; i++)

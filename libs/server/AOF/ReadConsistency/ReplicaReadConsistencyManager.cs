@@ -23,20 +23,21 @@ namespace Garnet.server
     ///     read k1 (at t3 because s1 has replayed until k3)
     ///     read k2 (at t2 have to wait because reading k1 established that we are in t3 though no updates have arrived for k1 by t3)
     /// </summary>
-    /// <param name="nextVersion"></param>
+    /// <param name="currentVersion"></param>
     /// <param name="appendOnlyFile"></param>
     /// <param name="serverOptions"></param>
     /// <param name="logger"></param>
-    public class ReplicaReadConsistencyManager(long nextVersion, GarnetAppendOnlyFile appendOnlyFile, GarnetServerOptions serverOptions, ILogger logger = null)
+    public class ReplicaReadConsistencyManager(long currentVersion, GarnetAppendOnlyFile appendOnlyFile, GarnetServerOptions serverOptions, ILogger logger = null)
     {
-        public long CurrentVersion { get; private set; } = nextVersion;
+        public long CurrentVersion { get; private set; } = currentVersion;
         public const int KeyOffsetCount = (1 << 15) + 1;
         const int SublogMaxKeySequenceNumberOffset = KeyOffsetCount - 1;
         readonly GarnetAppendOnlyFile appendOnlyFile = appendOnlyFile;
         readonly GarnetServerOptions serverOptions = serverOptions;
         readonly ILogger logger = logger;
 
-        long[][] activeSequenceNumbers = InitializeTimestamps(appendOnlyFile.Log.Size, KeyOffsetCount);
+        readonly long[][] activeSequenceNumbers = InitializeTimestamps(serverOptions.AofVirtualSublogCount, KeyOffsetCount);
+        readonly ConcurrentQueue<ReadSessionWaiter>[] waitQs = InitializeWaitQs(serverOptions.AofVirtualSublogCount);
 
         /// <summary>
         /// Get snapshot of maximum replayed timestamp for all sublogs
@@ -57,15 +58,13 @@ namespace Garnet.server
                 throw new InvalidOperationException($"Size ({KeyOffsetCount - 1}) must be a power of 2");
         }
 
-        ConcurrentQueue<ReadSessionWaiter>[] waitQs = InitializeWaitQs(appendOnlyFile.Log.Size);
+        static ConcurrentQueue<ReadSessionWaiter>[] InitializeWaitQs(int virtualSublogCount)
+            => [.. Enumerable.Range(0, virtualSublogCount).Select(_ => new ConcurrentQueue<ReadSessionWaiter>())];
 
-        static ConcurrentQueue<ReadSessionWaiter>[] InitializeWaitQs(int aofSublogCount)
-            => [.. Enumerable.Range(0, aofSublogCount).Select(_ => new ConcurrentQueue<ReadSessionWaiter>())];
-
-        private static long[][] InitializeTimestamps(int aofSublogCount, int size)
-            => [.. Enumerable.Range(0, aofSublogCount).Select(_ =>
+        static long[][] InitializeTimestamps(int virtualSublogCount, int keyCount)
+            => [.. Enumerable.Range(0, virtualSublogCount).Select(_ =>
             {
-                var array = GC.AllocateArray<long>(size, pinned: true);
+                var array = GC.AllocateArray<long>(keyCount, pinned: true);
                 Array.Clear(array);
                 return array;
             })];
@@ -159,95 +158,6 @@ namespace Garnet.server
             // Re-insert any waiters that have not been released yet
             foreach (var waiter in waiterList)
                 waitQs[sublogIdx].Enqueue(waiter);
-        }
-
-        /// <summary>
-        /// Ensure consistent read protocol for network command
-        /// NOTE: Reading and validating one key at a time is not transactional
-        /// but it is ok since it is no worse than what we currently support (i.e. MGET)
-        /// </summary>
-        /// <param name="replicaReadSessionContext"></param>
-        /// <param name="parseState"></param>
-        /// <param name="csvi"></param>
-        public void MultiKeyConsistentRead(ref ReplicaReadSessionContext replicaReadSessionContext, ref SessionParseState parseState, ref ClusterSlotVerificationInput csvi, ReadSessionWaiter readSessionWaiter)
-        {
-            // If first time calling or version has been bumped reset read context
-            // NOTE: version changes every time replica is reset and a attached to a new primary
-            if (replicaReadSessionContext.sessionVersion == -1 || replicaReadSessionContext.sessionVersion != CurrentVersion)
-            {
-                replicaReadSessionContext.sessionVersion = CurrentVersion;
-                replicaReadSessionContext.lastSublogIdx = -1;
-                replicaReadSessionContext.maximumSessionSequenceNumber = 0;
-            }
-
-            for (var i = csvi.firstKey; i < csvi.lastKey; i += csvi.step)
-            {
-                var key = parseState.GetArgSliceByRef(i).Span;
-                ConsistentReadKey(key, ref replicaReadSessionContext, readSessionWaiter);
-            }
-        }
-
-        /// <summary>
-        /// Enforce consistent read protocol for key batch
-        /// NOTE: Reading and validating one key at a time is not transactional
-        /// but it is ok since it is no worse than what we currently support (i.e. MGET)
-        /// </summary>
-        /// <param name="keys"></param>
-        /// <param name="replicaReadSessionContext"></param>
-        /// <param name="readSessionWaiter"></param>
-        public void MultiKeyConsistentRead(List<byte[]> keys, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
-        {
-            for (var i = 0; i < keys.Count; i++)
-                ConsistentReadKey(keys[i].AsSpan(), ref replicaReadSessionContext, readSessionWaiter);
-        }
-
-        /// <summary>
-        /// Consistent read protocol implementation
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="replicaReadSessionContext"></param>
-        /// <param name="readSessionWaiter"></param>
-        public void ConsistentReadKey(Span<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
-        {
-            appendOnlyFile.Log.HashKey(key, out _, out var sublogIdx, out var keyOffset);
-
-            // If first time calling or version has been bumped reset read context
-            // NOTE: version changes every time replica is reset and a attached to a new primary
-            if (replicaReadSessionContext.sessionVersion == -1 || replicaReadSessionContext.sessionVersion != CurrentVersion)
-            {
-                replicaReadSessionContext.sessionVersion = CurrentVersion;
-                replicaReadSessionContext.lastSublogIdx = -1;
-                replicaReadSessionContext.maximumSessionSequenceNumber = 0;
-            }
-
-            // If first read initialize context
-            if (replicaReadSessionContext.lastSublogIdx == -1)
-            {
-                replicaReadSessionContext.lastSublogIdx = sublogIdx;
-                replicaReadSessionContext.maximumSessionSequenceNumber = GetKeySequenceNumber(sublogIdx, keyOffset);
-                return;
-            }
-
-            // Here we have to wait for replay to catch up
-            // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
-            if (replicaReadSessionContext.lastSublogIdx != sublogIdx && replicaReadSessionContext.maximumSessionSequenceNumber > GetFrontierSequenceNumber(sublogIdx, keyOffset))
-            {
-                // Before adding to the waitQ set timestamp and reader associated information
-                readSessionWaiter.waitForTimestamp = replicaReadSessionContext.maximumSessionSequenceNumber;
-                readSessionWaiter.sublogIdx = (byte)sublogIdx;
-                readSessionWaiter.keyOffset = keyOffset;
-
-                // Enqueue waiter and wait
-                waitQs[sublogIdx].Enqueue(readSessionWaiter);
-                readSessionWaiter.Wait(serverOptions.ReplicaSyncTimeout);
-
-                // Reset waiter for next iteration
-                readSessionWaiter.Reset();
-            }
-
-            // If timestamp of current key is after maximum timestamp we can safely read the key
-            replicaReadSessionContext.lastSublogIdx = sublogIdx;
-            replicaReadSessionContext.maximumSessionSequenceNumber = Math.Max(replicaReadSessionContext.maximumSessionSequenceNumber, GetKeySequenceNumber(sublogIdx, keyOffset));
         }
 
         /// <summary>

@@ -58,7 +58,7 @@ namespace Resp.benchmark
                 AofReplicationRefreshFrequencyMs = 10,
                 EnableCluster = true,
                 ReplicationOffsetMaxLag = 0,
-                AofSublogCount = options.AofSublogCount
+                AofPhysicalSublogCount = options.AofSublogCount
             };
             aofServerOptions.GetAofSettings(0, out var logSettings);
             garnetLog = new GarnetLog(aofServerOptions, logSettings);

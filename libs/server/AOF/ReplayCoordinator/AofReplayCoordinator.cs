@@ -37,13 +37,16 @@ namespace Garnet.server
         /// transactions and operations, ensuring consistency and correctness during AOF replay.  The <see
         /// cref="AofReplayCoordinator"/> is designed to work with an <see cref="AofProcessor"/> to facilitate the
         /// replay of operations.</remarks>
+        /// <param name="serverOptions"></param>
         /// <param name="aofProcessor"></param>
         /// <param name="logger"></param>
-        public class AofReplayCoordinator(AofProcessor aofProcessor, ILogger logger = null) : IDisposable
+        public class AofReplayCoordinator(GarnetServerOptions serverOptions, AofProcessor aofProcessor, ILogger logger = null) : IDisposable
         {
+            readonly GarnetServerOptions serverOptions = serverOptions;
             readonly ConcurrentDictionary<int, EventBarrier> eventBarriers = [];
             readonly AofProcessor aofProcessor = aofProcessor;
-            readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(aofProcessor.storeWrapper.serverOptions.AofSublogCount, aofProcessor.storeWrapper.serverOptions.AofReplaySubtaskCount);
+            readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(
+                serverOptions.AofVirtualSublogCount, serverOptions.AofReplaySubtaskCount);
 
             /// <summary>
             /// Replay context for replay subtask
@@ -160,7 +163,7 @@ namespace Garnet.server
                 switch (header.opType)
                 {
                     case AofEntryType.TxnStart:
-                        var logAccessCount = aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1 ? 0 : (*(AofTransactionHeader*)ptr).sublogAccessCount;
+                        var logAccessCount = !serverOptions.MultiLogEnabled ? 0 : (*(AofTransactionHeader*)ptr).sublogAccessCount;
                         aofReplayContext[sublogIdx].AddTransactionGroup(header.sessionID, sublogIdx, (byte)logAccessCount);
                         break;
                     case AofEntryType.TxnAbort:
@@ -228,10 +231,9 @@ namespace Garnet.server
                 else
                 {
                     var txnManager = aofProcessor.respServerSessions[sublogIdx].txnManager;
-                    var usingShardedLog = aofProcessor.storeWrapper.serverOptions.AofSublogCount > 1;
 
                     // Start by saving transaction keys for locking
-                    SaveTransactionGroupKeysToLock(txnManager, txnGroup, usingShardedLog: usingShardedLog);
+                    SaveTransactionGroupKeysToLock(txnManager, txnGroup);
 
                     // Start transaction
                     _ = txnManager.Run(internal_txn: true);
@@ -246,7 +248,7 @@ namespace Garnet.server
                         asReplica);
 
                     // Wait for all participating subtasks to complete replay unless singleLog
-                    if (usingShardedLog)
+                    if (serverOptions.MultiLogEnabled)
                     {
                         var shardedHeader = *(AofShardedHeader*)ptr;
                         // Synchronize replay of txn
@@ -262,7 +264,7 @@ namespace Garnet.server
                 }
 
                 // Helper to iterate of transaction keys and add them to lockset
-                static unsafe void SaveTransactionGroupKeysToLock(TransactionManager txnManager, TransactionGroup txnGroup, bool usingShardedLog)
+                static unsafe void SaveTransactionGroupKeysToLock(TransactionManager txnManager, TransactionGroup txnGroup)
                 {
                     foreach (var entry in txnGroup.operations)
                     {
@@ -303,7 +305,7 @@ namespace Garnet.server
             /// <param name="ptr"></param>
             internal void ReplayStoredProc(int sublogIdx, byte id, byte* ptr)
             {
-                if (aofProcessor.storeWrapper.serverOptions.AofSublogCount == 1)
+                if (!serverOptions.MultiLogEnabled)
                 {
                     StoredProcRunnerBase(0, id, ptr, shardedLog: false, null);
                 }
@@ -357,14 +359,14 @@ namespace Garnet.server
             /// <param name="operation">The operation to execute</param>
             internal void ProcessSynchronizedOperation(int sublogIdx, byte* ptr, int barrierId, Action operation)
             {
-                Debug.Assert(aofProcessor.storeWrapper.serverOptions.AofSublogCount > 1);
+                Debug.Assert(serverOptions.MultiLogEnabled);
 
                 // Extract extended header info and validate header
                 var txnHeader = *(AofTransactionHeader*)ptr;
 
                 // Synchronize execution across sublogs
                 var eventBarrier = GetBarrier(barrierId, txnHeader.sublogAccessCount);
-                var isLeader = eventBarrier.TrySignalAndWait(out var signalException, aofProcessor.storeWrapper.serverOptions.ReplicaSyncTimeout);
+                var isLeader = eventBarrier.TrySignalAndWait(out var signalException, serverOptions.ReplicaSyncTimeout);
                 Exception removeBarrierException = null;
 
                 // We execute the synchronized operation iff
@@ -372,7 +374,7 @@ namespace Garnet.server
                 // 2. No exception was triggered or we allow data loss (see cref serverOptions.AllowDataLoss).
                 // In the event of an exception with the possibility of data loss we follow a best effort approach to guarantee
                 // the integrity of the replication stream
-                var execute = isLeader && (signalException == null || aofProcessor.storeWrapper.serverOptions.AllowDataLoss);
+                var execute = isLeader && (signalException == null || serverOptions.AllowDataLoss);
                 // Here either all participants joined or timeout exception happened
                 // We can guarantee only one leader since at least one replay task has entered this method.
 
@@ -398,7 +400,7 @@ namespace Garnet.server
                 }
 
                 // Throw exception if data loss is not allowed and replay failed due to exception (possibly timeout)
-                if (signalException != null && aofProcessor.storeWrapper.serverOptions.AllowDataLoss)
+                if (signalException != null && serverOptions.AllowDataLoss)
                     throw signalException;
 
                 // Need to always fail here otherwise next operations could not create a barrier if the last operation was not

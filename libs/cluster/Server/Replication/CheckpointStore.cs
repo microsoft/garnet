@@ -237,7 +237,7 @@ namespace Garnet.cluster
             {
                 cEntry = new CheckpointEntry
                 {
-                    metadata = new(storeWrapper.serverOptions.AofSublogCount)
+                    metadata = new(storeWrapper.serverOptions.AofPhysicalSublogCount)
                 };
                 _ = cEntry.TryAddReader();
                 return true;
@@ -256,13 +256,13 @@ namespace Garnet.cluster
         /// <returns></returns>
         public CheckpointEntry GetLatestCheckpointEntryFromDisk()
         {
-            var storeCheckpointCoveredAofAddress = AofAddress.Create(clusterProvider.serverOptions.AofSublogCount, 0);
+            var storeCheckpointCoveredAofAddress = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, 0);
             storeWrapper.store.GetLatestCheckpointTokens(out var storeHLogToken, out var storeIndexToken, out var storeVersion);
             GetCheckpointCookieMetadata(StoreType.Main, storeHLogToken, ref storeCheckpointCoveredAofAddress, out var storePrimaryReplId);
 
             CheckpointEntry entry = new()
             {
-                metadata = new(storeWrapper.serverOptions.AofSublogCount)
+                metadata = new(storeWrapper.serverOptions.AofPhysicalSublogCount)
                 {
                     storeVersion = storeVersion,
                     storeHlogToken = storeHLogToken,
