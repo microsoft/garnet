@@ -50,15 +50,15 @@ jobs:
       - name: Set workaround for libaio on Ubuntu 24.04 (see https://askubuntu.com/questions/1512196/libaio1-on-noble/1512197#1512197)
         run: |
            sudo ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
-        if: ${{ matrix.os == 'ubuntu-24.04' }}        
+        if: ${{ matrix.os == 'ubuntu-latest' }}
 
       - name: Set environment variable for Linux
         run: echo "RunAzureTests=yes" >> $GITHUB_ENV
-        if: ${{ matrix.os == 'ubuntu-24.04' }}
+        if: ${{ matrix.os == 'ubuntu-latest' }}
 
       - name: Set environment variable for Windows
         run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
-        if: ${{ matrix.os == 'windows-2025' }}
+        if: ${{ matrix.os == 'windows-latest' }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -205,7 +205,7 @@ jobs:
 
   generate-allure-report:
     name: Generate Allure Report
-    runs-on: windows-2022  # only used to generate report - makes it easy on how calls made so don't have to worry about windows and linux 
+    runs-on: windows-latest  # only used to generate report - makes it easy on how calls made so don't have to worry about windows and linux 
     needs: [ build-test-all ]
     if: ${{ always() }}
     steps:
