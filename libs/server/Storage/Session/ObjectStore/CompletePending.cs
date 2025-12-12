@@ -17,7 +17,7 @@ namespace Garnet.server
         /// <param name="status"></param>
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
-        static void CompletePendingForObjectStoreSession<TObjectContext>(ref Status status, ref ObjectOutput output, ref TObjectContext objectContext)
+        internal static void CompletePendingForObjectStoreSession<TObjectContext>(ref Status status, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             objectContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
