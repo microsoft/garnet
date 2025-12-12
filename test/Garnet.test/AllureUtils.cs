@@ -44,10 +44,17 @@ namespace Garnet.test
 
             AllureLifecycle.Instance.UpdateTestCase(x =>
             {
+                // Remove any default suite/subSuite labels that NUnit added
+                x.labels.RemoveAll(l => l.name == "suite" || l.name == "subSuite");
+
+                // apply your custom hierarchy
                 x.labels.Add(Label.ParentSuite($"{namespaceName} - {timestamp}"));
                 x.labels.Add(Label.Suite(os));
                 x.labels.Add(Label.SubSuite($"{framework} | {config}"));
+
+                // Deterministic historyId so each matrix variant is distinct but still builds history
                 //x.historyId = Guid.NewGuid().ToString(); // Optional: breaks history grouping but keeps each test separate (shows as a "retry" if not separate). Adding the "AddTestParameter" also handles this.
+                x.historyId = $"{GetType().FullName}.{TestContext.CurrentContext.Test.Name}-{os}-{framework}-{config}";
             });
 
             // allows to separate out tests based on config but still hold history
