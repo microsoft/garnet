@@ -962,6 +962,7 @@ namespace Garnet.server
                 RespCommand.XRANGE => StreamRange(respProtocolVersion),
                 RespCommand.XREVRANGE => StreamRange(respProtocolVersion, isReverse: true),
                 RespCommand.XTRIM => StreamTrim(),
+                RespCommand.XLAST => StreamLast(respProtocolVersion),
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
             return success;

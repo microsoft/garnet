@@ -301,5 +301,56 @@ namespace Garnet.server
                 SendAndReset();
             return true;
         }
+
+        /// <summary>
+        ///  Gets last entry in the stream.
+        /// XLAST key
+        /// </summary>
+        /// <returns></returns>
+        public bool StreamLast(byte respProtocolVersion)
+        {
+            if (parseState.Count != 1)
+            {
+                return AbortWithErrorMessage(CmdStrings.RESP_ERR_WRONG_NUMBER_OF_ARGUMENTS);
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+
+            SpanByteAndMemory _output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+
+            var disabledStreams = streamManager == null;
+            if (disabledStreams)
+            {
+                while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_STREAMS_DISABLED, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            bool success = false;
+            // check if the stream exists in cache
+            if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
+            {
+                cachedStream.ReadLastEntry(ref _output, respProtocolVersion);
+                success = true;
+            }
+            else
+            {
+                success = streamManager.StreamLast(key, ref _output, respProtocolVersion);
+            }
+
+            if (success)
+            {
+                ProcessOutput(_output);
+            }
+            else
+            {
+                //return empty array
+                while (!RespWriteUtils.TryWriteArrayLength(0, ref dcurr, dend))
+                    SendAndReset();
+                return true;
+            }
+
+            return true;
+        }
     }
 }

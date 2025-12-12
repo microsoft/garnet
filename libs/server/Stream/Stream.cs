@@ -356,6 +356,45 @@ namespace Garnet.server
             return deleted;
         }
 
+
+        // Read the last entry in the stream and into output
+        internal unsafe void ReadLastEntry(ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+            try
+            {
+                _lock.ReadLock();
+                try
+                {
+                    if (index.Count() == 0)
+                    {
+                        writer.WriteNull();
+                        return;
+                    }
+
+                    // LastAlive to skip tombstoned entries
+                    long addressOnLog = (long)index.LastAlive().Value.address;
+                    (byte[] entry, int len) = log.Read(addressOnLog, readUncommitted: true);
+
+                    if (entry == null && len == 0)
+                    {
+                        // below begin address? throw error? TODO: later 
+                    }
+
+                    ReadOnlySpan<byte> entrySp = entry.AsSpan(sizeof(long), len - sizeof(long)); // skip the previousEntryAddress part
+                    WriteEntryToWriter(entrySp, ref writer, len);
+                }
+                finally
+                {
+                    _lock.ReadUnlock();
+                }
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+        }
+
         /// <summary>
         /// Read entries from the stream from given range
         /// </summary>
@@ -365,141 +404,109 @@ namespace Garnet.server
         /// <param name="output"></param>
         public unsafe void ReadRange(string min, string max, int limit, ref SpanByteAndMemory output, byte respProtocolVersion, bool isReverse = false)
         {
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
-            _lock.ReadLock();
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output);
             try
             {
-                if (index.Count() == 0)
-                {
-                    return;
-                }
-
-                long startAddr, endAddr;
-                StreamID startID, endID;
-                if (min == "-")
-                {
-                    byte[] idBytes = index.First().Key;
-                    startID = new StreamID(idBytes);
-                }
-                else if (min == "+") // this can happen in reverse range queries
-                {
-                    byte[] idBytes = index.Last().Key;
-                    startID = new StreamID(idBytes);
-                }
-                else if (!ParseStreamIDFromString(min, out startID))
-                {
-                    return;
-                }
-
-                if (max == "+")
-                {
-                    byte[] idBytes = index.Last().Key;
-                    endID = new StreamID(idBytes);
-                }
-                else if (max == "-") // this can happen in reverse range queries
-                {
-                    byte[] idBytes = index.First().Key;
-                    endID = new StreamID(idBytes);
-                }
-                else if (!ParseStreamIDFromString(max, out endID))
-                {
-                    return;
-                }
-
-                int count = index.Get((byte*)Unsafe.AsPointer(ref startID.idBytes[0]), (byte*)Unsafe.AsPointer(ref endID.idBytes[0]), out Value startVal, out Value endVal, out var tombstones, limit, isReverse);
-
-                if (isReverse)
-                {
-                    startAddr = (long)startVal.address;
-                    endAddr = (long)endVal.address;
-                }
-                else
-                {
-                    startAddr = (long)startVal.address;
-                    endAddr = (long)endVal.address + 1;
-                }
-
-                byte* tmpPtr = null;
-                int tmpSize = 0;
-                long readCount = 0;
+                _lock.ReadLock();
                 try
                 {
-                    using (var iter = log.Scan(startAddr, endAddr, scanUncommitted: true, isReverseStreamIter: isReverse))
+                    if (index.Count() == 0)
                     {
-                        writer.WriteArrayLength(count);
+                        return;
+                    }
 
-                        byte* e;
-                        while (iter.GetNext(out var entry, out _, out long currentAddress, out long nextAddress))
+                    long startAddr, endAddr;
+                    StreamID startID, endID;
+                    if (min == "-")
+                    {
+                        byte[] idBytes = index.First().Key;
+                        startID = new StreamID(idBytes);
+                    }
+                    else if (min == "+") // this can happen in reverse range queries
+                    {
+                        byte[] idBytes = index.Last().Key;
+                        startID = new StreamID(idBytes);
+                    }
+                    else if (!ParseStreamIDFromString(min, out startID))
+                    {
+                        return;
+                    }
+
+                    if (max == "+")
+                    {
+                        byte[] idBytes = index.Last().Key;
+                        endID = new StreamID(idBytes);
+                    }
+                    else if (max == "-") // this can happen in reverse range queries
+                    {
+                        byte[] idBytes = index.First().Key;
+                        endID = new StreamID(idBytes);
+                    }
+                    else if (!ParseStreamIDFromString(max, out endID))
+                    {
+                        return;
+                    }
+
+                    int count = index.Get((byte*)Unsafe.AsPointer(ref startID.idBytes[0]), (byte*)Unsafe.AsPointer(ref endID.idBytes[0]), out Value startVal, out Value endVal, out var tombstones, limit, isReverse);
+
+                    if (isReverse)
+                    {
+                        startAddr = (long)startVal.address;
+                        endAddr = (long)endVal.address;
+                    }
+                    else
+                    {
+                        startAddr = (long)startVal.address;
+                        endAddr = (long)endVal.address + 1;
+                    }
+
+                    long readCount = 0;
+                    try
+                    {
+                        using (var iter = log.Scan(startAddr, endAddr, scanUncommitted: true, isReverseStreamIter: isReverse))
                         {
-                            var current = new Value((ulong)currentAddress);
-                            // check if any tombstone t.address matches current
-                            var tombstoneFound = false;
-                            foreach (var tombstone in tombstones)
+                            writer.WriteArrayLength(count);
+
+                            while (iter.GetNext(out byte[] entry, out _, out long currentAddress, out long nextAddress))
                             {
-                                if (tombstone.address == current.address)
+                                var current = new Value((ulong)currentAddress);
+                                // check if any tombstone t.address matches current
+                                var tombstoneFound = false;
+                                foreach (var tombstone in tombstones)
                                 {
-                                    tombstoneFound = true;
+                                    if (tombstone.address == current.address)
+                                    {
+                                        tombstoneFound = true;
+                                        break;
+                                    }
+                                }
+                                if (tombstoneFound)
+                                {
+                                    continue;
+                                }
+
+                                var entryBytes = entry.AsSpan(start: sizeof(long)); // skip the previousEntryAddress part
+                                WriteEntryToWriter(entryBytes, ref writer, entry.Length);
+
+                                readCount++;
+                                if (limit != -1 && readCount == limit)
+                                {
                                     break;
                                 }
                             }
-                            if (tombstoneFound)
-                            {
-                                continue;
-                            }
-
-                            var entryBytes = entry.AsSpan(start: sizeof(long)); // skip the previousEntryAddress part
-
-                            // check if the entry is actually one of the qualified keys 
-                            // parse ID for the entry which is the first 16 bytes
-                            Span<byte> idBytes = entryBytes.Slice(0, 16);
-                            ulong ts = BinaryPrimitives.ReadUInt64BigEndian(idBytes.Slice(0, 8));
-                            ulong seq = BinaryPrimitives.ReadUInt64BigEndian(idBytes.Slice(8, 8));
-
-                            string idString = $"{ts}-{seq}";
-                            Span<byte> numPairsBytes = entryBytes.Slice(16, 4);
-                            int numPairs = BitConverter.ToInt32(numPairsBytes);
-                            Span<byte> value = entryBytes.Slice(20);
-
-                            // we can already write back the ID that we read 
-                            writer.WriteArrayLength(2);
-
-                            writer.WriteAsciiBulkString(idString);
-
-                            // print array length for the number of key-value pairs in the entry
-                            writer.WriteArrayLength(numPairs);
-
-                            // write key-value pairs
-                            fixed (byte* p = value)
-                            {
-                                e = p;
-                                int read = 0;
-                                read += (int)(e - p);
-                                while (value.Length - read >= 4)
-                                {
-                                    var orig = e;
-                                    if (!RespReadUtils.TryReadPtrWithLengthHeader(ref tmpPtr, ref tmpSize, ref e, e + entry.Length))
-                                    {
-                                        return;
-                                    }
-                                    var o = new Span<byte>(tmpPtr, tmpSize).ToArray();
-                                    writer.WriteBulkString(o);
-                                    read += (int)(e - orig);
-                                }
-                            }
-                            readCount++;
-                            if (limit != -1 && readCount == limit)
-                            {
-                                break;
-                            }
                         }
                     }
+                    finally
+                    { }
                 }
                 finally
-                { }
+                {
+                    _lock.ReadUnlock();
+                }
             }
             finally
             {
-                _lock.ReadUnlock();
+                writer.Dispose();
             }
         }
 
@@ -554,6 +561,51 @@ namespace Garnet.server
                 _lock.WriteUnlock();
             }
             return true;
+        }
+
+        private unsafe void WriteEntryToWriter(ReadOnlySpan<byte> entryBytes, ref RespMemoryWriter writer, int entryLength)
+        {
+            byte* tmpPtr = null;
+            int tmpSize = 0;
+            byte* e;
+
+            // check if the entry is actually one of the qualified keys 
+            // parse ID for the entry which is the first 16 bytes
+            ReadOnlySpan<byte> idBytes = entryBytes.Slice(0, 16);
+            ulong ts = BinaryPrimitives.ReadUInt64BigEndian(idBytes.Slice(0, 8));
+            ulong seq = BinaryPrimitives.ReadUInt64BigEndian(idBytes.Slice(8, 8));
+
+            string idString = $"{ts}-{seq}";
+            ReadOnlySpan<byte> numPairsBytes = entryBytes.Slice(16, 4);
+            int numPairs = BitConverter.ToInt32(numPairsBytes);
+            ReadOnlySpan<byte> value = entryBytes.Slice(20);
+
+            // we can already write back the ID that we read 
+            writer.WriteArrayLength(2);
+
+            writer.WriteAsciiBulkString(idString);
+
+            // print array length for the number of key-value pairs in the entry
+            writer.WriteArrayLength(numPairs);
+
+            // write key-value pairs
+            fixed (byte* p = value)
+            {
+                e = p;
+                int read = 0;
+                read += (int)(e - p);
+                while (value.Length - read >= 4)
+                {
+                    var orig = e;
+                    if (!RespReadUtils.TryReadPtrWithLengthHeader(ref tmpPtr, ref tmpSize, ref e, e + entryLength))
+                    {
+                        return;
+                    }
+                    var o = new Span<byte>(tmpPtr, tmpSize).ToArray();
+                    writer.WriteBulkString(o);
+                    read += (int)(e - orig);
+                }
+            }
         }
 
 

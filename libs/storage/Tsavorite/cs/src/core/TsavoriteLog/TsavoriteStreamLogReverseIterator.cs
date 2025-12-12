@@ -5,6 +5,8 @@ using Microsoft.Extensions.Logging;
 
 using EmptyStoreFunctions = StoreFunctions<Empty, byte, EmptyKeyComparer, DefaultRecordDisposer<Empty, byte>>;
 
+// Currently works by having the a linked list for previous address scanning. This is adding 8 bytes per entry, and I need to get rid of this.
+
 // I don't believe this needs to be concurrency control aware since we only go backwards on entries with knowledge of their addresses.
 internal class TsavoriteStreamLogReverseIterator : TsavoriteLogScanIterator
 {

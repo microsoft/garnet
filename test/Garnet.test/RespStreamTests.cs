@@ -170,7 +170,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(delCount, 1);
 
             // just for messing around, let's add multiple key value pairs for this id?
-            retId = db.StreamAdd(streamKey, [ new NameValueEntry("field1", "value1"), new NameValueEntry("field2", "value2") ], messageId: $"{2}-0");
+            retId = db.StreamAdd(streamKey, [new NameValueEntry("field1", "value1"), new NameValueEntry("field2", "value2")], messageId: $"{2}-0");
 
             // check if all the values are there
             res = db.StreamRange(streamKey, "-", "+");
@@ -372,6 +372,202 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(expectedEntries[expectedIndex].value, (string)limitedRevRange[i].Values[0].Value);
             }
         }
+
+        [Test]
+        public void StreamLastBasicTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServers()[0];
+
+            var streamKey = "lastBasic";
+
+            // Add entries with known field-value pairs
+            var id1 = db.StreamAdd(streamKey, "field1", "value1", messageId: "1-0");
+            var id2 = db.StreamAdd(streamKey, "field2", "value2", messageId: "2-0");
+            var id3 = db.StreamAdd(streamKey, "field3", "value3", messageId: "3-0");
+
+            // Execute XLAST
+            var result = server.Execute("XLAST", streamKey);
+            var lastEntry = (RedisResult[])result;
+
+            // Verify the last entry
+            ClassicAssert.AreEqual(2, lastEntry.Length);
+            ClassicAssert.AreEqual("3-0", (string)lastEntry[0]);
+
+            var values = (RedisResult[])lastEntry[1];
+            ClassicAssert.AreEqual(2, values.Length);
+            ClassicAssert.AreEqual("field3", (string)values[0]);
+            ClassicAssert.AreEqual("value3", (string)values[1]);
+        }
+
+        [Test]
+        public void StreamLastMultipleFieldsTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServers()[0];
+
+            var streamKey = "lastMultiFields";
+
+            // Add an entry with multiple field-value pairs
+            var id = db.StreamAdd(streamKey, [
+                new NameValueEntry("field1", "value1"),
+                new NameValueEntry("field2", "value2"),
+                new NameValueEntry("field3", "value3")
+            ], messageId: "100-0");
+
+            // Execute XLAST
+            var result = server.Execute("XLAST", streamKey);
+            var lastEntry = (RedisResult[])result;
+
+            // Verify the last entry
+            ClassicAssert.AreEqual(2, lastEntry.Length);
+            ClassicAssert.AreEqual("100-0", (string)lastEntry[0]);
+
+            var values = (RedisResult[])lastEntry[1];
+            ClassicAssert.AreEqual(6, values.Length); // 3 fields * 2 (name + value)
+            ClassicAssert.AreEqual("field1", (string)values[0]);
+            ClassicAssert.AreEqual("value1", (string)values[1]);
+            ClassicAssert.AreEqual("field2", (string)values[2]);
+            ClassicAssert.AreEqual("value2", (string)values[3]);
+            ClassicAssert.AreEqual("field3", (string)values[4]);
+            ClassicAssert.AreEqual("value3", (string)values[5]);
+        }
+
+        [Test]
+        public void StreamLastEmptyStreamTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var server = redis.GetServers()[0];
+
+            var streamKey = "lastEmpty";
+
+            // Execute XLAST on non-existent stream
+            var result = server.Execute("XLAST", streamKey);
+
+            // Should return empty array
+            ClassicAssert.IsTrue(result.IsNull || ((RedisResult[])result).Length == 0);
+        }
+
+        [Test]
+        public void StreamLastSingleEntryTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServers()[0];
+
+            var streamKey = "lastSingle";
+
+            // Add only one entry
+            var id = db.StreamAdd(streamKey, "onlyField", "onlyValue");
+
+            // Execute XLAST
+            var result = server.Execute("XLAST", streamKey);
+            var lastEntry = (RedisResult[])result;
+
+            // Verify it returns the only entry
+            ClassicAssert.AreEqual(2, lastEntry.Length);
+            ClassicAssert.AreEqual((string)id, (string)lastEntry[0]);
+
+            var values = (RedisResult[])lastEntry[1];
+            ClassicAssert.AreEqual(2, values.Length);
+            ClassicAssert.AreEqual("onlyField", (string)values[0]);
+            ClassicAssert.AreEqual("onlyValue", (string)values[1]);
+        }
+
+        [Test]
+        public void StreamLastAfterDeleteTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServers()[0];
+
+            var streamKey = "lastAfterDelete";
+
+            // Add multiple entries
+            var id1 = db.StreamAdd(streamKey, "field1", "value1", messageId: "1-0");
+            var id2 = db.StreamAdd(streamKey, "field2", "value2", messageId: "2-0");
+            var id3 = db.StreamAdd(streamKey, "field3", "value3", messageId: "3-0");
+
+            // Delete the last entry
+            db.StreamDelete(streamKey, [id3]);
+
+            // Execute XLAST
+            var result = server.Execute("XLAST", streamKey);
+            var lastEntry = (RedisResult[])result;
+
+            // Should return the second entry as it's now the last
+            ClassicAssert.AreEqual(2, lastEntry.Length);
+            ClassicAssert.AreEqual("2-0", (string)lastEntry[0]);
+
+            var values = (RedisResult[])lastEntry[1];
+            ClassicAssert.AreEqual(2, values.Length);
+            ClassicAssert.AreEqual("field2", (string)values[0]);
+            ClassicAssert.AreEqual("value2", (string)values[1]);
+        }
+
+        [Test]
+        public void StreamLastAfterTrimTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServers()[0];
+
+            var streamKey = "lastAfterTrim";
+
+            // Add multiple entries
+            for (int i = 0; i < 10; i++)
+            {
+                db.StreamAdd(streamKey, $"field{i}", $"value{i}");
+            }
+
+            // Trim to keep only 3 entries
+            db.StreamTrim(streamKey, 3);
+
+            // Execute XLAST
+            var result = server.Execute("XLAST", streamKey);
+            var lastEntry = (RedisResult[])result;
+
+            // Should return the last entry after trim
+            ClassicAssert.AreEqual(2, lastEntry.Length);
+            var values = (RedisResult[])lastEntry[1];
+            ClassicAssert.AreEqual(2, values.Length);
+            ClassicAssert.AreEqual("field9", (string)values[0]);
+            ClassicAssert.AreEqual("value9", (string)values[1]);
+        }
+
+        [Test]
+        public void StreamLastAutoGeneratedIdTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            var server = redis.GetServers()[0];
+            server.FlushDatabase();
+
+            var streamKey = "lastAutoId";
+
+            // Add entries with auto-generated IDs
+            db.StreamAdd(streamKey, "field1", "value1");
+            System.Threading.Thread.Sleep(1); // Ensure different timestamps
+            db.StreamAdd(streamKey, "field2", "value2");
+            System.Threading.Thread.Sleep(1);
+            var lastId = db.StreamAdd(streamKey, "field3", "value3");
+
+            // Execute XLAST
+            var result = server.Execute("XLAST", streamKey);
+            var lastEntry = (RedisResult[])result;
+
+            // Verify it returns the last entry with the correct auto-generated ID
+            ClassicAssert.AreEqual(2, lastEntry.Length);
+            ClassicAssert.AreEqual(lastId.ToString(), (string)lastEntry[0]);
+
+            var values = (RedisResult[])lastEntry[1];
+            ClassicAssert.AreEqual(2, values.Length);
+            ClassicAssert.AreEqual("field3", (string)values[0]);
+            ClassicAssert.AreEqual("value3", (string)values[1]);
+        }
+
 
         #endregion
 

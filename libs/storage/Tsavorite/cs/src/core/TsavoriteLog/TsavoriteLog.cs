@@ -23,6 +23,7 @@ namespace Tsavorite.core
         private Exception cannedException = null;
 
         readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
+
         readonly LightEpoch epoch;
         readonly ILogCommitManager logCommitManager;
         readonly bool disposeLogCommitManager;
@@ -2199,6 +2200,53 @@ namespace Tsavorite.core
             if (Interlocked.Increment(ref logRefCount) == 1)
                 throw new TsavoriteException("Cannot scan disposed log instance");
             return iter;
+        }
+
+        // HK TODO: Add tests to this method
+        /// <summary>
+        /// Random read record from log, at given address Non-async version. Blocks until read is complete.
+        /// </summary>
+        /// <param name="address">Logical address to read from</param>
+        /// <param name="estimatedLength">Estimated length of entry, if known</param>
+        /// <returns></returns>
+        public unsafe (byte[], int) Read(long address, int estimatedLength = 0, bool readUncommitted = true)
+        {
+            epoch.Resume();
+            if ((address >= CommittedUntilAddress && !readUncommitted) || address < BeginAddress)
+            {
+                epoch.Suspend();
+                return default;
+            }
+
+            if (address >= CommittedUntilAddress)
+            {
+                long physicalAddress = allocator.GetPhysicalAddress(address);
+                byte* headerPtr = (byte*)physicalAddress;
+
+                long len = GetLength(headerPtr);
+                byte[] entries = new byte[len]; // HK TODO: This can be optimized to write to buffer directly instead
+                fixed (byte* entryPtr = entries)
+                {
+                    Buffer.MemoryCopy((void*)(headerPtr + headerSize), entryPtr, len, len);
+                }
+
+                epoch.Suspend();
+                return (entries, (int)len);
+            }
+
+            var ctx = new SimpleReadContext
+            {
+                logicalAddress = address,
+                completedRead = new SemaphoreSlim(0)
+            };
+            unsafe
+            {
+                allocator.AsyncReadRecordToMemory(address, headerSize + estimatedLength, AsyncGetFromDiskCallback, ref ctx);
+            }
+
+            epoch.Suspend();
+            ctx.completedRead.Wait();
+            return GetRecordAndFree(ctx.record);
         }
 
         /// <summary>

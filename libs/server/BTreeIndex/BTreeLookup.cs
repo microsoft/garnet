@@ -147,5 +147,23 @@ namespace Garnet.server.BTreeIndex
 
             return count;
         }
+
+        /// <summary>
+        /// Retrieves the last Undeleted entry in the B+Tree (largest non-tombstoned key)
+        /// </summary>
+        /// <returns>entry fetched</returns>
+        public KeyValuePair<byte[], Value> LastAlive()
+        {
+            BTreeNode* leaf = tail;
+            if (leaf == null)
+            {
+                return default;
+            }
+
+            // HK TODO: 
+            // BUGFIX Picks up the last value even if it is tombstoned at the moment, need to use some idea of traversal to find last non-tombstoned key
+            byte[] keyBytes = new ReadOnlySpan<byte>(leaf->GetKey(leaf->info->count - 1), BTreeNode.KEY_SIZE).ToArray();
+            return new KeyValuePair<byte[], Value>(keyBytes, leaf->GetValue(leaf->info->count - 1));
+        }
     }
 }

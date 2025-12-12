@@ -184,9 +184,9 @@ namespace Garnet.server.BTreeIndex
             {
                 return default;
             }
+
             byte[] keyBytes = new ReadOnlySpan<byte>(leaf->GetKey(leaf->info->count - 1), BTreeNode.KEY_SIZE).ToArray();
             return new KeyValuePair<byte[], Value>(keyBytes, leaf->GetValue(leaf->info->count - 1));
         }
-
     }
 }

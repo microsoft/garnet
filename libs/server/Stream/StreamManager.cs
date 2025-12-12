@@ -277,6 +277,21 @@ namespace Garnet.server
             }
             return true; // no keys removed so return true
         }
+    
+        public bool StreamLast(ArgSlice key, ref SpanByteAndMemory output, byte respProtocolVersion)
+        {
+            var keyArr = key.ToArray();
+            if (streams != null && streams.Count > 0)
+            {
+                bool foundStream = streams.TryGetValue(keyArr, out StreamObject stream);
+                if (foundStream)
+                {
+                    stream.ReadLastEntry(ref output, respProtocolVersion);
+                    return true;
+                }
+            }
+            return false;
+        }
 
         /// <inheritdoc/>
         public void Dispose()
