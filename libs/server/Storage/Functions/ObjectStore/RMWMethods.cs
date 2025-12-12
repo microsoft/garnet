@@ -45,27 +45,11 @@ namespace Garnet.server
             IGarnetObject value;
             if ((byte)type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var updatedEtag = functionsState.GetUpdatedEtag(input.header.metaCmd, ref input.parseState, isInitUpdate: true, out var execCmd);
-
                 value = GarnetObject.Create(type);
 
-                var oOffset = 0;
-                if (input.header.metaCmd.IsEtagCommand())
-                {
-                    var oWriter = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-                    try
-                    {
-                        oWriter.WriteArrayLength(2);
-                        oWriter.WriteInt64(updatedEtag);
-                        oOffset = oWriter.GetPosition();
-                    }
-                    finally
-                    {
-                        oWriter.Dispose();
-                    }
-                }
+                var updatedEtag = GetUpdatedEtagAndHandleMetaCommand(ref input, ref output, out var execCmd, out var outputOffset);
 
-                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out _, oOffset);
+                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out _, outputOffset);
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
 
                 // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
@@ -164,27 +148,9 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var updatedEtag = functionsState.GetUpdatedEtag(input.header.metaCmd, ref input.parseState, isInitUpdate: false, out var execCmd);
+                var updatedEtag = GetUpdatedEtagAndHandleMetaCommand(ref input, ref output, out var execCmd, out var outputOffset);
 
-                var operateSuccessful = true;
-
-                var oOffset = 0;
-                if (input.header.metaCmd.IsEtagCommand())
-                {
-                    var oWriter = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-                    try
-                    {
-                        oWriter.WriteArrayLength(2);
-                        oWriter.WriteInt64(updatedEtag);
-                        oOffset = oWriter.GetPosition();
-                    }
-                    finally
-                    {
-                        oWriter.Dispose();
-                    }
-                }
-
-                operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out sizeChange, oOffset);
+                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out sizeChange, outputOffset);
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)
@@ -287,18 +253,15 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var updatedEtag = functionsState.GetUpdatedEtag(input.header.metaCmd, ref input.parseState, isInitUpdate: false, out var execCmd);
+                var updatedEtag = GetUpdatedEtagAndHandleMetaCommand(ref input, ref output, out var execCmd, out var outputOffset);
 
-                if (execCmd)
+                value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out _, outputOffset);
+                if (output.HasWrongType)
+                    return true;
+                if (output.HasRemoveKey)
                 {
-                    value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out _);
-                    if (output.HasWrongType)
-                        return true;
-                    if (output.HasRemoveKey)
-                    {
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-                        return false;
-                    }
+                    rmwInfo.Action = RMWAction.ExpireAndStop;
+                    return false;
                 }
 
                 if (execCmd || (!recordHadEtagPreMutation && inputHeaderHasEtag))
@@ -340,6 +303,32 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 WriteLogRMW(srcLogRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
             return true;
+        }
+
+        private long GetUpdatedEtagAndHandleMetaCommand(ref ObjectInput input, ref ObjectOutput output, out bool execCmd, out int outputOffset)
+        {
+            outputOffset = 0;
+
+            // Get the updated etag
+            var updatedEtag = functionsState.GetUpdatedEtag(input.header.metaCmd, ref input.parseState, isInitUpdate: true, out execCmd);
+
+            // Write the updated etag to the output if needed
+            if (input.header.metaCmd.IsEtagCommand())
+            {
+                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                try
+                {
+                    writer.WriteArrayLength(2);
+                    writer.WriteInt64(updatedEtag);
+                    outputOffset = writer.GetPosition();
+                }
+                finally
+                {
+                    writer.Dispose();
+                }
+            }
+
+            return updatedEtag;
         }
     }
 }
