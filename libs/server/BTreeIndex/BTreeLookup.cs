@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 
@@ -160,10 +161,27 @@ namespace Garnet.server.BTreeIndex
                 return default;
             }
 
-            // HK TODO: 
-            // BUGFIX Picks up the last value even if it is tombstoned at the moment, need to use some idea of traversal to find last non-tombstoned key
-            byte[] keyBytes = new ReadOnlySpan<byte>(leaf->GetKey(leaf->info->count - 1), BTreeNode.KEY_SIZE).ToArray();
-            return new KeyValuePair<byte[], Value>(keyBytes, leaf->GetValue(leaf->info->count - 1));
+            // Traverse backwards from the tail to find the first valid (non-tombstoned) entry.
+            while (leaf != null)
+            {
+                // Iterate backwards through the entries in this leaf
+                for (int i = (int)leaf->info->count - 1; i >= 0; i--)
+                {
+                    var value = leaf->GetValue(i);
+                    if (value.Valid)
+                    {
+                        // Found a valid entry, return it
+                        byte[] keyBytes = new ReadOnlySpan<byte>(leaf->GetKey(i), BTreeNode.KEY_SIZE).ToArray();
+                        return new KeyValuePair<byte[], Value>(keyBytes, value);
+                    }
+                }
+
+                // No valid entry found in this leaf, move to the previous leaf
+                leaf = leaf->info->previous;
+            }
+
+            // No valid entry found in the entire tree
+            return default;
         }
     }
 }

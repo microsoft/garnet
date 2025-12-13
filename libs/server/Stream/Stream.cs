@@ -376,9 +376,10 @@ namespace Garnet.server
                     long addressOnLog = (long)index.LastAlive().Value.address;
                     (byte[] entry, int len) = log.Read(addressOnLog, readUncommitted: true);
 
-                    if (entry == null && len == 0)
+                    if (entry == null)
                     {
-                        // below begin address? throw error? TODO: later 
+                        writer.WriteNull();
+                        return;
                     }
 
                     ReadOnlySpan<byte> entrySp = entry.AsSpan(sizeof(long), len - sizeof(long)); // skip the previousEntryAddress part

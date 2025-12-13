@@ -68,7 +68,7 @@ namespace Garnet.server
                     }
                 }
 
-                cursor = cursorFromStart < streams.Count ? cursorFromStart : 0;
+                cursor = cursorFromStart < (streams.Count - 1) ? cursorFromStart : 0;
             }
             finally
             {
