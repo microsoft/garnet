@@ -138,6 +138,9 @@ namespace Garnet.cluster
                 // Update replicationIds and replicationOffset2
                 clusterProvider.replicationManager.TryUpdateForFailover();
 
+                // Reset replay iterators
+                clusterProvider.replicationManager.ResetReplayIterator();
+
                 // Initialize checkpoint history
                 if (!clusterProvider.replicationManager.InitializeCheckpointStore())
                     logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TakeOverAsPrimary));
