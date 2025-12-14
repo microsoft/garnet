@@ -29,7 +29,7 @@ namespace Garnet.server
             argsParsed++;
 
             bool noMkStream = false;
-            if (argsParsed < parseState.Count && parseState.GetArgSliceByRef(argsParsed).ToString().ToUpper().Equals("NOMKSTREAM"))
+            if (argsParsed < parseState.Count && parseState.GetArgSliceByRef(argsParsed).ReadOnlySpan.SequenceEqual("NOMKSTREAM"u8))
             {
                 noMkStream = true;
                 argsParsed++;

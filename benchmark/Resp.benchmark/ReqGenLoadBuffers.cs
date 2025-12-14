@@ -135,6 +135,7 @@ namespace Resp.benchmark
                 OpType.SCRIPTRETKEY => System.Text.Encoding.ASCII.GetBytes($"*4\r\n$7\r\nEVALSHA\r\n{BenchUtils.sha1RetKeyScript}\r\n$1\r\n1\r\n"),
                 OpType.PUBLISH => System.Text.Encoding.ASCII.GetBytes($"*3\r\n$7\r\nPUBLISH\r\n"),
                 OpType.SPUBLISH => System.Text.Encoding.ASCII.GetBytes($"*3\r\n$8\r\nSPUBLISH\r\n"),
+                OpType.XADD => System.Text.Encoding.ASCII.GetBytes($"*5\r\n$4\r\nXADD\r\n"),
                 _ => null
             };
 
@@ -178,6 +179,7 @@ namespace Resp.benchmark
                 case OpType.SCRIPTRETKEY:
                 case OpType.PUBLISH:
                 case OpType.SPUBLISH:
+                case OpType.XADD:
                     writeSuccess = GenerateSingleKeyValueOp(i, opHeader, start, end, opType);
                     return writeSuccess;
                 default:
