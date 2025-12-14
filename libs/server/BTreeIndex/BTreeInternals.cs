@@ -231,6 +231,7 @@ namespace Garnet.server.BTreeIndex
             {
                 return 0;
             }
+            // Binary search for the first key >= given key
             int left = 0, right = info->count - 1;
             while (left <= right)
             {

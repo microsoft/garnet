@@ -259,6 +259,86 @@ namespace Garnet.test
             ClassicAssert.GreaterOrEqual(trimCount, 1);
             ClassicAssert.GreaterOrEqual(count - trimCount, maxLen);
         }
+        
+        [Test]
+        [Category("Trim")]
+        public void StreamTrimFullTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var streamKey = "trimmer";
+            long count = 1000;
+            string[] ids = new string[count];
+            for (long i = 0; i < count; i++)
+            {
+                var entryKey = GenerateRandomString(4); // generate random ascii string of length 4
+                var entryValue = GenerateRandomString(4); // generate random ascii string of length 4
+                RedisValue retId = db.StreamAdd(streamKey, entryKey, entryValue, $"{i + 1}-0");
+                ids[i] = retId.ToString();
+            }
+
+            // Trim in random steps from 1-150 until we have 0 entries
+            long currentLength = count;
+            var random = new Random(42); // Fixed seed for reproducibility
+            
+            while (currentLength > 0)
+            {
+                // Determine how many to keep (trim to this length)
+                long trimAmount = random.Next(1, Math.Min(151, (int)currentLength + 1));
+                long newLength = Math.Max(0, currentLength - trimAmount);
+                
+                // Verify stream length before trim
+                long lengthBefore = db.StreamLength(streamKey);
+                ClassicAssert.AreEqual(currentLength, lengthBefore, "Stream length mismatch before trim");
+                
+                // Get first and last entries before trim
+                var rangeBefore = db.StreamRange(streamKey, "-", "+");
+                var firstIdBefore = rangeBefore.Length > 0 ? rangeBefore[0].Id.ToString() : null;
+                var lastIdBefore = rangeBefore.Length > 0 ? rangeBefore[rangeBefore.Length - 1].Id.ToString() : null;
+                
+                // Perform the trim
+                long trimmed = db.StreamTrim(streamKey, newLength);
+                
+                // Verify the correct number of entries were trimmed
+                ClassicAssert.AreEqual(trimAmount, trimmed, $"Expected to trim {trimAmount} entries");
+                
+                // Verify new stream length
+                long lengthAfter = db.StreamLength(streamKey);
+                ClassicAssert.AreEqual(newLength, lengthAfter, "Stream length mismatch after trim");
+                
+                if (newLength > 0)
+                {
+                    // Get first and last entries after trim
+                    var rangeAfter = db.StreamRange(streamKey, "-", "+");
+                    ClassicAssert.AreEqual(newLength, rangeAfter.Length, "Range length should match stream length");
+                    
+                    var firstIdAfter = rangeAfter[0].Id.ToString();
+                    var lastIdAfter = rangeAfter[rangeAfter.Length - 1].Id.ToString();
+                    
+                    // First entry should have changed (oldest entries were removed)
+                    ClassicAssert.AreNotEqual(firstIdBefore, firstIdAfter, "First entry should change after trim");
+                    
+                    // Last entry should remain the same (we keep newest entries)
+                    ClassicAssert.AreEqual(lastIdBefore, lastIdAfter, "Last entry should not change after trim");
+                    
+                    // Verify the new first entry is from the expected position in ids array
+                    long expectedFirstIndex = count - newLength;
+                    string expectedFirstId = ids[expectedFirstIndex];
+                    ClassicAssert.AreEqual(expectedFirstId, firstIdAfter, "First entry ID should match expected from ids array");
+                    
+                    // Verify the last entry is still the original last entry from ids array
+                    string expectedLastId = ids[count - 1];
+                    ClassicAssert.AreEqual(expectedLastId, lastIdAfter, "Last entry should still be the original last from ids array");
+                }
+                
+                currentLength = newLength;
+            }
+            
+            // Final verification: stream should be empty or minimal
+            long finalLength = db.StreamLength(streamKey);
+            ClassicAssert.AreEqual(0, finalLength, "Stream should be empty at the end");
+        }
 
         [Test]
         [Category("XRANGE_XREVRANGE")]
@@ -564,16 +644,15 @@ namespace Garnet.test
             db.StreamTrim(streamKey, 3);
 
             // Execute XLAST
-            // var result = server.Execute("XLAST", streamKey);
-            // var lastEntry = (RedisResult[])result;
-            var result = db.StreamRange(streamKey, "-", "+", 1, Order.Descending).FirstOrDefault();
+            var result = server.Execute("XLAST", streamKey);
+            var lastEntry = (RedisResult[])result;
 
             // Should return the last entry after trim
-            // ClassicAssert.AreEqual(2, lastEntry.Length);
-            // var values = (RedisResult[])lastEntry[1];
-            // ClassicAssert.AreEqual(2, values.Length);
-            // ClassicAssert.AreEqual("field9", (string)values[0]);
-            // ClassicAssert.AreEqual("value9", (string)values[1]);
+            ClassicAssert.AreEqual(2, lastEntry.Length);
+            var values = (RedisResult[])lastEntry[1];
+            ClassicAssert.AreEqual(2, values.Length);
+            ClassicAssert.AreEqual("field9", (string)values[0]);
+            ClassicAssert.AreEqual("value9", (string)values[1]);
         }
 
         [Test]
@@ -668,7 +747,7 @@ namespace Garnet.test
 
                 foreach (var key in keys)
                 {
-                    scannedKeys.Add((string)key);
+                    ClassicAssert.IsTrue(scannedKeys.Add((string)key), "Did not expect a duplicate");
                 }
 
                 iterations++;

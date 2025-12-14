@@ -8,7 +8,13 @@ namespace Garnet.server.BTreeIndex
 {
     public unsafe partial class BTree
     {
-        public void TrimByID(byte* key, out int underflowingNodes, out ulong entriesTrimmed, out Value headValidValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
+        public void TrimByID(byte* key, out ulong entriesTrimmed, out Value headValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
+            => TrimByID(key, out int _, out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted);
+
+        public void TrimByLength(ulong length, out ulong entriesTrimmed, out Value headValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted, bool approximateTrimming = false)
+            => TrimByLength(ref root, length, out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted, approximateTrimming);
+
+        private void TrimByID(byte* key, out int underflowingNodes, out ulong entriesTrimmed, out Value headValidValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
         {
             underflowingNodes = 0;
             entriesTrimmed = 0;
@@ -149,12 +155,12 @@ namespace Garnet.server.BTreeIndex
                 nodesTraversed[stats.depth - 1]->info->validCount -= totalDeletedValidCount;
             }
         }
-
-        public void TrimByLength(ref BTreeNode* node, ulong length, out ulong entriesTrimmed, out Value headValidValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted, bool approximateTrimming)
+    
+        private void TrimByLength(ref BTreeNode* node, ulong length, out ulong entriesTrimmed, out Value headValidValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted, bool approximateTrimming)
         {
             var depth = stats.depth - 1;
             ulong currentValidCount = 0;
-            var current = node;
+            BTreeNode* current = node;
             int[] internalSlots = new int[MAX_TREE_DEPTH];
             int underflowingNodes = 0;
             entriesTrimmed = 0;
@@ -162,6 +168,7 @@ namespace Garnet.server.BTreeIndex
             headValidKey = default;
             BTreeNode*[] nodesTraversed = new BTreeNode*[MAX_TREE_DEPTH];
 
+            // stream is already smaller than desired length to trim to
             if (length >= stats.numValidKeys)
             {
                 headValidValue = current->GetValue(0);
@@ -169,30 +176,44 @@ namespace Garnet.server.BTreeIndex
                 return;
             }
 
+            // set the starting node (root) as the last node in nodes traversed array
             nodesTraversed[depth] = current;
+            // while we have not traversed the entire depth of the tree?\
             while (depth > 0)
             {
+                // current node is internal node
                 if (current->info->type == BTreeNodeType.Internal)
                 {
+                    // iterate over the children in the internal node from right to left, largest to smallest
                     for (var i = current->info->count; i >= 0; i--)
                     {
                         var child = current->GetChild(i);
-                        if (currentValidCount + child->info->validCount >= length)
+
+                        // cumulative valid count is less than desired length so just keep accumulating
+                        if (currentValidCount + child->info->validCount < length)
                         {
-                            nodesTraversed[depth - 1] = child;
-                            internalSlots[depth] = i;
-                            current = child;
-                            break;
+                            currentValidCount += child->info->validCount;
                         }
                         else
                         {
-                            currentValidCount += child->info->validCount;
+                            // if the cumulative valid count including this child exceeds the desired length, then we have found the node to split at
+                            // track the node in nodes traversed and the slot index in internalSlots
+                            nodesTraversed[depth - 1] = child;
+                            internalSlots[depth] = i;
+                            // current holds the node we will continue traversing from to find the split point
+                            current = child;
+                            break;
                         }
                     }
                 }
                 depth--;
             }
 
+            // After traversing down from root (depth stats.depth-1) to leaf level (depth 0),
+            // current is guaranteed to be a leaf node
+            Debug.Assert(current->info->type == BTreeNodeType.Leaf, "Current must be a leaf after traversal");
+
+            // In approximate trimming mode, we don't attempt to trim within the node itself.
             if (approximateTrimming)
             {
                 headValidValue = current->GetValue(0);
@@ -200,17 +221,22 @@ namespace Garnet.server.BTreeIndex
             }
             else
             {
+                // length is the desired length to trim to and currentValidCount is the cumulative valid count before this node.
+                // since we are in non-approximate mode, we need to trim within this node to reach the exact desired length.
+                // keepInCurrent holds that little diff we may not have accumulated once we reached the current node itself.
                 ulong keepInCurrent = length - currentValidCount;
                 ulong kept = 0;
                 headValidValue = default;
                 headValidKey = default;
-                for (int i = 0; i < current->info->count; i++)
+                // iterate over entries in current node right to left (largest to smallest).
+                for (int i = (int)current->info->count - 1; i >= 0; i--)
                 {
+                    // only consider valid entries
                     if (current->IsValueValid(i))
                     {
+                        // we keep a key in the current node only if we have not yet reached the desired keepInCurrent count
                         if (kept < keepInCurrent)
                         {
-                            // Keep this key
                             if (kept == 0)
                             {
                                 headValidValue = current->GetValue(i);
@@ -220,7 +246,9 @@ namespace Garnet.server.BTreeIndex
                         }
                         else
                         {
-                            // Mark as deleted
+                            // once we have reached the desired keepInCurrent count, we mark remaining keys as deleted;
+                            // since we iterate right to left, we're now deleting entries to the LEFT (older entries)
+                            // Mark as deleted.
                             current->SetValueValid(i, false);
                             current->info->validCount--;
                             entriesTrimmed++;
@@ -230,6 +258,9 @@ namespace Garnet.server.BTreeIndex
                 }
             }
 
+            // now current node has been trimmed internally. Proceed to removing preceding nodes
+
+            // nodes are linked list at leaf level, so we can traverse backwards
             var leaf = current->info->previous;
             uint deletedValidCount = 0;
             var nodesToTraverseInSubtree = internalSlots[depth + 1] - 1;
@@ -258,6 +289,8 @@ namespace Garnet.server.BTreeIndex
                 numLeavesDeleted++;
                 leaf = prev;
             }
+
+            // disconnect current from previous nodes, and make the current the new head node
             current->info->previous = null;
             head = current;
             // traverse the internal nodes except root and delete preceding internal nodes
@@ -330,17 +363,6 @@ namespace Garnet.server.BTreeIndex
                     }
                 }
             }
-        }
-        public void TrimByID(byte* key, out ulong entriesTrimmed, out Value headValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted)
-        {
-            int underflowingNodes;
-            TrimByID(key, out underflowingNodes, out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted);
-        }
-
-        public void TrimByLength(ulong length, out ulong entriesTrimmed, out Value headValue, out ReadOnlySpan<byte> headValidKey, out uint numLeavesDeleted, bool approximateTrimming = false)
-        {
-
-            TrimByLength(ref root, length, out entriesTrimmed, out headValue, out headValidKey, out numLeavesDeleted, approximateTrimming);
         }
     }
 }
