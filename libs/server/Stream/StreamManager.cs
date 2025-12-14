@@ -41,34 +41,46 @@ namespace Garnet.server
             _lock.ReadLock();
             try
             {
-                int cursorFromStart = 0;
-                Dictionary<byte[], StreamObject>.KeyCollection streamKeys = streams.Keys;
+                int currentPosition = 0;  // Tracks absolute position in dictionary
+                int matchedCount = 0;     // Tracks number of keys added to results
+                
                 foreach (byte[] key in streams.Keys)
                 {
-                    // skip till we reach the cursor position, better to tradeoff some CPU for memory here by avoiding having to store all keys in an array
-                    if (cursorFromStart < cursor)
+                    // Skip keys before cursor position
+                    if (currentPosition < cursor)
                     {
-                        cursorFromStart++;
+                        currentPosition++;
                         continue;
                     }
 
+                    // Check pattern matching
+                    bool matches = true;
                     if (patternPtr != null)
                     {
                         fixed (byte* keyPtr = key)
-                            if (!GlobUtils.Match(patternPtr, length, keyPtr, key.Length, true))
-                                continue;
+                            matches = GlobUtils.Match(patternPtr, length, keyPtr, key.Length, true);
                     }
 
-                    keys.Add(key);
-                    cursorFromStart++;
-                    remainingCount--;
-                    if (remainingCount == 0)
+                    // If key matches pattern, add it to results
+                    if (matches)
                     {
-                        break;
+                        keys.Add(key);
+                        matchedCount++;
+                        
+                        // Stop if we've reached the requested count
+                        if (matchedCount >= remainingCount)
+                        {
+                            currentPosition++;
+                            break;
+                        }
                     }
+                    
+                    currentPosition++;
                 }
 
-                cursor = cursorFromStart < (streams.Count - 1) ? cursorFromStart : 0;
+                // If we've processed all keys, set cursor to 0 (scan complete)
+                // Otherwise, set cursor to current position for next iteration
+                cursor = currentPosition >= streams.Count ? 0 : currentPosition;
             }
             finally
             {
