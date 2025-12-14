@@ -138,12 +138,12 @@ namespace Tsavorite.core
                 if ((indicator & RecordDataHeader.ExtendedNamespaceIndicatorBit) == 0)
                 {
                     // Single-byte namespace
-                    return new ReadOnlySpan<byte>(&indicator, 1);
+                    return new ReadOnlySpan<byte>(ref *(byte*)NamespaceAddress);
                 }
                 else
                 {
                     // Extended namespace
-                    var length = indicator & RecordDataHeader.NamespaceIndicatorMask;
+                    // var length = indicator & RecordDataHeader.NamespaceIndicatorMask;
                     // return new ReadOnlySpan<byte>((byte*)(ExtendedNamespaceAddress + 1), length);
                     throw new TsavoriteException("Extended namespace not yet supported");
                 }

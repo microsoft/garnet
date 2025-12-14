@@ -37,8 +37,8 @@ namespace Tsavorite.core
             internal DiskLogRecord diskLogRecord;
 
             /// <summary>The Key that was sent to this operation if it was RUMD.</summary>
-            internal SpanByteHeapContainer request_key;
-            /// <summary>The hash of <see cref="request_key"/> if it is present.</summary>
+            internal SpanByteHeapContainer requestKey;
+            /// <summary>The hash of <see cref="requestKey"/> if it is present.</summary>
             internal long keyHash;
 
             /// <summary>The Input that was sent to this operation if it was RUMD.</summary>
@@ -87,7 +87,7 @@ namespace Tsavorite.core
             /// <inheritdoc/>
             public override string ToString()
             {
-                var keyStr = request_key is not null ? SpanByte.ToShortString(request_key.Get(), 12) : "<null>";
+                var keyStr = requestKey is not null ? SpanByte.ToShortString(requestKey.Get(), 12) : "<null>";
                 var keyHashStr = GetHashString(keyHash);
                 return $"Type={type}, id={id}, reqKey={keyStr}, keyHash={keyHashStr}, IsSet={diskLogRecord.IsSet}, LA={logicalAddress}, InitLLA={initialLatestLogicalAddress}, MinA={minAddress}, MaxA={maxAddress}, ETag={eTag}, ReadCopyOpt={readCopyOptions}";
             }
@@ -124,8 +124,8 @@ namespace Tsavorite.core
                 if (diskLogRecord.IsSet)
                     diskLogRecord.Dispose();
                 diskLogRecord = default;
-                request_key?.Dispose();
-                request_key = default;
+                requestKey?.Dispose();
+                requestKey = default;
                 input?.Dispose();
                 input = default;
             }
@@ -159,11 +159,11 @@ namespace Tsavorite.core
                 this.userContext = userContext;
             }
 
-            /// <summary>Copy the passed key into our <see cref="request_key"/></summary>
+            /// <summary>Copy the passed key into our <see cref="requestKey"/></summary>
             internal void CopyKey(ReadOnlySpan<byte> key, SectorAlignedBufferPool bufferPool)
             {
-                request_key?.Dispose();
-                request_key = new(key, bufferPool);
+                requestKey?.Dispose();
+                requestKey = new(key, bufferPool);
             }
 
             /// <summary>

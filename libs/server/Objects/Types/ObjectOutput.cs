@@ -49,7 +49,7 @@ namespace Garnet.server
         public ObjectOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;
 
         public static unsafe ObjectOutput FromPinnedPointer(byte* pointer, int length)
-            => new(new SpanByteAndMemory() { SpanByte = PinnedSpanByte.FromPinnedPointer(pointer, length) });
+            => new(SpanByteAndMemory.FromPinnedPointer(pointer, length));
 
         public void ConvertToHeap()
         {

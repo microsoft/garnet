@@ -70,7 +70,7 @@ namespace Garnet.cluster
                 try
                 {
                     var input = new UnifiedInput(RespCommand.MIGRATE);
-                    input.arg1 = session.NetworkBufferSettings.sendBufferSize - 1024;   // Reserve some space for overhead
+                    input.arg1 = session.NetworkBufferSettings.sendBufferSize - common.NetworkBufferSettings.SendBufferOverheadReserve;
                     foreach (var key in sketch.argSliceVector)
                     {
                         if (!session.WriteOrSendRecord(gcs, localServerSession, key, ref input, ref output, out _))

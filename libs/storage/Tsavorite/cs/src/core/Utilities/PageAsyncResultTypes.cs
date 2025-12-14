@@ -45,13 +45,14 @@ namespace Tsavorite.core
         public uint numBytesRead;
 
         /// <summary>The max offset on the main log page to iterate records when determining how many bytes in the ObjectLog to read.</summary>
-        internal long maxPtr;
+        internal long maxAddressOffsetOnPage;
 
         /// <summary>If true, we are called from recovery, and should use the non-transient <see cref="ObjectIdMap"/>.</summary>
         internal bool isForRecovery;
 
+        /// <inheritdoc/>
         public override string ToString()
-            => $"page {page}, isRecov {isForRecovery}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} ({destinationPtr:X}), maxPtr {maxPtr}";
+            => $"page {page}, isRecov {isForRecovery}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}), maxPtr {maxAddressOffsetOnPage}";
 
         /// <summary>Currently nothing to free.</summary>
         public void Free()
@@ -160,7 +161,7 @@ namespace Tsavorite.core
         public override string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-            return $"page {page}, isRecov {isForRecovery}, ctx {context}, count {count}, partial {bstr(partial)}, fromAddr {fromAddress} ({fromAddress:X}), untilAddr {untilAddress} ({untilAddress:X}),"
+            return $"page {page}, isRecov {isForRecovery}, ctx {context}, count {count}, partial {bstr(partial)}, fromAddr {fromAddress} (0x{fromAddress:X}), untilAddr {untilAddress} (0x{untilAddress:X}),"
                  + $" flushCompTrack [{flushCompletionTracker}], circFlushBufs [{flushBuffers}]";
         }
 

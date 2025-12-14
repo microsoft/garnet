@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -32,16 +31,17 @@ namespace Garnet.server
 
             if (input.header.type != 0)
             {
+                var garnetObject = (IGarnetObject)srcLogRecord.ValueObject;
                 if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
-                    var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
+                    var opResult = garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
                     if (output.HasWrongType)
                         return true;
 
                     return opResult;
                 }
 
-                if (IncorrectObjectType(ref input, (IGarnetObject)srcLogRecord.ValueObject, ref output.SpanByteAndMemory))
+                if (IncorrectObjectType(ref input, garnetObject, ref output.SpanByteAndMemory))
                 {
                     output.OutputFlags |= OutputFlags.WrongType;
                     return true;
@@ -51,7 +51,7 @@ namespace Garnet.server
                 var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                 try
                 {
-                    var result = customObjectCommand.Reader(srcLogRecord.Key, ref input, Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject), ref writer, ref readInfo);
+                    var result = customObjectCommand.Reader(srcLogRecord.Key, ref input, garnetObject, ref writer, ref readInfo);
                     return result;
                 }
                 finally

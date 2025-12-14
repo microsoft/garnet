@@ -488,6 +488,8 @@ namespace Tsavorite.core
                     numBytesToWrite = (uint)(endOffset - startOffset);
                 }
             }
+            else
+                Debug.Assert(!asyncResult.isForRecovery, "asyncResult.isForRecovery should always be done an entire page at a time");
 
             var alignedStartOffset = RoundDown(startOffset, (int)device.SectorSize);
             var startPadding = startOffset - alignedStartOffset;
@@ -548,13 +550,12 @@ namespace Tsavorite.core
                 while (physicalAddress < endPhysicalAddress)
                 {
                     // LogRecord is in the *copy of* the log buffer. We will update it (for objectIds) without affecting the actual record in the log.
+                    // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
                     var logRecord = new LogRecord(physicalAddress, objectIdMap);
-
-                    // Use allocatedSize here because that is what LogicalAddress is based on.
                     var logRecordSize = logRecord.AllocatedSize;
 
                     // Do not write Invalid records. This includes IsNull records.
-                    if (!logRecord.Info.Invalid)
+                    if (logRecord.Info.Valid)
                     {
                         // Do not write v+1 records (e.g. during a checkpoint)
                         if (logicalAddress < fuzzyStartLogicalAddress || !logRecord.Info.IsInNewVersion)
@@ -651,7 +652,7 @@ namespace Tsavorite.core
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
             logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
-            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.request_key, startPosition.SegmentSizeBits))
+            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits))
             {
                 // Success; set the DiskLogRecord objectDisposer. We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
                 ctx.diskLogRecord.objectDisposer = obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk);
@@ -674,7 +675,7 @@ namespace Tsavorite.core
             asyncResult.callback = callback;
             asyncResult.destinationPtr = destinationPtr;
             asyncResult.readBuffers = readBuffers;
-            asyncResult.maxPtr = aligned_read_length;
+            asyncResult.maxAddressOffsetOnPage = aligned_read_length;
 
             device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
         }
@@ -686,8 +687,6 @@ namespace Tsavorite.core
 
             var result = (PageAsyncReadResult<TContext>)context;
             var pageStartAddress = (long)result.destinationPtr;
-            if (numBytes < result.maxPtr)
-                result.maxPtr = numBytes;
 
             // Iterate all records in range to determine how many bytes we need to read from objlog.
             ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
@@ -695,21 +694,15 @@ namespace Tsavorite.core
             ulong endValueLength = 0;
             ulong totalBytesToRead = 0;
             var recordAddress = pageStartAddress + PageHeader.Size;
-            var endAddress = pageStartAddress + result.maxPtr;
+            var endAddress = pageStartAddress + result.maxAddressOffsetOnPage;
 
             while (recordAddress < endAddress)
             {
+                // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
                 var logRecord = new LogRecord(recordAddress);
-
-                // Use allocatedSize here because that is what LogicalAddress is based on.
-                if (logRecord.Info.RecordIsInline)
-                {
-                    recordAddress += logRecord.AllocatedSize;
-                    continue;
-                }
-
                 recordAddress += logRecord.AllocatedSize;
-                if (logRecord.Info.Valid)
+
+                if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
                 {
                     if (!startPosition.IsSet)
                         startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogTail.SegmentSizeBits);
@@ -734,12 +727,11 @@ namespace Tsavorite.core
 
                 while (recordAddress < endAddress)
                 {
+                    // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
                     var logRecord = new LogRecord(recordAddress, objectIdMapToUse);
-
-                    // Increment by allocatedSize because that is what LogicalAddress is based on.
                     recordAddress += logRecord.AllocatedSize;
 
-                    if (!logRecord.Info.RecordIsInline && logRecord.Info.Valid)
+                    if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
                     {
                         // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
                         // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.

@@ -9,6 +9,9 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
+
     public sealed unsafe partial class AofProcessor
     {
         /// <summary>
@@ -152,7 +155,7 @@ namespace Garnet.server
                 foreach (var entry in fuzzyRegionOps)
                 {
                     fixed (byte* entryPtr = entry)
-                        _ = aofProcessor.ReplayOp(entryPtr, entry.Length, asReplica);
+                        _ = aofProcessor.ReplayOp(aofProcessor.stringBasicContext, aofProcessor.objectBasicContext, aofProcessor.unifiedBasicContext, entryPtr, entry.Length, asReplica);
                 }
             }
 
@@ -184,7 +187,7 @@ namespace Garnet.server
                 {
                     // If recovering reads will not expose partial transactions so we can replay without locking.
                     // Also we don't have to synchronize replay of sublogs because write ordering has been established at the time of enqueue.
-                    ProcessTransactionGroupOperations(aofProcessor, txnGroup, asReplica);
+                    ProcessTransactionGroupOperations(aofProcessor, aofProcessor.stringBasicContext, aofProcessor.objectBasicContext, aofProcessor.unifiedBasicContext, txnGroup, asReplica);
                 }
                 else
                 {
@@ -197,7 +200,7 @@ namespace Garnet.server
                     _ = txnManager.Run(internal_txn: true);
 
                     // Process in parallel transaction group
-                    ProcessTransactionGroupOperations(aofProcessor, txnGroup, asReplica);
+                    ProcessTransactionGroupOperations(aofProcessor, aofProcessor.stringTransactionalContext, aofProcessor.objectTransactionalContext, aofProcessor.unifiedTransactionalContext, txnGroup, asReplica);
 
                     // NOTE:
                     // This txnManager instance is taken from a session with StoreWrapper(recordToAof=false).
@@ -236,12 +239,17 @@ namespace Garnet.server
                 }
 
                 // Process transaction 
-                static void ProcessTransactionGroupOperations(AofProcessor aofProcessor, TransactionGroup txnGroup, bool asReplica)
+                static void ProcessTransactionGroupOperations<TStringContext, TObjectContext, TUnifiedContext>(AofProcessor aofProcessor,
+                        TStringContext stringContext, TObjectContext objectContext, TUnifiedContext unifiedContext,
+                        TransactionGroup txnGroup, bool asReplica)
+                    where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+                    where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+                    where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
                 {
                     foreach (var entry in txnGroup.operations)
                     {
                         fixed (byte* entryPtr = entry)
-                            _ = aofProcessor.ReplayOp(entryPtr, entry.Length, asReplica: asReplica);
+                            _ = aofProcessor.ReplayOp(stringContext, objectContext, unifiedContext, entryPtr, entry.Length, asReplica: asReplica);
                     }
                 }
             }

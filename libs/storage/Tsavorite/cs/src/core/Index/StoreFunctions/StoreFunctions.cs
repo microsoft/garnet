@@ -105,7 +105,7 @@ namespace Tsavorite.core
         /// </summary>
         public static StoreFunctions<TKeyComparer, DefaultRecordDisposer> Create<TKeyComparer>(TKeyComparer keyComparer, Func<IObjectSerializer<IHeapObject>> valueSerializerCreator)
             where TKeyComparer : IKeyComparer
-            => new(keyComparer, valueSerializerCreator, new DefaultRecordDisposer());
+            => new(keyComparer, valueSerializerCreator, DefaultRecordDisposer.Instance);
 
         /// <summary>
         /// Construct a StoreFunctions instance with all types specified and contained instances passed, e.g. for custom objects.

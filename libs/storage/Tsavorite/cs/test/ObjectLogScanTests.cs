@@ -130,6 +130,10 @@ namespace Tsavorite.test
                 if (i % 100 == 0)
                     store.Log.FlushAndEvict(true);
             }
+
+            // One pass to verify in-memory scan
+            scanAndVerify(DiskScanBufferingMode.SinglePageBuffering);
+
             store.Log.FlushAndEvict(true);
 
             GenericPushScanTestFunctions scanIteratorFunctions = new();

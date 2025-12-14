@@ -126,7 +126,7 @@ namespace Garnet.server
 
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
-                    fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
+                    fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                     fieldInfo.HasETag = true;
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
@@ -143,7 +143,7 @@ namespace Garnet.server
                     return fieldInfo;
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
-                    var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                    var newValue = input.parseState.GetArgSliceByRef(1);
                     fieldInfo.ValueSize = newValue.Length + offset;
                     return fieldInfo;
 
@@ -184,7 +184,7 @@ namespace Garnet.server
                         fieldInfo.ValueSize = functions.GetInitialLength(ref input);
                     }
                     else
-                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
+                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                     fieldInfo.HasETag = input.header.CheckWithETagFlag();
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
@@ -297,14 +297,14 @@ namespace Garnet.server
 
                     case RespCommand.SETIFGREATER:
                     case RespCommand.SETIFMATCH:
-                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
+                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                         fieldInfo.HasETag = true;
                         fieldInfo.HasExpiration = input.arg1 != 0 || srcLogRecord.Info.HasExpiration;
                         return fieldInfo;
 
                     case RespCommand.SETRANGE:
                         var offset = input.parseState.GetInt(0);
-                        var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                        var newValue = input.parseState.GetArgSliceByRef(1);
 
                         fieldInfo.ValueSize = newValue.Length + offset;
                         if (fieldInfo.ValueSize < srcLogRecord.ValueSpan.Length)

@@ -604,7 +604,7 @@ namespace Garnet.server
                 return ObjectCollect(keys[0], CmdStrings.HASH, _hcollectTaskLock, ref input, ref objectContext);
 
             foreach (var key in keys)
-                RMWObjectStoreOperation(key.ToArray(), ref input, out _, ref objectContext);
+                RMWObjectStoreOperation(key, ref input, out _, ref objectContext);
 
             return GarnetStatus.OK;
         }

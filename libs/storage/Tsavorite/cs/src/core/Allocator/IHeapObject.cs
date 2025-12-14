@@ -24,7 +24,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Create a cloned (shallow copy) of this object
         /// </summary>
-        HeapObjectBase Clone();
+        IHeapObject Clone();
 
         /// <summary>
         /// Top-level routine to Serialize to the binary writer; checks for cached checkpoint data and calls <see cref="DoSerialize(BinaryWriter)"/> if needed.

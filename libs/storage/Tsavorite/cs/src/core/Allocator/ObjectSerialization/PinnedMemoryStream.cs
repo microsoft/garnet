@@ -67,14 +67,14 @@ namespace Tsavorite.core
         /// <summary>The amount of data in the internal streamBuffer. Not supported because we chunk and thus may not have all data.</summary>
         public override long Length
         {
-            get => throw new InvalidOperationException("Stream does not support get_Length.");
+            get => throw new NotSupportedException("Stream does not support get_Length.");
         }
 
         /// <summary>The current position of the stream seeking; not supported</summary>
         public override long Position
         {
-            get => throw new InvalidOperationException("Stream does not support get_Position.");
-            set => throw new InvalidOperationException("Stream does not support set_Position.");
+            get => throw new NotSupportedException("Stream does not support get_Position.");
+            set => throw new NotSupportedException("Stream does not support set_Position.");
         }
 
         /// <summary>Copy data from the internal streamBuffer into the buffer; the streamBuffer handles Flush, Reset, and Read more 
@@ -116,8 +116,8 @@ namespace Tsavorite.core
         /// <returns>The byte read (as an int)</returns>
         public override unsafe int ReadByte()
         {
-            Span<byte> span = stackalloc byte[1];
-            return streamBuffer.Read(span) > 0 ? span[0] : -1;
+            byte b = default;
+            return streamBuffer.Read(new Span<byte>(ref b)) > 0 ? b : -1;
         }
 
         /// <summary>Seeking is not supported in this stream.</summary>
@@ -178,6 +178,6 @@ namespace Tsavorite.core
 
         /// <summary>Writes a byte at the next streamBuffer position and advances the position</summary>
         public override unsafe void WriteByte(byte value)
-            => streamBuffer.Write(new ReadOnlySpan<byte>(&value, 1));
+            => streamBuffer.Write(new ReadOnlySpan<byte>(ref value));
     }
 }

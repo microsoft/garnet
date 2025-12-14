@@ -197,7 +197,7 @@ namespace Garnet.cluster
             var ckptManager = fileType switch
             {
                 CheckpointFileType.STORE_SNAPSHOT or
-                CheckpointFileType.STORE_INDEX => clusterProvider.GetReplicationLogCheckpointManager(),
+                CheckpointFileType.STORE_INDEX => clusterProvider.ReplicationLogCheckpointManager,
                 _ => throw new Exception($"Invalid checkpoint filetype {fileType}"),
             };
 
@@ -242,7 +242,7 @@ namespace Garnet.cluster
             {
                 CheckpointFileType.STORE_HLOG => GetStoreHLogDevice(isObj: false),
                 CheckpointFileType.STORE_HLOG_OBJ => GetStoreHLogDevice(isObj: true),
-                _ => clusterProvider.GetReplicationLogCheckpointManager().GetDevice(type, token),
+                _ => clusterProvider.ReplicationLogCheckpointManager.GetDevice(type, token),
             };
 
             var (shouldInitialize, segmentSizeBits) = ShouldInitialize(type, clusterProvider.serverOptions);

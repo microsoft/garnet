@@ -89,7 +89,7 @@ namespace Garnet.cluster
         public async Task<bool> SendCheckpoint()
         {
             errorMsg = default;
-            var storeCkptManager = clusterProvider.GetReplicationLogCheckpointManager();
+            var storeCkptManager = clusterProvider.ReplicationLogCheckpointManager;
             var current = clusterProvider.clusterManager.CurrentConfig;
             var (address, port) = current.GetWorkerAddressFromNodeId(replicaNodeId);
 

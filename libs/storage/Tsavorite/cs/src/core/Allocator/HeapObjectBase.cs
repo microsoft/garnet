@@ -33,7 +33,7 @@ namespace Tsavorite.core
         /// Create a cloned (shallow copy) of this object
         /// </summary>
         /// <remarks>The implementation of this method should NOT copy <see cref="serializedBytes"/>.</remarks>
-        public abstract HeapObjectBase Clone();
+        public abstract IHeapObject Clone();
 
         /// <summary>
         /// Serialize to the binary writer.

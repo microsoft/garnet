@@ -20,9 +20,9 @@ namespace Tsavorite.core
         public long id;
 
         /// <summary>
-        /// Key; this is a shallow copy of the key in pendingContext, pointing to its request_key.
+        /// Key; this is a shallow copy of the key in pendingContext, pointing to its requestKey.
         /// </summary>
-        public PinnedSpanByte request_key;
+        public PinnedSpanByte requestKey;
 
         /// The retrieved record, including deserialized ValueObject if RecordInfo.ValueIsObject, and key or value Overflows
         public DiskLogRecord diskLogRecord;
@@ -67,7 +67,7 @@ namespace Tsavorite.core
         /// </summary>
         public void DisposeRecord()
         {
-            // Do not dispose request_key as it is a shallow copy of the key in pendingContext
+            // Do not dispose requestKey as it is a shallow copy of the key in pendingContext
             diskLogRecord.Dispose();
             diskLogRecord = default;
             record?.Return();
@@ -76,7 +76,7 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public override readonly string ToString()
-            => $"id {id}, key {request_key}, LogAddr {AddressString(logicalAddress)}, MinAddr {minAddress}, LogRec [{diskLogRecord}]";
+            => $"id {id}, key {requestKey}, LogAddr {AddressString(logicalAddress)}, MinAddr {minAddress}, LogRec [{diskLogRecord}]";
     }
 
     // Wrapper class so we can communicate back the context.record even if it has to retry due to incomplete records.
@@ -95,15 +95,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Prepares to issue an async IO. <paramref name="request_key"/>
+        /// Prepares to issue an async IO. <paramref name="requestKey"/>
         /// </summary>
         /// <remarks>
-        /// SAFETY: The <paramref name="request_key"/> MUST be non-movable, such as on the stack, or pinned for the life of the IO operation.
+        /// SAFETY: The <paramref name="requestKey"/> MUST be non-movable, such as on the stack, or pinned for the life of the IO operation.
         /// </remarks>
-        internal void Prepare(PinnedSpanByte request_key, long logicalAddress)
+        internal void Prepare(PinnedSpanByte requestKey, long logicalAddress)
         {
             request.DisposeRecord();
-            request.request_key = request_key;
+            request.requestKey = requestKey;
             request.logicalAddress = logicalAddress;
         }
 

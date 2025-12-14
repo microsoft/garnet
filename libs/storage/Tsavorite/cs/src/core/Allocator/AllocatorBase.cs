@@ -1617,7 +1617,7 @@ namespace Tsavorite.core
                     devicePageOffset = devicePageOffset,
                     context = context,
                     handle = completed,
-                    maxPtr = PageSize,
+                    maxAddressOffsetOnPage = PageSize,
                     isForRecovery = true
                 };
 
@@ -1628,7 +1628,7 @@ namespace Tsavorite.core
                 if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
                 {
                     readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
-                    asyncResult.maxPtr = readLength;
+                    asyncResult.maxAddressOffsetOnPage = readLength;
                     readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
                 }
 
@@ -1922,7 +1922,7 @@ namespace Tsavorite.core
         /// <returns>True if we have the full record and the key was the requested key; if the record is fully inline, then the ctx.diskLogRecord is set and the ctx.record is transferred to it.
         /// Otherwise it is false, and:
         /// <list type="bullet">
-        ///     <item>If the key was present, it did not match ctx.request_key; <paramref name="prevAddressToRead"/> is recordInfo.PreviousAddress, and <paramref name="prevLengthToRead"/>
+        ///     <item>If the key was present, it did not match ctx.requestKey; <paramref name="prevAddressToRead"/> is recordInfo.PreviousAddress, and <paramref name="prevLengthToRead"/>
         ///         is the initial IO size.</item>
         ///     <item>Otherwise, the data we have is not sufficient to determine record length, or we know the length and it is greater than the data we have now.
         ///         <paramref name="prevAddressToRead"/> is the same address we just read, and <paramref name="prevLengthToRead"/>is one of:</item>
@@ -1972,7 +1972,7 @@ namespace Tsavorite.core
                     var keyStartPtr = ptr + offsetToKeyStart;
 
                     // We have the full key if it is inline, so check for a match if we had a requested key, and return if not.
-                    if (!ctx.request_key.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.request_key, new ReadOnlySpan<byte>(keyStartPtr, keyLength)))
+                    if (!ctx.requestKey.IsEmpty && recordInfo.KeyIsInline && !storeFunctions.KeysEqual(ctx.requestKey, new ReadOnlySpan<byte>(keyStartPtr, keyLength)))
                         return false;
 
                     // Keys match. If we have the full record, return success; otherwise we'll drop through to read the full record with the length we now know.

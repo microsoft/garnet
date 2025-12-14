@@ -29,10 +29,13 @@ namespace Garnet.common
         /// </summary>
         public readonly int maxReceiveBufferSize;
 
+        /// <summary>Reserve some space for overhead in send buffer when determining the max size of a single send buffer (e.g. for object serialization during migration)</summary>
+        public const int SendBufferOverheadReserve = 64;    // TODO verify this value
+
         /// <summary>
         /// Default constructor
         /// </summary>
-        public NetworkBufferSettings() : this(1 << 17, 1 << 17, 1 << 20) { }
+        public NetworkBufferSettings() : this(sendBufferSize: 1 << 17, initialReceiveBufferSize: 1 << 17, maxReceiveBufferSize: 1 << 20) { }
 
         /// <summary>
         /// Set network buffer sizes without allocating them
