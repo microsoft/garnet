@@ -390,19 +390,20 @@ jobs:
           Write-Host "=== Listing contents of history-branch ==="
           Get-ChildItem -Recurse -Path $path
 
-      - name: Copy history from allure_data_history branch into CombinedResults
-        shell: pwsh
-        run: |
-          $source = "${{ github.workspace }}/history-branch/test/Allure/history"
-          $target = "${{ github.workspace }}/test/Allure/CombinedResults/history"
-          if (Test-Path $source) {
-          New-Item -ItemType Directory -Path $target -Force
-          Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
-          Write-Host "History copied from allure_data_history into CombinedResults"
-          } else {
-              Write-Host "No history found in allure_data_history, starting fresh"
-          }        
-        if: ${{ always() }}
+      # DEBUG DEBUG - commenting this out so can test other parts to make sure getting history isn't the cause of problems
+      #- name: Copy history from allure_data_history branch into CombinedResults
+        #shell: pwsh
+        #run: |
+          #$source = "${{ github.workspace }}/history-branch/test/Allure/history"
+          #$target = "${{ github.workspace }}/test/Allure/CombinedResults/history"
+          #if (Test-Path $source) {
+          #New-Item -ItemType Directory -Path $target -Force
+          #Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
+          #Write-Host "History copied from allure_data_history into CombinedResults"
+          #} else {
+              #Write-Host "No history found in allure_data_history, starting fresh"
+          #}        
+        #if: ${{ always() }}
 
       - name: DEBUG DEBUG List contents of test/Allure/CombinedResults/history AFTER Copy previous history
         shell: pwsh
@@ -425,21 +426,22 @@ jobs:
           path: test/Allure/allure-report/history
         if: ${{ always() }}
 
-      - name: Commit updated history to allure_data_history
-        shell: pwsh
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin allure_data_history
-          git checkout allure_data_history
-          $source = "${{ github.workspace }}/test/Allure/allure-report/history"
-          $target = "${{ github.workspace }}/test/Allure/history"
-          Remove-Item -Recurse -Force $target -ErrorAction SilentlyContinue
-          Copy-Item -Path $source -Destination $target -Recurse -Force
-          git add test/Allure/history
-          git commit -m "Update Allure history [CI]"
-          git push origin allure_data_history
-        if: ${{ always() }}
+# DEBUG DEBUG - Commenting this out for now to test other parts         
+      #- name: Commit updated history to allure_data_history
+#        shell: pwsh
+#        run: |
+#          git config --global user.name "github-actions[bot]"
+#          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+#          git fetch origin allure_data_history
+#          git checkout allure_data_history
+#          $source = "${{ github.workspace }}/test/Allure/allure-report/history"
+#          $target = "${{ github.workspace }}/test/Allure/history"
+#          Remove-Item -Recurse -Force $target -ErrorAction SilentlyContinue
+#          Copy-Item -Path $source -Destination $target -Recurse -Force
+#          git add test/Allure/history
+#          git commit -m "Update Allure history [CI]"
+#          git push origin allure_data_history
+#        if: ${{ always() }}
 
       - name: Upload Allure HTML report
         uses: actions/upload-artifact@v4
