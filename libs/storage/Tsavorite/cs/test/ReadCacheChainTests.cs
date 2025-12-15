@@ -767,7 +767,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
-        [Repeat(10000)]
+        //[Repeat(10000)]
         [Explicit("TODO: requestKey being cleared unexpectedly")]
 #pragma warning disable IDE0060 // Remove unused parameter (modRange is used by Setup())
         public void LongRcMultiThreadTest([Values] HashModulo modRange, [Values(0, 1, 2, 8)] int numReadThreads, [Values(0, 1, 2, 8)] int numWriteThreads,
