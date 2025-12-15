@@ -548,141 +548,150 @@ namespace Garnet.test
 
             var key = $"{nameof(InterruptedVectorSetDelete)}_{faultLocation}";
 
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase();
-
-            var res1 = db.Execute("VADD", [key, "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
-            ClassicAssert.AreEqual(1, (int)res1);
-
-            // TODO: we could use EXISTS here... except not all non-Vector Set commands understand Vector Sets, so that's a bit flaky
-            ExceptionInjectionHelper.EnableException(faultLocation);
-            try
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
             {
-                _ = ClassicAssert.Throws<RedisServerException>(() => db.KeyDelete(key));
-            }
-            finally
-            {
-                ExceptionInjectionHelper.DisableException(faultLocation);
-            }
+                var db = redis.GetDatabase();
 
-            var deleteWasEffective = false;
+                var res1 = db.Execute("VADD", [key, "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+                ClassicAssert.AreEqual(1, (int)res1);
 
-            try
-            {
-                _ = (string)db.StringGet(key);
-                deleteWasEffective = true;
-            }
-            catch { }
-
-            var vectorSetCommands = Enum.GetValues<RespCommand>().Where(static x => x.IsLegalOnVectorSet() && x is not (RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG)).OrderBy(static x => x);
-
-            if (!deleteWasEffective)
-            {
-                // Check that all Vector Set commands on a partially deleted vector set give a reasonable error message OR succeed
-                //
-                // Success is possible if the delete failed early enough that we didn't actually being a "real" delete
-                //
-                // Such cases leave some trash around, but it'll be cleaned up either at restart or the next time a Vector Set is really deleted
-                foreach (var cmd in vectorSetCommands)
+                // TODO: we could use EXISTS here... except not all non-Vector Set commands understand Vector Sets, so that's a bit flaky
+                ExceptionInjectionHelper.EnableException(faultLocation);
+                try
                 {
-                    RedisServerException exc = null;
-                    switch (cmd)
-                    {
-                        case RespCommand.VADD:
-                            try
-                            {
-                                var res = db.Execute("VADD", [key, "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32"]);
-                                ClassicAssert.AreEqual(1, (int)res);
-                            }
-                            catch (RedisServerException e)
-                            {
-                                exc = e;
-                            }
-                            break;
-                        case RespCommand.VCARD:
-                            // TODO: Implement once VCARD is implemented
-                            continue;
-                        case RespCommand.VDIM:
-                            try
-                            {
-                                var res = db.Execute("VDIM", [key]);
-                                ClassicAssert.AreEqual(3, (int)res);
-                            }
-                            catch (RedisServerException e)
-                            {
-                                exc = e;
-                            }
-                            break;
-                        case RespCommand.VEMB:
-                            try
-                            {
-                                var res = (string[])db.Execute("VEMB", [key, new byte[] { 0, 0, 0, 0 }]);
-                                ClassicAssert.AreEqual(75, res.Length);
-                            }
-                            catch (RedisServerException e)
-                            {
-                                exc = e;
-                            }
-                            break;
-                        case RespCommand.VGETATTR:
-                            // TODO: Implement once VGETATTR is implemented
-                            continue;
-                        case RespCommand.VINFO:
-                            // TODO: Implement once VINFO is implemented
-                            continue;
-                        case RespCommand.VISMEMBER:
-                            // TODO: Implement once VISMEMBER is implemented
-                            continue;
-                        case RespCommand.VLINKS:
-                            // TODO: Implement once VLINKS is implemented
-                            continue;
-                        case RespCommand.VRANDMEMBER:
-                            // TODO: Implement once VRANDMEMBER is implemented
-                            continue;
-                        case RespCommand.VREM:
-                            try
-                            {
-                                var res = db.Execute("VREM", [key, new byte[] { 0, 0, 0, 5 }]);
-                                ClassicAssert.AreEqual(0, (int)res);
-                            }
-                            catch (RedisServerException e)
-                            {
-                                exc = e;
-                            }
-                            break;
-                        case RespCommand.VSETATTR:
-                            // TODO: Implement once VSETATTR is implemented
-                            continue;
-                        case RespCommand.VSIM:
-                            try
-                            {
-                                var res = (byte[][])db.Execute("VSIM", [key, "ELE", new byte[] { 0, 0, 0, 0 }]);
-                                ClassicAssert.IsTrue(res.Length > 0);
-                            }
-                            catch (RedisServerException e)
-                            {
-                                exc = e;
-                            }
-                            break;
-                        default:
-                            Assert.Fail($"No test for command: {cmd}");
-                            return;
-                    }
+                    _ = ClassicAssert.Throws<RedisServerException>(() => db.KeyDelete(key));
+                }
+                finally
+                {
+                    ExceptionInjectionHelper.DisableException(faultLocation);
+                }
+            }
 
-                    if (exc != null)
-                    {
-                        ClassicAssert.AreEqual("ERR Vector Set is in a partially deleted state - re-execute DEL to complete deletion", exc.Message, $"For command: {cmd}");
-                    }
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase();
+
+                var deleteWasEffective = false;
+
+                try
+                {
+                    _ = (string)db.StringGet(key);
+                    deleteWasEffective = true;
+                }
+                catch
+                {
                 }
 
-                // Delete again, this time we'll succeed
-                var delRes = db.KeyDelete(key);
-                ClassicAssert.IsTrue(delRes);
-            }
+                var vectorSetCommands = Enum.GetValues<RespCommand>().Where(static x => x.IsLegalOnVectorSet() && x is not (RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG)).OrderBy(static x => x);
 
-            // Now accessing the key should give a null, no matter what happened
-            var res2 = (string)db.StringGet(key);
-            ClassicAssert.IsNull(res2);
+                if (!deleteWasEffective)
+                {
+                    // Check that all Vector Set commands on a partially deleted vector set give a reasonable error message OR succeed
+                    //
+                    // Success is possible if the delete failed early enough that we didn't actually being a "real" delete
+                    //
+                    // Such cases leave some trash around, but it'll be cleaned up either at restart or the next time a Vector Set is really deleted
+                    foreach (var cmd in vectorSetCommands)
+                    {
+                        RedisServerException exc = null;
+                        switch (cmd)
+                        {
+                            case RespCommand.VADD:
+                                try
+                                {
+                                    var res = db.Execute("VADD", [key, "REDUCE", "3", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32"]);
+                                    ClassicAssert.AreEqual(1, (int)res);
+                                }
+                                catch (RedisServerException e)
+                                {
+                                    exc = e;
+                                }
+                                break;
+                            case RespCommand.VCARD:
+                                // TODO: Implement once VCARD is implemented
+                                continue;
+                            case RespCommand.VDIM:
+                                try
+                                {
+                                    var res = db.Execute("VDIM", [key]);
+                                    ClassicAssert.AreEqual(3, (int)res);
+                                }
+                                catch (RedisServerException e)
+                                {
+                                    exc = e;
+                                }
+                                break;
+                            case RespCommand.VEMB:
+                                try
+                                {
+                                    var res = (string[])db.Execute("VEMB", [key, new byte[] { 0, 0, 0, 0 }]);
+                                    ClassicAssert.AreEqual(75, res.Length);
+                                }
+                                catch (RedisServerException e)
+                                {
+                                    exc = e;
+                                }
+                                break;
+                            case RespCommand.VGETATTR:
+                                // TODO: Implement once VGETATTR is implemented
+                                continue;
+                            case RespCommand.VINFO:
+                                // TODO: Implement once VINFO is implemented
+                                continue;
+                            case RespCommand.VISMEMBER:
+                                // TODO: Implement once VISMEMBER is implemented
+                                continue;
+                            case RespCommand.VLINKS:
+                                // TODO: Implement once VLINKS is implemented
+                                continue;
+                            case RespCommand.VRANDMEMBER:
+                                // TODO: Implement once VRANDMEMBER is implemented
+                                continue;
+                            case RespCommand.VREM:
+                                try
+                                {
+                                    var res = db.Execute("VREM", [key, new byte[] { 0, 0, 0, 5 }]);
+                                    ClassicAssert.AreEqual(0, (int)res);
+                                }
+                                catch (RedisServerException e)
+                                {
+                                    exc = e;
+                                }
+                                break;
+                            case RespCommand.VSETATTR:
+                                // TODO: Implement once VSETATTR is implemented
+                                continue;
+                            case RespCommand.VSIM:
+                                try
+                                {
+                                    var res = (byte[][])db.Execute("VSIM", [key, "ELE", new byte[] { 0, 0, 0, 0 }]);
+                                    ClassicAssert.IsTrue(res.Length > 0);
+                                }
+                                catch (RedisServerException e)
+                                {
+                                    exc = e;
+                                }
+                                break;
+                            default:
+                                Assert.Fail($"No test for command: {cmd}");
+                                return;
+                        }
+
+                        if (exc != null)
+                        {
+                            ClassicAssert.AreEqual("ERR Vector Set is in a partially deleted state - re-execute DEL to complete deletion", exc.Message, $"For command: {cmd}");
+                        }
+                    }
+
+                    // Delete again, this time we'll succeed
+                    var delRes = db.KeyDelete(key);
+                    ClassicAssert.IsTrue(delRes);
+                }
+
+                // Now accessing the key should give a null, no matter what happened
+                var res2 = (string)db.StringGet(key);
+                ClassicAssert.IsNull(res2);
+            }
         }
 
         [Test]
