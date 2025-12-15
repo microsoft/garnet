@@ -330,13 +330,21 @@ jobs:
         run: |
           $source = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
           if (Test-Path $source) {
-            Write-Host "🧹 Removing $source"
+            Write-Host "Removing $source"
             Remove-Item $source -Recurse -Force
           } else {
             Write-Host "No AllResults folder found to remove"
           }
         if: ${{ always() }}
-        
+
+      - name: DEBUG DEBUG List contents of test/Allure/AllResults (after deleted just to check)
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
+          Get-ChildItem -Path $target -Recurse
+        if: ${{ always() }}
+       
+
       - name: DEBUG DEBUG List contents of test/Allure/CombinedResults BEFORE Copy previous history
         shell: pwsh
         run: |
