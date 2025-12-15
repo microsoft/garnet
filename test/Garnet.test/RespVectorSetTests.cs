@@ -776,9 +776,6 @@ namespace Garnet.test
         [Test]
         public void RepeatedVectorSetDeletes()
         {
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase();
-
             var bytes1 = new byte[75];
             var bytes2 = new byte[75];
             var bytes3 = new byte[75];
@@ -794,49 +791,60 @@ namespace Garnet.test
 
             for (var i = 0; i < 1_000; i++)
             {
-                var delRes = (int)db.Execute("DEL", ["foo"]);
-
-                if (i != 0)
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
                 {
-                    ClassicAssert.AreEqual(1, delRes);
-                }
-                else
-                {
-                    ClassicAssert.AreEqual(0, delRes);
-                }
+                    var db = redis.GetDatabase();
 
-                var addRes1 = (int)db.Execute("VADD", ["foo", "XB8", bytes1, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
-                ClassicAssert.AreEqual(1, addRes1);
+                    var delRes = (int)db.Execute("DEL", ["foo"]);
 
-                var addRes2 = (int)db.Execute("VADD", ["foo", "XB8", bytes2, new byte[] { 0, 0, 0, 1 }, "XPREQ8"]);
-                ClassicAssert.AreEqual(1, addRes2);
-
-                var readExc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GET", ["foo"]));
-                ClassicAssert.IsTrue(readExc.Message.Equals("WRONGTYPE Operation against a key holding the wrong kind of value."), $"In iteration: {i}");
-
-                var query = (byte[][])db.Execute("VSIM", ["foo", "XB8", bytes3]);
-
-                if (query is null)
-                {
-                    try
+                    if (i != 0)
                     {
-                        var res = db.Execute("FOO");
-                        Console.WriteLine($"After unexpected null, got: {res}");
+                        ClassicAssert.AreEqual(1, delRes);
                     }
-                    catch { }
-                }
-                else if (query.Length != 2)
-                {
-                    Console.WriteLine($"Wrong length {query.Length} != 2 response was");
-                    for (var j = 0; j < query.Length; j++)
+                    else
                     {
-                        var txt = Encoding.UTF8.GetString(query[j]);
-                        Console.WriteLine("---");
-                        Console.WriteLine(txt);
+                        ClassicAssert.AreEqual(0, delRes);
                     }
+
+                    var addRes1 = (int)db.Execute("VADD", ["foo", "XB8", bytes1, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
+                    ClassicAssert.AreEqual(1, addRes1);
+
+                    var addRes2 = (int)db.Execute("VADD", ["foo", "XB8", bytes2, new byte[] { 0, 0, 0, 1 }, "XPREQ8"]);
+                    ClassicAssert.AreEqual(1, addRes2);
+
+                    var readExc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("GET", ["foo"]));
+                    ClassicAssert.IsTrue(readExc.Message.Equals("WRONGTYPE Operation against a key holding the wrong kind of value."), $"In iteration: {i}");
                 }
 
-                ClassicAssert.AreEqual(2, query.Length, $"In iteration: {i}");
+                // After an exception, get a clean connection
+                using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+                {
+                    var db = redis.GetDatabase();
+
+                    var query = (byte[][])db.Execute("VSIM", ["foo", "XB8", bytes3]);
+
+                    if (query is null)
+                    {
+                        try
+                        {
+                            var res = db.Execute("FOO");
+                            Console.WriteLine($"After unexpected null, got: {res}");
+                        }
+                        catch { }
+                    }
+                    else if (query.Length != 2)
+                    {
+                        Console.WriteLine($"Wrong length {query.Length} != 2 response was");
+                        for (var j = 0; j < query.Length; j++)
+                        {
+                            var txt = Encoding.UTF8.GetString(query[j]);
+                            Console.WriteLine("---");
+                            Console.WriteLine(txt);
+                        }
+                    }
+
+                    ClassicAssert.AreEqual(2, query.Length, $"In iteration: {i}");
+                }
             }
         }
 
