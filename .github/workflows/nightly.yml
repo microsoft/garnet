@@ -203,6 +203,43 @@ jobs:
           path: test/Allure/AllResults
         if: ${{ always() }}
 
+      - name: Clean up raw allure-results folders after copying to Allure staging area
+        shell: pwsh
+        run: |
+          $base = $env:GITHUB_WORKSPACE
+          $paths = @(
+            "libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results",
+            "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          )
+          foreach ($p in $paths) {
+            $full = Join-Path $base $p
+            if (Test-Path $full) {
+              Write-Host "Removing $full"
+              Remove-Item $full -Recurse -Force
+            }
+          }
+        if: ${{ always() }}
+
+      - name: DEBUG DEBUG Verify allure-results were deleted by showing contents of folder
+        shell: pwsh
+        run: |
+          $base = $env:GITHUB_WORKSPACE
+
+          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
+            $dest = Join-Path $base "libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          } else {
+            $dest = Join-Path $base "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          }
+
+          Write-Host "Contents of ${dest}:"
+          if (Test-Path $dest) {
+            Get-ChildItem -Path $dest -Recurse | ForEach-Object { Write-Host $_.FullName }
+          } else {
+            Write-Host "No allure-results found at ${dest}"
+          }
+        if: ${{ always() }}
+
+
   generate-allure-report:
     name: Generate Allure Report
     runs-on: windows-latest  # only used to generate report - makes it easy on how calls made so don't have to worry about windows and linux 
@@ -245,7 +282,7 @@ jobs:
             }
         if: ${{ always() }}
 
-      - name: Download all test result artifacts
+      - name: Download all test result artifacts that were staged in artifacts
         uses: actions/download-artifact@v4
         with:
           path: test/Allure/AllResults
