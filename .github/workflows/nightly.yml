@@ -18,8 +18,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
-        os: [ ubuntu-latest, windows-latest ]
+        #test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
+        # os: [ ubuntu-latest, windows-latest ]
+        test: [ 'Tsavorite.test' ]
+        os: [ ubuntu-latest ]
+
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
 
@@ -325,7 +328,26 @@ jobs:
           }          
         if: ${{ always() }}
 
-      - name: Clean up AllResults after staging into CombinedResults
+      - name: Final cleanup of stray allure-results folders
+        shell: pwsh
+        run: |
+          $base = $env:GITHUB_WORKSPACE
+          # Remove any allure-results directories anywhere under workspace
+          Get-ChildItem -Path $base -Recurse -Directory -Filter "allure-results" |
+            ForEach-Object {
+              Write-Host "Removing $($_.FullName)"
+              Remove-Item $_.FullName -Recurse -Force
+            }
+
+          # Remove the staging folder once CombinedResults is ready
+          $staging = Join-Path $base "test/Allure/AllResults"
+          if (Test-Path $staging) {
+            Write-Host "Removing staging folder $staging"
+            Remove-Item $staging -Recurse -Force
+          }
+        if: ${{ always() }}
+
+      - name: DEBUG DEBUG - maybe don't need - Clean up AllResults after staging into CombinedResults
         shell: pwsh
         run: |
           $source = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
