@@ -197,6 +197,12 @@ namespace Garnet.server
                     // Clear everything after that so we won't think it's valid
                     remaining[^(sizeof(ulong) + sizeof(int) + curLen)..].Clear();
 
+                    // Shrink record by removed chunk size
+                    var newSize = inLogValue.TotalSize - (sizeof(ulong) + sizeof(int) + curLen);
+                    rmwInfo.ClearExtraValueLength(ref recordInfo, ref inLogValue, inLogValue.TotalSize);
+                    inLogValue.ShrinkSerializedLength(inLogValue.TotalSize - newSize);
+                    rmwInfo.SetUsedValueLength(ref recordInfo, ref inLogValue, inLogValue.TotalSize);
+
                     return true;
                 }
 
@@ -215,6 +221,14 @@ namespace Garnet.server
                 BinaryPrimitives.WriteInt32LittleEndian(remaining[sizeof(ulong)..], len);
 
                 key.CopyTo(remaining[(sizeof(ulong) + sizeof(int))..]);
+
+                remaining = remaining[(sizeof(ulong) + sizeof(int) + key.Length)..];
+
+                // Record used length
+                var newSize = inLogValue.TotalSize - remaining.Length;
+                rmwInfo.ClearExtraValueLength(ref recordInfo, ref inLogValue, inLogValue.TotalSize);
+                inLogValue.ShrinkSerializedLength(newSize);
+                rmwInfo.SetUsedValueLength(ref recordInfo, ref inLogValue, inLogValue.TotalSize);
             }
 
             return true;
