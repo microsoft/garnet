@@ -157,8 +157,10 @@ namespace Garnet.server
 
         /// <summary>
         /// Called in response to <see cref="TryMarkDeleteInProgress{TContext}(ref TContext, ref SpanByte, ulong)"/> or <see cref="ClearDeleteInProgress{TContext}(ref TContext, ref SpanByte, ulong)"/> to update metadata in Tsavorite.
+        /// 
+        /// Returns false if there is insufficient size for the value.
         /// </summary>
-        internal static void UpdateInProgressDeletes(Span<byte> updateMessage, ref SpanByte inLogValue, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
+        internal static bool TryUpdateInProgressDeletes(Span<byte> updateMessage, ref SpanByte inLogValue, ref RecordInfo recordInfo, ref RMWInfo rmwInfo)
         {
             var context = BinaryPrimitives.ReadUInt64LittleEndian(updateMessage);
             var len = BinaryPrimitives.ReadInt32LittleEndian(updateMessage[sizeof(ulong)..]);
@@ -185,7 +187,7 @@ namespace Garnet.server
                     if (isAdding)
                     {
                         // Already added, ignore and make no other changes
-                        return;
+                        return true;
                     }
 
                     // Copy later values to cover the one we're removing
@@ -195,7 +197,7 @@ namespace Garnet.server
                     // Clear everything after that so we won't think it's valid
                     remaining[^(sizeof(ulong) + sizeof(int) + curLen)..].Clear();
 
-                    return;
+                    return true;
                 }
 
                 remaining = remaining[(sizeof(ulong) + sizeof(int) + curLen)..];
@@ -203,12 +205,19 @@ namespace Garnet.server
 
             if (isAdding)
             {
+                if (remaining.Length < sizeof(ulong) + sizeof(int) + key.Length)
+                {
+                    return false;
+                }
+
                 // Not already added, so slap it in
                 BinaryPrimitives.WriteUInt64LittleEndian(remaining, context);
                 BinaryPrimitives.WriteInt32LittleEndian(remaining[sizeof(ulong)..], len);
 
                 key.CopyTo(remaining[(sizeof(ulong) + sizeof(int))..]);
             }
+
+            return true;
         }
 
         /// <summary>

@@ -152,7 +152,9 @@ namespace Garnet.server
                         return false;
                     }
 
-                    VectorManager.UpdateInProgressDeletes(inProgressDeleteUpdateData, ref value, ref recordInfo, ref rmwInfo);
+                    var fits = VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref value, ref recordInfo, ref rmwInfo);
+                    Debug.Assert(fits, "Initial size of record should have been correct for in progress deletes");
+
                     return true;
                 }
             }
@@ -210,7 +212,7 @@ namespace Garnet.server
                 effectiveWriteDesiredSize = -effectiveWriteDesiredSize;
             }
 
-            return sizeof(byte) + sizeof(int) + effectiveWriteDesiredSize;
+            return sizeof(int) + effectiveWriteDesiredSize;
         }
         /// <inheritdoc />
         public int GetRMWModifiedValueLength(ref SpanByte value, ref VectorInput input)
@@ -222,12 +224,12 @@ namespace Garnet.server
             }
 
             // Constant size indicated
-            return sizeof(byte) + sizeof(int) + input.WriteDesiredSize;
+            return sizeof(int) + input.WriteDesiredSize;
         }
 
         /// <inheritdoc />
         public int GetUpsertValueLength(ref SpanByte value, ref VectorInput input)
-        => sizeof(byte) + sizeof(int) + value.Length;
+        => sizeof(int) + value.Length;
 
         /// <inheritdoc />
         public bool InPlaceUpdater(ref SpanByte key, ref VectorInput input, ref SpanByte value, ref SpanByte output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
@@ -285,8 +287,7 @@ namespace Garnet.server
                         inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
                     }
 
-                    VectorManager.UpdateInProgressDeletes(inProgressDeleteUpdateData, ref value, ref recordInfo, ref rmwInfo);
-                    return true;
+                    return VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref value, ref recordInfo, ref rmwInfo);
                 }
             }
             else
@@ -367,7 +368,9 @@ namespace Garnet.server
                         inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
                     }
 
-                    VectorManager.UpdateInProgressDeletes(inProgressDeleteUpdateData, ref newValue, ref recordInfo, ref rmwInfo);
+                    var fits = VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref newValue, ref recordInfo, ref rmwInfo);
+                    Debug.Assert(fits, "Copy update should have allocated enough space for in progress deletes");
+
                     return true;
                 }
             }
