@@ -18,6 +18,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -119,7 +120,7 @@ namespace Garnet.test.cluster
 
             context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1, logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
@@ -208,7 +209,7 @@ namespace Garnet.test.cluster
 
             context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1, logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
@@ -362,7 +363,7 @@ namespace Garnet.test.cluster
 
             context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1, logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
@@ -476,7 +477,7 @@ namespace Garnet.test.cluster
 
             context.CreateInstances(HighReplicationShards, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 5, logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 5);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondaries = new IPEndPoint[SecondaryEndIndex - SecondaryStartIndex + 1];
@@ -623,7 +624,7 @@ namespace Garnet.test.cluster
 
             context.CreateInstances(HighReplicationShards, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 5, logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 5);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var secondaries = new IPEndPoint[SecondaryEndIndex - SecondaryStartIndex + 1];
@@ -817,7 +818,7 @@ namespace Garnet.test.cluster
 
             context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1, logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -888,8 +889,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(Primary0Index, Secondary0Index);
             context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index);
 
-            var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
-            var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+            var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, NullLogger.Instance);
+            var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, NullLogger.Instance);
 
             ClassicAssert.IsFalse(curPrimary0Slots.Contains(primary0HashSlot));
             ClassicAssert.IsTrue(curPrimary1Slots.Contains(primary0HashSlot));
@@ -949,13 +950,13 @@ namespace Garnet.test.cluster
 
             context.CreateInstances(ShardCount, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster();
 
             var otherNodeIndex = 0;
             var sourceNodeIndex = 1;
             var targetNodeIndex = 2;
-            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, context.logger);
-            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, context.logger);
+            var sourceNodeId = context.clusterTestUtils.GetNodeIdFromNode(sourceNodeIndex, NullLogger.Instance);
+            var targetNodeId = context.clusterTestUtils.GetNodeIdFromNode(targetNodeIndex, NullLogger.Instance);
 
             var key = Encoding.ASCII.GetBytes("{abc}a");
             List<byte[]> keys = [];
@@ -992,18 +993,18 @@ namespace Garnet.test.cluster
             }
 
             // Start migration
-            var respImport = context.clusterTestUtils.SetSlot(targetNodeIndex, _workingSlot, "IMPORTING", sourceNodeId, logger: context.logger);
+            var respImport = context.clusterTestUtils.SetSlot(targetNodeIndex, _workingSlot, "IMPORTING", sourceNodeId);
             ClassicAssert.AreEqual(respImport, "OK");
 
-            var respMigrate = context.clusterTestUtils.SetSlot(sourceNodeIndex, _workingSlot, "MIGRATING", targetNodeId, logger: context.logger);
+            var respMigrate = context.clusterTestUtils.SetSlot(sourceNodeIndex, _workingSlot, "MIGRATING", targetNodeId);
             ClassicAssert.AreEqual(respMigrate, "OK");
 
             // Check key count
-            var countKeys = context.clusterTestUtils.CountKeysInSlot(sourceNodeIndex, _workingSlot, context.logger);
+            var countKeys = context.clusterTestUtils.CountKeysInSlot(sourceNodeIndex, _workingSlot);
             ClassicAssert.AreEqual(countKeys, KeyCount);
 
             // Enumerate keys in slots
-            var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, _workingSlot, countKeys, context.logger);
+            var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, _workingSlot, countKeys);
             ClassicAssert.AreEqual(keys, keysInSlot);
 
             // Migrate keys, but in a random-ish order so context reservation gets stressed
@@ -1012,32 +1013,32 @@ namespace Garnet.test.cluster
             {
                 var migrateSingleIx = rand.Next(toMigrate.Count);
                 var migrateKey = toMigrate[migrateSingleIx];
-                context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), [migrateKey], context.logger);
+                context.clusterTestUtils.MigrateKeys(context.clusterTestUtils.GetEndPoint(sourceNodeIndex), context.clusterTestUtils.GetEndPoint(targetNodeIndex), [migrateKey], NullLogger.Instance);
 
                 toMigrate.RemoveAt(migrateSingleIx);
             }
 
             // Finish migration
-            var respNodeTarget = context.clusterTestUtils.SetSlot(targetNodeIndex, _workingSlot, "NODE", targetNodeId, logger: context.logger);
+            var respNodeTarget = context.clusterTestUtils.SetSlot(targetNodeIndex, _workingSlot, "NODE", targetNodeId);
             ClassicAssert.AreEqual(respNodeTarget, "OK");
-            context.clusterTestUtils.BumpEpoch(targetNodeIndex, waitForSync: true, logger: context.logger);
+            context.clusterTestUtils.BumpEpoch(targetNodeIndex, waitForSync: true);
 
-            var respNodeSource = context.clusterTestUtils.SetSlot(sourceNodeIndex, _workingSlot, "NODE", targetNodeId, logger: context.logger);
+            var respNodeSource = context.clusterTestUtils.SetSlot(sourceNodeIndex, _workingSlot, "NODE", targetNodeId);
             ClassicAssert.AreEqual(respNodeSource, "OK");
-            context.clusterTestUtils.BumpEpoch(sourceNodeIndex, waitForSync: true, logger: context.logger);
+            context.clusterTestUtils.BumpEpoch(sourceNodeIndex, waitForSync: true);
             // End Migration
 
             // Check config
-            var targetConfigEpochFromTarget = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(targetNodeIndex, targetNodeId, context.logger);
-            var targetConfigEpochFromSource = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(sourceNodeIndex, targetNodeId, context.logger);
-            var targetConfigEpochFromOther = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(otherNodeIndex, targetNodeId, context.logger);
+            var targetConfigEpochFromTarget = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(targetNodeIndex, targetNodeId, NullLogger.Instance);
+            var targetConfigEpochFromSource = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(sourceNodeIndex, targetNodeId, NullLogger.Instance);
+            var targetConfigEpochFromOther = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(otherNodeIndex, targetNodeId, NullLogger.Instance);
 
             while (targetConfigEpochFromOther != targetConfigEpochFromTarget || targetConfigEpochFromSource != targetConfigEpochFromTarget)
             {
                 _ = Thread.Yield();
-                targetConfigEpochFromTarget = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(targetNodeIndex, targetNodeId, context.logger);
-                targetConfigEpochFromSource = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(sourceNodeIndex, targetNodeId, context.logger);
-                targetConfigEpochFromOther = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(otherNodeIndex, targetNodeId, context.logger);
+                targetConfigEpochFromTarget = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(targetNodeIndex, targetNodeId, NullLogger.Instance);
+                targetConfigEpochFromSource = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(sourceNodeIndex, targetNodeId, NullLogger.Instance);
+                targetConfigEpochFromOther = context.clusterTestUtils.GetConfigEpochOfNodeFromNodeIndex(otherNodeIndex, targetNodeId, NullLogger.Instance);
             }
             ClassicAssert.AreEqual(targetConfigEpochFromTarget, targetConfigEpochFromOther);
             ClassicAssert.AreEqual(targetConfigEpochFromTarget, targetConfigEpochFromSource);
@@ -1045,10 +1046,10 @@ namespace Garnet.test.cluster
             // Check migration in progress
             foreach (var _key in keys)
             {
-                var resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out var slot, out var endpoint, out var responseState, logger: context.logger);
+                var resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out var slot, out var endpoint, out var responseState);
                 while (endpoint.Port != context.clusterTestUtils.GetEndPoint(targetNodeIndex).Port && responseState != ResponseState.OK)
                 {
-                    resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out slot, out endpoint, out responseState, logger: context.logger);
+                    resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out slot, out endpoint, out responseState);
                 }
                 ClassicAssert.AreEqual(resp, "MOVED");
                 ClassicAssert.AreEqual(_workingSlot, slot);
@@ -1056,7 +1057,7 @@ namespace Garnet.test.cluster
             }
 
             // Finish migration
-            context.clusterTestUtils.WaitForMigrationCleanup(context.logger);
+            context.clusterTestUtils.WaitForMigrationCleanup(NullLogger.Instance);
 
             // Validate vector sets coherent
             for (var i = 0; i < keys.Count; i++)
@@ -1086,7 +1087,7 @@ namespace Garnet.test.cluster
 
             context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1, logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -1187,8 +1188,8 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitForReplicaAofSync(Primary0Index, Secondary0Index);
             context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index);
 
-            var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
-            var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+            var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, NullLogger.Instance);
+            var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, NullLogger.Instance);
 
             foreach (var hashSlot in migratedHashSlots)
             {
@@ -1303,7 +1304,7 @@ namespace Garnet.test.cluster
 
             context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true, OnDemandCheckpoint: true, EnableIncrementalSnapshots: true);
             context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1, logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -1421,8 +1422,8 @@ namespace Garnet.test.cluster
                 context.clusterTestUtils.WaitForReplicaAofSync(Primary1Index, Secondary1Index, cancellation: replicationToken.Token);
             }
 
-            var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
-            var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+            var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, NullLogger.Instance);
+            var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, NullLogger.Instance);
 
             ClassicAssert.IsFalse(curPrimary0Slots.Contains(primary0HashSlot));
             ClassicAssert.IsTrue(curPrimary1Slots.Contains(primary0HashSlot));
@@ -1479,7 +1480,7 @@ namespace Garnet.test.cluster
 
             context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultShards, replica_count: 0, logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultShards, replica_count: 0);
 
             var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
             var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -1523,7 +1524,6 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(1, add0Res);
 
             // Migrate 0 -> 1
-            context.logger?.LogInformation("Starting 0 -> 1 migration of {slot}", vectorSetKeySlot);
             {
                 using (var migrateToken = new CancellationTokenSource())
                 {
@@ -1538,8 +1538,8 @@ namespace Garnet.test.cluster
                 var start = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
                 {
-                    var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
-                    var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+                    var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, NullLogger.Instance);
+                    var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, NullLogger.Instance);
 
                     var movedOffPrimary0 = !curPrimary0Slots.Contains(vectorSetKeySlot);
                     var movedOntoPrimary1 = curPrimary1Slots.Contains(vectorSetKeySlot);
@@ -1563,7 +1563,6 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(1, add1Res);
 
             // Migrate 1 -> 0
-            context.logger?.LogInformation("Starting 1 -> 0 migration of {slot}", vectorSetKeySlot);
             {
                 using (var migrateToken = new CancellationTokenSource())
                 {
@@ -1578,8 +1577,8 @@ namespace Garnet.test.cluster
                 var start = Stopwatch.GetTimestamp();
                 while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
                 {
-                    var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
-                    var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+                    var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, NullLogger.Instance);
+                    var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, NullLogger.Instance);
 
                     var movedOntoPrimary0 = curPrimary0Slots.Contains(vectorSetKeySlot);
                     var movedOffPrimary1 = !curPrimary1Slots.Contains(vectorSetKeySlot);
@@ -1632,7 +1631,7 @@ namespace Garnet.test.cluster
             {
                 context.CreateInstances(DefaultMultiPrimaryShards, useTLS: true, enableAOF: true);
                 context.CreateConnection(useTLS: true);
-                _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1, logger: context.logger);
+                _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultMultiPrimaryShards / 2, replica_count: 1);
 
                 var primary0 = (IPEndPoint)context.endpoints[Primary0Index];
                 var primary1 = (IPEndPoint)context.endpoints[Primary1Index];
@@ -1862,7 +1861,6 @@ namespace Garnet.test.cluster
                                 // Move 0 -> 1
                                 if (hashSlotsOnP0.Count > 0)
                                 {
-                                    context.logger?.LogInformation("Starting 0 -> 1 migration of {slots}", string.Join(", ", hashSlotsOnP0));
                                     using (var migrateToken = new CancellationTokenSource())
                                     {
                                         migrateToken.CancelAfter(30_000);
@@ -1876,8 +1874,8 @@ namespace Garnet.test.cluster
                                     var start = Stopwatch.GetTimestamp();
                                     while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
                                     {
-                                        var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
-                                        var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+                                        var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, NullLogger.Instance);
+                                        var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, NullLogger.Instance);
 
                                         var movedOffPrimary0 = !curPrimary0Slots.Any(h => hashSlotsOnP0.Contains(h));
                                         var movedOntoPrimary1 = hashSlotsOnP0.All(h => curPrimary1Slots.Contains(h));
@@ -1895,7 +1893,6 @@ namespace Garnet.test.cluster
                                 // Move 1 -> 0
                                 if (hashSlotsOnP1.Count > 0)
                                 {
-                                    context.logger?.LogInformation("Starting 1 -> 0 migration of {slots}", string.Join(", ", hashSlotsOnP1));
                                     using (var migrateToken = new CancellationTokenSource())
                                     {
                                         migrateToken.CancelAfter(30_000);
@@ -1909,8 +1906,8 @@ namespace Garnet.test.cluster
                                     var start = Stopwatch.GetTimestamp();
                                     while (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(5))
                                     {
-                                        var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
-                                        var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+                                        var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, NullLogger.Instance);
+                                        var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, NullLogger.Instance);
 
                                         var movedOffPrimary1 = !curPrimary1Slots.Any(h => hashSlotsOnP1.Contains(h));
                                         var movedOntoPrimary0 = hashSlotsOnP1.All(h => curPrimary0Slots.Contains(h));
@@ -1954,8 +1951,8 @@ namespace Garnet.test.cluster
 
                 // Check that everything written survived all the migrations
                 {
-                    var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, context.logger);
-                    var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, context.logger);
+                    var curPrimary0Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary0, NullLogger.Instance);
+                    var curPrimary1Slots = context.clusterTestUtils.GetOwnedSlotsFromNode(primary1, NullLogger.Instance);
 
                     for (var i = 0; i < vectorSetKeys.Count; i++)
                     {
@@ -2019,7 +2016,7 @@ namespace Garnet.test.cluster
 
             context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
             context.CreateConnection(useTLS: true);
-            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultShards / 2, replica_count: DefaultShards / 2, logger: context.logger);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultShards / 2, replica_count: DefaultShards / 2);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
             var replica = (IPEndPoint)context.endpoints[ReplicaIndex];
@@ -2041,7 +2038,7 @@ namespace Garnet.test.cluster
             ClassicAssert.IsFalse(primaryVectorManager.AreReplicationTasksActive);
             ClassicAssert.IsTrue(replicaVectorManager.AreReplicationTasksActive);
 
-            context.ClusterFailoveSpinWait(ReplicaIndex, context.logger);
+            context.ClusterFailoveSpinWait(ReplicaIndex, NullLogger.Instance);
 
             context.clusterTestUtils.WaitForReplicaAofSync(ReplicaIndex, PrimaryIndex);
 
