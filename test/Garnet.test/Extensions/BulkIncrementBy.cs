@@ -22,7 +22,7 @@ namespace Garnet
 
             for (var i = 0; i < count; i++)
             {
-                AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, isObject: false);
+                AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, storeType: StoreType.Main);
                 GetNextArg(ref procInput, ref offset);
             }
 

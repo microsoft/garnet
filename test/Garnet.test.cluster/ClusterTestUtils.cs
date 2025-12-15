@@ -95,8 +95,6 @@ namespace Garnet.test.cluster
 
         STORE_CURRENT_SAFE_AOF_ADDRESS,
         STORE_RECOVERED_SAFE_AOF_ADDRESS,
-        OBJECT_STORE_CURRENT_SAFE_AOF_ADDRESS,
-        OBJECT_STORE_RECOVERED_SAFE_AOF_ADDRESS,
         PRIMARY_SYNC_IN_PROGRESS,
         PRIMARY_FAILOVER_STATE,
         RECOVER_STATUS,
@@ -598,15 +596,14 @@ namespace Garnet.test.cluster
             this.certificates = certificates;
         }
 
-        public int HashSlot(RedisKey key)
-        => redis.HashSlot(key);
+        public int HashSlot(RedisKey key) => redis.HashSlot(key);
 
         public static void BackOff(TimeSpan timeSpan = default) => Thread.Sleep(timeSpan == default ? backoff : timeSpan);
 
         public static void BackOff(CancellationToken cancellationToken, TimeSpan timeSpan = default, string msg = null)
         {
             if (cancellationToken.IsCancellationRequested)
-                ClassicAssert.Fail(msg ?? "Cancellation Requested");
+                Assert.Fail(msg ?? "Cancellation Requested");
             Thread.Sleep(timeSpan == default ? backoff : timeSpan);
         }
 
@@ -1816,7 +1813,7 @@ namespace Garnet.test.cluster
             {
                 target.Address.ToString(),
                 target.Port,
-                $"",
+                "",
                 0,
                 -1,
                 "KEYS"
@@ -2599,42 +2596,6 @@ namespace Garnet.test.cluster
             }
         }
 
-        public long GetObjectStoreCurrentAofAddress(int nodeIndex, ILogger logger = null)
-            => GetObjectStoreCurrentAofAddress((IPEndPoint)endpoints[nodeIndex], logger);
-
-        public long GetObjectStoreCurrentAofAddress(IPEndPoint endPoint, ILogger logger = null)
-        {
-            try
-            {
-                var objectStoreCurrentSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.OBJECT_STORE_CURRENT_SAFE_AOF_ADDRESS], logger)[0].Item2;
-                return long.Parse(objectStoreCurrentSafeAofAddress);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "An error has occured; GetObjectStoreCurrentAofAddress");
-                Assert.Fail(ex.Message);
-                return 0;
-            }
-        }
-
-        public long GetObjectStoreRecoveredAofAddress(int nodeIndex, ILogger logger = null)
-            => GetObjectStoreRecoveredAofAddress((IPEndPoint)endpoints[nodeIndex], logger);
-
-        public long GetObjectStoreRecoveredAofAddress(IPEndPoint endPoint, ILogger logger = null)
-        {
-            try
-            {
-                var objectStoreRecoveredSafeAofAddress = GetReplicationInfo(endPoint, [ReplicationInfoItem.OBJECT_STORE_RECOVERED_SAFE_AOF_ADDRESS], logger)[0].Item2;
-                return long.Parse(objectStoreRecoveredSafeAofAddress);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogError(ex, "An error has occurred; GetObjectStoreRecoveredAofAddress");
-                Assert.Fail(ex.Message);
-                return 0;
-            }
-        }
-
         public long GetConnectedReplicas(int nodeIndex, ILogger logger = null)
             => GetConnectedReplicas((IPEndPoint)endpoints[nodeIndex], logger);
 
@@ -2849,14 +2810,6 @@ namespace Garnet.test.cluster
                             startsWith = "store_recovered_safe_aof_address:";
                             if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
                             continue;
-                        case ReplicationInfoItem.OBJECT_STORE_CURRENT_SAFE_AOF_ADDRESS:
-                            startsWith = "object_store_current_safe_aof_address:";
-                            if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
-                            continue;
-                        case ReplicationInfoItem.OBJECT_STORE_RECOVERED_SAFE_AOF_ADDRESS:
-                            startsWith = "object_store_recovered_safe_aof_address:";
-                            if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
-                            continue;
                         case ReplicationInfoItem.PRIMARY_SYNC_IN_PROGRESS:
                             startsWith = "master_sync_in_progress:";
                             if (item.StartsWith(startsWith)) items.Add((ii, item.Split(startsWith)[1].Trim()));
@@ -2883,23 +2836,23 @@ namespace Garnet.test.cluster
             return items;
         }
 
-        public int GetStoreCurrentVersion(int nodeIndex, bool isMainStore, ILogger logger = null)
+        public int GetStoreCurrentVersion(int nodeIndex, ILogger logger = null)
         {
-            var result = GetStoreInfo(endpoints[nodeIndex].ToIPEndPoint(), [StoreInfoItem.CurrentVersion], isMainStore, logger);
+            var result = GetStoreInfo(endpoints[nodeIndex].ToIPEndPoint(), [StoreInfoItem.CurrentVersion], logger);
             ClassicAssert.AreEqual(1, result.Count);
             return int.Parse(result[0].Item2);
         }
 
-        public List<(StoreInfoItem, string)> GetStoreInfo(int nodeIndex, HashSet<StoreInfoItem> infoItems, bool isMainStore, ILogger logger = null)
-            => GetStoreInfo(endpoints[nodeIndex].ToIPEndPoint(), infoItems, isMainStore, logger);
+        public List<(StoreInfoItem, string)> GetStoreInfo(int nodeIndex, HashSet<StoreInfoItem> infoItems, ILogger logger = null)
+            => GetStoreInfo(endpoints[nodeIndex].ToIPEndPoint(), infoItems, logger);
 
-        private List<(StoreInfoItem, string)> GetStoreInfo(IPEndPoint endPoint, HashSet<StoreInfoItem> infoItems, bool isMainStore, ILogger logger = null)
+        private List<(StoreInfoItem, string)> GetStoreInfo(IPEndPoint endPoint, HashSet<StoreInfoItem> infoItems, ILogger logger = null)
         {
             var fields = new List<(StoreInfoItem, string)>();
             try
             {
                 var server = redis.GetServer(endPoint);
-                var result = server.InfoRawAsync(isMainStore ? "store" : "objectstore").Result;
+                var result = server.InfoRawAsync("store").Result;
                 var data = result.Split('\n');
                 foreach (var line in data)
                 {
@@ -2960,8 +2913,8 @@ namespace Garnet.test.cluster
                 if (primaryReplicationOffset == secondaryReplicationOffset1)
                     break;
 
-                var primaryMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, isMainStore: true, logger);
-                var replicaMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(secondaryIndex, isMainStore: true, logger);
+                var primaryMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(primaryIndex, logger);
+                var replicaMainStoreVersion = context.clusterTestUtils.GetStoreCurrentVersion(secondaryIndex, logger);
                 BackOff(cancellationToken: context.cts.Token, msg: $"[{endpoints[primaryIndex]}]: {primaryMainStoreVersion},{primaryReplicationOffset} != [{endpoints[secondaryIndex]}]: {replicaMainStoreVersion},{secondaryReplicationOffset1}");
             }
             logger?.LogInformation("[{primaryEndpoint}]{primaryReplicationOffset} ?? [{endpoints[secondaryEndpoint}]{secondaryReplicationOffset1}", endpoints[primaryIndex], primaryReplicationOffset, endpoints[secondaryIndex], secondaryReplicationOffset1);

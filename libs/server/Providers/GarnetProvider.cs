@@ -8,14 +8,13 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
-    /// Session provider for Garnet, based on
-    /// [K, V, I, O, C] = [SpanByte, SpanByte, SpanByte, SpanByteAndMemory, long]
+    /// Session provider for Garnet
     /// </summary>
-    public sealed class GarnetProvider : TsavoriteKVProviderBase<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, SpanByteFunctionsForServer<long>, MainStoreFunctions, MainStoreAllocator, SpanByteServerSerializer>
+    public sealed class GarnetProvider : TsavoriteKVProviderBase<PinnedSpanByte, SpanByteAndMemory, StoreFunctions, StoreAllocator>
     {
         readonly StoreWrapper storeWrapper;
 
@@ -32,10 +31,8 @@ namespace Garnet.server
         /// <param name="storeWrapper"></param>
         /// <param name="broker"></param>
         /// <param name="maxSizeSettings"></param>        
-        public GarnetProvider(StoreWrapper storeWrapper,
-            SubscribeBroker broker = null,
-            MaxSizeSettings maxSizeSettings = default)
-            : base(new SpanByteServerSerializer(), broker, maxSizeSettings)
+        public GarnetProvider(StoreWrapper storeWrapper, SubscribeBroker broker = null, MaxSizeSettings maxSizeSettings = default)
+            : base(broker, maxSizeSettings)
         {
             this.storeWrapper = storeWrapper;
         }
@@ -61,12 +58,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override SpanByteFunctionsForServer<long> GetFunctions() => new();
-
-        /// <inheritdoc />
         public override IMessageConsumer GetSession(WireFormat wireFormat, INetworkSender networkSender)
             => (wireFormat == WireFormat.ASCII)
-                ? new RespServerSession(Interlocked.Increment(ref lastSessionId), networkSender, storeWrapper, broker, null, true)
+                ? new RespServerSession(Interlocked.Increment(ref lastSessionId), networkSender, storeWrapper, broker, authenticator: null, enableScripts: true)
                 : throw new GarnetException($"Unsupported wireFormat {wireFormat}");
     }
 }

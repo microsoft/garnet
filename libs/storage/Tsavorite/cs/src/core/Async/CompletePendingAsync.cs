@@ -9,9 +9,9 @@ namespace Tsavorite.core
     /// <summary>
     /// The Tsavorite key-value store
     /// </summary>
-    public partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>
         /// Check if at least one (sync) request is ready for CompletePending to operate on
@@ -28,8 +28,8 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns></returns>
         internal async ValueTask CompletePendingAsync<TInput, TOutput, TContext, TSessionFunctionsWrapper>(TSessionFunctionsWrapper sessionFunctions,
-                                      CancellationToken token, CompletedOutputIterator<TKey, TValue, TInput, TOutput, TContext> completedOutputs)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+                                      CancellationToken token, CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             while (true)
             {
@@ -44,11 +44,10 @@ namespace Tsavorite.core
                 }
 
                 await sessionFunctions.Ctx.WaitPendingAsync(token).ConfigureAwait(false);
-
-                if (sessionFunctions.Ctx.HasNoPendingRequests) return;
+                if (sessionFunctions.Ctx.HasNoPendingRequests)
+                    return;
 
                 InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
-
                 Thread.Yield();
             }
         }

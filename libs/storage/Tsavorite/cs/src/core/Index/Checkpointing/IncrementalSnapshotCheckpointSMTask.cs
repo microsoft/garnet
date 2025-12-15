@@ -10,11 +10,11 @@ namespace Tsavorite.core
     /// slower and more complex than a foldover, but more space-efficient on the log, and retains in-place
     /// update performance as it does not advance the readonly marker unnecessarily.
     /// </summary>
-    internal sealed class IncrementalSnapshotCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class IncrementalSnapshotCheckpointSMTask<TStoreFunctions, TAllocator> : HybridLogCheckpointSMTask<TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        public IncrementalSnapshotCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
+        public IncrementalSnapshotCheckpointSMTask(TsavoriteKV<TStoreFunctions, TAllocator> store, Guid guid)
             : base(store, guid)
         {
         }
@@ -25,7 +25,9 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE:
+                    // Capture state before checkpoint starts
                     store._hybridLogCheckpoint = store._lastSnapshotCheckpoint;
+                    ObjectLog_OnPrepare();
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     store._hybridLogCheckpoint.prevVersion = next.Version;
                     break;
@@ -48,7 +50,7 @@ namespace Tsavorite.core
                     // handle corrupted or unexpected concurrent page changes during the flush, e.g., by
                     // resuming epoch protection if necessary. Correctness is not affected as we will
                     // only read safe pages during recovery.
-                    store.hlogBase.AsyncFlushDeltaToDevice(
+                    store.hlogBase.AsyncFlushDeltaToDevice(ObjectLog_OnWaitFlush(),
                         store.hlogBase.FlushedUntilAddress,
                         store._hybridLogCheckpoint.info.finalLogicalAddress,
                         store._lastSnapshotCheckpoint.info.finalLogicalAddress,
@@ -61,7 +63,7 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:
-                    CollectMetadata(next, store);
+                    ObjectLog_OnPersistenceCallback();
                     store._hybridLogCheckpoint.info.deltaTailAddress = store._hybridLogCheckpoint.deltaLog.TailAddress;
                     store.WriteHybridLogIncrementalMetaInfo(store._hybridLogCheckpoint.deltaLog);
                     store._hybridLogCheckpoint.info.deltaTailAddress = store._hybridLogCheckpoint.deltaLog.TailAddress;

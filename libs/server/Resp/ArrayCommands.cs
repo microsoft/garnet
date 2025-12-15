@@ -73,7 +73,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSETNX));
             }
 
-            var input = new RawStringInput(RespCommand.MSETNX, ref parseState);
+            var input = new StringInput(RespCommand.MSETNX, ref parseState);
             var status = storageApi.MSET_Conditional(ref input);
 
             // For a "set if not exists", NOTFOUND means that the operation succeeded
@@ -86,10 +86,11 @@ namespace Garnet.server
             where TGarnetApi : IGarnetApi
         {
             int keysDeleted = 0;
+
             for (int c = 0; c < parseState.Count; c++)
             {
-                var key = parseState.GetArgSliceByRef(c).SpanByte;
-                var status = storageApi.DELETE(ref key, StoreType.All);
+                var key = parseState.GetArgSliceByRef(c);
+                var status = storageApi.DELETE(key);
 
                 // This is only an approximate count because the deletion of a key on disk is performed as a blind tombstone append
                 if (status == GarnetStatus.OK)
@@ -257,7 +258,7 @@ namespace Garnet.server
             }
 
             var pattern = "*"u8;
-            var patternArgSlice = ArgSlice.FromPinnedSpan(pattern);
+            var patternArgSlice = PinnedSpanByte.FromPinnedSpan(pattern);
             var allKeys = true;
             long countValue = 10;
             ReadOnlySpan<byte> typeParameterValue = default;
@@ -330,16 +331,21 @@ namespace Garnet.server
             // TYPE key
             var keySlice = parseState.GetArgSliceByRef(0);
 
-            var status = storageApi.GetKeyType(keySlice, out var typeName);
+            // Prepare input
+            var input = new UnifiedInput(RespCommand.TYPE);
+
+            // Prepare UnifiedOutput output
+            var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.TYPE(keySlice, ref input, ref output);
 
             if (status == GarnetStatus.OK)
             {
-                while (!RespWriteUtils.TryWriteSimpleString(typeName, ref dcurr, dend))
-                    SendAndReset();
+                ProcessOutput(output.SpanByteAndMemory);
             }
             else
             {
-                while (!RespWriteUtils.TryWriteSimpleString("none"u8, ref dcurr, dend))
+                while (!RespWriteUtils.TryWriteSimpleString(CmdStrings.none, ref dcurr, dend))
                     SendAndReset();
             }
 
@@ -448,7 +454,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_LENGTH_AND_INDEXES);
             }
 
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
 
             if (!output.IsSpanByte)

@@ -8,6 +8,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
+    using static LogAddress;
+
     internal unsafe struct InternalHashTable
     {
         public long size;
@@ -136,7 +138,7 @@ namespace Tsavorite.core
             do
             {
                 // Search through the bucket looking for our key. Last entry is reserved for the overflow pointer.
-                for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
+                for (int index = 0; index < Constants.kOverflowBucketIndex; index++)
                 {
                     target_entry_word = *(((long*)hei.bucket) + index);
                     if (0 == target_entry_word)
@@ -151,7 +153,7 @@ namespace Tsavorite.core
                 }
 
                 // Go to next bucket in the chain (if it is a nonzero overflow allocation)
-                target_entry_word = *(((long*)hei.bucket) + Constants.kOverflowBucketIndex) & Constants.kAddressMask;
+                target_entry_word = *(((long*)hei.bucket) + Constants.kOverflowBucketIndex) & kAddressBitMask;
                 if (target_entry_word == 0)
                 {
                     // We lock the firstBucket, so it can't be cleared.
@@ -181,7 +183,7 @@ namespace Tsavorite.core
                 // Install tentative tag in free slot
                 hei.entry = default;
                 hei.entry.Tag = hei.tag;
-                hei.entry.Address = Constants.kTempInvalidAddress;
+                hei.entry.Address = kTempInvalidAddress;
                 hei.entry.Tentative = true;
 
                 // Insert the tag into this slot. Failure means another session inserted a key into that slot, so continue the loop to find another free slot.
@@ -220,7 +222,7 @@ namespace Tsavorite.core
             do
             {
                 // Search through the bucket looking for our key. Last entry is reserved for the overflow pointer.
-                for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
+                for (int index = 0; index < Constants.kOverflowBucketIndex; index++)
                 {
                     target_entry_word = *(((long*)hei.bucket) + index);
                     if (0 == target_entry_word)
@@ -236,9 +238,9 @@ namespace Tsavorite.core
 
                     // If the entry points to an address that has been truncated, it's free; try to reclaim it by setting its word to 0.
                     hei.entry.word = target_entry_word;
-                    if (hei.entry.Address < BeginAddress && hei.entry.Address != Constants.kTempInvalidAddress)
+                    if (hei.entry.Address < BeginAddress && hei.entry.Address != kTempInvalidAddress)
                     {
-                        if (hei.entry.word == Interlocked.CompareExchange(ref hei.bucket->bucket_entries[index], Constants.kInvalidAddress, target_entry_word))
+                        if (hei.entry.word == Interlocked.CompareExchange(ref hei.bucket->bucket_entries[index], kInvalidAddress, target_entry_word))
                         {
                             if (hei.slot == Constants.kInvalidEntrySlot)
                             {
@@ -258,7 +260,7 @@ namespace Tsavorite.core
 
                 // Go to next bucket in the chain (if it is a nonzero overflow allocation). Don't mask off the non-address bits here; they're needed for CAS.
                 target_entry_word = *(((long*)hei.bucket) + Constants.kOverflowBucketIndex);
-                while ((target_entry_word & Constants.kAddressMask) == 0)
+                while ((target_entry_word & kAddressBitMask) == 0)
                 {
                     // There is no next bucket. If slot is Constants.kInvalidEntrySlot then we did not find an empty slot, so must allocate a new bucket.
                     if (hei.slot == Constants.kInvalidEntrySlot)
@@ -268,7 +270,7 @@ namespace Tsavorite.core
                         var physicalBucketAddress = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(logicalBucketAddress);
                         long compare_word = target_entry_word;
                         target_entry_word = logicalBucketAddress;
-                        target_entry_word |= compare_word & ~Constants.kAddressMask;
+                        target_entry_word |= compare_word & ~kAddressBitMask;
 
                         long result_word = Interlocked.CompareExchange(
                             ref hei.bucket->bucket_entries[Constants.kOverflowBucketIndex],
@@ -297,7 +299,7 @@ namespace Tsavorite.core
                 }
 
                 // The next bucket was there or was allocated. Move to it.
-                hei.bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word & Constants.kAddressMask);
+                hei.bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word & kAddressBitMask);
             } while (true);
         }
 
@@ -315,7 +317,7 @@ namespace Tsavorite.core
             do
             {
                 // Search through the bucket looking for our key. Last entry is reserved for the overflow pointer.
-                for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
+                for (int index = 0; index < Constants.kOverflowBucketIndex; index++)
                 {
                     target_entry_word = *(((long*)bucket) + index);
                     if (0 == target_entry_word)
@@ -333,7 +335,7 @@ namespace Tsavorite.core
                 }
 
                 // Go to next bucket in the chain (if it is a nonzero overflow allocation).
-                target_entry_word = *(((long*)bucket) + Constants.kOverflowBucketIndex) & Constants.kAddressMask;
+                target_entry_word = *(((long*)bucket) + Constants.kOverflowBucketIndex) & kAddressBitMask;
                 if (target_entry_word == 0)
                     return false;
                 bucket = (HashBucket*)overflowBucketsAllocator.GetPhysicalAddress(target_entry_word);

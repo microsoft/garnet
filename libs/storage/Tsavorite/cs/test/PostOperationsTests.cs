@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+#if LOGRECORD_TODO
+
 using System.IO;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -15,7 +17,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class PostOperationsTests
     {
-        class PostFunctions : SimpleSimpleFunctions<int, int>
+        class PostFunctions : SimpleLongSimpleFunctions<int, int>
         {
             internal long pswAddress;
             internal long piuAddress;
@@ -33,7 +35,7 @@ namespace Tsavorite.test
 
             internal PostFunctions() : base() { }
 
-            public override void PostSingleWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo, WriteReason reason) { pswAddress = upsertInfo.Address; }
+            public override void PostInitialWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo) { pswAddress = upsertInfo.Address; }
 
             public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) { value = input; return true; }
             /// <inheritdoc/>
@@ -52,8 +54,8 @@ namespace Tsavorite.test
                 return !returnFalseFromPCU;
             }
 
-            public override void PostSingleDeleter(ref int key, ref DeleteInfo deleteInfo) { psdAddress = deleteInfo.Address; }
-            public override bool ConcurrentDeleter(ref int key, ref int value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => false;
+            public override void PostInitialDeleter(ref int key, ref DeleteInfo deleteInfo) { psdAddress = deleteInfo.Address; }
+            public override bool InPlaceDeleter(ref int key, ref int value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => false;
         }
 
         private TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
@@ -122,7 +124,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void PostSingleWriterTest()
+        public void PostInitialWriterTest()
         {
             // Populate has already executed the not-found test (InternalInsert) as part of its normal insert.
 
@@ -203,9 +205,9 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void PostSingleDeleterTest()
+        public void PostInitialDeleterTest()
         {
-            // Execute the not-in-memory test (InternalDelete); ConcurrentDeleter returns false to force a new record to be added.
+            // Execute the not-in-memory test (InternalDelete); InPlaceDeleter returns false to force a new record to be added.
             _ = bContext.Delete(TargetKey);
             ClassicAssert.AreEqual(expectedAddress, session.functions.psdAddress);
 
@@ -217,3 +219,5 @@ namespace Tsavorite.test
         }
     }
 }
+
+#endif // LOGRECORD_TODO

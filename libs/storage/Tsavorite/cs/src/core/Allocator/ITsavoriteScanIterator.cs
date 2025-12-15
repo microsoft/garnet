@@ -6,9 +6,9 @@ using System;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Scan buffering mode
+    /// Scan buffering mode when reading from disk
     /// </summary>
-    public enum ScanBufferingMode
+    public enum DiskScanBufferingMode
     {
         /// <summary>
         /// Buffer only current page being scanned
@@ -27,39 +27,31 @@ namespace Tsavorite.core
     }
 
     /// <summary>
-    /// Scan iterator interface for Tsavorite log
+    /// Scan buffering mode for in-memory records, e.g. for copying and holding a record for Pull iterators
     /// </summary>
-    /// <typeparam name="TKey"></typeparam>
-    /// <typeparam name="TValue"></typeparam>
-    public interface ITsavoriteScanIterator<TKey, TValue> : IDisposable
+    public enum InMemoryScanBufferingMode
     {
         /// <summary>
-        /// Gets reference to current key
+        /// Buffer the current record being scanned. Automatic for Pull iteration.
         /// </summary>
-        /// <returns></returns>
-        ref TKey GetKey();
+        CurrentRecordBuffering,
 
         /// <summary>
-        /// Gets reference to current value
+        /// Do not buffer - with this mode, Push iteration will hold the epoch during each record's push to the client
         /// </summary>
-        /// <returns></returns>
-        ref TValue GetValue();
+        NoBuffering
+    }
 
-        /// <summary>
-        /// Get next record
-        /// </summary>
-        /// <param name="recordInfo"></param>
-        /// <returns>True if record found, false if end of scan</returns>
-        bool GetNext(out RecordInfo recordInfo);
-
+    /// <summary>
+    /// Scan iterator interface for Tsavorite log
+    /// </summary>
+    public interface ITsavoriteScanIterator : ISourceLogRecord, IDisposable
+    {
         /// <summary>
         /// Get next record
         /// </summary>
-        /// <param name="recordInfo"></param>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
         /// <returns>True if record found, false if end of scan</returns>
-        bool GetNext(out RecordInfo recordInfo, out TKey key, out TValue value);
+        bool GetNext();
 
         /// <summary>
         /// Current address

@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Tsavorite.core;
 using static Tsavorite.benchmark.YcsbConstants;
 
 namespace Tsavorite.benchmark
@@ -57,7 +58,7 @@ namespace Tsavorite.benchmark
                 AggregateType.FinalTrimmed => StatsLineNum.FinalTrimmedTail,
                 _ => throw new InvalidOperationException("Unknown AggregateType")
             };
-            ShowStats(statsLineNum, "TailAddress", tailAddresses);
+            ShowStats(statsLineNum, "TailAddress (abs)", tailAddresses);
         }
 
         private void ShowStats(StatsLineNum lineNum, string tag, List<double> vec)
@@ -105,7 +106,7 @@ namespace Tsavorite.benchmark
             => $"##00; {InsPerSec}: {insertsPerSec:N2}; sec: {(double)elapsedMs / 1000:N3}";
 
         internal static string GetAddressesLine(AddressLineNum lineNum, long begin, long head, long rdonly, long tail)
-            => $"##{(int)lineNum:00}; begin: {begin}; head: {head}; readonly: {rdonly}; tail: {tail}";
+            => $"##{(int)lineNum:00}; begin: {LogAddress.AddressString(begin)}; head: {LogAddress.AddressString(head)}; readonly: {LogAddress.AddressString(rdonly)}; tail: {LogAddress.AddressString(tail)}";
 
         internal static string GetStatsLine(StatsLineNum lineNum, string opsPerSecTag, double opsPerSec)
             => $"##{(int)lineNum:00}; {opsPerSecTag}: {opsPerSec:N2}; {OptionsString}";

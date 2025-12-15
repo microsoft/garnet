@@ -169,7 +169,7 @@ namespace Garnet.test
             {
                 tasks[i] = Task.Run(async () =>
                 {
-                    for (var ii = 0; ii < numIterations; ++ii)
+                    for (var ii = 0; ii < numIterations; ii++)
                     {
                         string name = GetUniqueName(ss, ii);
                         if (name == String.Empty)

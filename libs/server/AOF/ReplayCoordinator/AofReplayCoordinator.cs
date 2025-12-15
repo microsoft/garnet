@@ -3,18 +3,14 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     public sealed unsafe partial class AofProcessor
     {
@@ -159,7 +155,7 @@ namespace Garnet.server
                 foreach (var entry in fuzzyRegionOps)
                 {
                     fixed (byte* entryPtr = entry)
-                        _ = aofProcessor.ReplayOp(aofProcessor.basicContext, aofProcessor.objectStoreBasicContext, entryPtr, entry.Length, asReplica);
+                        _ = aofProcessor.ReplayOp(aofProcessor.stringBasicContext, aofProcessor.objectBasicContext, aofProcessor.unifiedBasicContext, entryPtr, entry.Length, asReplica);
                 }
             }
 
@@ -182,6 +178,7 @@ namespace Garnet.server
             /// <summary>
             /// Process provided transaction group
             /// </summary>
+            /// <param name="ptr"></param>
             /// <param name="asReplica"></param>
             /// <param name="txnGroup"></param>
             internal void ProcessTransactionGroup(byte* ptr, bool asReplica, TransactionGroup txnGroup)
@@ -190,7 +187,7 @@ namespace Garnet.server
                 {
                     // If recovering reads will not expose partial transactions so we can replay without locking.
                     // Also we don't have to synchronize replay of sublogs because write ordering has been established at the time of enqueue.
-                    ProcessTransactionGroupOperations(aofProcessor, aofProcessor.basicContext, aofProcessor.objectStoreBasicContext, txnGroup, asReplica);
+                    ProcessTransactionGroupOperations(aofProcessor, aofProcessor.stringBasicContext, aofProcessor.objectBasicContext, aofProcessor.unifiedBasicContext, txnGroup, asReplica);
                 }
                 else
                 {
@@ -203,7 +200,7 @@ namespace Garnet.server
                     _ = txnManager.Run(internal_txn: true);
 
                     // Process in parallel transaction group
-                    ProcessTransactionGroupOperations(aofProcessor, txnManager.LockableContext, txnManager.ObjectStoreLockableContext, txnGroup, asReplica);
+                    ProcessTransactionGroupOperations(aofProcessor, aofProcessor.stringTransactionalContext, aofProcessor.objectTransactionalContext, aofProcessor.unifiedTransactionalContext, txnGroup, asReplica);
 
                     // NOTE:
                     // This txnManager instance is taken from a session with StoreWrapper(recordToAof=false).
@@ -218,44 +215,41 @@ namespace Garnet.server
                 {
                     foreach (var entry in txnGroup.operations)
                     {
-                        ref var key = ref Unsafe.NullRef<SpanByte>();
                         fixed (byte* entryPtr = entry)
                         {
                             var header = *(AofHeader*)entryPtr;
-                            var isObject = false;
+                            var keyPtr = entryPtr + sizeof(AofHeader);
                             switch (header.opType)
                             {
                                 case AofEntryType.StoreUpsert:
                                 case AofEntryType.StoreRMW:
                                 case AofEntryType.StoreDelete:
-                                    key = ref Unsafe.AsRef<SpanByte>(entryPtr + sizeof(AofHeader));
-                                    isObject = false;
-                                    break;
                                 case AofEntryType.ObjectStoreUpsert:
                                 case AofEntryType.ObjectStoreRMW:
                                 case AofEntryType.ObjectStoreDelete:
-                                    key = ref Unsafe.AsRef<SpanByte>(entryPtr + sizeof(AofHeader));
-                                    isObject = true;
                                     break;
                                 default:
                                     throw new GarnetException($"Invalid replay operation {header.opType} within transaction");
                             }
 
                             // Add key to the lockset
-                            txnManager.SaveKeyEntryToLock(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()), isObject: isObject, LockType.Exclusive);
+                            txnManager.SaveKeyEntryToLock(PinnedSpanByte.FromLengthPrefixedPinnedPointer(keyPtr), LockType.Exclusive);
                         }
                     }
                 }
 
                 // Process transaction 
-                static void ProcessTransactionGroupOperations<TContext, TObjectContext>(AofProcessor aofProcessor, TContext context, TObjectContext objectContext, TransactionGroup txnGroup, bool asReplica)
-                    where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
-                    where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+                static void ProcessTransactionGroupOperations<TStringContext, TObjectContext, TUnifiedContext>(AofProcessor aofProcessor,
+                        TStringContext stringContext, TObjectContext objectContext, TUnifiedContext unifiedContext,
+                        TransactionGroup txnGroup, bool asReplica)
+                    where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+                    where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+                    where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
                 {
                     foreach (var entry in txnGroup.operations)
                     {
                         fixed (byte* entryPtr = entry)
-                            _ = aofProcessor.ReplayOp(context, objectContext, entryPtr, entry.Length, asReplica: asReplica);
+                            _ = aofProcessor.ReplayOp(stringContext, objectContext, unifiedContext, entryPtr, entry.Length, asReplica: asReplica);
                     }
                 }
             }

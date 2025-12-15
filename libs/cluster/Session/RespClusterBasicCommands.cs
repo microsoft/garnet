@@ -366,7 +366,7 @@ namespace Garnet.cluster
                     gossipWithMeet = true;
             }
 
-            var gossipMessage = parseState.GetArgSliceByRef(currTokenIdx).SpanByte.ToByteArray();
+            var gossipMessage = parseState.GetArgSliceByRef(currTokenIdx).ToArray();
 
             clusterProvider.clusterManager.gossipStats.UpdateGossipBytesRecv(gossipMessage.Length);
             var current = clusterProvider.clusterManager.CurrentConfig;

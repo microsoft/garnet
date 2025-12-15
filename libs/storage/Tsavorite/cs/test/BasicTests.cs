@@ -12,11 +12,11 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
 
-    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>;
 
     //** NOTE - more detailed / in depth Read tests in ReadAddressTests.cs 
     //** These tests ensure the basics are fully covered
@@ -24,9 +24,9 @@ namespace Tsavorite.test
     [TestFixture]
     internal class BasicTests
     {
-        private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
-        private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> session;
-        private BasicContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> bContext;
+        private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
+        private ClientSession<InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> session;
+        private BasicContext<InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> bContext;
         private IDevice log;
         TestDeviceType deviceType;
 
@@ -37,7 +37,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
         }
 
-        private void Setup(KVSettings<KeyStruct, ValueStruct> kvSettings, TestDeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
+        private void Setup(KVSettings kvSettings, TestDeviceType deviceType, int latencyMs = DefaultLocalMemoryDeviceLatencyMs)
         {
             kvSettings.IndexSize = 1L << 13;
 
@@ -46,7 +46,7 @@ namespace Tsavorite.test
             kvSettings.LogDevice = log;
 
             store = new(kvSettings
-                , StoreFunctions<KeyStruct, ValueStruct>.Create(KeyStruct.Comparer.Instance)
+                , StoreFunctions.Create(KeyStruct.Comparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -63,7 +63,7 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
         private void AssertCompleted(Status expected, Status actual)
@@ -92,8 +92,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            _ = bContext.Upsert(ref key1, ref value, Empty.Default);
-            var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
 
             AssertCompleted(new(StatusCode.Found), status);
             ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
@@ -113,26 +113,25 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            _ = bContext.Upsert(ref key1, ref value, Empty.Default);
-            var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
-            _ = bContext.Delete(ref key1, Empty.Default);
+            _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key1), Empty.Default);
 
-            status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+            status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.NotFound), status);
 
             var key2 = new KeyStruct { kfield1 = 14, kfield2 = 15 };
             var value2 = new ValueStruct { vfield1 = 24, vfield2 = 25 };
 
-            _ = bContext.Upsert(ref key2, ref value2, Empty.Default);
-            status = bContext.Read(ref key2, ref input, ref output, Empty.Default);
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key2), SpanByte.FromPinnedVariable(ref value2), Empty.Default);
+            status = bContext.Read(SpanByte.FromPinnedVariable(ref key2), ref input, ref output, Empty.Default);
 
             AssertCompleted(new(StatusCode.Found), status);
             ClassicAssert.AreEqual(value2.vfield1, output.value.vfield1);
             ClassicAssert.AreEqual(value2.vfield2, output.value.vfield2);
         }
-
 
         [Test]
         [Category("TsavoriteKV")]
@@ -154,13 +153,13 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                _ = bContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
             }
 
             for (var i = 0; i < 10 * count; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
-                _ = bContext.Delete(ref key1, Empty.Default);
+                _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key1), Empty.Default);
             }
 
             for (var i = 0; i < 10 * count; i++)
@@ -168,16 +167,16 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = 24 };
 
-                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.NotFound), status);
 
-                _ = bContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
             }
 
             for (var i = 0; i < 10 * count; i++)
             {
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = 14 };
-                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
                 AssertCompleted(new(StatusCode.Found), status);
             }
         }
@@ -203,7 +202,7 @@ namespace Tsavorite.test
                 var i = r.Next(10000);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                _ = bContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
             }
 
             r = new Random(10);
@@ -215,7 +214,7 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (bContext.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
+                if (bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default).IsPending)
                 {
                     _ = bContext.CompletePending(true);
                 }
@@ -233,7 +232,7 @@ namespace Tsavorite.test
                 var i = r.Next(10000);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                ClassicAssert.IsFalse(bContext.Read(ref key1, ref input, ref output, Empty.Default).Found);
+                ClassicAssert.IsFalse(bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default).Found);
             }
         }
 
@@ -258,7 +257,7 @@ namespace Tsavorite.test
                 var i = r.Next(RandRange);
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
-                _ = bContext.Upsert(ref key1, ref value, Empty.Default);
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
             }
 
             r = new Random(RandSeed);
@@ -271,7 +270,7 @@ namespace Tsavorite.test
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 var value = new ValueStruct { vfield1 = i, vfield2 = i + 1 };
 
-                if (bContext.Read(ref key1, ref input, ref output, Empty.Default).IsPending)
+                if (bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default).IsPending)
                 {
                     ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
                     ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
@@ -291,7 +290,7 @@ namespace Tsavorite.test
                 var i = r.Next(RandRange);
                 OutputStruct output = default;
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                var foundStatus = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                var foundStatus = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(foundStatus.IsPending);
                 if (batchMode == BatchMode.NoBatch)
                 {
@@ -310,8 +309,8 @@ namespace Tsavorite.test
                     while (outputs.Next())
                     {
                         count++;
-                        ClassicAssert.AreEqual(outputs.Current.Key.kfield1, outputs.Current.Output.value.vfield1);
-                        ClassicAssert.AreEqual(outputs.Current.Key.kfield2, outputs.Current.Output.value.vfield2);
+                        ClassicAssert.AreEqual(outputs.Current.Key.AsRef<KeyStruct>().kfield1, outputs.Current.Output.value.vfield1);
+                        ClassicAssert.AreEqual(outputs.Current.Key.AsRef<KeyStruct>().kfield2, outputs.Current.Output.value.vfield2);
                     }
                     outputs.Dispose();
                     ClassicAssert.AreEqual(batchSize + (c == batchSize ? 1 : 0), count);
@@ -342,14 +341,14 @@ namespace Tsavorite.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                _ = bContext.RMW(ref key1, ref input, Empty.Default);
+                _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key1), ref input, Empty.Default);
             }
             for (var j = 0; j < nums.Length; ++j)
             {
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                if (bContext.RMW(ref key1, ref input, ref output, Empty.Default).IsPending)
+                if (bContext.RMW(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default).IsPending)
                 {
                     _ = bContext.CompletePending(true);
                 }
@@ -370,7 +369,7 @@ namespace Tsavorite.test
                 key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 ValueStruct value = new() { vfield1 = i, vfield2 = i + 1 };
 
-                status = bContext.Read(ref key, ref input, ref output, Empty.Default);
+                status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
                 ClassicAssert.AreEqual(2 * value.vfield1, output.value.vfield1);
@@ -378,7 +377,7 @@ namespace Tsavorite.test
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
-            status = bContext.Read(ref key, ref input, ref output, Empty.Default);
+            status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.NotFound), status);
         }
 
@@ -405,7 +404,7 @@ namespace Tsavorite.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                _ = bContext.RMW(ref key1, ref input, Empty.Default);
+                _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key1), ref input, Empty.Default);
             }
 
             // CopyUpdater
@@ -414,7 +413,7 @@ namespace Tsavorite.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                _ = bContext.RMW(key1, input);  // no ref and do not set any other params
+                _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key1), ref input);
             }
 
             OutputStruct output = default;
@@ -428,7 +427,7 @@ namespace Tsavorite.test
                 key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 ValueStruct value = new() { vfield1 = i, vfield2 = i + 1 };
 
-                status = bContext.Read(ref key, ref input, ref output, Empty.Default);
+                status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, Empty.Default);
 
                 AssertCompleted(new(StatusCode.Found), status);
                 ClassicAssert.AreEqual(2 * value.vfield1, output.value.vfield1);
@@ -436,7 +435,7 @@ namespace Tsavorite.test
             }
 
             key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
-            status = bContext.Read(ref key, ref input, ref output, Empty.Default);
+            status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.NotFound), status);
         }
 
@@ -453,8 +452,9 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            _ = bContext.Upsert(ref key1, ref value, Empty.Default);
-            var status = bContext.Read(key1, input, out var output, Empty.Default);
+            OutputStruct output = default;
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
@@ -474,8 +474,9 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            _ = bContext.Upsert(ref key1, ref value, Empty.Default);
-            var status = bContext.Read(key1, out var output, Empty.Default);
+            OutputStruct output = default;
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
@@ -499,8 +500,8 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            _ = bContext.Upsert(ref key1, ref value, Empty.Default);
-            var status = bContext.Read(ref key1, ref output, Empty.Default);
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             // Verify the read data
@@ -521,9 +522,9 @@ namespace Tsavorite.test
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            _ = bContext.Upsert(ref key1, ref value, Empty.Default);
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
 
-            var (status, output) = bContext.Read(key1);
+            var (status, output) = bContext.Read(SpanByte.FromPinnedVariable(ref key1));
             AssertCompleted(new(StatusCode.Found), status);
 
             ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
@@ -549,7 +550,7 @@ namespace Tsavorite.test
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
             ReadOptions readOptions = default;
 
-            _ = bContext.Upsert(ref key1, ref value, Empty.Default);
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
             var status = bContext.ReadAtAddress(store.Log.BeginAddress, ref input, ref output, ref readOptions, out _, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
@@ -563,25 +564,15 @@ namespace Tsavorite.test
         {
             internal long expectedReadAddress;
 
-            public override bool SingleReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, ref InputStruct input, ref OutputStruct output, ref ReadInfo readInfo)
             {
-                Assign(ref value, ref dst, ref readInfo);
-                return true;
-            }
-
-            public override bool ConcurrentReader(ref KeyStruct key, ref InputStruct input, ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo, ref RecordInfo recordInfo)
-            {
-                Assign(ref value, ref dst, ref readInfo);
-                return true;
-            }
-
-            void Assign(ref ValueStruct value, ref OutputStruct dst, ref ReadInfo readInfo)
-            {
-                dst.value = value;
+                output.value = logRecord.ValueSpan.AsRef<ValueStruct>();
                 ClassicAssert.AreEqual(expectedReadAddress, readInfo.Address);
                 expectedReadAddress = -1;   // show that the test executed
+                return true;
             }
-            public override void ReadCompletionCallback(ref KeyStruct key, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
+
+            public override void ReadCompletionCallback(ref DiskLogRecord logRecord, ref InputStruct input, ref OutputStruct output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 // Do no data verifications here; they're done in the test
             }
@@ -608,7 +599,7 @@ namespace Tsavorite.test
             var readAtAddress = store.Log.BeginAddress;
             Status status;
 
-            _ = skipReadCachebContext.Upsert(ref key1, ref value, Empty.Default);
+            _ = skipReadCachebContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
 
             void VerifyOutput()
             {
@@ -632,7 +623,7 @@ namespace Tsavorite.test
 
             // This will just be an ordinary read, as the record is in memory.
             functions.expectedReadAddress = readAtAddress;
-            status = skipReadCachebContext.Read(ref key1, ref input, ref output);
+            status = skipReadCachebContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output);
             ClassicAssert.IsTrue(status.Found);
             VerifyOutput();
 
@@ -642,7 +633,7 @@ namespace Tsavorite.test
             // Do not put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
             ReadOptions readOptions = new() { CopyOptions = ReadCopyOptions.None };
-            status = skipReadCachebContext.ReadAtAddress(readAtAddress, ref key1, ref input, ref output, ref readOptions, out _);
+            status = skipReadCachebContext.ReadAtAddress(readAtAddress, SpanByte.FromPinnedVariable(ref key1), ref input, ref output, ref readOptions, out _);
             VerifyResult();
 
             ClassicAssert.AreEqual(store.ReadCache.BeginAddress, store.ReadCache.TailAddress);
@@ -650,15 +641,15 @@ namespace Tsavorite.test
             // Put it into the read cache.
             functions.expectedReadAddress = readAtAddress;
             readOptions.CopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.ReadCache);
-            status = skipReadCachebContext.ReadAtAddress(readAtAddress, ref key1, ref input, ref output, ref readOptions, out _);
+            status = skipReadCachebContext.ReadAtAddress(readAtAddress, SpanByte.FromPinnedVariable(ref key1), ref input, ref output, ref readOptions, out _);
             ClassicAssert.IsTrue(status.IsPending);
             VerifyResult();
 
             ClassicAssert.Less(store.ReadCache.BeginAddress, store.ReadCache.TailAddress);
 
             // Now this will read from the read cache.
-            functions.expectedReadAddress = Constants.kInvalidAddress;
-            status = skipReadCachebContext.Read(ref key1, ref input, ref output);
+            functions.expectedReadAddress = LogAddress.kInvalidAddress;
+            status = skipReadCachebContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output);
             ClassicAssert.IsFalse(status.IsPending);
             ClassicAssert.IsTrue(status.Found);
             VerifyOutput();
@@ -680,36 +671,11 @@ namespace Tsavorite.test
 
             ClassicAssert.AreEqual(0, store.EntryCount);
 
-            _ = bContext.Upsert(ref key1, ref value);
-            var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value));
+            var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
             AssertCompleted(new(StatusCode.Found), status);
 
             ClassicAssert.AreEqual(1, store.EntryCount);
-            ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
-            ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
-        }
-
-        // Simple Upsert test of overload where not using Ref for key and value and setting all parameters
-        [Test]
-        [Category("TsavoriteKV")]
-        [Category("Smoke")]
-        public void UpsertNoRefNoDefaultsTest()
-        {
-            // Just checking more parameter values so one device is enough
-            deviceType = TestDeviceType.MLSD;
-
-            Setup(new() { MemorySize = 1L << 29 }, deviceType);
-
-            InputStruct input = default;
-            OutputStruct output = default;
-
-            var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
-            var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
-
-            _ = bContext.Upsert(key1, value, Empty.Default);
-            var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
-            AssertCompleted(new(StatusCode.Found), status);
-
             ClassicAssert.AreEqual(value.vfield1, output.value.vfield1);
             ClassicAssert.AreEqual(value.vfield2, output.value.vfield2);
         }
@@ -723,25 +689,26 @@ namespace Tsavorite.test
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
 
-            using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
+            using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(
                 new()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var s = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var s = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = s.BasicContext;
 
-            long key = 1, value = 1, input = 10, output = 0;
-            _ = bContext.Upsert(ref key, ref value);
-            _ = bContext.Read(ref key, ref output);
-            ClassicAssert.AreEqual(value, output);
-            _ = bContext.RMW(ref key, ref input);
-            _ = bContext.RMW(ref key, ref input);
-            _ = bContext.Read(ref key, ref output);
+            long keyNum = 1, valueNum = 1, input = 10, output = 0;
+            ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum);
+            _ = bContext.Upsert(key, value);
+            _ = bContext.Read(key, ref output);
+            ClassicAssert.AreEqual(valueNum, output);
+            _ = bContext.RMW(key, ref input);
+            _ = bContext.RMW(key, ref input);
+            _ = bContext.Read(key, ref output);
             ClassicAssert.AreEqual(10, output);
         }
 
@@ -763,16 +730,16 @@ namespace Tsavorite.test
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
 
-            using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
+            using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(
                 new()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
 
             const int numRecords = 500;
@@ -780,28 +747,31 @@ namespace Tsavorite.test
 
             var hashes = new long[numRecords];
             Status status;
-            long output;
+            long output = 0;
 
-            for (var key = 0L; key < numRecords; key++)
+            for (var keyNum = 0L; keyNum < numRecords; keyNum++)
             {
-                var value = key + valueMult;
-                hashes[key] = store.storeFunctions.GetKeyHashCode64(ref key);
+                var valueNum = keyNum + valueMult;
+                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum);
+
+                hashes[keyNum] = store.storeFunctions.GetKeyHashCode64(key);
                 status = bContext.Upsert(key, value);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
-                status = bContext.Read(key, out output);
+                status = bContext.Read(key, ref output);
                 ClassicAssert.IsTrue(status.Found, status.ToString());
-                ClassicAssert.AreEqual(value, output);
+                ClassicAssert.AreEqual(valueNum, output);
             }
 
             void doUpdate(bool useRMW)
             {
                 // Update and Read without keyHash
-                for (var key = 0L; key < numRecords; key++)
+                for (var keyNum = 0L; keyNum < numRecords; keyNum++)
                 {
-                    var value = key + valueMult * 2;
+                    var valueNum = keyNum + valueMult * 2;
+                    ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum);
                     if (useRMW)
                     {
-                        status = bContext.RMW(key, value);
+                        status = bContext.RMW(key, ref valueNum);
                         ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
@@ -809,31 +779,32 @@ namespace Tsavorite.test
                         status = bContext.Upsert(key, value);
                         ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
-                    status = bContext.Read(key, out output);
+                    status = bContext.Read(key, ref output);
                     ClassicAssert.IsTrue(status.Found, status.ToString());
-                    ClassicAssert.AreEqual(value, output);
+                    ClassicAssert.AreEqual(valueNum, output);
                 }
 
                 // Update and Read with keyHash
-                for (var key = 0L; key < numRecords; key++)
+                for (var keyNum = 0L; keyNum < numRecords; keyNum++)
                 {
-                    var value = key + valueMult * 3;
+                    var valueNum = keyNum + valueMult * 3;
+                    ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum);
                     if (useRMW)
                     {
-                        RMWOptions rmwOptions = new() { KeyHash = hashes[key] };
-                        status = bContext.RMW(key, value, ref rmwOptions);
+                        RMWOptions rmwOptions = new() { KeyHash = hashes[keyNum] };
+                        status = bContext.RMW(key, ref valueNum, ref rmwOptions);
                         ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
                     {
-                        UpsertOptions upsertOptions = new() { KeyHash = hashes[key] };
+                        UpsertOptions upsertOptions = new() { KeyHash = hashes[keyNum] };
                         status = bContext.Upsert(key, value, ref upsertOptions);
                         ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
-                    ReadOptions readOptions = new() { KeyHash = hashes[key] };
-                    status = bContext.Read(key, out output, ref readOptions);
+                    ReadOptions readOptions = new() { KeyHash = hashes[keyNum] };
+                    status = bContext.Read(key, ref output, ref readOptions);
                     ClassicAssert.IsTrue(status.Found, status.ToString());
-                    ClassicAssert.AreEqual(value, output);
+                    ClassicAssert.AreEqual(valueNum, output);
                 }
             }
 
@@ -841,21 +812,23 @@ namespace Tsavorite.test
             doUpdate(useRMW: true);
 
             // Delete without keyHash
-            for (var key = 0L; key < numRecords; key++)
+            for (var keyNum = 0L; keyNum < numRecords; keyNum++)
             {
+                var key = SpanByte.FromPinnedVariable(ref keyNum);
                 status = bContext.Delete(key);
                 ClassicAssert.IsTrue(status.Found, status.ToString());
-                status = bContext.Read(key, out _);
+                status = bContext.Read(key, ref output);
                 ClassicAssert.IsTrue(status.NotFound, status.ToString());
             }
 
             // Update and Read without keyHash
-            for (var key = 0L; key < numRecords; key++)
+            for (var keyNum = 0L; keyNum < numRecords; keyNum++)
             {
-                DeleteOptions deleteOptions = new() { KeyHash = hashes[key] };
+                var key = SpanByte.FromPinnedVariable(ref keyNum);
+                DeleteOptions deleteOptions = new() { KeyHash = hashes[keyNum] };
                 status = bContext.Delete(key, ref deleteOptions);
-                ReadOptions readOptions = new() { KeyHash = hashes[key] };
-                status = bContext.Read(key, out _, ref readOptions);
+                ReadOptions readOptions = new() { KeyHash = hashes[keyNum] };
+                status = bContext.Read(key, ref output, ref readOptions);
                 ClassicAssert.IsTrue(status.NotFound, status.ToString());
             }
         }
@@ -866,16 +839,16 @@ namespace Tsavorite.test
         {
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
 
-            using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
+            using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(
                 new()
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var session = store.NewSession<long, long, Empty, SimpleSimpleFunctions<long, long>>(new SimpleSimpleFunctions<long, long>());
+            using var session = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bContext = session.BasicContext;
 
             const int numRecords = 500;
@@ -885,26 +858,30 @@ namespace Tsavorite.test
             Status status;
             long output;
 
-            for (var key = 0L; key < numRecords; key++)
+            for (var keyNum = 0L; keyNum < numRecords; keyNum++)
             {
-                var value = key + valueMult;
-                hashes[key] = store.storeFunctions.GetKeyHashCode64(ref key);
+                var valueNum = keyNum + valueMult;
+                ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum);
+
+                hashes[keyNum] = store.storeFunctions.GetKeyHashCode64(key);
                 status = bContext.Upsert(key, value);
                 ClassicAssert.IsTrue(status.Record.Created, status.ToString());
                 (status, output) = bContext.Read(key);
                 ClassicAssert.IsTrue(status.Found, status.ToString());
-                ClassicAssert.AreEqual(value, output);
+                ClassicAssert.AreEqual(valueNum, output);
             }
 
             void doUpdate(bool useRMW)
             {
                 // Update and Read without keyHash
-                for (var key = 0L; key < numRecords; key++)
+                for (var keyNum = 0L; keyNum < numRecords; keyNum++)
                 {
-                    var value = key + valueMult * 2;
+                    var valueNum = keyNum + valueMult * 2;
+                    ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum);
+
                     if (useRMW)
                     {
-                        status = bContext.RMW(key, value);
+                        status = bContext.RMW(key, ref valueNum);
                         ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
@@ -914,29 +891,31 @@ namespace Tsavorite.test
                     }
                     (status, output) = bContext.Read(key);
                     ClassicAssert.IsTrue(status.Found, status.ToString());
-                    ClassicAssert.AreEqual(value, output);
+                    ClassicAssert.AreEqual(valueNum, output);
                 }
 
                 // Update and Read with keyHash
-                for (var key = 0L; key < numRecords; key++)
+                for (var keyNum = 0L; keyNum < numRecords; keyNum++)
                 {
-                    var value = key + valueMult * 3;
+                    var valueNum = keyNum + valueMult * 3;
+                    ReadOnlySpan<byte> key = SpanByte.FromPinnedVariable(ref keyNum), value = SpanByte.FromPinnedVariable(ref valueNum);
+
                     if (useRMW)
                     {
-                        RMWOptions rmwOptions = new() { KeyHash = hashes[key] };
-                        status = bContext.RMW(key, value, ref rmwOptions);
+                        RMWOptions rmwOptions = new() { KeyHash = hashes[keyNum] };
+                        status = bContext.RMW(key, ref valueNum, ref rmwOptions);
                         ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
                     else
                     {
-                        UpsertOptions upsertOptions = new() { KeyHash = hashes[key] };
+                        UpsertOptions upsertOptions = new() { KeyHash = hashes[keyNum] };
                         status = bContext.Upsert(key, value, ref upsertOptions);
                         ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
                     }
-                    ReadOptions readOptions = new() { KeyHash = hashes[key] };
+                    ReadOptions readOptions = new() { KeyHash = hashes[keyNum] };
                     (status, output) = bContext.Read(key, ref readOptions);
                     ClassicAssert.IsTrue(status.Found, status.ToString());
-                    ClassicAssert.AreEqual(value, output);
+                    ClassicAssert.AreEqual(valueNum, output);
                 }
             }
 
@@ -944,8 +923,10 @@ namespace Tsavorite.test
             doUpdate(useRMW: true);
 
             // Delete without keyHash
-            for (var key = 0L; key < numRecords; key++)
+            for (var keyNum = 0L; keyNum < numRecords; keyNum++)
             {
+                var key = SpanByte.FromPinnedVariable(ref keyNum);
+
                 status = bContext.Delete(key);
                 ClassicAssert.IsTrue(status.Found, status.ToString());
                 (status, _) = bContext.Read(key);
@@ -953,11 +934,13 @@ namespace Tsavorite.test
             }
 
             // Update and Read without keyHash
-            for (var key = 0L; key < numRecords; key++)
+            for (var keyNum = 0L; keyNum < numRecords; keyNum++)
             {
-                DeleteOptions deleteOptions = new() { KeyHash = hashes[key] };
+                var key = SpanByte.FromPinnedVariable(ref keyNum);
+
+                DeleteOptions deleteOptions = new() { KeyHash = hashes[keyNum] };
                 status = bContext.Delete(key, ref deleteOptions);
-                ReadOptions readOptions = new() { KeyHash = hashes[key] };
+                ReadOptions readOptions = new() { KeyHash = hashes[keyNum] };
                 (status, _) = bContext.Read(key, ref readOptions);
                 ClassicAssert.IsTrue(status.NotFound, status.ToString());
             }

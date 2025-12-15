@@ -36,10 +36,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="type"></param>
-        /// <param name="isObject"></param>
-        protected void AddKey(ArgSlice key, LockType type, bool isObject)
+        /// <param name="storeType"></param>
+        protected void AddKey(PinnedSpanByte key, LockType type, StoreType storeType)
         {
-            txnManager.SaveKeyEntryToLock(key, isObject, type);
+            txnManager.AddTransactionStoreType(storeType);
+            txnManager.SaveKeyEntryToLock(key, type);
             txnManager.VerifyKeyOwnership(key, type);
         }
 
@@ -47,19 +48,19 @@ namespace Garnet.server
         /// Rewind (pop) the last entry of scratch buffer (rewinding the current scratch buffer offset),
         /// if it contains the given ArgSlice
         /// </summary>
-        protected bool RewindScratchBuffer(ref ArgSlice slice)
+        protected bool RewindScratchBuffer(PinnedSpanByte slice)
             => scratchBufferAllocator.RewindScratchBuffer(ref slice);
 
         /// <summary>
         /// Create ArgSlice in scratch buffer, from given ReadOnlySpan
         /// </summary>
-        protected ArgSlice CreateArgSlice(ReadOnlySpan<byte> bytes)
+        protected PinnedSpanByte CreateArgSlice(ReadOnlySpan<byte> bytes)
             => scratchBufferAllocator.CreateArgSlice(bytes);
 
         /// <summary>
         /// Create ArgSlice in UTF8 format in scratch buffer, from given string
         /// </summary>
-        protected ArgSlice CreateArgSlice(string str)
+        protected PinnedSpanByte CreateArgSlice(string str)
             => scratchBufferAllocator.CreateArgSlice(str);
 
         /// <summary>

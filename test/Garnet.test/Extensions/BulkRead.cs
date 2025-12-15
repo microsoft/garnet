@@ -21,7 +21,7 @@ namespace Garnet
                 return false;
 
             for (var i = 0; i < count; i++)
-                AddKey(GetNextArg(ref procInput, ref offset), LockType.Shared, isObject: false);
+                AddKey(GetNextArg(ref procInput, ref offset), LockType.Shared, storeType: StoreType.Main);
 
             return true;
         }
@@ -36,7 +36,7 @@ namespace Garnet
                 return;
             }
 
-            var result = new ArgSlice[count];
+            var result = new PinnedSpanByte[count];
 
             for (var i = 0; i < count; i++)
             {

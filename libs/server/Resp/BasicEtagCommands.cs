@@ -22,10 +22,10 @@ namespace Garnet.server
         {
             Debug.Assert(parseState.Count == 1);
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var input = new RawStringInput(RespCommand.GETWITHETAG);
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.GET(ref key, ref input, ref output);
+            var key = parseState.GetArgSliceByRef(0);
+            var input = new StringInput(RespCommand.GETWITHETAG);
+            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
             {
@@ -53,10 +53,10 @@ namespace Garnet.server
         {
             Debug.Assert(parseState.Count == 2);
 
-            var key = parseState.GetArgSliceByRef(0).SpanByte;
-            var input = new RawStringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
-            var output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
-            var status = storageApi.GET(ref key, ref input, ref output);
+            var key = parseState.GetArgSliceByRef(0);
+            var input = new StringInput(RespCommand.GETIFNOTMATCH, ref parseState, startIdx: 1);
+            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var status = storageApi.GET(key, ref input, ref output);
 
             switch (status)
             {
@@ -87,7 +87,7 @@ namespace Garnet.server
             if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.DELIFGREATER));
 
-            SpanByte key = parseState.GetArgSliceByRef(0).SpanByte;
+            var key = parseState.GetArgSliceByRef(0);
             if (!parseState.TryGetLong(1, out long givenEtag) || givenEtag < 0)
             {
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_INVALID_ETAG);
@@ -96,10 +96,10 @@ namespace Garnet.server
             // Conditional delete is not natively supported for records in the stable region.
             // To achieve this, we use a conditional DEL command to gain RMW (Read-Modify-Write) access, enabling deletion based on conditions.
 
-            RawStringInput input = new RawStringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
-            input.header.SetWithEtagFlag();
+            StringInput input = new StringInput(RespCommand.DELIFGREATER, ref parseState, startIdx: 1);
+            input.header.SetWithETagFlag();
 
-            GarnetStatus status = storageApi.DEL_Conditional(ref key, ref input);
+            GarnetStatus status = storageApi.DEL_Conditional(key, ref input);
 
             int keysDeleted = status == GarnetStatus.OK ? 1 : 0;
 
@@ -213,10 +213,8 @@ namespace Garnet.server
                 return true;
             }
 
-            SpanByte key = parseState.GetArgSliceByRef(0).SpanByte;
-
-            NetworkSET_Conditional(cmd, expiry, ref key, getValue: !noGet, highPrecision: expOption == ExpirationOption.PX, withEtag: true, ref storageApi);
-
+            var key = parseState.GetArgSliceByRef(0);
+            NetworkSET_Conditional(cmd, expiry, key, getValue: !noGet, highPrecision: expOption == ExpirationOption.PX, withEtag: true, ref storageApi);
             return true;
         }
     }

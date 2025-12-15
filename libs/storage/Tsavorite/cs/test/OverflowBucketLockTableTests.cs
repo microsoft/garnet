@@ -13,13 +13,13 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.LockTable
 {
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
 
-    internal class SingleBucketComparer : IKeyComparer<long>
+    internal class SingleBucketComparer : IKeyComparer
     {
-        public bool Equals(ref long k1, ref long k2) => k1 == k2;
+        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => k1.AsRef<long>() == k2.AsRef<long>();
 
-        public long GetHashCode64(ref long k) => 42L;
+        public long GetHashCode64(ReadOnlySpan<byte> k) => 42L;
     }
 
     // Used to signal Setup to use the SingleBucketComparer
@@ -28,11 +28,11 @@ namespace Tsavorite.test.LockTable
     [TestFixture]
     internal class OverflowBucketLockTableTests
     {
-        IKeyComparer<long> comparer = new LongKeyComparer();
+        IKeyComparer comparer = new LongKeyComparer();
         long SingleBucketKey = 1;   // We use a single bucket here for most tests so this lets us use 'ref' easily
 
         // For OverflowBucketLockTable, we need an instance of TsavoriteKV
-        private TsavoriteKV<long, long, LongStoreFunctions, BlittableAllocator<long, long, LongStoreFunctions>> store;
+        private TsavoriteKV<LongStoreFunctions, SpanByteAllocator<LongStoreFunctions>> store;
         private IDevice log;
 
         [SetUp]
@@ -58,7 +58,7 @@ namespace Tsavorite.test.LockTable
                 LogDevice = log,
                 PageSize = 1L << 12,
                 MemorySize = 1L << 22
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -76,7 +76,7 @@ namespace Tsavorite.test.LockTable
 
         void TryLock(long key, LockType lockType, int expectedCurrentReadLocks, bool expectedLockResult)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
+            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref key)));
             PopulateHei(ref hei);
 
             // Check for existing lock
@@ -91,7 +91,7 @@ namespace Tsavorite.test.LockTable
 
         void Unlock(long key, LockType lockType)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(ref key));
+            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref key)));
             PopulateHei(ref hei);
             if (lockType == LockType.Shared)
                 store.LockTable.UnlockShared(ref hei);
@@ -101,9 +101,9 @@ namespace Tsavorite.test.LockTable
 
         internal void PopulateHei(ref HashEntryInfo hei) => PopulateHei(store, ref hei);
 
-        internal static void PopulateHei<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref HashEntryInfo hei)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        internal static void PopulateHei<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ref HashEntryInfo hei)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
             => store.FindOrCreateTag(ref hei, store.Log.BeginAddress);
 
         internal void AssertLockCounts(ref HashEntryInfo hei, bool expectedX, long expectedS)
@@ -113,42 +113,22 @@ namespace Tsavorite.test.LockTable
             ClassicAssert.AreEqual(expectedS, lockState.NumLockedShared);
         }
 
-        internal static void AssertLockCounts<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, TKey key, bool expectedX, int expectedS)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
-            => AssertLockCounts(store, ref key, expectedX, expectedS);
-
-        internal static void AssertLockCounts<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key, bool expectedX, int expectedS)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        internal static void AssertLockCounts<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, bool expectedX, int expectedS)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
-            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(ref key));
+            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(key));
             PopulateHei(store, ref hei);
             var lockState = store.LockTable.GetLockState(ref hei);
             ClassicAssert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
             ClassicAssert.AreEqual(expectedS, lockState.NumLockedShared, "SLock mismatch");
         }
 
-        internal static void AssertLockCounts<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref TKey key, bool expectedX, bool expectedS)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+        internal static void AssertLockCounts<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ref FixedLengthTransactionalKeyStruct keyStruct, bool expectedX, bool expectedS)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
-            FixedLengthLockableKeyStruct<TKey> keyStruct = new()
-            {
-                Key = key,
-                KeyHash = store.storeFunctions.GetKeyHashCode64(ref key),
-                LockType = LockType.None,   // Not used for this call
-            };
-            keyStruct.KeyHash = store.GetKeyHash(ref key);
-            AssertLockCounts(store, ref keyStruct, expectedX, expectedS);
-        }
-
-
-        internal static void AssertLockCounts<TKey, TValue, TStoreFunctions, TAllocator>(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, ref FixedLengthLockableKeyStruct<TKey> key, bool expectedX, bool expectedS)
-            where TStoreFunctions : IStoreFunctions<TKey, TValue>
-            where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
-        {
-            HashEntryInfo hei = new(key.KeyHash);
+            HashEntryInfo hei = new(keyStruct.KeyHash);
             PopulateHei(store, ref hei);
             var lockState = store.LockTable.GetLockState(ref hei);
             ClassicAssert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
@@ -158,9 +138,9 @@ namespace Tsavorite.test.LockTable
         internal unsafe void AssertTotalLockCounts(long expectedX, long expectedS)
             => AssertTotalLockCounts(store, expectedX, expectedS);
 
-        internal static unsafe void AssertTotalLockCounts<TStoreFunctions, TAllocator>(TsavoriteKV<long, long, TStoreFunctions, TAllocator> store, long expectedX, long expectedS)
-            where TStoreFunctions : IStoreFunctions<long, long>
-            where TAllocator : IAllocator<long, long, TStoreFunctions>
+        internal static unsafe void AssertTotalLockCounts<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, long expectedX, long expectedS)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             HashBucket* buckets = store.state[store.resizeInfo.version].tableAligned;
             var count = store.LockTable.NumBuckets;
@@ -175,11 +155,11 @@ namespace Tsavorite.test.LockTable
             ClassicAssert.AreEqual(expectedS, scount);
         }
 
-        internal void AssertBucketLockCount(ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS) => AssertBucketLockCount(store, ref key, expectedX, expectedS);
+        internal void AssertBucketLockCount(ref FixedLengthTransactionalKeyStruct keyStruct, long expectedX, long expectedS) => AssertBucketLockCount(store, ref keyStruct, expectedX, expectedS);
 
-        internal static unsafe void AssertBucketLockCount<TStoreFunctions, TAllocator>(TsavoriteKV<long, long, TStoreFunctions, TAllocator> store, ref FixedLengthLockableKeyStruct<long> key, long expectedX, long expectedS)
-            where TStoreFunctions : IStoreFunctions<long, long>
-            where TAllocator : IAllocator<long, long, TStoreFunctions>
+        internal static unsafe void AssertBucketLockCount<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ref FixedLengthTransactionalKeyStruct key, long expectedX, long expectedS)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
         {
             var bucketIndex = store.LockTable.GetBucketIndex(key.KeyHash);
             var bucket = store.state[store.resizeInfo.version].tableAligned + bucketIndex;
@@ -191,7 +171,7 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void SingleKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(ref SingleBucketKey));
+            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref SingleBucketKey)));
             PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
@@ -227,7 +207,7 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void ThreeKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(ref SingleBucketKey));
+            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref SingleBucketKey)));
             PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
@@ -303,15 +283,16 @@ namespace Tsavorite.test.LockTable
             AssertTotalLockCounts(0, 0);
         }
 
-        FixedLengthLockableKeyStruct<long>[] CreateKeys(Random rng, int numKeys, int numRecords)
+        FixedLengthTransactionalKeyStruct[] CreateKeys(Random rng, int numKeys, int numRecords)
         {
-            FixedLengthLockableKeyStruct<long> createKey()
+            FixedLengthTransactionalKeyStruct createKey()
             {
-                long key = rng.Next(numKeys);
-                var keyHash = store.GetKeyHash(ref key);
+                long keyLong = rng.Next(numKeys);
+                var key = SpanByte.FromPinnedVariable(ref keyLong);
+                var keyHash = store.GetKeyHash(key);
                 return new()
                 {
-                    Key = key,
+                    Key = PinnedSpanByte.FromPinnedSpan(key),
                     // LockType.None means split randomly between Shared and Exclusive
                     LockType = rng.Next(0, 100) < 25 ? LockType.Exclusive : LockType.Shared,
                     KeyHash = keyHash,
@@ -320,7 +301,7 @@ namespace Tsavorite.test.LockTable
             return [.. Enumerable.Range(0, numRecords).Select(ii => createKey())];
         }
 
-        void AssertSorted(FixedLengthLockableKeyStruct<long>[] keys, int count)
+        void AssertSorted(FixedLengthTransactionalKeyStruct[] keys, int count)
         {
             long prevCode = default;
             long lastXcode = default;
@@ -361,7 +342,7 @@ namespace Tsavorite.test.LockTable
         public void FullArraySortTest()
         {
             var keys = CreateKeys(new Random(101), 100, 1000);
-            store.LockTable.SortKeyHashes<FixedLengthLockableKeyStruct<long>>(keys);
+            store.LockTable.SortKeyHashes<FixedLengthTransactionalKeyStruct>(keys);
             AssertSorted(keys, keys.Length);
         }
 
@@ -394,16 +375,17 @@ namespace Tsavorite.test.LockTable
             {
                 Random rng = new(101 * tid);
 
-                // maxNumKeys < 0 means use random number of keys
+                // maxNumKeys < 0 means use random number of keys. SpanByte requires persistent storage so we need the threadKeyNums vector in parallel with threadStructs.
                 int numKeys = maxNumKeys < 0 ? rng.Next(1, -maxNumKeys) : maxNumKeys;
-                var threadStructs = new FixedLengthLockableKeyStruct<long>[numKeys];
+                var threadKeyNums = new long[numKeys];
+                var threadStructs = new FixedLengthTransactionalKeyStruct[numKeys];
 
                 long getNextKey()
                 {
                     while (true)
                     {
                         var key = rng.Next(lowKey, highKey + 1);    // +1 because the end # is not included
-                        if (!Array.Exists(threadStructs, it => it.Key == key))
+                        if (!Array.Exists(threadStructs, it => it.Key.Length > 0 && it.Key.ReadOnlySpan.AsRef<long>() == key))
                             return key;
                     }
                 }
@@ -413,19 +395,21 @@ namespace Tsavorite.test.LockTable
                     // Create key structs
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
-                        var key = getNextKey();
-                        threadStructs[ii] = new()   // local var for debugging
+                        var keyNum = getNextKey();
+                        threadKeyNums[ii] = keyNum;
+                        var key = SpanByte.FromPinnedVariable(ref threadKeyNums[ii]);   // storage for the SpanByte
+                        threadStructs[ii] = new()                                       // local var for debugging
                         {
-                            Key = key,
+                            Key = PinnedSpanByte.FromPinnedSpan(key),
                             // LockType.None means split randomly between Shared and Exclusive
                             LockType = lockType == LockType.None ? (rng.Next(0, 100) > 50 ? LockType.Shared : LockType.Exclusive) : lockType,
-                            KeyHash = comparer.GetHashCode64(ref key),
+                            KeyHash = comparer.GetHashCode64(key),
                         };
-                        threadStructs[ii].KeyHash = store.GetKeyHash(ref key);
+                        threadStructs[ii].KeyHash = store.GetKeyHash(key);
                     }
 
                     // Sort and lock
-                    store.LockTable.SortKeyHashes<FixedLengthLockableKeyStruct<long>>(threadStructs);
+                    store.LockTable.SortKeyHashes<FixedLengthTransactionalKeyStruct>(threadStructs);
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
                         HashEntryInfo hei = new(threadStructs[ii].KeyHash);
@@ -451,7 +435,6 @@ namespace Tsavorite.test.LockTable
                     }
                     Array.Clear(threadStructs);
                 }
-
             }
 
             for (int t = 1; t <= numThreads; t++)

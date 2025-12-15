@@ -3,9 +3,14 @@
 
 using System;
 using System.Threading;
+using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
+#pragma warning disable IDE0065 // Misplaced using directive
+    using FixedLenStoreFunctions = StoreFunctions<FixedLengthKey.Comparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
+
     public class Program
     {
         const int kTrimResultCount = 3; // Use some high value like int.MaxValue to disable
@@ -15,6 +20,9 @@ namespace Tsavorite.benchmark
             TestLoader testLoader = new(args);
             if (testLoader.error)
                 return;
+
+            // Output the options at the start, for easy verification (and to stop immediately if we forgot something...).
+            Console.WriteLine(testLoader.Options.GetOptionsString());
 
             TestStats testStats = new(testLoader.Options);
             testLoader.LoadData();
@@ -28,21 +36,42 @@ namespace Tsavorite.benchmark
 
                 switch (testLoader.BenchmarkType)
                 {
-                    case BenchmarkType.Ycsb:
+                    case BenchmarkType.FixedLen:
+                        if (options.UseSBA)
                         {
-                            var tester = new Tsavorite_YcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
+                            var tester = new FixedLenYcsbBenchmark<SpanByteAllocator<FixedLenStoreFunctions>>(testLoader.init_keys, testLoader.txn_keys, testLoader);
+                            testStats.AddResult(tester.Run(testLoader));
+                            tester.Dispose();
+                        }
+                        else
+                        {
+                            var tester = new FixedLenYcsbBenchmark<ObjectAllocator<FixedLenStoreFunctions>>(testLoader.init_keys, testLoader.txn_keys, testLoader);
                             testStats.AddResult(tester.Run(testLoader));
                             tester.Dispose();
                         }
                         break;
                     case BenchmarkType.SpanByte:
+                        if (options.UseSBA)
                         {
-                            var tester = new SpanByteYcsbBenchmark(testLoader.init_span_keys, testLoader.txn_span_keys, testLoader);
+                            var tester = new SpanByteYcsbBenchmark<SpanByteAllocator<SpanByteStoreFunctions>>(testLoader.init_span_keys, testLoader.txn_span_keys, testLoader);
+                            testStats.AddResult(tester.Run(testLoader));
+                            tester.Dispose();
+                        }
+                        else
+                        {
+                            var tester = new SpanByteYcsbBenchmark<ObjectAllocator<SpanByteStoreFunctions>>(testLoader.init_span_keys, testLoader.txn_span_keys, testLoader);
                             testStats.AddResult(tester.Run(testLoader));
                             tester.Dispose();
                         }
                         break;
-                    case BenchmarkType.ConcurrentDictionaryYcsb:
+                    case BenchmarkType.Object:
+                        {
+                            var tester = new ObjectYcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
+                            testStats.AddResult(tester.Run(testLoader));
+                            tester.Dispose();
+                        }
+                        break;
+                    case BenchmarkType.ConcurrentDictionary:
                         {
                             var tester = new ConcurrentDictionary_YcsbBenchmark(testLoader.init_keys, testLoader.txn_keys, testLoader);
                             testStats.AddResult(tester.Run(testLoader));

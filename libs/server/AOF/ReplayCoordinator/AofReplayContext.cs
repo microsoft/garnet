@@ -17,8 +17,9 @@ namespace Garnet.server
         public readonly Queue<TransactionGroup> txnGroupBuffer = [];
         public readonly Dictionary<int, TransactionGroup> activeTxns = [];
 
-        public readonly RawStringInput storeInput;
-        public readonly ObjectInput objectStoreInput;
+        public readonly StringInput storeInput;
+        public readonly ObjectInput objectInput;
+        public readonly UnifiedInput unifiedInput;
         public CustomProcedureInput customProcInput;
         public readonly SessionParseState parseState;
 
@@ -43,7 +44,8 @@ namespace Garnet.server
         {
             parseState.Initialize();
             storeInput.parseState = parseState;
-            objectStoreInput.parseState = parseState;
+            objectInput.parseState = parseState;
+            unifiedInput.parseState = parseState;
             customProcInput.parseState = parseState;
             objectOutputBuffer = GC.AllocateArray<byte>(BufferSizeUtils.ServerBufferSize(new MaxSizeSettings()), pinned: true);
         }

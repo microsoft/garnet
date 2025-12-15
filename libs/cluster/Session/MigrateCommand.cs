@@ -13,9 +13,9 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
-        public static bool Expired(ref SpanByte value) => value.MetadataSize > 0 && value.ExtraMetadata < DateTimeOffset.UtcNow.Ticks;
-
-        public static bool Expired(ref IGarnetObject value) => value.Expiration != 0 && value.Expiration < DateTimeOffset.UtcNow.Ticks;
+        public static bool Expired<TSourceLogRecord>(in TSourceLogRecord logRecord)
+            where TSourceLogRecord : ISourceLogRecord
+            => logRecord.Info.HasExpiration && logRecord.Expiration < DateTimeOffset.UtcNow.Ticks;
 
         internal enum MigrateCmdParseState : byte
         {
@@ -116,7 +116,7 @@ namespace Garnet.cluster
             {
                 transferOption = TransferOption.KEYS;
                 sketch = new();
-                sketch.HashAndStore(ref keySlice);
+                sketch.HashAndStore(keySlice);
             }
 
             var currTokenIdx = 5;
@@ -148,13 +148,12 @@ namespace Garnet.cluster
                     while (currTokenIdx < parseState.Count)
                     {
                         var currKeySlice = parseState.GetArgSliceByRef(currTokenIdx++);
-                        var sbKey = currKeySlice.SpanByte;
 
                         // Skip if previous error encountered
                         if (pstate != MigrateCmdParseState.SUCCESS) continue;
 
                         // Check if all keys are local R/W because we migrate keys and need to be able to delete them
-                        var slot = HashSlotUtils.HashSlot(sbKey.ToPointer(), sbKey.Length);
+                        var slot = HashSlotUtils.HashSlot(currKeySlice);
                         if (!current.IsLocal(slot, readWriteSession: false))
                         {
                             pstate = MigrateCmdParseState.SLOTNOTLOCAL;
@@ -176,7 +175,7 @@ namespace Garnet.cluster
                         }
 
                         // Add key to sketch
-                        sketch.HashAndStore(ref currKeySlice);
+                        sketch.HashAndStore(currKeySlice);
                         _ = slots.Add(slot);
                     }
                 }

@@ -24,6 +24,13 @@ namespace Garnet.test
             server.Start();
         }
 
+        [TearDown]
+        public void TearDown()
+        {
+            server.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+        }
+
         [Test]
         public void MultiDatabaseBasicSelectTestSE()
         {
@@ -32,7 +39,7 @@ namespace Garnet.test
             var db2Key1 = "db2:key1";
             var db2Key2 = "db2:key2";
             var db12Key1 = "db12:key1";
-            var db12Key2 = "db12:key1";
+            var db12Key2 = "db12:key2";
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db1 = redis.GetDatabase(0);
@@ -57,7 +64,7 @@ namespace Garnet.test
             ClassicAssert.IsFalse(db12.KeyExists(db1Key1));
             ClassicAssert.IsFalse(db12.KeyExists(db1Key2));
 
-            db2.StringSet(db12Key2, "db12:value2");
+            db2.StringSet(db12Key1, "db12:value2");
             db2.SetAdd(db12Key2, [new RedisValue("db12:val2"), new RedisValue("db12:val2")]);
 
             ClassicAssert.IsFalse(db12.KeyExists(db12Key1));
@@ -438,7 +445,7 @@ namespace Garnet.test
             var db1Key1 = "db1:key1";
             var db1Key2 = "db1:key2";
             var db2Key1 = "db2:key1";
-            var db2Key2 = "db2:key1";
+            var db2Key2 = "db2:key2";
 
             using var lightClientRequest = TestUtils.CreateRequest();
 
@@ -1149,7 +1156,8 @@ namespace Garnet.test
                 var garnetServer = redis.GetServer(TestUtils.EndPoint);
                 db1.Execute("SAVE");
                 //garnetServer.Save(SaveType.BackgroundSave);
-                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+                while (garnetServer.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks)
+                    Thread.Sleep(10);
             }
 
             server.Dispose(false);
@@ -1630,13 +1638,6 @@ namespace Garnet.test
                 ClassicAssert.IsFalse(db1.KeyExists(db2Key3));
                 ClassicAssert.IsFalse(db1.KeyExists(db2Key4));
             }
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            server.Dispose();
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
         private (int, int, string, string)[] GenerateDataset(int dbCount, int keyCount)

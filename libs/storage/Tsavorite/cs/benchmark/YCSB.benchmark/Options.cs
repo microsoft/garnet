@@ -11,9 +11,10 @@ namespace Tsavorite.benchmark
     {
         [Option('b', "benchmark", Required = false, Default = 0,
             HelpText = "Benchmark to run:" +
-                        "\n    0 = YCSB" +
-                        "\n    1 = YCSB with SpanByte" +
-                        "\n    2 = ConcurrentDictionary")]
+                        "\n    0 = YCSB with Fixed-length (long- and int-sized) SpanByte values" +
+                        "\n    1 = YCSB with longer SpanByte keys and values" +
+                        "\n    2 = YCSB with longer values that may also be represented as overflow byte[] or as Object" +
+                        "\n    3 = ConcurrentDictionary")]
         public int Benchmark { get; set; }
 
         [Option('t', "threads", Required = false, Default = 8,
@@ -49,6 +50,10 @@ namespace Tsavorite.benchmark
             HelpText = "#,#,#,#: Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] (summing to 100) operations in this run")]
         public IEnumerable<int> RumdPercents { get; set; }
 
+        [Option("sba", Required = false, Default = false,
+            HelpText = "Use SpanByteAllocator (default is to use ObjectAllocator)")]
+        public bool UseSBA { get; set; }
+
         [Option("reviv", Required = false, Default = RevivificationLevel.None,
             HelpText = "Revivification of tombstoned records:" +
                         $"\n    {nameof(RevivificationLevel.None)} = No revivification" +
@@ -61,6 +66,10 @@ namespace Tsavorite.benchmark
                        "    Default (not specified): All bins are 128 records" +
                        "    # (one value): All bins have this number of records, else error")]
         public int RevivBinRecordCount { get; set; }
+
+        [Option("di", Required = false, Default = false,
+            HelpText = "Delete+insert; immediately reinsert the key after deleting it")]
+        public bool DeleteAndReinsert { get; set; }
 
         [Option("reviv-mutable%", Separator = ',', Required = false, Default = RevivificationSettings.DefaultRevivifiableFraction,
             HelpText = "Percentage of in-memory region that is eligible for revivification")]
@@ -82,6 +91,14 @@ namespace Tsavorite.benchmark
             HelpText = "Use Small Memory log in experiment")]
         public bool UseSmallMemoryLog { get; set; }
 
+        [Option("ovf", Required = false, Default = false,
+            HelpText = "Use Small MaxInlineValueSize in SpanByte benchmark to test (ov)er(f)low value allocations")]
+        public bool UseOverflowValues { get; set; }
+
+        [Option("obj", Required = false, Default = false,
+            HelpText = "Use (obj)ect values")]
+        public bool UseObjectValues { get; set; }
+
         [Option("hashpack", Required = false, Default = 2.0,
             HelpText = "The hash table packing; divide the number of keys by this to cause hash collisions")]
         public double HashPacking { get; set; }
@@ -91,7 +108,7 @@ namespace Tsavorite.benchmark
         public bool UseSafeContext { get; set; }
 
         [Option("chkptms", Required = false, Default = 0,
-            HelpText = "If > 0, the number of milliseconds between checkpoints in experiment (else checkpointing is not done")]
+            HelpText = "If > 0, the number of milliseconds between checkpoints in experiment (else checkpointing is not done)")]
         public int PeriodicCheckpointMilliseconds { get; set; }
 
         [Option("chkptsnap", Required = false, Default = false,
@@ -111,9 +128,10 @@ namespace Tsavorite.benchmark
         public string GetOptionsString()
         {
             static string boolStr(bool value) => value ? "y" : "n";
-            return $"b: {Benchmark}; d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount};"
-                        + $" revivfrac {RevivifiableFraction}; t: {ThreadCount}; i: {IterationCount}; hp: {HashPacking};"
-                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; sy: {boolStr(UseSyntheticData)}; safectx: {boolStr(UseSafeContext)};"
+            var allocator = UseSBA ? "sba" : "oa";
+            return $"b: {Benchmark}; a: {allocator}; d: {DistributionName.ToLower()}; n: {NumaStyle}; rumd: {string.Join(',', RumdPercents)}; reviv: {RevivificationLevel}; revivbinrecs: {RevivBinRecordCount};"
+                        + $" revivfrac {RevivifiableFraction}; t: {ThreadCount}; i: {IterationCount}; ov: {boolStr(UseOverflowValues)}; obj: {boolStr(UseObjectValues)}; hp: {HashPacking};"
+                        + $" sd: {boolStr(UseSmallData)}; sm: {boolStr(UseSmallMemoryLog)}; synth: {boolStr(UseSyntheticData)}; safectx: {boolStr(UseSafeContext)};"
                         + $" chkptms: {PeriodicCheckpointMilliseconds}; chkpttype: {(PeriodicCheckpointMilliseconds > 0 ? PeriodicCheckpointType.ToString() : "None")};"
                         + $" chkptincr: {boolStr(PeriodicCheckpointTryIncremental)}";
         }

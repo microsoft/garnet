@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -86,30 +85,13 @@ namespace Garnet.cluster
         /// </summary>
         public RecoveryStatus currentRecoveryStatus;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public GarnetClusterCheckpointManager GetCkptManager(StoreType storeType)
-        {
-            return storeType switch
-            {
-                StoreType.Main => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager,
-                StoreType.Object => (GarnetClusterCheckpointManager)storeWrapper.objectStore?.CheckpointManager,
-                _ => throw new Exception($"GetCkptManager: unexpected state {storeType}")
-            };
-        }
+        public GarnetClusterCheckpointManager CheckpointManager => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
 
         public long GetRecoveredSafeAofAddress()
-        {
-            var storeAofAddress = clusterProvider.replicationManager.GetCkptManager(StoreType.Main).RecoveredSafeAofAddress;
-            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : clusterProvider.replicationManager.GetCkptManager(StoreType.Object).RecoveredSafeAofAddress;
-            return Math.Min(storeAofAddress, objectStoreAofAddress);
-        }
+            => clusterProvider.replicationManager.CheckpointManager.RecoveredSafeAofAddress;
 
         public long GetCurrentSafeAofAddress()
-        {
-            var storeAofAddress = clusterProvider.replicationManager.GetCkptManager(StoreType.Main).CurrentSafeAofAddress;
-            var objectStoreAofAddress = clusterProvider.serverOptions.DisableObjects ? long.MaxValue : clusterProvider.replicationManager.GetCkptManager(StoreType.Object).CurrentSafeAofAddress;
-            return Math.Min(storeAofAddress, objectStoreAofAddress);
-        }
+            => clusterProvider.replicationManager.CheckpointManager.CurrentSafeAofAddress;
 
         public ReplicationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
@@ -130,13 +112,8 @@ namespace Garnet.cluster
             ReplicationOffset = 0;
 
             // Set the appendOnlyFile field for all stores
-            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShiftStart = CheckpointVersionShiftStart;
-            clusterProvider.GetReplicationLogCheckpointManager(StoreType.Main).checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
-            if (storeWrapper.objectStore != null)
-            {
-                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShiftStart = CheckpointVersionShiftStart;
-                clusterProvider.GetReplicationLogCheckpointManager(StoreType.Object).checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
-            }
+            clusterProvider.ReplicationLogCheckpointManager.checkpointVersionShiftStart = CheckpointVersionShiftStart;
+            clusterProvider.ReplicationLogCheckpointManager.checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !BeginRecovery(RecoveryStatus.InitializeRecover, upgradeLock: false))

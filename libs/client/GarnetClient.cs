@@ -423,7 +423,7 @@ namespace Garnet.client
 
         void CheckLength(int totalLen, TcsWrapper tcs)
         {
-            if (totalLen > networkWriter.PageSize)
+            if (networkWriter is not null && totalLen > networkWriter.PageSize)
             {
                 var e = new Exception($"Entry of size {totalLen} does not fit on page of size {networkWriter.PageSize}. Try increasing sendPageSize parameter to GarnetClient constructor.");
                 switch (tcs.taskType)

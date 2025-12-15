@@ -26,7 +26,6 @@ namespace Garnet.cluster
                 "originNodeId:{originNodeId}\n" +
                 "currentPrimaryReplId:{currentPrimaryReplId}\n" +
                 "currentStoreVersion:{currentStoreVersion}\n" +
-                "currentObjectStoreVersion:{currentObjectStoreVersion}\n" +
                 "currentAofBeginAddress:{currentAofBeginAddress}\n" +
                 "currentAofTailAddress:{currentAofTailAddress}\n" +
                 "currentReplicationOffset:{currentReplicationOffset}\n" +
@@ -37,7 +36,6 @@ namespace Garnet.cluster
                 syncMetadata.originNodeId,
                 syncMetadata.currentPrimaryReplId,
                 syncMetadata.currentStoreVersion,
-                syncMetadata.currentObjectStoreVersion,
                 syncMetadata.currentAofBeginAddress,
                 syncMetadata.currentAofTailAddress,
                 syncMetadata.currentReplicationOffset,
@@ -63,7 +61,6 @@ namespace Garnet.cluster
                 "originNodeId:{originNodeId}\n" +
                 "currentPrimaryReplId:{currentPrimaryReplId}\n" +
                 "currentStoreVersion:{currentStoreVersion}\n" +
-                "currentObjectStoreVersion:{currentObjectStoreVersion}\n" +
                 "currentAofBeginAddress:{currentAofBeginAddress}\n" +
                 "currentAofTailAddress:{currentAofTailAddress}\n" +
                 "currentReplicationOffset:{currentReplicationOffset}\n" +
@@ -74,7 +71,6 @@ namespace Garnet.cluster
                 "recoverOriginNodeId:{originNodeId}\n" +
                 "recoverCurrentPrimaryReplId:{currentPrimaryReplId}\n" +
                 "recoverCurrentStoreVersion:{currentStoreVersion}\n" +
-                "recoverCurrentObjectStoreVersion:{currentObjectStoreVersion}\n" +
                 "recoverCurrentAofBeginAddress:{currentAofBeginAddress}\n" +
                 "recoverCurrentAofTailAddress:{currentAofTailAddress}\n" +
                 "recoverCurrentReplicationOffset:{currentReplicationOffset}\n" +
@@ -85,7 +81,6 @@ namespace Garnet.cluster
                 origin.originNodeId,
                 origin.currentPrimaryReplId,
                 origin.currentStoreVersion,
-                origin.currentObjectStoreVersion,
                 origin.currentAofBeginAddress,
                 origin.currentAofTailAddress,
                 origin.currentReplicationOffset,
@@ -95,7 +90,6 @@ namespace Garnet.cluster
                 local.originNodeId,
                 local.currentPrimaryReplId,
                 local.currentStoreVersion,
-                local.currentObjectStoreVersion,
                 local.currentAofBeginAddress,
                 local.currentAofTailAddress,
                 local.currentReplicationOffset,
@@ -109,7 +103,6 @@ namespace Garnet.cluster
         string originNodeId,
         string currentPrimaryReplId,
         long currentStoreVersion,
-        long currentObjectStoreVersion,
         long currentAofBeginAddress,
         long currentAofTailAddress,
         long currentReplicationOffset,
@@ -120,7 +113,6 @@ namespace Garnet.cluster
         public readonly string originNodeId = originNodeId;
         public readonly string currentPrimaryReplId = currentPrimaryReplId;
         public readonly long currentStoreVersion = currentStoreVersion;
-        public readonly long currentObjectStoreVersion = currentObjectStoreVersion;
         public readonly long currentAofBeginAddress = currentAofBeginAddress;
         public readonly long currentAofTailAddress = currentAofTailAddress;
         public readonly long currentReplicationOffset = currentReplicationOffset;
@@ -137,7 +129,6 @@ namespace Garnet.cluster
             writer.Write(currentPrimaryReplId);
 
             writer.Write(currentStoreVersion);
-            writer.Write(currentObjectStoreVersion);
 
             writer.Write(currentAofBeginAddress);
             writer.Write(currentAofTailAddress);
@@ -168,7 +159,6 @@ namespace Garnet.cluster
                 originNodeId: reader.ReadString(),
                 currentPrimaryReplId: reader.ReadString(),
                 currentStoreVersion: reader.ReadInt64(),
-                currentObjectStoreVersion: reader.ReadInt64(),
                 currentAofBeginAddress: reader.ReadInt64(),
                 currentAofTailAddress: reader.ReadInt64(),
                 currentReplicationOffset: reader.ReadInt64(),

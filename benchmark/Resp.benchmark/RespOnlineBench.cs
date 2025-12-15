@@ -209,7 +209,7 @@ namespace Resp.benchmark
         private Thread[] InitializeThreadWorkers()
         {
             Thread[] workers = new Thread[NumThreads];
-            for (int idx = 0; idx < NumThreads; ++idx)
+            for (int idx = 0; idx < NumThreads; idx++)
             {
                 int x = idx;
 
@@ -563,7 +563,7 @@ namespace Resp.benchmark
             _ = Interlocked.Increment(ref workerCount);
             if (opts.BatchSize.First() != 1)
                 throw new Exception("Only batch size 1 supported for online bench");
-            var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength, opts.ObjectDbSize);
+            var req = new OnlineReqGen(thread_id, opts.DbSize, true, opts.Zipf, opts.KeyLength, opts.ValueLength);
 
             GarnetClientSession client = null;
             if (!opts.Pool)
@@ -607,8 +607,12 @@ namespace Resp.benchmark
                         OpType.ZREM => await ZREM(),
                         OpType.ZCARD => await ZCARD(),
                         OpType.READWRITETX => await c.ExecuteAsync("READWRITETX", req.GenerateKey(), req.GenerateKey(), req.GenerateKey(), "1000"),
-                        OpType.SAMPLEUPDATETX => await c.ExecuteAsync("SAMPLEUPDATETX", req.GenerateKeyRandom(), req.GenerateValue(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectEntryScore(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectEntryScore()),
-                        OpType.SAMPLEDELETETX => await c.ExecuteAsync("SAMPLEDELETETX", req.GenerateKeyRandom(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectKeyRandom(), req.GenerateObjectEntry()),
+                        OpType.SAMPLEUPDATETX => await c.ExecuteAsync("SAMPLEUPDATETX", req.GenerateKeyRandom(), req.GenerateValue(),   // stringKey
+                                            req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectEntryScore(),   // sortedSetKey1
+                                            req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(), req.GenerateObjectEntryScore()),  // sortedSetKey2
+                        OpType.SAMPLEDELETETX => await c.ExecuteAsync("SAMPLEDELETETX", req.GenerateKeyRandom(),    // stringKey
+                                            req.GenerateObjectKeyRandom(), req.GenerateObjectEntry(),               // sortedSetKey1                    
+                                            req.GenerateObjectKeyRandom(), req.GenerateObjectEntry()),              // sortedSetKey2
                         _ => throw new Exception($"opType: {op} benchmark not supported with {opts.Client} ClientType!")
                     };
 

@@ -23,7 +23,7 @@ namespace Garnet.server
 #if NET9_0_OR_GREATER
         ref
 #endif
-        struct MGetReadArgBatch<TGarnetApi>(ref TGarnetApi storageApi, RespServerSession session) : IReadArgBatch<SpanByte, RawStringInput, SpanByteAndMemory>
+        struct MGetReadArgBatch<TGarnetApi>(ref TGarnetApi storageApi, RespServerSession session) : IReadArgBatch<StringInput, SpanByteAndMemory>
         where TGarnetApi : IGarnetAdvancedApi
     {
         private Status currentStatus;
@@ -43,12 +43,12 @@ namespace Garnet.server
         => session.parseState.Count;
 
         /// <inheritdoc/>
-        public readonly void GetInput(int i, out RawStringInput input)
+        public readonly void GetInput(int i, out StringInput input)
         => input = default;
 
         /// <inheritdoc/>
-        public readonly void GetKey(int i, out SpanByte key)
-        => key = session.parseState.GetArgSliceByRef(i).SpanByte;
+        public readonly void GetKey(int i, out PinnedSpanByte key)
+        => key = session.parseState.GetArgSliceByRef(i);
 
         /// <inheritdoc/>
         public readonly unsafe void GetOutput(int i, out SpanByteAndMemory output)
@@ -117,7 +117,7 @@ namespace Garnet.server
     /// For commands that are served entirely out of memory, writes results directly into the output buffer if possible.
     /// If operation would complete asynchronously, moves onto the next one and buffers results for later writing.
     /// </summary>
-    internal struct MGetReadArgBatch_SG(RespServerSession session) : IReadArgBatch<SpanByte, RawStringInput, SpanByteAndMemory>
+    internal struct MGetReadArgBatch_SG(RespServerSession session) : IReadArgBatch<StringInput, SpanByteAndMemory>
     {
         private bool pendingNullWrite;
         private Memory<(Status Status, SpanByteAndMemory Output)> runningStatus;
@@ -130,7 +130,7 @@ namespace Garnet.server
         => !runningStatus.IsEmpty;
 
         /// <inheritdoc/>
-        public readonly void GetInput(int i, out RawStringInput input)
+        public readonly void GetInput(int i, out StringInput input)
         {
             input = default;
 
@@ -139,8 +139,8 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public readonly void GetKey(int i, out SpanByte key)
-        => key = session.parseState.GetArgSliceByRef(i).SpanByte;
+        public readonly void GetKey(int i, out PinnedSpanByte key)
+        => key = session.parseState.GetArgSliceByRef(i);
 
         /// <inheritdoc/>
         public readonly void GetOutput(int i, out SpanByteAndMemory output)

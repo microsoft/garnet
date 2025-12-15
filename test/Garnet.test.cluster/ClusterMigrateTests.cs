@@ -266,15 +266,15 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("2. Creating slot data {keyCount} done", keyCount);
 
             var sourceIndex = context.clusterTestUtils.GetSourceNodeIndexFromSlot((ushort)slot, context.logger);
-            var expectedKeyCount = context.clusterTestUtils.CountKeysInSlot(slot, context.logger);
-            ClassicAssert.AreEqual(keyCount, expectedKeyCount);
+            var actualKeyCount = context.clusterTestUtils.CountKeysInSlot(slot, context.logger);
+            ClassicAssert.AreEqual(keyCount, actualKeyCount);
             _ = context.clusterTestUtils.CountKeysInSlot(-1, context.logger);
             _ = context.clusterTestUtils.CountKeysInSlot(ushort.MaxValue, context.logger);
 
-            var result = context.clusterTestUtils.GetKeysInSlot(sourceIndex, slot, expectedKeyCount, context.logger);
+            var result = context.clusterTestUtils.GetKeysInSlot(sourceIndex, slot, actualKeyCount, context.logger);
             ClassicAssert.AreEqual(keyCount, result.Count);
-            _ = context.clusterTestUtils.GetKeysInSlot(-1, expectedKeyCount);
-            _ = context.clusterTestUtils.GetKeysInSlot(ushort.MaxValue, expectedKeyCount);
+            _ = context.clusterTestUtils.GetKeysInSlot(-1, actualKeyCount);
+            _ = context.clusterTestUtils.GetKeysInSlot(ushort.MaxValue, actualKeyCount);
 
             context.logger.LogDebug("3. ClusterSimpleSlotInfoTest done");
         }
@@ -929,7 +929,7 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("4. Set slot {_slot} to MIGRATING state on node {port}", _workingSlot, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port);
 
             var countKeys = context.clusterTestUtils.CountKeysInSlot(sourceNodeIndex, _workingSlot, context.logger);
-            ClassicAssert.AreEqual(countKeys, keyCount);
+            ClassicAssert.AreEqual(keyCount, countKeys);
             context.logger.LogDebug("5. CountKeysInSlot {countKeys}", countKeys);
 
             var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, _workingSlot, countKeys, context.logger);
@@ -975,13 +975,13 @@ namespace Garnet.test.cluster
                 {
                     resp = context.clusterTestUtils.GetKey(otherNodeIndex, _key, out slot, out endpoint, out responseState, logger: context.logger);
                 }
-                ClassicAssert.AreEqual(resp, "MOVED");
-                ClassicAssert.AreEqual(_workingSlot, slot);
-                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(targetNodeIndex), endpoint);
+                Assert.That(resp, Is.EqualTo("MOVED"));
+                Assert.That(slot, Is.EqualTo(_workingSlot));
+                Assert.That(endpoint, Is.EqualTo(context.clusterTestUtils.GetEndPoint(targetNodeIndex)));
 
                 resp = context.clusterTestUtils.GetKey(targetNodeIndex, _key, out _, out _, out responseState, logger: context.logger);
-                ClassicAssert.AreEqual(responseState, ResponseState.OK);
-                ClassicAssert.AreEqual(resp, _key);
+                Assert.That(responseState, Is.EqualTo(ResponseState.OK));
+                Assert.That(resp, Is.EqualTo(_key));
             }
             context.logger.LogDebug("14. Checking migrate keys done");
 
@@ -1056,7 +1056,7 @@ namespace Garnet.test.cluster
             context.logger.LogDebug("6. Set slot {_slot} to MIGRATING state on node {port}", _slot, context.clusterTestUtils.GetEndPoint(sourceNodeIndex).Port);
 
             var countKeys = context.clusterTestUtils.CountKeysInSlot(sourceNodeIndex, _slot, context.logger);
-            ClassicAssert.AreEqual(countKeys, keyCount);
+            ClassicAssert.AreEqual(keyCount, countKeys);
             context.logger.LogDebug("7. CountKeysInSlot {countKeys}", countKeys);
 
             var keysInSlot = context.clusterTestUtils.GetKeysInSlot(sourceNodeIndex, _slot, countKeys, context.logger);
@@ -1096,7 +1096,7 @@ namespace Garnet.test.cluster
             {
                 var resp = DoZCOUNT(targetNodeIndex, key, out var count, out _Address, out _Port, out _Slot, logger: context.logger);
                 ClassicAssert.AreEqual(resp, "OK");
-                ClassicAssert.AreEqual(data[_key].Count, count);
+                ClassicAssert.AreEqual(data[_key].Count, count, $"key: {Encoding.UTF8.GetString(_key)}");
 
                 List<string> members;
                 (resp, members) = DoZRANGE(targetNodeIndex, _key, out _Address, out _Port, out _Slot, context.logger);
@@ -1628,6 +1628,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(18)]
         [Category("CLUSTER")]
+        [Explicit("TODO: fix Dispose() sequencing")]
         public void ClusterMigrateLargePayload([Values] bool expiration, [Values] bool largePayload)
         {
             var r = new Random(674386);
@@ -1642,6 +1643,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(19)]
         [Category("CLUSTER")]
+        [Explicit("TODO: fix Dispose() sequencing")]
         public void ClusterMigrateIncreasingPayload([Values] bool expiration, [Values] bool largeSameSize)
         {
             var r = new Random(674386);

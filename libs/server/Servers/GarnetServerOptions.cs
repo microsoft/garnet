@@ -24,38 +24,7 @@ namespace Garnet.server
         /// <summary>
         /// Heap memory size limit of object store.
         /// </summary>
-        public string ObjectStoreHeapMemorySize = "";
-
-        /// <summary>
-        /// Object store log memory used in bytes excluding heap memory.
-        /// </summary>
-        public string ObjectStoreLogMemorySize = "32m";
-
-        /// <summary>
-        /// Size of each object store page in bytes (rounds down to power of 2).
-        /// </summary>
-        public string ObjectStorePageSize = "4k";
-
-        /// <summary>
-        /// Size of each object store log segment in bytes on disk (rounds down to power of 2).
-        /// </summary>
-        public string ObjectStoreSegmentSize = "32m";
-
-        /// <summary>
-        /// Size of object store hash index in bytes (rounds down to power of 2).
-        /// </summary>
-        public string ObjectStoreIndexSize = "16m";
-
-        /// <summary>
-        /// Max size of object store hash index in bytes (rounds down to power of 2). 
-        /// If unspecified, index size doesn't grow (default behavior).
-        /// </summary>
-        public string ObjectStoreIndexMaxSize = string.Empty;
-
-        /// <summary>
-        /// Percentage of object store log memory that is kept mutable.
-        /// </summary>
-        public int ObjectStoreMutablePercent = 90;
+        public string HeapMemorySize = "";
 
         /// <summary>
         /// Enable cluster.
@@ -136,6 +105,11 @@ namespace Garnet.server
         public int IndexResizeThreshold = 50;
 
         /// <summary>
+        /// The length at which a value string becomes an overflow byte[]
+        /// </summary>
+        public int ValueOverflowThreshold = 4096;   // TODO Tsavorite.core.LogSettings.MaxInlineValueSize
+
+        /// <summary>
         /// Wait for AOF to commit before returning results to client.
         /// Warning: will greatly increase operation latency.
         /// </summary>
@@ -180,11 +154,6 @@ namespace Garnet.server
         /// Number of log segments created on disk before compaction triggers.
         /// </summary>
         public int CompactionMaxSegments = 32;
-
-        /// <summary>
-        /// Number of object store log segments created on disk before compaction triggers.
-        /// </summary>
-        public int ObjectStoreCompactionMaxSegments = 32;
 
         /// <summary>
         /// Percent of cluster nodes to gossip with at each gossip iteration.
@@ -314,7 +283,7 @@ namespace Garnet.server
         public int CheckpointThrottleFlushDelayMs = 0;
 
         /// <summary>
-        /// Enable FastCommit mode for TsavoriteLog
+        /// Enable FastCommit mode for TsavoriteAof
         /// </summary>
         public bool EnableFastCommit = true;
 
@@ -431,11 +400,6 @@ namespace Garnet.server
         /// </summary>
         public bool RevivInChainOnly;
 
-        /// <summary>
-        /// Number of records in the single free record bin for the object store.
-        /// </summary>
-        public int RevivObjBinRecordCount;
-
         /// <summary>Max size of hash index (cache lines) after rounding down size in bytes to power of 2.</summary>
         public int AdjustedIndexMaxCacheLines;
 
@@ -471,13 +435,7 @@ namespace Garnet.server
 
         public string ReadCachePageSize = "32m";
 
-        public string ObjectStoreReadCachePageSize = "1m";
-
-        public string ObjectStoreReadCacheLogMemorySize = "32m";
-
-        public string ObjectStoreReadCacheHeapMemorySize = "";
-
-        public bool EnableObjectStoreReadCache = false;
+        public string ReadCacheHeapMemorySize = "";
 
         public LuaOptions LuaOptions;
 
@@ -509,12 +467,7 @@ namespace Garnet.server
         /// <summary>
         /// Gets the base directory for storing main-store checkpoints
         /// </summary>
-        public string MainStoreCheckpointBaseDirectory => Path.Combine(CheckpointBaseDirectory, "Store");
-
-        /// <summary>
-        /// Gets the base directory for storing object-store checkpoints
-        /// </summary>
-        public string ObjectStoreCheckpointBaseDirectory => Path.Combine(CheckpointBaseDirectory, "ObjectStore");
+        public string StoreCheckpointBaseDirectory => Path.Combine(CheckpointBaseDirectory, "Store");
 
         /// <summary>
         /// Seconds between attempts to re-establish replication between a Primary and Replica if the replication connection
@@ -540,20 +493,12 @@ namespace Garnet.server
         public string GetCheckpointDirectoryName(int dbId) => $"checkpoints{(dbId == 0 ? string.Empty : $"_{dbId}")}";
 
         /// <summary>
-        /// Get the directory for main-store database checkpoints
+        /// Get the directory for database checkpoints
         /// </summary>
         /// <param name="dbId">Database Id</param>
         /// <returns>Directory</returns>
-        public string GetMainStoreCheckpointDirectory(int dbId) =>
-            Path.Combine(MainStoreCheckpointBaseDirectory, GetCheckpointDirectoryName(dbId));
-
-        /// <summary>
-        /// Get the directory for object-store database checkpoints
-        /// </summary>
-        /// <param name="dbId">Database Id</param>
-        /// <returns>Directory</returns>
-        public string GetObjectStoreCheckpointDirectory(int dbId) =>
-            Path.Combine(ObjectStoreCheckpointBaseDirectory, GetCheckpointDirectoryName(dbId));
+        public string GetStoreCheckpointDirectory(int dbId) =>
+            Path.Combine(StoreCheckpointBaseDirectory, GetCheckpointDirectoryName(dbId));
 
         /// <summary>
         /// Gets the base directory for storing AOF commits
@@ -598,17 +543,21 @@ namespace Garnet.server
         /// <param name="epoch">Epoch instance used by server</param>
         /// <param name="stateMachineDriver">Common state machine driver used by Garnet</param>
         /// <param name="logFactory">Tsavorite Log factory instance</param>
+        /// <param name="heapMemorySize">Heap memory size</param>
+        /// <param name="readCacheHeapMemorySize">Read cache heap memory size</param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public KVSettings<SpanByte, SpanByte> GetSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver,
-            out INamedDeviceFactory logFactory)
+        public KVSettings GetSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver,
+            out INamedDeviceFactory logFactory, out long heapMemorySize, out long readCacheHeapMemorySize)
         {
+            readCacheHeapMemorySize = 0;
+
             if (MutablePercent is < 10 or > 95)
                 throw new Exception("MutablePercent must be between 10 and 95");
 
             var indexCacheLines = IndexSizeCachelines("hash index size", IndexSize);
 
-            KVSettings<SpanByte, SpanByte> kvSettings = new()
+            KVSettings kvSettings = new()
             {
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
@@ -616,11 +565,13 @@ namespace Garnet.server
                 PageSize = 1L << PageSizeBits(),
                 Epoch = epoch,
                 StateMachineDriver = stateMachineDriver,
+                MaxInlineValueSize = ValueOverflowThreshold,
                 loggerFactory = loggerFactory,
                 logger = loggerFactory?.CreateLogger("TsavoriteKV [main]")
             };
 
             logger?.LogInformation("[Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
+            logger?.LogInformation("[Store] Each page can hold ~{PageSize} key-value pairs of objects", kvSettings.PageSize / 24);
 
             kvSettings.MemorySize = 1L << MemorySizeBits(MemorySize, PageSize, out var storeEmptyPageCount);
             kvSettings.MinEmptyPageCount = storeEmptyPageCount;
@@ -634,7 +585,8 @@ namespace Garnet.server
 
             logger?.LogInformation("[Store] There are {LogPages} log pages in memory", PrettySize(kvSettings.MemorySize / kvSettings.PageSize));
 
-            kvSettings.SegmentSize = 1L << SegmentSizeBits();
+            kvSettings.SegmentSize = 1L << SegmentSizeBits(isObj: false);
+            kvSettings.ObjectLogSegmentSize = 1L << SegmentSizeBits(isObj: true);
             logger?.LogInformation("[Store] Using disk segment size of {SegmentSize}", PrettySize(kvSettings.SegmentSize));
 
             logger?.LogInformation("[Store] Using hash index size of {IndexSize} ({indexCacheLines} cache lines)", PrettySize(kvSettings.IndexSize), PrettySize(indexCacheLines));
@@ -662,6 +614,9 @@ namespace Garnet.server
             if (LatencyMonitor && MetricsSamplingFrequency == 0)
                 throw new Exception("LatencyMonitor requires MetricsSamplingFrequency to be set");
 
+            heapMemorySize = ParseSize(HeapMemorySize, out _);
+            logger?.LogInformation("[Store] Heap memory size is {heapMemorySize}", heapMemorySize > 0 ? PrettySize(heapMemorySize) : "unlimited");
+
             // Read cache related settings
             if (EnableReadCache && !EnableStorageTier)
             {
@@ -675,6 +630,9 @@ namespace Garnet.server
                 kvSettings.ReadCacheMemorySize = ParseSize(ReadCacheMemorySize, out _);
                 logger?.LogInformation("[Store] Read cache enabled with page size of {ReadCachePageSize} and memory size of {ReadCacheMemorySize}",
                     PrettySize(kvSettings.ReadCachePageSize), PrettySize(kvSettings.ReadCacheMemorySize));
+
+                readCacheHeapMemorySize = ParseSize(ReadCacheHeapMemorySize, out _);
+                logger?.LogInformation("[Store] Read cache heap memory size is {readCacheHeapMemorySize}", readCacheHeapMemorySize > 0 ? PrettySize(readCacheHeapMemorySize) : "unlimited");
             }
 
             if (EnableStorageTier)
@@ -682,7 +640,11 @@ namespace Garnet.server
                 if (LogDir is null or "")
                     LogDir = Directory.GetCurrentDirectory();
                 logFactory = GetInitializedDeviceFactory(LogDir);
+
+                // These must match GetInitializedSegmentFileDevice.GetStoreHLogDevice
                 kvSettings.LogDevice = logFactory.Get(new FileDescriptor("Store", "hlog"));
+                if (!DisableObjects)
+                    kvSettings.ObjectLogDevice = logFactory.Get(new FileDescriptor("Store", "hlog_objs"));
             }
             else
             {
@@ -719,7 +681,7 @@ namespace Garnet.server
                     FreeRecordBins = new RevivificationBin[RevivBinRecordSizes.Length],
                     RevivifiableFraction = RevivifiableFraction
                 };
-                for (var ii = 0; ii < RevivBinRecordSizes.Length; ++ii)
+                for (var ii = 0; ii < RevivBinRecordSizes.Length; ii++)
                 {
                     var recordCount = RevivBinRecordCounts?.Length switch
                     {
@@ -760,122 +722,6 @@ namespace Garnet.server
                 emptyPageCount = (int)((adjustedSize - size) / pageSize);
             }
             return (int)Math.Log(adjustedSize, 2);
-        }
-
-        /// <summary>
-        /// Get KVSettings for the object store log
-        /// </summary>
-        public KVSettings<byte[], IGarnetObject> GetObjectStoreSettings(ILoggerFactory loggerFactory, LightEpoch epoch, StateMachineDriver stateMachineDriver,
-            out long objHeapMemorySize, out long objReadCacheHeapMemorySize)
-        {
-            objReadCacheHeapMemorySize = default;
-
-            if (ObjectStoreMutablePercent is < 10 or > 95)
-                throw new Exception("ObjectStoreMutablePercent must be between 10 and 95");
-
-            var indexCacheLines = IndexSizeCachelines("object store hash index size", ObjectStoreIndexSize);
-            KVSettings<byte[], IGarnetObject> kvSettings = new()
-            {
-                IndexSize = indexCacheLines * 64L,
-                PreallocateLog = false,
-                MutableFraction = ObjectStoreMutablePercent / 100.0,
-                PageSize = 1L << ObjectStorePageSizeBits(),
-                Epoch = epoch,
-                StateMachineDriver = stateMachineDriver,
-                loggerFactory = loggerFactory,
-                logger = loggerFactory?.CreateLogger("TsavoriteKV  [obj]")
-            };
-
-            logger?.LogInformation("[Object Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
-            logger?.LogInformation("[Object Store] Each page can hold ~{PageSize} key-value pairs of objects", kvSettings.PageSize / 24);
-
-            kvSettings.MemorySize = 1L << MemorySizeBits(ObjectStoreLogMemorySize, ObjectStorePageSize, out var objectStoreEmptyPageCount);
-            kvSettings.MinEmptyPageCount = objectStoreEmptyPageCount;
-
-            long effectiveSize = kvSettings.MemorySize - objectStoreEmptyPageCount * kvSettings.PageSize;
-            if (objectStoreEmptyPageCount == 0)
-                logger?.LogInformation("[Object Store] Using log memory size of {MemorySize}", PrettySize(kvSettings.MemorySize));
-            else
-                logger?.LogInformation("[Object Store] Using log memory size of {MemorySize}, with {objectStoreEmptyPageCount} empty pages, for effective size of {effectiveSize}", PrettySize(kvSettings.MemorySize), objectStoreEmptyPageCount, PrettySize(effectiveSize));
-
-            logger?.LogInformation("[Object Store] This can hold ~{PageSize} key-value pairs of objects in memory total", effectiveSize / 24);
-
-            logger?.LogInformation("[Object Store] There are {LogPages} log pages in memory", PrettySize(kvSettings.MemorySize / kvSettings.PageSize));
-
-            kvSettings.SegmentSize = 1L << ObjectStoreSegmentSizeBits();
-            logger?.LogInformation("[Object Store] Using disk segment size of {SegmentSize}", PrettySize(kvSettings.SegmentSize));
-
-            logger?.LogInformation("[Object Store] Using hash index size of {IndexSize} ({indexCacheLines} cache lines)", PrettySize(kvSettings.IndexSize), PrettySize(indexCacheLines));
-            logger?.LogInformation("[Object Store] Hash index size is optimized for up to ~{distinctKeys} distinct keys", PrettySize(indexCacheLines * 4L));
-
-            AdjustedObjectStoreIndexMaxCacheLines = ObjectStoreIndexMaxSize == string.Empty ? 0 : IndexSizeCachelines("hash index max size", ObjectStoreIndexMaxSize);
-            if (AdjustedObjectStoreIndexMaxCacheLines != 0 && AdjustedObjectStoreIndexMaxCacheLines < indexCacheLines)
-                throw new Exception($"Index size {IndexSize} should not be less than index max size {IndexMaxSize}");
-
-            if (AdjustedObjectStoreIndexMaxCacheLines > 0)
-            {
-                logger?.LogInformation("[Object Store] Using hash index max size of {MaxSize}, ({CacheLines} cache lines)", PrettySize(AdjustedObjectStoreIndexMaxCacheLines * 64L), PrettySize(AdjustedObjectStoreIndexMaxCacheLines));
-                logger?.LogInformation("[Object Store] Hash index max size is optimized for up to ~{distinctKeys} distinct keys", PrettySize(AdjustedObjectStoreIndexMaxCacheLines * 4L));
-            }
-            logger?.LogInformation("[Object Store] Using log mutable percentage of {ObjectStoreMutablePercent}%", ObjectStoreMutablePercent);
-
-            objHeapMemorySize = ParseSize(ObjectStoreHeapMemorySize, out _);
-            logger?.LogInformation("[Object Store] Heap memory size is {objHeapMemorySize}", objHeapMemorySize > 0 ? PrettySize(objHeapMemorySize) : "unlimited");
-
-            // Read cache related settings
-            if (EnableObjectStoreReadCache && !EnableStorageTier)
-            {
-                throw new Exception("Read cache requires storage tiering to be enabled");
-            }
-
-            if (EnableObjectStoreReadCache)
-            {
-                kvSettings.ReadCacheEnabled = true;
-                kvSettings.ReadCachePageSize = ParseSize(ObjectStoreReadCachePageSize, out _);
-                kvSettings.ReadCacheMemorySize = ParseSize(ObjectStoreReadCacheLogMemorySize, out _);
-                logger?.LogInformation("[Object Store] Read cache enabled with page size of {ReadCachePageSize} and memory size of {ReadCacheMemorySize}",
-                    PrettySize(kvSettings.ReadCachePageSize), PrettySize(kvSettings.ReadCacheMemorySize));
-
-                objReadCacheHeapMemorySize = ParseSize(ObjectStoreReadCacheHeapMemorySize, out _);
-                logger?.LogInformation("[Object Store] Read cache heap memory size is {objReadCacheHeapMemorySize}", objReadCacheHeapMemorySize > 0 ? PrettySize(objReadCacheHeapMemorySize) : "unlimited");
-            }
-
-            if (EnableStorageTier)
-            {
-                if (LogDir is null or "")
-                    LogDir = Directory.GetCurrentDirectory();
-                kvSettings.LogDevice = GetInitializedDeviceFactory(LogDir).Get(new FileDescriptor("ObjectStore", "hlog"));
-                kvSettings.ObjectLogDevice = GetInitializedDeviceFactory(LogDir).Get(new FileDescriptor("ObjectStore", "hlog.obj"));
-            }
-            else
-            {
-                if (LogDir != null)
-                    throw new Exception("LogDir specified without enabling tiered storage (UseStorage)");
-                kvSettings.LogDevice = kvSettings.ObjectLogDevice = new NullDevice();
-            }
-
-            if (ObjectStoreCopyReadsToTail)
-                kvSettings.ReadCopyOptions = new(ReadCopyFrom.AllImmutable, ReadCopyTo.MainLog);
-
-            if (RevivInChainOnly)
-            {
-                logger?.LogInformation("[Object Store] Using Revivification in-chain only");
-                kvSettings.RevivificationSettings = RevivificationSettings.InChainOnly.Clone();
-            }
-            else if (UseRevivBinsPowerOf2 || RevivBinRecordSizes?.Length > 0)
-            {
-                logger?.LogInformation("[Object Store] Using Revivification with a single fixed-size bin");
-                kvSettings.RevivificationSettings = RevivificationSettings.DefaultFixedLength.Clone();
-                kvSettings.RevivificationSettings.RevivifiableFraction = RevivifiableFraction;
-                kvSettings.RevivificationSettings.FreeRecordBins[0].NumberOfRecords = RevivObjBinRecordCount;
-                kvSettings.RevivificationSettings.FreeRecordBins[0].BestFitScanLimit = RevivBinBestFitScanLimit;
-            }
-            else
-            {
-                logger?.LogInformation("[Object Store] Not using Revivification");
-            }
-
-            return kvSettings;
         }
 
         /// <summary>
@@ -961,37 +807,11 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get object store page size
-        /// </summary>
-        /// <returns></returns>
-        public int ObjectStorePageSizeBits()
-        {
-            long size = ParseSize(ObjectStorePageSize, out _);
-            long adjustedSize = PreviousPowerOf2(size);
-            if (size != adjustedSize)
-                logger?.LogInformation("Warning: using lower object store page size than specified (power of 2)");
-            return (int)Math.Log(adjustedSize, 2);
-        }
-
-        /// <summary>
         /// Get integer value of ReplicaDisklessSyncFullSyncAofThreshold
         /// </summary>
         /// <returns></returns>
         public long ReplicaDisklessSyncFullSyncAofThresholdValue()
             => ParseSize(string.IsNullOrEmpty(ReplicaDisklessSyncFullSyncAofThreshold) ? AofMemorySize : ReplicaDisklessSyncFullSyncAofThreshold, out _);
-
-        /// <summary>
-        /// Get object store segment size
-        /// </summary>
-        /// <returns></returns>
-        public int ObjectStoreSegmentSizeBits()
-        {
-            long size = ParseSize(ObjectStoreSegmentSize, out _);
-            long adjustedSize = PreviousPowerOf2(size);
-            if (size != adjustedSize)
-                logger?.LogInformation("Warning: using lower object store disk segment size than specified (power of 2)");
-            return (int)Math.Log(adjustedSize, 2);
-        }
 
         /// <summary>
         /// Get device for AOF

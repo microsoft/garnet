@@ -84,37 +84,42 @@ namespace Tsavorite.core
         /// <summary>
         /// Whether a Read or RMW found the key
         /// </summary>
-        public bool Found => (Record.statusCode & StatusCode.BasicMask) == StatusCode.Found;
+        public readonly bool Found => (Record.statusCode & StatusCode.BasicMask) == StatusCode.Found;
 
         /// <summary>
         /// Whether a Read or RMW did not find the key
         /// </summary>
-        public bool NotFound => (statusCode & StatusCode.BasicMask) == StatusCode.NotFound;
+        public readonly bool NotFound => (statusCode & StatusCode.BasicMask) == StatusCode.NotFound;
 
         /// <summary>
         /// Whether the operation went pending
         /// </summary>
-        public bool IsPending => statusCode == StatusCode.Pending;
+        public readonly bool IsPending => statusCode == StatusCode.Pending;
 
         /// <summary>
         /// Whether the operation went pending
         /// </summary>
-        public bool IsCompleted => !IsPending;
+        public readonly bool IsCompleted => !IsPending;
 
         /// <summary>
         /// Whether the operation is in an error state
         /// </summary>
-        public bool IsFaulted => statusCode == StatusCode.Error;
+        public readonly bool IsFaulted => statusCode == StatusCode.Error;
 
         /// <summary>
         /// Whether the operation was canceled
         /// </summary>
-        public bool IsCanceled => statusCode == StatusCode.Canceled;
+        public readonly bool IsCanceled => statusCode == StatusCode.Canceled;
 
         /// <summary>
         /// Whether the operation found an expired record
         /// </summary>
-        public bool Expired => (statusCode & StatusCode.Expired) == StatusCode.Expired;
+        public readonly bool IsExpired => (statusCode & StatusCode.Expired) == StatusCode.Expired;
+
+        /// <summary>
+        /// Whether the operation found an expired record
+        /// </summary>
+        public readonly bool IsWrongType => (statusCode & StatusCode.WrongType) == StatusCode.WrongType;
 
         /// <summary>
         /// Whether the operation completed successfully, i.e., it is not pending and did not error out

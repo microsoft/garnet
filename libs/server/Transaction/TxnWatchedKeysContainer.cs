@@ -49,20 +49,20 @@ namespace Garnet.server
             watchBufferHeadAddress = 0;
         }
 
-        public bool RemoveWatch(ArgSlice key)
+        public bool RemoveWatch(PinnedSpanByte key)
         {
             for (int i = 0; i < sliceCount; i++)
             {
                 if (key.ReadOnlySpan.SequenceEqual(keySlices[i].slice.ReadOnlySpan))
                 {
-                    keySlices[i].type = 0;
+                    keySlices[i].isWatched = false;
                     return true;
                 }
             }
             return false;
         }
 
-        public void AddWatch(ArgSlice key, StoreType type)
+        public void AddWatch(PinnedSpanByte key)
         {
             if (sliceCount >= sliceBufferSize)
             {
@@ -92,12 +92,12 @@ namespace Garnet.server
                 }
             }
 
-            var slice = new ArgSlice(watchBufferPtr, key.Length);
+            var slice = PinnedSpanByte.FromPinnedPointer(watchBufferPtr, key.Length);
             key.ReadOnlySpan.CopyTo(slice.Span);
 
             keySlices[sliceCount].slice = slice;
-            keySlices[sliceCount].type = type;
-            keySlices[sliceCount].hash = Utility.HashBytes(slice.ptr, slice.Length);
+            keySlices[sliceCount].isWatched = true;
+            keySlices[sliceCount].hash = Utility.HashBytes(slice.ReadOnlySpan);
             keySlices[sliceCount].version = versionMap.ReadVersion(keySlices[sliceCount].hash);
 
             watchBufferPtr += key.Length;
@@ -114,7 +114,7 @@ namespace Garnet.server
             for (int i = 0; i < sliceCount; i++)
             {
                 WatchedKeySlice key = keySlices[i];
-                if (key.type == 0) continue;
+                if (!key.isWatched) continue;
                 if (versionMap.ReadVersion(key.hash) != key.version)
                     return false;
             }
@@ -126,13 +126,10 @@ namespace Garnet.server
             for (int i = 0; i < sliceCount; i++)
             {
                 WatchedKeySlice watchedKeySlice = keySlices[i];
-                if (watchedKeySlice.type == 0) continue;
+                if (!watchedKeySlice.isWatched) continue;
 
                 var slice = keySlices[i].slice;
-                if (watchedKeySlice.type == StoreType.Main || watchedKeySlice.type == StoreType.All)
-                    txnManager.SaveKeyEntryToLock(slice, false, LockType.Shared);
-                if (watchedKeySlice.type == StoreType.Object || watchedKeySlice.type == StoreType.All)
-                    txnManager.SaveKeyEntryToLock(slice, true, LockType.Shared);
+                txnManager.SaveKeyEntryToLock(slice, LockType.Shared);
             }
             return true;
         }
