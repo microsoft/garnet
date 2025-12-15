@@ -4,6 +4,7 @@
 using System;
 using System.Buffers;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -39,6 +40,12 @@ namespace Garnet.server
         private readonly Task[] replicationReplayTasks;
 
         private CancellationTokenSource replicationReplayTasksCts;
+
+        /// <summary>
+        /// For testing purposes, are the replication replay tasks active.
+        /// </summary>
+        public bool AreReplicationTasksActive
+        => replicationReplayTasksCts != null && replicationReplayTasks.Any(static r => !r.IsCompleted);
 
         /// <summary>
         /// For replication purposes, we need a write against the main log.
@@ -351,7 +358,7 @@ namespace Garnet.server
                                     }
                                 }
                             }
-                            catch (TaskCanceledException cancelEx)
+                            catch (OperationCanceledException cancelEx)
                             {
                                 self.logger?.LogInformation(cancelEx, "ReplicationReplayTask cancelled");
                             }
@@ -361,7 +368,8 @@ namespace Garnet.server
                                 throw;
                             }
                         }
-                    );
+                    )
+                    .Unwrap();
                 }
             }
 

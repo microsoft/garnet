@@ -11,6 +11,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -2009,5 +2010,54 @@ namespace Garnet.test.cluster
                 return faultRound + faultResponse + faultMergeMap;
             }
         }
+
+        [Test]
+        public async Task FailoverStopsVectorManagerReplicationTasksAsync()
+        {
+            const int PrimaryIndex = 0;
+            const int ReplicaIndex = 1;
+
+            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
+            context.CreateConnection(useTLS: true);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: DefaultShards / 2, replica_count: DefaultShards / 2, logger: context.logger);
+
+            var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
+            var replica = (IPEndPoint)context.endpoints[ReplicaIndex];
+
+            var primaryVectorManager = GetStoreWrapper(context.nodes[PrimaryIndex]).DefaultDatabase.VectorManager;
+            var replicaVectorManager = GetStoreWrapper(context.nodes[ReplicaIndex]).DefaultDatabase.VectorManager;
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(replica).Value);
+
+            var vectorData0 = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
+
+            var vadd0Res = (int)context.clusterTestUtils.Execute(primary, "VADD", [new RedisKey("foo"), "XB8", vectorData0, new byte[] { 1, 0, 0, 0 }, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, vadd0Res);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, ReplicaIndex);
+            await Task.Delay(10);
+
+            ClassicAssert.IsFalse(primaryVectorManager.AreReplicationTasksActive);
+            ClassicAssert.IsTrue(replicaVectorManager.AreReplicationTasksActive);
+
+            context.ClusterFailoveSpinWait(ReplicaIndex, context.logger);
+
+            context.clusterTestUtils.WaitForReplicaAofSync(ReplicaIndex, PrimaryIndex);
+
+            var vectorData1 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
+
+            var vadd1Res = (int)context.clusterTestUtils.Execute(replica, "VADD", [new RedisKey("foo"), "XB8", vectorData1, new byte[] { 2, 0, 0, 0 }, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, vadd1Res);
+
+            ClassicAssert.IsTrue(primaryVectorManager.AreReplicationTasksActive);
+            ClassicAssert.IsFalse(replicaVectorManager.AreReplicationTasksActive);
+
+            var vsimRes = (byte[][])context.clusterTestUtils.Execute(replica, "VSIM", [new RedisKey("foo"), "XB8", vectorData0]);
+            ClassicAssert.IsTrue(vsimRes.Length > 0);
+        }
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "storeWrapper")]
+        private static extern ref StoreWrapper GetStoreWrapper(GarnetServer server);
     }
 }
