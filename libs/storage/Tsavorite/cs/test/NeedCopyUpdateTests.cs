@@ -20,7 +20,7 @@ namespace Tsavorite.test
 
     [AllureNUnit]
     [TestFixture]
-    internal class NeedCopyUpdateTests
+    internal class NeedCopyUpdateTests : AllureTestBase
     {
         private TsavoriteKV<int, RMWValueObj, RMWValueStoreFunctions, RMWValueAllocator> store;
         private IDevice log, objlog;

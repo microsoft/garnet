@@ -234,7 +234,7 @@ namespace Tsavorite.test.Revivification
 
     [AllureNUnit]
     [TestFixture]
-    class RevivificationFixedLenTests
+    class RevivificationFixedLenTests : AllureTestBase
     {
         internal class RevivificationFixedLenFunctions : SimpleSimpleFunctions<int, int>
         {
@@ -442,7 +442,7 @@ namespace Tsavorite.test.Revivification
 
     [AllureNUnit]
     [TestFixture]
-    class RevivificationSpanByteTests
+    class RevivificationSpanByteTests : AllureTestBase
     {
         const int KeyLength = 10;
         const int InitialLength = 50;

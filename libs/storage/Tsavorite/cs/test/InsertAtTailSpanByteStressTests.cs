@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -25,7 +27,9 @@ namespace Tsavorite.test.InsertAtTailStressTests
         Two
     }
 
-    class SpanByteInsertAtTailChainTests
+    [AllureNUnit]
+    [TestFixture]
+    class SpanByteInsertAtTailChainTests : AllureTestBase
     {
         private TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;

@@ -3,6 +3,7 @@
 
 using System.IO;
 using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -15,7 +16,7 @@ namespace Tsavorite.test
 
     [AllureNUnit]
     [TestFixture]
-    internal class GenericDiskDeleteTests
+    internal class GenericDiskDeleteTests : AllureTestBase
     {
         private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
         private ClientSession<MyKey, MyValue, MyInput, MyOutput, int, MyFunctionsDelete, ClassStoreFunctions, ClassAllocator> session;

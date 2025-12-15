@@ -9,6 +9,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -17,7 +18,7 @@ namespace Tsavorite.test
 {
     [AllureNUnit]
     [TestFixture]
-    internal class TsavoriteLogStandAloneTests
+    internal class TsavoriteLogStandAloneTests : AllureTestBase
     {
         [Test]
         [Category("TsavoriteLog")]
@@ -56,7 +57,7 @@ namespace Tsavorite.test
     }
 
     // This test base class allows splitting up the tests into separate fixtures that can be run in parallel
-    internal class TsavoriteLogTestBase
+    internal class TsavoriteLogTestBase : AllureTestBase
     {
         protected const int entryLength = 100;
         protected const int numEntries = 10000; //1000000;
