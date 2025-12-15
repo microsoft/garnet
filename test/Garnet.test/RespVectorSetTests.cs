@@ -224,6 +224,10 @@ namespace Garnet.test
             ClassicAssert.AreEqual("ERR asked M value mismatch with existing vector set", exc18.Message);
 
             // TODO: Redis doesn't appear to validate attributes... so that's weird
+
+            // Empty Vector Set keys are forbidden (TODO: Remove this constraint)
+            var exc19 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
+            ClassicAssert.AreEqual("ERR Vector Set key cannot be empty", exc19.Message);
         }
 
         [Test]

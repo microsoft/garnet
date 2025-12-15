@@ -223,8 +223,7 @@ To fix that, synthetic writes against related keys are made after an insert or r
 > This needs to confirmed - if it is not the case, handling this failure needs to be figured out.
 
 > [!IMPORTANT]
-> This code assumes a Vector Set under the empty string is illegal.  That needs to be tested against Redis, and if it's not true we need to use
-> one of the other reserved namespaces.
+> This code assumes a Vector Set under the empty string is illegal.  That does not seem to be true with Redis - so we will need to move these keys elsewhere.  For now, we just forbid the empty key for VADDs.
 
 > [!NOTE]
 > These synthetic writes might appear to double write volume, but that is not the case.  Actual inserts and deletes have extreme write amplification (that is, each cause DiskANN to perform many writes against the Main Store), whereas the synthetic writes cause a single (no-op) modification to the Main Store plus an AOF entry.

@@ -291,6 +291,12 @@ namespace Garnet.server
                     return AbortWithErrorMessage("ERR invalid option after element");
                 }
 
+                if (key.ReadOnlySpan.IsEmpty)
+                {
+                    // TODO: this is not a Redis restriction, but once that comes from Replication Keys being in the 0 namespace, we should lift it
+                    return AbortWithErrorMessage("ERR Vector Set key cannot be empty"u8);
+                }
+
                 // Default unspecified options
                 quantType ??= VectorQuantType.Q8;
                 buildExplorationFactor ??= 200;
