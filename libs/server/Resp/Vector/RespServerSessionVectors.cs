@@ -1017,7 +1017,7 @@ namespace Garnet.server
 
             if (parseState.Count != 1)
             {
-                return AbortWithWrongNumberOfArguments("VDIM");
+                return AbortWithWrongNumberOfArguments("VINFO");
             }
 
             var key = parseState.GetArgSliceByRef(0);
