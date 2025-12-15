@@ -889,13 +889,13 @@ namespace Garnet.server
             disposed = true;
 
             itemBroker?.Dispose();
+            clusterProvider?.Dispose();
             monitor?.Dispose();
             luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();
             databaseManager.Dispose();
 
             ctsCommit?.Dispose();
-            clusterProvider?.Dispose();
         }
     }
 }
