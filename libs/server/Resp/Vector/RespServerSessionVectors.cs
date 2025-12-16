@@ -1036,7 +1036,7 @@ namespace Garnet.server
 
             var quantTypeSpan = quantType switch
             {
-                VectorQuantType.NoQuant => "no-quant"u8,
+                VectorQuantType.NoQuant => "f32"u8,
                 VectorQuantType.Bin => "bin"u8,
                 VectorQuantType.Q8 => "q8"u8,
                 VectorQuantType.XPreQ8 => "xpreq8"u8,
