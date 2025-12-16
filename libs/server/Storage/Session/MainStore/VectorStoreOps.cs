@@ -285,7 +285,7 @@ namespace Garnet.server
             out uint numberOfLinks,
             out long size)
         {
-            parseState.InitializeWithArgument(ArgSlice.FromPinnedSpan(key.AsReadOnlySpan()));
+            parseState.InitializeWithArgument(new(ref key));
 
             var input = new RawStringInput(RespCommand.VINFO, ref parseState);
             Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
