@@ -36,8 +36,21 @@ namespace Garnet.server
                 {
                     if (srcLogRecord.Info.HasETag)
                         ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
+                    
+                    var outputOffset = 0;
+                    var execCmd = true;
+                    var metaCmd = input.header.metaCmd;
 
-                    var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, execOp: true, out _);
+                    if (metaCmd.IsEtagCondExecCommand())
+                    {
+                        var inputEtag = input.parseState.GetLong(0, isMetaArg: true);
+                        execCmd = metaCmd.CheckConditionalExecution(srcLogRecord.ETag, inputEtag);
+                    }
+
+                    if (input.header.metaCmd.IsEtagCommand())
+                        WriteEtagToOutput(srcLogRecord.ETag, ref output, out outputOffset);
+
+                    var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, execOp: execCmd, out _);
 
                     if (srcLogRecord.Info.HasETag)
                         ETagState.ResetState(ref functionsState.etagState);

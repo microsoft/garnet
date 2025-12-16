@@ -63,7 +63,7 @@ namespace Garnet.server
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
             var metaCmd = input.header.metaCmd;
-            var updatedEtag = GetUpdatedEtag(logRecord.ETag, metaCmd, ref input.parseState, isInitUpdate: true, out _);
+            var updatedEtag = GetUpdatedEtag(logRecord.ETag, metaCmd, ref input.parseState, out _);
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
             var cmd = input.header.cmd;
@@ -388,7 +388,7 @@ namespace Garnet.server
             bool shouldCheckExpiration = true;
 
             var metaCmd = input.header.metaCmd;
-            var updatedEtag = GetUpdatedEtag(logRecord.ETag, metaCmd, ref input.parseState, isInitUpdate: false, out var execCmd);
+            var updatedEtag = GetUpdatedEtag(logRecord.ETag, metaCmd, ref input.parseState, out var execCmd);
 
             switch (cmd)
             {
@@ -803,7 +803,7 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
             var metaCmd = input.header.metaCmd;
-            var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, metaCmd, ref input.parseState, isInitUpdate: false, out var execCmd);
+            var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, metaCmd, ref input.parseState, out var execCmd);
 
             switch (input.header.cmd)
             {
@@ -928,7 +928,7 @@ namespace Garnet.server
             }
 
             var metaCmd = input.header.metaCmd;
-            var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, metaCmd, ref input.parseState, isInitUpdate: false, out _);
+            var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, metaCmd, ref input.parseState, out _);
 
             switch (cmd)
             {

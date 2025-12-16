@@ -74,7 +74,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public sealed override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                            byte respProtocolVersion, bool execOp, out long sizeChange, int outputOffset = 0)
+                                            byte respProtocolVersion, bool execOp, out long sizeChange)
         {
             sizeChange = 0;
 

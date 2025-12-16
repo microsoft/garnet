@@ -320,7 +320,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                     byte respProtocolVersion, bool execOp, out long memorySizeChange, int outputOffset = 0)
+                                     byte respProtocolVersion, bool execOp, out long memorySizeChange)
         {
             memorySizeChange = 0;
 
@@ -338,7 +338,7 @@ namespace Garnet.server
             switch (op)
             {
                 case SortedSetOperation.ZADD:
-                    SortedSetAdd(ref input, ref output, outputOffset, execOp, respProtocolVersion);
+                    SortedSetAdd(ref input, ref output, execOp, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZREM:
                     SortedSetRemove(ref input, ref output);
@@ -416,7 +416,7 @@ namespace Garnet.server
                     Scan(ref input, ref output, respProtocolVersion);
                     break;
                 default:
-                    throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");
+                    throw new GarnetException($"Unsupported operation {op} in {nameof(SortedSetObject)}.{nameof(Operate)}");
             }
 
             memorySizeChange = HeapMemorySize - prevMemorySize;
@@ -425,6 +425,83 @@ namespace Garnet.server
                 output.OutputFlags |= OutputFlags.RemoveKey;
 
             return true;
+        }
+
+        /// <summary>
+        /// This method performs no operation on the object and produces a default output for each command
+        /// IMPORTANT: The object may be read but not modified in any way in this method
+        /// </summary>
+        /// <param name="input"></param>
+        /// <param name="output"></param>
+        /// <param name="respProtocolVersion"></param>
+        /// <exception cref="GarnetException"></exception>
+        private void NoOp(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        {
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+
+            var op = input.header.SortedSetOp;
+            switch (op)
+            {
+                case SortedSetOperation.ZADD:
+                    var options = SortedSetAddOption.None;
+                    if (!input.parseState.TryGetDouble(0, out _))
+                        options = input.parseState.GetSortedSetAddOptions(0, out _);
+                    if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
+                        writer.WriteDoubleNumeric(0);
+                    else
+                        writer.WriteInt32(0);
+                    break;
+                case SortedSetOperation.ZREM:
+                case SortedSetOperation.GEOADD:
+                case SortedSetOperation.ZREMRANGEBYLEX:
+                case SortedSetOperation.ZREMRANGEBYRANK:
+                case SortedSetOperation.ZREMRANGEBYSCORE:
+                    writer.WriteInt32(0);
+                    break;
+                case SortedSetOperation.ZCARD:
+                case SortedSetOperation.ZSCORE:
+                case SortedSetOperation.ZMSCORE:
+                case SortedSetOperation.ZCOUNT:
+                case SortedSetOperation.ZRANK:
+                case SortedSetOperation.GEOHASH:
+                case SortedSetOperation.GEODIST:
+                case SortedSetOperation.GEOPOS:
+                case SortedSetOperation.ZRANGE:
+                case SortedSetOperation.ZREVRANK:
+                case SortedSetOperation.ZLEXCOUNT:
+                case SortedSetOperation.ZRANDMEMBER:
+                case SortedSetOperation.ZSCAN:
+                    writer.WriteNull();
+                    break;
+                case SortedSetOperation.ZPOPMAX:
+                case SortedSetOperation.ZPOPMIN:
+                    writer.WriteEmptyArray();
+                    break;
+                case SortedSetOperation.ZINCRBY:
+                    var member = input.parseState.GetArgSliceByRef(1).ToArray();
+                    writer.WriteDoubleNumeric(sortedSetDict[member]);
+                    break;
+                case SortedSetOperation.ZEXPIRE:
+                    writer.WriteArrayLength(input.parseState.Count);
+                    for (var i = 0; i < input.parseState.Count; i++)
+                        writer.WriteInt32((int)ExpireResult.ExpireConditionNotMet);
+                    break;
+                case SortedSetOperation.ZTTL:
+                    writer.WriteArrayLength(input.parseState.Count);
+                    for (var i = 0; i < input.parseState.Count; i++)
+                        writer.WriteNull();
+                    break;
+                case SortedSetOperation.ZPERSIST:
+                    writer.WriteArrayLength(input.parseState.Count);
+                    for (var i = 0; i < input.parseState.Count; i++)
+                        writer.WriteInt32(-1);
+                    break;
+                case SortedSetOperation.ZCOLLECT:
+                    writer.WriteInt32(-1);
+                    break;
+                default:
+                    throw new GarnetException($"Unsupported operation {op} in {nameof(SortedSetObject)}.{nameof(NoOp)}");
+            }
         }
 
         /// <inheritdoc />

@@ -119,20 +119,19 @@ namespace Garnet.server
         /// <param name="currEtag">Current etag</param>
         /// <param name="metaCmd">Input meta command</param>
         /// <param name="parseState">Input parse state</param>
-        /// <param name="isInitUpdate">True if called from <see cref="ISessionFunctions{TInput,TOutput,TContext}.InitialUpdater"/></param>
         /// <param name="execCmd">Execute command</param>
         /// <returns>Updated etag</returns>
-        public static long GetUpdatedEtag(long currEtag, RespMetaCommand metaCmd, ref SessionParseState parseState, bool isInitUpdate, out bool execCmd)
+        public static long GetUpdatedEtag(long currEtag, RespMetaCommand metaCmd, ref SessionParseState parseState, out bool execCmd)
         {
             execCmd = true;
             var updatedEtag = currEtag;
             long inputEtag = LogRecord.NoETag;
 
-            if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater or RespMetaCommand.ExecIfNotMatch)
+            if (metaCmd.IsEtagCondExecCommand())
             {
                 inputEtag = parseState.GetLong(0, isMetaArg: true);
 
-                if (!isInitUpdate)
+                if (currEtag != LogRecord.NoETag)
                     execCmd = metaCmd.CheckConditionalExecution(currEtag, inputEtag);
             }
 

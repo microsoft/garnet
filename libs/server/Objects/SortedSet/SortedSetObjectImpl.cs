@@ -35,7 +35,7 @@ namespace Garnet.server
             InfiniteMax = 2
         }
 
-        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, int outputOffset, bool execOp, byte respProtocolVersion)
+        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, bool execOp, byte respProtocolVersion)
         {
             DeleteExpiredItems();
 
@@ -45,7 +45,7 @@ namespace Garnet.server
             var options = SortedSetAddOption.None;
             var currTokenIdx = 0;
 
-            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory, outputOffset);
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             try
             {
