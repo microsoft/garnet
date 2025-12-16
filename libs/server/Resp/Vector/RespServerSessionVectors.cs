@@ -1024,7 +1024,7 @@ namespace Garnet.server
             var res = storageApi.VectorSetInfo(key, out VectorQuantType quantType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numLinks, out long size);
             if (res == GarnetStatus.NOTFOUND)
             {
-                WriteNull();
+                WriteNullArray();
                 return true;
             }
             
