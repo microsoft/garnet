@@ -96,7 +96,7 @@ namespace Garnet.test
                             continue;
                         case RespCommand.VINFO:
                             exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VINFO", ["foo"]));
-                            continue;
+                            break;
                         case RespCommand.VISMEMBER:
                             // TODO: Implement when VISMEMBER works
                             continue;
@@ -1644,7 +1644,7 @@ namespace Garnet.test
                                 vectorValues[2] = "2.0";
 
                                 // Add another element and try again
-                                res = db.Execute("VADD", GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorValues.ToArray(), [0, 0, 0, 0]));
+                                res = db.Execute("VADD", GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorValues.ToArray(), [0, 0, 0, 1]));
                                 ClassicAssert.AreEqual(1, (int)res);
 
                                 vinfoRes = (RedisValue[])db.Execute(command: "VINFO", [fooKey]);

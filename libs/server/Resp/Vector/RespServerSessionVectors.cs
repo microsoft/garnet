@@ -1030,8 +1030,7 @@ namespace Garnet.server
             
             if (res == GarnetStatus.WRONGTYPE)
             {
-                WriteError("ERR Not a Vector Set"u8);
-                return true;
+                return AbortVectorSetWrongType();
             }
 
             var quantTypeSpan = quantType switch
@@ -1040,7 +1039,7 @@ namespace Garnet.server
                 VectorQuantType.Bin => "bin"u8,
                 VectorQuantType.Q8 => "q8"u8,
                 VectorQuantType.XPreQ8 => "xpreq8"u8,
-                _ => "invalid"u8,
+                _ => throw new GarnetException($"Invalid VectorQuantType: {quantType}"),
             };
 
             WriteArrayLength(12);
