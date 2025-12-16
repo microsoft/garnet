@@ -74,15 +74,12 @@ namespace Garnet.server
 
         /// <summary>Class to track and update cache size</summary>
         /// <param name="store">Tsavorite store instance</param>
-        /// <param name="logSettings">Hybrid log settings</param>
         /// <param name="targetSize">Total memory size target</param>
         /// <param name="readCacheTargetSize">Target memory size for read cache</param>
         /// <param name="loggerFactory"></param>
-        public CacheSizeTracker(TsavoriteKV<StoreFunctions, StoreAllocator> store, KVSettings logSettings,
-                long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null)
+        public CacheSizeTracker(TsavoriteKV<StoreFunctions, StoreAllocator> store, long targetSize, long readCacheTargetSize, ILoggerFactory loggerFactory = null)
         {
             Debug.Assert(store != null);
-            Debug.Assert(logSettings != null);
             Debug.Assert(targetSize > 0 || readCacheTargetSize > 0);
 
             this.TargetSize = targetSize;

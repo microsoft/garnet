@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -86,15 +85,13 @@ namespace Garnet.cluster
         /// </summary>
         public RecoveryStatus currentRecoveryStatus;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public GarnetClusterCheckpointManager GetCkptManager()
-            => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
+        public GarnetClusterCheckpointManager CheckpointManager => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
 
         public long GetRecoveredSafeAofAddress()
-            => clusterProvider.replicationManager.GetCkptManager().RecoveredSafeAofAddress;
+            => clusterProvider.replicationManager.CheckpointManager.RecoveredSafeAofAddress;
 
         public long GetCurrentSafeAofAddress()
-            => clusterProvider.replicationManager.GetCkptManager().CurrentSafeAofAddress;
+            => clusterProvider.replicationManager.CheckpointManager.CurrentSafeAofAddress;
 
         public ReplicationManager(ClusterProvider clusterProvider, ILogger logger = null)
         {
@@ -115,8 +112,8 @@ namespace Garnet.cluster
             ReplicationOffset = 0;
 
             // Set the appendOnlyFile field for all stores
-            clusterProvider.GetReplicationLogCheckpointManager().checkpointVersionShiftStart = CheckpointVersionShiftStart;
-            clusterProvider.GetReplicationLogCheckpointManager().checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
+            clusterProvider.ReplicationLogCheckpointManager.checkpointVersionShiftStart = CheckpointVersionShiftStart;
+            clusterProvider.ReplicationLogCheckpointManager.checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !BeginRecovery(RecoveryStatus.InitializeRecover, upgradeLock: false))

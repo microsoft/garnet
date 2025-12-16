@@ -83,12 +83,10 @@ namespace Tsavorite.core
                     return false;
                 beginAddress = nextAddress = SnapToLogicalAddressBoundary(ref cursor, headAddress, currentPage);
             }
-            catch
+            finally
             {
                 epoch?.Suspend();
-                throw;
             }
-
             return true;
         }
 
@@ -259,7 +257,7 @@ namespace Tsavorite.core
                         diskLogRecord = new(logRecord,
                                             store is not null
                                             ? obj => store.storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk)
-                                            : obj => { });  // TODOnow this needs to dispose the object even if store is null; review whether we should have separate arg for behavior instead of a null store
+                                            : obj => { });  // TODOobjDispose this needs to dispose the object even if store is null; review whether we should have separate arg for behavior instead of a null store
                     }
                 }
                 finally
@@ -319,7 +317,7 @@ namespace Tsavorite.core
         public byte RecordType => diskLogRecord.RecordType;
 
         /// <inheritdoc/>
-        public byte Namespace => diskLogRecord.Namespace;
+        public ReadOnlySpan<byte> Namespace => diskLogRecord.Namespace;
 
         /// <inheritdoc/>
         public ObjectIdMap ObjectIdMap => diskLogRecord.ObjectIdMap;
@@ -404,7 +402,7 @@ namespace Tsavorite.core
                 hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
             recordBuffer?.Return();
             recordBuffer = null;
-            //TODOnow("Dispose objects in frame");
+            //TODOobjDispose("Dispose objects in frame");
             frame?.Dispose();
         }
 

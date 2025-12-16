@@ -94,13 +94,15 @@ namespace Garnet.server
 
         internal StorageSession HybridLogStatScanStorageSession;
 
+        private KVSettings kvSettings;
+
         bool disposed = false;
 
-        public GarnetDatabase(int id, TsavoriteKV<StoreFunctions, StoreAllocator> store,
-            LightEpoch epoch, StateMachineDriver stateMachineDriver,
-            CacheSizeTracker sizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile,
-            bool storeIndexMaxedOut) : this()
+        public GarnetDatabase(KVSettings kvSettings, int id, TsavoriteKV<StoreFunctions, StoreAllocator> store, LightEpoch epoch, StateMachineDriver stateMachineDriver,
+                CacheSizeTracker sizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile, bool storeIndexMaxedOut)
+            : this()
         {
+            this.kvSettings = kvSettings;
             Id = id;
             Store = store;
             Epoch = epoch;
@@ -113,6 +115,7 @@ namespace Garnet.server
 
         public GarnetDatabase(int id, GarnetDatabase srcDb, bool enableAof, bool copyLastSaveData = false) : this()
         {
+            kvSettings = srcDb.kvSettings;
             Id = id;
             Store = srcDb.Store;
             Epoch = srcDb.Epoch;
@@ -141,7 +144,9 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            if (disposed) return;
+            if (disposed)
+                return;
+            disposed = true;
 
             // Wait for checkpoints to complete and disable checkpointing
             CheckpointingLock.CloseLock();
@@ -152,6 +157,9 @@ namespace Garnet.server
             StoreCollectionDbStorageSession?.Dispose();
             StoreExpiredKeyDeletionDbStorageSession?.Dispose();
 
+            kvSettings?.LogDevice?.Dispose();
+            kvSettings?.ObjectLogDevice?.Dispose();
+
             if (SizeTracker != null)
             {
                 // If tracker has previously started, wait for it to stop
@@ -161,8 +169,6 @@ namespace Garnet.server
                         Thread.Yield();
                 }
             }
-
-            disposed = true;
         }
     }
 }

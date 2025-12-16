@@ -14,7 +14,7 @@ namespace Garnet.server
         /// <summary>
         /// Handles the complete pending status for Session Store
         /// </summary>
-        static void CompletePendingForSession<TStringContext>(ref Status status, ref SpanByteAndMemory output, ref TStringContext context)
+        internal static void CompletePendingForSession<TStringContext>(ref Status status, ref SpanByteAndMemory output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             => CompletePendingForSession(ref status, ref output, ref context, out _);
 

@@ -375,7 +375,7 @@ namespace Garnet.server
             // Prepare the input
             var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState, arg2: 2) { SortedSetOp = SortedSetOperation.ZINCRBY };
 
-            var output = new ObjectOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+            var output = new ObjectOutput();
             var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext,
                 ref output);
 
@@ -486,7 +486,7 @@ namespace Garnet.server
             // Prepare the input
             var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState, arg2: (int)rangeOpts) { SortedSetOp = SortedSetOperation.ZRANGE };
 
-            var output = new ObjectOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
+            var output = new ObjectOutput();
             var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
             for (var i = arguments.Count - 1; i > 1; i--)

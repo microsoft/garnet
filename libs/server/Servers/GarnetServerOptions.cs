@@ -585,7 +585,8 @@ namespace Garnet.server
 
             logger?.LogInformation("[Store] There are {LogPages} log pages in memory", PrettySize(kvSettings.MemorySize / kvSettings.PageSize));
 
-            kvSettings.SegmentSize = 1L << SegmentSizeBits();
+            kvSettings.SegmentSize = 1L << SegmentSizeBits(isObj: false);
+            kvSettings.ObjectLogSegmentSize = 1L << SegmentSizeBits(isObj: true);
             logger?.LogInformation("[Store] Using disk segment size of {SegmentSize}", PrettySize(kvSettings.SegmentSize));
 
             logger?.LogInformation("[Store] Using hash index size of {IndexSize} ({indexCacheLines} cache lines)", PrettySize(kvSettings.IndexSize), PrettySize(indexCacheLines));

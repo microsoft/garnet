@@ -37,14 +37,14 @@ namespace Tsavorite.core
         public long PageSize = 1 << 25;
 
         /// <summary>
-        /// Size of a segment (group of pages), in bytes. Rounds down to power of 2.
+        /// Size of a main log segment (group of pages), in bytes. Rounds down to power of 2.
         /// </summary>
         public long SegmentSize = 1L << 30;
 
         /// <summary>
-        /// Size of a segment (group of pages), in bytes. Rounds down to power of 2.
+        /// Size of an object log segment (group of pages), in bytes. Rounds down to power of 2.
         /// </summary>
-        public long ObjectLogSegmentSize = 1L << 40;
+        public long ObjectLogSegmentSize = 1L << 30;
 
         /// <summary>
         /// Total size of in-memory part of log, in bytes. Rounds down to power of 2.

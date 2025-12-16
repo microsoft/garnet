@@ -959,6 +959,8 @@ namespace Garnet.test
                 {
                     if (!Directory.Exists(path))
                         return;
+
+                    // Recursively delete subdirectories, then fall through to delete this directory.
                     foreach (string directory in Directory.GetDirectories(path))
                         DeleteDirectory(directory, wait);
                     break;
@@ -968,7 +970,7 @@ namespace Garnet.test
                 }
             }
 
-            bool retry = true;
+            var retry = true;
             while (retry)
             {
                 // Exceptions may happen due to a handle briefly remaining held after Dispose().
@@ -978,9 +980,9 @@ namespace Garnet.test
                     if (Directory.Exists(path))
                         Directory.Delete(path, true);
                 }
-                catch (Exception ex) when (ex is IOException ||
-                                           ex is UnauthorizedAccessException)
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
+                    // If we're not waiting, try once more then give up.
                     if (!wait)
                     {
                         try { Directory.Delete(path, true); }
@@ -988,6 +990,7 @@ namespace Garnet.test
                         return;
                     }
                     retry = true;
+                    _ = Thread.Yield();
                 }
             }
         }

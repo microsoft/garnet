@@ -968,6 +968,7 @@ namespace Garnet.server
                         if (!dstLogRecord.RemoveETag())
                             return false;
                     }
+                    shouldUpdateEtag = false;   // since we already updated the ETag
 
                     // reset etag state after done using
                     ETagState.ResetState(ref functionsState.etagState);

@@ -268,7 +268,7 @@ namespace Tsavorite.core
         public byte RecordType => CurrentIter.RecordType;
 
         /// <inheritdoc/>
-        public byte Namespace => CurrentIter.Namespace;
+        public ReadOnlySpan<byte> Namespace => CurrentIter.Namespace;
 
         /// <inheritdoc/>
         public ObjectIdMap ObjectIdMap => CurrentIter.ObjectIdMap;

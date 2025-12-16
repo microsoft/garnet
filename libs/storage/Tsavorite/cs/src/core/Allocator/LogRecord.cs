@@ -55,9 +55,13 @@ namespace Tsavorite.core
         /// In particular, if knowledge of whether this is a string or object record is required, or an overflow allocator is needed, this method cannot be used.</summary>
         public LogRecord(byte* recordPtr) => physicalAddress = (long)recordPtr;
 
+        /// <summary>Address of the <see cref="RecordDataHeader"/></summary>
         internal readonly long DataHeaderAddress => physicalAddress + RecordInfo.Size;
-        private readonly long NamespaceAddress => physicalAddress + RecordInfo.Size + 1;
-        private readonly long RecordTypeAddress => physicalAddress + RecordInfo.Size + 2;
+        /// <summary>Address of the namespace indicator byte. If the <see cref="RecordDataHeader.ExtendedNamespaceIndicatorBit"/> is not set, then the <see cref="RecordDataHeader.NamespaceIndicatorMask"/> bits
+        /// contain the full namespace as a single byte; otherwise those bits are the length of the extended namespace data preceding the key data.</summary>
+        private readonly long NamespaceAddress => physicalAddress + RecordInfo.Size + RecordDataHeader.NamespaceOffsetInHeader;
+        /// <summary>Address of the Record type indicator byte</summary>
+        private readonly long RecordTypeAddress => physicalAddress + RecordInfo.Size + RecordDataHeader.RecordTypeOffsetInHeader;
 
         public readonly byte IndicatorByte => *(byte*)DataHeaderAddress;
 
@@ -123,17 +127,27 @@ namespace Tsavorite.core
 
         #region ISourceLogRecord
         /// <inheritdoc/>
-        public readonly byte RecordType
-        {
-            get => *(byte*)RecordTypeAddress;
-            set => *(byte*)RecordTypeAddress = value;
-        }
+        public readonly byte RecordType => *(byte*)RecordTypeAddress;
 
         /// <inheritdoc/>
-        public readonly byte Namespace
+        public readonly ReadOnlySpan<byte> Namespace
         {
-            get => *(byte*)NamespaceAddress;
-            set => *(byte*)NamespaceAddress = value;
+            get
+            {
+                var indicator = *(byte*)NamespaceAddress;
+                if ((indicator & RecordDataHeader.ExtendedNamespaceIndicatorBit) == 0)
+                {
+                    // Single-byte namespace
+                    return new ReadOnlySpan<byte>(ref *(byte*)NamespaceAddress);
+                }
+                else
+                {
+                    // Extended namespace
+                    // var length = indicator & RecordDataHeader.NamespaceIndicatorMask;
+                    // return new ReadOnlySpan<byte>((byte*)(ExtendedNamespaceAddress + 1), length);
+                    throw new TsavoriteException("Extended namespace not yet supported");
+                }
+            }
         }
 
         /// <inheritdoc/>
@@ -213,23 +227,53 @@ namespace Tsavorite.core
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
-                if (!Info.ValueIsObject)
-                    throw new TsavoriteException("ValueObject is not valid for Span values");
-                var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
-                return objectIdMap.GetHeapObject(*(int*)dataAddress);
+                if (Info.ValueIsObject)
+                {
+                    var (_ /*valueLength*/, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                    return objectIdMap.GetHeapObject(*(int*)valueAddress);
+                }
+                throw new TsavoriteException("ValueObject is not valid for Span values");
             }
             internal set
             {
-                var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                if (Info.ValueIsObject)
+                {
+                    var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                    Debug.Assert(valueLength == ObjectIdMap.ObjectIdSize, $"valueLength {valueLength} should be ObjectIdSize {ObjectIdMap.ObjectIdSize}");
+                    *(int*)valueAddress = objectIdMap.AllocateAndSet(value);
 
-                if (!Info.ValueIsObject)
-                    throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord or Deserialization with ValueIsObject==true");
-                Debug.Assert(valueLength == ObjectIdMap.ObjectIdSize, $"valueLength {valueLength} should be ObjectIdSize {ObjectIdMap.ObjectIdSize}");
-                *(int*)valueAddress = objectIdMap.AllocateAndSet(value);
-
-                // Clear the object log file position.
-                *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()) = ObjectLogFilePositionInfo.NotSet;
+                    // Clear the object log file position.
+                    *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()) = ObjectLogFilePositionInfo.NotSet;
+                    return;
+                }
+                throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord or Deserialization with ValueIsObject==true");
             }
+        }
+
+        public readonly bool ValueObjectIsSet
+            => Info.ValueIsObject
+                  ? *(int*)new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info).valueAddress != ObjectIdMap.InvalidObjectId
+                  : throw new TsavoriteException("ValueObjectIsSet is not valid for Span values");
+
+        /// <summary>
+        /// We track the deserialized length of an object value in the ObjectLogPosition field after deserialization is complete. This allows
+        /// flushes during recovery to both avoid re-serializing the object and know how to reset the ObjectLogPosition.
+        /// </summary>
+        /// <param name="heapObject">The deserialized object</param>
+        /// <param name="deserializedLength">The deserialized length of the object</param>
+        internal void SetDeserializedValueObject(IHeapObject heapObject, ulong deserializedLength)
+        {
+            var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+
+            if (!Info.ValueIsObject)
+                throw new TsavoriteException("SetDeserializedValueObject should only be called by Deserialization with ValueIsObject==true");
+            Debug.Assert(valueLength == ObjectIdMap.ObjectIdSize, $"valueLength {valueLength} should be ObjectIdSize {ObjectIdMap.ObjectIdSize}");
+
+            *(int*)valueAddress = objectIdMap.AllocateAndSet(heapObject);
+
+            // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
+            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
+            *objectLogPositionPtr = deserializedLength;
         }
 
         /// <summary>The span of the entire record, including the ObjectId space if the record has objects.</summary>
@@ -416,16 +460,9 @@ namespace Tsavorite.core
             return new((byte*)dataAddress, length);
         }
 
-        public readonly Span<byte> RecordSpan
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get
-            {
-                return Info.RecordIsInline
-                    ? new((byte*)physicalAddress, ActualSize)
-                    : throw new TsavoriteException("RecordSpan is not valid for non-inline records");
-            }
-        }
+        /// <summary>Get the span of the inline portion of the record. Following this, the caller should be sure the objectIds are remapped
+        ///     to a transient ObjectIdMap if necessary.</summary>
+        public readonly Span<byte> RecordSpan => new((byte*)physicalAddress, ActualSize);
 
         /// <summary>
         /// Tries to set the length of the value field, as well as verifying there is also space for the optionals (ETag, Expiration, ObjectLogPosition) as 
@@ -601,7 +638,7 @@ namespace Tsavorite.core
             // Because it is for (re)initialization, we don't zero-initialize; the caller should assume they have to do that if they only copy partial data in.
             ClearOptionals();
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
-            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info);
+            var (_ /*valueLength*/, valueAddress) = dataHeader.GetValueFieldInfo(Info);
             var recordLength = dataHeader.GetRecordLength();
             var fillerLength = (int)(physicalAddress + recordLength - (valueAddress + sizeInfo.InlineValueSize));
             if (fillerLength < 0)
@@ -878,15 +915,13 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Copy the entire record values: Value and optionals (ETag, Expiration).
+        /// Copy the entire record values: Value and optionals (ETag, Expiration). Key is not copied as it has already been set into 'this'.
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly bool TryCopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
-            // TODOnow: For RENAME, add a key param to this and copy it in. Reflect this in RecordFieldInfo's KeyLength etc. (including whether it's overflow)
-            // For now, this assumes the Key has been set and is not changed
             if (srcLogRecord.Info.ValueIsInline)
             {
                 if (!TrySetContentLengths(in sizeInfo))
@@ -902,7 +937,7 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    // TODOnow: make sure Object isn't disposed by the source, to avoid use-after-Dispose. Maybe this (and DiskLogRecord remapping to TransientOIDMap) needs Clone()
+                    // TODOobjDispose: make sure Object isn't disposed by the source, to avoid use-after-Dispose. Maybe this (and DiskLogRecord remapping to TransientOIDMap) needs Clone()
                     Debug.Assert(srcLogRecord.ValueObject is not null, "Expected srcLogRecord.ValueObject to be set (or deserialized) already");
                     if (!TrySetValueObjectAndPrepareOptionals(srcLogRecord.ValueObject, in sizeInfo))
                         return false;
@@ -1011,6 +1046,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Sets the lengths of Overflow Keys and Values and Object values into the disk-image copy of the log record before the main-log page is flushed.
         /// </summary>
+        /// <param name="objectLogFilePosition">The starting position of the serialized key and value data in the object log.</param>
+        /// <param name="valueObjectLength">The serialized length of the value object if it is an object and not inline or overflow. Overflow
+        ///     fields have their length known from the <see cref="OverflowByteArray.Length"/> property.</param>
         /// <remarks>
         /// IMPORTANT: This is only to be called in the disk image copy of the log record, not in the actual log record itself.
         /// </remarks>
@@ -1044,8 +1082,9 @@ namespace Tsavorite.core
             }
             else if (Info.ValueIsObject)
             {
+                // Reuse the valueAddress space to store the low int of valueObjectLength, then store the high byte in the ObjectLogPosition
+                // (it is combined with the length that is stored in the ObjectId field data of the record).
                 *(uint*)valueAddress = (uint)(valueObjectLength & 0xFFFFFFFF);
-                // Update the high byte in the ObjectLogPosition (it is combined with the length that is stored in the ObjectId field data of the record).
                 ObjectLogFilePositionInfo.SetObjectSizeHighByte(objectLogPositionPtr, (int)(valueObjectLength >> 32));
             }
             else if (Info.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
@@ -1080,7 +1119,7 @@ namespace Tsavorite.core
                 // Get the high byte in the ObjectLogPosition (it is combined with the length that is stored in the ObjectId field data of the record).
                 // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
                 var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
-                valueObjectLength = *(uint*)valueAddress | ((uint)ObjectLogFilePositionInfo.GetObjectSizeHighByte(objectLogPositionPtr) << 32);
+                valueObjectLength = *(uint*)valueAddress | ((ulong)ObjectLogFilePositionInfo.GetObjectSizeHighByte(objectLogPositionPtr) << 32);
             }
             else // ValueIsInline is true; valueLength will be ignored
             {
@@ -1093,6 +1132,67 @@ namespace Tsavorite.core
             }
 
             return *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress());
+        }
+
+        /// <summary>
+        /// For recovery, we have already deserialized all objects and know their lengths: Overflow is in the Key or Value field,
+        /// and Object is in the ObjectLogPosition field. So we can set up the pagePositionInfo for this record directly rather than
+        /// re-serializing, which also keeps the objectLogTail consistent.
+        /// </summary>
+        /// <param name="pagePositionInfo">The cumulative position on the page (starting from the PageHeader)</param>
+        /// <remarks>
+        /// IMPORTANT: This is only to be called in the disk image copy of the log record, not in the actual log record itself.
+        /// </remarks>
+        /// <returns>The total "serialized" lengths from this LogRecord; will be 0 for inline records. Caller will adjust for
+        ///     segment boundaries.</returns>
+        internal readonly ulong SetRecoveredObjectLogRecordStartPosition(ObjectLogFilePositionInfo pagePositionInfo)
+        {
+            if (Info.RecordIsInline)
+            {
+                Debug.Fail("Cannot call SetRecoveredObjectLogRecordStartPositionAndLengths for an inline record");
+                return 0;
+            }
+
+            // Adding valueAddress and length is the same as GetOptionalStartAddress() but faster
+            var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
+            var (valueLength, valueAddress) = dataHeader.GetValueFieldInfo(Info);
+            var objectLogPositionPtr = (ulong*)GetObjectLogPositionAddress(valueAddress + valueLength);
+            ulong objectLengths = 0;
+
+            // In case we're a ValueObject, store off the ulong at objectLogPositionPtr before overwriting it with the position in the log file.
+            var valueObjectLength = *objectLogPositionPtr;
+            *objectLogPositionPtr = pagePositionInfo.word;
+
+            if (Info.KeyIsOverflow)
+            {
+                var (_ /*keyLength*/, keyAddress) = dataHeader.GetKeyFieldInfo();
+                var overflow = objectIdMap.GetOverflowByteArray(*(int*)keyAddress);
+                objectLengths += (uint)overflow.Length;
+            }
+
+            if (Info.ValueIsOverflow)
+            {
+                var overflow = objectIdMap.GetOverflowByteArray(*(int*)valueAddress);
+                objectLengths += (uint)overflow.Length;
+            }
+            else if (Info.ValueIsObject)
+            {
+                objectLengths += valueObjectLength;
+
+                // Reuse the valueAddress space to store the low int of valueObjectLength, then store the high byte in the ObjectLogPosition
+                // (it is combined with the length that is stored in the ObjectId field data of the record).
+                *(uint*)valueAddress = (uint)(valueObjectLength & 0xFFFFFFFF);
+                ObjectLogFilePositionInfo.SetObjectSizeHighByte(objectLogPositionPtr, (int)(valueObjectLength >> 32));
+            }
+            else if (Info.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
+            {
+                Debug.Fail("Cannot call SetRecoveredObjectLogRecordStartPositionAndLengths for an inline record");
+                return 0;
+            }
+
+            // We no longer need the valueObjectLength in our objectLogPositionPtr, so now we overwrite that with the pagePositionInfo,
+            // then update pagePositionInfo.
+            return objectLengths;
         }
 
         internal void OnDeserializationError(bool keyWasSet)

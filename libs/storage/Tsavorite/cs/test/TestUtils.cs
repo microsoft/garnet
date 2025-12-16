@@ -214,7 +214,7 @@ namespace Tsavorite.test
             Object
         }
 
-        internal enum CompletionSyncMode { Sync, Async }
+        public enum CompletionSyncMode { Sync, Async }
 
         public enum ReadCopyDestination { Tail, ReadCache }
 
@@ -237,6 +237,8 @@ namespace Tsavorite.test
         public enum ScanMode { Scan, Iterate }
 
         public enum WaitMode { Wait, NoWait }
+
+        public enum RandomMode { Rng, NoRng }
 
         internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext>(CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);

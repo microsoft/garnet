@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -16,8 +14,8 @@ using Tsavorite.test.recovery;
 
 namespace Tsavorite.test
 {
-    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
 
     public class CheckpointManagerTests
     {
@@ -47,7 +45,7 @@ namespace Tsavorite.test
             {
                 TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
 
-                using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(
+                using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(
                     new()
                     {
                         IndexSize = 1L << 16,
@@ -56,10 +54,10 @@ namespace Tsavorite.test
                         PageSize = 1L << 10,
                         MemorySize = 1L << 20,
                         CheckpointManager = checkpointManager
-                    }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                    }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
-                using var s = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
+                using var s = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bContext = s.BasicContext;
 
                 var logCheckpoints = new Dictionary<Guid, int>();
@@ -69,7 +67,9 @@ namespace Tsavorite.test
                 for (var i = 0; i < 10; i++)
                 {
                     // Do some dummy update
-                    _ = bContext.Upsert(0, random.Next());
+                    var key = 0L;
+                    var value = (long)random.Next();
+                    _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
 
                     var checkpointType = random.Next(5);
                     Guid result = default;
@@ -151,4 +151,3 @@ namespace Tsavorite.test
         }
     }
 }
-#endif // LOGRECORD_TODO

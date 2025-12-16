@@ -70,7 +70,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                bool startTxn = txnManager.Run();
+                var startTxn = txnManager.Run();
 
                 if (startTxn)
                 {

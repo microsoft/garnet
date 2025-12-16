@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -11,11 +9,12 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 using Tsavorite.test.recovery.sumstore;
+using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.recovery
 {
-    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
 
     public enum DeviceMode
     {
@@ -33,35 +32,44 @@ namespace Tsavorite.test.recovery
         {
             inputArray = new AdId[NumOps];
             for (int i = 0; i < NumOps; i++)
-            {
                 inputArray[i].adId = i;
-            }
 
-            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "hlog.log"), deleteOnClose: false);
-            TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "hlog.log"), deleteOnClose: false);
+            RecreateDirectory(MethodTestDir);
         }
 
         protected void BaseTearDown()
         {
             log?.Dispose();
             log = null;
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
-        public class MyFunctions : SimpleLongSimpleFunctions<long, long>
+        protected static void AssertEquivalentTailAddress(long tailAddress1, long tailAddress2, long pageSize, int iteration)
         {
-            public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            if (tailAddress1 != tailAddress2)
             {
-                ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                ClassicAssert.AreEqual(key, output, $"output = {output}");
+                // We adjust TailAddress in recovery to start at PageHeader.Size offset within the page if it ended on a page boundary
+                // in the RecoveryInfo, so test for that case here.
+                Assert.That(tailAddress1 / pageSize == tailAddress2 / pageSize && tailAddress2 % pageSize == PageHeader.Size, Is.True,
+                    $"iteration {iteration}: tailAddress1 != tailAddress2 even after adjusting for PageHeader.Size offset");
             }
         }
 
-        public class MyFunctions2 : SimpleLongSimpleFunctions<long, long>
+        public class MyFunctions : SimpleLongSimpleFunctions
         {
-            public override void ReadCompletionCallback(ref long key, ref long input, ref long output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref long input, ref long output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
-                Verify(status, key, output);
+                ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                ClassicAssert.AreEqual(diskLogRecord.Key.AsRef<long>(), output, $"output = {output}");
+            }
+        }
+
+        public class MyFunctions2 : SimpleLongSimpleFunctions
+        {
+            public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref long input, ref long output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            {
+                Verify(status, diskLogRecord.Key.AsRef<long>(), output);
             }
 
             internal static void Verify(Status status, long key, long output)
@@ -91,18 +99,19 @@ namespace Tsavorite.test.recovery
 
         public async ValueTask RecoveryCheck1(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+            [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            const long pageSize = 1L << 10;
+            using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = pageSize,
                 MemorySize = 1L << 20,
-                ReadCacheEnabled = useReadCache,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                ReadCacheEnabled = readCacheMode == ReadCacheMode.UseReadCache,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -110,42 +119,41 @@ namespace Tsavorite.test.recovery
             var bc1 = s1.BasicContext;
 
             for (long key = 0; key < 1000; key++)
-            {
-                _ = bc1.Upsert(ref key, ref key);
-            }
+                _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
 
-            if (useReadCache)
+            if (readCacheMode == ReadCacheMode.UseReadCache)
             {
                 store1.Log.FlushAndEvict(true);
                 for (long key = 0; key < 1000; key++)
                 {
                     long output = default;
-                    var status = bc1.Read(ref key, ref output);
-                    if (!status.IsPending)
+                    var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                    if (status.IsPending)
                     {
-                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                        ClassicAssert.AreEqual(key, output, $"output = {output}");
+                        Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                        (status, output) = GetSinglePendingResult(completedOutputs);
                     }
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
-                _ = bc1.CompletePending(true);
             }
 
             var task = store1.TakeFullCheckpointAsync(checkpointType);
 
-            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            using var store2 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = pageSize,
                 MemorySize = 1L << 20,
-                ReadCacheEnabled = useReadCache,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                ReadCacheEnabled = readCacheMode == ReadCacheMode.UseReadCache,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            if (isAsync)
+            if (completionSyncMode == CompletionSyncMode.Async)
             {
                 var (status, token) = await task;
                 _ = await store2.RecoverAsync(default, token);
@@ -158,23 +166,23 @@ namespace Tsavorite.test.recovery
 
             ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
             ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-            ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+            AssertEquivalentTailAddress(store1.Log.TailAddress, store2.Log.TailAddress, pageSize, iteration: 0);
 
             using var s2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
             var bc2 = s2.BasicContext;
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = bc2.Read(ref key, ref output);
-                if (!status.IsPending)
+                var status = bc2.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                if (status.IsPending)
                 {
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
+                ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}");
             }
-            _ = bc2.CompletePending(true);
         }
-
     }
 
     [TestFixture]
@@ -190,63 +198,63 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck2(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+            [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            const long pageSize = 1L << 10;
+            using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = pageSize,
                 MemorySize = 1L << 20,
-                ReadCacheEnabled = useReadCache,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                ReadCacheEnabled = readCacheMode == ReadCacheMode.UseReadCache,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
+            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bc1 = s1.BasicContext;
 
-            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            using var store2 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = pageSize,
                 MemorySize = 1L << 20,
-                ReadCacheEnabled = useReadCache,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                ReadCacheEnabled = readCacheMode == ReadCacheMode.UseReadCache,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             for (int i = 0; i < 5; i++)
             {
                 for (long key = 1000 * i; key < 1000 * i + 1000; key++)
-                {
-                    _ = bc1.Upsert(ref key, ref key);
-                }
+                    _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
 
-                if (useReadCache)
+                if (readCacheMode == ReadCacheMode.UseReadCache)
                 {
                     store1.Log.FlushAndEvict(true);
                     for (long key = 1000 * i; key < 1000 * i + 1000; key++)
                     {
                         long output = default;
-                        var status = bc1.Read(ref key, ref output);
-                        if (!status.IsPending)
+                        var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                        if (status.IsPending)
                         {
-                            ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                            ClassicAssert.AreEqual(key, output, $"output = {output}");
+                            Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                            (status, output) = GetSinglePendingResult(completedOutputs);
                         }
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
-                    _ = bc1.CompletePending(true);
                 }
 
                 var task = store1.TakeHybridLogCheckpointAsync(checkpointType);
 
-                if (isAsync)
+                if (completionSyncMode == CompletionSyncMode.Async)
                 {
                     var (status, token) = await task;
                     _ = await store2.RecoverAsync(default, token);
@@ -257,23 +265,24 @@ namespace Tsavorite.test.recovery
                     _ = store2.Recover(default, token);
                 }
 
-                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-                ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress, $"iter {i}");
+                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress, $"iter {i}");
+                AssertEquivalentTailAddress(store1.Log.TailAddress, store2.Log.TailAddress, pageSize, iteration: i);
 
-                using var s2 = store2.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
+                using var s2 = store2.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bc2 = s2.BasicContext;
                 for (long key = 0; key < 1000 * i + 1000; key++)
                 {
                     long output = default;
-                    var status = bc2.Read(ref key, ref output);
-                    if (!status.IsPending)
+                    var status = bc2.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                    if (status.IsPending)
                     {
-                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                        ClassicAssert.AreEqual(key, output, $"output = {output}");
+                        Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                        (status, output) = GetSinglePendingResult(completedOutputs);
                     }
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
-                _ = bc2.CompletePending(true);
             }
         }
 
@@ -284,80 +293,77 @@ namespace Tsavorite.test.recovery
             )
         {
             Guid token = default;
+            const long pageSize = 1L << 10;
 
             for (int i = 0; i < 6; i++)
             {
-                using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+                using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
                 {
                     IndexSize = 1L << 13,
                     LogDevice = log,
                     MutableFraction = 1,
-                    PageSize = 1L << 10,
+                    PageSize = pageSize,
                     MemorySize = 1L << 20,
-                    CheckpointDir = TestUtils.MethodTestDir
-                }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                    CheckpointDir = MethodTestDir
+                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
 
                 if (i > 0)
                     _ = store.Recover(default, token);
 
-                using var s1 = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
+                using var s1 = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bc1 = s1.BasicContext;
 
                 for (long key = 1000 * i; key < 1000 * i + 1000; key++)
-                {
-                    _ = bc1.Upsert(ref key, ref key);
-                }
+                    _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
 
                 var task = store.TakeHybridLogCheckpointAsync(checkpointType);
                 bool success;
                 (success, token) = task.AsTask().GetAwaiter().GetResult();
                 ClassicAssert.IsTrue(success);
 
-                using var s2 = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
+                using var s2 = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bc2 = s2.BasicContext;
 
                 for (long key = 0; key < 1000 * i + 1000; key++)
                 {
                     long output = default;
-                    var status = bc2.Read(ref key, ref output);
-                    if (!status.IsPending)
+                    var status = bc2.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                    if (status.IsPending)
                     {
-                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                        ClassicAssert.AreEqual(key, output, $"output = {output}");
+                        Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                        (status, output) = GetSinglePendingResult(completedOutputs);
                     }
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
-                _ = bc2.CompletePending(true);
             }
         }
 
         [Test]
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
-        public void RecoveryRollback(
-            [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType
-            )
+        public void RecoveryRollback([Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType)
         {
-            using var store = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            const long pageSize = 1L << 10;
+            using var store = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = pageSize,
                 MemorySize = 1L << 11,
                 SegmentSize = 1L << 11,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var s1 = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
+            using var s1 = store.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bc1 = s1.BasicContext;
 
             for (long key = 0; key < 1000; key++)
-            {
-                _ = bc1.Upsert(ref key, ref key);
-            }
+                _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
 
             var task = store.TakeHybridLogCheckpointAsync(checkpointType);
             (bool success, Guid token) = task.AsTask().GetAwaiter().GetResult();
@@ -366,25 +372,18 @@ namespace Tsavorite.test.recovery
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = bc1.Read(ref key, ref output);
-                if (!status.IsPending)
+                var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                if (status.IsPending)
                 {
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
+                ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}");
             }
-            _ = bc1.CompletePendingWithOutputs(out var completedOutputs, true);
-            while (completedOutputs.Next())
-            {
-                ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
-                ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
-            }
-            completedOutputs.Dispose();
 
             for (long key = 1000; key < 2000; key++)
-            {
-                _ = bc1.Upsert(ref key, ref key);
-            }
+                _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
 
             // Reset store to empty state
             store.Reset();
@@ -392,18 +391,14 @@ namespace Tsavorite.test.recovery
             for (long key = 0; key < 2000; key++)
             {
                 long output = default;
-                var status = bc1.Read(ref key, ref output);
-                if (!status.IsPending)
+                var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                if (status.IsPending)
                 {
-                    ClassicAssert.IsTrue(status.NotFound, $"status = {status}");
+                    Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
+                ClassicAssert.IsTrue(status.NotFound, $"status = {status}");
             }
-            _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
-            while (completedOutputs.Next())
-            {
-                ClassicAssert.IsTrue(completedOutputs.Current.Status.NotFound);
-            }
-            completedOutputs.Dispose();
 
             // Rollback to previous checkpoint
             _ = store.Recover(default, token);
@@ -411,69 +406,43 @@ namespace Tsavorite.test.recovery
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = bc1.Read(ref key, ref output);
-                if (!status.IsPending)
+                var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                if (status.IsPending)
                 {
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
+                ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}");
             }
-            _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
-            while (completedOutputs.Next())
-            {
-                ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
-                ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
-            }
-            completedOutputs.Dispose();
 
             for (long key = 1000; key < 2000; key++)
             {
                 long output = default;
-                var status = bc1.Read(ref key, ref output);
-                if (!status.IsPending)
+                var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                if (status.IsPending)
                 {
-                    ClassicAssert.IsTrue(status.NotFound, $"status = {status}");
+                    Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
+                ClassicAssert.IsTrue(status.NotFound, $"status = {status}");
             }
-            _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
-            while (completedOutputs.Next())
-            {
-                ClassicAssert.IsTrue(completedOutputs.Current.Status.NotFound);
-            }
-            completedOutputs.Dispose();
 
             for (long key = 1000; key < 2000; key++)
-            {
-                _ = bc1.Upsert(ref key, ref key);
-            }
+                _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
 
             for (long key = 0; key < 2000; key++)
             {
                 long output = default;
-                var status = bc1.Read(ref key, ref output);
-                if (!status.IsPending)
+                var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                if (status.IsPending)
                 {
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
-                else
-                {
-                    _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
-                    while (completedOutputs.Next())
-                    {
-                        ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
-                        ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
-                    }
-                    completedOutputs.Dispose();
-                }
+                ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}");
             }
-            _ = bc1.CompletePendingWithOutputs(out completedOutputs, true);
-            while (completedOutputs.Next())
-            {
-                ClassicAssert.IsTrue(completedOutputs.Current.Status.Found);
-                ClassicAssert.AreEqual(completedOutputs.Current.Key, completedOutputs.Current.Output, $"output = {completedOutputs.Current.Output}");
-            }
-            completedOutputs.Dispose();
         }
     }
 
@@ -490,63 +459,63 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck3(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+            [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            const long pageSize = 1L << 10;
+            using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = pageSize,
                 MemorySize = 1L << 20,
-                ReadCacheEnabled = useReadCache,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                ReadCacheEnabled = readCacheMode == ReadCacheMode.UseReadCache,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
+            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bc1 = s1.BasicContext;
 
-            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            using var store2 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = pageSize,
                 MemorySize = 1L << 20,
-                ReadCacheEnabled = useReadCache,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                ReadCacheEnabled = readCacheMode == ReadCacheMode.UseReadCache,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             for (int i = 0; i < 5; i++)
             {
                 for (long key = 1000 * i; key < 1000 * i + 1000; key++)
-                {
-                    _ = bc1.Upsert(ref key, ref key);
-                }
+                    _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
 
-                if (useReadCache)
+                if (readCacheMode == ReadCacheMode.UseReadCache)
                 {
                     store1.Log.FlushAndEvict(true);
                     for (long key = 1000 * i; key < 1000 * i + 1000; key++)
                     {
                         long output = default;
-                        var status = bc1.Read(ref key, ref output);
-                        if (!status.IsPending)
+                        var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                        if (status.IsPending)
                         {
-                            ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                            ClassicAssert.AreEqual(key, output, $"output = {output}");
+                            Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                            (status, output) = GetSinglePendingResult(completedOutputs);
                         }
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
-                    _ = bc1.CompletePending(true);
                 }
 
                 var task = store1.TakeFullCheckpointAsync(checkpointType);
 
-                if (isAsync)
+                if (completionSyncMode == CompletionSyncMode.Async)
                 {
                     var (status, token) = await task;
                     _ = await store2.RecoverAsync(default, token);
@@ -557,26 +526,26 @@ namespace Tsavorite.test.recovery
                     _ = store2.Recover(default, token);
                 }
 
-                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-                ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress, $"iter {i}");
+                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress, $"iter {i}");
+                AssertEquivalentTailAddress(store1.Log.TailAddress, store2.Log.TailAddress, pageSize, iteration: i);
 
-                using var s2 = store2.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
+                using var s2 = store2.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bc2 = s2.BasicContext;
                 for (long key = 0; key < 1000 * i + 1000; key++)
                 {
                     long output = default;
-                    var status = bc2.Read(ref key, ref output);
-                    if (!status.IsPending)
+                    var status = bc2.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                    if (status.IsPending)
                     {
-                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                        ClassicAssert.AreEqual(key, output, $"output = {output}");
+                        Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                        (status, output) = GetSinglePendingResult(completedOutputs);
                     }
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
-                _ = bc2.CompletePending(true);
             }
         }
-
     }
 
     [TestFixture]
@@ -592,66 +561,65 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV"), Category("CheckpointRestore")]
         public async ValueTask RecoveryCheck4(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
-            [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
+            [Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            const long pageSize = 1L << 10;
+            using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = pageSize,
                 MemorySize = 1L << 20,
-                ReadCacheEnabled = useReadCache,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                ReadCacheEnabled = readCacheMode == ReadCacheMode.UseReadCache,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
+            using var s1 = store1.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
             var bc1 = s1.BasicContext;
 
-            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            using var store2 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = pageSize,
                 MemorySize = 1L << 20,
-                ReadCacheEnabled = useReadCache,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                ReadCacheEnabled = readCacheMode == ReadCacheMode.UseReadCache,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             for (int i = 0; i < 5; i++)
             {
                 for (long key = 1000 * i; key < 1000 * i + 1000; key++)
-                {
-                    _ = bc1.Upsert(ref key, ref key);
-                }
+                    _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
 
-                if (useReadCache)
+                if (readCacheMode == ReadCacheMode.UseReadCache)
                 {
                     store1.Log.FlushAndEvict(true);
                     for (long key = 1000 * i; key < 1000 * i + 1000; key++)
                     {
                         long output = default;
-                        var status = bc1.Read(ref key, ref output);
-                        if (!status.IsPending)
+                        var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                        if (status.IsPending)
                         {
-                            ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                            ClassicAssert.AreEqual(key, output, $"output = {output}");
+                            Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                            (status, output) = GetSinglePendingResult(completedOutputs);
                         }
+                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                        ClassicAssert.AreEqual(key, output, $"output = {output}");
                     }
-                    _ = bc1.CompletePending(true);
                 }
 
                 if (i == 0)
                     _ = store1.TakeIndexCheckpointAsync().AsTask().GetAwaiter().GetResult();
-
                 var task = store1.TakeHybridLogCheckpointAsync(checkpointType);
 
-                if (isAsync)
+                if (completionSyncMode == CompletionSyncMode.Async)
                 {
                     var (status, token) = await task;
                     _ = await store2.RecoverAsync(default, token);
@@ -662,26 +630,26 @@ namespace Tsavorite.test.recovery
                     _ = store2.Recover(default, token);
                 }
 
-                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
-                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-                ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+                ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress, $"iter {i}");
+                ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress, $"iter {i}");
+                AssertEquivalentTailAddress(store1.Log.TailAddress, store2.Log.TailAddress, pageSize, iteration: i);
 
-                using var s2 = store2.NewSession<long, long, Empty, SimpleLongSimpleFunctions<long, long>>(new SimpleLongSimpleFunctions<long, long>());
+                using var s2 = store2.NewSession<long, long, Empty, SimpleLongSimpleFunctions>(new SimpleLongSimpleFunctions());
                 var bc2 = s2.BasicContext;
                 for (long key = 0; key < 1000 * i + 1000; key++)
                 {
                     long output = default;
-                    var status = bc2.Read(ref key, ref output);
-                    if (!status.IsPending)
+                    var status = bc2.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                    if (status.IsPending)
                     {
-                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                        ClassicAssert.AreEqual(key, output, $"output = {output}");
+                        Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                        (status, output) = GetSinglePendingResult(completedOutputs);
                     }
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}");
                 }
-                _ = bc2.CompletePending(true);
             }
         }
-
     }
 
     [TestFixture]
@@ -700,25 +668,24 @@ namespace Tsavorite.test.recovery
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values] bool isAsync, [Values] bool useReadCache, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            const long pageSize = 1L << 10;
+            using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = pageSize,
                 MemorySize = 1L << 20,
                 ReadCacheEnabled = useReadCache,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             using var s1 = store1.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
             var bc1 = s1.BasicContext;
             for (long key = 0; key < 1000; key++)
-            {
-                _ = bc1.Upsert(ref key, ref key);
-            }
+                _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
 
             if (useReadCache)
             {
@@ -726,14 +693,15 @@ namespace Tsavorite.test.recovery
                 for (long key = 0; key < 1000; key++)
                 {
                     long output = default;
-                    var status = bc1.Read(ref key, ref output);
-                    if (!status.IsPending)
+                    var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                    if (status.IsPending)
                     {
-                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                        ClassicAssert.AreEqual(key, output, $"output = {output}");
+                        Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                        (status, output) = GetSinglePendingResult(completedOutputs);
                     }
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}");
                 }
-                _ = bc1.CompletePending(true);
             }
 
             var result = await store1.GrowIndexAsync();
@@ -742,27 +710,28 @@ namespace Tsavorite.test.recovery
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = bc1.Read(ref key, ref output);
-                if (!status.IsPending)
+                var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                if (status.IsPending)
                 {
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
+                ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}");
             }
-            _ = bc1.CompletePending(true);
 
             var task = store1.TakeFullCheckpointAsync(checkpointType);
 
-            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            using var store2 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
-                PageSize = 1L << 10,
+                PageSize = pageSize,
                 MemorySize = 1L << 20,
                 ReadCacheEnabled = useReadCache,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -779,7 +748,7 @@ namespace Tsavorite.test.recovery
 
             ClassicAssert.AreEqual(store1.Log.HeadAddress, store2.Log.HeadAddress);
             ClassicAssert.AreEqual(store1.Log.ReadOnlyAddress, store2.Log.ReadOnlyAddress);
-            ClassicAssert.AreEqual(store1.Log.TailAddress, store2.Log.TailAddress);
+            AssertEquivalentTailAddress(store1.Log.TailAddress, store2.Log.TailAddress, pageSize, iteration: 0);
 
             using var s2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
             var bc2 = s2.BasicContext;
@@ -787,14 +756,15 @@ namespace Tsavorite.test.recovery
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = bc2.Read(ref key, ref output);
-                if (!status.IsPending)
+                var status = bc2.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                if (status.IsPending)
                 {
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
+                ClassicAssert.IsTrue(status.Found, $"status = {status}, key = {key}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}, key = {key}");
             }
-            _ = bc2.CompletePending(true);
         }
     }
 
@@ -811,21 +781,22 @@ namespace Tsavorite.test.recovery
         [Category("TsavoriteKV")]
         [Category("CheckpointRestore")]
         [Category("Smoke")]
+        [Ignore("TODO DeltaLog")]
         public async ValueTask IncrSnapshotRecoveryCheck([Values] DeviceMode deviceMode)
         {
-            ICheckpointManager checkpointManager;
+            DeviceLogCommitCheckpointManager checkpointManager;
             if (deviceMode == DeviceMode.Local)
             {
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     new LocalStorageNamedDeviceFactoryCreator(),
-                    new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir + "/checkpoints/"));  // PurgeAll deletes this directory
+                    new DefaultCheckpointNamingScheme(MethodTestDir + "/checkpoints/"));  // PurgeAll deletes this directory
             }
             else
             {
-                TestUtils.IgnoreIfNotRunningAzureTests();
+                IgnoreIfNotRunningAzureTests();
                 checkpointManager = new DeviceLogCommitCheckpointManager(
                     TestUtils.AzureStorageNamedDeviceFactoryCreator,
-                    new AzureCheckpointNamingScheme($"{TestUtils.AzureTestContainer}/{TestUtils.AzureTestDirectory}"));
+                    new AzureCheckpointNamingScheme($"{AzureTestContainer}/{AzureTestDirectory}"));
             }
 
             await IncrSnapshotRecoveryCheck(checkpointManager);
@@ -835,7 +806,7 @@ namespace Tsavorite.test.recovery
 
         private async ValueTask IncrSnapshotRecoveryCheck(ICheckpointManager checkpointManager)
         {
-            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = 1L << 16,
                 LogDevice = log,
@@ -843,30 +814,36 @@ namespace Tsavorite.test.recovery
                 PageSize = 1L << 10,
                 MemorySize = 1L << 20,
                 CheckpointManager = checkpointManager
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             using var s1 = store1.NewSession<long, long, Empty, MyFunctions2>(new MyFunctions2());
             var bc1 = s1.BasicContext;
             for (long key = 0; key < 1000; key++)
-                _ = bc1.Upsert(ref key, ref key);
+                _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
 
             var task = store1.TakeHybridLogCheckpointAsync(CheckpointType.Snapshot);
             var (success, token) = await task;
 
             for (long key = 950; key < 1000; key++)
-                _ = bc1.Upsert(key, key + 1);
+            {
+                var value = key + 1;
+                _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
+            }
 
             var version1 = store1.CurrentVersion;
-            var _result1 = store1.TryInitiateHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, true);
+            var _result1 = store1.TryInitiateHybridLogCheckpoint(out var _token1, CheckpointType.Snapshot, tryIncremental: true);
             await store1.CompleteCheckpointAsync();
 
             ClassicAssert.IsTrue(_result1);
             ClassicAssert.AreEqual(token, _token1);
 
             for (long key = 1000; key < 2000; key++)
-                _ = bc1.Upsert(key, key + 1);
+            {
+                var value = key + 1;
+                _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
+            }
 
             var version2 = store1.CurrentVersion;
             var _result2 = store1.TryInitiateHybridLogCheckpoint(out var _token2, CheckpointType.Snapshot, true);
@@ -876,7 +853,7 @@ namespace Tsavorite.test.recovery
             ClassicAssert.AreEqual(token, _token2);
 
             // Test that we can recover to latest version
-            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            using var store2 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = 1L << 16,
                 LogDevice = log,
@@ -884,11 +861,11 @@ namespace Tsavorite.test.recovery
                 PageSize = 1L << 10,
                 MemorySize = 1L << 14,
                 CheckpointManager = checkpointManager
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
-            await store2.RecoverAsync(default, _token2);
+            _ = await store2.RecoverAsync(default, _token2);
 
             ClassicAssert.AreEqual(store2.Log.TailAddress, store1.Log.TailAddress);
 
@@ -898,16 +875,17 @@ namespace Tsavorite.test.recovery
             for (long key = 0; key < 2000; key++)
             {
                 long output = default;
-                var status = bc2.Read(ref key, ref output);
-                if (!status.IsPending)
+                var status = bc2.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                if (status.IsPending)
                 {
-                    MyFunctions2.Verify(status, key, output);
+                    Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
+                MyFunctions2.Verify(status, key, output);
             }
-            _ = bc2.CompletePending(true);
 
             // Test that we can recover to earlier version
-            using var store3 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            using var store3 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = 1L << 16,
                 LogDevice = log,
@@ -915,7 +893,7 @@ namespace Tsavorite.test.recovery
                 PageSize = 1L << 10,
                 MemorySize = 1L << 14,
                 CheckpointManager = checkpointManager
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -927,13 +905,14 @@ namespace Tsavorite.test.recovery
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = bc3.Read(ref key, ref output);
-                if (!status.IsPending)
+                var status = bc3.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                if (status.IsPending)
                 {
-                    MyFunctions2.Verify(status, key, output);
+                    Assert.That(bc3.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
+                MyFunctions2.Verify(status, key, output);
             }
-            _ = bc3.CompletePending(true);
         }
     }
 
@@ -946,15 +925,15 @@ namespace Tsavorite.test.recovery
         [TearDown]
         public void TearDown() => BaseTearDown();
 
-        public class SnapshotIterator : IStreamingSnapshotIteratorFunctions<long, long>
+        public class SnapshotIterator : IStreamingSnapshotIteratorFunctions
         {
-            readonly TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store2;
+            readonly TsavoriteKV<LongStoreFunctions, LongAllocator> store2;
             readonly long expectedCount;
 
-            ClientSession<long, long, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> session2;
-            BasicContext<long, long, long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> bc2;
+            ClientSession<long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> session2;
+            BasicContext<long, long, Empty, MyFunctions, LongStoreFunctions, LongAllocator> bc2;
 
-            public SnapshotIterator(TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store2, long expectedCount)
+            public SnapshotIterator(TsavoriteKV<LongStoreFunctions, LongAllocator> store2, long expectedCount)
             {
                 this.store2 = store2;
                 this.expectedCount = expectedCount;
@@ -968,9 +947,10 @@ namespace Tsavorite.test.recovery
                 return true;
             }
 
-            public bool Reader(ref long key, ref long value, RecordMetadata recordMetadata, long numberOfRecords)
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords)
+                where TSourceLogRecord : ISourceLogRecord
             {
-                _ = bc2.Upsert(ref key, ref value);
+                _ = bc2.Upsert(logRecord.Key, logRecord.ValueSpan);
                 return true;
             }
 
@@ -989,18 +969,19 @@ namespace Tsavorite.test.recovery
         [Category("CheckpointRestore")]
         [Category("Smoke")]
 
-        public async ValueTask StreamingSnapshotBasicTest([Values] bool isAsync, [Values] bool useReadCache, [Values] bool reInsert, [Values(1L << 13, 1L << 16)] long indexSize)
+        public async ValueTask StreamingSnapshotBasicTest([Values] CompletionSyncMode completionSyncMode, [Values] ReadCacheMode readCacheMode,
+                [Values] bool reInsert, [Values(1L << 13, 1L << 16)] long indexSize)
         {
-            using var store1 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
                 PageSize = 1L << 10,
                 MemorySize = 1L << 20,
-                ReadCacheEnabled = useReadCache,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                ReadCacheEnabled = readCacheMode == ReadCacheMode.UseReadCache,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -1011,63 +992,56 @@ namespace Tsavorite.test.recovery
             {
                 // If reInsert, we insert the wrong key during the first pass for the first 500 keys
                 long value = reInsert && key < 500 ? key + 1 : key;
-                _ = bc1.Upsert(ref key, ref value);
+                _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
             }
 
             if (reInsert)
             {
                 store1.Log.FlushAndEvict(true);
                 for (long key = 0; key < 500; key++)
-                {
-                    _ = bc1.Upsert(ref key, ref key);
-                }
+                    _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
                 for (long key = 800; key < 1000; key++)
-                {
-                    _ = bc1.Upsert(ref key, ref key);
-                }
+                    _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref key));
             }
 
-            if (useReadCache)
+            if (readCacheMode == ReadCacheMode.UseReadCache)
             {
                 store1.Log.FlushAndEvict(true);
                 for (long key = 0; key < 1000; key++)
                 {
                     long output = default;
-                    var status = bc1.Read(ref key, ref output);
-                    if (!status.IsPending)
+                    var status = bc1.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                    if (status.IsPending)
                     {
-                        ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                        ClassicAssert.AreEqual(key, output, $"output = {output}");
+                        Assert.That(bc1.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                        (status, output) = GetSinglePendingResult(completedOutputs);
                     }
+                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                    ClassicAssert.AreEqual(key, output, $"output = {output}");
                 }
-                _ = bc1.CompletePending(true);
             }
 
             // First create the new store, we will insert into this store as part of the iterator functions on the old store
-            using var store2 = new TsavoriteKV<long, long, LongStoreFunctions, LongAllocator>(new()
+            using var store2 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
                 IndexSize = indexSize,
                 LogDevice = log,
                 MutableFraction = 1,
                 PageSize = 1L << 10,
                 MemorySize = 1L << 20,
-                ReadCacheEnabled = useReadCache,
-                CheckpointDir = TestUtils.MethodTestDir
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+                ReadCacheEnabled = readCacheMode == ReadCacheMode.UseReadCache,
+                CheckpointDir = MethodTestDir
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
             // Take a streaming snapshot checkpoint of the old store
             var iterator = new SnapshotIterator(store2, 1000);
             var task = store1.TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, streamingSnapshotIteratorFunctions: iterator);
-            if (isAsync)
-            {
-                var (status, token) = await task;
-            }
+            if (completionSyncMode == CompletionSyncMode.Async)
+                _ = await task;
             else
-            {
-                var (status, token) = task.AsTask().GetAwaiter().GetResult();
-            }
+                _ = task.AsTask().GetAwaiter().GetResult();
 
             // Verify that the new store has all the records
             using var s2 = store2.NewSession<long, long, Empty, MyFunctions>(new MyFunctions());
@@ -1075,16 +1049,15 @@ namespace Tsavorite.test.recovery
             for (long key = 0; key < 1000; key++)
             {
                 long output = default;
-                var status = bc2.Read(ref key, ref output);
-                if (!status.IsPending)
+                var status = bc2.Read(SpanByte.FromPinnedVariable(ref key), ref output);
+                if (status.IsPending)
                 {
-                    ClassicAssert.IsTrue(status.Found, $"status = {status}");
-                    ClassicAssert.AreEqual(key, output, $"output = {output}");
+                    Assert.That(bc2.CompletePendingWithOutputs(out var completedOutputs, wait: true), Is.True);
+                    (status, output) = GetSinglePendingResult(completedOutputs);
                 }
+                ClassicAssert.IsTrue(status.Found, $"status = {status}");
+                ClassicAssert.AreEqual(key, output, $"output = {output}");
             }
-            _ = bc2.CompletePending(true);
         }
     }
 }
-
-#endif // LOGRECORD_TODO

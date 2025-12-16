@@ -73,7 +73,7 @@ namespace Garnet.server
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;
 
-            itemBroker?.HandleCollectionUpdate(key.Span.ToArray());
+            itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
         }
 

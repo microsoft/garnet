@@ -421,10 +421,13 @@ namespace Garnet.cluster
         public void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
             => clusterManager.TryClusterPublish(cmd, ref channel, ref message);
 
-        internal GarnetClusterCheckpointManager GetReplicationLogCheckpointManager()
+        internal GarnetClusterCheckpointManager ReplicationLogCheckpointManager
         {
-            Debug.Assert(serverOptions.EnableCluster);
-            return (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
+            get
+            {
+                Debug.Assert(serverOptions.EnableCluster);
+                return (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
+            }
         }
 
         /// <summary>

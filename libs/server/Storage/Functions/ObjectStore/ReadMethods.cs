@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Runtime.CompilerServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -32,6 +31,7 @@ namespace Garnet.server
 
             if (input.header.type != 0)
             {
+                var garnetObject = (IGarnetObject)srcLogRecord.ValueObject;
                 if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
                     if (srcLogRecord.Info.HasETag)
@@ -50,7 +50,7 @@ namespace Garnet.server
                     if (input.header.metaCmd.IsEtagCommand())
                         WriteEtagToOutput(srcLogRecord.ETag, ref output, out outputOffset);
 
-                    var opResult = ((IGarnetObject)srcLogRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, execOp: execCmd, out _);
+                    var opResult = garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, execOp: execCmd, out _);
 
                     if (srcLogRecord.Info.HasETag)
                         ETagState.ResetState(ref functionsState.etagState);
@@ -74,7 +74,7 @@ namespace Garnet.server
                 var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                 try
                 {
-                    var result = customObjectCommand.Reader(srcLogRecord.Key, ref input, Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject), ref writer, ref readInfo);
+                    var result = customObjectCommand.Reader(srcLogRecord.Key, ref input, garnetObject, ref writer, ref readInfo);
                     return result;
                 }
                 finally

@@ -67,9 +67,17 @@ namespace Tsavorite.core
                     }
                 }
 
+                // If a readcache record was evicted while we were processing it here, its .PreviousAddress will be kTempInvalidAddress.
+                // This should not be the case otherwise; we should always find a valid main-log address after the readcache prefix chain.
+                if (recordInfo.PreviousAddress <= kTempInvalidAddress)
+                {
+                    _ = ReadCacheNeedToWaitForEviction(ref stackCtx);
+                    goto RestartChain;
+                }
+
                 // Update the leading LatestLogicalAddress to recordInfo.PreviousAddress, and if that is a main log record, break out.
                 stackCtx.recSrc.LatestLogicalAddress = recordInfo.PreviousAddress;
-                if (!IsReadCache(recordInfo.PreviousAddress))
+                if (!IsReadCache(stackCtx.recSrc.LatestLogicalAddress))
                     goto InMainLog;
             }
 
@@ -88,9 +96,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         bool ReadCacheNeedToWaitForEviction(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx)
         {
-            if (stackCtx.recSrc.LatestLogicalAddress < readcacheBase.HeadAddress)
+            Debug.Assert(stackCtx.hei.IsReadCache, "Can only call ReadCacheNeedToWaitForEviction when hei.IsReadCache is true");
+            Debug.Assert(IsReadCache(stackCtx.recSrc.LatestLogicalAddress), "Can only call ReadCacheNeedToWaitForEviction when stackCtx.recSrc.LatestLogicalAddress is readcache");
+            var logicalAddress = AbsoluteAddress(stackCtx.recSrc.LatestLogicalAddress);
+            if (logicalAddress < readcacheBase.HeadAddress)
             {
-                SpinWaitUntilRecordIsClosed(stackCtx.recSrc.LatestLogicalAddress, readcacheBase);
+                SpinWaitUntilRecordIsClosed(logicalAddress, readcacheBase);
 
                 // Restore to hlog; we may have set readcache into Log and continued the loop, had to restart, and the matching readcache record was evicted.
                 stackCtx.UpdateRecordSourceToCurrentHashEntry(hlogBase);

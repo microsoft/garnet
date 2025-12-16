@@ -26,6 +26,7 @@ namespace Garnet.server
 
             var customObjectCommand = GetCustomObjectCommand(ref input, type);
 
+            // TODO: Cannot use 'using' statement because writer is passed by ref. Change that to non-ref parameter and convert to 'using'.
             var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
             try
             {
@@ -291,8 +292,7 @@ namespace Garnet.server
                 var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                 try
                 {
-                    var result =
-                        customObjectCommand.Updater(srcLogRecord.Key, ref input, value, ref writer, ref rmwInfo);
+                    var result = customObjectCommand.Updater(srcLogRecord.Key, ref input, value, ref writer, ref rmwInfo);
                     return result;
                 }
                 finally

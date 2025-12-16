@@ -884,17 +884,18 @@ namespace Garnet.server
         /// </summary>
         public void Dispose()
         {
-            if (disposed) return;
+            if (disposed)
+                return;
             disposed = true;
 
             itemBroker?.Dispose();
+            clusterProvider?.Dispose();
             monitor?.Dispose();
             luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();
             databaseManager.Dispose();
 
             ctsCommit?.Dispose();
-            clusterProvider?.Dispose();
         }
     }
 }

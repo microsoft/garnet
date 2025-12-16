@@ -45,13 +45,14 @@ namespace Tsavorite.core
         public uint numBytesRead;
 
         /// <summary>The max offset on the main log page to iterate records when determining how many bytes in the ObjectLog to read.</summary>
-        internal long maxPtr;
+        internal long maxAddressOffsetOnPage;
 
         /// <summary>If true, we are called from recovery, and should use the non-transient <see cref="ObjectIdMap"/>.</summary>
         internal bool isForRecovery;
 
+        /// <inheritdoc/>
         public override string ToString()
-            => $"page {page}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} ({destinationPtr:X}), maxPtr {maxPtr}";
+            => $"page {page}, isRecov {isForRecovery}, devPgOffset {devicePageOffset}, ctx {context}, countdown {handle?.CurrentCount}, destPtr {destinationPtr} (0x{destinationPtr:X}), maxPtr {maxAddressOffsetOnPage}";
 
         /// <summary>Currently nothing to free.</summary>
         public void Free()
@@ -124,50 +125,44 @@ namespace Tsavorite.core
     /// <typeparam name="TContext"></typeparam>
     public sealed class PageAsyncFlushResult<TContext>
     {
-        /// <summary>
-        /// The index of the log Page being written
-        /// </summary>
+        /// <summary>The index of the log Page being written</summary>
         public long page;
 
-        /// <summary>
-        /// Context object for the callback
-        /// </summary>
+        /// <summary>Context object for the callback</summary>
         public TContext context;
 
-        /// <summary>
-        /// Flush buffers if flushing ObjectAllocator.
-        /// </summary>
+        /// <summary>Flush buffers if flushing ObjectAllocator.</summary>
         public CircularDiskWriteBuffer flushBuffers;
 
-        /// <summary>
-        /// Count of active pending flush operations; the callback decrements this and when it hits 0, the overall flush operation is complete.
-        /// </summary>
+        /// <summary>Count of active pending flush operations; the callback decrements this and when it hits 0, the overall flush operation is complete.</summary>
         public int count;
 
-        /// <summary>
-        /// If true, this is a flush of a partial page.
-        /// </summary>
+        /// <summary>If true, this is a flush of a partial page.</summary>
         internal bool partial;
 
         internal long fromAddress;
         internal long untilAddress;
 
-        /// <summary>
-        /// This is the record buffer, passed through the IO process to retain a reference to it so it will not be GC'd before the Flush write completes.
-        /// </summary>
+        /// <summary>If true, we are called from recovery via AsyncFlushPagesForRecovery, so the object log files have already been written; we must reuse the
+        /// deserialized object lengths to update the LogRecord's ObjectLogPosition rather than serialize again.</summary>
+        internal bool isForRecovery;
+
+        /// <summary>The record buffer, passed through the IO process to retain a reference to it so it will not be GC'd before the Flush write completes.</summary>
         internal SectorAlignedMemory freeBuffer1;
 
-        /// <summary>
-        /// The event that is signaled by the callback so any waiting thread knows the IO has completed.
-        /// </summary>
+        /// <summary>The event that is signaled by the callback so any waiting thread knows the IO has completed.</summary>
         internal AutoResetEvent done;
 
         internal FlushCompletionTracker flushCompletionTracker;
 
+        /// <summary>If this is set then we are using a different objectLog device from that in the allocator, and do not use the allocator's <see cref="ObjectLogFilePositionInfo"/>.</summary>
+        internal ObjectLogFilePositionInfo objectLogFilePositionInfo;
+
         public override string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
-            return $"page {page}, ctx {context}, count {count}, partial {bstr(partial)}, fromAddr {fromAddress} ({fromAddress:X}), untilAddr {untilAddress} ({untilAddress:X}), flushCompTrack [{flushCompletionTracker}], circFlushBufs [{flushBuffers}]";
+            return $"page {page}, isRecov {isForRecovery}, ctx {context}, count {count}, partial {bstr(partial)}, fromAddr {fromAddress} (0x{fromAddress:X}), untilAddr {untilAddress} (0x{untilAddress:X}),"
+                 + $" flushCompTrack [{flushCompletionTracker}], circFlushBufs [{flushBuffers}]";
         }
 
         /// <summary>

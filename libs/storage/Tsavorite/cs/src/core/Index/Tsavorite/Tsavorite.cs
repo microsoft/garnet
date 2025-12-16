@@ -394,7 +394,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="numPagesToPreload">Number of pages to preload into memory (beyond what needs to be read for recovery)</param>
         /// <param name="undoNextVersion">Whether records with versions beyond checkpoint version need to be undone (and invalidated on log)</param>
-        /// <param name="recoverTo"> specific version requested or -1 for latest version. Tsavorite will recover to the largest version number checkpointed that's smaller than the required version.</param>
+        /// <param name="recoverTo">Specific version requested to recover to, or -1 for latest version. Tsavorite will recover to the largest version number checkpointed that's smaller than the required version.</param>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>Version we actually recovered to</returns>
         public ValueTask<long> RecoverAsync(int numPagesToPreload = -1, bool undoNextVersion = true, long recoverTo = -1,
@@ -625,7 +625,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRead(key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -656,7 +656,7 @@ namespace Tsavorite.core
                 internalStatus = InternalReadAtAddress(address, key, ref input, ref output, ref readOptions, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -674,7 +674,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue, srcObjectValue: null, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -692,7 +692,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue, in emptyLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -710,7 +710,7 @@ namespace Tsavorite.core
                         key, keyHash, ref input, srcStringValue: default, srcObjectValue: default, in inputLogRecord, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
@@ -726,7 +726,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRMW(key, keyHash, ref input, ref output, ref context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            recordMetadata = new(pcontext.logicalAddress, pcontext.ETag);
+            recordMetadata = new(pcontext.logicalAddress, pcontext.eTag);
             return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 

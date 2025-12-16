@@ -1427,8 +1427,10 @@ namespace Garnet.test
             else if (initialValue is string)
                 db.StringSet(key, (string)initialValue);
 
-            // TODO: This is RedisServerException in the InPlaceUpdater call, but GetRMWModifiedFieldInfo currently throws RedisConnectionException
-            Assert.Throws<RedisConnectionException>(() => db.Execute("INCRBYFLOAT", key, incrByValue));
+            // TODO: This is RedisServerException in the InPlaceUpdater call, but GetRMWModifiedFieldInfo currently throws RedisConnectionException.
+            // This can be different in CIs vs. locally.
+            Assert.That(() => db.Execute("INCRBYFLOAT", key, incrByValue),
+                    Throws.TypeOf<RedisServerException>().Or.TypeOf<RedisConnectionException>());
         }
 
         [Test]

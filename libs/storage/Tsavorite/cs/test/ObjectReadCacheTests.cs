@@ -10,13 +10,13 @@ using Tsavorite.core;
 
 namespace Tsavorite.test.ReadCacheTests
 {
-    using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
-    using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
+    using ClassAllocator = ObjectAllocator<StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>>;
+    using ClassStoreFunctions = StoreFunctions<TestObjectKey.Comparer, DefaultRecordDisposer>;
 
     [TestFixture]
     internal class ObjectReadCacheTests
     {
-        private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
+        private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
 
         [SetUp]
@@ -36,7 +36,7 @@ namespace Tsavorite.test.ReadCacheTests
                 ReadCacheMemorySize = 1L << 15,
                 ReadCachePageSize = 1L << 10,
                 ReadCacheEnabled = true
-            }, StoreFunctions<MyKey, MyValue>.Create(new MyKey.Comparer(), () => new MyKeySerializer(), () => new MyValueSerializer(), DefaultRecordDisposer<MyKey, MyValue>.Instance)
+            }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer(), DefaultRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -58,18 +58,18 @@ namespace Tsavorite.test.ReadCacheTests
         [Category("Smoke")]
         public void ObjectDiskWriteReadCache()
         {
-            using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
-            MyInput input = default;
+            TestObjectInput input = default;
 
             for (int i = 0; i < 2000; i++)
             {
-                var key = new MyKey { key = i };
-                var value = new MyValue { value = i };
-                bContext.Upsert(ref key, ref value, Empty.Default);
+                var key = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), value, Empty.Default);
             }
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
             // Evict all records from main memory of hybrid log
             store.Log.FlushAndEvict(true);
@@ -77,23 +77,23 @@ namespace Tsavorite.test.ReadCacheTests
             // Read 2000 keys - all should be served from disk, populating and evicting the read cache FIFO
             for (int i = 0; i < 2000; i++)
             {
-                MyOutput output = new();
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
+                TestObjectOutput output = new();
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.IsPending);
-                bContext.CompletePending(true);
+                _ = bContext.CompletePending(true);
             }
 
             // Read last 100 keys - all should be served from cache
             for (int i = 1900; i < 2000; i++)
             {
-                MyOutput output = new();
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
+                TestObjectOutput output = new();
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found);
                 ClassicAssert.AreEqual(value.value, output.value.value);
             }
@@ -104,54 +104,55 @@ namespace Tsavorite.test.ReadCacheTests
             // Read 100 keys - all should be served from disk, populating cache
             for (int i = 1900; i < 2000; i++)
             {
-                MyOutput output = new();
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
+                TestObjectOutput output = new();
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.IsPending);
-                bContext.CompletePending(true);
+                _ = bContext.CompletePending(true);
             }
 
             // Read 100 keys - all should be served from cache
             for (int i = 1900; i < 2000; i++)
             {
-                MyOutput output = new();
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
+                TestObjectOutput output = new();
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found);
                 ClassicAssert.AreEqual(value.value, output.value.value);
             }
 
+            const int valueAdd = 100_000;
 
             // Upsert to overwrite the read cache
             for (int i = 1900; i < 1950; i++)
             {
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i + 1 };
-                bContext.Upsert(ref key1, ref value, Empty.Default);
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i + valueAdd };
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value, Empty.Default);
             }
 
             // RMW to overwrite the read cache
             for (int i = 1950; i < 2000; i++)
             {
-                var key1 = new MyKey { key = i };
-                input = new MyInput { value = 1 };
-                var status = bContext.RMW(ref key1, ref input, Empty.Default);
+                var key1 = new TestObjectKey { key = i };
+                input = new TestObjectInput { value = valueAdd };
+                var status = bContext.RMW(SpanByte.FromPinnedVariable(ref key1), ref input, Empty.Default);
                 if (status.IsPending)
-                    bContext.CompletePending(true);
+                    _ = bContext.CompletePending(true);
             }
 
             // Read the 100 keys
             for (int i = 1900; i < 2000; i++)
             {
-                MyOutput output = new();
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i + 1 };
+                TestObjectOutput output = new();
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i + valueAdd };
 
-                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found, $"key = {key1.key}");
                 ClassicAssert.AreEqual(value.value, output.value.value);
             }
@@ -161,42 +162,41 @@ namespace Tsavorite.test.ReadCacheTests
         [Category("TsavoriteKV")]
         public void ObjectDiskWriteReadCache2()
         {
-            using var session = store.NewSession<MyInput, MyOutput, Empty, MyFunctions>(new MyFunctions());
+            using var session = store.NewSession<TestObjectInput, TestObjectOutput, Empty, TestObjectFunctions>(new TestObjectFunctions());
             var bContext = session.BasicContext;
 
-            MyInput input = default;
+            TestObjectInput input = default;
 
             for (int i = 0; i < 2000; i++)
             {
-                var key = new MyKey { key = i };
-                var value = new MyValue { value = i };
-                bContext.Upsert(ref key, ref value, Empty.Default);
+                var key = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), value, Empty.Default);
             }
-            bContext.CompletePending(true);
+            _ = bContext.CompletePending(true);
 
-            // Dispose the hybrid log from memory entirely
-            store.Log.DisposeFromMemory();
+            store.Log.FlushAndEvict(wait: true);
 
             // Read 2000 keys - all should be served from disk, populating and evicting the read cache FIFO
             for (int i = 0; i < 2000; i++)
             {
-                MyOutput output = new();
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
+                TestObjectOutput output = new();
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.IsPending);
-                bContext.CompletePending(true);
+                _ = bContext.CompletePending(true);
             }
 
             // Read last 100 keys - all should be served from cache
             for (int i = 1900; i < 2000; i++)
             {
-                MyOutput output = new();
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
+                TestObjectOutput output = new();
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found);
                 ClassicAssert.AreEqual(value.value, output.value.value);
             }
@@ -207,23 +207,23 @@ namespace Tsavorite.test.ReadCacheTests
             // Read 100 keys - all should be served from disk, populating cache
             for (int i = 1900; i < 2000; i++)
             {
-                MyOutput output = new();
-                var key1 = new MyKey { key = i };
-                var value = new MyValue { value = i };
+                TestObjectOutput output = new();
+                var key1 = new TestObjectKey { key = i };
+                var value = new TestObjectValue { value = i };
 
-                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.IsPending);
-                bContext.CompletePending(true);
+                _ = bContext.CompletePending(true);
             }
 
             // Read 100 keys - all should be served from cache
             for (int i = 1900; i < 2000; i++)
             {
-                MyOutput output = new();
-                MyKey key1 = new() { key = i };
-                MyValue value = new() { value = i };
+                TestObjectOutput output = new();
+                TestObjectKey key1 = new() { key = i };
+                TestObjectValue value = new() { value = i };
 
-                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
                 ClassicAssert.IsTrue(status.Found);
                 ClassicAssert.AreEqual(value.value, output.value.value);
             }
