@@ -274,6 +274,50 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Implement Vector Set Add - this may also create a Vector Set if one does not already exist.
+        /// </summary>
+        [SkipLocalsInit]
+        public unsafe GarnetStatus VectorSetUpdateAttributes(SpanByte key, ArgSlice element, ArgSlice attributes, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        {
+            var dims = VectorManager.CalculateValueDimensions(valueType, values.ReadOnlySpan);
+
+            var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
+            var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));
+            var valueTypeArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorValueType, byte>(MemoryMarshal.CreateSpan(ref valueType, 1)));
+            var valuesArg = values;
+            var elementArg = element;
+            var quantizerArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorQuantType, byte>(MemoryMarshal.CreateSpan(ref quantizer, 1)));
+            var buildExplorationFactorArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
+            var attributesArg = attributes;
+            var numLinksArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
+
+            parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg]);
+
+            var input = new RawStringInput(RespCommand.VSETATTR, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    result = VectorManagerResult.Invalid;
+                    errorMsg = default;
+                    return status;
+                }
+
+                // After a successful read we update the vector attributes while holding a shared lock
+                // That lock prevents deletion, but everything else can proceed in parallel
+                result = vectorManager.TrySetAttributes(indexSpan, element.ReadOnlySpan, attributes.ReadOnlySpan, out errorMsg);
+                if (result == VectorManagerResult.OK)
+                {
+                    // On successful addition, we need to manually replicate the attribute update
+                    vectorManager.ReplicateVectorSetAdd(ref key, ref input, ref basicContext);
+                }
+
+                return GarnetStatus.OK;
+            }
+        }
+
+        /// <summary>
         /// Get debugging information about the VectorSet
         /// </summary>
         [SkipLocalsInit]

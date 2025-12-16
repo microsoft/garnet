@@ -480,6 +480,20 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Deletion of a Vector Set needs special handling.
+        /// 
+        /// This is called by DEL and UNLINK after a naive delete fails for us to _try_ and delete a Vector Set.
+        /// </summary>
+        internal VectorManagerResult TrySetAttributes(scoped ReadOnlySpan<byte> indexValue,
+            ReadOnlySpan<byte> element,
+            ReadOnlySpan<byte> attributes,
+            out ReadOnlySpan<byte> errorMsg)
+        {
+        }
+
+        
+
+        /// <summary>
         /// Perform a similarity search given a vector to compare against.
         /// </summary>
         internal VectorManagerResult ValueSimilarity(
