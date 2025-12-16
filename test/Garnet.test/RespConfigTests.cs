@@ -691,9 +691,10 @@ namespace Garnet.test
     /// <summary>
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
     /// </summary>
+    [AllureNUnit]
     [TestFixture(false)]
     [TestFixture(true)]
-    public class RespConfigHeapUtilizationTests
+    public class RespConfigHeapUtilizationTests : AllureTestBase
     {
         GarnetServer server;
         private string memorySize = "3m";

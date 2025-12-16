@@ -18,11 +18,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        #test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
-        # os: [ ubuntu-latest, windows-latest ]
-        test: [ 'Tsavorite.test' ]
-        os: [ ubuntu-latest ]
-
+        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
+        os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
 
