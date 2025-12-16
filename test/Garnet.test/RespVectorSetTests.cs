@@ -95,7 +95,7 @@ namespace Garnet.test
                             // TODO: Implement when VGETATTR works
                             continue;
                         case RespCommand.VINFO:
-                            // TODO: Implement when VGETATTR works
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VINFO", ["foo"]));
                             continue;
                         case RespCommand.VISMEMBER:
                             // TODO: Implement when VISMEMBER works
