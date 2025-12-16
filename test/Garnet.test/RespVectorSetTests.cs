@@ -1675,7 +1675,6 @@ namespace Garnet.test
                             }
                         }
                     }
-
                 }
             }
 
@@ -1721,7 +1720,6 @@ namespace Garnet.test
 
                 return values;
             }
-
         }
 
         [Test]
