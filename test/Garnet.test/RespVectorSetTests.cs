@@ -1567,6 +1567,35 @@ namespace Garnet.test
         // TODO: FLUSHDB needs to cleanup too...
 
         [Test]
+        public void VINFO_NotFound()
+        {
+            // VINFO NotFound response depends on the RESP version used:
+            // - Resp3: Null
+            // - Resp2: Null array reply
+            using var redisResp3 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp3));
+            var resp3Result = redisResp3.GetDatabase().Execute("VINFO", ["nonexistent"]);
+            ClassicAssert.IsTrue(resp3Result.IsNull);
+            ClassicAssert.IsTrue(resp3Result.Resp3Type == ResultType.Null);
+
+            using var redisResp2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var resp2Result = redisResp2.GetDatabase().Execute("VINFO", ["nonexistent"]);
+            ClassicAssert.IsTrue(resp2Result.IsNull);
+            ClassicAssert.IsTrue(resp2Result.Resp2Type == ResultType.Array);
+        }
+
+        [Test]
+        public void VINFO_WrongType()
+        {
+            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp3));
+            var db = redis.GetDatabase();
+            _ = db.StringSet("stringkey", "value");
+
+            // TODO: Uncomment once WRONGTYPE is implemented for all commands
+            //var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VINFO", ["stringkey"]));
+            //ClassicAssert.IsTrue(exc1.Message.StartsWith("ERR Not a Vector Set"));
+        }
+
+        [Test]
         public void VINFO()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1612,16 +1641,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(32, (int)res2[9]);
             ClassicAssert.AreEqual("size", (string)res2[10]);
             ClassicAssert.AreEqual(0, (long)res2[11]);
-
-            // VINFO on non-existent key returns null
-            var res5 = db.Execute("VINFO", ["nonexistent"]);
-            ClassicAssert.IsTrue(res5.IsNull);
-
-            // VINFO on wrong type returns error
-            // TODO: add WRONGTYPE test once implemented
-            //_ = db.StringSet("stringkey", "value");
-            //var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VINFO", ["stringkey"]));
-            //ClassicAssert.IsTrue(exc1.Message.StartsWith("WRONGTYPE"));
         }
 
         [Test]
