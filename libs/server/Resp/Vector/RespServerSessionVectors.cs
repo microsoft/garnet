@@ -356,6 +356,10 @@ namespace Garnet.server
                         return AbortWithErrorMessage(customErrMsg);
                     }
                 }
+                else if (res == GarnetStatus.WRONGTYPE)
+                {
+                    return AbortVectorSetWrongType();
+                }
                 else if (res == GarnetStatus.BADSTATE)
                 {
                     return AbortVectorSetPartiallyDeleted(ref key);
@@ -820,6 +824,10 @@ namespace Garnet.server
                             throw new GarnetException($"Unexpected {nameof(VectorManagerResult)}: {vectorRes}");
                         }
                     }
+                    else if (res == GarnetStatus.WRONGTYPE)
+                    {
+                        return AbortVectorSetWrongType();
+                    }
                     else if (res == GarnetStatus.BADSTATE)
                     {
                         return AbortVectorSetPartiallyDeleted(ref key);
@@ -905,6 +913,10 @@ namespace Garnet.server
                             SendAndReset();
                     }
                 }
+                else if (res == GarnetStatus.WRONGTYPE)
+                {
+                    return AbortVectorSetWrongType();
+                }
                 else if (res == GarnetStatus.BADSTATE)
                 {
                     return AbortVectorSetPartiallyDeleted(ref key);
@@ -964,8 +976,7 @@ namespace Garnet.server
             }
             else if (res == GarnetStatus.WRONGTYPE)
             {
-                while (!RespWriteUtils.TryWriteError("ERR Not a Vector Set"u8, ref dcurr, dend))
-                    SendAndReset();
+                return AbortVectorSetWrongType();
             }
             else if (res == GarnetStatus.BADSTATE)
             {
@@ -1080,6 +1091,10 @@ namespace Garnet.server
             {
                 return AbortVectorSetPartiallyDeleted(ref key);
             }
+            else if (res == GarnetStatus.WRONGTYPE)
+            {
+                return AbortVectorSetWrongType();
+            }
             else
             {
                 var resp = res == GarnetStatus.OK ? 1 : 0;
@@ -1113,6 +1128,15 @@ namespace Garnet.server
             //       That's more intrusive, and is more of a V2 thing... so lets just give a workaround for now
 
             while (!RespWriteUtils.TryWriteError("ERR Vector Set is in a partially deleted state - re-execute DEL to complete deletion"u8, ref dcurr, dend))
+                SendAndReset();
+
+            return true;
+        }
+
+        private bool AbortVectorSetWrongType()
+        {
+            // Matches Redis behavior - doesn't indicate the type involved
+            while (!RespWriteUtils.TryWriteError("WRONGTYPE Operation against a key holding the wrong kind of value"u8, ref dcurr, dend))
                 SendAndReset();
 
             return true;

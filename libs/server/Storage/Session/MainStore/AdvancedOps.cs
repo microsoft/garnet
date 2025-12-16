@@ -94,9 +94,18 @@ namespace Garnet.server
                 CompletePendingForSession(ref status, ref output, ref context);
 
             if (status.Found)
+            {
                 return GarnetStatus.OK;
+            }
+            else if (status.IsCanceled)
+            {
+                // Vector Sets signal WRONGTYPE via cancellation - everything else will fall into NOTFOUND
+                return GarnetStatus.WRONGTYPE;
+            }
             else
+            {
                 return GarnetStatus.NOTFOUND;
+            }
         }
 
 

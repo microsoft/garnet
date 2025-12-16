@@ -61,6 +61,71 @@ namespace Garnet.test
         }
 
         [Test]
+        public void WrongTypeForVectorSetOpsOnNonVectorSetKeys()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var vectorSetCommands = Enum.GetValues<RespCommand>().Where(static t => t.IsLegalOnVectorSet() && !(t is RespCommand.DEL or RespCommand.UNLINK or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.TYPE));
+
+            // Strings
+            {
+                var res = db.StringSet("foo", "bar");
+                ClassicAssert.IsTrue(res);
+
+                foreach (var cmd in vectorSetCommands)
+                {
+                    RedisServerException exc;
+                    switch (cmd)
+                    {
+                        case RespCommand.VADD:
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "Q8", "EF", "16", "M", "32"]));
+                            break;
+                        case RespCommand.VCARD:
+                            // TODO: Implement when VCARD works
+                            continue;
+                        case RespCommand.VDIM:
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VDIM", ["foo"]));
+                            break;
+                        case RespCommand.VEMB:
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]));
+                            break;
+                        case RespCommand.VGETATTR:
+                            // TODO: Implement when VGETATTR works
+                            continue;
+                        case RespCommand.VINFO:
+                            // TODO: Implement when VGETATTR works
+                            continue;
+                        case RespCommand.VISMEMBER:
+                            // TODO: Implement when VISMEMBER works
+                            continue;
+                        case RespCommand.VLINKS:
+                            // TODO: Implement when VLINKS works
+                            continue;
+                        case RespCommand.VRANDMEMBER:
+                            // TODO: Implement when VRANDMEMBER works
+                            continue;
+                        case RespCommand.VREM:
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VREM", ["foo", new byte[] { 0, 0, 0, 0 }]));
+                            break;
+                        case RespCommand.VSETATTR:
+                            // TODO: Implement when VSETATTR works
+                            continue;
+                        case RespCommand.VSIM:
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "75", "110.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]));
+                            break;
+                        default:
+                            throw new InvalidOperationException($"Unexpected Vector Set command: {cmd}");
+                    }
+
+                    ClassicAssert.AreEqual("WRONGTYPE Operation against a key holding the wrong kind of value", exc.Message, $"RESP Command: {cmd}");
+                }
+            }
+
+            // TODO: Other objects - but we can wait for store v2 for that
+        }
+
+        [Test]
         public void VADD()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -481,7 +546,6 @@ namespace Garnet.test
             }
         }
 
-
         [Test]
         public void VDIM()
         {
@@ -582,7 +646,7 @@ namespace Garnet.test
                 {
                 }
 
-                var vectorSetCommands = Enum.GetValues<RespCommand>().Where(static x => x.IsLegalOnVectorSet() && x is not (RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG)).OrderBy(static x => x);
+                var vectorSetCommands = Enum.GetValues<RespCommand>().Where(static x => x.IsLegalOnVectorSet() && x is not (RespCommand.DEL or RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX)).OrderBy(static x => x);
 
                 if (!deleteWasEffective)
                 {
