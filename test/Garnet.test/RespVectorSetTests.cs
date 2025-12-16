@@ -1585,18 +1585,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void VINFO_WrongType()
-        {
-            using ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp3));
-            var db = redis.GetDatabase();
-            _ = db.StringSet("stringkey", "value");
-
-            // TODO: Uncomment once WRONGTYPE is implemented for all commands
-            //var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VINFO", ["stringkey"]));
-            //ClassicAssert.IsTrue(exc1.Message.StartsWith("ERR Not a Vector Set"));
-        }
-
-        [Test]
         public void VINFO()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
