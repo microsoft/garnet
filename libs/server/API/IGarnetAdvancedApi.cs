@@ -13,7 +13,7 @@ namespace Garnet.server
         /// <summary>
         /// GET with support for pending multiple ongoing operations, scatter gather IO for outputs
         /// </summary>
-        GarnetStatus GET_WithPending(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, long ctx, out bool pending);
+        GarnetStatus GET_WithPending(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output, long ctx, out bool pending);
 
         /// <summary>
         /// Complete pending read operations on main store
@@ -28,26 +28,46 @@ namespace Garnet.server
         /// <param name="completedOutputs"></param>
         /// <param name="wait"></param>
         /// <returns></returns>
-        bool GET_CompletePending(out CompletedOutputIterator<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long> completedOutputs, bool wait = false);
+        bool GET_CompletePending(out CompletedOutputIterator<StringInput, SpanByteAndMemory, long> completedOutputs, bool wait = false);
 
         /// <summary>
         /// RMW operation on main store
         /// </summary>
-        GarnetStatus RMW_MainStore(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
+        GarnetStatus RMW_MainStore(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// Read operation on main store
         /// </summary>
-        GarnetStatus Read_MainStore(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output);
+        GarnetStatus Read_MainStore(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output);
 
         /// <summary>
         /// RMW operation on object store
         /// </summary>
-        GarnetStatus RMW_ObjectStore(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+        GarnetStatus RMW_ObjectStore(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Read operation on object store
         /// </summary>
-        GarnetStatus Read_ObjectStore(ref byte[] key, ref ObjectInput input, ref GarnetObjectStoreOutput output);
+        GarnetStatus Read_ObjectStore(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
+
+        /// <summary>
+        /// RMW operation on unified store
+        /// </summary>
+        GarnetStatus RMW_UnifiedStore(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
+
+        /// <summary>
+        /// Read operation on unified store
+        /// </summary>
+        GarnetStatus Read_UnifiedStore(PinnedSpanByte key, ref UnifiedInput input, ref UnifiedOutput output);
+
+        /// <summary>
+        /// Read batch of keys on main store.
+        /// </summary>
+        void ReadWithPrefetch<TBatch>(ref TBatch batch, long context = default)
+            where TBatch : IReadArgBatch<StringInput, SpanByteAndMemory>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
     }
 }

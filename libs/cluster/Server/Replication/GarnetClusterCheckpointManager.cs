@@ -58,10 +58,7 @@ namespace Garnet.cluster
                 CheckpointFileType.STORE_DLOG => GetDeltaLogDevice(fileToken),
                 CheckpointFileType.STORE_INDEX => GetIndexDevice(fileToken),
                 CheckpointFileType.STORE_SNAPSHOT => GetSnapshotLogDevice(fileToken),
-                CheckpointFileType.OBJ_STORE_DLOG => GetDeltaLogDevice(fileToken),
-                CheckpointFileType.OBJ_STORE_INDEX => GetIndexDevice(fileToken),
-                CheckpointFileType.OBJ_STORE_SNAPSHOT => GetSnapshotLogDevice(fileToken),
-                CheckpointFileType.OBJ_STORE_SNAPSHOT_OBJ => GetSnapshotObjectLogDevice(fileToken),
+                CheckpointFileType.STORE_SNAPSHOT_OBJ => GetSnapshotObjectLogDevice(fileToken),
                 _ => throw new Exception($"RetrieveCheckpointFile: unexpected state{retStateType}")
             };
             return device;
@@ -221,7 +218,8 @@ namespace Garnet.cluster
                                     Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
                             }
                             hlri = ConvertMetadata(metadata);
-                            if (hlri.version == recoverTo || hlri.version < recoverTo && hlri.nextVersion > recoverTo) goto LoopEnd;
+                            if (hlri.version == recoverTo || hlri.version < recoverTo && hlri.nextVersion > recoverTo)
+                                goto LoopEnd;
                             continue;
                         default:
                             throw new GarnetException("Unexpected entry type");

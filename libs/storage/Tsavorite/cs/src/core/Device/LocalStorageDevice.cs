@@ -48,6 +48,13 @@ namespace Tsavorite.core
 
         private IntPtr ioCompletionPort;
 
+        /// <inheritdoc/>
+        public override string ToString()
+        {
+            static string bstr(bool value) => value ? "T" : "F";
+            return $"secSize {sectorSize}, numPend {numPending}, RO {bstr(readOnly)}, preAll {bstr(preallocateFile)}, delClose {bstr(deleteOnClose)}, noFileBuf {bstr(disableFileBuffering)}";
+        }
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -355,6 +362,8 @@ namespace Tsavorite.core
         /// </summary>
         public override void Dispose()
         {
+            if (_disposed)
+                return;
             _disposed = true;
             foreach (var logHandle in logHandles.Values)
                 logHandle.Dispose();
@@ -363,9 +372,7 @@ namespace Tsavorite.core
                 new SafeFileHandle(ioCompletionPort, true).Dispose();
 
             while (results.TryDequeue(out var entry))
-            {
                 Overlapped.Free(entry.nativeOverlapped);
-            }
         }
 
         /// <inheritdoc/>
@@ -373,12 +380,22 @@ namespace Tsavorite.core
         {
             if (!useIoCompletionPort) return true;
 
-            bool succeeded = Native32.GetQueuedCompletionStatus(ioCompletionPort, out uint num_bytes, out _, out NativeOverlapped* nativeOverlapped, 0);
+            const int COMPLETION_BATCH_SIZE = 8;
+            var pEntries = stackalloc Native32.OVERLAPPED_ENTRY[COMPLETION_BATCH_SIZE];
 
-            if (nativeOverlapped != null)
+            // Dequeue a batch of completed I/O operations
+            var succeeded = Native32.GetQueuedCompletionStatusEx(ioCompletionPort, pEntries, COMPLETION_BATCH_SIZE, out uint numEntriesRemoved, 0, false);
+
+            if (succeeded)
             {
-                int errorCode = succeeded ? 0 : Marshal.GetLastWin32Error();
-                _callback((uint)errorCode, num_bytes, nativeOverlapped);
+                for (int i = 0; i < numEntriesRemoved; i++)
+                {
+                    var entry = pEntries[i];
+                    if (entry.lpOverlapped == null)
+                        return false;
+                    uint errorCode = entry.Internal == 0 ? 0 : (uint)Native32.RtlNtStatusToDosError(entry.Internal);
+                    _callback(errorCode, (uint)entry.dwNumberOfBytesTransferred, entry.lpOverlapped);
+                }
                 return true;
             }
             return false;
@@ -559,18 +576,31 @@ namespace Tsavorite.core
     {
         public static void Start(IntPtr ioCompletionPort, IOCompletionCallback _callback)
         {
+            const int COMPLETION_BATCH_SIZE = 16;
+            var pEntries = stackalloc Native32.OVERLAPPED_ENTRY[COMPLETION_BATCH_SIZE];
+
             while (true)
             {
                 Thread.Yield();
-                bool succeeded = Native32.GetQueuedCompletionStatus(ioCompletionPort, out uint num_bytes, out _, out NativeOverlapped* nativeOverlapped, uint.MaxValue);
 
-                if (nativeOverlapped != null)
+                // Dequeue a batch of completed I/O operations
+                var succeeded = Native32.GetQueuedCompletionStatusEx(ioCompletionPort, pEntries, COMPLETION_BATCH_SIZE, out uint numEntriesRemoved, uint.MaxValue, false);
+
+                if (succeeded)
                 {
-                    int errorCode = succeeded ? 0 : Marshal.GetLastWin32Error();
-                    _callback((uint)errorCode, num_bytes, nativeOverlapped);
+                    for (int i = 0; i < numEntriesRemoved; i++)
+                    {
+                        var entry = pEntries[i];
+                        if (entry.lpOverlapped == null)
+                            return;
+                        uint errorCode = entry.Internal == 0 ? 0 : Native32.RtlNtStatusToDosError(entry.Internal);
+                        _callback(errorCode, (uint)entry.dwNumberOfBytesTransferred, entry.lpOverlapped);
+                    }
                 }
                 else
+                {
                     break;
+                }
             }
         }
     }

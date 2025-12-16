@@ -10,130 +10,199 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
     {
         /// <summary>
         /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
         /// </summary>
-        /// <param name="length">Length of byte array</param>
-        /// <param name="source">Pointer to byte array</param>
+        /// <param name="source">Source string to evaluate</param>
         /// <param name="val">Parsed long value</param>
         /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
-        static bool IsValidNumber(int length, byte* source, out long val)
+        static bool IsValidNumber(ReadOnlySpan<byte> source, out long val)
         {
-            val = 0;
             try
             {
                 // Check for valid number
-                if (!NumUtils.TryReadInt64(length, source, out val))
-                {
-                    // Signal value is not a valid number
-                    return false;
-                }
+                return NumUtils.TryReadInt64(source, out val);
             }
             catch
             {
                 // Signal value is not a valid number
+                val = 0;
                 return false;
             }
-            return true;
+        }
+
+        /// <summary>
+        /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
+        /// </summary>
+        /// <param name="source">Source string to evaluate</param>
+        /// <param name="val">Parsed long value</param>
+        /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
+        static bool IsValidNumber(byte* source, int sourceLen, out long val)
+        {
+            try
+            {
+                // Check for valid number
+                return NumUtils.TryReadInt64(sourceLen, source, out val);
+            }
+            catch
+            {
+                // Signal value is not a valid number
+                val = 0;
+                return false;
+            }
         }
 
         /// <summary>
         /// Parse ASCII byte array into double and validate that only contains ASCII decimal characters
         /// </summary>
-        /// <param name="length">Length of byte array</param>
-        /// <param name="source">Pointer to byte array</param>
+        /// <param name="source">Source string to evaluate</param>
         /// <param name="val">Parsed long value</param>
         /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
-        static bool IsValidDouble(int length, byte* source, out double val)
+        static bool IsValidDouble(ReadOnlySpan<byte> source, out double val)
         {
-            val = 0;
             try
             {
                 // Check for valid number
-                if (!NumUtils.TryReadDouble(length, source, out val) || !double.IsFinite(val))
-                {
-                    // Signal value is not a valid number
-                    return false;
-                }
+                return NumUtils.TryReadDouble(source, out val) || !double.IsFinite(val);
             }
             catch
             {
                 // Signal value is not a valid number
+                val = 0;
                 return false;
             }
-            return true;
+        }
+
+        /// <summary>
+        /// Parse ASCII byte array into double and validate that only contains ASCII decimal characters
+        /// </summary>
+        /// <param name="source">Source string to evaluate</param>
+        /// <param name="val">Parsed long value</param>
+        /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
+        static bool IsValidDouble(byte* source, int sourceLen, out double val)
+        {
+            try
+            {
+                // Check for valid number
+                return NumUtils.TryReadDouble(sourceLen, source, out val) || !double.IsFinite(val);
+            }
+            catch
+            {
+                // Signal value is not a valid number
+                val = 0;
+                return false;
+            }
         }
 
         /// <inheritdoc/>
-        public int GetRMWInitialValueLength(ref RawStringInput input)
+        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref StringInput input)
         {
             var cmd = input.header.cmd;
+            var fieldInfo = new RecordFieldInfo()
+            {
+                KeySize = key.Length,
+                ValueSize = 0,
+                HasETag = input.header.CheckWithETagFlag()
+            };
 
             switch (cmd)
             {
                 case RespCommand.SETBIT:
                     var bOffset = input.arg1;
-                    return sizeof(int) + BitmapManager.Length(bOffset);
+                    fieldInfo.ValueSize = BitmapManager.Length(bOffset);
+                    return fieldInfo;
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
-                    return sizeof(int) + BitmapManager.LengthFromType(bitFieldArgs);
+                    fieldInfo.ValueSize = BitmapManager.LengthFromType(bitFieldArgs);
+                    return fieldInfo;
                 case RespCommand.PFADD:
-                    return sizeof(int) + HyperLogLog.DefaultHLL.SparseInitialLength(ref input);
+                    fieldInfo.ValueSize = HyperLogLog.DefaultHLL.SparseInitialLength(ref input);
+                    return fieldInfo;
                 case RespCommand.PFMERGE:
-                    var length = input.parseState.GetArgSliceByRef(0).SpanByte.Length;
-                    return sizeof(int) + length;
+                    fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                    return fieldInfo;
+
+                case RespCommand.SETIFGREATER:
+                case RespCommand.SETIFMATCH:
+                    fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                    fieldInfo.HasETag = true;
+                    fieldInfo.HasExpiration = input.arg1 != 0;
+                    return fieldInfo;
+
+                case RespCommand.SET:
+                case RespCommand.SETEXNX:
+                    fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                    fieldInfo.HasExpiration = input.arg1 != 0;
+                    return fieldInfo;
+
+                case RespCommand.SETKEEPTTL:
+                    // Copy input to value; do not change expiration
+                    fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                    return fieldInfo;
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
-                    var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
-                    return sizeof(int) + newValue.Length + offset;
+                    var newValue = input.parseState.GetArgSliceByRef(1);
+                    fieldInfo.ValueSize = newValue.Length + offset;
+                    return fieldInfo;
 
                 case RespCommand.APPEND:
                     var valueLength = input.parseState.GetArgSliceByRef(0).Length;
-                    return sizeof(int) + valueLength;
+                    fieldInfo.ValueSize = valueLength;
+                    return fieldInfo;
 
                 case RespCommand.INCR:
-                    return sizeof(int) + 1; // # of digits in "1"
+                    fieldInfo.ValueSize = 1; // # of digits in "1"
+                    return fieldInfo;
 
                 case RespCommand.DECR:
-                    return sizeof(int) + 2; // # of digits in "-1"
+                    fieldInfo.ValueSize = 2; // # of digits in "-1"
+                    return fieldInfo;
 
                 case RespCommand.INCRBY:
                     var ndigits = NumUtils.CountDigits(input.arg1, out var isNegative);
 
-                    return sizeof(int) + ndigits + (isNegative ? 1 : 0);
+                    fieldInfo.ValueSize = ndigits + (isNegative ? 1 : 0);
+                    return fieldInfo;
 
                 case RespCommand.DECRBY:
                     ndigits = NumUtils.CountDigits(-input.arg1, out isNegative);
 
-                    return sizeof(int) + ndigits + (isNegative ? 1 : 0);
+                    fieldInfo.ValueSize = ndigits + (isNegative ? 1 : 0);
+                    return fieldInfo;
+
                 case RespCommand.INCRBYFLOAT:
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
-                    ndigits = NumUtils.CountCharsInDouble(incrByFloat, out var _, out var _, out var _);
+                    fieldInfo.ValueSize = NumUtils.CountCharsInDouble(incrByFloat, out var _, out var _, out var _);
+                    return fieldInfo;
 
-                    return sizeof(int) + ndigits;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
                         var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
-                        // Compute metadata size for result
-                        int metadataSize = input.arg1 switch
-                        {
-                            -1 => 0,
-                            0 => 0,
-                            _ => 8,
-                        };
-                        return sizeof(int) + metadataSize + functions.GetInitialLength(ref input);
+                        fieldInfo.ValueSize = functions.GetInitialLength(ref input);
                     }
-
-                    return sizeof(int) + input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length + (input.arg1 == 0 ? 0 : sizeof(long)) + this.functionsState.etagState.etagOffsetForVarlen;
+                    else
+                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                    fieldInfo.HasETag = input.header.CheckWithETagFlag();
+                    fieldInfo.HasExpiration = input.arg1 != 0;
+                    return fieldInfo;
             }
         }
 
         /// <inheritdoc/>
-        public int GetRMWModifiedValueLength(ref SpanByte t, ref RawStringInput input)
+        public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input)
+            where TSourceLogRecord : ISourceLogRecord
         {
+            var fieldInfo = new RecordFieldInfo()
+            {
+                KeySize = srcLogRecord.Key.Length,
+                ValueSize = 0,
+                HasETag = input.header.CheckWithETagFlag() || srcLogRecord.Info.HasETag,
+                HasExpiration = srcLogRecord.Info.HasExpiration
+            };
+
             if (input.header.cmd != RespCommand.NONE)
             {
                 var cmd = input.header.cmd;
@@ -144,129 +213,173 @@ namespace Garnet.server
                     case RespCommand.INCRBY:
                         var incrByValue = input.header.cmd == RespCommand.INCRBY ? input.arg1 : 1;
 
-                        if (!NumUtils.TryReadInt64(t.AsSpan(functionsState.etagState.etagOffsetForVarlen), out var curr))
+                        var value = srcLogRecord.ValueSpan;
+                        fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
+                                                 // TODO set error as in PrivateMethods.IsValidNumber and test in caller, to avoid the log record allocation. This would require 'output'
+                        if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidNumber(value, out _))
                         {
-                            // Return enough space to copy over old value
-                            return sizeof(int) + t.Length + functionsState.etagState.etagOffsetForVarlen;
+                            // TODO Consider adding a way to cache curr for the IPU call
+                            var curr = NumUtils.ReadInt64(value);
+                            var next = curr + incrByValue;
+
+                            fieldInfo.ValueSize = NumUtils.CountDigits(next, out var isNegative) + (isNegative ? 1 : 0);
                         }
-                        var next = curr + incrByValue;
-
-                        var ndigits = NumUtils.CountDigits(next, out var isNegative);
-                        ndigits += isNegative ? 1 : 0;
-
-                        return sizeof(int) + ndigits + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
+                        return fieldInfo;
 
                     case RespCommand.DECR:
                     case RespCommand.DECRBY:
                         var decrByValue = input.header.cmd == RespCommand.DECRBY ? input.arg1 : 1;
 
-                        curr = NumUtils.ReadInt64(t.AsSpan(functionsState.etagState.etagOffsetForVarlen));
-                        next = curr - decrByValue;
+                        value = srcLogRecord.ValueSpan;
+                        fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead).
+                        if (srcLogRecord.IsPinnedValue ? IsValidNumber(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidNumber(value, out _))
+                        {
+                            var curr = NumUtils.ReadInt64(value);
+                            var next = curr - decrByValue;
 
-                        ndigits = NumUtils.CountDigits(next, out isNegative);
-                        ndigits += isNegative ? 1 : 0;
-
-                        return sizeof(int) + ndigits + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
+                            fieldInfo.ValueSize = NumUtils.CountDigits(next, out var isNegative) + (isNegative ? 1 : 0);
+                        }
+                        return fieldInfo;
                     case RespCommand.INCRBYFLOAT:
                         var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
 
-                        NumUtils.TryReadDouble(t.AsSpan(functionsState.etagState.etagOffsetForVarlen), out var currVal);
-                        var nextVal = currVal + incrByFloat;
+                        value = srcLogRecord.ValueSpan;
+                        fieldInfo.ValueSize = 2; // # of digits in "-1", in case of invalid number (which may throw instead)
+                        if (srcLogRecord.IsPinnedValue ? IsValidDouble(srcLogRecord.PinnedValuePointer, value.Length, out _) : IsValidDouble(value, out _))
+                        {
+                            _ = NumUtils.TryReadDouble(srcLogRecord.ValueSpan, out var currVal);
+                            var nextVal = currVal + incrByFloat;
 
-                        ndigits = NumUtils.CountCharsInDouble(nextVal, out _, out _, out _);
+                            fieldInfo.ValueSize = NumUtils.CountCharsInDouble(nextVal, out _, out _, out _);
+                        }
+                        return fieldInfo;
 
-                        return sizeof(int) + ndigits + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
                     case RespCommand.SETBIT:
                         var bOffset = input.arg1;
-                        return sizeof(int) + BitmapManager.NewBlockAllocLength(t.Length, bOffset);
+                        fieldInfo.ValueSize = BitmapManager.NewBlockAllocLength(srcLogRecord.ValueSpan.Length, bOffset);
+                        return fieldInfo;
+
                     case RespCommand.BITFIELD:
                         var bitFieldArgs = GetBitFieldArguments(ref input);
-                        return sizeof(int) + BitmapManager.NewBlockAllocLengthFromType(bitFieldArgs, t.Length);
+                        fieldInfo.ValueSize = BitmapManager.NewBlockAllocLengthFromType(bitFieldArgs, srcLogRecord.ValueSpan.Length);
+                        return fieldInfo;
+
                     case RespCommand.PFADD:
-                        var length = sizeof(int);
-                        var v = t.ToPointer();
-                        length += HyperLogLog.DefaultHLL.UpdateGrow(ref input, v);
-                        return length + t.MetadataSize;
+                        // TODO: call HyperLogLog.DefaultHLL.IsValidHYLL and check error return per RMWMethods. This would require 'output'. Also carry this result through to RMWMethods.
+                        if (srcLogRecord.IsPinnedValue)
+                            fieldInfo.ValueSize = HyperLogLog.DefaultHLL.UpdateGrow(ref input, srcLogRecord.PinnedValuePointer);
+                        else
+                            fixed (byte* valuePtr = srcLogRecord.ValueSpan)
+                                fieldInfo.ValueSize = HyperLogLog.DefaultHLL.UpdateGrow(ref input, valuePtr);
+                        return fieldInfo;
 
                     case RespCommand.PFMERGE:
-                        length = sizeof(int);
-                        var srcHLL = input.parseState.GetArgSliceByRef(0).SpanByte.ToPointer();
-                        var dstHLL = t.ToPointer();
-                        length += HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
-                        return length + t.MetadataSize;
+                        // TODO: call HyperLogLog.DefaultHLL.IsValidHYLL and check error return per RMWMethods. This would require 'output'. Also carry this result through to RMWMethods.
+                        var srcHLL = input.parseState.GetArgSliceByRef(0).ToPointer();
+                        if (srcLogRecord.IsPinnedValue)
+                            fieldInfo.ValueSize = HyperLogLog.DefaultHLL.MergeGrow(srcHLL, srcLogRecord.PinnedValuePointer);
+                        else
+                            fixed (byte* dstHLL = srcLogRecord.ValueSpan)
+                                fieldInfo.ValueSize = HyperLogLog.DefaultHLL.MergeGrow(srcHLL, dstHLL);
+                        return fieldInfo;
 
                     case RespCommand.SETKEEPTTLXX:
                     case RespCommand.SETKEEPTTL:
-                        var setValue = input.parseState.GetArgSliceByRef(0);
-                        return sizeof(int) + t.MetadataSize + setValue.Length + functionsState.etagState.etagOffsetForVarlen;
+                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                        return fieldInfo;
 
                     case RespCommand.SET:
                     case RespCommand.SETEXXX:
-                        return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length + (input.arg1 == 0 ? 0 : sizeof(long)) + functionsState.etagState.etagOffsetForVarlen;
-                    case RespCommand.PERSIST:
-                        return sizeof(int) + t.LengthWithoutMetadata;
+                    case RespCommand.SETEXNX:
+                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                        fieldInfo.HasExpiration = input.arg1 != 0;
+                        return fieldInfo;
+
                     case RespCommand.SETIFGREATER:
                     case RespCommand.SETIFMATCH:
-                        var newValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-                        int metadataSize = input.arg1 == 0 ? t.MetadataSize : sizeof(long);
-                        return sizeof(int) + newValue.Length + EtagConstants.EtagSize + metadataSize;
-                    case RespCommand.EXPIRE:
-                    case RespCommand.PEXPIRE:
-                    case RespCommand.EXPIREAT:
-                    case RespCommand.PEXPIREAT:
-                        return sizeof(int) + t.Length + sizeof(long);
+                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+                        fieldInfo.HasETag = true;
+                        fieldInfo.HasExpiration = input.arg1 != 0 || srcLogRecord.Info.HasExpiration;
+                        return fieldInfo;
 
                     case RespCommand.SETRANGE:
                         var offset = input.parseState.GetInt(0);
-                        newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                        var newValue = input.parseState.GetArgSliceByRef(1);
 
-                        if (newValue.Length + offset > t.LengthWithoutMetadata - functionsState.etagState.etagOffsetForVarlen)
-                            return sizeof(int) + newValue.Length + offset + t.MetadataSize + functionsState.etagState.etagOffsetForVarlen;
-                        return sizeof(int) + t.Length;
+                        fieldInfo.ValueSize = newValue.Length + offset;
+                        if (fieldInfo.ValueSize < srcLogRecord.ValueSpan.Length)
+                            fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
+                        return fieldInfo;
 
                     case RespCommand.GETEX:
-                        return sizeof(int) + t.LengthWithoutMetadata + (input.arg1 > 0 ? sizeof(long) : 0);
+                        fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
+
+                        // If both EX and PERSIST were specified, EX wins
+                        if (input.arg1 > 0)
+                            fieldInfo.HasExpiration = true;
+                        else if (input.parseState.Count > 0)
+                        {
+                            if (input.parseState.GetArgSliceByRef(0).ReadOnlySpan.EqualsUpperCaseSpanIgnoringCase(CmdStrings.PERSIST))
+                                fieldInfo.HasExpiration = false;
+                        }
+
+                        return fieldInfo;
 
                     case RespCommand.APPEND:
-                        var valueLength = input.parseState.GetArgSliceByRef(0).Length;
-                        return sizeof(int) + t.Length + valueLength;
+                        fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length + input.parseState.GetArgSliceByRef(0).Length;
+                        return fieldInfo;
 
                     case RespCommand.GETDEL:
                     case RespCommand.DELIFGREATER:
                         // Min allocation (only metadata) needed since this is going to be used for tombstoning anyway.
-                        return sizeof(int);
+                        return fieldInfo;
 
                     default:
                         if (cmd > RespCommandExtensions.LastValidCommand)
                         {
                             var functions = functionsState.GetCustomCommandFunctions((ushort)cmd);
-                            // compute metadata for result
-                            metadataSize = input.arg1 switch
-                            {
-                                -1 => 0,
-                                0 => t.MetadataSize,
-                                _ => 8,
-                            };
-                            return sizeof(int) + metadataSize + functions.GetLength(t.AsReadOnlySpan(), ref input);
+                            fieldInfo.ValueSize = functions.GetLength(srcLogRecord.ValueSpan, ref input);
+                            fieldInfo.HasExpiration = input.arg1 != 0;
+                            return fieldInfo;
                         }
                         throw new GarnetException("Unsupported operation on input");
                 }
             }
 
-            return sizeof(int) + input.parseState.GetArgSliceByRef(0).Length +
-                (input.arg1 == 0 ? 0 : sizeof(long));
+            fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
+            fieldInfo.HasExpiration = input.arg1 != 0;
+            return fieldInfo;
         }
 
-        public int GetUpsertValueLength(ref SpanByte t, ref RawStringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref StringInput input)
         {
+            var fieldInfo = new RecordFieldInfo()
+            {
+                KeySize = key.Length,
+                ValueSize = value.Length,
+                HasETag = input.header.CheckWithETagFlag()
+            };
+
             switch (input.header.cmd)
             {
                 case RespCommand.SET:
                 case RespCommand.SETEX:
-                    return input.arg1 == 0 ? t.TotalSize : sizeof(int) + t.LengthWithoutMetadata + sizeof(long);
+                case RespCommand.APPEND:
+                    fieldInfo.HasExpiration = input.arg1 != 0;
+                    break;
             }
+            return fieldInfo;
+        }
 
-            return t.TotalSize;
+        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref StringInput input)
+            => throw new GarnetException("String store should not be called with IHeapObject");
+
+        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref StringInput input)
+            where TSourceLogRecord : ISourceLogRecord
+        {
+            if (inputLogRecord.Info.ValueIsObject)
+                throw new GarnetException("String store should not be called with IHeapObject");
+            return inputLogRecord.GetRecordFieldInfo();
         }
     }
 }

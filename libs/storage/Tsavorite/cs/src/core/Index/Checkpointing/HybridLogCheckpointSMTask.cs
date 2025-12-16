@@ -11,16 +11,16 @@ namespace Tsavorite.core
     /// This task is the base class for a checkpoint "backend", which decides how a captured version is
     /// persisted on disk.
     /// </summary>
-    internal abstract class HybridLogCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator> : IStateMachineTask
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal abstract class HybridLogCheckpointSMTask<TStoreFunctions, TAllocator> : IStateMachineTask
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        protected readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
+        protected readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         protected long lastVersion;
         protected readonly Guid guid;
         protected bool isStreaming;
 
-        public HybridLogCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
+        public HybridLogCheckpointSMTask(TsavoriteKV<TStoreFunctions, TAllocator> store, Guid guid)
         {
             this.store = store;
             this.guid = guid;
@@ -58,7 +58,6 @@ namespace Tsavorite.core
                     break;
 
                 case Phase.PERSISTENCE_CALLBACK:
-                    CollectMetadata(next, store);
                     store.WriteHybridLogMetaInfo();
                     store.lastVersion = lastVersion;
                     break;
@@ -73,16 +72,33 @@ namespace Tsavorite.core
             }
         }
 
-        protected static void CollectMetadata(SystemState next, TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store)
+        protected void ObjectLog_OnPrepare()
         {
-            // Collect object log offsets only after flushes
-            // are completed
-            var seg = store.hlog.GetSegmentOffsets();
-            if (seg != null)
+            // This will be zero unless Truncate() has removed enough main-log segments to allow freeing one or more object-log segments.
+            store._hybridLogCheckpoint.info.beginAddressObjectLogSegment = store.hlogBase.LowestObjectLogSegmentInUse;
+        }
+
+        protected CircularDiskWriteBuffer ObjectLog_OnWaitFlush()
+        {
+            if (store._hybridLogCheckpoint.info.useSnapshotFile != 0)
             {
-                store._hybridLogCheckpoint.info.objectLogSegmentOffsets = new long[seg.Length];
-                Array.Copy(seg, store._hybridLogCheckpoint.info.objectLogSegmentOffsets, seg.Length);
+                // GetObjectTail().HasData may be false if we have not flushed the main log (ReadOnlyAddress has not advanced).
+                store._hybridLogCheckpoint.info.snapshotStartObjectLogTail = store.hlogBase.GetObjectLogTail();
+
+                // Flush buffers are only used for Snapshot checkpoints.
+                store._hybridLogCheckpoint.objectLogFlushBuffers = store.hlogBase.CreateCircularFlushBuffers(store._hybridLogCheckpoint.snapshotFileObjectLogDevice, store.hlogBase.logger);
+                store._hybridLogCheckpoint.objectLogFlushBuffers?.InitializeOwnObjectLogFilePosition(store._hybridLogCheckpoint.snapshotFileObjectLogDevice.SegmentSize);
             }
+            return store._hybridLogCheckpoint.objectLogFlushBuffers;
+        }
+
+        protected void ObjectLog_OnPersistenceCallback()
+        {
+            // GetObjectTail().HasData may be false if we have not flushed the main log (ReadOnlyAddress has not advanced).
+            store._hybridLogCheckpoint.info.hlogEndObjectLogTail = store.hlogBase.GetObjectLogTail();
+
+            if (store._hybridLogCheckpoint.info.useSnapshotFile != 0)
+                store._hybridLogCheckpoint.info.snapshotEndObjectLogTail = store._hybridLogCheckpoint.objectLogFlushBuffers?.filePosition ?? new();
         }
 
         /// <inheritdoc />

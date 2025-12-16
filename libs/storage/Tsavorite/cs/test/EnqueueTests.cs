@@ -69,7 +69,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
+        public void EnqueueBasicTest([Values] EnqueueIteratorType iteratorType, [Values] TestUtils.TestDeviceType deviceType)
         {
 
             int entryLength = 20;
@@ -135,7 +135,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -143,13 +143,9 @@ namespace Tsavorite.test
                     {
                         // Span Batch only added first entry several times so have separate verification
                         if (iteratorType == EnqueueIteratorType.SpanBatch)
-                        {
                             ClassicAssert.AreEqual((byte)entryFlag, result[0]);
-                        }
                         else
-                        {
                             ClassicAssert.AreEqual((byte)entryFlag, result[currentEntry]);
-                        }
 
                         currentEntry++;
                     }
@@ -158,14 +154,12 @@ namespace Tsavorite.test
 
             // Make sure expected length (entryLength) is same as current - also makes sure that data verification was not skipped
             ClassicAssert.AreEqual(entryLength, currentEntry);
-
         }
-
 
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public async Task EnqueueAsyncBasicTest([Values] TestUtils.DeviceType deviceType)
+        public async Task EnqueueAsyncBasicTest([Values] TestUtils.TestDeviceType deviceType)
         {
 
             const int expectedEntryCount = 11;
@@ -174,7 +168,7 @@ namespace Tsavorite.test
             device = TestUtils.CreateTestDevice(deviceType, filename);
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
 
-            if (OperatingSystem.IsWindows() && deviceType == TestUtils.DeviceType.EmulatedAzure)
+            if (OperatingSystem.IsWindows() && deviceType == TestUtils.TestDeviceType.EmulatedAzure)
                 return;
 
             CancellationToken cancellationToken = default;

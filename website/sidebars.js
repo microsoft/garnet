@@ -24,7 +24,7 @@ const sidebars = {
 		{type: 'category', label: 'Server Extensions', items: ["extensions/overview", "extensions/raw-strings", "extensions/objects", "extensions/transactions", "extensions/procedure", "extensions/module"]},
 		{type: 'category', label: 'Cluster Mode', items: ["cluster/overview", "cluster/replication", "cluster/key-migration"]},
 		{type: 'category', label: 'Developer Guide', items: ["dev/onboarding", "dev/code-structure", "dev/configuration", "dev/network", "dev/processing", "dev/garnet-api",
-		  {type: 'category', label: 'Tsavorite - Storage Layer', collapsed: true, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking", "dev/tsavorite/storefunctions", "dev/tsavorite/epoch"]},
+		  {type: 'category', label: 'Tsavorite - Storage Layer', collapsed: true, items: ["dev/tsavorite/intro", "dev/tsavorite/reviv", "dev/tsavorite/locking", "dev/tsavorite/storefunctions", "dev/tsavorite/epochprotection", "dev/tsavorite/logrecord", "dev/tsavorite/object-allocator"]},
 		  "dev/transactions",
 		  "dev/custom-commands",
 		  "dev/multi-db",
@@ -41,6 +41,7 @@ const sidebars = {
 		{type: 'category', label: 'Diagnostics', items: ["logger", "metrics"]},
 		"research",
 			*/
+		{type: 'category', label: 'Azure', items: ["azure/overview", "azure/quickstart", "azure/api-compatibility", "azure/cluster-configuration", "azure/resiliency", "azure/security", "azure/monitoring", "azure/faq"]},
 		{type: 'category', label: 'Research', items: ["research/papers"]},
 		{type: 'category', label: 'Other Links', items: [
 			{type: 'link', label: 'Releases', href: 'https://github.com/microsoft/garnet/releases'},

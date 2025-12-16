@@ -90,7 +90,7 @@ namespace Garnet.test
 
             var response = db.Execute("MEMORY", "USAGE", "user1:set");
             var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 272;
+            var expectedResponse = 312;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -183,7 +183,7 @@ namespace Garnet.test
 
             var memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
             var actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            var expectedResponse = 424;
+            var expectedResponse = 464;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var response = db.SetRemove(key, new RedisValue("ItemOne"));
@@ -191,7 +191,7 @@ namespace Garnet.test
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
             actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 352;
+            expectedResponse = 392;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             response = db.SetRemove(key, new RedisValue("ItemFive"));
@@ -199,7 +199,7 @@ namespace Garnet.test
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
             actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 352;
+            expectedResponse = 392;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var longResponse = db.SetRemove(key, ["ItemTwo", "ItemThree"]);
@@ -207,7 +207,7 @@ namespace Garnet.test
 
             memresponse = db.Execute("MEMORY", "USAGE", "user1:set");
             actualValue = ResultType.Integer == memresponse.Resp2Type ? Int32.Parse(memresponse.ToString()) : -1;
-            expectedResponse = 200;
+            expectedResponse = 240;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var members = db.SetMembers(key);
@@ -227,16 +227,9 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
 
             // SSCAN without key
-            try
-            {
-                db.Execute("SSCAN");
-                Assert.Fail();
-            }
-            catch (RedisServerException e)
-            {
-                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(Garnet.server.SetOperation.SSCAN));
-                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
-            }
+            var e = Assert.Throws<RedisServerException>(() => db.Execute("SSCAN"));
+            var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(Garnet.server.SetOperation.SSCAN));
+            ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
 
             // Use setscan on non existing key
             var items = db.SetScan(new RedisKey("foo"), new RedisValue("*"), pageSize: 10);
@@ -387,15 +380,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(4, members.Length);
             ClassicAssert.IsTrue(members.OrderBy(x => x).SequenceEqual(redisValues1.OrderBy(x => x)));
 
-            try
-            {
-                db.SetCombine(SetOperation.Union, []);
-                Assert.Fail();
-            }
-            catch (RedisServerException e)
-            {
-                ClassicAssert.AreEqual(string.Format(CmdStrings.GenericErrWrongNumArgs, "SUNION"), e.Message);
-            }
+            var e = Assert.Throws<RedisServerException>(() => db.SetCombine(SetOperation.Union, []));
+            ClassicAssert.AreEqual(string.Format(CmdStrings.GenericErrWrongNumArgs, "SUNION"), e.Message);
         }
 
         [Test]
@@ -472,15 +458,8 @@ namespace Garnet.test
             ClassicAssert.IsEmpty(members);
 
 
-            try
-            {
-                db.SetCombine(SetOperation.Intersect, []);
-                Assert.Fail();
-            }
-            catch (RedisServerException e)
-            {
-                ClassicAssert.AreEqual(string.Format(CmdStrings.GenericErrWrongNumArgs, "SINTER"), e.Message);
-            }
+            var e = Assert.Throws<RedisServerException>(() => db.SetCombine(SetOperation.Intersect, []));
+            ClassicAssert.AreEqual(string.Format(CmdStrings.GenericErrWrongNumArgs, "SINTER"), e.Message);
         }
 
         [Test]

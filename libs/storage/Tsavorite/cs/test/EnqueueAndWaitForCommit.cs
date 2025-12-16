@@ -67,9 +67,7 @@ namespace Tsavorite.test
         {
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
-            {
                 entry[i] = (byte)i;
-            }
 
             // Add to TsavoriteLog on a separate thread, which will wait for the commit from this thread
             var currentTask = Task.Run(() => LogWriter(log, entry, iteratorType));
@@ -82,7 +80,7 @@ namespace Tsavorite.test
             await currentTask;
 
             // Read the log - Look for the flag so know each entry is unique
-            using var iter = log.Scan(0, 1000);
+            using var iter = log.Scan(0, LogAddress.MaxValidAddress);
             int currentEntry = 0;
             while (iter.GetNext(out byte[] result, out _, out _))
             {

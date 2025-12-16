@@ -13,6 +13,10 @@ using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
+#pragma warning disable IDE0065 // Misplaced using directive
+    using FixedLenStoreFunctions = StoreFunctions<FixedLengthKey.Comparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
+
     internal interface IKeySetter<TKey>
     {
         void Set(TKey[] vector, long idx, long value);
@@ -22,8 +26,8 @@ namespace Tsavorite.benchmark
     {
         internal readonly Options Options;
         internal readonly string Distribution;
-        internal Key[] init_keys = default;
-        internal Key[] txn_keys = default;
+        internal FixedLengthKey[] init_keys = default;
+        internal FixedLengthKey[] txn_keys = default;
         internal KeySpanByte[] init_span_keys = default;
         internal KeySpanByte[] txn_span_keys = default;
 
@@ -77,6 +81,21 @@ namespace Tsavorite.benchmark
             if (!verifyOption(rumdPercents.Length == 4 && Options.RumdPercents.Sum() == 100 && !Options.RumdPercents.Any(x => x < 0), "rmud",
                     "Percentages of [(r)eads,(u)pserts,r(m)ws,(d)eletes] must be empty or must sum to 100 with no negative elements"))
                 return;
+            if (Options.UseOverflowValues && Options.UseObjectValues)
+            {
+                Console.WriteLine($"Cannot specify both UseOverflowValues and UseObjectValues");
+                return;
+            }
+            if ((Options.UseOverflowValues || Options.UseObjectValues) && BenchmarkType != BenchmarkType.Object)
+            {
+                Console.WriteLine($"Can only specify UseOverflowValues or UseObjectValues with BenchmarkType.Object");
+                return;
+            }
+            if (Options.UseSBA && BenchmarkType == BenchmarkType.Object)
+            {
+                Console.WriteLine($"SpanByteAllocator is not supported with BenchmarkType.Object");
+                return;
+            }
             ReadPercent = rumdPercents[0];
             UpsertPercent = ReadPercent + rumdPercents[1];
             RmwPercent = UpsertPercent + rumdPercents[2];
@@ -106,15 +125,25 @@ namespace Tsavorite.benchmark
 
             switch (BenchmarkType)
             {
-                case BenchmarkType.Ycsb:
-                    Tsavorite_YcsbBenchmark.CreateKeyVectors(this, out init_keys, out txn_keys);
-                    LoadData(this, init_keys, txn_keys, new Tsavorite_YcsbBenchmark.KeySetter());
+                case BenchmarkType.FixedLen:
+                    if (Options.UseSBA)
+                        FixedLenYcsbBenchmark<SpanByteAllocator<FixedLenStoreFunctions>>.CreateKeyVectors(this, out init_keys, out txn_keys);
+                    else
+                        FixedLenYcsbBenchmark<ObjectAllocator<FixedLenStoreFunctions>>.CreateKeyVectors(this, out init_keys, out txn_keys);
+                    LoadData(this, init_keys, txn_keys, new FixedLenYcsbKeySetter());
                     break;
                 case BenchmarkType.SpanByte:
-                    SpanByteYcsbBenchmark.CreateKeyVectors(this, out init_span_keys, out txn_span_keys);
-                    LoadData(this, init_span_keys, txn_span_keys, new SpanByteYcsbBenchmark.KeySetter());
+                    if (Options.UseSBA)
+                        SpanByteYcsbBenchmark<SpanByteAllocator<SpanByteStoreFunctions>>.CreateKeyVectors(this, out init_span_keys, out txn_span_keys);
+                    else
+                        SpanByteYcsbBenchmark<ObjectAllocator<SpanByteStoreFunctions>>.CreateKeyVectors(this, out init_span_keys, out txn_span_keys);
+                    LoadData(this, init_span_keys, txn_span_keys, new SpanByteYcsbKeySetter());
                     break;
-                case BenchmarkType.ConcurrentDictionaryYcsb:
+                case BenchmarkType.Object:
+                    ObjectYcsbBenchmark.CreateKeyVectors(this, out init_keys, out txn_keys);
+                    LoadData(this, init_keys, txn_keys, new ObjectYcsbBenchmark.KeySetter());
+                    break;
+                case BenchmarkType.ConcurrentDictionary:
                     ConcurrentDictionary_YcsbBenchmark.CreateKeyVectors(this, out init_keys, out txn_keys);
                     LoadData(this, init_keys, txn_keys, new ConcurrentDictionary_YcsbBenchmark.KeySetter());
                     break;
@@ -340,9 +369,9 @@ namespace Tsavorite.benchmark
 
         internal string BackupPath => $"{DataPath}/{Distribution}_{(Options.UseSyntheticData ? "synthetic" : "ycsb")}_{(Options.UseSmallData ? "2.5M_10M" : "250M_1000M")}";
 
-        internal bool MaybeRecoverStore<K, V, SF, A>(TsavoriteKV<K, V, SF, A> store)
-            where SF : IStoreFunctions<K, V>
-            where A : IAllocator<K, V, SF>
+        internal bool MaybeRecoverStore<SF, A>(TsavoriteKV<SF, A> store)
+            where SF : IStoreFunctions
+            where A : IAllocator<SF>
         {
             // Recover database for fast benchmark repeat runs.
             if (RecoverMode)
@@ -371,9 +400,9 @@ namespace Tsavorite.benchmark
             return false;
         }
 
-        internal void MaybeCheckpointStore<K, V, SF, A>(TsavoriteKV<K, V, SF, A> store)
-            where SF : IStoreFunctions<K, V>
-            where A : IAllocator<K, V, SF>
+        internal void MaybeCheckpointStore<SF, A>(TsavoriteKV<SF, A> store)
+            where SF : IStoreFunctions
+            where A : IAllocator<SF>
         {
             // Checkpoint database for fast benchmark repeat runs.
             if (RecoverMode)

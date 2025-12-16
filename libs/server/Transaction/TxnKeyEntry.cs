@@ -8,42 +8,36 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using MainStoreAllocator = SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>;
-    using MainStoreFunctions = StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
-
-    using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
-    using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
+    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
+    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     /// <summary>
     /// Entry for a key to lock and unlock in transactions
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = 10)]
-    struct TxnKeyEntry : ILockableKey
+    [StructLayout(LayoutKind.Explicit, Size = 9)]
+    struct TxnKeyEntry : ITransactionalKey
     {
         [FieldOffset(0)]
         internal long keyHash;
 
         [FieldOffset(8)]
-        internal bool isObject;
-
-        [FieldOffset(9)]
         internal LockType lockType;
 
-        #region ILockableKey
+        #region ITransactionalKey
         /// <inheritdoc/>
-        public long KeyHash { get => keyHash; }
+        public readonly long KeyHash => keyHash;
 
         /// <inheritdoc/>
-        public LockType LockType { get => lockType; }
-        #endregion ILockableKey
+        public readonly LockType LockType => lockType;
+        #endregion ITransactionalKey
 
         /// <inheritdoc />
-        public override string ToString()
+        public override readonly string ToString()
         {
             // The debugger often can't call the Globalization NegativeSign property so ToString() would just display the class name
             var keyHashSign = keyHash < 0 ? "-" : string.Empty;
-            var absKeyHash = this.keyHash >= 0 ? this.keyHash : -this.keyHash;
-            return $"{keyHashSign}{absKeyHash}:{(isObject ? "obj" : "raw")}:{(lockType == LockType.None ? "-" : (lockType == LockType.Shared ? "s" : "x"))}";
+            var absKeyHash = keyHash >= 0 ? keyHash : -keyHash;
+            return $"{keyHashSign}{absKeyHash}:{(lockType == LockType.None ? "-" : (lockType == LockType.Shared ? "s" : "x"))}";
         }
     }
 
@@ -51,30 +45,28 @@ namespace Garnet.server
     {
         // Basic keys
         int keyCount;
-        int mainKeyCount;
         TxnKeyEntry[] keys;
 
-        bool mainStoreKeyLocked;
-        bool objectStoreKeyLocked;
+        bool unifiedStoreKeyLocked;
 
         readonly TxnKeyComparison comparison;
 
         public int phase;
 
-        internal TxnKeyEntries(int initialCount, LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator> lockableContext,
-                LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext)
+        internal TxnKeyEntries(int initialCount,
+                TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext)
         {
             keys = GC.AllocateArray<TxnKeyEntry>(initialCount, pinned: true);
             // We sort a single array for speed, and the sessions use the same sorting logic,
-            comparison = new(lockableContext, objectStoreLockableContext);
+            comparison = new(unifiedTransactionalContext);
         }
 
         public bool IsReadOnly
         {
             get
             {
-                bool readOnly = true;
-                for (int i = 0; i < keyCount; i++)
+                var readOnly = true;
+                for (var i = 0; i < keyCount; i++)
                 {
                     if (keys[i].lockType == LockType.Exclusive)
                     {
@@ -86,11 +78,9 @@ namespace Garnet.server
             }
         }
 
-        public void AddKey(ArgSlice keyArgSlice, bool isObject, LockType type)
+        public void AddKey(PinnedSpanByte keyArgSlice, LockType type)
         {
-            var keyHash = !isObject
-                ? comparison.lockableContext.GetKeyHash(keyArgSlice.SpanByte)
-                : comparison.objectStoreLockableContext.GetKeyHash(keyArgSlice.ToArray());
+            var keyHash = comparison.UnifiedTransactionalContext.GetKeyHash(keyArgSlice.ReadOnlySpan);
 
             // Grow the buffer if needed
             if (keyCount >= keys.Length)
@@ -102,11 +92,8 @@ namespace Garnet.server
 
             // Populate the new key slot.
             keys[keyCount].keyHash = keyHash;
-            keys[keyCount].isObject = isObject;
             keys[keyCount].lockType = type;
             ++keyCount;
-            if (!isObject)
-                ++mainKeyCount;
         }
 
         internal void LockAllKeys()
@@ -119,18 +106,11 @@ namespace Garnet.server
             // This does not call Tsavorite's SortKeyHashes because we need to consider isObject as well.
             MemoryExtensions.Sort(keys.AsSpan().Slice(0, keyCount), comparison.comparisonDelegate);
 
-            // Issue main store locks
-            if (mainKeyCount > 0)
+            // Issue unified store locks
+            if (keyCount > 0)
             {
-                comparison.lockableContext.Lock<TxnKeyEntry>(keys.AsSpan()[..mainKeyCount]);
-                mainStoreKeyLocked = true;
-            }
-
-            // Issue object store locks
-            if (mainKeyCount < keyCount)
-            {
-                comparison.objectStoreLockableContext.Lock<TxnKeyEntry>(keys.AsSpan().Slice(mainKeyCount, keyCount - mainKeyCount));
-                objectStoreKeyLocked = true;
+                comparison.UnifiedTransactionalContext.Lock<TxnKeyEntry>(keys.AsSpan().Slice(0, keyCount));
+                unifiedStoreKeyLocked = true;
             }
 
             phase = 0;
@@ -146,24 +126,12 @@ namespace Garnet.server
             // This does not call Tsavorite's SortKeyHashes because we need to consider isObject as well.
             MemoryExtensions.Sort(keys.AsSpan().Slice(0, keyCount), comparison.comparisonDelegate);
 
-            // Issue main store locks
+            // Issue unified store locks
             // TryLock will unlock automatically in case of partial failure
-            if (mainKeyCount > 0)
+            if (keyCount > 0)
             {
-                mainStoreKeyLocked = comparison.lockableContext.TryLock<TxnKeyEntry>(keys.AsSpan()[..mainKeyCount], lock_timeout);
-                if (!mainStoreKeyLocked)
-                {
-                    phase = 0;
-                    return false;
-                }
-            }
-
-            // Issue object store locks
-            // TryLock will unlock automatically in case of partial failure
-            if (mainKeyCount < keyCount)
-            {
-                objectStoreKeyLocked = comparison.objectStoreLockableContext.TryLock<TxnKeyEntry>(keys.AsSpan().Slice(mainKeyCount, keyCount - mainKeyCount), lock_timeout);
-                if (!objectStoreKeyLocked)
+                unifiedStoreKeyLocked = comparison.UnifiedTransactionalContext.TryLock<TxnKeyEntry>(keys.AsSpan().Slice(0, keyCount), lock_timeout);
+                if (!unifiedStoreKeyLocked)
                 {
                     phase = 0;
                     return false;
@@ -177,14 +145,10 @@ namespace Garnet.server
         internal void UnlockAllKeys()
         {
             phase = 2;
-            if (mainStoreKeyLocked && mainKeyCount > 0)
-                comparison.lockableContext.Unlock<TxnKeyEntry>(keys.AsSpan()[..mainKeyCount]);
-            if (objectStoreKeyLocked && mainKeyCount < keyCount)
-                comparison.objectStoreLockableContext.Unlock<TxnKeyEntry>(keys.AsSpan().Slice(mainKeyCount, keyCount - mainKeyCount));
-            mainKeyCount = 0;
+            if (unifiedStoreKeyLocked && keyCount > 0)
+                comparison.UnifiedTransactionalContext.Unlock<TxnKeyEntry>(keys.AsSpan().Slice(0, keyCount));
             keyCount = 0;
-            mainStoreKeyLocked = false;
-            objectStoreKeyLocked = false;
+            unifiedStoreKeyLocked = false;
             phase = 0;
         }
 
@@ -196,12 +160,12 @@ namespace Garnet.server
             for (int ii = 0; ii < keyCount; ii++)
             {
                 ref var entry = ref keys[ii];
-                sb.Append(delimiter);
-                sb.Append(entry.ToString());
+                _ = sb.Append(delimiter);
+                _ = sb.Append(entry.ToString());
             }
 
             if (sb.Length > 0)
-                sb.Append($" (phase: {(phase == 0 ? "none" : (phase == 1 ? "lock" : "unlock"))}))");
+                _ = sb.Append($" (phase: {(phase == 0 ? "none" : (phase == 1 ? "lock" : "unlock"))}))");
             return sb.ToString();
         }
     }

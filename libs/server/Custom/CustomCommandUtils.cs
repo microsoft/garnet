@@ -23,7 +23,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input">Main store input</param>
         /// <returns></returns>
-        public static ReadOnlySpan<byte> GetFirstArg(ref RawStringInput input)
+        public static ReadOnlySpan<byte> GetFirstArg(ref StringInput input)
         {
             var idx = 0;
             return GetNextArg(ref input, ref idx);
@@ -50,7 +50,7 @@ namespace Garnet.server
         /// <param name="input">Main store input</param>
         /// <param name="idx">Current argument index in input</param>
         /// <returns>Argument as a span</returns>
-        public static ReadOnlySpan<byte> GetNextArg(ref RawStringInput input, scoped ref int idx)
+        public static ReadOnlySpan<byte> GetNextArg(ref StringInput input, scoped ref int idx)
         {
             var arg = idx < input.parseState.Count
                 ? input.parseState.GetArgSliceByRef(idx).ReadOnlySpan

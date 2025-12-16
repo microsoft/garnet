@@ -138,18 +138,13 @@ namespace Garnet.server
         /// <summary>
         /// Set "WithEtag" flag for the input header
         /// </summary>
-        internal void SetWithEtagFlag() => flags |= RespInputFlags.WithEtag;
+        internal void SetWithETagFlag() => flags |= RespInputFlags.WithEtag;
 
         /// <summary>
         /// Check if the WithEtag flag is set
         /// </summary>
         /// <returns></returns>
-        internal bool CheckWithEtagFlag() => (flags & RespInputFlags.WithEtag) != 0;
-
-        /// <summary>
-        /// Check that neither SetGet nor WithEtag flag is set
-        /// </summary>
-        internal bool NotSetGetNorCheckWithEtag() => (flags & (RespInputFlags.SetGet | RespInputFlags.WithEtag)) == 0;
+        internal bool CheckWithETagFlag() => (flags & RespInputFlags.WithEtag) != 0;
 
         /// <summary>
         /// Check if record is expired, either deterministically during log replay,
@@ -157,22 +152,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="expireTime">Expiration time</param>
         /// <returns></returns>
-        internal unsafe bool CheckExpiry(long expireTime)
-        {
-            if ((flags & RespInputFlags.Deterministic) != 0)
-            {
-                if ((flags & RespInputFlags.Expired) != 0)
-                    return true;
-            }
-            else
-            {
-                if (expireTime < DateTimeOffset.Now.UtcTicks)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
+        internal readonly unsafe bool CheckExpiry(long expireTime)
+            => (flags & RespInputFlags.Deterministic) != 0
+                ? (flags & RespInputFlags.Expired) != 0
+                : expireTime < DateTimeOffset.Now.UtcTicks;
 
         /// <summary>
         /// Check the SetGet flag
@@ -188,9 +171,9 @@ namespace Garnet.server
             => (byte*)Unsafe.AsPointer(ref cmd);
 
         /// <summary>
-        /// Get header as SpanByte
+        /// Get header as PinnedSpanByte
         /// </summary>
-        public unsafe SpanByte SpanByte => new(Length, (nint)ToPointer());
+        public unsafe PinnedSpanByte SpanByte => PinnedSpanByte.FromPinnedPointer(ToPointer(), Length);
 
         /// <summary>
         /// Get header length
@@ -276,7 +259,7 @@ namespace Garnet.server
             var curr = dest;
 
             // Serialize header
-            header.SpanByte.CopyTo(curr);
+            header.SpanByte.SerializeTo(curr);
             curr += header.SpanByte.TotalSize;
 
             // Serialize arg1
@@ -289,7 +272,7 @@ namespace Garnet.server
 
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
-            var len = parseState.CopyTo(curr, remainingLength);
+            var len = parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Number of serialized bytes
@@ -302,10 +285,10 @@ namespace Garnet.server
             var curr = src;
 
             // Deserialize header
-            ref var sbHeader = ref Unsafe.AsRef<SpanByte>(curr);
-            ref var h = ref Unsafe.AsRef<RespInputHeader>(sbHeader.ToPointer());
-            curr += sbHeader.TotalSize;
-            header = h;
+            var header = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
+            ref var h = ref Unsafe.AsRef<RespInputHeader>(header.ToPointer());
+            curr += header.TotalSize;
+            this.header = h;
 
             // Deserialize arg1
             arg1 = *(int*)curr;
@@ -326,7 +309,7 @@ namespace Garnet.server
     /// <summary>
     /// Header for Garnet Main Store inputs
     /// </summary>
-    public struct RawStringInput : IStoreInput
+    public struct StringInput : IStoreInput
     {
         /// <summary>
         /// Common input header for Garnet
@@ -344,50 +327,50 @@ namespace Garnet.server
         public SessionParseState parseState;
 
         /// <summary>
-        /// Create a new instance of RawStringInput
+        /// Create a new instance of StringInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public RawStringInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
+        public StringInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
         {
             this.header = new RespInputHeader(cmd, flags);
             this.arg1 = arg1;
         }
 
         /// <summary>
-        /// Create a new instance of RawStringInput
+        /// Create a new instance of StringInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public RawStringInput(ushort cmd, byte flags = 0, long arg1 = 0) :
+        public StringInput(ushort cmd, byte flags = 0, long arg1 = 0) :
             this((RespCommand)cmd, (RespInputFlags)flags, arg1)
 
         {
         }
 
         /// <summary>
-        /// Create a new instance of RawStringInput
+        /// Create a new instance of StringInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public RawStringInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        public StringInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
         {
             this.parseState = parseState;
         }
 
         /// <summary>
-        /// Create a new instance of RawStringInput
+        /// Create a new instance of StringInput
         /// </summary>
         /// <param name="cmd">Command</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="startIdx">First command argument index in parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public RawStringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        public StringInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
         {
             this.parseState = parseState.Slice(startIdx);
         }
@@ -405,7 +388,7 @@ namespace Garnet.server
             var curr = dest;
 
             // Serialize header
-            header.SpanByte.CopyTo(curr);
+            header.SpanByte.SerializeTo(curr);
             curr += header.SpanByte.TotalSize;
 
             // Serialize arg1
@@ -414,7 +397,7 @@ namespace Garnet.server
 
             // Serialize parse state
             var remainingLength = length - (int)(curr - dest);
-            var len = parseState.CopyTo(curr, remainingLength);
+            var len = parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Serialize length
@@ -427,10 +410,131 @@ namespace Garnet.server
             var curr = src;
 
             // Deserialize header
-            ref var sbHeader = ref Unsafe.AsRef<SpanByte>(curr);
-            ref var h = ref Unsafe.AsRef<RespInputHeader>(sbHeader.ToPointer());
-            curr += sbHeader.TotalSize;
-            header = h;
+            var header = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
+            ref var h = ref Unsafe.AsRef<RespInputHeader>(header.ToPointer());
+            curr += header.TotalSize;
+            this.header = h;
+
+            // Deserialize arg1
+            arg1 = *(long*)curr;
+            curr += sizeof(long);
+
+            // Deserialize parse state
+            var len = parseState.DeserializeFrom(curr);
+            curr += len;
+
+            return (int)(curr - src);
+        }
+    }
+
+    /// <summary>
+    /// Header for Garnet Unified Store inputs
+    /// </summary>
+    public struct UnifiedInput : IStoreInput
+    {
+        /// <summary>
+        /// Common input header for Garnet
+        /// </summary>
+        public RespInputHeader header;
+
+        /// <summary>
+        /// Argument for generic usage by command implementation
+        /// </summary>
+        public long arg1;
+
+        /// <summary>
+        /// Session parse state
+        /// </summary>
+        public SessionParseState parseState;
+
+        /// <summary>
+        /// Create a new instance of UnifiedInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="flags">Flags</param>
+        /// <param name="arg1">General-purpose argument</param>
+        public UnifiedInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
+        {
+            this.header = new RespInputHeader(cmd, flags);
+            this.arg1 = arg1;
+        }
+
+        /// <summary>
+        /// Create a new instance of UnifiedInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="flags">Flags</param>
+        /// <param name="arg1">General-purpose argument</param>
+        public UnifiedInput(ushort cmd, byte flags = 0, long arg1 = 0) :
+            this((RespCommand)cmd, (RespInputFlags)flags, arg1)
+
+        {
+        }
+
+        /// <summary>
+        /// Create a new instance of UnifiedInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="arg1">General-purpose argument</param>
+        /// <param name="flags">Flags</param>
+        public UnifiedInput(RespCommand cmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        {
+            this.parseState = parseState;
+        }
+
+        /// <summary>
+        /// Create a new instance of UnifiedInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="parseState">Parse state</param>
+        /// <param name="startIdx">First command argument index in parse state</param>
+        /// <param name="arg1">General-purpose argument</param>
+        /// <param name="flags">Flags</param>
+        public UnifiedInput(RespCommand cmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) : this(cmd, flags, arg1)
+        {
+            this.parseState = parseState.Slice(startIdx);
+        }
+
+        /// <inheritdoc />
+        public int SerializedLength => header.SpanByte.TotalSize
+                                       + sizeof(long) // arg1
+                                       + parseState.GetSerializedLength();
+
+        /// <inheritdoc />
+        public unsafe int CopyTo(byte* dest, int length)
+        {
+            Debug.Assert(length >= this.SerializedLength);
+
+            var curr = dest;
+
+            // Serialize header
+            header.SpanByte.SerializeTo(curr);
+            curr += header.SpanByte.TotalSize;
+
+            // Serialize arg1
+            *(long*)curr = arg1;
+            curr += sizeof(long);
+
+            // Serialize parse state
+            var remainingLength = length - (int)(curr - dest);
+            var len = parseState.SerializeTo(curr, remainingLength);
+            curr += len;
+
+            // Serialize length
+            return (int)(curr - dest);
+        }
+
+        /// <inheritdoc />
+        public unsafe int DeserializeFrom(byte* src)
+        {
+            var curr = src;
+
+            // Deserialize header
+            var header = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
+            ref var h = ref Unsafe.AsRef<RespInputHeader>(header.ToPointer());
+            curr += header.TotalSize;
+            this.header = h;
 
             // Deserialize arg1
             arg1 = *(long*)curr;
@@ -462,7 +566,7 @@ namespace Garnet.server
         public byte RespVersion { get; }
 
         /// <summary>
-        /// Create a new instance of RawStringInput
+        /// Create a new instance of StringInput
         /// </summary>
         /// <param name="parseState">Parse state</param>
         /// <param name="respVersion">RESP version for the session</param>
@@ -473,7 +577,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Create a new instance of RawStringInput
+        /// Create a new instance of StringInput
         /// </summary>
         /// <param name="parseState">Parse state</param>
         /// <param name="startIdx">First command argument index in parse state</param>
@@ -496,7 +600,7 @@ namespace Garnet.server
 
             // Serialize parse state
             var remainingLength = (int)(curr - dest);
-            var len = parseState.CopyTo(curr, remainingLength);
+            var len = parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             return (int)(curr - dest);
@@ -510,23 +614,5 @@ namespace Garnet.server
 
             return len;
         }
-    }
-
-    /// <summary>
-    /// Object output header (sometimes used as footer)
-    /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = Size)]
-    public struct ObjectOutputHeader
-    {
-        /// <summary>
-        /// Expected size of this object
-        /// </summary>
-        public const int Size = 4;
-
-        /// <summary>
-        /// Some result of operation (e.g., number of items added successfully)
-        /// </summary>
-        [FieldOffset(0)]
-        public int result1;
     }
 }

@@ -13,7 +13,7 @@ namespace Garnet.server
     /// </summary>
     public partial class SetObject : IGarnetObject
     {
-        private void SetAdd(ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        private void SetAdd(ref ObjectInput input, ref ObjectOutput output)
         {
             for (var i = 0; i < input.parseState.Count; i++)
             {
@@ -31,7 +31,7 @@ namespace Garnet.server
             }
         }
 
-        private void SetMembers(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void SetMembers(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -44,7 +44,7 @@ namespace Garnet.server
             }
         }
 
-        private void SetIsMember(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void SetIsMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -58,7 +58,7 @@ namespace Garnet.server
             output.Header.result1 = 1;
         }
 
-        private void SetMultiIsMember(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void SetMultiIsMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
@@ -78,7 +78,7 @@ namespace Garnet.server
             output.Header.result1 = input.parseState.Count;
         }
 
-        private void SetRemove(ref ObjectInput input, ref GarnetObjectStoreOutput output)
+        private void SetRemove(ref ObjectInput input, ref ObjectOutput output)
         {
             for (var i = 0; i < input.parseState.Count; i++)
             {
@@ -96,13 +96,13 @@ namespace Garnet.server
             }
         }
 
-        private void SetLength(ref GarnetObjectStoreOutput output)
+        private void SetLength(ref ObjectOutput output)
         {
             // SCARD key
             output.Header.result1 = Set.Count;
         }
 
-        private void SetPop(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void SetPop(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             // SPOP key [count]
             var count = input.arg1;
@@ -154,7 +154,7 @@ namespace Garnet.server
             output.Header.result1 = countDone;
         }
 
-        private void SetRandomMember(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion)
+        private void SetRandomMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
         {
             var count = input.arg1;
             var seed = input.arg2;

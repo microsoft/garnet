@@ -358,10 +358,10 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, memorySize: sizeToString(recoveryMemorySize), pageSize: sizeToString(pageSize), objectStoreHeapMemorySize: "64k");
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, memorySize: sizeToString(recoveryMemorySize), pageSize: sizeToString(pageSize), heapMemorySize: "64k");
             server.Start();
 
-            ClassicAssert.LessOrEqual(server.Provider.StoreWrapper.objectStore.MaxAllocatedPageCount, (recoveryMemorySize / pageSize) + 1);
+            ClassicAssert.LessOrEqual(server.Provider.StoreWrapper.store.MaxAllocatedPageCount, (recoveryMemorySize / pageSize) + 1);
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
@@ -393,9 +393,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 for (int i = 0; i < 1000; i++)
-                {
                     db.StringSet($"SeSaveRecoverTestKey{i:0000}", $"SeSaveRecoverTestValue");
-                }
 
                 for (int i = 0; i < 1000; i++)
                 {
@@ -411,9 +409,7 @@ namespace Garnet.test
                 while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
 
                 for (int i = 1000; i < 2000; i++)
-                {
                     db.StringSet($"SeSaveRecoverTestKey{i:0000}", $"SeSaveRecoverTestValue");
-                }
 
                 for (int i = 1000; i < 2000; i++)
                 {
@@ -643,17 +639,10 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            try
-            {
-                db.Execute("CONFIG");
-                Assert.Fail("Shouldn't be reachable, command is incorrect");
-            }
-            catch (Exception ex)
-            {
-                var expectedMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
-                    $"{nameof(RespCommand.CONFIG)}");
-                ClassicAssert.AreEqual(expectedMessage, ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG"));
+            var expectedMessage = string.Format(CmdStrings.GenericErrWrongNumArgs,
+                $"{nameof(RespCommand.CONFIG)}");
+            ClassicAssert.AreEqual(expectedMessage, ex.Message);
         }
 
         [Test]
@@ -661,17 +650,10 @@ namespace Garnet.test
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-            try
-            {
-                db.Execute("CONFIG", "GET");
-                Assert.Fail("Shouldn't be reachable, command is incorrect");
-            }
-            catch (Exception ex)
-            {
-                var expectedMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
-                    $"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.GET)}"));
-                ClassicAssert.AreEqual(expectedMessage, ex.Message);
-            }
+            var ex = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "GET"));
+            var expectedMessage = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrWrongNumArgs,
+                $"{nameof(RespCommand.CONFIG)}|{nameof(CmdStrings.GET)}"));
+            ClassicAssert.AreEqual(expectedMessage, ex.Message);
         }
         #endregion
     }

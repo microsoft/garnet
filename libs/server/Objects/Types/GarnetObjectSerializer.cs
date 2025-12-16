@@ -11,7 +11,8 @@ namespace Garnet.server
     /// <summary>
     /// Serializer for IGarnetObject
     /// </summary>
-    public sealed class GarnetObjectSerializer : BinaryObjectSerializer<IGarnetObject>
+    /// <remarks>Implements <see cref="IObjectSerializer{IHeapObject}"/> for Tsavorite <see cref="StoreFunctions{TKeyComparer, TRecordDisposer}"/></remarks>
+    public sealed class GarnetObjectSerializer : BinaryObjectSerializer<IGarnetObject>, IObjectSerializer<IHeapObject>
     {
         readonly CustomCommandManager customCommandManager;
 
@@ -25,6 +26,12 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override void Deserialize(out IGarnetObject obj)
+        {
+            obj = DeserializeInternal(base.reader);
+        }
+
+        /// <inheritdoc />
+        public void Deserialize(out IHeapObject obj)
         {
             obj = DeserializeInternal(base.reader);
         }
@@ -64,20 +71,23 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override void Serialize(ref IGarnetObject obj) => SerializeInternal(base.writer, obj);
+        public override void Serialize(IGarnetObject obj) => SerializeInternal(base.writer, obj);
 
         /// <summary>Thread safe version of Serialize.</summary>
         /// <param name="obj"></param>
         /// <returns></returns>
-        public static byte[] Serialize(IGarnetObject obj)
+        public static void Serialize(IGarnetObject obj, out byte[] bytes)
         {
             Debug.Assert(obj != null);
 
             using var ms = new MemoryStream();
             using var binaryWriter = new BinaryWriter(ms, Encoding.UTF8);
             SerializeInternal(binaryWriter, obj);
-            return ms.ToArray();
+            bytes = ms.ToArray();
         }
+
+        /// <inheritdoc />
+        public void Serialize(IHeapObject obj) => SerializeInternal(base.writer, (IGarnetObject)obj);
 
         private static void SerializeInternal(BinaryWriter binaryWriter, IGarnetObject obj)
         {

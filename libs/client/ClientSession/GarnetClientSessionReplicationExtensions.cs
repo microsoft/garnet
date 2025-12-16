@@ -31,6 +31,7 @@ namespace Garnet.client
         /// <param name="aofBeginAddress"></param>
         /// <param name="aofTailAddress"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterInitiateReplicaSync"/>
         public Task<string> ExecuteReplicaSync(string nodeId, string primary_replid, byte[] checkpointEntryData, long aofBeginAddress, long aofTailAddress)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -112,6 +113,7 @@ namespace Garnet.client
         /// <param name="fileTokenBytes"></param>
         /// <param name="fileType"></param>
         /// <param name="data"></param>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterSendCheckpointMetadata"/>
         public Task<string> ExecuteSendCkptMetadata(Memory<byte> fileTokenBytes, int fileType, Memory<byte> data)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -178,6 +180,7 @@ namespace Garnet.client
         /// <param name="startAddress"></param>
         /// <param name="data"></param>
         /// <param name="segmentId"></param>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterSendCheckpointFileSegment"/>
         public Task<string> ExecuteSendFileSegments(Memory<byte> fileTokenBytes, int fileType, long startAddress, Span<byte> data, int segmentId = -1)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -257,19 +260,19 @@ namespace Garnet.client
         /// Signal replica to recover
         /// </summary>
         /// <param name="sendStoreCheckpoint"></param>
-        /// <param name="sendObjectStoreCheckpoint"></param>
         /// <param name="replayAOF"></param>
         /// <param name="primary_replid"></param>
         /// <param name="checkpointEntryData"></param>
         /// <param name="beginAddress"></param>
         /// <param name="tailAddress"></param>
         /// <returns></returns>
-        public Task<string> ExecuteBeginReplicaRecover(bool sendStoreCheckpoint, bool sendObjectStoreCheckpoint, bool replayAOF, string primary_replid, byte[] checkpointEntryData, long beginAddress, long tailAddress)
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterBeginReplicaRecover"/>
+        public Task<string> ExecuteBeginReplicaRecover(bool sendStoreCheckpoint, bool replayAOF, string primary_replid, byte[] checkpointEntryData, long beginAddress, long tailAddress)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(tcs);
             byte* curr = offset;
-            int arraySize = 9;
+            int arraySize = 8;
 
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
@@ -303,14 +306,6 @@ namespace Garnet.client
             offset = curr;
 
             //4
-            while (!RespWriteUtils.TryWriteBulkString(sendObjectStoreCheckpoint ? "1"u8 : "0"u8, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            //5
             while (!RespWriteUtils.TryWriteBulkString(replayAOF ? "1"u8 : "0"u8, ref curr, end))
             {
                 Flush();
@@ -318,7 +313,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //6
+            //5
             while (!RespWriteUtils.TryWriteAsciiBulkString(primary_replid, ref curr, end))
             {
                 Flush();
@@ -326,7 +321,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //7
+            //6
             while (!RespWriteUtils.TryWriteBulkString(checkpointEntryData, ref curr, end))
             {
                 Flush();
@@ -334,7 +329,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //8
+            //7
             while (!RespWriteUtils.TryWriteArrayItem(beginAddress, ref curr, end))
             {
                 Flush();
@@ -342,7 +337,7 @@ namespace Garnet.client
             }
             offset = curr;
 
-            //9
+            //8
             while (!RespWriteUtils.TryWriteArrayItem(tailAddress, ref curr, end))
             {
                 Flush();
@@ -360,6 +355,7 @@ namespace Garnet.client
         /// </summary>
         /// <param name="syncMetadata"></param>
         /// <returns></returns>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterAttachSync"/>
         public Task<string> ExecuteAttachSync(byte[] syncMetadata)
         {
             var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -407,17 +403,17 @@ namespace Garnet.client
         /// Set CLUSTER SYNC header info
         /// </summary>
         /// <param name="sourceNodeId"></param>
-        /// <param name="isMainStore"></param>
-        public void SetClusterSyncHeader(string sourceNodeId, bool isMainStore)
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterSync"/>
+        public void SetClusterSyncHeader(string sourceNodeId)
         {
+            // Unlike Migration, where we don't know at the time of header initialization if we have a record or not, in Replication 
+            // we know we have a record at the time this is called, so we can initialize it directly.
             currTcsIterationTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             tcsQueue.Enqueue(currTcsIterationTask);
             curr = offset;
-            this.isMainStore = isMainStore;
             this.ist = IncrementalSendType.SYNC;
-            var storeType = isMainStore ? MAIN_STORE : OBJECT_STORE;
 
-            var arraySize = 5;
+            var arraySize = 4;
             while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
             {
                 Flush();
@@ -450,14 +446,6 @@ namespace Garnet.client
             offset = curr;
 
             // 4
-            while (!RespWriteUtils.TryWriteBulkString(storeType, ref curr, end))
-            {
-                Flush();
-                curr = offset;
-            }
-            offset = curr;
-
-            // 5
             // Reserve space for the bulk string header + final newline
             while (ExtraSpace + 2 > (int)(end - curr))
             {

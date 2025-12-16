@@ -62,8 +62,12 @@ namespace Garnet
         public string PageSize { get; set; }
 
         [MemorySizeValidation]
-        [Option('s', "segment", Required = false, HelpText = "Size of each log segment in bytes on disk (rounds down to power of 2)")]
+        [Option('s', "segment", Required = false, HelpText = "Size of each main-log segment in bytes on disk (rounds down to power of 2)")]
         public string SegmentSize { get; set; }
+
+        [MemorySizeValidation]
+        [Option("object-log-segment", Required = false, HelpText = "Size of each object-log segment in bytes on disk (rounds down to power of 2)")]
+        public string ObjectLogSegmentSize { get; set; }
 
         [MemorySizeValidation]
         [Option('i', "index", Required = false, HelpText = "Start size of hash index in bytes (rounds down to power of 2)")]
@@ -90,48 +94,12 @@ namespace Garnet
         public string ReadCachePageSize { get; set; }
 
         [MemorySizeValidation(false)]
-        [Option("obj-heap-memory", Required = false, HelpText = "Object store heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
-        public string ObjectStoreHeapMemorySize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-log-memory", Required = false, HelpText = "Object store log memory used in bytes (Size of only the log with references to heap objects, excludes size of heap memory consumed by the objects themselves referred to from the log)")]
-        public string ObjectStoreLogMemorySize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-page", Required = false, HelpText = "Size of each object store page in bytes (rounds down to power of 2)")]
-        public string ObjectStorePageSize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-segment", Required = false, HelpText = "Size of each object store log segment in bytes on disk (rounds down to power of 2)")]
-        public string ObjectStoreSegmentSize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-index", Required = false, HelpText = "Start size of object store hash index in bytes (rounds down to power of 2)")]
-        public string ObjectStoreIndexSize { get; set; }
+        [Option("heap-memory", Required = false, HelpText = "Heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
+        public string HeapMemorySize { get; set; }
 
         [MemorySizeValidation(false)]
-        [Option("obj-index-max-size", Required = false, HelpText = "Max size of object store hash index in bytes (rounds down to power of 2)")]
-        public string ObjectStoreIndexMaxSize { get; set; }
-
-        [PercentageValidation]
-        [Option("obj-mutable-percent", Required = false, HelpText = "Percentage of object store log memory that is kept mutable")]
-        public int ObjectStoreMutablePercent { get; set; }
-
-        [OptionValidation]
-        [Option("obj-readcache", Required = false, HelpText = "Enables object store read cache for faster access to on-disk records.")]
-        public bool? EnableObjectStoreReadCache { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-readcache-log-memory", Required = false, HelpText = "Total object store read cache log memory used in bytes (rounds down to power of 2)")]
-        public string ObjectStoreReadCacheLogMemorySize { get; set; }
-
-        [MemorySizeValidation]
-        [Option("obj-readcache-page", Required = false, HelpText = "Size of each object store read cache page in bytes (rounds down to power of 2)")]
-        public string ObjectStoreReadCachePageSize { get; set; }
-
-        [MemorySizeValidation(false)]
-        [Option("obj-readcache-heap-memory", Required = false, HelpText = "Object store read cache heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
-        public string ObjectStoreReadCacheHeapMemorySize { get; set; }
+        [Option("readcache-heap-memory", Required = false, HelpText = "Read cache heap memory size in bytes (Sum of size taken up by all object instances in the heap)")]
+        public string ReadCacheHeapMemorySize { get; set; }
 
         [OptionValidation]
         [Option("storage-tier", Required = false, HelpText = "Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory.")]
@@ -140,10 +108,6 @@ namespace Garnet
         [OptionValidation]
         [Option("copy-reads-to-tail", Required = false, HelpText = "When records are read from the main store's in-memory immutable region or storage device, copy them to the tail of the log.")]
         public bool? CopyReadsToTail { get; set; }
-
-        [OptionValidation]
-        [Option("obj-copy-reads-to-tail", Required = false, HelpText = "When records are read from the object store's in-memory immutable region or storage device, copy them to the tail of the log.")]
-        public bool? ObjectStoreCopyReadsToTail { get; set; }
 
         [LogDirValidation(false, false)]
         [Option('l', "logdir", Required = false, HelpText = "Storage directory for tiered records (hybrid log), if storage tiering (--storage-tier) is enabled. Uses current directory if unspecified.")]
@@ -276,10 +240,6 @@ namespace Garnet
         [IntRangeValidation(0, int.MaxValue)]
         [Option("compaction-max-segments", Required = false, HelpText = "Number of log segments created on disk before compaction triggers.")]
         public int CompactionMaxSegments { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("obj-compaction-max-segments", Required = false, HelpText = "Number of object store log segments created on disk before compaction triggers.")]
-        public int ObjectStoreCompactionMaxSegments { get; set; }
 
         [OptionValidation]
         [Option("lua", Required = false, HelpText = "Enable Lua scripts on server.")]
@@ -504,8 +464,11 @@ namespace Garnet
         public bool? UseAzureStorageForConfigExport { get; set; }
 
         [OptionValidation]
-        [Option("use-native-device-linux", Required = false, HelpText = "Use native device on Linux for local storage")]
+        [Option("use-native-device-linux", Required = false, HelpText = "DEPRECATED: use DeviceType (--device-type) of Native instead.")]
         public bool? UseNativeDeviceLinux { get; set; }
+
+        [Option("device-type", Required = false, HelpText = "Device type (Default, Native, RandomAccess, FileStream, AzureStorage, Null)")]
+        public DeviceType DeviceType { get; set; }
 
         [Option("reviv-bin-record-sizes", Separator = ',', Required = false,
             HelpText = "#,#,...,#: For the main store, the sizes of records in each revivification bin, in order of increasing size." +
@@ -522,8 +485,7 @@ namespace Garnet
 
         [DoubleRangeValidation(0, 1)]
         [Option("reviv-fraction", Required = false,
-            HelpText = "#: Fraction of mutable in-memory log space, from the highest log address down to the read-only region, that is eligible for revivification." +
-                       "        Applies to both main and object store.")]
+            HelpText = "#: Fraction of mutable in-memory log space, from the highest log address down to the read-only region, that is eligible for revivification.")]
         public double RevivifiableFraction { get; set; }
 
         [OptionValidation]
@@ -549,14 +511,8 @@ namespace Garnet
         [OptionValidation]
         [Option("reviv-in-chain-only", Required = false,
             HelpText = "Revivify tombstoned records in tag chains only (do not use free list)." +
-                       "    Cannot be used with reviv-bin-record-sizes or reviv-bin-record-counts. Propagates to object store by default.")]
+                       "    Cannot be used with reviv-bin-record-sizes or reviv-bin-record-counts.")]
         public bool? RevivInChainOnly { get; set; }
-
-        [IntRangeValidation(0, int.MaxValue)]
-        [Option("reviv-obj-bin-record-count", Required = false,
-            HelpText = "Number of records in the single free record bin for the object store. The Object store has only a single bin, unlike the main store." +
-                       "        Ignored unless the main store is using the free record list.")]
-        public int RevivObjBinRecordCount { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
         [Option("object-scan-count-limit", Required = false, HelpText = "Limit of items to return in one iteration of *SCAN command")]
@@ -586,12 +542,16 @@ namespace Garnet
         public bool? ExtensionAllowUnsignedAssemblies { get; set; }
 
         [IntRangeValidation(1, int.MaxValue, isRequired: false)]
-        [Option("index-resize-freq", Required = false, HelpText = "Index resize check frequency in seconds")]
+        [Option("index-resize-freq", Required = false, HelpText = "Hash-index resize check frequency in seconds")]
         public int IndexResizeFrequencySecs { get; set; }
 
         [IntRangeValidation(1, 100, isRequired: false)]
-        [Option("index-resize-threshold", Required = false, HelpText = "Overflow bucket count over total index size in percentage to trigger index resize")]
+        [Option("index-resize-threshold", Required = false, HelpText = "Hash-index Overflow bucket count over total index size in percentage to trigger index resize")]
         public int IndexResizeThreshold { get; set; }
+
+        [IntRangeValidation(1, int.MaxValue, isRequired: false)]
+        [Option("value-overflow-threshold", Required = false, HelpText = "The length at which a value string becomes an overflow byte[]")]
+        public int ValueOverflowThreshold { get; set; }
 
         [OptionValidation]
         [Option("fail-on-recovery-error", Required = false, HelpText = "Server bootup should fail if errors happen during bootup of AOF and checkpointing")]
@@ -716,18 +676,22 @@ namespace Garnet
 
         public GarnetServerOptions GetServerOptions(ILogger logger = null)
         {
-            var useAzureStorage = UseAzureStorage.GetValueOrDefault();
             var enableStorageTier = EnableStorageTier.GetValueOrDefault();
             var enableRevivification = EnableRevivification.GetValueOrDefault();
 
+            if (UseNativeDeviceLinux.GetValueOrDefault())
+            {
+                logger?.LogWarning("The --use-native-device-linux option is deprecated. Please use --device-type Native instead.");
+                DeviceType = DeviceType.Native;
+            }
+
+            var deviceType = GetDeviceType(logger);
+
+            var useAzureStorage = deviceType == DeviceType.AzureStorage;
             if (useAzureStorage && string.IsNullOrEmpty(AzureStorageConnectionString) && string.IsNullOrEmpty(AzureStorageServiceUri))
-            {
-                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage without supplying storage-string or storage-service-uri");
-            }
+                throw new InvalidAzureConfiguration("Cannot use AzureStorage device without supplying storage-string or storage-service-uri");
             if (useAzureStorage && !string.IsNullOrEmpty(AzureStorageConnectionString) && !string.IsNullOrEmpty(AzureStorageServiceUri))
-            {
-                throw new InvalidAzureConfiguration("Cannot enable use-azure-storage with both storage-string and storage-service-uri");
-            }
+                throw new InvalidAzureConfiguration("Cannot use AzureStorage device with both storage-string and storage-service-uri");
 
             var logDir = LogDir;
             if (!useAzureStorage && enableStorageTier) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
@@ -821,26 +785,17 @@ namespace Garnet
                 MemorySize = MemorySize,
                 PageSize = PageSize,
                 SegmentSize = SegmentSize,
+                ObjectLogSegmentSize = ObjectLogSegmentSize,
                 IndexSize = IndexSize,
                 IndexMaxSize = IndexMaxSize,
                 MutablePercent = MutablePercent,
                 EnableReadCache = EnableReadCache.GetValueOrDefault(),
                 ReadCacheMemorySize = ReadCacheMemorySize,
                 ReadCachePageSize = ReadCachePageSize,
-                ObjectStoreHeapMemorySize = ObjectStoreHeapMemorySize,
-                ObjectStoreLogMemorySize = ObjectStoreLogMemorySize,
-                ObjectStorePageSize = ObjectStorePageSize,
-                ObjectStoreSegmentSize = ObjectStoreSegmentSize,
-                ObjectStoreIndexSize = ObjectStoreIndexSize,
-                ObjectStoreIndexMaxSize = ObjectStoreIndexMaxSize,
-                ObjectStoreMutablePercent = ObjectStoreMutablePercent,
-                EnableObjectStoreReadCache = EnableObjectStoreReadCache.GetValueOrDefault(),
-                ObjectStoreReadCachePageSize = ObjectStoreReadCachePageSize,
-                ObjectStoreReadCacheLogMemorySize = ObjectStoreReadCacheLogMemorySize,
-                ObjectStoreReadCacheHeapMemorySize = ObjectStoreReadCacheHeapMemorySize,
+                HeapMemorySize = HeapMemorySize,
+                ReadCacheHeapMemorySize = ReadCacheHeapMemorySize,
                 EnableStorageTier = enableStorageTier,
                 CopyReadsToTail = CopyReadsToTail.GetValueOrDefault(),
-                ObjectStoreCopyReadsToTail = ObjectStoreCopyReadsToTail.GetValueOrDefault(),
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
                 Recover = Recover.GetValueOrDefault(),
@@ -868,7 +823,6 @@ namespace Garnet
                 CompactionType = CompactionType,
                 CompactionForceDelete = CompactionForceDelete.GetValueOrDefault(),
                 CompactionMaxSegments = CompactionMaxSegments,
-                ObjectStoreCompactionMaxSegments = ObjectStoreCompactionMaxSegments,
                 GossipSamplePercent = GossipSamplePercent,
                 GossipDelay = GossipDelay,
                 ClusterTimeout = ClusterTimeout,
@@ -899,9 +853,8 @@ namespace Garnet
                 ThreadPoolMinIOCompletionThreads = ThreadPoolMinIOCompletionThreads,
                 ThreadPoolMaxIOCompletionThreads = ThreadPoolMaxIOCompletionThreads,
                 NetworkConnectionLimit = NetworkConnectionLimit,
-                DeviceFactoryCreator = useAzureStorage
-                    ? azureFactoryCreator()
-                    : new LocalStorageNamedDeviceFactoryCreator(useNativeDeviceLinux: UseNativeDeviceLinux.GetValueOrDefault(), logger: logger),
+                DeviceFactoryCreator = deviceType == DeviceType.AzureStorage ? azureFactoryCreator()
+                    : new LocalStorageNamedDeviceFactoryCreator(deviceType: deviceType, logger: logger),
                 CheckpointThrottleFlushDelayMs = CheckpointThrottleFlushDelayMs,
                 EnableScatterGatherGet = EnableScatterGatherGet.GetValueOrDefault(),
                 ReplicaSyncDelayMs = ReplicaSyncDelayMs,
@@ -916,7 +869,7 @@ namespace Garnet
                 UseAofNullDevice = UseAofNullDevice.GetValueOrDefault(),
                 ClusterUsername = ClusterUsername,
                 ClusterPassword = ClusterPassword,
-                UseNativeDeviceLinux = UseNativeDeviceLinux.GetValueOrDefault(),
+                DeviceType = deviceType,
                 ObjectScanCountLimit = ObjectScanCountLimit,
                 RevivBinRecordSizes = revivBinRecordSizes,
                 RevivBinRecordCounts = revivBinRecordCounts,
@@ -925,13 +878,13 @@ namespace Garnet
                 RevivBinBestFitScanLimit = RevivBinBestFitScanLimit,
                 RevivNumberOfBinsToSearch = RevivNumberOfBinsToSearch,
                 RevivInChainOnly = RevivInChainOnly.GetValueOrDefault(),
-                RevivObjBinRecordCount = RevivObjBinRecordCount,
                 EnableDebugCommand = EnableDebugCommand,
                 EnableModuleCommand = EnableModuleCommand,
                 ExtensionBinPaths = FileUtils.ConvertToAbsolutePaths(ExtensionBinPaths),
                 ExtensionAllowUnsignedAssemblies = ExtensionAllowUnsignedAssemblies.GetValueOrDefault(),
                 IndexResizeFrequencySecs = IndexResizeFrequencySecs,
                 IndexResizeThreshold = IndexResizeThreshold,
+                ValueOverflowThreshold = ValueOverflowThreshold,
                 LoadModuleCS = LoadModuleCS,
                 FailOnRecoveryError = FailOnRecoveryError.GetValueOrDefault(),
                 SkipRDBRestoreChecksumValidation = SkipRDBRestoreChecksumValidation.GetValueOrDefault(),
@@ -943,6 +896,22 @@ namespace Garnet
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
             };
+        }
+
+        internal DeviceType GetDeviceType(ILogger logger = null)
+        {
+            var deviceType = DeviceType;
+
+            if (deviceType == DeviceType.Default)
+            {
+                deviceType = Devices.GetDefaultDeviceType();
+            }
+            if (UseAzureStorage.GetValueOrDefault())
+            {
+                logger?.LogInformation("The UseAzureStorage flag is deprecated, use DeviceType of AzureStorage instead");
+                deviceType = DeviceType.AzureStorage;
+            }
+            return deviceType;
         }
 
         private IAuthenticationSettings GetAuthenticationSettings(ILogger logger = null)

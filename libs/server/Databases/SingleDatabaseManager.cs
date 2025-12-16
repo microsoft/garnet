@@ -4,7 +4,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.common;
 using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -58,9 +57,9 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
+        public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
         {
-            long storeVersion = 0, objectStoreVersion = 0;
+            long storeVersion = 0;
             try
             {
                 if (replicaRecover)
@@ -68,48 +67,28 @@ namespace Garnet.server
                     // Note: Since replicaRecover only pertains to cluster-mode, we can use the default store pointers (since multi-db mode is disabled in cluster-mode)
                     if (metadata!.storeIndexToken != default && metadata.storeHlogToken != default)
                     {
-                        storeVersion = !recoverMainStoreFromToken ? MainStore.Recover() : MainStore.Recover(metadata.storeIndexToken, metadata.storeHlogToken);
+                        storeVersion = !recoverFromToken ? Store.Recover() : Store.Recover(metadata.storeIndexToken, metadata.storeHlogToken);
                     }
 
-                    if (ObjectStore != null)
-                    {
-                        if (metadata.objectStoreIndexToken != default && metadata.objectStoreHlogToken != default)
-                        {
-                            objectStoreVersion = !recoverObjectStoreFromToken ? ObjectStore.Recover() : ObjectStore.Recover(metadata.objectStoreIndexToken, metadata.objectStoreHlogToken);
-                        }
-                    }
-
-                    if (storeVersion > 0 || objectStoreVersion > 0)
+                    if (storeVersion > 0)
                         defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
                 }
                 else
                 {
-                    RecoverDatabaseCheckpoint(defaultDatabase, out storeVersion, out objectStoreVersion);
+                    RecoverDatabaseCheckpoint(defaultDatabase, out storeVersion);
                 }
             }
             catch (TsavoriteNoHybridLogException ex)
             {
                 // No hybrid log being found is not the same as an error in recovery. e.g. fresh start
-                Logger?.LogInformation(ex,
-                    "No Hybrid Log found for recovery; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
-                    storeVersion, objectStoreVersion);
+                Logger?.LogInformation(ex, "No Hybrid Log found for recovery; storeVersion = {storeVersion};", storeVersion);
             }
             catch (Exception ex)
             {
-                Logger?.LogInformation(ex,
-                    "Error during recovery of store; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}",
-                    storeVersion, objectStoreVersion);
+                Logger?.LogInformation(ex, "Error during recovery of store; storeVersion = {storeVersion};", storeVersion);
 
                 if (StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw;
-            }
-
-            // After recovery, we check if store versions match
-            if (ObjectStore != null && storeVersion != objectStoreVersion)
-            {
-                Logger?.LogInformation("Main store and object store checkpoint versions do not match; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
-                if (StoreWrapper.serverOptions.FailOnRecoveryError)
-                    throw new GarnetException("Main store and object store checkpoint versions do not match");
             }
         }
 
@@ -143,13 +122,10 @@ namespace Garnet.server
                     {
                         if (t.IsCompletedSuccessfully)
                         {
-                            var storeTailAddress = t.Result.Item1;
-                            var objectStoreTailAddress = t.Result.Item2;
+                            var storeTailAddress = t.Result;
 
                             if (storeTailAddress.HasValue)
                                 defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
-                            if (ObjectStore != null && objectStoreTailAddress.HasValue)
-                                defaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
 
                             defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
                         }
@@ -193,13 +169,10 @@ namespace Garnet.server
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
                 var result = await TakeCheckpointAsync(defaultDatabase, logger: Logger);
 
-                var storeTailAddress = result.Item1;
-                var objectStoreTailAddress = result.Item2;
+                var storeTailAddress = result;
 
                 if (storeTailAddress.HasValue)
                     defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
-                if (ObjectStore != null && objectStoreTailAddress.HasValue)
-                    defaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
 
                 defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
             }
@@ -233,13 +206,10 @@ namespace Garnet.server
 
                 var result = await TakeCheckpointAsync(defaultDatabase, logger: logger, token: token);
 
-                var storeTailAddress = result.Item1;
-                var objectStoreTailAddress = result.Item2;
+                var storeTailAddress = result;
 
                 if (storeTailAddress.HasValue)
                     defaultDatabase.LastSaveStoreTailAddress = storeTailAddress.Value;
-                if (ObjectStore != null && objectStoreTailAddress.HasValue)
-                    defaultDatabase.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
 
                 defaultDatabase.LastSaveTime = DateTimeOffset.UtcNow;
             }
@@ -318,8 +288,8 @@ namespace Garnet.server
             ExpiredKeyDeletionScan(defaultDatabase);
 
         /// <inheritdoc/>
-        public override void StartObjectSizeTrackers(CancellationToken token = default) =>
-            ObjectStoreSizeTracker?.Start(token);
+        public override void StartSizeTrackers(CancellationToken token = default) =>
+            SizeTracker?.Start(token);
 
         /// <inheritdoc/>
         public override void Reset(int dbId = 0)
@@ -331,10 +301,7 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public override void ResetRevivificationStats()
-        {
-            MainStore.ResetRevivificationStats();
-            ObjectStore?.ResetRevivificationStats();
-        }
+            => Store.ResetRevivificationStats();
 
         /// <inheritdoc/>
         public override void EnqueueCommit(AofEntryType entryType, long version, int dbId = 0)
@@ -390,8 +357,7 @@ namespace Garnet.server
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
 
-            return new(AppendOnlyFile, VersionMap, StoreWrapper.customCommandManager, null, ObjectStoreSizeTracker,
-                StoreWrapper.GarnetObjectSerializer, respProtocolVersion);
+            return new(AppendOnlyFile, VersionMap, StoreWrapper, null, SizeTracker, Logger, respProtocolVersion);
         }
 
         private async Task<bool> TryPauseCheckpointsContinuousAsync(int dbId,
@@ -413,9 +379,7 @@ namespace Garnet.server
         public override (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId)
         {
             ArgumentOutOfRangeException.ThrowIfNotEqual(dbId, 0);
-            var (k1, t1) = MainStoreExpiredKeyDeletionScan(DefaultDatabase);
-            var (k2, t2) = StoreWrapper.serverOptions.DisableObjects ? (0, 0) : ObjectStoreExpiredKeyDeletionScan(DefaultDatabase);
-            return (k1 + k2, t1 + t2);
+            return StoreExpiredKeyDeletionScan(DefaultDatabase);
         }
 
         public override (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];

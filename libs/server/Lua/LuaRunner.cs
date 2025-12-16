@@ -263,7 +263,8 @@ namespace Garnet.server
             delegate* unmanaged[Cdecl]<nint, int> garnetCall;
             if (txnMode)
             {
-                txnKeyEntries = new TxnKeyEntries(16, respServerSession.storageSession.lockableContext, respServerSession.storageSession.objectStoreLockableContext);
+                txnKeyEntries = new TxnKeyEntries(16,
+                    respServerSession.storageSession.unifiedTransactionalContext);
 
                 garnetCall = &LuaRunnerTrampolines.GarnetCallWithTransaction;
             }
@@ -1237,9 +1238,7 @@ namespace Garnet.server
                     foreach (var key in keys)
                     {
                         var _key = scratchBufferBuilder.CreateArgSlice(key);
-                        txnKeyEntries.AddKey(_key, false, Tsavorite.core.LockType.Exclusive);
-                        if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                            txnKeyEntries.AddKey(_key, true, Tsavorite.core.LockType.Exclusive);
+                        txnKeyEntries.AddKey(_key, Tsavorite.core.LockType.Exclusive);
                     }
 
                     adapter = new(scratchBufferBuilder);
@@ -1337,25 +1336,31 @@ namespace Garnet.server
             var txnVersion = respServerSession.storageSession.stateMachineDriver.AcquireTransactionVersion();
             try
             {
-                respServerSession.storageSession.lockableContext.BeginLockable();
-                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                    respServerSession.storageSession.objectStoreLockableContext.BeginLockable();
+                respServerSession.storageSession.stringTransactionalContext.BeginTransaction();
+                if (!respServerSession.storageSession.objectTransactionalContext.IsNull)
+                    respServerSession.storageSession.objectTransactionalContext.BeginTransaction();
+                if (!respServerSession.storageSession.unifiedTransactionalContext.IsNull)
+                    respServerSession.storageSession.unifiedTransactionalContext.BeginTransaction();
                 respServerSession.SetTransactionMode(true);
                 txnKeyEntries.LockAllKeys();
 
                 txnVersion = respServerSession.storageSession.stateMachineDriver.VerifyTransactionVersion(txnVersion);
-                respServerSession.storageSession.lockableContext.LocksAcquired(txnVersion);
-                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                    respServerSession.storageSession.objectStoreLockableContext.LocksAcquired(txnVersion);
+                respServerSession.storageSession.stringTransactionalContext.LocksAcquired(txnVersion);
+                if (!respServerSession.storageSession.objectTransactionalContext.IsNull)
+                    respServerSession.storageSession.objectTransactionalContext.LocksAcquired(txnVersion);
+                if (!respServerSession.storageSession.unifiedTransactionalContext.IsNull)
+                    respServerSession.storageSession.unifiedTransactionalContext.LocksAcquired(txnVersion);
                 RunCommon(ref response);
             }
             finally
             {
                 txnKeyEntries.UnlockAllKeys();
                 respServerSession.SetTransactionMode(false);
-                respServerSession.storageSession.lockableContext.EndLockable();
-                if (!respServerSession.storageSession.objectStoreLockableContext.IsNull)
-                    respServerSession.storageSession.objectStoreLockableContext.EndLockable();
+                respServerSession.storageSession.stringTransactionalContext.EndTransaction();
+                if (!respServerSession.storageSession.objectTransactionalContext.IsNull)
+                    respServerSession.storageSession.objectTransactionalContext.EndTransaction();
+                if (!respServerSession.storageSession.unifiedTransactionalContext.IsNull)
+                    respServerSession.storageSession.unifiedTransactionalContext.EndTransaction();
                 respServerSession.storageSession.stateMachineDriver.EndTransaction(txnVersion);
             }
         }

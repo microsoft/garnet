@@ -6,6 +6,8 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
+    using static Utility;
+
     /// <summary>
     /// A frame is an in-memory circular buffer of log pages
     /// </summary>
@@ -29,9 +31,9 @@ namespace Tsavorite.core
         {
             var adjustedSize = pageSize + 2 * sectorSize;
 
-            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
-            long p = (long)Unsafe.AsPointer(ref tmp[0]);
-            pointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
+            var tmp = GC.AllocateArray<byte>(adjustedSize, pinned: true);
+            var p = (long)Unsafe.AsPointer(ref tmp[0]);
+            pointers[index] = RoundUp(p, sectorSize);
             frame[index] = tmp;
         }
 
@@ -40,9 +42,17 @@ namespace Tsavorite.core
             Array.Clear(frame[pageIndex], 0, frame[pageIndex].Length);
         }
 
-        public long GetPhysicalAddress(long frameNumber, long offset)
+        public long GetPhysicalAddress(long frameNumber, long offset = 0)
         {
             return pointers[frameNumber % frameSize] + offset;
+        }
+
+        public unsafe (byte[] array, long offset) GetArrayAndUnalignedOffset(long frameNumber, long alignedOffset)
+        {
+            var frameIndex = frameNumber % frameSize;
+
+            long ptr = (long)Unsafe.AsPointer(ref frame[frameIndex]);
+            return (frame[frameIndex], alignedOffset + ptr - pointers[frameIndex]);
         }
 
         public void Dispose()

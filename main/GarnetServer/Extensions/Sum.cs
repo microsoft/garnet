@@ -3,6 +3,7 @@
 
 using Garnet.common;
 using Garnet.server;
+using Tsavorite.core;
 
 namespace Garnet
 {
@@ -12,11 +13,11 @@ namespace Garnet
         {
             var offset = 0;
             var sum = 0;
-            ArgSlice key;
+            PinnedSpanByte key;
 
             while ((key = GetNextArg(ref procInput, ref offset)).Length > 0)
             {
-                if (garnetApi.GET(key, out var value) == GarnetStatus.OK)
+                if (garnetApi.GET(key, out PinnedSpanByte value) == GarnetStatus.OK)
                 {
                     // Sum the values
                     if (int.TryParse(value.ToString(), out var intValue))

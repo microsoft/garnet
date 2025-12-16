@@ -87,13 +87,13 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverMainStoreFromToken = false, bool recoverObjectStoreFromToken = false, CheckpointMetadata metadata = null)
+        public override void RecoverCheckpoint(bool replicaRecover = false, bool recoverFromToken = false, CheckpointMetadata metadata = null)
         {
             if (replicaRecover)
                 throw new GarnetException(
                     $"Unexpected call to {nameof(MultiDatabaseManager)}.{nameof(RecoverCheckpoint)} with {nameof(replicaRecover)} == true.");
 
-            var checkpointParentDir = StoreWrapper.serverOptions.MainStoreCheckpointBaseDirectory;
+            var checkpointParentDir = StoreWrapper.serverOptions.StoreCheckpointBaseDirectory;
             var checkpointDirBaseName = StoreWrapper.serverOptions.GetCheckpointDirectoryName(0);
 
             int[] dbIdsToRecover;
@@ -122,7 +122,7 @@ namespace Garnet.server
 
                 try
                 {
-                    RecoverDatabaseCheckpoint(db, out storeVersion, out objectStoreVersion);
+                    RecoverDatabaseCheckpoint(db, out storeVersion);
                 }
                 catch (TsavoriteNoHybridLogException ex)
                 {
@@ -138,14 +138,6 @@ namespace Garnet.server
                         storeVersion, objectStoreVersion);
                     if (StoreWrapper.serverOptions.FailOnRecoveryError)
                         throw;
-                }
-
-                // After recovery, we check if store versions match
-                if (db.ObjectStore != null && storeVersion != objectStoreVersion)
-                {
-                    Logger?.LogInformation("Main store and object store checkpoint versions do not match; storeVersion = {storeVersion}; objectStoreVersion = {objectStoreVersion}", storeVersion, objectStoreVersion);
-                    if (StoreWrapper.serverOptions.FailOnRecoveryError)
-                        throw new GarnetException("Main store and object store checkpoint versions do not match");
                 }
             }
         }
@@ -210,9 +202,8 @@ namespace Garnet.server
                     {
                         if (t.IsCompletedSuccessfully)
                         {
-                            var storeTailAddress = t.Result.Item1;
-                            var objectStoreTailAddress = t.Result.Item2;
-                            UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
+                            var storeTailAddress = t.Result;
+                            UpdateLastSaveData(dbId, storeTailAddress);
                         }
                     }
                     finally
@@ -249,9 +240,8 @@ namespace Garnet.server
                 // Necessary to take a checkpoint because the latest checkpoint is before entryTime
                 var result = await TakeCheckpointAsync(db, logger: Logger);
 
-                var storeTailAddress = result.Item1;
-                var objectStoreTailAddress = result.Item2;
-                UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
+                var storeTailAddress = result;
+                UpdateLastSaveData(dbId, storeTailAddress);
             }
             finally
             {
@@ -575,7 +565,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public override void StartObjectSizeTrackers(CancellationToken token = default)
+        public override void StartSizeTrackers(CancellationToken token = default)
         {
             sizeTrackersStarted = true;
 
@@ -595,7 +585,7 @@ namespace Garnet.server
                     var db = databasesMapSnapshot[dbId];
                     Debug.Assert(db != null);
 
-                    db.ObjectStoreSizeTracker?.Start(token);
+                    db.SizeTracker?.Start(token);
                 }
             }
             finally
@@ -624,8 +614,7 @@ namespace Garnet.server
             for (var i = 0; i < activeDbIdsMapSize; i++)
             {
                 var dbId = activeDbIdsMapSnapshot[i];
-                databaseMapSnapshot[dbId].MainStore.ResetRevivificationStats();
-                databaseMapSnapshot[dbId].ObjectStore?.ResetRevivificationStats();
+                databaseMapSnapshot[dbId].Store.ResetRevivificationStats();
             }
         }
 
@@ -711,8 +700,7 @@ namespace Garnet.server
             if (!success)
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
-            return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper.customCommandManager, null, db.ObjectStoreSizeTracker,
-                StoreWrapper.GarnetObjectSerializer, respProtocolVersion);
+            return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper, memoryPool: null, db.SizeTracker, Logger, respProtocolVersion);
         }
 
         /// <inheritdoc/>
@@ -932,7 +920,7 @@ namespace Garnet.server
             // If size tracker exists and is stopped, start it (only if DB 0 size tracker is started as well)
             var db = databases.Map[dbId];
             if (sizeTrackersStarted)
-                db.ObjectStoreSizeTracker?.Start(StoreWrapper.ctsCommit.Token);
+                db.SizeTracker?.Start(StoreWrapper.ctsCommit.Token);
 
             activeDbIds.TryGetNextId(out var nextIdx);
             activeDbIds.TrySetValue(nextIdx, db.Id);
@@ -1019,9 +1007,8 @@ namespace Garnet.server
                             if (!t.IsCompletedSuccessfully)
                                 return;
 
-                            var storeTailAddress = t.Result.Item1;
-                            var objectStoreTailAddress = t.Result.Item2;
-                            UpdateLastSaveData(dbId, storeTailAddress, objectStoreTailAddress);
+                            var storeTailAddress = t.Result;
+                            UpdateLastSaveData(dbId, storeTailAddress);
                         }, TaskContinuationOptions.ExecuteSynchronously);
                 }
 
@@ -1039,7 +1026,7 @@ namespace Garnet.server
             return true;
         }
 
-        private void UpdateLastSaveData(int dbId, long? storeTailAddress, long? objectStoreTailAddress)
+        private void UpdateLastSaveData(int dbId, long? storeTailAddress)
         {
             var databasesMapSnapshot = databases.Map;
 
@@ -1049,9 +1036,6 @@ namespace Garnet.server
             if (storeTailAddress.HasValue)
             {
                 db.LastSaveStoreTailAddress = storeTailAddress.Value;
-
-                if (db.ObjectStore != null && objectStoreTailAddress.HasValue)
-                    db.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
             }
         }
 
@@ -1071,11 +1055,7 @@ namespace Garnet.server
         }
 
         public override (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId)
-        {
-            var (k1, t1) = MainStoreExpiredKeyDeletionScan(GetDbById(dbId));
-            var (k2, t2) = StoreWrapper.serverOptions.DisableObjects ? (0, 0) : ObjectStoreExpiredKeyDeletionScan(GetDbById(dbId));
-            return (k1 + k2, t1 + t2);
-        }
+            => StoreExpiredKeyDeletionScan(GetDbById(dbId));
 
         private GarnetDatabase GetDbById(int dbId)
         {

@@ -57,7 +57,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public void TryEnqueueBasicTest([Values] TryEnqueueIteratorType iteratorType, [Values] TestUtils.DeviceType deviceType)
+        public void TryEnqueueBasicTest([Values] TryEnqueueIteratorType iteratorType, [Values] TestUtils.TestDeviceType deviceType)
         {
             int entryLength = 50;
             int numEntries = 10000;
@@ -69,7 +69,7 @@ namespace Tsavorite.test
             log = new TsavoriteLog(new TsavoriteLogSettings { LogDevice = device, SegmentSizeBits = 22, LogCommitDir = TestUtils.MethodTestDir });
 
             // Issue with Non Async Commit and Emulated Azure so don't run it - at least put after device creation to see if crashes doing that simple thing
-            if (OperatingSystem.IsWindows() && deviceType == TestUtils.DeviceType.EmulatedAzure)
+            if (OperatingSystem.IsWindows() && deviceType == TestUtils.TestDeviceType.EmulatedAzure)
                 return;
 
             // Reduce SpanBatch to make sure entry fits on page
@@ -139,7 +139,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {

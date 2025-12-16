@@ -11,7 +11,7 @@ namespace Garnet.test
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             int offset = 0;
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, false);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Main);
             return true;
         }
         public override void Main<TGarnetApi>(TGarnetApi api, ref CustomProcedureInput procInput, ref MemoryResult<byte> output)

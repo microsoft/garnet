@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using static Tsavorite.core.LogAddress;
 
 namespace Tsavorite.core
 {
@@ -12,11 +13,11 @@ namespace Tsavorite.core
     internal unsafe struct HashBucket
     {
         // We use the first overflow bucket for latching, reusing all bits after the address.
-        const int kSharedLatchBits = 63 - Constants.kAddressBits;
+        const int kSharedLatchBits = 63 - kAddressBits;
         const int kExclusiveLatchBits = 1;
 
         // Shift positions of latches in word
-        const int kSharedLatchBitOffset = Constants.kAddressBits;
+        const int kSharedLatchBitOffset = kAddressBits;
         const int kExclusiveLatchBitOffset = kSharedLatchBitOffset + kSharedLatchBits;
 
         // Shared latch constants
@@ -40,7 +41,8 @@ namespace Tsavorite.core
         {
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
 
-            for (int spinCount = Constants.kMaxLockSpins; ; Thread.Yield())
+            var spinCount = Constants.kMaxLockSpins;
+            while (true)
             {
                 // Note: If reader starvation is encountered, consider rotating priority between reader and writer locks.
                 long expected_word = entry_word;
@@ -54,6 +56,7 @@ namespace Tsavorite.core
                 }
                 if (--spinCount <= 0)
                     return false;
+                _ = Thread.Yield();
             }
         }
 
@@ -79,7 +82,8 @@ namespace Tsavorite.core
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
 
             // Acquire exclusive lock (readers may still be present; we'll drain them later)
-            for (int spinCount = Constants.kMaxLockSpins; ; Thread.Yield())
+            var spinCount = Constants.kMaxLockSpins;
+            while (true)
             {
                 long expected_word = entry_word;
                 if ((expected_word & kExclusiveLatchBitMask) == 0)
@@ -89,10 +93,11 @@ namespace Tsavorite.core
                 }
                 if (--spinCount <= 0)
                     return false;
+                _ = Thread.Yield();
             }
 
             // Wait for readers to drain. Another session may hold an SLock on this bucket and need an epoch refresh to unlock, so limit this to avoid deadlock.
-            for (var ii = 0; ii < Constants.kMaxReaderLockDrainSpins; ++ii)
+            for (var ii = 0; ii < Constants.kMaxReaderLockDrainSpins; ii++)
             {
                 if ((entry_word & kSharedLatchBitMask) == 0)
                     return true;
@@ -100,11 +105,12 @@ namespace Tsavorite.core
             }
 
             // Release the exclusive bit and return false so the caller will retry the operation. Since we still have readers, we must CAS.
-            for (; ; Thread.Yield())
+            while (true)
             {
                 long expected_word = entry_word;
                 if (Interlocked.CompareExchange(ref entry_word, expected_word & ~kExclusiveLatchBitMask, expected_word) == expected_word)
                     break;
+                _ = Thread.Yield();
             }
             return false;
         }
@@ -115,7 +121,8 @@ namespace Tsavorite.core
             ref long entry_word = ref bucket->bucket_entries[Constants.kOverflowBucketIndex];
 
             // Acquire shared lock
-            for (int spinCount = Constants.kMaxLockSpins; ; Thread.Yield())
+            var spinCount = Constants.kMaxLockSpins;
+            while (true)
             {
                 long expected_word = entry_word;
                 Debug.Assert((expected_word & kSharedLatchBitMask) != 0, "Trying to promote a bucket that is not S latched to X latch");
@@ -127,10 +134,11 @@ namespace Tsavorite.core
                 }
                 if (--spinCount <= 0)
                     return false;
+                _ = Thread.Yield();
             }
 
             // Wait for readers to drain. Another session may hold an SLock on this bucket and need an epoch refresh to unlock, so limit this to avoid deadlock.
-            for (var ii = 0; ii < Constants.kMaxReaderLockDrainSpins; ++ii)
+            for (var ii = 0; ii < Constants.kMaxReaderLockDrainSpins; ii++)
             {
                 if ((entry_word & kSharedLatchBitMask) == 0)
                     return true;
@@ -138,12 +146,13 @@ namespace Tsavorite.core
             }
 
             // Reverse the shared-to-exclusive bit transition and return false so the caller will retry the operation. Since we still have readers, we must CAS.
-            for (; ; Thread.Yield())
+            while (true)
             {
                 long expected_word = entry_word;
                 long new_word = (expected_word & ~kExclusiveLatchBitMask) + kSharedLatchIncrement;
                 if (expected_word == Interlocked.CompareExchange(ref entry_word, new_word, expected_word))
                     break;
+                _ = Thread.Yield();
             }
             return false;
         }
@@ -160,11 +169,12 @@ namespace Tsavorite.core
             Debug.Assert((entry_word & kExclusiveLatchBitMask) != 0, "Trying to X unlatch an unlatched bucket");
 
             // CAS is necessary to preserve the reader count, and also the address in the overflow bucket may change from unassigned to assigned.
-            for (; ; Thread.Yield())
+            while (true)
             {
-                long expected_word = entry_word;
+                var expected_word = entry_word;
                 if (expected_word == Interlocked.CompareExchange(ref entry_word, expected_word & ~kExclusiveLatchBitMask, expected_word))
                     break;
+                _ = Thread.Yield();
             }
         }
 

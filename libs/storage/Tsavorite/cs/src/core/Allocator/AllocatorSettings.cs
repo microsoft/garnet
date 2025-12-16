@@ -7,17 +7,17 @@ using Microsoft.Extensions.Logging;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// This class is created by <see cref="TsavoriteKV{TKey, TValue, TStoreFunctions, TAllocator}"/> to pass parameters to the allocator factory function.
+    /// This class is created by <see cref="TsavoriteKV{TStoreFunctions, TAllocator}"/> to pass parameters to the allocator factory function.
     /// </summary>
     public struct AllocatorSettings
     {
-        /// <summary>The Log settings, usually from <see cref="KVSettings{Key, Value}"/></summary>
+        /// <summary>The Log settings, usually from <see cref="KVSettings"/></summary>
         internal LogSettings LogSettings;
 
-        /// <summary>The epoch created for the <see cref="TsavoriteKV{TKey, TValue, TStoreFunctions, TAllocator}"/></summary>
+        /// <summary>The epoch created for the <see cref="TsavoriteKV{TStoreFunctions, TAllocator}"/></summary>
         internal LightEpoch epoch;
 
-        /// <summary>The logger to use, either from <see cref="KVSettings{K, V}"/> or created by <see cref="TsavoriteKV{TKey, TValue, TStoreFunctions, TAllocator}"/></summary>
+        /// <summary>The logger to use, either from <see cref="KVSettings"/> or created by <see cref="TsavoriteKV{TStoreFunctions, TAllocator}"/></summary>
         internal ILogger logger;
 
         /// <summary>The action to call on page eviction; used only for readcache</summary>

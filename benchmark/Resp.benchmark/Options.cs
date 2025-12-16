@@ -102,9 +102,6 @@ namespace Resp.benchmark
         [Option("op-workload", Separator = ',', Default = new[] { OpType.GET, OpType.SET, OpType.DEL }, HelpText = "Workload of commands for online bench.")]
         public IEnumerable<OpType> OpWorkload { get; set; }
 
-        [Option("object-dbsize", Required = false, Default = -1, HelpText = "Object DB size")]
-        public int ObjectDbSize { get; set; }
-
         [Option("save-freq", Required = false, Default = 0, HelpText = "Save (checkpoint) frequency in seconds")]
         public int SaveFreqSecs { get; set; }
 

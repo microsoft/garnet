@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -18,7 +19,7 @@ namespace Garnet.server
         int numActiveChannels = 0;
 
         /// <inheritdoc />
-        public override unsafe void Publish(ArgSlice key, ArgSlice value)
+        public override unsafe void Publish(PinnedSpanByte key, PinnedSpanByte value)
         {
             try
             {
@@ -48,7 +49,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public override unsafe void PatternPublish(ArgSlice pattern, ArgSlice key, ArgSlice value)
+        public override unsafe void PatternPublish(PinnedSpanByte pattern, PinnedSpanByte key, PinnedSpanByte value)
         {
             try
             {

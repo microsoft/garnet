@@ -14,13 +14,13 @@ using Tsavorite.core;
 
 namespace Tsavorite.benchmark
 {
-    internal class KeyComparer : IEqualityComparer<Key>
+    internal class KeyComparer : IEqualityComparer<FixedLengthKey>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Equals(Key x, Key y) => x.value == y.value;
+        public bool Equals(FixedLengthKey x, FixedLengthKey y) => x.value == y.value;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetHashCode(Key obj) => (int)Utility.GetHashCode(obj.value);
+        public int GetHashCode(FixedLengthKey obj) => (int)Utility.GetHashCode(obj.value);
     }
 
     internal unsafe class ConcurrentDictionary_YcsbBenchmark
@@ -31,17 +31,17 @@ namespace Tsavorite.benchmark
         readonly int readPercent, upsertPercent, rmwPercent;
         readonly Input[] input_;
 
-        readonly Key[] init_keys_;
-        readonly Key[] txn_keys_;
+        readonly FixedLengthKey[] init_keys_;
+        readonly FixedLengthKey[] txn_keys_;
 
-        readonly ConcurrentDictionary<Key, Value> store;
+        readonly ConcurrentDictionary<FixedLengthKey, FixedLengthValue> store;
 
         long idx_ = 0;
         long total_ops_done = 0;
         volatile bool done = false;
         Input* input_ptr;
 
-        internal ConcurrentDictionary_YcsbBenchmark(Key[] i_keys_, Key[] t_keys_, TestLoader testLoader)
+        internal ConcurrentDictionary_YcsbBenchmark(FixedLengthKey[] i_keys_, FixedLengthKey[] t_keys_, TestLoader testLoader)
         {
             this.testLoader = testLoader;
             init_keys_ = i_keys_;
@@ -90,7 +90,7 @@ namespace Tsavorite.benchmark
             }
             var sw = Stopwatch.StartNew();
 
-            Value value = default;
+            FixedLengthValue value = default;
             long reads_done = 0;
             long writes_done = 0;
             long deletes_done = 0;
@@ -129,7 +129,7 @@ namespace Tsavorite.benchmark
                     }
                     if (r < rmwPercent)
                     {
-                        store.AddOrUpdate(txn_keys_[idx], *(Value*)(input_ptr + (idx & 0x7)), (k, v) => new Value { value = v.value + (input_ptr + (idx & 0x7))->value });
+                        store.AddOrUpdate(txn_keys_[idx], *(FixedLengthValue*)(input_ptr + (idx & 0x7)), (k, v) => new FixedLengthValue { value = v.value + (input_ptr + (idx & 0x7))->value });
                         ++writes_done;
                         continue;
                     }
@@ -267,7 +267,7 @@ namespace Tsavorite.benchmark
             int count = 0;
 #endif
 
-            Value value = default;
+            FixedLengthValue value = default;
 
             for (long chunk_idx = Interlocked.Add(ref idx_, YcsbConstants.kChunkSize) - YcsbConstants.kChunkSize;
                 chunk_idx < testLoader.InitCount;
@@ -276,7 +276,7 @@ namespace Tsavorite.benchmark
                 for (long idx = chunk_idx; idx < chunk_idx + YcsbConstants.kChunkSize; ++idx)
                 {
 
-                    Key key = init_keys_[idx];
+                    FixedLengthKey key = init_keys_[idx];
                     store[key] = value;
                 }
 #if DASHBOARD
@@ -371,14 +371,14 @@ namespace Tsavorite.benchmark
 
         #region Load Data
 
-        internal static void CreateKeyVectors(TestLoader testLoader, out Key[] i_keys, out Key[] t_keys)
+        internal static void CreateKeyVectors(TestLoader testLoader, out FixedLengthKey[] i_keys, out FixedLengthKey[] t_keys)
         {
-            i_keys = new Key[testLoader.InitCount];
-            t_keys = new Key[testLoader.TxnCount];
+            i_keys = new FixedLengthKey[testLoader.InitCount];
+            t_keys = new FixedLengthKey[testLoader.TxnCount];
         }
-        internal class KeySetter : IKeySetter<Key>
+        internal class KeySetter : IKeySetter<FixedLengthKey>
         {
-            public void Set(Key[] vector, long idx, long value) => vector[idx].value = value;
+            public void Set(FixedLengthKey[] vector, long idx, long value) => vector[idx].value = value;
         }
 
         #endregion

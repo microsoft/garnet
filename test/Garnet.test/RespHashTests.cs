@@ -24,7 +24,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, enableAOF: true, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableAOF: true, lowMemory: true);
             server.Start();
         }
 
@@ -680,16 +680,9 @@ namespace Garnet.test
             db.HashSet("user:user1", [new HashEntry("name", "Alice"), new HashEntry("email", "email@example.com"), new HashEntry("age", "30")]);
 
             // HSCAN without key
-            try
-            {
-                db.Execute("HSCAN");
-                Assert.Fail();
-            }
-            catch (RedisServerException e)
-            {
-                var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(HashOperation.HSCAN));
-                ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
-            }
+            var e = Assert.Throws<RedisServerException>(() => db.Execute("HSCAN"));
+            var expectedErrorMessage = string.Format(CmdStrings.GenericErrWrongNumArgs, nameof(HashOperation.HSCAN));
+            ClassicAssert.AreEqual(expectedErrorMessage, e.Message);
 
             // HSCAN without parameters
             members = db.HashScan("user:user1");
@@ -1140,7 +1133,7 @@ namespace Garnet.test
                 db.HashSet(key, [new HashEntry("Field1", "StringValue"), new HashEntry("Field2", "1")]);
             }
 
-            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
             // Ensure data has spilled to disk
             ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
 
@@ -1432,7 +1425,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":680\r\n";
+            expectedResponse = ":712\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // multiple get
@@ -1496,7 +1489,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":408\r\n";
+            expectedResponse = ":440\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("HDEL myhash field1");
@@ -1504,7 +1497,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":272\r\n";
+            expectedResponse = ":304\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //HDEL with nonexisting key
@@ -1599,7 +1592,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":264\r\n";
+            expectedResponse = ":296\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // do hincrby
@@ -1608,7 +1601,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":264\r\n";
+            expectedResponse = ":296\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
@@ -1621,7 +1614,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":264\r\n";
+            expectedResponse = ":296\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("HINCRBYFLOAT myhash field 0.1");
@@ -1629,7 +1622,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":264\r\n";
+            expectedResponse = ":296\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // exponential notation
@@ -1638,7 +1631,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":392\r\n";
+            expectedResponse = ":424\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommands("HINCRBYFLOAT myhash field2 2.0e2", "PING HELLO");
@@ -1646,7 +1639,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             response = lightClientRequest.SendCommand("MEMORY USAGE myhash");
-            expectedResponse = ":392\r\n";
+            expectedResponse = ":424\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
