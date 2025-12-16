@@ -786,7 +786,7 @@ namespace Garnet.server
             if (input.SerializedLength > 0)
                 input.header.flags |= RespInputFlags.Deterministic;
 
-            if (functionsState.appendOnlyFile.Log.Size == 1)
+            if (functionsState.appendOnlyFile.serverOptions.MultiLogEnabled)
             {
                 var header = new AofHeader
                 {
@@ -836,7 +836,7 @@ namespace Garnet.server
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
 
-            if (functionsState.appendOnlyFile.Log.Size == 1)
+            if (functionsState.appendOnlyFile.serverOptions.MultiLogEnabled)
             {
                 var header = new AofHeader
                 {
@@ -882,7 +882,7 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
 
-            if (functionsState.appendOnlyFile.Log.Size == 1)
+            if (functionsState.appendOnlyFile.serverOptions.MultiLogEnabled)
             {
                 var header = new AofHeader
                 {

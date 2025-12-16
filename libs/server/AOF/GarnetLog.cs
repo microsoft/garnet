@@ -26,7 +26,7 @@ namespace Garnet.server
         public int Size => singleLog != null ? 1 : shardedLog.Length;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        static long HASH(ReadOnlySpan<byte> key)
+        public static long HASH(ReadOnlySpan<byte> key)
             => Utility.HashBytes(key);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -41,7 +41,25 @@ namespace Garnet.server
         {
             hash = HASH(key);
             sublogIdx = (int)(((ulong)hash) % (ulong)shardedLog.Length);
-            keyOffset = (int)(hash & (ReplicaReadConsistencyManager.KeyOffsetCount - 1));
+            keyOffset = (int)(hash & (VirtualSublogSketch.keySlotCount - 1));
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long HashKey(ReadOnlySpan<byte> key, out byte sublogIdx, out int replayIdx)
+        {
+            var hash = HASH(key);
+            sublogIdx = (byte)(((ulong)hash) % (ulong)serverOptions.AofPhysicalSublogCount);
+            replayIdx = (byte)(((ulong)hash) % (ulong)serverOptions.AofReplaySubtaskCount);
+            return hash;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long HashKey(ref PinnedSpanByte key, out byte sublogIdx, out int replayIdx)
+        {
+            var hash = HASH(key);
+            sublogIdx = (byte)(((ulong)hash) % (ulong)serverOptions.AofPhysicalSublogCount);
+            replayIdx = (byte)(((ulong)hash) % (ulong)serverOptions.AofReplaySubtaskCount);
+            return hash;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -52,10 +70,10 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Hash(long hash, out int sublogIdx, out int keyOffset)
+        public void Hash(long hash, out byte sublogIdx, out int replayIdx)
         {
-            sublogIdx = (int)(hash % shardedLog.Length);
-            keyOffset = (int)(hash & (ReplicaReadConsistencyManager.KeyOffsetCount - 1));
+            sublogIdx = (byte)(((ulong)hash) % (ulong)serverOptions.AofPhysicalSublogCount);
+            replayIdx = (byte)(((ulong)hash) % (ulong)serverOptions.AofReplaySubtaskCount);
         }
 
         public AofAddress BeginAddress

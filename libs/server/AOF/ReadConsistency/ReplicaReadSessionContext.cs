@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 
 namespace Garnet.server
 {
-    [StructLayout(LayoutKind.Explicit, Size = 24)]
+    [StructLayout(LayoutKind.Explicit, Size = 26)]
     public struct ReplicaReadSessionContext
     {
         /// <summary>
@@ -21,15 +21,21 @@ namespace Garnet.server
         public long maximumSessionSequenceNumber;
 
         /// <summary>
-        /// Last read sublogIdx
+        /// Last read hash
         /// </summary>
         [FieldOffset(16)]
-        public int lastSublogIdx;
+        public long lastHash;
 
         /// <summary>
-        /// Last read keyOffset
+        /// Last read sublogIdx
         /// </summary>
-        [FieldOffset(20)]
-        public int lastKeyOffset;
+        [FieldOffset(24)]
+        public short lastSublogIdx;
+
+        /// <summary>
+        /// Last read replayIdx
+        /// </summary>
+        [FieldOffset(25)]
+        public int lastReplayIdx;
     }
 }

@@ -15,13 +15,13 @@ namespace Garnet.server
 
         public long TotalSize() => Log.TailAddress.AggregateDiff(Log.BeginAddress);
 
-        public ReplicaReadConsistencyManager replicaReadConsistencyManager = null;
+        public ReplicaReadConsistencyStateManager replicaReadConsistencyStateManager = null;
 
         public SequenceNumberGenerator seqNumGen = null;
 
         public GarnetLog Log { get; private set; }
 
-        readonly GarnetServerOptions serverOptions;
+        public readonly GarnetServerOptions serverOptions;
 
         public long HeaderSize => Log.HeaderSize;
 
@@ -56,9 +56,9 @@ namespace Garnet.server
         {
             // Create manager only if sharded log is enabled
             if (!serverOptions.MultiLogEnabled) return;
-            var currentVersion = replicaReadConsistencyManager?.CurrentVersion ?? 0L;
-            var _replayTimestampManager = new ReplicaReadConsistencyManager(currentVersion + 1, this, serverOptions, logger);
-            _ = Interlocked.CompareExchange(ref replicaReadConsistencyManager, _replayTimestampManager, replicaReadConsistencyManager);
+            var currentVersion = replicaReadConsistencyStateManager?.CurrentVersion ?? 0L;
+            var _replayTimestampManager = new ReplicaReadConsistencyStateManager(currentVersion + 1, this, serverOptions, logger);
+            _ = Interlocked.CompareExchange(ref replicaReadConsistencyStateManager, _replayTimestampManager, replicaReadConsistencyStateManager);
         }
 
         /// <summary>
@@ -66,7 +66,7 @@ namespace Garnet.server
         /// </summary>
         public void ResetSequenceNumberGenerator()
         {
-            var start = replicaReadConsistencyManager.GetMaximumSequenceNumber();
+            var start = replicaReadConsistencyStateManager.MaxSequenceNumber;
             var newSeqNumGen = new SequenceNumberGenerator(start);
             _ = Interlocked.CompareExchange(ref seqNumGen, newSeqNumGen, seqNumGen);
         }
@@ -78,14 +78,14 @@ namespace Garnet.server
         /// <param name="replicaReadSessionContext"></param>
         /// <param name="readSessionWaiter"></param>
         public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
-            => replicaReadConsistencyManager.ConsistentReadKeyPrepare(key, ref replicaReadSessionContext, readSessionWaiter);
+            => replicaReadConsistencyStateManager.ConsistentReadKeyPrepare(key, ref replicaReadSessionContext, readSessionWaiter);
 
         /// <summary>
         /// Invoke the update phase of the consistent read protocol
         /// </summary>
         /// <param name="replicaReadSessionContext"></param>
         public void ConsistentReadSequenceNumberUpdate(ref ReplicaReadSessionContext replicaReadSessionContext)
-            => replicaReadConsistencyManager.ConsistentReadSequenceNumberUpdate(ref replicaReadSessionContext);
+            => replicaReadConsistencyStateManager.ConsistentReadSequenceNumberUpdate(ref replicaReadSessionContext);
 
         /// <summary>
         /// Set log shift tail callbacks

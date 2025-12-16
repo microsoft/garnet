@@ -13,35 +13,11 @@ namespace Garnet.common
     /// <param name="participantCount"></param>
     public class EventBarrier(int participantCount)
     {
-        int participantCount = participantCount;
+        readonly int participantCount = participantCount;
         int arrivedCount = participantCount;
-        readonly ManualResetEventSlim eventSlim = new(false);
 
-        readonly ManualResetEventSlim releaseFirst = new(false);
-        readonly ManualResetEventSlim releaseAll = new(false);
-
-        /// <summary>
-        /// Decrements participant count but does not set signal.
-        /// </summary>
-        /// <param name="timeout"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        /// <exception cref="Exception"></exception>
-        public bool SignalAndWait(TimeSpan timeout = default, CancellationToken cancellationToken = default)
-        {
-            var newValue = Interlocked.Decrement(ref arrivedCount);
-            if (newValue > 0)
-            {
-                if (!Wait(timeout, cancellationToken))
-                    throw new TimeoutException();
-                return false;
-            }
-            else if (newValue == 0)
-                return true;
-            else
-                throw new Exception("Invalid count value < 0");
-        }
-
+        ManualResetEventSlim releaseFirst = new(false);
+        ManualResetEventSlim releaseAll = new(false);
 
         /// <summary>
         /// Try wait for all participants to join
@@ -96,17 +72,11 @@ namespace Garnet.common
         /// </summary>
         public void Release() => releaseAll.Set();
 
-        /// <summary>
-        /// Set underlying event.
-        /// </summary>
-        public void Set() => eventSlim.Set();
-
-        /// <summary>
-        /// Wait for signal to be set.
-        /// </summary>
-        /// <param name="timeout"></param>
-        /// <param name="cancellationToken"></param>
-        bool Wait(TimeSpan timeout = default, CancellationToken cancellationToken = default)
-            => eventSlim.Wait(timeout == default ? Timeout.InfiniteTimeSpan : timeout, cancellationToken);
+        public void Reset()
+        {
+            releaseFirst = new(false);
+            releaseAll = new(false);
+            arrivedCount = participantCount;
+        }
     }
 }

@@ -15,12 +15,12 @@ namespace Garnet.server
         /// <summary>
         /// Replica read context used with sharded log
         /// </summary>
-        ReplicaReadSessionContext replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastSublogIdx = -1, lastKeyOffset = -1 };
+        ReplicaReadSessionContext replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastSublogIdx = -1, lastReplayIdx = -1 };
 
         /// <summary>
         /// Read session waiter used with sharded log to avoid spin-wait
         /// </summary>
-        ReadSessionWaiter readSessionWaiter = new() { eventSlim = new(), waitForTimestamp = -1 };
+        ReadSessionWaiter readSessionWaiter = new() { eventSlim = new(), rrsc = new() };
 
         /// <summary>
         /// This method is used to verify slot ownership for provided array of key argslices.

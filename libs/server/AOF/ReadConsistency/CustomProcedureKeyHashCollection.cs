@@ -28,10 +28,7 @@ namespace Garnet.server
         public void UpdateSequenceNumber(long sequenceNumber)
         {
             foreach (var hash in hashes)
-            {
-                appendOnlyFile.Log.Hash(hash, out var sublogIdx, out var keyOffset);
-                appendOnlyFile.replicaReadConsistencyManager.UpdateKeySequenceNumber(sublogIdx, keyOffset, sequenceNumber);
-            }
+                appendOnlyFile.replicaReadConsistencyStateManager.UpdateKeySequenceNumber(hash, sequenceNumber);
         }
     }
 }

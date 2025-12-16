@@ -22,15 +22,6 @@ namespace Garnet.cluster
             => replicaReplayDrivers[sublogIdx];
 
         /// <summary>
-        /// Get replay subtask for given sublogIdx and subtaskIdx
-        /// </summary>
-        /// <param name="sublogIdx"></param>
-        /// <param name="subtaskIdx"></param>
-        /// <returns></returns>
-        public ReplicaReplaySubtask GetReplaySubtask(int sublogIdx, int subtaskIdx)
-            => replicaReplayDrivers[sublogIdx][subtaskIdx];
-
-        /// <summary>
         /// Replay task instances per sublog (used with ShardedLog)
         /// </summary>
         readonly ReplicaReplayDriver[] replicaReplayDrivers = new ReplicaReplayDriver[clusterProvider.serverOptions.AofPhysicalSublogCount];

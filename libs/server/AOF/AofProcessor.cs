@@ -177,7 +177,7 @@ namespace Garnet.server
                     {
                         fixed (byte* ptr = entry.Memory.Span)
                         {
-                            ProcessAofRecordInternal(sublogIdx, 0, ptr, length, asReplica: false, out _);
+                            ProcessAofRecordInternal(sublogIdx, ptr, length, asReplica: false, out _);
                         }
                         entry.Dispose();
                     }
@@ -207,12 +207,11 @@ namespace Garnet.server
         /// NOTE: This method is shared between recover replay and replication replay
         /// </summary>
         /// <param name="sublogIdx"></param>
-        /// <param name="subtaskIdx"></param>
         /// <param name="ptr"></param>
         /// <param name="length"></param>
         /// <param name="asReplica"></param>
         /// <param name="isCheckpointStart"></param>
-        public void ProcessAofRecordInternal(int sublogIdx, int subtaskIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
+        public void ProcessAofRecordInternal(int sublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
         {
             var header = *(AofHeader*)ptr;
             var shardedHeader = default(AofShardedHeader);
@@ -243,7 +242,7 @@ namespace Garnet.server
                     if (shardedLog)
                     {
                         shardedHeader = *(AofShardedHeader*)ptr;
-                        storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, shardedHeader.sequenceNumber);
+                        storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
                     }
                     break;
                 case AofEntryType.CheckpointEndCommit:
@@ -322,7 +321,7 @@ namespace Garnet.server
                     if (shardedLog)
                     {
                         shardedHeader = *(AofShardedHeader*)ptr;
-                        storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, shardedHeader.sequenceNumber);
+                        storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
                     }
                     break;
                 case AofEntryType.FlushAll:
@@ -356,7 +355,7 @@ namespace Garnet.server
                 case AofEntryType.RefreshSublogTail:
                     shardedHeader = *(AofShardedHeader*)ptr;
                     //logger?.LogDebug("RefreshSublogTail {sublogIdx} {idx}", sublogIdx, extendedHeader.sequenceNumber);
-                    storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, shardedHeader.sequenceNumber);
+                    storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
                     break;
                 default:
                     _ = ReplayOp(sublogIdx, basicContext, objectStoreBasicContext, unifiedStoreBasicContext, ptr, length, asReplica);
@@ -454,8 +453,8 @@ namespace Garnet.server
             Debug.Assert(storeWrapper.serverOptions.AofPhysicalSublogCount > 1);
             var shardedHeader = *(AofShardedHeader*)ptr;
             var curr = ptr + sizeof(AofShardedHeader);
-            var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr);
-            storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateKeySequenceNumber(sublogIdx, ref key, shardedHeader.sequenceNumber);
+            var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
+            storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateKeySequenceNumber(sublogIdx, key, shardedHeader.sequenceNumber);
         }
 
         static void StoreUpsert<TContext>(
@@ -671,6 +670,17 @@ namespace Garnet.server
 
             bool IsNewVersionRecord(AofHeader header)
                 => header.storeVersion > storeWrapper.store.CurrentVersion;
+        }
+
+        /// <summary>
+        /// Get subtask idx from header key digest
+        /// </summary>
+        /// <param name="ptr"></param>
+        /// <returns></returns>
+        public int GetReplayTask(byte* ptr)
+        {
+            var shardedHeader = *(AofShardedHeader*)ptr;
+            return shardedHeader.keyDigest % storeWrapper.serverOptions.AofReplaySubtaskCount;
         }
     }
 }

@@ -10,9 +10,7 @@ namespace Garnet.server
     public class ReadSessionWaiter
     {
         public ManualResetEventSlim eventSlim;
-        public long waitForTimestamp;
-        public byte sublogIdx;
-        public int keyOffset;
+        public ReplicaReadSessionContext rrsc;
 
         readonly CancellationTokenSource cts = new();
         SingleWriterMultiReaderLock _disposed = new();

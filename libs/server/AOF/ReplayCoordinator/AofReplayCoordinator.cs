@@ -73,7 +73,7 @@ namespace Garnet.server
             EventBarrier GetBarrier(int id, int participantCount)
                 => eventBarriers.GetOrAdd(id, _ => new EventBarrier(participantCount));
 
-            bool RemoveBarrier(int id, out EventBarrier eventBarrier)
+            bool TryRemoveBarrier(int id, out EventBarrier eventBarrier)
                 => eventBarriers.TryRemove(id, out eventBarrier);
 
             /// <summary>
@@ -124,7 +124,7 @@ namespace Garnet.server
                         case AofEntryType.TxnAbort:
                             ClearSessionTxn();
                             shardedHeader = *(AofShardedHeader*)ptr;
-                            aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, shardedHeader.sequenceNumber);
+                            aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
                             break;
                         case AofEntryType.TxnCommit:
                             if (replayContext.inFuzzyRegion)
@@ -172,7 +172,7 @@ namespace Garnet.server
                         // after a checkpoint, and the transaction belonged to the previous version. It can safely
                         // be ignored.
                         shardedHeader = *(AofShardedHeader*)ptr;
-                        aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, shardedHeader.sequenceNumber);
+                        aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
                         break;
                     default:
                         // Continue processing
@@ -391,7 +391,7 @@ namespace Garnet.server
                     // The leader will always perform a cleanup
                     if (isLeader)
                     {
-                        if (!RemoveBarrier(barrierId, out _))
+                        if (!TryRemoveBarrier(barrierId, out _))
                             removeBarrierException = new GarnetException($"RemoveBarrier failed when processing {barrierId}");
 
                         // Release participants if any
@@ -409,7 +409,7 @@ namespace Garnet.server
                     throw removeBarrierException;
 
                 // Update timestamp
-                aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyManager.UpdateSublogSequencenumber(sublogIdx, txnHeader.shardedHeader.sequenceNumber);
+                aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateSublogMaxSequenceNumber(sublogIdx, txnHeader.shardedHeader.sequenceNumber);
             }
         }
     }

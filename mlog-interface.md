@@ -24,6 +24,24 @@ This happens in the event a replica starts replicating a new primary
 </ul></ul>
 
 - [X] Ensure timestamp tracker recovers correctly alongside the sequence number generator
+ReplayProgressTracker
+Tracks information about the sequence numbers of the keys replayed from the AOF.
+This information is used by RespsServerSessions to perform consistent read.
+The consistent read is executed in two phases:
+1. Ensure prefix consistency across virtual sublogs 
+    To enforce this, we need to compare the sequence number (timestamp) of key being read to the maximum session sequence number (mssn)
+    as determined by previous reads.
+    The ReplayProgressTracker maintains a replayInfoArray which keeps tracks the sequence numbers for replayed keys for all virtual replay tasks.
+    The replayInfoArray maintains a fixed number of slots which are used to track the sequence number of a bag of keys
+    Each replay task is responsible for updating the sequence number of a key after replaying the corresponding operation.
+    Replay task number is equal or greater to the physical sublog number.
+    Hence, updates to replayInfoArray are indexed using (sublogIdx, replayTaskIdx, keyIdx)
+    
+    The current key sequence number (cksn) is determined as the 
+
+by comparing the sequence number (timestamp) of the key being read
+2. Update 
+
 <ul><ul></ul></ul> 
 - [X] Validate diskless replication tests and add new tests for replay coordination.
 <ul><ul></ul></ul> 
@@ -132,6 +150,9 @@ void ReplayTask(int taskId, int replayTaskCount)
 - Ensure that replay is possible with varying number of virtual sublogs (NOTE: physical sublogs should remain fixed)
 - Every enqueue operation adds hash value (single byte) to use with assigning work to each virtual subtask
 - Coordination for transactions adds a marker for every participating virtual sublog. That marker can be hashed to support varying number of virtual subtasks
+
+NOTES:
+- 
 </ul></ul>
 
 - [ ] Role command does not work as expected with SE Redis.
