@@ -5,6 +5,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -22,7 +23,9 @@ namespace Tsavorite.test.recovery
         Cloud
     }
 
-    public class RecoveryCheckBase
+    [AllureNUnit]
+    [TestFixture]
+    public class RecoveryCheckBase : AllureTestBase
     {
         protected IDevice log;
         protected const int NumOps = 5000;

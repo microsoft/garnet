@@ -644,7 +644,9 @@ namespace Tsavorite.test.ReadCacheTests
         }
     }
 
-    class LongStressChainTests
+    [AllureNUnit]
+    [TestFixture]
+    class LongStressChainTests : AllureTestBase
     {
         private TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store;
         private IDevice log;

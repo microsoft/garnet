@@ -6,6 +6,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -16,7 +17,9 @@ namespace Tsavorite.test.recovery
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
     using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
 
-    public abstract class StateMachineDriverTestsBase
+    [AllureNUnit]
+    [TestFixture]
+    public abstract class StateMachineDriverTestsBase : AllureTestBase
     {
         readonly int numOpThreads = 2;
         protected readonly int numKeys = 4;

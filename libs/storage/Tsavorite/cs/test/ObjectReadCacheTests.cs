@@ -3,6 +3,7 @@
 
 using System.IO;
 using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -14,7 +15,7 @@ namespace Tsavorite.test.ReadCacheTests
 
     [AllureNUnit]
     [TestFixture]
-    internal class ObjectReadCacheTests
+    internal class ObjectReadCacheTests : AllureTestBase
     {
         private TsavoriteKV<MyKey, MyValue, ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;
