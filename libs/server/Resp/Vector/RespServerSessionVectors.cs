@@ -1021,7 +1021,7 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            var res = storageApi.VectorSetInfo(key, out VectorQuantType quantType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numLinks, out long size);
+            var res = storageApi.VectorSetInfo(key, out VectorQuantType quantType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size);
             if (res == GarnetStatus.NOTFOUND)
             {
                 WriteNullArray();
@@ -1034,28 +1034,28 @@ namespace Garnet.server
                 return true;
             }
 
-            string quantTypeStr = quantType switch
+            var quantTypeSpan = quantType switch
             {
-                VectorQuantType.NoQuant => "no-quant",
-                VectorQuantType.Bin => "bin",
-                VectorQuantType.Q8 => "q8",
-                VectorQuantType.XPreQ8 => "xpreq8",
-                _ => "invalid",
+                VectorQuantType.NoQuant => "no-quant"u8,
+                VectorQuantType.Bin => "bin"u8,
+                VectorQuantType.Q8 => "q8"u8,
+                VectorQuantType.XPreQ8 => "xpreq8"u8,
+                _ => "invalid"u8,
             };
 
             WriteArrayLength(12);
-            WriteSimpleString("quant-type");
-            WriteSimpleString($"{quantTypeStr}");
-            WriteSimpleString("input-vector-dimensions");
-            WriteSimpleString($"{vectorDimensions}");
-            WriteSimpleString("reduced-dimensions");
-            WriteSimpleString($"{reducedDimensions}");
-            WriteSimpleString("build-exploration-factor");
-            WriteSimpleString($"{buildExplorationFactor}");
-            WriteSimpleString("num-links");
-            WriteSimpleString($"{numLinks}");
-            WriteSimpleString("size");
-            WriteSimpleString($"{size}");
+            WriteSimpleString("quant-type"u8);
+            WriteSimpleString(quantTypeSpan);
+            WriteSimpleString("input-vector-dimensions"u8);
+            WriteInt32AsBulkString((int)vectorDimensions);
+            WriteSimpleString("reduced-dimensions"u8);
+            WriteInt32AsBulkString((int)reducedDimensions);
+            WriteSimpleString("build-exploration-factor"u8);
+            WriteInt32AsBulkString((int)buildExplorationFactor);
+            WriteSimpleString("num-links"u8);
+            WriteInt32AsBulkString((int)numLinks);
+            WriteSimpleString("size"u8);
+            WriteInt64AsBulkString(size);
             return true;
         }
 
