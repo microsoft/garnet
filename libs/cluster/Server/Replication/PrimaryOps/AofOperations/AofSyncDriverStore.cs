@@ -93,17 +93,23 @@ namespace Garnet.cluster
 
             // Calculate min address of all iterators
             var TruncatedUntil = truncateUntil;
-            for (var i = 0; i < numDrivers; i++)
+            try
             {
-                Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null at {nameof(SafeTruncateAof)}");
-                if (syncDrivers[i].PreviousAddress[sublogIdx] < TruncatedUntil)
-                    TruncatedUntil = syncDrivers[i].PreviousAddress[sublogIdx];
-            }
+                for (var i = 0; i < numDrivers; i++)
+                {
+                    Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null at {nameof(SafeTruncateAof)}");
+                    if (syncDrivers[i].PreviousAddress[sublogIdx] < TruncatedUntil)
+                        TruncatedUntil = syncDrivers[i].PreviousAddress[sublogIdx];
+                }
 
-            // Inform that we have logically truncatedUntil
-            this.TruncatedUntil.MonotonicUpdate(TruncatedUntil, sublogIdx);
-            // Release lock early
-            _lock.WriteUnlock();
+                // Inform that we have logically truncatedUntil
+                this.TruncatedUntil.MonotonicUpdate(TruncatedUntil, sublogIdx);
+            }
+            finally
+            {
+                // Release lock early
+                _lock.WriteUnlock();
+            }
 
             if (clusterProvider.serverOptions.FastAofTruncate)
             {
@@ -134,21 +140,26 @@ namespace Garnet.cluster
 
             // Calculate min address of all iterators
             var TruncatedUntil = truncateUntil;
-            for (var i = 0; i < numDrivers; i++)
+            try
             {
-                Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null {nameof(SafeTruncateAof)}");
-                var previousAddress = syncDrivers[i].PreviousAddress;
-                for (var sublogIdx = 0; sublogIdx < previousAddress.Length; sublogIdx++)
+                for (var i = 0; i < numDrivers; i++)
                 {
-                    if (previousAddress[sublogIdx] < TruncatedUntil[sublogIdx])
-                        TruncatedUntil[sublogIdx] = previousAddress[sublogIdx];
+                    Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null {nameof(SafeTruncateAof)}");
+                    var previousAddress = syncDrivers[i].PreviousAddress;
+                    for (var sublogIdx = 0; sublogIdx < previousAddress.Length; sublogIdx++)
+                    {
+                        if (previousAddress[sublogIdx] < TruncatedUntil[sublogIdx])
+                            TruncatedUntil[sublogIdx] = previousAddress[sublogIdx];
+                    }
                 }
+                // Inform that we have logically truncatedUntil
+                this.TruncatedUntil.MonotonicUpdate(ref TruncatedUntil);
             }
-
-            // Inform that we have logically truncatedUntil
-            this.TruncatedUntil.MonotonicUpdate(ref TruncatedUntil);
-            // Release lock early
-            _lock.WriteUnlock();
+            finally
+            {
+                // Release lock early
+                _lock.WriteUnlock();
+            }
 
             if (clusterProvider.serverOptions.FastAofTruncate)
             {
@@ -208,18 +219,24 @@ namespace Garnet.cluster
                 _lock.WriteLock();
                 if (_disposed) return;
                 _disposed = true;
-                for (var i = 0; i < numDrivers; i++)
-                {
-                    var task = syncDrivers[i];
-                    task.Dispose();
-                }
-                numDrivers = 0;
-                Array.Clear(syncDrivers);
             }
             finally
             {
                 _lock.WriteUnlock();
             }
+
+            for (var i = 0; i < numDrivers; i++)
+            {
+                var syncDriver = syncDrivers[i];
+                syncDrivers[i] = null;
+                try
+                {
+                    syncDriver?.Dispose();
+                }
+                catch { }
+            }
+            numDrivers = 0;
+            Array.Clear(syncDrivers);
         }
 
         /// <summary>
@@ -279,12 +296,12 @@ namespace Garnet.cluster
                 // Iterate array of existing tasks and update associated task if it already exists
                 for (var i = 0; i < numDrivers; i++)
                 {
-                    var t = syncDrivers[i];
-                    Debug.Assert(t != null, "syncDriver should not be null");
-                    if (t.RemoteNodeId == remoteNodeId)
+                    var syncDriver = syncDrivers[i];
+                    Debug.Assert(syncDriver != null, "syncDriver should not be null");
+                    if (syncDriver.RemoteNodeId == remoteNodeId)
                     {
                         syncDrivers[i] = aofSyncDriver;
-                        t.Dispose();
+                        syncDriver.Dispose();
                         success = true;
                         break;
                     }
@@ -385,12 +402,12 @@ namespace Garnet.cluster
                     // Find if AOF sync task already exists
                     for (var i = 0; i < numDrivers; i++)
                     {
-                        var t = syncDrivers[i];
-                        Debug.Assert(t != null, $"syncDrive should not be null {nameof(TryAddReplicationDrivers)}");
-                        if (t.RemoteNodeId == rss.replicaNodeId)
+                        var syncDriver = syncDrivers[i];
+                        Debug.Assert(syncDriver != null, $"syncDrive should not be null {nameof(TryAddReplicationDrivers)}");
+                        if (syncDriver.RemoteNodeId == rss.replicaNodeId)
                         {
                             syncDrivers[i] = rss.AofSyncDriver;
-                            t.Dispose();
+                            syncDriver.Dispose();
                             added = true;
                             break;
                         }
@@ -448,9 +465,9 @@ namespace Garnet.cluster
 
                 for (var i = 0; i < numDrivers; i++)
                 {
-                    var t = syncDrivers[i];
-                    Debug.Assert(t != null, $"syncDriver should not be null at {nameof(TryRemove)}");
-                    if (t == aofSyncDriver)
+                    var syncDriver = syncDrivers[i];
+                    Debug.Assert(syncDriver != null, $"syncDriver should not be null at {nameof(TryRemove)}");
+                    if (syncDriver == aofSyncDriver)
                     {
                         syncDrivers[i] = null;
                         if (i < numDrivers - 1)
@@ -463,7 +480,7 @@ namespace Garnet.cluster
                         numDrivers--;
 
                         // Kill the task
-                        t.Dispose();
+                        syncDriver.Dispose();
                         success = true;
                         break;
                     }
@@ -507,15 +524,21 @@ namespace Garnet.cluster
         /// <param name="truncatedUntil"></param>
         public void UpdateTruncatedUntil(AofAddress truncatedUntil)
         {
-            _lock.WriteLock();
-            this.TruncatedUntil.MonotonicUpdate(ref truncatedUntil);
-            _lock.WriteUnlock();
+            try
+            {
+                _lock.WriteLock();
+                TruncatedUntil.MonotonicUpdate(ref truncatedUntil);
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
         }
 
         /// <summary>
         /// Remove and dispose all active aof sync drivers
         /// </summary>
-        public void RemoveAll()
+        public void Reset()
         {
             try
             {
@@ -523,8 +546,13 @@ namespace Garnet.cluster
                 if (_disposed) return;
                 for (var i = 0; i < numDrivers; i++)
                 {
-                    var task = syncDrivers[i];
-                    task.Dispose();
+                    var syncDriver = syncDrivers[i];
+                    syncDrivers[i] = null;
+                    try
+                    {
+                        syncDriver?.Dispose();
+                    }
+                    catch { }
                 }
                 numDrivers = 0;
                 Array.Clear(syncDrivers);

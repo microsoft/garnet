@@ -16,10 +16,11 @@ namespace Garnet.server
     /// <summary>
     /// Used for coordinated operations
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = AofTransactionHeader.TotalSize)]
-    struct AofTransactionHeader
+    [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
+    unsafe struct AofTransactionHeader
     {
-        public const int TotalSize = AofShardedHeader.TotalSize + 1;
+        public const int TotalSize = AofShardedHeader.TotalSize + 2 + 32;
+        public const int ReplayTaskAccessVectorSize = 32;
 
         /// <summary>
         /// AofShardedHeader used with multi-log
@@ -31,13 +32,19 @@ namespace Garnet.server
         /// Used for synchronizing sublog replay
         /// </summary>
         [FieldOffset(AofShardedHeader.TotalSize)]
-        public byte sublogAccessCount;
+        public short participantCount;
+
+        /// <summary>
+        /// Used to track replay task participating in the txn
+        /// </summary>
+        [FieldOffset(AofShardedHeader.TotalSize + 2)]
+        public fixed byte replayTaskAccessVector[ReplayTaskAccessVectorSize];
     }
 
     /// <summary>
     /// Used for sharded log to add a k
     /// </summary>
-    [StructLayout(LayoutKind.Explicit, Size = AofShardedHeader.TotalSize)]
+    [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
     struct AofShardedHeader
     {
         public const int TotalSize = AofHeader.TotalSize + 8 + 1;

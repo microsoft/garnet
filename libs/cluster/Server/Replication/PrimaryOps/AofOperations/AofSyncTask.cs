@@ -160,7 +160,7 @@ namespace Garnet.cluster
                 var acquireReadLock = false;
                 try
                 {
-                    acquireReadLock = aofSyncDriver.dispose.TryReadLock();
+                    acquireReadLock = aofSyncDriver.ResumeAofStreaming();
                     if (!acquireReadLock)
                         throw new GarnetException($"[{sublogIdx}] Failed to acquire lock at {nameof(RunAofSyncTask)}");
 
@@ -192,7 +192,7 @@ namespace Garnet.cluster
                 finally
                 {
                     if (acquireReadLock)
-                        aofSyncDriver.dispose.ReadUnlock();
+                        aofSyncDriver.SuspendAofStreaming();
                 }
             }
         }

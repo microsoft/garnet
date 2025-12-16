@@ -152,7 +152,8 @@ void ReplayTask(int taskId, int replayTaskCount)
 - Coordination for transactions adds a marker for every participating virtual sublog. That marker can be hashed to support varying number of virtual subtasks
 
 NOTES:
-- 
+- Coordinate replication offset update and maximum timestamp for single sublog
+
 </ul></ul>
 
 - [ ] Role command does not work as expected with SE Redis.

@@ -76,7 +76,7 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.ResetReplicaReplayGroup();
 
                     // Remove aofSync tasks if this node was a primary
-                    aofSyncDriverStore.RemoveAll();
+                    aofSyncDriverStore.Reset();
 
                     // Reset the database in preparation for connecting to primary
                     // only if we expect to have disk checkpoint to recover from,

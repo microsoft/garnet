@@ -163,7 +163,7 @@ namespace Garnet.server
                 switch (header.opType)
                 {
                     case AofEntryType.TxnStart:
-                        var logAccessCount = !serverOptions.MultiLogEnabled ? 0 : (*(AofTransactionHeader*)ptr).sublogAccessCount;
+                        var logAccessCount = !serverOptions.MultiLogEnabled ? 0 : (*(AofTransactionHeader*)ptr).participantCount;
                         aofReplayContext[sublogIdx].AddTransactionGroup(header.sessionID, sublogIdx, (byte)logAccessCount);
                         break;
                     case AofEntryType.TxnAbort:
@@ -365,7 +365,7 @@ namespace Garnet.server
                 var txnHeader = *(AofTransactionHeader*)ptr;
 
                 // Synchronize execution across sublogs
-                var eventBarrier = GetBarrier(barrierId, txnHeader.sublogAccessCount);
+                var eventBarrier = GetBarrier(barrierId, txnHeader.participantCount);
                 var isLeader = eventBarrier.TrySignalAndWait(out var signalException, serverOptions.ReplicaSyncTimeout);
                 Exception removeBarrierException = null;
 

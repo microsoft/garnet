@@ -28,14 +28,22 @@ namespace Garnet.cluster
         /// <summary>
         /// Check if client connection is healthy
         /// </summary>
-        public bool IsConnected => aofSyncTasks.Select(x => x.IsConnected ? 1 : 0).Sum() > 0;
+        public bool IsConnected
+            => aofSyncTasks.Select(x => x.IsConnected ? 1 : 0).Sum() == aofSyncTasks.Length;
 
         /// <summary>
         /// Node-id associated with this AofSyncTask
         /// </summary>
         public string RemoteNodeId => remoteNodeId;
 
-        public SingleWriterMultiReaderLock dispose = new();
+        SingleWriterMultiReaderLock dispose = new();
+        SingleWriterMultiReaderLock activeAofSync = new();
+
+        public bool ResumeAofStreaming()
+            => activeAofSync.TryReadLock();
+
+        public void SuspendAofStreaming()
+            => activeAofSync.ReadUnlock();
 
         /// <summary>
         /// Return start address for underlying AofSyncTask
@@ -97,16 +105,15 @@ namespace Garnet.cluster
         /// </summary>
         public void Dispose()
         {
-            // First cancel the token
+            // Cancel cts
             cts?.Cancel();
 
-            // Then, dispose the iterator. This will also signal the iterator so that it can observe the canceled token
+            // Dispose sync tasks
             foreach (var aofSyncTask in aofSyncTasks)
                 aofSyncTask?.Dispose();
 
-            // Signal dispose
-            // NOTE: wait for tasks to complete
-            dispose.WriteLock();
+            // Wait for tasks to exit
+            activeAofSync.WriteLock();
 
             // Finally, dispose the cts
             cts?.Dispose();
@@ -169,7 +176,7 @@ namespace Garnet.cluster
 
             try
             {
-                acquireReadLock = dispose.TryReadLock();
+                acquireReadLock = ResumeAofStreaming();
                 if (!acquireReadLock)
                     throw new GarnetException($"Failed to acquire read lock at {nameof(RefreshSublogTail)}");
 
@@ -207,7 +214,7 @@ namespace Garnet.cluster
             finally
             {
                 if (acquireReadLock)
-                    dispose.ReadUnlock();
+                    SuspendAofStreaming();
                 client?.Dispose();
             }
         }

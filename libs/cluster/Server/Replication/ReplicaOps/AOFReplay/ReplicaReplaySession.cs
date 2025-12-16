@@ -101,9 +101,6 @@ namespace Garnet.cluster
                 if (clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0)
                 {
                     // Synchronous replay
-                    // NOTE:
-                    //  Currently synchronous replay does not enable parallel background task replay
-                    //  because it will require us to scan, identify and copy the page level records to the right subtask replay queue, which we try to avoid
                     replicaReplayTaskGroup.GetReplayDriver(sublogIdx).Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
                 }
                 else

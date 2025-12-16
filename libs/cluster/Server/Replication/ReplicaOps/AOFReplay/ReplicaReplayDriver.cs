@@ -29,7 +29,7 @@ namespace Garnet.cluster
         TsavoriteLogScanSingleIterator replayIterator;
         SingleWriterMultiReaderLock activeReplay;
         const int ReplayBufferSize = 1 << 10;
-        internal readonly ReplayItem[] replayBuffer;
+        internal readonly ReplayRecordState[] replayBuffer;
         long replayBufferOffset = 0;
         ReplicaReplayTask[] replayTasks;
 
@@ -44,7 +44,7 @@ namespace Garnet.cluster
             this.logger = logger;
             this.replayIterator = null;
             this.activeReplay = new SingleWriterMultiReaderLock();
-            this.replayBuffer = [.. Enumerable.Range(0, ReplayBufferSize).Select(_ => new ReplayItem(clusterProvider.serverOptions.AofReplaySubtaskCount))];
+            this.replayBuffer = [.. Enumerable.Range(0, ReplayBufferSize).Select(_ => new ReplayRecordState(clusterProvider.serverOptions.AofReplaySubtaskCount))];
             this.replayBufferOffset = 0;
 
             // Initialize background replay tasks for this sublog replay driver

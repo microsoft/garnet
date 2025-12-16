@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -392,7 +391,7 @@ namespace Garnet.server
 
         public override (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats() => [CollectHybridLogStatsForDb(defaultDatabase)];
 
-        private void SafeFlushAOF(AofEntryType entryType, bool unsafeTruncateLog)
+        private unsafe void SafeFlushAOF(AofEntryType entryType, bool unsafeTruncateLog)
         {
             // Safe truncate up to tail for botth primary and replica
             StoreWrapper.clusterProvider.SafeTruncateAOF(AppendOnlyFile.Log.TailAddress);
@@ -414,11 +413,11 @@ namespace Garnet.server
                 }
                 else if (AppendOnlyFile != null)
                 {
-                    var logAccessBitmap = AppendOnlyFile.Log.AllLogBitsSet();
+                    var logAccessVector = AppendOnlyFile.Log.AllLogsBitmask();
                     try
                     {
-                        AppendOnlyFile.Log.LockSublogs(logAccessBitmap);
-                        var _logAccessBitmap = logAccessBitmap;
+                        AppendOnlyFile.Log.LockSublogs(logAccessVector);
+                        var _logAccessVector = logAccessVector;
                         var header = new AofTransactionHeader
                         {
                             shardedHeader = new AofShardedHeader
@@ -434,18 +433,19 @@ namespace Garnet.server
                                 },
                                 sequenceNumber = storeWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber()
                             },
-                            sublogAccessCount = (byte)BitOperations.PopCount(ulong.MaxValue)
+                            participantCount = (short)(AppendOnlyFile.Log.Size * AppendOnlyFile.Log.ReplayTaskCount)
                         };
+                        new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize).Fill(0xFF);
 
-                        while (_logAccessBitmap > 0)
+                        while (_logAccessVector > 0)
                         {
-                            var sublogIdx = _logAccessBitmap.GetNextOffset();
+                            var sublogIdx = _logAccessVector.GetNextOffset();
                             AppendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, out _);
                         }
                     }
                     finally
                     {
-                        AppendOnlyFile.Log.UnlockSublogs(logAccessBitmap);
+                        AppendOnlyFile.Log.UnlockSublogs(logAccessVector);
                     }
                 }
             }

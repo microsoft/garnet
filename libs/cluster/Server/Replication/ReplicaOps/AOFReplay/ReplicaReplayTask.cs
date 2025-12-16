@@ -19,11 +19,11 @@ namespace Garnet.cluster
         readonly ReplicaReplayDriver replayDriver = replayDriver;
         readonly ReplicationManager replicationManager = clusterProvider.replicationManager;
         readonly GarnetAppendOnlyFile appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
-        readonly Channel<ReplayItem> channel = Channel.CreateUnbounded<ReplayItem>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
+        readonly Channel<ReplayRecordState> channel = Channel.CreateUnbounded<ReplayRecordState>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
         readonly CancellationTokenSource cts = cts;
         readonly ILogger logger = logger;
 
-        internal void Append(ReplayItem item)
+        internal void Append(ReplayRecordState item)
         {
             if (!channel.Writer.TryWrite(item))
                 throw new GarnetException("Failed to append to channel");

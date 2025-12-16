@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -14,66 +15,29 @@ namespace Garnet.server
 {
     public class GarnetLog(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
     {
-        readonly int subtaskReplayCount = serverOptions.AofReplaySubtaskCount;
+        readonly int replayTaskCount = serverOptions.AofReplaySubtaskCount;
         readonly int aofSublogCount = serverOptions.AofPhysicalSublogCount;
         readonly SingleLog singleLog = serverOptions.AofPhysicalSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
         readonly ShardedLog shardedLog = serverOptions.AofPhysicalSublogCount > 1 ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger) : null;
 
         public TsavoriteLog SigleLog => singleLog.log;
+        public readonly BitVector[] AllParticipatingTasks;
 
         public long HeaderSize => singleLog != null ? singleLog.HeaderSize : shardedLog.HeaderSize;
 
         public int Size => singleLog != null ? 1 : shardedLog.Length;
 
+        public int ReplayTaskCount => replayTaskCount;
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long HASH(ReadOnlySpan<byte> key)
-            => Utility.HashBytes(key);
+            => Utility.HashBytes(key) & long.MaxValue;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (int, int) HashKey(ReadOnlySpan<byte> key)
         {
             var hash = HASH(key);
             return ((int)(((ulong)hash) % (ulong)aofSublogCount), (int)(((ulong)hash) % 0xFF));
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void HashKey(ReadOnlySpan<byte> key, out long hash, out int sublogIdx, out int keyOffset)
-        {
-            hash = HASH(key);
-            sublogIdx = (int)(((ulong)hash) % (ulong)shardedLog.Length);
-            keyOffset = (int)(hash & (VirtualSublogSketch.keySlotCount - 1));
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long HashKey(ReadOnlySpan<byte> key, out byte sublogIdx, out int replayIdx)
-        {
-            var hash = HASH(key);
-            sublogIdx = (byte)(((ulong)hash) % (ulong)serverOptions.AofPhysicalSublogCount);
-            replayIdx = (byte)(((ulong)hash) % (ulong)serverOptions.AofReplaySubtaskCount);
-            return hash;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long HashKey(ref PinnedSpanByte key, out byte sublogIdx, out int replayIdx)
-        {
-            var hash = HASH(key);
-            sublogIdx = (byte)(((ulong)hash) % (ulong)serverOptions.AofPhysicalSublogCount);
-            replayIdx = (byte)(((ulong)hash) % (ulong)serverOptions.AofReplaySubtaskCount);
-            return hash;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void HashKey(ref PinnedSpanByte key, out long hash, out int sublogIdx, out int keyOffset)
-        {
-            Debug.Assert(shardedLog != null);
-            HashKey(key.Span, out hash, out sublogIdx, out keyOffset);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Hash(long hash, out byte sublogIdx, out int replayIdx)
-        {
-            sublogIdx = (byte)(((ulong)hash) % (ulong)serverOptions.AofPhysicalSublogCount);
-            replayIdx = (byte)(((ulong)hash) % (ulong)serverOptions.AofReplaySubtaskCount);
         }
 
         public AofAddress BeginAddress
@@ -176,7 +140,7 @@ namespace Garnet.server
         /// Get a bitmap having all bits set according to the total number of sublogs being used
         /// </summary>
         /// <returns></returns>
-        public ulong AllLogBitsSet() => (ulong)((1L << Size) - 1);
+        public ulong AllLogsBitmask() => (ulong)((1L << Size) - 1);
 
         /// <summary>
         /// Lock sublogs for enqueue operation (bits indicate sublogIdx)

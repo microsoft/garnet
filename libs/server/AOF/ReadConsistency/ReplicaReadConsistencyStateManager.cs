@@ -48,23 +48,23 @@ namespace Garnet.server
         /// Get frontier sequence number for provided hash
         /// NOTE: Frontier sequence number is maximum sequence number between key specific sequence number and maximum observed sublog sequence number
         /// </summary>
-        /// <param name="keyHash"></param>
+        /// <param name="hash"></param>
         /// <returns></returns>
-        long GetSublogFrontierSequenceNumber(long keyHash)
+        long GetSublogFrontierSequenceNumber(long hash)
         {
-            var sublogIdx = (byte)(keyHash % serverOptions.AofPhysicalSublogCount);
-            return srs[sublogIdx].GetSublogFrontierSequenceNumber(keyHash);
+            var sublogIdx = (byte)(hash % serverOptions.AofPhysicalSublogCount);
+            return srs[sublogIdx].GetSublogFrontierSequenceNumber(hash);
         }
 
         /// <summary>
         /// Get key specific sequence number for provided hash
         /// </summary>
-        /// <param name="keyHash"></param>
+        /// <param name="hash"></param>
         /// <returns></returns>
-        long GetKeySequenceNumber(long keyHash)
+        long GetKeySequenceNumber(long hash)
         {
-            var sublogIdx = (byte)(keyHash % serverOptions.AofPhysicalSublogCount);
-            return srs[sublogIdx].GetKeySequenceNumber(keyHash);
+            var sublogIdx = (byte)(hash % serverOptions.AofPhysicalSublogCount);
+            return srs[sublogIdx].GetKeySequenceNumber(hash);
         }
 
         /// <summary>

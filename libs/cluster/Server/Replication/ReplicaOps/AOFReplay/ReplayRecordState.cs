@@ -6,7 +6,7 @@ using Garnet.common;
 
 namespace Garnet.cluster
 {
-    internal unsafe class ReplayItem(int replayTasks)
+    internal unsafe class ReplayRecordState(int replayTasks)
     {
         public byte* record;
         public int recordLength;

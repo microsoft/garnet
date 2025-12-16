@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -313,12 +312,12 @@ namespace Garnet.server
             }
             else
             {
-                var bitmapLock = db.AppendOnlyFile.Log.AllLogBitsSet();
+                var bitmapLock = db.AppendOnlyFile.Log.AllLogsBitmask();
                 try
                 {
                     db.AppendOnlyFile.Log.LockSublogs(bitmapLock);
                     var _logAccessBitmap = bitmapLock;
-                    var txnHeader = new AofTransactionHeader
+                    var header = new AofTransactionHeader
                     {
                         shardedHeader = new AofShardedHeader
                         {
@@ -331,13 +330,17 @@ namespace Garnet.server
                             },
                             sequenceNumber = db.AppendOnlyFile.seqNumGen.GetSequenceNumber()
                         },
-                        sublogAccessCount = (byte)BitOperations.PopCount(bitmapLock)
+                        participantCount = (short)(db.AppendOnlyFile.Log.Size * db.AppendOnlyFile.Log.ReplayTaskCount)
                     };
+                    unsafe
+                    {
+                        new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize).Fill(0xFF);
+                    }
 
                     while (_logAccessBitmap > 0)
                     {
                         var sublogIdx = _logAccessBitmap.GetNextOffset();
-                        db.AppendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(txnHeader, out _);
+                        db.AppendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, out _);
                     }
                 }
                 finally

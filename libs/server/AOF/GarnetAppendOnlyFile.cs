@@ -38,7 +38,7 @@ namespace Garnet.server
             InvalidAofAddress = AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: -1);
             MaxAofAddress = AofAddress.Create(length: serverOptions.AofPhysicalSublogCount, value: long.MaxValue);
             CreateOrUpdateKeySequenceManager();
-            if (!serverOptions.MultiLogEnabled)
+            if (serverOptions.MultiLogEnabled)
                 seqNumGen = new SequenceNumberGenerator(0);
             this.logger = logger;
         }

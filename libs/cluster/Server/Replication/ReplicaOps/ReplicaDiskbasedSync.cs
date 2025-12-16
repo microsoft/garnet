@@ -113,7 +113,7 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.ResetReplicaReplayGroup();
 
                     // Remove aofSync tasks if this node was a primary
-                    aofSyncDriverStore.RemoveAll();
+                    aofSyncDriverStore.Reset();
 
                     // Reset replication offset
                     replicationOffset.SetValue(0);
