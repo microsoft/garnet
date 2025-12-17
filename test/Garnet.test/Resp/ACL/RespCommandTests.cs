@@ -7612,8 +7612,7 @@ namespace Garnet.test.Resp.ACL
             static async Task DoVInfoAsync(GarnetClient client)
             {
                 var res = await client.ExecuteForStringArrayResultAsync("VINFO", ["foo"]);
-                ClassicAssert.IsTrue(res.Length == 1);
-                ClassicAssert.AreEqual(res[0], null);
+                ClassicAssert.AreEqual(res, null);
             }
         }
 
