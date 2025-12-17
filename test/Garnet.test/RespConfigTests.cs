@@ -280,12 +280,15 @@ namespace Garnet.test
         }
     }
 
+
+
     /// <summary>
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
     /// </summary>
+    [AllureNUnit]
     [TestFixture(false)]
     [TestFixture(true)]
-    public class RespConfigUtilizationTests
+    public class RespConfigUtilizationTests : AllureTestBase
     {
         GarnetServer server;
         private string memorySize = "3m";
@@ -563,9 +566,10 @@ namespace Garnet.test
     /// <summary>
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
     /// </summary>
+    [AllureNUnit]
     [TestFixture(false)]
     [TestFixture(true)]
-    public class RespConfigIndexUtilizationTests
+    public class RespConfigIndexUtilizationTests : AllureTestBase
     {
         GarnetServer server;
         private string memorySize = "3m";

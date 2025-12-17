@@ -72,7 +72,7 @@ jobs:
         run: dotnet restore libs/storage/Tsavorite/cs/Tsavorite.sln
       - name: Check style format
         run: dotnet format libs/storage/Tsavorite/cs/Tsavorite.sln --no-restore --verify-no-changes --verbosity diagnostic
-  
+
   # Job to build and test Garnet code
   build-test-garnet:
     name: Garnet
@@ -95,6 +95,39 @@ jobs:
         run: dotnet restore
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
+
+      - name: Verify Allure wiring (${{ matrix.test }})
+        shell: pwsh
+        run: |
+          $asmPath = "$(System.DefaultWorkingDirectory)/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll"
+          $asm = [System.Reflection.Assembly]::LoadFrom($asmPath)
+          $allureBase = $asm.GetTypes() | Where-Object { $_.Name -eq "AllureTestBase" }
+          $testFixtureAttr = [Type]::GetType("NUnit.Framework.TestFixtureAttribute, nunit.framework")
+          $testAttr        = [Type]::GetType("NUnit.Framework.TestAttribute, nunit.framework")
+          $allureAttr      = [Type]::GetType("Allure.NUnit.AllureNUnitAttribute, allure.nunit")
+
+          $bad = @()
+          foreach ($t in $asm.GetTypes()) {
+            $isFixture = $t.GetCustomAttributes($testFixtureAttr, $true).Count -gt 0 -or
+                         ($t.GetMethods() | Where-Object { $_.GetCustomAttributes($testAttr, $true).Count -gt 0 })
+            if ($isFixture) {
+              $inheritsAllure = $allureBase -and $allureBase.IsAssignableFrom($t)
+              $hasAttr = $t.GetCustomAttributes($allureAttr, $true).Count -gt 0
+              if (-not $inheritsAllure -or -not $hasAttr) {
+                $bad += $t.FullName
+              }
+            }
+          }
+
+          if ($bad.Count -gt 0) {
+            Write-Host "These test fixtures are missing Allure setup from $asmPath"
+            $bad | ForEach-Object { Write-Host $_ }
+            exit 1
+          } else {
+            $fileName = [System.IO.Path]::GetFileName($asmPath)
+            Write-Host "All test fixtures wired to Allure in $asmPath"
+          }
+
       - name: Run tests ${{ matrix.test }}
         run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
@@ -145,6 +178,39 @@ jobs:
         run: dotnet restore
       - name: Build Tsavorite
         run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
+
+      - name: Verify Allure wiring (Tsavorite)
+        shell: pwsh
+        run: |
+          $asmPath = "$(System.DefaultWorkingDirectory)/libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/Tsavorite.test.dll"
+          $asm = [System.Reflection.Assembly]::LoadFrom($asmPath)
+          $allureBase = $asm.GetTypes() | Where-Object { $_.Name -eq "AllureTestBase" }
+          $testFixtureAttr = [Type]::GetType("NUnit.Framework.TestFixtureAttribute, nunit.framework")
+          $testAttr        = [Type]::GetType("NUnit.Framework.TestAttribute, nunit.framework")
+          $allureAttr      = [Type]::GetType("Allure.NUnit.AllureNUnitAttribute, allure.nunit")
+
+          $bad = @()
+          foreach ($t in $asm.GetTypes()) {
+             $isFixture = $t.GetCustomAttributes($testFixtureAttr, $true).Count -gt 0 -or
+                          ($t.GetMethods() | Where-Object { $_.GetCustomAttributes($testAttr, $true).Count -gt 0 })
+             if ($isFixture) {
+              $inheritsAllure = $allureBase -and $allureBase.IsAssignableFrom($t)
+              $hasAttr = $t.GetCustomAttributes($allureAttr, $true).Count -gt 0
+              if (-not $inheritsAllure -or -not $hasAttr) {
+                $bad += $t.FullName
+              }
+            }
+          }
+
+          if ($bad.Count -gt 0) {
+            Write-Host "These test fixtures are missing Allure setup from $asmPath"
+            $bad | ForEach-Object { Write-Host $_ }
+            exit 1
+          } else {
+            $fileName = [System.IO.Path]::GetFileName($asmPath)
+            Write-Host "All test fixtures wired to Allure in $fileName"
+          }
+
       - name: Run Tsavorite tests
         run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
         timeout-minutes: 45 

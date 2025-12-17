@@ -1779,7 +1779,7 @@ namespace Tsavorite.test.Revivification
 
     [AllureNUnit]
     [TestFixture]
-    class RevivificationObjectTests
+    class RevivificationObjectTests : AllureTestBase
     {
         const int NumRecords = 1000;
         internal const int ValueMult = 1_000_000;

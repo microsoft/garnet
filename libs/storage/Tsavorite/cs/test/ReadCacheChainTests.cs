@@ -890,7 +890,9 @@ namespace Tsavorite.test.ReadCacheTests
         }
     }
 
-    class SpanByteStressChainTests
+    [AllureNUnit]
+    [TestFixture]
+    class SpanByteStressChainTests : AllureTestBase
     {
         private TsavoriteKV<SpanByte, SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
         private IDevice log;
