@@ -99,7 +99,7 @@ jobs:
       - name: Verify Allure wiring (${{ matrix.test }})
         shell: pwsh
         run: |
-          $asmPath = "$(System.DefaultWorkingDirectory)/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll"
+          $asmPath = "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll"
           $asm = [System.Reflection.Assembly]::LoadFrom($asmPath)
           $allureBase = $asm.GetTypes() | Where-Object { $_.Name -eq "AllureTestBase" }
           $testFixtureAttr = [Type]::GetType("NUnit.Framework.TestFixtureAttribute, nunit.framework")
@@ -182,7 +182,7 @@ jobs:
       - name: Verify Allure wiring (Tsavorite)
         shell: pwsh
         run: |
-          $asmPath = "$(System.DefaultWorkingDirectory)/libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/Tsavorite.test.dll"
+          $asmPath = "${{ github.workspace }}/libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/Tsavorite.test.dll"
           $asm = [System.Reflection.Assembly]::LoadFrom($asmPath)
           $allureBase = $asm.GetTypes() | Where-Object { $_.Name -eq "AllureTestBase" }
           $testFixtureAttr = [Type]::GetType("NUnit.Framework.TestFixtureAttribute, nunit.framework")
