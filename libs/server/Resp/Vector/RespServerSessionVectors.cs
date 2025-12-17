@@ -1027,10 +1027,13 @@ namespace Garnet.server
                 WriteNullArray();
                 return true;
             }
-            
-            if (res == GarnetStatus.WRONGTYPE)
+            else if (res == GarnetStatus.WRONGTYPE)
             {
                 return AbortVectorSetWrongType();
+            }
+            else if (res == GarnetStatus.BADSTATE)
+            {
+                return AbortVectorSetPartiallyDeleted(ref key);
             }
 
             var quantTypeSpan = quantType switch
