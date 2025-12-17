@@ -124,6 +124,7 @@ namespace Garnet.server
                 case RespCommand.VREM:
                 case RespCommand.VDIM:
                 case RespCommand.GET:
+                case RespCommand.VINFO:
                     // Get value without RESP header; exclude expiration
                     if (value.LengthWithoutMetadata <= dst.Length)
                     {

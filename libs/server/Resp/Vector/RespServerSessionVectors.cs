@@ -1015,11 +1015,49 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count != 1)
+            {
+                return AbortWithWrongNumberOfArguments("VINFO");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+            var res = storageApi.VectorSetInfo(key, out VectorQuantType quantType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size);
+            if (res == GarnetStatus.NOTFOUND)
+            {
+                WriteNullArray();
+                return true;
+            }
+            else if (res == GarnetStatus.WRONGTYPE)
+            {
+                return AbortVectorSetWrongType();
+            }
+            else if (res == GarnetStatus.BADSTATE)
+            {
+                return AbortVectorSetPartiallyDeleted(ref key);
+            }
 
+            var quantTypeSpan = quantType switch
+            {
+                VectorQuantType.NoQuant => "f32"u8,
+                VectorQuantType.Bin => "bin"u8,
+                VectorQuantType.Q8 => "q8"u8,
+                VectorQuantType.XPreQ8 => "xpreq8"u8,
+                _ => throw new GarnetException($"Invalid VectorQuantType: {quantType}"),
+            };
+
+            WriteArrayLength(12);
+            WriteSimpleString("quant-type"u8);
+            WriteSimpleString(quantTypeSpan);
+            WriteSimpleString("input-vector-dimensions"u8);
+            WriteInt32AsBulkString((int)vectorDimensions);
+            WriteSimpleString("reduced-dimensions"u8);
+            WriteInt32AsBulkString((int)reducedDimensions);
+            WriteSimpleString("build-exploration-factor"u8);
+            WriteInt32AsBulkString((int)buildExplorationFactor);
+            WriteSimpleString("num-links"u8);
+            WriteInt32AsBulkString((int)numLinks);
+            WriteSimpleString("size"u8);
+            WriteInt64AsBulkString(size);
             return true;
         }
 
