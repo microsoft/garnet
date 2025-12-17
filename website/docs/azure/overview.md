@@ -12,11 +12,12 @@ The Azure Cosmos DB Garnet Cache is currently in an expanded Private Preview. Pl
 
 ## Key Benefits
 
-Azure Cosmos DB Garnet Cache is a cloud-native caching service that combines the performance advantages of Garnet with Azure's managed service capabilities. Unlike traditional single-threaded Redis, Garnet is designed to handle high concurrency efficiently, maintaining sub-millisecond latencies even with thousands of concurrent client connections. This architectural advantage translates to cost savings for applications with many concurrent users. It offers:
+Azure Cosmos DB Garnet Cache is a cloud-native caching service that combines the performance advantages of Garnet with Azure's managed service capabilities. Unlike traditional single-threaded caches or caches that are hash-partitioned within each node, Garnet uses a shared-everything architecture within nodes where all threads directly access the single shared memory space. This architectural advantage allows Garnet to maintain sub-millisecond latencies even under heavy load with thousands of concurrent client connections and translates to cost savings for applications with many simultaneous users. It offers:
 
 - **Ultra-Low Latency**: Sub-millisecond latency with 3ms at the 99th percentile.
 - **Throughput**: Supports millions of operations per second with linear scalability across nodes. Performance scales efficiently even with thousands of concurrent connections.
-- **Data Persistence**: Data durability with non-blocking Append Only File (AOF) checkpoints. Maintains full throughput with no performance penalty like traditional Redis.
+- **Scalability**: Optimized performance with vertical and horizontal scaling as well as configurable replication for increased read throughput.
+- **Data Persistence**: Data durability with non-blocking Append Only File (AOF) checkpoints. Maintains full throughput with no performance penalty.
 - **Cost Optimization**: Per node pricing with multiple performance tiers and no licensing fees. Cost-effective at scale for workloads where cache size is driven by throughput requirements (as opposed to memory size).
 - **Fully Managed**: No infrastructure to manage, patch, or maintain while delivering enterprise features for high availability, security and more.
 
@@ -25,19 +26,16 @@ Azure Cosmos DB Garnet Cache is a cloud-native caching service that combines the
 Azure Cosmos DB Garnet Cache supports distributed caching across multiple application instances and is designed for workloads where throughput efficiency and data durability matter. Here are scenarios where Garnet's unique advantages deliver the most value:
 
 ### High-Concurrency Applications
-Live trading systems, multiplayer services, and IoT platforms with thousands of simultaneous connections. Garnet's multi-threaded architecture maintains sub-millisecond latency and consistent throughput even under heavy concurrent load, eliminating the bottlenecks of single-threaded Redis. Examples include:
-- Live trading and financial tick data
-- Gaming leaderboards and player state
-- Real-time IoT telemetry and sensor data
+Live trading and financial tick systems, multiplayer and gaming services, and IoT platforms with thousands of simultaneous connections. Garnet's multi-threaded architecture maintains sub-millisecond latency and consistent throughput even under heavy concurrent load, eliminating the performance degradation single-threaded caches experience with many parallel requests.
 
 ### Mission-Critical Caching with Durability
-Applications where losing cached data is not acceptable. Garnet's non-blocking AOF persistence eliminates the traditional tradeoff between persistence and throughput. It lets you durably cache critical data without sacrificing performance. Common scenarios that benefit include user sessions, payment information, and transaction data.
+Applications where losing cached data is not acceptable like user sessions, payment information, and transaction data. Garnet's non-blocking AOF persistence eliminates the traditional tradeoff between persistence and throughput. It lets you durably cache critical data without sacrificing performance.
 
 ### AI-Powered Applications
 Vector search for recommendation engines, semantic search, and AI applications. Store and query high-dimensional vectors using VectorSet data structures with DiskANN indexing for single-digit millisecond vector search at scale.
 
 ### Cost-Optimized At-Scale Infrastructure
-Applications where high throughput requirements would otherwise lead to infrastructure decisions like upgrading cache size. Garnet's multi-threaded efficiency means you can handle the same throughput with smaller SKUs or fewer cache nodes than other solutions, directly reducing operational costs and complexity. 
+Applications where high throughput requirements drive infrastructure costs. Garnet's multi-threaded efficiency means you can handle the same throughput with smaller SKUs or fewer cache nodes than other solutions, directly reducing operational costs and complexity. 
 
 ## Features
 
