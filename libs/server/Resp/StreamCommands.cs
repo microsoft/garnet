@@ -48,7 +48,7 @@ namespace Garnet.server
             byte* vPtr = parseState.GetArgSliceByRef(argsParsed).ptr - sizeof(int);
             int vsize = (int)(recvBufferPtr + endReadHead - vPtr);
             var streamDataSpan = new ReadOnlySpan<byte>(vPtr, vsize);
-            SpanByteAndMemory _output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            var _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr)));
 
             var disabledStreams = streamManager == null;
             if (disabledStreams)
@@ -147,7 +147,7 @@ namespace Garnet.server
                 }
             }
 
-            SpanByteAndMemory _output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            SpanByteAndMemory _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr)));
 
             var disabledStreams = streamManager == null;
             if (disabledStreams)
@@ -316,7 +316,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            SpanByteAndMemory _output = new SpanByteAndMemory(dcurr, (int)(dend - dcurr));
+            SpanByteAndMemory _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr)));
 
             var disabledStreams = streamManager == null;
             if (disabledStreams)

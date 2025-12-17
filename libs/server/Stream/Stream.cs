@@ -125,7 +125,7 @@ namespace Garnet.server
             IncrementID(ref id);
         }
 
-        unsafe ParsedStreamEntryID parseIDString(ArgSlice idSlice, ref StreamID id)
+        unsafe ParsedStreamEntryID parseIDString(PinnedSpanByte idSlice, ref StreamID id)
         {
             // if we have to auto-generate the whole ID
             if (*idSlice.ptr == '*' && idSlice.length == 1)
@@ -152,7 +152,7 @@ namespace Garnet.server
                 }
                 // parse the timestamp
                 // slice the id to remove the last two characters
-                var slicedId = new ArgSlice(idSlice.ptr, idSlice.length - 2);
+                var slicedId = PinnedSpanByte.FromPinnedPointer(idSlice.ptr, idSlice.length - 2);
                 var idEnd = idSlice.ptr + idSlice.length - 2;
                 if (!RespReadUtils.ReadUlong(out ulong timestamp, ref idSlice.ptr, idEnd))
                 {
@@ -212,8 +212,8 @@ namespace Garnet.server
                 {
                     // parse the timestamp
                     // slice the id to remove everything after '-'
-                    var slicedId = new ArgSlice(idSlice.ptr, index);
-                    var slicedSeq = new ArgSlice(idSlice.ptr + index + 1, idSlice.length - index - 1);
+                    var slicedId = PinnedSpanByte.FromPinnedPointer(idSlice.ptr, index);
+                    var slicedSeq = PinnedSpanByte.FromPinnedPointer(idSlice.ptr + index + 1, idSlice.length - index - 1);
                     if (!RespReadUtils.ReadUlong(out ulong timestamp, ref idSlice.ptr, idSlice.ptr + index))
                     {
                         return ParsedStreamEntryID.INVALID;
@@ -251,7 +251,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="value">byte array of the entry to store in the stream</param>
         /// <returns>True if entry is added successfully</returns>
-        public unsafe void AddEntry(ReadOnlySpan<byte> value, int valueLength, ArgSlice idSlice, int numPairs, ref SpanByteAndMemory output, byte respProtocolVersion)
+        public unsafe void AddEntry(ReadOnlySpan<byte> value, int valueLength, PinnedSpanByte idSlice, int numPairs, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
             byte* tmpPtr = null;
             StreamID id = default;
@@ -275,7 +275,8 @@ namespace Garnet.server
 
                 // add the entry to the log
                 {
-                    bool enqueueInLog = log.TryEnqueueStreamEntry(id.idBytes, sizeof(StreamID), numPairs, value, valueLength, out long retAddress);
+                    long retAddress = 0;
+                    bool enqueueInLog = false; //log.TryEnqueueStreamEntry(id.idBytes, sizeof(StreamID), numPairs, value, valueLength, out long retAddress);
                     if (!enqueueInLog)
                     {
                         writer.WriteNull();
@@ -335,7 +336,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="idSlice">id of the stream entry to delete</param>
         /// <returns>true if entry was deleted successfully</returns>
-        public unsafe bool DeleteEntry(ArgSlice idSlice)
+        public unsafe bool DeleteEntry(PinnedSpanByte idSlice)
         {
             // first parse the idString
             if (!parseCompleteID(idSlice, out StreamID entryID))
@@ -374,7 +375,7 @@ namespace Garnet.server
 
                     // LastAlive to skip tombstoned entries
                     long addressOnLog = (long)index.LastAlive().Value.address;
-                    (byte[] entry, int len) = log.Read(addressOnLog, readUncommitted: true);
+                    (byte[] entry, int len) = (null, 0); // log.Read(addressOnLog, readUncommitted: true);
 
                     if (entry == null)
                     {
@@ -464,7 +465,7 @@ namespace Garnet.server
                     long readCount = 0;
                     try
                     {
-                        using (var iter = log.Scan(startAddr, endAddr, scanUncommitted: true, isReverseStreamIter: isReverse))
+                        using (var iter = log.Scan(startAddr, endAddr, scanUncommitted: true)) // isReverseStreamIter: isReverse))
                         {
                             writer.WriteArrayLength(count);
 
@@ -518,7 +519,7 @@ namespace Garnet.server
         /// <param name="optType">MAXLEN or MINID</param>
         /// <param name="entriesTrimmed">number of keys trimmed</param>
         /// <returns></returns>
-        public unsafe bool Trim(ArgSlice trimArg, StreamTrimOpts optType, out ulong entriesTrimmed, bool approximate = false)
+        public unsafe bool Trim(PinnedSpanByte trimArg, StreamTrimOpts optType, out ulong entriesTrimmed, bool approximate = false)
         {
             uint numLeavesDeleted = 0;
             Value headValue = default;
@@ -610,7 +611,7 @@ namespace Garnet.server
         }
 
 
-        unsafe bool parseCompleteID(ArgSlice idSlice, out StreamID streamID)
+        unsafe bool parseCompleteID(PinnedSpanByte idSlice, out StreamID streamID)
         {
             streamID = default;
             // complete ID is of the format ts-seq in input where both ts and seq are ulong

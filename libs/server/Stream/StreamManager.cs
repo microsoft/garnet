@@ -136,7 +136,7 @@ namespace Garnet.server
         /// <param name="streamKey">key of last stream accessed (for cache)</param>
         /// <param name="lastStream">reference to last stream accessed (for cache)</param>
         /// <param name="respProtocolVersion">RESP protocol version</param>
-        public void StreamAdd(ArgSlice keySlice, ArgSlice idSlice, bool noMkStream, ReadOnlySpan<byte> value, int valueLength, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream, byte respProtocolVersion)
+        public void StreamAdd(PinnedSpanByte keySlice, PinnedSpanByte idSlice, bool noMkStream, ReadOnlySpan<byte> value, int valueLength, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream, byte respProtocolVersion)
         {
             // copy key store this key in the dictionary
             byte[] key = keySlice.ToArray();
@@ -206,7 +206,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="keySlice">key of the stream we want to obtain the length</param>
         /// <returns>length of the stream</returns>
-        public ulong StreamLength(ArgSlice keySlice)
+        public ulong StreamLength(PinnedSpanByte keySlice)
         {
             var key = keySlice.ToArray();
             if (streams != null)
@@ -234,7 +234,7 @@ namespace Garnet.server
         /// <param name="count">threshold to limit scanning</param>
         /// <param name="output"></param>
         /// <param name="respProtocolVersion">RESP protocol version</param>
-        public bool StreamRange(ArgSlice keySlice, string start, string end, int count, ref SpanByteAndMemory output, byte respProtocolVersion, bool isReverse)
+        public bool StreamRange(PinnedSpanByte keySlice, string start, string end, int count, ref SpanByteAndMemory output, byte respProtocolVersion, bool isReverse)
         {
             var key = keySlice.ToArray();
             if (streams != null && streams.Count > 0)
@@ -256,7 +256,7 @@ namespace Garnet.server
         /// <param name="idSlice">id of stream entry to delete</param>
         /// <param name="lastSeenStream">last accessed stream in cache</param>
         /// <returns></returns>
-        public bool StreamDelete(ArgSlice keySlice, ArgSlice idSlice, out StreamObject lastSeenStream)
+        public bool StreamDelete(PinnedSpanByte keySlice, PinnedSpanByte idSlice, out StreamObject lastSeenStream)
         {
             var key = keySlice.ToArray();
             StreamObject stream;
@@ -272,7 +272,7 @@ namespace Garnet.server
             return false;
         }
 
-        public bool StreamTrim(ArgSlice keySlice, ArgSlice trimArg, StreamTrimOpts optType, out ulong validKeysRemoved, bool approximate = false)
+        public bool StreamTrim(PinnedSpanByte keySlice, PinnedSpanByte trimArg, StreamTrimOpts optType, out ulong validKeysRemoved, bool approximate = false)
         {
             bool foundStream;
             var key = keySlice.ToArray();
@@ -290,7 +290,7 @@ namespace Garnet.server
             return true; // no keys removed so return true
         }
     
-        public bool StreamLast(ArgSlice key, ref SpanByteAndMemory output, byte respProtocolVersion)
+        public bool StreamLast(PinnedSpanByte key, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
             var keyArr = key.ToArray();
             if (streams != null && streams.Count > 0)
