@@ -101,7 +101,14 @@ jobs:
         run: |
           $asmPath = "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll"
           $asm = [System.Reflection.Assembly]::LoadFrom($asmPath)
-          $allureBase = $asm.GetTypes() | Where-Object { $_.Name -eq "AllureTestBase" }
+
+          # when using .Net 90 it tries to resolve every referenced type in that assembly and some dependencies are missing by design so pops exception (we don't need those anyways)
+          try {
+            $types = $asm.GetTypes()
+          } catch [System.Reflection.ReflectionTypeLoadException] {
+            $types = $_.Exception.Types | Where-Object { $_ -ne $null }
+          }
+          $allureBase = $types | Where-Object { $_.Name -eq "AllureTestBase" }
 
           $bad = @()
           foreach ($t in $asm.GetTypes()) {
@@ -192,7 +199,14 @@ jobs:
         run: |
           $asmPath = "${{ github.workspace }}/libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/Tsavorite.test.dll"
           $asm = [System.Reflection.Assembly]::LoadFrom($asmPath)
-          $allureBase = $asm.GetTypes() | Where-Object { $_.Name -eq "AllureTestBase" }
+
+          # when using .Net 90 it tries to resolve every referenced type in that assembly and some dependencies are missing by design so pops exception (we don't need those anyways)
+          try {
+            $types = $asm.GetTypes()
+          } catch [System.Reflection.ReflectionTypeLoadException] {
+            $types = $_.Exception.Types | Where-Object { $_ -ne $null }
+          }
+          $allureBase = $types | Where-Object { $_.Name -eq "AllureTestBase" }
 
           $bad = @()
           foreach ($t in $asm.GetTypes()) {
