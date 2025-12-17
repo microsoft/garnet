@@ -17,7 +17,7 @@ Azure Cosmos DB Garnet Cache is a cloud-native caching service that combines the
 - **Ultra-Low Latency**: Sub-millisecond latency with 3ms at the 99th percentile.
 - **Throughput**: Supports millions of operations per second with linear scalability across nodes. Performance scales efficiently even with thousands of concurrent connections.
 - **Data Persistence**: Data durability with non-blocking Append Only File (AOF) checkpoints. Maintains full throughput with no performance penalty like traditional Redis.
-- **Cost Optimization**: Per node pricing with multiple performance tiers and no licensing fees. Cost effective at scale for workloads where cache size is driven by throughput requirements (as opposed to memory size).
+- **Cost Optimization**: Per node pricing with multiple performance tiers and no licensing fees. Cost-effective at scale for workloads where cache size is driven by throughput requirements (as opposed to memory size).
 - **Fully Managed**: No infrastructure to manage, patch, or maintain while delivering enterprise features for high availability, security and more.
 
 ## Common Use Cases
@@ -25,7 +25,7 @@ Azure Cosmos DB Garnet Cache is a cloud-native caching service that combines the
 Azure Cosmos DB Garnet Cache supports distributed caching across multiple application instances and is designed for workloads where throughput efficiency and data durability matter. Here are scenarios where Garnet's unique advantages deliver the most value:
 
 ### High-Concurrency Applications
-Live trading systems, multiplayer services and IoT platforms with thousands of simultaneous connections. Garnet's multi-threaded architecture maintains sub-millisecond latency and consistent throughput even under heavy concurrent load, eliminating the bottlenecks of single-threaded Redis. Examples include:
+Live trading systems, multiplayer services, and IoT platforms with thousands of simultaneous connections. Garnet's multi-threaded architecture maintains sub-millisecond latency and consistent throughput even under heavy concurrent load, eliminating the bottlenecks of single-threaded Redis. Examples include:
 - Live trading and financial tick data
 - Gaming leaderboards and player state
 - Real-time IoT telemetry and sensor data
@@ -33,8 +33,8 @@ Live trading systems, multiplayer services and IoT platforms with thousands of s
 ### Mission-Critical Caching with Durability
 Applications where losing cached data is not acceptable. Garnet's non-blocking AOF persistence eliminates the traditional tradeoff between persistence and throughput. It lets you durably cache critical data without sacrificing performance. Common scenarios that benefit include user sessions, payment information, and transaction data.
 
-### AI-Powered Applications  
-Vector search for recommendation engines, semantic search, and AI applications. Store and query high-dimensional vectors using VectorSet data structures with DiskANN indexing for single digit millisecond vector search at scale.
+### AI-Powered Applications
+Vector search for recommendation engines, semantic search, and AI applications. Store and query high-dimensional vectors using VectorSet data structures with DiskANN indexing for single-digit millisecond vector search at scale.
 
 ### Cost-Optimized At-Scale Infrastructure
 Applications where high throughput requirements would otherwise lead to infrastructure decisions like upgrading cache size. Garnet's multi-threaded efficiency means you can handle the same throughput with smaller SKUs or fewer cache nodes than other solutions, directly reducing operational costs and complexity. 
@@ -62,7 +62,7 @@ Applications where high throughput requirements would otherwise lead to infrastr
 
 ### Compatible with Redis clients
 
-Just like self-hosted Garnet, Azure Cosmos DB Garnet Cache uses the Redis RESP protocol, making it compatible with existing Redis clients and tools. You can migrate from Redis or other cache solutions with minimal code changes. Azure Cosmos DB Garnet Cache supports a subset of the self-hosted Garnet commands including Strings, Hashes, Sets, Sorted Sets, Pub/Sub, Lua scripting and more. See the full list of [supported commands](./api-compatibility.md).
+Just like self-hosted Garnet, Azure Cosmos DB Garnet Cache uses the Redis RESP protocol, making it compatible with existing Redis clients and tools. You can migrate from Redis or other cache solutions with minimal code changes. Azure Cosmos DB Garnet Cache supports a subset of the self-hosted Garnet commands including Strings, Hashes, Sets, Sorted Sets, Pub/Sub, Lua scripting, and more. See the full list of [supported commands](./api-compatibility.md).
 
 ### Available Tiers
 
