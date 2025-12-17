@@ -103,19 +103,21 @@ namespace Garnet.cluster
             try
             {
                 _lock.WriteLock();
+                if (_disposed) return;
                 _disposed = true;
-                for (var i = 0; i < numTasks; i++)
-                {
-                    var task = tasks[i];
-                    task.Dispose();
-                }
-                numTasks = 0;
-                Array.Clear(tasks);
             }
             finally
             {
                 _lock.WriteUnlock();
             }
+
+            for (var i = 0; i < numTasks; i++)
+            {
+                var task = tasks[i];
+                task?.Dispose();
+            }
+            numTasks = 0;
+            Array.Clear(tasks);
         }
 
         public bool TryAddReplicationTask(string remoteNodeId, long startAddress, out AofSyncTaskInfo aofSyncTaskInfo)
