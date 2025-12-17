@@ -701,8 +701,16 @@ namespace Garnet.test
                                 // TODO: Implement once VGETATTR is implemented
                                 continue;
                             case RespCommand.VINFO:
-                                // TODO: Implement once VINFO is implemented
-                                continue;
+                                try
+                                {
+                                    var res = (RedisValue[])db.Execute("VINFO", [key]);
+                                    ClassicAssert.AreEqual(12, res.Length);
+                                }
+                                catch (RedisServerException e)
+                                {
+                                    exc = e;
+                                }
+                                break;
                             case RespCommand.VISMEMBER:
                                 // TODO: Implement once VISMEMBER is implemented
                                 continue;
