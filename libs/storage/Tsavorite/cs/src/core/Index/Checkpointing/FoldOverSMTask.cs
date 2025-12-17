@@ -10,11 +10,11 @@ namespace Tsavorite.core
     /// version on the log and waiting until it is flushed to disk. It is simple and fast, but can result
     /// in garbage entries on the log, and a slower recovery of performance.
     /// </summary>
-    internal sealed class FoldOverSMTask<TKey, TValue, TStoreFunctions, TAllocator> : HybridLogCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class FoldOverSMTask<TStoreFunctions, TAllocator> : HybridLogCheckpointSMTask<TStoreFunctions, TAllocator>
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        public FoldOverSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
+        public FoldOverSMTask(TsavoriteKV<TStoreFunctions, TAllocator> store, Guid guid)
             : base(store, guid)
         {
         }
@@ -29,6 +29,7 @@ namespace Tsavorite.core
                     store._hybridLogCheckpointToken = guid;
                     store.InitializeHybridLogCheckpoint(store._hybridLogCheckpointToken, next.Version);
                     base.GlobalBeforeEnteringState(next, stateMachineDriver);
+                    ObjectLog_OnPrepare();
                     break;
 
                 case Phase.WAIT_FLUSH:
@@ -42,11 +43,19 @@ namespace Tsavorite.core
 
                         // Update final logical address to the flushed tail - this may not be necessary
                         store._hybridLogCheckpoint.info.finalLogicalAddress = tailAddress;
+                        _ = ObjectLog_OnWaitFlush();
                     }
                     finally
                     {
                         store.epoch.Suspend();
                     }
+                    break;
+
+                case Phase.PERSISTENCE_CALLBACK:
+                    // Set actual FlushedUntil to the latest possible data in main log that is on disk
+                    // If we are using a NullDevice then storage tier is not enabled and FlushedUntilAddress may be ReadOnlyAddress; get all records in memory.
+                    ObjectLog_OnPersistenceCallback();
+                    base.GlobalBeforeEnteringState(next, stateMachineDriver);
                     break;
 
                 default:

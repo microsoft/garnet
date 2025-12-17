@@ -40,7 +40,7 @@ namespace Garnet.test
             var buffOffset = garnetApi.GetScratchBufferOffset();
             for (var i = 0; i < 120_000; i++)
             {
-                garnetApi.GET(key, out var outval);
+                garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
                 {
                     if (!ResetBuffer(garnetApi, ref output, buffOffset))
@@ -49,8 +49,8 @@ namespace Garnet.test
             }
 
             buffOffset = garnetApi.GetScratchBufferOffset();
-            garnetApi.GET(key, out var outval1);
-            garnetApi.GET(key, out var outval2);
+            garnetApi.GET(key, out PinnedSpanByte outval1);
+            garnetApi.GET(key, out PinnedSpanByte outval2);
             if (!ResetBuffer(garnetApi, ref output, buffOffset)) return false;
 
             buffOffset = garnetApi.GetScratchBufferOffset();
@@ -68,7 +68,7 @@ namespace Garnet.test
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             int offset = 0;
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Shared, false);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Shared, StoreType.Main);
             return true;
         }
 
@@ -79,7 +79,7 @@ namespace Garnet.test
             var buffOffset = garnetApi.GetScratchBufferOffset();
             for (int i = 0; i < 120_000; i++)
             {
-                garnetApi.GET(key, out var outval);
+                garnetApi.GET(key, out PinnedSpanByte outval);
                 if (i % 100 == 0)
                 {
                     if (!garnetApi.ResetScratchBuffer(buffOffset))
@@ -100,10 +100,10 @@ namespace Garnet.test
             var key = GetNextArg(ref procInput, ref offset);
 
             var buffOffset1 = garnetApi.GetScratchBufferOffset();
-            garnetApi.GET(key, out var outval1);
+            garnetApi.GET(key, out PinnedSpanByte outval1);
 
             var buffOffset2 = garnetApi.GetScratchBufferOffset();
-            garnetApi.GET(key, out var outval2);
+            garnetApi.GET(key, out PinnedSpanByte outval2);
 
             if (!garnetApi.ResetScratchBuffer(buffOffset1))
             {
@@ -153,7 +153,7 @@ namespace Garnet.test
             garnetApi.Increment(keyToIncrement, out long _, 1);
 
             var keyToReturn = GetNextArg(ref procInput, ref offset);
-            garnetApi.GET(keyToReturn, out ArgSlice outval);
+            garnetApi.GET(keyToReturn, out PinnedSpanByte outval);
             WriteBulkString(ref output, outval.Span);
             return true;
         }
@@ -164,8 +164,8 @@ namespace Garnet.test
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             int offset = 0;
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, false);
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, false);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Main);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Main);
             return true;
         }
 
@@ -178,7 +178,7 @@ namespace Garnet.test
 
             // key will have an etag associated with it already but the transaction should not be able to see it.
             // if the transaction needs to see it, then it can send GET with cmd as GETWITHETAG
-            garnetApi.GET(key, out ArgSlice outval);
+            garnetApi.GET(key, out PinnedSpanByte outval);
 
             List<byte> valueToMessWith = outval.ToArray().ToList();
 
@@ -200,20 +200,18 @@ namespace Garnet.test
                 valueToMessWith.RemoveAt(valueToMessWith.Count - 1);
             }
 
-            RawStringInput input = new RawStringInput(RespCommand.SET);
+            StringInput input = new StringInput(RespCommand.SET);
             input.header.cmd = RespCommand.SET;
             // if we send a SET we must explictly ask it to retain etag, and use conditional set
-            input.header.SetWithEtagFlag();
+            input.header.SetWithETagFlag();
 
             fixed (byte* valuePtr = valueToMessWith.ToArray())
             {
-                ArgSlice valForKey1 = new ArgSlice(valuePtr, valueToMessWith.Count);
+                PinnedSpanByte valForKey1 = PinnedSpanByte.FromPinnedPointer(valuePtr, valueToMessWith.Count);
                 input.parseState.InitializeWithArgument(valForKey1);
                 // since we are setting with retain to etag, this change should be reflected in an etag update
-                SpanByte sameKeyToUse = key.SpanByte;
-                garnetApi.SET_Conditional(ref sameKeyToUse, ref input);
+                garnetApi.SET_Conditional(key, ref input);
             }
-
 
             var keyToIncrment = GetNextArg(ref procInput, ref offset);
 
@@ -549,7 +547,7 @@ namespace Garnet.test
 
             var result = db.Execute("MEMORY", "USAGE", mainkey);
             var actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            var expectedResponse = 272;
+            var expectedResponse = 304;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             string key2 = "mykey2";
@@ -561,7 +559,7 @@ namespace Garnet.test
 
             result = db.Execute("MEMORY", "USAGE", mainkey);
             actualValue = ResultType.Integer == result.Resp2Type ? Int32.Parse(result.ToString()) : -1;
-            expectedResponse = 408;
+            expectedResponse = 440;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -976,14 +974,15 @@ namespace Garnet.test
                 [.. args]);
 
             // Test READWRITETX
-            string key = "readkey";
+            string key1 = "readkey1";
+            string key2 = "readkey2";
             string value = "foovalue0";
-            db.StringSet(key, value);
+            db.StringSet(key1, value);
 
             string writekey1 = "writekey1";
             string writekey2 = "writekey2";
 
-            var result = db.Execute("READWRITETX", key, writekey1, writekey2);
+            var result = db.Execute("READWRITETX", key1, writekey1, writekey2);
             ClassicAssert.AreEqual("SUCCESS", (string)result);
 
             // Read keys to verify transaction succeeded
@@ -999,32 +998,32 @@ namespace Garnet.test
             string newValue2 = "foovalue2";
 
             // This conditional set should pass (prefix matches)
-            result = db.Execute("SETIFPM", key, newValue1, "foo");
+            result = db.Execute("SETIFPM", key1, newValue1, "foo");
             ClassicAssert.AreEqual("OK", (string)result);
 
-            retValue = db.StringGet(key);
+            retValue = db.StringGet(key1);
             ClassicAssert.AreEqual(newValue1, retValue);
 
             // This conditional set should fail (prefix does not match)
-            result = db.Execute("SETIFPM", key, newValue2, "bar");
+            result = db.Execute("SETIFPM", key1, newValue2, "bar");
             ClassicAssert.AreEqual("OK", (string)result);
 
-            retValue = db.StringGet(key);
+            retValue = db.StringGet(key1);
             ClassicAssert.AreEqual(newValue1, retValue);
 
             // Test MYDICTSET
             string newKey1 = "newkey1";
             string newKey2 = "newkey2";
 
-            db.Execute("MYDICTSET", key, newKey1, newValue1);
+            db.Execute("MYDICTSET", key2, newKey1, newValue1);
 
-            var dictVal = db.Execute("MYDICTGET", key, newKey1);
+            var dictVal = db.Execute("MYDICTGET", key2, newKey1);
             ClassicAssert.AreEqual(newValue1, (string)dictVal);
 
-            db.Execute("MYDICTSET", key, newKey2, newValue2);
+            db.Execute("MYDICTSET", key2, newKey2, newValue2);
 
             // Test MYDICTGET
-            dictVal = db.Execute("MYDICTGET", key, newKey2);
+            dictVal = db.Execute("MYDICTGET", key2, newKey2);
             ClassicAssert.AreEqual(newValue2, (string)dictVal);
         }
 

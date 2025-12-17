@@ -7,6 +7,8 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
+#pragma warning disable IDE1006 // Naming Styles
+
 namespace Tsavorite.test
 {
     [TestFixture]
@@ -66,7 +68,7 @@ namespace Tsavorite.test
                     entry[i - 1] = (byte)(i - 1);
 
                 // Add to TsavoriteLog
-                log.Enqueue(entry);
+                _ = log.Enqueue(entry);
             }
 
             // Commit to the log
@@ -92,13 +94,12 @@ namespace Tsavorite.test
                     entry[j - 1] = (byte)(j - 1);
 
                 // Add to TsavoriteLog
-                logUncommitted.Enqueue(entry);
+                _ = logUncommitted.Enqueue(entry);
             }
 
             // Wait for safe tail to catch up
             while (logUncommitted.SafeTailAddress < logUncommitted.TailAddress)
-                Thread.Yield();
-
+                _ = Thread.Yield();
         }
 
         [Test]
@@ -117,7 +118,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -149,7 +150,7 @@ namespace Tsavorite.test
             // Indirectly used in other tests, but good to have the basic test here for completeness
 
             // Read the log - Look for the flag so know each entry is unique
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress))
             {
                 var next = iter.GetNext(out byte[] result, out _, out _);
                 ClassicAssert.IsTrue(next);
@@ -165,7 +166,7 @@ namespace Tsavorite.test
                 // Wait for allocator to realize the new BeginAddress
                 // Needed as this is done post-commit
                 while (log.AllocatorBeginAddress < log.TailAddress)
-                    Thread.Yield();
+                    _ = Thread.Yield();
 
                 // Iterator will skip ahead to tail
                 next = iter.GetNext(out result, out _, out _);
@@ -178,7 +179,7 @@ namespace Tsavorite.test
                 tcs.Cancel();
                 try
                 {
-                    task.GetAwaiter().GetResult();
+                    _ = task.GetAwaiter().GetResult();
                 }
                 catch { }
             }
@@ -215,7 +216,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             var consumer = new TestConsumer();
-            using (var iter = log.Scan(0, 100_000_000))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress))
             {
                 while (iter.TryConsumeNext(consumer)) { }
             }
@@ -238,7 +239,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, recover: true, scanBufferingMode: ScanBufferingMode.DoublePageBuffering, scanUncommitted: false))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress, recover: true, scanBufferingMode: DiskScanBufferingMode.DoublePageBuffering, scanUncommitted: false))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -270,7 +271,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, recover: true))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress, recover: true))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -302,7 +303,7 @@ namespace Tsavorite.test
 
             // Read the log 
             int currentEntry = 9;   // since starting at specified address of 1000, need to set current entry as 9 so verification starts at proper spot
-            using (var iter = log.Scan(1000, 100_000_000, recover: false))
+            using (var iter = log.Scan(1000, LogAddress.MaxValidAddress, recover: false))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -334,7 +335,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, scanBufferingMode: ScanBufferingMode.DoublePageBuffering))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress, scanBufferingMode: DiskScanBufferingMode.DoublePageBuffering))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -364,7 +365,7 @@ namespace Tsavorite.test
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress, scanBufferingMode: DiskScanBufferingMode.SinglePageBuffering))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {
@@ -395,7 +396,7 @@ namespace Tsavorite.test
             // Setting scanUnCommitted to true is actual test here.
             // Read the log - Look for the flag so know each entry is unique and still reads uncommitted
             int currentEntry = 0;
-            using (var iter = log.Scan(0, 100_000_000, scanUncommitted: true))
+            using (var iter = log.Scan(0, LogAddress.MaxValidAddress, scanUncommitted: true))
             {
                 while (iter.GetNext(out byte[] result, out _, out _))
                 {

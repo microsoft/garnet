@@ -10,7 +10,7 @@ namespace Garnet
 {
     public class MyDictGet : CustomObjectFunctions
     {
-        public override bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
+        public override bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo)
         {
             Debug.Assert(value is MyDict);
 

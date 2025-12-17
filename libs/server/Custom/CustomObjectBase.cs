@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System.IO;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -18,15 +19,21 @@ namespace Garnet.server
         /// Base constructor
         /// </summary>
         /// <param name="type">Object type</param>
-        /// <param name="size"></param>
-        protected CustomObjectBase(byte type, long expiration, long size = 0)
-            : base(expiration, size)
+        /// <param name="heapMemorySize"></param>
+        protected CustomObjectBase(byte type, long heapMemorySize = 0)
+            : base(heapMemorySize)
         {
             this.type = type;
         }
 
-        protected CustomObjectBase(byte type, BinaryReader reader, long size = 0)
-            : base(reader, size)
+        /// <summary>
+        /// Base constructor
+        /// </summary>
+        /// <param name="type">Object type</param>
+        /// <param name="reader"></param>
+        /// <param name="heapMemorySize"></param>
+        protected CustomObjectBase(byte type, BinaryReader reader, long heapMemorySize = 0)
+            : base(reader, heapMemorySize)
         {
             this.type = type;
         }
@@ -35,7 +42,7 @@ namespace Garnet.server
         /// Base copy constructor
         /// </summary>
         /// <param name="obj">Other object</param>
-        protected CustomObjectBase(CustomObjectBase obj) : this(obj.type, obj.Expiration, obj.Size) { }
+        protected CustomObjectBase(CustomObjectBase obj) : this(obj.type) { }
 
         /// <inheritdoc />
         public override byte Type => type;
@@ -54,7 +61,7 @@ namespace Garnet.server
         /// Clone object (shallow copy)
         /// </summary>
         /// <returns></returns>
-        public sealed override GarnetObjectBase Clone() => CloneObject();
+        public sealed override IHeapObject Clone() => CloneObject();
 
         /// <inheritdoc />
         public sealed override void DoSerialize(BinaryWriter writer)
@@ -67,7 +74,7 @@ namespace Garnet.server
         public abstract override void Dispose();
 
         /// <inheritdoc />
-        public sealed override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+        public sealed override bool Operate(ref ObjectInput input, ref ObjectOutput output,
                                             byte respProtocolVersion, out long sizeChange)
         {
             sizeChange = 0;
@@ -82,7 +89,7 @@ namespace Garnet.server
                     if ((byte)input.header.type != this.type)
                     {
                         // Indicates an incorrect type of key
-                        output.OutputFlags |= ObjectStoreOutputFlags.WrongType;
+                        output.OutputFlags |= OutputFlags.WrongType;
                         output.SpanByteAndMemory.Length = 0;
                         return true;
                     }

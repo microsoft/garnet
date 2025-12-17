@@ -8,22 +8,23 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
     /// <summary>
     /// <see cref="ScratchBufferAllocator"/> is responsible for allocating sufficient memory and copying data into a buffer
-    /// and returning an <see cref="ArgSlice"/> to the caller.
+    /// and returning an <see cref="PinnedSpanByte"/> to the caller.
     /// Whenever the current buffer runs out of space, a new buffer is allocated, without copying the previous buffer data.
-    /// The previous allocated buffers are kept rooted in a stack by the manager, so that each <see cref="ArgSlice"/> that wasn't explicitly
+    /// The previous allocated buffers are kept rooted in a stack by the manager, so that each <see cref="PinnedSpanByte"/> that wasn't explicitly
     /// rewound is not going to be GCed.
     ///
     /// The manager is meant to be called from a single-threaded context (i.e. one manager per session).
     /// Each call to CreateArgSlice will copy the data to the current or new buffer that could contain the data in its entirety,
-    /// so rewinding the <see cref="ArgSlice"/> (i.e. releasing the memory) should be called in reverse order to assignment.
+    /// so rewinding the <see cref="PinnedSpanByte"/> (i.e. releasing the memory) should be called in reverse order to assignment.
     /// 
     /// Note: Use <see cref="ScratchBufferBuilder"/> if you need all data to remain in a continuous chunk of memory (which is not promised by
-    /// <see cref="ScratchBufferAllocator"/>) and you do not need to reuse previously returned <see cref="ArgSlice"/> structs
+    /// <see cref="ScratchBufferAllocator"/>) and you do not need to reuse previously returned <see cref="PinnedSpanByte"/> structs
     /// (as consequent allocations may cause them to point to GCed areas in memory).
     /// </summary>
     internal sealed unsafe class ScratchBufferAllocator
@@ -51,12 +52,12 @@ namespace Garnet.server
             /// <summary>
             /// Length of the entire scratch buffer
             /// </summary>
-            internal int Length => scratchBuffer.Length;
+            internal readonly int Length => scratchBuffer.Length;
 
             /// <summary>
             /// True if buffer was not yet allocated
             /// </summary>
-            internal bool IsDefault => scratchBuffer == null;
+            internal readonly bool IsDefault => scratchBuffer == null;
 
             /// <summary>
             /// Initializes the scratch buffer to a specified length
@@ -109,7 +110,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Reset all scratch buffers managed by the <see cref="ScratchBufferAllocator"/>.
-        /// Loses all <see cref="ArgSlice"/>s created on the scratch buffers.
+        /// Loses all <see cref="PinnedSpanByte"/>s created on the scratch buffers.
         /// </summary>
         public void Reset()
         {
@@ -160,11 +161,11 @@ namespace Garnet.server
 
         /// <summary>
         /// Rewind (pop) the last entry of the current scratch buffer (rewinding the current scratch buffer offset),
-        /// if it contains the given <see cref="ArgSlice"/>
+        /// if it contains the given <see cref="PinnedSpanByte"/>
         /// </summary>
-        /// <param name="slice">The <see cref="ArgSlice"/> to rewind</param>
+        /// <param name="slice">The <see cref="PinnedSpanByte"/> to rewind</param>
         /// <returns>True if successful</returns>
-        public bool RewindScratchBuffer(ref ArgSlice slice)
+        public bool RewindScratchBuffer(ref PinnedSpanByte slice)
         {
             if (currScratchBuffer.IsDefault) return false;
 
@@ -205,15 +206,15 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Create an <see cref="ArgSlice"/> from the given ReadOnlySpan
+        /// Create an <see cref="PinnedSpanByte"/> from the given ReadOnlySpan
         /// </summary>
         /// <param name="bytes">Input bytes</param>
-        /// <returns>Created <see cref="ArgSlice"/></returns>
-        public ArgSlice CreateArgSlice(ReadOnlySpan<byte> bytes)
+        /// <returns>Created <see cref="PinnedSpanByte"/></returns>
+        public PinnedSpanByte CreateArgSlice(ReadOnlySpan<byte> bytes)
         {
             ExpandScratchBufferIfNeeded(bytes.Length);
 
-            var retVal = new ArgSlice(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, bytes.Length);
+            var retVal = PinnedSpanByte.FromPinnedPointer(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, bytes.Length);
             bytes.CopyTo(retVal.Span);
 
             currScratchBuffer.scratchBufferOffset += bytes.Length;
@@ -222,32 +223,32 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Create an <see cref="ArgSlice"/> in UTF8 format from the given string
+        /// Create an <see cref="PinnedSpanByte"/> in UTF8 format from the given string
         /// </summary>
         /// <param name="str">Input string</param>
-        /// <returns>Created <see cref="ArgSlice"/></returns>
-        public ArgSlice CreateArgSlice(string str)
+        /// <returns>Created <see cref="PinnedSpanByte"/></returns>
+        public PinnedSpanByte CreateArgSlice(string str)
         {
             var length = Encoding.UTF8.GetByteCount(str);
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, length);
-            Encoding.UTF8.GetBytes(str, retVal.Span);
+            var retVal = PinnedSpanByte.FromPinnedPointer(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, length);
+            _ = Encoding.UTF8.GetBytes(str, retVal.Span);
             currScratchBuffer.scratchBufferOffset += length;
 
             return retVal;
         }
 
         /// <summary>
-        /// Create an <see cref="ArgSlice"/> of specified length, leaves contents as is
+        /// Create an <see cref="PinnedSpanByte"/> of specified length, leaves contents as is
         /// </summary>
         /// <param name="length">Length of slice</param>
-        /// <returns>Created <see cref="ArgSlice"/></returns>
-        public ArgSlice CreateArgSlice(int length)
+        /// <returns>Created <see cref="PinnedSpanByte"/></returns>
+        public PinnedSpanByte CreateArgSlice(int length)
         {
             ExpandScratchBufferIfNeeded(length);
 
-            var retVal = new ArgSlice(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, length);
+            var retVal = PinnedSpanByte.FromPinnedPointer(currScratchBuffer.scratchBufferHead + currScratchBuffer.scratchBufferOffset, length);
             currScratchBuffer.scratchBufferOffset += length;
             Debug.Assert(currScratchBuffer.scratchBufferOffset <= currScratchBuffer.Length);
             return retVal;

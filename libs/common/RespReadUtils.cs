@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common.Parsing;
+using Tsavorite.core;
 
 namespace Garnet.common
 {
@@ -1235,85 +1236,22 @@ namespace Garnet.common
         }
 
         /// <summary>
-        /// Read serialized data for migration
-        /// </summary>
-        public static bool TryReadSerializedSpanByte(ref byte* keyPtr, ref byte keyMetaDataSize, ref byte* valPtr, ref byte valMetaDataSize, ref byte* ptr, byte* end)
+        /// Read serialized data for migration and replication. For details of the layout see <see cref="DiskLogRecord.Serialize"/>.
+        /// </summary>  
+        public static bool GetSerializedRecordSpan(out PinnedSpanByte recordSpan, ref byte* ptr, byte* end)
         {
-            //1. safe read ksize
+            // 1. Safe read recordSize.
             if (ptr + sizeof(int) > end)
+            {
+                recordSpan = default;
                 return false;
-            var ksize = *(int*)ptr;
+            }
+            var recordLength = *(int*)ptr;
             ptr += sizeof(int);
 
-            //2. safe read key bytes
-            if (ptr + ksize + 1 > end)
-                return false;
-            keyPtr = ptr - sizeof(int);
-            ptr += ksize;
-            keyMetaDataSize = *ptr++;
-
-            //3. safe read vsize
-            if (ptr + 4 > end)
-                return false;
-            var vsize = *(int*)ptr;
-            ptr += sizeof(int);
-
-            //4. safe read value bytes
-            if (ptr + vsize + 1 > end)
-                return false;
-            valPtr = ptr - sizeof(int);
-            ptr += vsize;
-            valMetaDataSize = *ptr++;
-
-            return true;
-        }
-
-        /// <summary>
-        /// Read serialized data for migration
-        /// </summary>
-        public static bool TryReadSerializedData(out byte[] key, out byte[] value, out long expiration, ref byte* ptr, byte* end)
-        {
-            expiration = -1;
-            key = null;
-            value = null;
-
-            //1. safe read ksize
-            if (ptr + 4 > end)
-                return false;
-            var keyLen = *(int*)ptr;
-            ptr += 4;
-
-            //2. safe read keyPtr
-            if (ptr + keyLen > end)
-                return false;
-            var keyPtr = ptr;
-            ptr += keyLen;
-
-            //3. safe read vsize
-            if (ptr + 4 > end)
-                return false;
-            var valLen = *(int*)ptr;
-            ptr += 4;
-
-            //4. safe read valPtr
-            if (ptr + valLen > end)
-                return false;
-            var valPtr = ptr;
-            ptr += valLen;
-
-            //5. safe read expiration info
-            if (ptr + 8 > end)
-                return false;
-            expiration = *(long*)ptr;
-            ptr += 8;
-
-            key = new byte[keyLen];
-            value = new byte[valLen];
-            fixed (byte* kPtr = key)
-                Buffer.MemoryCopy(keyPtr, kPtr, keyLen, keyLen);
-            fixed (byte* vPtr = value)
-                Buffer.MemoryCopy(valPtr, vPtr, valLen, valLen);
-
+            // 2. The record starts immediately after the length prefix.
+            recordSpan = PinnedSpanByte.FromPinnedPointer(ptr, recordLength);
+            ptr += recordLength;
             return true;
         }
 

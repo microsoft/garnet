@@ -5,6 +5,7 @@ using System;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -51,18 +52,17 @@ namespace Garnet.test
             var server = redis.GetServer(TestUtils.EndPoint);
             var info = TestUtils.GetStoreAddressInfo(server);
 
-            // Start at tail address of 64
-            ClassicAssert.AreEqual(64, info.TailAddress);
+            // Start at tail address of PageHeader.Size (64)
+            ClassicAssert.AreEqual(PageHeader.Size, info.TailAddress);
 
             var expire = 100;
             var key0 = $"key{0:00000}";
             _ = db.StringSet(key0, key0, TimeSpan.FromSeconds(expire));
 
-            // Record size for key0 is 8 bytes header + 16 bytes key + 16 bytes value + 8 bytes expiry = 48 bytes
-            // so the new tail address should be 64 + 48 = 112
-            // That is, key0 is located at [64, 112)
+            // Record size for key0 is RecordInfo.Size (8) + MinLengthMetadataBytes (5) + 2 * 8 bytes (key and value) + 8 bytes expiry = 13 + 24 = 37 bytes rounded up to 40
+            // so the new tail address should be 64 + 40 = 104 (that is, the record for key0 is located at [64, 104)).
             info = TestUtils.GetStoreAddressInfo(server);
-            ClassicAssert.AreEqual(112, info.TailAddress);
+            ClassicAssert.AreEqual(104, info.TailAddress);
 
             // Make the record read-only by adding more records
             MakeReadOnly(info.TailAddress, server, db);
@@ -71,16 +71,16 @@ namespace Garnet.test
             var previousTail = info.TailAddress;
 
             // The first record inserted (key0) is now read-only
-            ClassicAssert.IsTrue(info.ReadOnlyAddress >= 112);
+            ClassicAssert.IsTrue(info.ReadOnlyAddress >= 104);
 
             // Persist the key, which should cause RMW to CopyUpdate to tail
             var response = db.KeyPersist(key0);
             ClassicAssert.IsTrue(response);
 
-            // Now key0 is only 40 bytes, as we are removing the expiration
-            // That is, key0 is now moved to [previousTail, previousTail + 40)
+            // Now key0 is only 32 bytes, as we are removing the expiration
+            // That is, key0 is now moved to [previousTail, previousTail + 32)
             info = TestUtils.GetStoreAddressInfo(server);
-            ClassicAssert.AreEqual(previousTail + 40, info.TailAddress);
+            ClassicAssert.AreEqual(previousTail + 32, info.TailAddress);
 
             // Verify that key0 exists with correct value
             ClassicAssert.AreEqual(key0, (string)db.StringGet(key0));

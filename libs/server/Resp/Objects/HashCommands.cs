@@ -31,8 +31,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(command.ToString());
             }
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var hop =
                 command switch
@@ -48,7 +47,7 @@ namespace Garnet.server
 
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var status = storageApi.HashSet(keyBytes, ref input, out var output);
+            var status = storageApi.HashSet(key, ref input, out var output);
 
             switch (status)
             {
@@ -86,17 +85,16 @@ namespace Garnet.server
             if (parseState.Count != 2)
                 return AbortWithWrongNumberOfArguments(command.ToString());
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGET };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.HashGet(keyBytes, ref input, ref output);
+            var status = storageApi.HashGet(key, ref input, ref output);
 
             switch (status)
             {
@@ -129,17 +127,16 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(command.ToString());
 
             // Get the hash key
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HGETALL };
             var input = new ObjectInput(header, respProtocolVersion);
 
-            // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.HashGetAll(keyBytes, ref input, ref output);
+            var status = storageApi.HashGetAll(key, ref input, ref output);
 
             switch (status)
             {
@@ -172,18 +169,17 @@ namespace Garnet.server
             if (parseState.Count < 2)
                 return AbortWithWrongNumberOfArguments(command.ToString());
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HMGET };
 
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.HashGetMultiple(keyBytes, ref input, ref output);
+            var status = storageApi.HashGetMultiple(key, ref input, ref output);
 
             switch (status)
             {
@@ -195,7 +191,7 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteArrayLength(parseState.Count - 1, ref dcurr, dend))
                         SendAndReset();
 
-                    for (var i = 0; i < parseState.Count - 1; ++i)
+                    for (var i = 0; i < parseState.Count - 1; i++)
                         WriteNull();
                     break;
                 case GarnetStatus.WRONGTYPE:
@@ -220,8 +216,7 @@ namespace Garnet.server
             if (parseState.Count < 1 || parseState.Count > 3)
                 return AbortWithWrongNumberOfArguments(command.ToString());
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var paramCount = 1;
             var withValues = false;
@@ -259,17 +254,17 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HRANDFIELD };
             var input = new ObjectInput(header, countWithMetadata, seed);
 
-            // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = GarnetStatus.NOTFOUND;
 
             // This prevents going to the backend if HRANDFIELD is called with a count of 0
             if (paramCount != 0)
             {
-                // Prepare GarnetObjectStore output
-                output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
-                status = storageApi.HashRandomField(keyBytes, ref input, ref output);
+                // Prepare output
+                output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+                status = storageApi.HashRandomField(key, ref input, ref output);
             }
 
             switch (status)
@@ -311,15 +306,14 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("HLEN");
             }
 
-            // Get the key
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            // Get the key 
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HLEN };
             var input = new ObjectInput(header);
 
-            var status = storageApi.HashLength(keyBytes, ref input, out var output);
+            var status = storageApi.HashLength(key, ref input, out var output);
 
             switch (status)
             {
@@ -355,14 +349,13 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("HSTRLEN");
             }
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HSTRLEN };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var status = storageApi.HashStrLength(keyBytes, ref input, out var output);
+            var status = storageApi.HashStrLength(key, ref input, out var output);
 
             switch (status)
             {
@@ -398,14 +391,13 @@ namespace Garnet.server
             }
 
             // Get the key for Hash
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HDEL };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var status = storageApi.HashDelete(keyBytes, ref input, out var output);
+            var status = storageApi.HashDelete(key, ref input, out var output);
 
             switch (status)
             {
@@ -439,14 +431,13 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments("HEXISTS");
             }
 
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXISTS };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var status = storageApi.HashExists(keyBytes, ref input, out var output);
+            var status = storageApi.HashExists(key, ref input, out var output);
 
             switch (status)
             {
@@ -483,8 +474,7 @@ namespace Garnet.server
             }
 
             // Get the key for Hash
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var op =
                 command switch
@@ -498,12 +488,12 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = op };
             var input = new ObjectInput(header);
 
-            // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = command == RespCommand.HKEYS
-                ? storageApi.HashKeys(keyBytes, ref input, ref output)
-                : storageApi.HashVals(keyBytes, ref input, ref output);
+                ? storageApi.HashKeys(key, ref input, ref output)
+                : storageApi.HashVals(key, ref input, ref output);
 
             switch (status)
             {
@@ -541,8 +531,7 @@ namespace Garnet.server
             }
 
             // Get the key for Hash
-            var sbKey = parseState.GetArgSliceByRef(0).SpanByte;
-            var keyBytes = sbKey.ToByteArray();
+            var key = parseState.GetArgSliceByRef(0);
 
             var op =
                 command switch
@@ -556,10 +545,10 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = op };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            // Prepare GarnetObjectStore output
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.HashIncrement(keyBytes, ref input, ref output);
+            var status = storageApi.HashIncrement(key, ref input, ref output);
 
             switch (status)
             {
@@ -584,9 +573,6 @@ namespace Garnet.server
         private unsafe bool HashExpire<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
-
             if (parseState.Count <= 4)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -642,7 +628,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HEXPIRE };
             var input = new ObjectInput(header, ref parseState, startIdx: currIdx, arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail);
 
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.HashExpire(key, ref input, ref output);
 
@@ -680,9 +666,6 @@ namespace Garnet.server
         private unsafe bool HashTimeToLive<TGarnetApi>(RespCommand command, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
-
             if (parseState.Count <= 3)
             {
                 return AbortWithWrongNumberOfArguments(command.ToString());
@@ -732,7 +715,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HTTL };
             var input = new ObjectInput(header, ref fieldsParseState);
 
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref output);
 
@@ -762,9 +745,6 @@ namespace Garnet.server
         private unsafe bool HashPersist<TGarnetApi>(ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (storeWrapper.objectStore == null)
-                throw new GarnetException("Object store is disabled");
-
             if (parseState.Count <= 3)
             {
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.HPERSIST));
@@ -794,7 +774,7 @@ namespace Garnet.server
             var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HPERSIST };
             var input = new ObjectInput(header, ref fieldsParseState);
 
-            var output = new GarnetObjectStoreOutput(new(dcurr, (int)(dend - dcurr)));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.HashPersist(key, ref input, ref output);
 

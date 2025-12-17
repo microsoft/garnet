@@ -40,7 +40,7 @@ namespace Garnet.server
         /// <param name="input">Input</param>
         /// <param name="writer">Output</param>
         /// <returns>True if an initial update is needed, otherwise false</returns>
-        public virtual bool NeedInitialUpdate(ReadOnlyMemory<byte> key, ref ObjectInput input, ref RespMemoryWriter writer) => throw new NotImplementedException();
+        public virtual bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ObjectInput input, ref RespMemoryWriter writer) => throw new NotImplementedException();
 
         /// <summary>
         /// Create initial value, given key and input. Optionally generate output for command.
@@ -51,7 +51,7 @@ namespace Garnet.server
         /// <param name="writer">Output</param>
         /// <param name="rmwInfo">Advanced arguments</param>
         /// <returns>True if done, false if we need to cancel the update</returns>
-        public virtual bool InitialUpdater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo) => Updater(key, ref input, value, ref writer, ref rmwInfo);
+        public virtual bool InitialUpdater(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo) => Updater(key, ref input, value, ref writer, ref rmwInfo);
 
         /// <summary>
         /// Update given value in place, given key and input. Optionally generate output for command.
@@ -62,7 +62,7 @@ namespace Garnet.server
         /// <param name="writer">Output</param>
         /// <param name="rmwInfo">Advanced arguments</param>
         /// <returns>True if done, false if we have no space to update in place</returns>
-        public virtual bool Updater(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo) => throw new NotImplementedException();
+        public virtual bool Updater(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref RMWInfo rmwInfo) => throw new NotImplementedException();
 
         /// <summary>
         /// Read value, given key and input and generate output for command.
@@ -73,7 +73,7 @@ namespace Garnet.server
         /// <param name="writer">Output</param>
         /// <param name="readInfo">Advanced arguments</param>
         /// <returns>True if done, false if not found</returns>
-        public virtual bool Reader(ReadOnlyMemory<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo) => throw new NotImplementedException();
+        public virtual bool Reader(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, ref RespMemoryWriter writer, ref ReadInfo readInfo) => throw new NotImplementedException();
 
         /// <summary>
         /// Aborts the execution of the current object store command and outputs

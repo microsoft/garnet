@@ -160,8 +160,6 @@ namespace Garnet.cluster
         async Task MainStreamingSnapshotDriver()
         {
             // Parameters for sync operation
-            var disableObjects = ClusterProvider.serverOptions.DisableObjects;
-
             try
             {
                 // Lock to avoid the addition of new replica sync sessions while sync is in progress
@@ -247,7 +245,6 @@ namespace Garnet.cluster
 
                         // Set store version to operate on
                         Sessions[i].currentStoreVersion = ClusterProvider.storeWrapper.store.CurrentVersion;
-                        Sessions[i].currentObjectStoreVersion = disableObjects ? -1 : ClusterProvider.storeWrapper.objectStore.CurrentVersion;
 
                         // If checkpoint is not needed mark this sync session as complete
                         // to avoid waiting for other replicas which may need to receive the latest checkpoint
@@ -285,21 +282,11 @@ namespace Garnet.cluster
 
                 // Iterate through main store
                 var mainStoreCheckpointTask = ClusterProvider.storeWrapper.store.
-                    TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, cancellationToken: cts.Token, streamingSnapshotIteratorFunctions: manager.mainStoreSnapshotIterator);
+                    TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, cancellationToken: cts.Token, streamingSnapshotIteratorFunctions: manager.StoreSnapshotIterator);
 
                 var result = await WaitOrDie(checkpointTask: mainStoreCheckpointTask, iteratorManager: manager);
                 if (!result.success)
                     throw new GarnetException("Main store checkpoint stream failed!");
-
-                if (!ClusterProvider.serverOptions.DisableObjects)
-                {
-                    // Iterate through object store
-                    var objectStoreCheckpointTask = ClusterProvider.storeWrapper.objectStore.
-                        TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, cancellationToken: cts.Token, streamingSnapshotIteratorFunctions: manager.objectStoreSnapshotIterator);
-                    result = await WaitOrDie(checkpointTask: objectStoreCheckpointTask, iteratorManager: manager);
-                    if (!result.success)
-                        throw new GarnetException("Object store checkpoint stream failed!");
-                }
 
                 // Note: We do not truncate the AOF here as this was just a "virtual" checkpoint
                 // WaitOrDie is needed here to check if streaming checkpoint is making progress.

@@ -12,12 +12,12 @@ namespace Garnet.server
         /// Save key entry
         /// </summary>
         /// <param name="key"></param>
-        /// <param name="isObject"></param>
         /// <param name="type"></param>
-        public void SaveKeyEntryToLock(ArgSlice key, bool isObject, LockType type)
+        public void SaveKeyEntryToLock(PinnedSpanByte key, LockType type)
         {
-            UpdateTransactionStoreType(isObject ? StoreType.Object : StoreType.Main);
-            keyEntries.AddKey(key, isObject, type);
+            // Indicate whether transaction has to perform a write operation (used to skip writing to AOF otherwise)
+            PerformWrites |= type == LockType.Exclusive;
+            keyEntries.AddKey(key, type);
         }
 
         /// <summary>
@@ -43,7 +43,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="type"></param>
-        public unsafe void VerifyKeyOwnership(ArgSlice key, LockType type)
+        public unsafe void VerifyKeyOwnership(PinnedSpanByte key, LockType type)
         {
             if (!clusterEnabled) return;
 
@@ -63,6 +63,8 @@ namespace Garnet.server
             if (cmdInfo.KeySpecs == null || cmdInfo.KeySpecs.Length == 0)
                 return;
 
+            AddTransactionStoreType(cmdInfo.StoreType);
+
             foreach (var keySpec in cmdInfo.KeySpecs)
             {
                 if (!respSession.parseState.TryGetKeySearchArgsFromSimpleKeySpec(keySpec, cmdInfo.IsSubCommand, out var searchArgs))
@@ -74,10 +76,7 @@ namespace Garnet.server
                 for (var currIdx = searchArgs.firstIdx; currIdx <= searchArgs.lastIdx; currIdx += searchArgs.step)
                 {
                     var key = respSession.parseState.GetArgSliceByRef(currIdx);
-                    if (cmdInfo.StoreType is StoreType.Main or StoreType.All)
-                        SaveKeyEntryToLock(key, false, lockType);
-                    if (cmdInfo.StoreType is StoreType.Object or StoreType.All && !objectStoreBasicContext.IsNull)
-                        SaveKeyEntryToLock(key, true, lockType);
+                    SaveKeyEntryToLock(key, lockType);
                     SaveKeyArgSlice(key);
                 }
             }

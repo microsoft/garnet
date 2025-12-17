@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -69,7 +70,7 @@ namespace Garnet.server
                     return true;
                 }
 
-                bool startTxn = txnManager.Run();
+                var startTxn = txnManager.Run();
 
                 if (startTxn)
                 {
@@ -214,7 +215,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.GenericErrWrongNumArgs);
             }
 
-            List<ArgSlice> keys = [];
+            List<PinnedSpanByte> keys = [];
 
             for (var c = 0; c < count; c++)
             {
@@ -222,9 +223,11 @@ namespace Garnet.server
                 keys.Add(nextKey);
             }
 
+            txnManager.AddTransactionStoreType(type);
+
             foreach (var toWatch in keys)
             {
-                txnManager.Watch(toWatch, type);
+                txnManager.Watch(toWatch);
             }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))

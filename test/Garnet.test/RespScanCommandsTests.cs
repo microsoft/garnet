@@ -92,7 +92,7 @@ namespace Garnet.test
 
             // set 10_000 strings
             const int KeyCount = 10_000;
-            for (int i = 0; i < KeyCount; ++i)
+            for (int i = 0; i < KeyCount; i++)
                 db.StringSet($"try:{i}", i);
 
             // get and count keys using SE Redis, using the default pageSize of 250
@@ -127,25 +127,25 @@ namespace Garnet.test
             }
 
             var r = db.Execute("MEMORY", ["USAGE", "keyOne"]);
-            ClassicAssert.AreEqual("40", r.ToString());
+            ClassicAssert.AreEqual("32", r.ToString());
 
             r = db.Execute("MEMORY", ["USAGE", "myss"]);
-            ClassicAssert.AreEqual("344", r.ToString());
+            ClassicAssert.AreEqual("376", r.ToString());
 
             r = db.Execute("MEMORY", ["USAGE", "mylist"]);
-            ClassicAssert.AreEqual("176", r.ToString());
+            ClassicAssert.AreEqual("208", r.ToString());
 
             r = db.Execute("MEMORY", ["USAGE", "myset"]);
-            ClassicAssert.AreEqual("200", r.ToString());
+            ClassicAssert.AreEqual("232", r.ToString());
 
             r = db.Execute("MEMORY", ["USAGE", "myhash"]);
-            ClassicAssert.AreEqual("264", r.ToString());
+            ClassicAssert.AreEqual("296", r.ToString());
 
             r = db.Execute("MEMORY", ["USAGE", "foo"]);
             ClassicAssert.IsTrue(r.IsNull);
 
             r = db.Execute("MEMORY", ["USAGE", "hllKey"]);
-            ClassicAssert.AreEqual("304", r.ToString());
+            ClassicAssert.AreEqual("296", r.ToString());
         }
 
 
@@ -344,7 +344,7 @@ namespace Garnet.test
                 recordsReturned += keysMatch.Length;
             } while (cursor != 0);
 
-            ClassicAssert.IsTrue(recordsReturned == nKeys);
+            ClassicAssert.AreEqual(nKeys, recordsReturned);
         }
 
         [Test]

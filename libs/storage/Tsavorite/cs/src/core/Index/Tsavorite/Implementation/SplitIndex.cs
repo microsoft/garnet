@@ -2,13 +2,16 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    using static LogAddress;
+
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         internal void SplitAllBuckets()
         {
@@ -30,6 +33,7 @@ namespace Tsavorite.core
             overflowBucketsAllocatorResize = null;
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal void SplitBuckets(long hash)
         {
             long masked_bucket_index = hash & state[1 - resizeInfo.version].size_mask;
@@ -114,27 +118,25 @@ namespace Tsavorite.core
                 HashBucketEntry entry = default;
                 do
                 {
-                    for (int index = 0; index < Constants.kOverflowBucketIndex; ++index)
+                    for (int index = 0; index < Constants.kOverflowBucketIndex; index++)
                     {
                         entry.word = *(((long*)src_start) + index);
                         if (Constants.kInvalidEntry == entry.word)
-                        {
                             continue;
-                        }
 
-                        var logicalAddress = entry.Address;
-                        long physicalAddress = 0;
-
-                        if (entry.ReadCache && entry.AbsoluteAddress >= readCacheBase.HeadAddress)
-                            physicalAddress = readcache.GetPhysicalAddress(entry.AbsoluteAddress);
-                        else if (logicalAddress >= hlogBase.HeadAddress)
-                            physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-
-                        // It is safe to always use hlog instead of readcache for some calls such
-                        // as GetKey and GetInfo
-                        if (physicalAddress != 0)
+                        LogRecord logRecord = default;
+                        if (entry.IsReadCache)
                         {
-                            var hash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(physicalAddress));
+                            if (entry.Address >= readcacheBase.HeadAddress)
+                                logRecord = readcache.CreateLogRecord(entry.Address);
+                        }
+                        else if (entry.Address >= hlogBase.HeadAddress)
+                            logRecord = hlog.CreateLogRecord(entry.Address);
+
+                        if (logRecord.IsSet)
+                        {
+                            var physicalAddress = logRecord.physicalAddress;
+                            var hash = storeFunctions.GetKeyHashCode64(logRecord.Key);
                             if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == 0)
                             {
                                 // Insert in left
@@ -151,8 +153,8 @@ namespace Tsavorite.core
                                 left++;
 
                                 // Insert previous address in right
-                                entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(physicalAddress).PreviousAddress, 1);
-                                if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
+                                entry.Address = TraceBackForOtherChainStart(LogRecord.GetInfo(physicalAddress).PreviousAddress, 1);
+                                if ((entry.Address != kInvalidAddress) && (entry.Address != kTempInvalidAddress))
                                 {
                                     if (right == right_end)
                                     {
@@ -183,8 +185,8 @@ namespace Tsavorite.core
                                 right++;
 
                                 // Insert previous address in left
-                                entry.Address = TraceBackForOtherChainStart(hlog.GetInfo(physicalAddress).PreviousAddress, 0);
-                                if ((entry.Address != Constants.kInvalidAddress) && (entry.Address != Constants.kTempInvalidAddress))
+                                entry.Address = TraceBackForOtherChainStart(LogRecord.GetInfo(physicalAddress).PreviousAddress, 0);
+                                if ((entry.Address != kInvalidAddress) && (entry.Address != kTempInvalidAddress))
                                 {
                                     if (left == left_end)
                                     {
@@ -242,32 +244,24 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                HashBucketEntry entry = default;
-                entry.Address = logicalAddress;
-                if (entry.ReadCache)
+                LogRecord logRecord;
+                if (IsReadCache(logicalAddress))
                 {
-                    if (logicalAddress < readCacheBase.HeadAddress)
+                    if (logicalAddress < readcacheBase.HeadAddress)
                         break;
-                    var physicalAddress = readcache.GetPhysicalAddress(logicalAddress);
-                    var hash = storeFunctions.GetKeyHashCode64(ref readcache.GetKey(physicalAddress));
-                    if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
-                    {
-                        return logicalAddress;
-                    }
-                    logicalAddress = readcache.GetInfo(physicalAddress).PreviousAddress;
+                    logRecord = new LogRecord(readcacheBase.GetPhysicalAddress(logicalAddress));
                 }
                 else
                 {
                     if (logicalAddress < hlogBase.HeadAddress)
                         break;
-                    var physicalAddress = hlog.GetPhysicalAddress(logicalAddress);
-                    var hash = storeFunctions.GetKeyHashCode64(ref hlog.GetKey(physicalAddress));
-                    if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
-                    {
-                        return logicalAddress;
-                    }
-                    logicalAddress = hlog.GetInfo(physicalAddress).PreviousAddress;
+                    logRecord = new LogRecord(hlogBase.GetPhysicalAddress(logicalAddress));
                 }
+
+                var hash = storeFunctions.GetKeyHashCode64(logRecord.Key);
+                if ((hash & state[resizeInfo.version].size_mask) >> (state[resizeInfo.version].size_bits - 1) == bit)
+                    return logicalAddress;
+                logicalAddress = logRecord.Info.PreviousAddress;
             }
             return logicalAddress;
         }

@@ -7,17 +7,17 @@ using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
-    internal struct OverflowBucketLockTable<TKey, TValue, TStoreFunctions, TAllocator> : ILockTable<TKey>
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal struct OverflowBucketLockTable<TStoreFunctions, TAllocator> : ILockTable
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        private readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
+        private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
 
         internal readonly long NumBuckets => store.state[store.resizeInfo.version].size_mask + 1;
 
         public readonly bool IsEnabled => store is not null;
 
-        internal OverflowBucketLockTable(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store) => this.store = store;
+        internal OverflowBucketLockTable(TsavoriteKV<TStoreFunctions, TAllocator> store) => this.store = store;
 
         internal readonly long GetSize() => store.state[store.resizeInfo.version].size_mask;
 
@@ -83,16 +83,16 @@ namespace Tsavorite.core
                 IsLockedExclusive = HashBucket.IsLatchedExclusive(hei.firstBucket)
             };
 
-        private static int KeyHashComparer<TLockableKey>(TLockableKey key1, TLockableKey key2, long size_mask)
-            where TLockableKey : ILockableKey
+        private static int KeyHashComparer<TTransactionalKey>(TTransactionalKey key1, TTransactionalKey key2, long size_mask)
+            where TTransactionalKey : ITransactionalKey
         {
             var idx1 = GetBucketIndex(key1.KeyHash, size_mask);
             var idx2 = GetBucketIndex(key2.KeyHash, size_mask);
             return (idx1 != idx2) ? idx1.CompareTo(idx2) : ((byte)key1.LockType).CompareTo((byte)key2.LockType);
         }
 
-        private static int KeyHashComparer<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2, long size_mask)
-            where TLockableKey : ILockableKey
+        private static int KeyHashComparer<TTransactionalKey>(ref TTransactionalKey key1, ref TTransactionalKey key2, long size_mask)
+            where TTransactionalKey : ITransactionalKey
         {
             var idx1 = GetBucketIndex(key1.KeyHash, size_mask);
             var idx2 = GetBucketIndex(key2.KeyHash, size_mask);
@@ -100,31 +100,31 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        internal readonly int CompareKeyHashes<TLockableKey>(TLockableKey key1, TLockableKey key2)
-            where TLockableKey : ILockableKey
+        internal readonly int CompareKeyHashes<TTransactionalKey>(TTransactionalKey key1, TTransactionalKey key2)
+            where TTransactionalKey : ITransactionalKey
             => KeyHashComparer(key1, key2, store.state[store.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
-        internal readonly int CompareKeyHashes<TLockableKey>(ref TLockableKey key1, ref TLockableKey key2)
-            where TLockableKey : ILockableKey
+        internal readonly int CompareKeyHashes<TTransactionalKey>(ref TTransactionalKey key1, ref TTransactionalKey key2)
+            where TTransactionalKey : ITransactionalKey
             => KeyHashComparer(ref key1, ref key2, store.state[store.resizeInfo.version].size_mask);
 
         /// <inheritdoc/>
-        internal readonly void SortKeyHashes<TLockableKey>(Span<TLockableKey> keys)
-            where TLockableKey : ILockableKey
-            => keys.Sort(new KeyComparer<TLockableKey>(store.state[store.resizeInfo.version].size_mask));
+        internal readonly void SortKeyHashes<TTransactionalKey>(Span<TTransactionalKey> keys)
+            where TTransactionalKey : ITransactionalKey
+            => keys.Sort(new KeyComparer<TTransactionalKey>(store.state[store.resizeInfo.version].size_mask));
 
         /// <summary>
         /// Need this struct because the Comparison{T} form of Array.Sort is not available with start and length arguments.
         /// </summary>
-        struct KeyComparer<TLockableKey> : IComparer<TLockableKey>
-            where TLockableKey : ILockableKey
+        struct KeyComparer<TTransactionalKey> : IComparer<TTransactionalKey>
+            where TTransactionalKey : ITransactionalKey
         {
             readonly long size_mask;
 
             internal KeyComparer(long s) => size_mask = s;
 
-            public int Compare(TLockableKey key1, TLockableKey key2) => KeyHashComparer(key1, key2, size_mask);
+            public int Compare(TTransactionalKey key1, TTransactionalKey key2) => KeyHashComparer(key1, key2, size_mask);
         }
 
         /// <inheritdoc/>

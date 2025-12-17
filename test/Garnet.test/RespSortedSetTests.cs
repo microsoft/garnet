@@ -19,12 +19,15 @@ using SetOperation = StackExchange.Redis.SetOperation;
 
 namespace Garnet.test
 {
-    using TestBasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-    /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-    SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-    BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-    /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-    GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
+    using TestBasicGarnetApi = GarnetApi<BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
     [TestFixture]
     public class RespSortedSetTests
@@ -78,7 +81,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableObjectStoreReadCache: true, enableAOF: true, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableReadCache: true, enableAOF: true, lowMemory: true);
             server.Start();
         }
 
@@ -100,16 +103,17 @@ namespace Garnet.test
             db.SortedSetAdd("key1", "b", 2);
 
             var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
-            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext, session.storageSession.objectStoreBasicContext);
+            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.stringBasicContext,
+                session.storageSession.objectBasicContext, session.storageSession.unifiedBasicContext);
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
             {
-                var result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out var items);
+                var result = api.SortedSetPop(PinnedSpanByte.FromPinnedPointer(keyPtr, key.Length), out var items);
                 ClassicAssert.AreEqual(1, items.Length);
                 ClassicAssert.AreEqual("a", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
                 ClassicAssert.AreEqual("1", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
 
-                result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out items);
+                result = api.SortedSetPop(PinnedSpanByte.FromPinnedPointer(keyPtr, key.Length), out items);
                 ClassicAssert.AreEqual(1, items.Length);
                 ClassicAssert.AreEqual("b", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
                 ClassicAssert.AreEqual("2", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
@@ -132,11 +136,12 @@ namespace Garnet.test
             Thread.Sleep(200);
 
             var session = new RespServerSession(0, new EmbeddedNetworkSender(), server.Provider.StoreWrapper, null, null, false);
-            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.basicContext, session.storageSession.objectStoreBasicContext);
+            var api = new TestBasicGarnetApi(session.storageSession, session.storageSession.stringBasicContext,
+                session.storageSession.objectBasicContext, session.storageSession.unifiedBasicContext);
             var key = Encoding.ASCII.GetBytes("key1");
             fixed (byte* keyPtr = key)
             {
-                var result = api.SortedSetPop(new ArgSlice(keyPtr, key.Length), out var items);
+                var result = api.SortedSetPop(PinnedSpanByte.FromPinnedPointer(keyPtr, key.Length), out var items);
                 ClassicAssert.AreEqual(1, items.Length);
                 ClassicAssert.AreEqual("b", Encoding.ASCII.GetString(items[0].member.ReadOnlySpan));
                 ClassicAssert.AreEqual("2", Encoding.ASCII.GetString(items[0].score.ReadOnlySpan));
@@ -204,7 +209,7 @@ namespace Garnet.test
 
             var response = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 1792;
+            var expectedResponse = 1832;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var entries2 = new SortedSetEntry[entries.Length + 1];
@@ -217,7 +222,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 1952;
+            expectedResponse = 1992;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // no new entries get added
@@ -226,7 +231,6 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 1952;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             card = db.SortedSetLength(key);
@@ -237,7 +241,6 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 1952;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var deleted = db.KeyDelete(key);
@@ -503,7 +506,7 @@ namespace Garnet.test
 
             var response = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 1792;
+            var expectedResponse = 1832;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var card = db.SortedSetLength(key);
@@ -587,7 +590,7 @@ namespace Garnet.test
 
             var response = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 1800;
+            var expectedResponse = 1848;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // remove all entries
@@ -613,7 +616,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 360;
+            expectedResponse = 408;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // remove the single entry
@@ -642,7 +645,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 1800;
+            expectedResponse = 1848;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // 1 entry removed
@@ -655,7 +658,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 1640;
+            expectedResponse = 1688;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             // remaining entries removed
@@ -730,7 +733,7 @@ namespace Garnet.test
 
             var response = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 1792;
+            var expectedResponse = 1840;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var last = db.SortedSetPop(key, Order.Descending);
@@ -740,7 +743,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 1632;
+            expectedResponse = 1680;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var last2 = db.SortedSetPop(key, 2, Order.Descending);
@@ -751,7 +754,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", key);
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 1312;
+            expectedResponse = 1360;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
 
             var last3 = db.SortedSetPop(key, 999, Order.Descending);
@@ -786,7 +789,7 @@ namespace Garnet.test
 
             var response = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 1800;
+            var expectedResponse = 1848;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -811,7 +814,7 @@ namespace Garnet.test
 
             var memResponse = db.Execute("MEMORY", "USAGE", key);
             var memActualValue = ResultType.Integer == memResponse.Resp2Type ? Int32.Parse(memResponse.ToString()) : -1;
-            var memExpectedResponse = 1808;
+            var memExpectedResponse = 1864;
             ClassicAssert.AreEqual(memExpectedResponse, memActualValue);
         }
 
@@ -851,7 +854,7 @@ namespace Garnet.test
 
             var response = db.Execute("MEMORY", "USAGE", key);
             var actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            var expectedResponse = 1792;
+            var expectedResponse = 1832;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -910,7 +913,7 @@ namespace Garnet.test
 
             response = db.Execute("MEMORY", "USAGE", "nokey");
             actualValue = ResultType.Integer == response.Resp2Type ? Int32.Parse(response.ToString()) : -1;
-            expectedResponse = 344;
+            expectedResponse = 376;
             ClassicAssert.AreEqual(expectedResponse, actualValue);
         }
 
@@ -2173,7 +2176,7 @@ namespace Garnet.test
                 ]);
             }
 
-            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true, isObjectStore: true);
+            var info = TestUtils.GetStoreAddressInfo(server, includeReadCache: true);
             // Ensure data has spilled to disk
             ClassicAssert.Greater(info.HeadAddress, info.BeginAddress);
 

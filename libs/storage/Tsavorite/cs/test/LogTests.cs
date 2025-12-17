@@ -11,6 +11,9 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
+using static Tsavorite.test.TestUtils;
+
+#pragma warning disable IDE1006 // Naming Styles
 
 namespace Tsavorite.test
 {
@@ -20,17 +23,17 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public void TestDisposeReleasesFileLocksWithCompletedCommit([Values] TestUtils.TestDeviceType deviceType)
+        public void TestDisposeReleasesFileLocksWithCompletedCommit([Values] TestDeviceType deviceType)
         {
-            string filename = Path.Join(TestUtils.MethodTestDir, "TestDisposeRelease" + deviceType.ToString() + ".log");
+            string filename = Path.Join(MethodTestDir, "TestDisposeRelease" + deviceType.ToString() + ".log");
 
-            DirectoryInfo di = Directory.CreateDirectory(TestUtils.MethodTestDir);
-            IDevice device = TestUtils.CreateTestDevice(deviceType, filename);
+            _ = Directory.CreateDirectory(MethodTestDir);
+            IDevice device = CreateTestDevice(deviceType, filename);
             TsavoriteLog log = new TsavoriteLog(new TsavoriteLogSettings
             {
                 LogDevice = device,
                 SegmentSizeBits = 22,
-                LogCommitDir = TestUtils.MethodTestDir,
+                LogCommitDir = MethodTestDir,
                 LogChecksum = LogChecksumType.PerEntry
             });
 
@@ -39,17 +42,7 @@ namespace Tsavorite.test
             log.Commit(spinWait: true);
             log.Dispose();
             device.Dispose();
-            while (true)
-            {
-                try
-                {
-                    di.Delete(recursive: true);
-                    break;
-                }
-                catch
-                {
-                }
-            }
+            DeleteDirectory(MethodTestDir, wait: true);
         }
     }
 
@@ -64,26 +57,26 @@ namespace Tsavorite.test
         protected DeviceLogCommitCheckpointManager manager;
 
         protected static readonly byte[] entry = new byte[100];
-        protected static readonly ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(10000);
+        protected static readonly ReadOnlySpanBatch spanBatch = new(10000);
 
         private bool deleteOnClose;
 
-        protected struct ReadOnlySpanBatch : IReadOnlySpanBatch
+        protected struct ReadOnlySpanBatch(int batchSize) : IReadOnlySpanBatch
         {
-            private readonly int batchSize;
-            public ReadOnlySpanBatch(int batchSize) => this.batchSize = batchSize;
-            public ReadOnlySpan<byte> Get(int index) => entry;
-            public int TotalEntries() => batchSize;
+            private readonly int batchSize = batchSize;
+
+            public readonly ReadOnlySpan<byte> Get(int index) => entry;
+            public readonly int TotalEntries() => batchSize;
         }
 
         protected void BaseSetup(bool deleteOnClose = true)
         {
             // Clean up log files from previous test runs in case they weren't cleaned up
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
+            DeleteDirectory(MethodTestDir, wait: true);
 
             manager = new DeviceLogCommitCheckpointManager(
                 new LocalStorageNamedDeviceFactoryCreator(deleteOnClose: deleteOnClose),
-                new DefaultCheckpointNamingScheme(TestUtils.MethodTestDir), false);
+                new DefaultCheckpointNamingScheme(MethodTestDir), false);
             this.deleteOnClose = deleteOnClose;
         }
 
@@ -98,7 +91,7 @@ namespace Tsavorite.test
             device?.Dispose();
             device = null;
 
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            DeleteDirectory(MethodTestDir);
         }
 
         internal class Counter
@@ -130,7 +123,7 @@ namespace Tsavorite.test
         }
 
         internal static bool IsAsync(IteratorType iterType) =>
-            iterType == IteratorType.AsyncByteVector || iterType == IteratorType.AsyncMemoryOwner;
+            iterType is IteratorType.AsyncByteVector or IteratorType.AsyncMemoryOwner;
 
         protected async ValueTask AssertGetNext(
             IAsyncEnumerator<(byte[] entry, int entryLength, long currentAddress, long nextAddress)>
@@ -178,11 +171,11 @@ namespace Tsavorite.test
             CancellationToken token = cts.Token;
 
             // Enter in some entries then wait on this separate thread
-            await log.EnqueueAsync(entry);
-            await log.EnqueueAsync(entry);
+            _ = await log.EnqueueAsync(entry);
+            _ = await log.EnqueueAsync(entry);
             var commitTask = await log.CommitAsync(null, null, token);
-            await log.EnqueueAsync(entry);
-            await log.CommitAsync(commitTask, null, token);
+            _ = await log.EnqueueAsync(entry);
+            _ = await log.CommitAsync(commitTask, null, token);
         }
     }
 
@@ -199,7 +192,7 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         public async ValueTask TsavoriteLogTest1([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
             log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
@@ -209,9 +202,7 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             log.Commit(true);
 
@@ -222,7 +213,7 @@ namespace Tsavorite.test
             switch (iteratorType)
             {
                 case IteratorType.AsyncByteVector:
-                    await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
+                    await foreach ((byte[] result, _, _, long nextAddress) in iter.GetAsyncEnumerable())
                     {
                         ClassicAssert.IsTrue(result.SequenceEqual(entry));
                         counter.IncrementAndMaybeTruncateUntil(nextAddress);
@@ -230,7 +221,7 @@ namespace Tsavorite.test
 
                     break;
                 case IteratorType.AsyncMemoryOwner:
-                    await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter
+                    await foreach ((IMemoryOwner<byte> result, _, _, long nextAddress) in iter
                                        .GetAsyncEnumerable(MemoryPool<byte>.Shared))
                     {
                         ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
@@ -261,7 +252,7 @@ namespace Tsavorite.test
         {
             var iteratorType = IteratorType.Sync;
 
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
             log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
@@ -275,9 +266,7 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             log.Commit(true);
 
@@ -288,7 +277,7 @@ namespace Tsavorite.test
             switch (iteratorType)
             {
                 case IteratorType.AsyncByteVector:
-                    await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
+                    await foreach ((byte[] result, _, _, long nextAddress) in iter.GetAsyncEnumerable())
                     {
                         ClassicAssert.IsTrue(result.SequenceEqual(entry));
                         counter.IncrementAndMaybeTruncateUntil(nextAddress);
@@ -296,7 +285,7 @@ namespace Tsavorite.test
 
                     break;
                 case IteratorType.AsyncMemoryOwner:
-                    await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter
+                    await foreach ((IMemoryOwner<byte> result, _, _, long nextAddress) in iter
                                        .GetAsyncEnumerable(MemoryPool<byte>.Shared))
                     {
                         ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
@@ -323,8 +312,8 @@ namespace Tsavorite.test
 
         internal class TestConsumer : ILogEntryConsumer
         {
-            private Counter counter;
-            private byte[] entry;
+            private readonly Counter counter;
+            private readonly byte[] entry;
 
             internal TestConsumer(Counter counter, byte[] entry)
             {
@@ -343,7 +332,7 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         public void TsavoriteLogConsumerTest([Values] LogChecksumType logChecksum)
         {
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
             log = new TsavoriteLog(logSettings);
@@ -353,9 +342,7 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             log.Commit(true);
 
@@ -374,7 +361,7 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         public async ValueTask TsavoriteLogAsyncConsumerTest([Values] LogChecksumType logChecksum)
         {
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
             log = await TsavoriteLog.CreateAsync(logSettings);
@@ -384,9 +371,7 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             log.Commit(true);
             log.CompleteLog(true);
@@ -416,7 +401,7 @@ namespace Tsavorite.test
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
 
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "Tsavoritelog.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
             log = IsAsync(iteratorType) ? await TsavoriteLog.CreateAsync(logSettings) : new TsavoriteLog(logSettings);
@@ -425,7 +410,7 @@ namespace Tsavorite.test
             byte[] data1 = new byte[dataLength];
             for (int i = 0; i < dataLength; i++) data1[i] = (byte)i;
 
-            using (var iter = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering))
+            using (var iter = log.Scan(0, long.MaxValue, scanBufferingMode: DiskScanBufferingMode.SinglePageBuffering))
             {
                 var asyncByteVectorIter = iteratorType == IteratorType.AsyncByteVector
                     ? iter.GetAsyncEnumerable().GetAsyncEnumerator()
@@ -464,11 +449,10 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public async ValueTask TryEnqueue2([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType,
-            [Values] TestUtils.TestDeviceType deviceType)
+        public async ValueTask TryEnqueue2([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType, [Values] TestDeviceType deviceType)
         {
-            string filename = Path.Join(TestUtils.MethodTestDir, "TryEnqueue2" + deviceType.ToString() + ".log");
-            device = TestUtils.CreateTestDevice(deviceType, filename);
+            string filename = Path.Join(MethodTestDir, "TryEnqueue2" + deviceType.ToString() + ".log");
+            device = CreateTestDevice(deviceType, filename);
 
             var logSettings = new TsavoriteLogSettings
             {
@@ -485,7 +469,7 @@ namespace Tsavorite.test
             byte[] data1 = new byte[dataLength];
             for (int i = 0; i < dataLength; i++) data1[i] = (byte)i;
 
-            using var iter = log.Scan(0, long.MaxValue, scanBufferingMode: ScanBufferingMode.SinglePageBuffering);
+            using var iter = log.Scan(0, long.MaxValue, scanBufferingMode: DiskScanBufferingMode.SinglePageBuffering);
             var asyncByteVectorIter = iteratorType == IteratorType.AsyncByteVector
                 ? iter.GetAsyncEnumerable().GetAsyncEnumerator()
                 : default;
@@ -496,7 +480,7 @@ namespace Tsavorite.test
             var appendResult = log.TryEnqueue(data1, out _);
             ClassicAssert.IsTrue(appendResult);
             await log.CommitAsync();
-            await iter.WaitAsync();
+            _ = await iter.WaitAsync();
 
             await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1);
 
@@ -504,7 +488,7 @@ namespace Tsavorite.test
             appendResult = log.TryEnqueue(data1, out _);
             ClassicAssert.IsTrue(appendResult);
             await log.CommitAsync();
-            await iter.WaitAsync();
+            _ = await iter.WaitAsync();
 
             switch (iteratorType)
             {
@@ -550,10 +534,10 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         [Category("Smoke")]
         public async ValueTask TruncateUntilBasic([Values] LogChecksumType logChecksum,
-            [Values] IteratorType iteratorType, [Values] TestUtils.TestDeviceType deviceType)
+            [Values] IteratorType iteratorType, [Values] TestDeviceType deviceType)
         {
-            string filename = Path.Join(TestUtils.MethodTestDir, "TruncateUntilBasic" + deviceType.ToString() + ".log");
-            device = TestUtils.CreateTestDevice(deviceType, filename);
+            string filename = Path.Join(MethodTestDir, "TruncateUntilBasic" + deviceType.ToString() + ".log");
+            device = CreateTestDevice(deviceType, filename);
 
             var logSettings = new TsavoriteLogSettings
             {
@@ -570,9 +554,7 @@ namespace Tsavorite.test
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
             for (int i = 0; i < 100; i++)
-            {
-                log.Enqueue(data1);
-            }
+                _ = log.Enqueue(data1);
 
             ClassicAssert.AreEqual(log.BeginAddress, log.CommittedUntilAddress);
             await log.CommitAsync();
@@ -606,14 +588,14 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         [Category("Smoke")]
         public async ValueTask EnqueueAndWaitForCommitAsyncBasicTest([Values] LogChecksumType logChecksum,
-            [Values] TestUtils.TestDeviceType deviceType)
+            [Values] TestDeviceType deviceType)
         {
             CancellationToken cancellationToken = default;
 
             ReadOnlySpanBatch spanBatch = new ReadOnlySpanBatch(numSpanEntries);
 
-            string filename = Path.Join(TestUtils.MethodTestDir, "EnqueueAndWaitForCommitAsyncBasicTest" + deviceType.ToString() + ".log");
-            device = TestUtils.CreateTestDevice(deviceType, filename);
+            string filename = Path.Join(MethodTestDir, "EnqueueAndWaitForCommitAsyncBasicTest" + deviceType.ToString() + ".log");
+            device = CreateTestDevice(deviceType, filename);
             log = new TsavoriteLog(new TsavoriteLogSettings
             {
                 LogDevice = device,
@@ -641,22 +623,22 @@ namespace Tsavorite.test
             commit.Start();
 
             // 65536=page size|headerSize|64=log header - add cancellation token on end just so not assuming default on at least one 
-            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize - 64], cancellationToken);
+            _ = await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize - 64], cancellationToken);
 
             // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
+            _ = await log.EnqueueAndWaitForCommitAsync(new byte[65536 - headerSize]);
 
             // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(spanBatch);
+            _ = await log.EnqueueAndWaitForCommitAsync(spanBatch);
 
             // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(spanBatch, cancellationToken);
+            _ = await log.EnqueueAndWaitForCommitAsync(spanBatch, cancellationToken);
 
             // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte);
+            _ = await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte);
 
             // 65536=page size|headerSize
-            await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte, cancellationToken);
+            _ = await log.EnqueueAndWaitForCommitAsync(readOnlyMemoryByte, cancellationToken);
 
             // TO DO: Probably do more verification - could read it but in reality, if fails it locks up waiting
 
@@ -669,7 +651,7 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         public async ValueTask TruncateUntil2([Values] LogChecksumType logChecksum, [Values] IteratorType iteratorType)
         {
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "tsavoritelog.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             {
                 LogDevice = device,
@@ -686,9 +668,7 @@ namespace Tsavorite.test
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
             for (int i = 0; i < 100; i++)
-            {
-                log.Enqueue(data1);
-            }
+                _ = log.Enqueue(data1);
 
             // Wait for safe tail to catch up
             while (log.SafeTailAddress < log.TailAddress)
@@ -737,7 +717,7 @@ namespace Tsavorite.test
             }
 
             // Enqueue data, becomes auto-visible
-            log.Enqueue(data1);
+            _ = log.Enqueue(data1);
 
             // Wait for safe tail to catch up
             while (log.SafeTailAddress < log.TailAddress)
@@ -753,7 +733,7 @@ namespace Tsavorite.test
         public async ValueTask TruncateUntilPageStart([Values] LogChecksumType logChecksum,
             [Values] IteratorType iteratorType)
         {
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "tsavoritelog.log"), deleteOnClose: true);
             log = new TsavoriteLog(new TsavoriteLogSettings
             {
                 LogDevice = device,
@@ -767,9 +747,7 @@ namespace Tsavorite.test
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
             for (int i = 0; i < 100; i++)
-            {
-                log.Enqueue(data1);
-            }
+                _ = log.Enqueue(data1);
 
             // Wait for safe tail to catch up
             while (log.SafeTailAddress < log.TailAddress)
@@ -818,12 +796,11 @@ namespace Tsavorite.test
                 }
 
                 // Enqueue data, becomes auto-visible
-                log.Enqueue(data1);
+                _ = log.Enqueue(data1);
 
                 // Wait for safe tail to catch up
                 while (log.SafeTailAddress < log.TailAddress)
                     await Task.Yield();
-
 
                 await AssertGetNext(asyncByteVectorIter, asyncMemoryOwnerIter, iter, data1, verifyAtEnd: true);
             }
@@ -835,10 +812,10 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public void CommitNoSpinWait([Values] TestUtils.TestDeviceType deviceType)
+        public void CommitNoSpinWait([Values] TestDeviceType deviceType)
         {
-            string filename = Path.Join(TestUtils.MethodTestDir, "CommitNoSpinWait" + deviceType.ToString() + ".log");
-            device = TestUtils.CreateTestDevice(deviceType, filename);
+            string filename = Path.Join(MethodTestDir, "CommitNoSpinWait" + deviceType.ToString() + ".log");
+            device = CreateTestDevice(deviceType, filename);
             log = new TsavoriteLog(new TsavoriteLogSettings
             { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22 });
 
@@ -849,9 +826,7 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < commitFalseEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             //*******
             // Main point of the test ... If commit(true) (like other tests do) it waits until commit completes before moving on.
@@ -862,7 +837,8 @@ namespace Tsavorite.test
             //*******
 
             log.Commit(false);
-            while (log.CommittedUntilAddress < log.TailAddress) Thread.Yield();
+            while (log.CommittedUntilAddress < log.TailAddress)
+                _ = Thread.Yield();
 
             // Read the log - Look for the flag so know each entry is unique
             int currentEntry = 0;
@@ -887,13 +863,13 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public async ValueTask CommitAsyncPrevTask([Values] TestUtils.TestDeviceType deviceType)
+        public async ValueTask CommitAsyncPrevTask([Values] TestDeviceType deviceType)
         {
             CancellationTokenSource cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
 
-            string filename = Path.Join(TestUtils.MethodTestDir, $"CommitAsyncPrevTask_{deviceType}.log");
-            device = TestUtils.CreateTestDevice(deviceType, filename);
+            string filename = Path.Join(MethodTestDir, $"CommitAsyncPrevTask_{deviceType}.log");
+            device = CreateTestDevice(deviceType, filename);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogCommitManager = manager, SegmentSizeBits = 22, TryRecoverLatest = false };
             log = await TsavoriteLog.CreateAsync(logSettings);
@@ -912,7 +888,7 @@ namespace Tsavorite.test
             Task currentTask = Task.Run(() => LogWriterAsync(log, entry), token);
 
             // Commit to the log
-            currentTask.Wait(4000, token);
+            _ = currentTask.Wait(4000, token);
 
             // double check to make sure finished - seen cases where timing kept running even after commit done
             bool wasCanceled = false;
@@ -954,14 +930,10 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteLog")]
         [Category("Smoke")]
-        public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType,
-            [Values] TestUtils.TestDeviceType deviceType)
+        public async ValueTask RefreshUncommittedAsyncTest([Values] IteratorType iteratorType, [Values] TestDeviceType deviceType)
         {
-            CancellationTokenSource cts = new CancellationTokenSource();
-            CancellationToken token = cts.Token;
-
-            string filename = Path.Join(TestUtils.MethodTestDir, "RefreshUncommittedAsyncTest" + deviceType.ToString() + ".log");
-            device = TestUtils.CreateTestDevice(deviceType, filename);
+            string filename = Path.Join(MethodTestDir, "RefreshUncommittedAsyncTest" + deviceType.ToString() + ".log");
+            device = CreateTestDevice(deviceType, filename);
 
             log = new TsavoriteLog(new TsavoriteLogSettings
             {
@@ -976,9 +948,7 @@ namespace Tsavorite.test
             for (int i = 0; i < 100; i++) data1[i] = (byte)i;
 
             for (int i = 0; i < 100; i++)
-            {
-                log.Enqueue(data1);
-            }
+                _ = log.Enqueue(data1);
 
             // Wait for safe tail to catch up
             while (log.SafeTailAddress < log.TailAddress)
@@ -1027,7 +997,7 @@ namespace Tsavorite.test
                 }
 
                 // Enqueue additional data item, becomes auto-visible
-                log.Enqueue(data1);
+                _ = log.Enqueue(data1);
 
                 // Wait for safe tail to catch up
                 while (log.SafeTailAddress < log.TailAddress)
@@ -1057,7 +1027,7 @@ namespace Tsavorite.test
             var cookie = new byte[100];
             new Random().NextBytes(cookie);
 
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "SimpleCommitCookie" + fastCommit + ".log"), deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "SimpleCommitCookie" + fastCommit + ".log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             {
                 LogDevice = device,
@@ -1072,11 +1042,9 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
-            log.CommitStrongly(out _, out _, true, cookie);
+            _ = log.CommitStrongly(out _, out _, true, cookie);
 
             var recoveredLog = new TsavoriteLog(logSettings);
             ClassicAssert.AreEqual(cookie, recoveredLog.RecoveredCookie);
@@ -1087,7 +1055,7 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         public void TsavoriteLogManualCommitTest()
         {
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "logManualCommitTest.log"), deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "logManualCommitTest.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             {
                 LogDevice = device,
@@ -1102,9 +1070,7 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             var cookie1 = new byte[100];
             new Random().NextBytes(cookie1);
@@ -1112,9 +1078,7 @@ namespace Tsavorite.test
             ClassicAssert.IsTrue(commitSuccessful);
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             var cookie2 = new byte[100];
             new Random().NextBytes(cookie2);
@@ -1122,9 +1086,7 @@ namespace Tsavorite.test
             ClassicAssert.IsTrue(commitSuccessful);
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             var cookie6 = new byte[100];
             new Random().NextBytes(cookie6);
@@ -1166,7 +1128,7 @@ namespace Tsavorite.test
         [Category("TsavoriteLog")]
         public async ValueTask TsavoriteLogAsyncConsumerTestAfterDisposeIterator([Values] LogChecksumType logChecksum)
         {
-            device = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "tsavoritelog.log"), deleteOnClose: true);
+            device = Devices.CreateLogDevice(Path.Join(MethodTestDir, "tsavoritelog.log"), deleteOnClose: true);
             var logSettings = new TsavoriteLogSettings
             { LogDevice = device, LogChecksum = logChecksum, LogCommitManager = manager, TryRecoverLatest = false };
             log = await TsavoriteLog.CreateAsync(logSettings);
@@ -1176,13 +1138,9 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             log.Commit(true);
-
-
 
             var nextAddress = 0L;
             using (var iter = log.Scan(0, long.MaxValue))
@@ -1198,9 +1156,7 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             log.Commit(true);
             log.CompleteLog(true);

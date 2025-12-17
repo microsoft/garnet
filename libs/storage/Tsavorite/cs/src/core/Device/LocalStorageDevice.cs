@@ -48,6 +48,13 @@ namespace Tsavorite.core
 
         private IntPtr ioCompletionPort;
 
+        /// <inheritdoc/>
+        public override string ToString()
+        {
+            static string bstr(bool value) => value ? "T" : "F";
+            return $"secSize {sectorSize}, numPend {numPending}, RO {bstr(readOnly)}, preAll {bstr(preallocateFile)}, delClose {bstr(deleteOnClose)}, noFileBuf {bstr(disableFileBuffering)}";
+        }
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -355,6 +362,8 @@ namespace Tsavorite.core
         /// </summary>
         public override void Dispose()
         {
+            if (_disposed)
+                return;
             _disposed = true;
             foreach (var logHandle in logHandles.Values)
                 logHandle.Dispose();
@@ -363,9 +372,7 @@ namespace Tsavorite.core
                 new SafeFileHandle(ioCompletionPort, true).Dispose();
 
             while (results.TryDequeue(out var entry))
-            {
                 Overlapped.Free(entry.nativeOverlapped);
-            }
         }
 
         /// <inheritdoc/>

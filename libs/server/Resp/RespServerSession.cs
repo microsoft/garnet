@@ -20,18 +20,24 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using BasicGarnetApi = GarnetApi<BasicContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
-    using LockableGarnetApi = GarnetApi<LockableContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions,
-            /* MainStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
-            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
-        LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
-            /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-            GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
+    using BasicGarnetApi = GarnetApi<BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
+    using TransactionalGarnetApi = GarnetApi<TransactionalContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions,
+            /* MainStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions,
+            /* ObjectStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>,
+        TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions,
+            /* UnifiedStoreFunctions */ StoreFunctions<SpanByteComparer, DefaultRecordDisposer>,
+            ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>>>;
 
     /// <summary>
     /// RESP server session
@@ -98,7 +104,7 @@ namespace Garnet.server
         /// </summary>
         public StorageSession storageSession;
         internal BasicGarnetApi basicGarnetApi;
-        internal LockableGarnetApi lockableGarnetApi;
+        internal TransactionalGarnetApi transactionalGarnetApi;
         internal TransactionManager txnManager;
 
         readonly IGarnetAuthenticator _authenticator;
@@ -143,7 +149,6 @@ namespace Garnet.server
                 }
             }
         }
-
 
         // Track whether the incoming network batch contains slow commands that should not be counter in NET_RS histogram
         bool containsSlowCommand;
@@ -602,7 +607,7 @@ namespace Garnet.server
                         {
                             if (txnManager.state == TxnState.Running)
                             {
-                                _ = ProcessBasicCommands(cmd, ref lockableGarnetApi);
+                                _ = ProcessBasicCommands(cmd, ref transactionalGarnetApi);
                             }
                             else _ = cmd switch
                             {
@@ -1225,13 +1230,9 @@ namespace Garnet.server
 
         private static unsafe bool Write(ref SpanByteAndMemory k, ref byte* dst, int length)
         {
-            if (k.Length > length) return false;
-
-            var dest = new SpanByte(length, (IntPtr)dst);
-            if (k.IsSpanByte)
-                k.SpanByte.CopyTo(ref dest);
-            else
-                k.AsMemoryReadOnlySpan().CopyTo(dest.AsSpan());
+            if (k.Length > length)
+                return false;
+            k.ReadOnlySpan.CopyTo(new Span<byte>(dst, length));
             return true;
         }
 
@@ -1514,8 +1515,11 @@ namespace Garnet.server
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
             var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId, logger, respProtocolVersion);
-            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext, dbStorageSession.objectStoreBasicContext);
-            var dbLockableGarnetApi = new LockableGarnetApi(dbStorageSession, dbStorageSession.lockableContext, dbStorageSession.objectStoreLockableContext);
+            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.stringBasicContext,
+                dbStorageSession.objectBasicContext, dbStorageSession.unifiedBasicContext);
+            var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession,
+                dbStorageSession.stringTransactionalContext, dbStorageSession.objectTransactionalContext,
+                dbStorageSession.unifiedTransactionalContext);
 
             var transactionManager = new TransactionManager(storeWrapper, this, dbGarnetApi, dbLockableGarnetApi,
                 dbStorageSession, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger, dbId);
@@ -1534,7 +1538,7 @@ namespace Garnet.server
             this.txnManager = dbSession.TransactionManager;
             this.storageSession = dbSession.StorageSession;
             this.basicGarnetApi = dbSession.GarnetApi;
-            this.lockableGarnetApi = dbSession.LockableGarnetApi;
+            this.transactionalGarnetApi = dbSession.TransactionalGarnetApi;
 
             this.storageSession.UpdateRespProtocolVersion(this.respProtocolVersion);
         }

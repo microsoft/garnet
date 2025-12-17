@@ -3,21 +3,21 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Tsavorite.core
 {
-    public unsafe partial class TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> : TsavoriteBase
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool HandleImmediateRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             OperationStatus internalStatus,
             TSessionFunctionsWrapper sessionFunctions,
             ref PendingContext<TInput, TOutput, TContext> pendingContext)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
                 && HandleRetryStatus(internalStatus, sessionFunctions, ref pendingContext);
 
@@ -26,17 +26,17 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(OperationStatus internalStatus, TSessionFunctionsWrapper sessionFunctions)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             switch (internalStatus)
             {
                 case OperationStatus.RETRY_NOW:
-                    Thread.Yield();
+                    _ = Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
                     InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
-                    Thread.Yield();
+                    _ = Thread.Yield();
                     return true;
                 default:
                     return false;
@@ -47,17 +47,17 @@ namespace Tsavorite.core
             OperationStatus internalStatus,
             TSessionFunctionsWrapper sessionFunctions,
             ref PendingContext<TInput, TOutput, TContext> pendingContext)
-            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
+            where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             Debug.Assert(epoch.ThisInstanceProtected());
             switch (internalStatus)
             {
                 case OperationStatus.RETRY_NOW:
-                    Thread.Yield();
+                    _ = Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
                     InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
-                    Thread.Yield();
+                    _ = Thread.Yield();
                     return true;
                 case OperationStatus.CPR_SHIFT_DETECTED:
                     // Retry as (v+1) Operation
@@ -66,8 +66,6 @@ namespace Tsavorite.core
                 case OperationStatus.ALLOCATE_FAILED:
                     // Async handles this in its own way, as part of the *AsyncResult.Complete*() sequence.
                     Debug.Assert(!pendingContext.flushEvent.IsDefault(), "flushEvent is required for ALLOCATE_FAILED");
-                    if (pendingContext.IsAsync)
-                        return false;
                     try
                     {
                         epoch.Suspend();
@@ -115,7 +113,7 @@ namespace Tsavorite.core
             TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
             ref PendingContext<TInput, TOutput, TContext> pendingContext,
             OperationStatus operationStatus,
-            out AsyncIOContext<TKey, TValue> request)
+            out AsyncIOContext request)
         {
             Debug.Assert(operationStatus != OperationStatus.RETRY_NOW, "OperationStatus.RETRY_NOW should have been handled before HandleOperationStatus");
             Debug.Assert(operationStatus != OperationStatus.RETRY_LATER, "OperationStatus.RETRY_LATER should have been handled before HandleOperationStatus");
@@ -128,8 +126,8 @@ namespace Tsavorite.core
 
             if (operationStatus == OperationStatus.ALLOCATE_FAILED)
             {
-                Debug.Assert(pendingContext.IsAsync, "Sync ops should have handled ALLOCATE_FAILED before HandleOperationStatus");
                 Debug.Assert(!pendingContext.flushEvent.IsDefault(), "Expected flushEvent for ALLOCATE_FAILED");
+                Debug.Fail("Should have handled ALLOCATE_FAILED before HandleOperationStatus");
                 return new(StatusCode.Pending);
             }
             else if (operationStatus == OperationStatus.RECORD_ON_DISK)
@@ -139,23 +137,31 @@ namespace Tsavorite.core
                 pendingContext.id = sessionCtx.totalPending++;
                 sessionCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
 
+                if (!pendingContext.IsConditionalOp)
+                {
+                    // We may have come from an already-pending operation, in which case we don't want to copy the diskLogRecord into the queue.
+                    // But we do want to keep the diskLogRecord in the incoming "ref pendingContext" for disposal, so clear it in the dictionary.
+                    // (We know this will not be a nullref because we just added it). Don't do this for CONDITIONAL_*; the diskLogRecord is what
+                    // we'll insert or push if an overriding record is not found.
+                    CollectionsMarshal.GetValueRefOrNullRef(sessionCtx.ioPendingRequests, pendingContext.id).diskLogRecord = default;
+                }
+
                 // Issue asynchronous I/O request
                 request.id = pendingContext.id;
-                request.request_key = pendingContext.key;
+
+                // Copying the key is stable; the pendingContext.requestKey will remain valid until it is freed (after the callback is invoked).
+                request.requestKey = pendingContext.requestKey is null ? default : pendingContext.requestKey.Get();
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.minAddress = pendingContext.minAddress;
                 request.record = default;
-                if (pendingContext.IsAsync)
-                    request.asyncOperation = new TaskCompletionSource<AsyncIOContext<TKey, TValue>>(TaskCreationOptions.RunContinuationsAsynchronously);
-                else
-                    request.callbackQueue = sessionCtx.readyResponses;
+                request.callbackQueue = sessionCtx.readyResponses;
 
-                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, hlog.GetAverageRecordSize(), request);
+                hlogBase.AsyncGetFromDisk(pendingContext.logicalAddress, IStreamBuffer.InitialIOSize, request);
                 return new(StatusCode.Pending);
             }
             else
             {
-                Debug.Assert(pendingContext.IsAsync, "Sync ops should never return status.IsFaulted");
+                Debug.Fail($"Unexpected OperationStatus {operationStatus}");
                 return new(StatusCode.Error);
             }
         }

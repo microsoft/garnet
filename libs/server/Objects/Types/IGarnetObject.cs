@@ -1,31 +1,20 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
-using System.IO;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
     /// <summary>
     /// Interface representing Garnet object
     /// </summary>
-    public interface IGarnetObject : IDisposable
+    public interface IGarnetObject : IHeapObject
     {
         /// <summary>
         /// Type of object
         /// </summary>
         byte Type { get; }
-
-        /// <summary>
-        /// Expiration time of object
-        /// </summary>
-        long Expiration { get; set; }
-
-        /// <summary>
-        /// Total memory size of the object
-        /// </summary>
-        long Size { get; set; }
 
         /// <summary>
         /// Operator on object
@@ -34,17 +23,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="sizeChange"></param>
         /// <returns></returns>
-        bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output, byte respProtocolVersion, out long sizeChange);
-
-        /// <summary>
-        /// Serializer
-        /// </summary>
-        void Serialize(BinaryWriter writer);
-
-        /// <summary>
-        /// Copy update
-        /// </summary>
-        void CopyUpdate(ref IGarnetObject oldValue, ref IGarnetObject newValue, bool isInNewVersion);
+        bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, out long sizeChange);
 
         /// <summary>
         /// Scan the items of the collection

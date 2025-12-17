@@ -14,7 +14,7 @@ namespace Garnet
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             int offset = 0;
-            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, true);
+            AddKey(GetNextArg(ref procInput, ref offset), LockType.Exclusive, StoreType.Object);
             return true;
         }
 
@@ -53,8 +53,8 @@ namespace Garnet
                                 var timeInMicroSecondBytes = Encoding.ASCII.GetBytes(timeInMicroSecond.ToString());
                                 fixed (byte* timeInMicroSecondBytesPtr = timeInMicroSecondBytes)
                                 {
-                                    api.SortedSetAdd(key, new ArgSlice(unixTimeInMilliSecondPtr, unixTimeInMilliSecondBytes.Length), new ArgSlice(timeInMicroSecondBytesPtr, timeInMicroSecondBytes.Length), out var _);
-                                    api.EXPIRE(key, TimeSpan.FromMilliseconds(slidingWindowInMilliSeconds), out var _, StoreType.Object);
+                                    api.SortedSetAdd(key, PinnedSpanByte.FromPinnedPointer(unixTimeInMilliSecondPtr, unixTimeInMilliSecondBytes.Length), PinnedSpanByte.FromPinnedPointer(timeInMicroSecondBytesPtr, timeInMicroSecondBytes.Length), out var _);
+                                    api.EXPIRE(key, TimeSpan.FromMilliseconds(slidingWindowInMilliSeconds), out _);
                                 }
                             }
 

@@ -12,7 +12,7 @@ namespace Garnet.cluster
 {
     internal sealed partial class ReplicationManager : IDisposable
     {
-        // Must be the same as the TsavoriteLog start address of allocator
+        // Must be the same as the TsavoriteAof start address of allocator
         public static readonly long kFirstValidAofAddress = 64;
         readonly AofTaskStore aofTaskStore;
 

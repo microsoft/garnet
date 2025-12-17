@@ -5,8 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Garnet.common;
-using Garnet.server;
 using Microsoft.Extensions.Logging;
+using Tsavorite.core;
 
 namespace Garnet.cluster
 {
@@ -211,7 +211,7 @@ namespace Garnet.cluster
         /// <param name="slot"></param>
         /// <param name="readOnly"></param>
         /// <returns>True if we can operate on the key, otherwise false (i.e. key is being migrated)</returns>
-        public bool CanAccessKey(ref ArgSlice key, int slot, bool readOnly)
+        public bool CanAccessKey(PinnedSpanByte key, int slot, bool readOnly)
         {
             try
             {
@@ -225,7 +225,7 @@ namespace Garnet.cluster
 
                 Debug.Assert(s != null);
                 // Check owner of slot if can operate on key
-                if (!s.CanAccessKey(ref key, slot, readOnly))
+                if (!s.CanAccessKey(key, slot, readOnly))
                     return false;
             }
             finally

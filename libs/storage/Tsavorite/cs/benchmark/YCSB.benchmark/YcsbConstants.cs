@@ -7,9 +7,10 @@ namespace Tsavorite.benchmark
 {
     enum BenchmarkType : byte
     {
-        Ycsb = 0,
+        FixedLen = 0,
         SpanByte,
-        ConcurrentDictionaryYcsb
+        Object,
+        ConcurrentDictionary
     };
 
     enum AddressLineNum : int

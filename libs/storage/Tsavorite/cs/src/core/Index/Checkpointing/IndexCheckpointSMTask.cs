@@ -9,14 +9,14 @@ namespace Tsavorite.core
     /// <summary>
     /// This task performs an index checkpoint.
     /// </summary>
-    internal sealed class IndexCheckpointSMTask<TKey, TValue, TStoreFunctions, TAllocator> : IStateMachineTask
-        where TStoreFunctions : IStoreFunctions<TKey, TValue>
-        where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
+    internal sealed class IndexCheckpointSMTask<TStoreFunctions, TAllocator> : IStateMachineTask
+        where TStoreFunctions : IStoreFunctions
+        where TAllocator : IAllocator<TStoreFunctions>
     {
-        readonly TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store;
+        readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         readonly Guid guid;
 
-        public IndexCheckpointSMTask(TsavoriteKV<TKey, TValue, TStoreFunctions, TAllocator> store, Guid guid)
+        public IndexCheckpointSMTask(TsavoriteKV<TStoreFunctions, TAllocator> store, Guid guid)
         {
             this.store = store;
             this.guid = guid;
@@ -28,7 +28,7 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE:
-                    Debug.Assert(store._indexCheckpoint.IsDefault());
+                    Debug.Assert(store._indexCheckpoint.IsDefault);
                     store._indexCheckpointToken = guid;
                     store.InitializeIndexCheckpoint(store._indexCheckpointToken);
                     store._indexCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();
