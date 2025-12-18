@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -94,8 +95,8 @@ namespace Garnet.test
                             // TODO: Implement when VGETATTR works
                             continue;
                         case RespCommand.VINFO:
-                            // TODO: Implement when VGETATTR works
-                            continue;
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VINFO", ["foo"]));
+                            break;
                         case RespCommand.VISMEMBER:
                             // TODO: Implement when VISMEMBER works
                             continue;
@@ -700,8 +701,16 @@ namespace Garnet.test
                                 // TODO: Implement once VGETATTR is implemented
                                 continue;
                             case RespCommand.VINFO:
-                                // TODO: Implement once VINFO is implemented
-                                continue;
+                                try
+                                {
+                                    var res = (RedisValue[])db.Execute("VINFO", [key]);
+                                    ClassicAssert.AreEqual(12, res.Length);
+                                }
+                                catch (RedisServerException e)
+                                {
+                                    exc = e;
+                                }
+                                break;
                             case RespCommand.VISMEMBER:
                                 // TODO: Implement once VISMEMBER is implemented
                                 continue;
@@ -1565,6 +1574,149 @@ namespace Garnet.test
         }
 
         // TODO: FLUSHDB needs to cleanup too...
+
+        [Test]
+        public void VINFO_NotFound()
+        {
+            // VINFO NotFound response depends on the RESP version used:
+            // - Resp3: Null
+            // - Resp2: Null array reply
+            using var redisResp3 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp3));
+            var resp3Result = redisResp3.GetDatabase().Execute("VINFO", ["nonexistent"]);
+            ClassicAssert.IsTrue(resp3Result.IsNull);
+            ClassicAssert.IsTrue(resp3Result.Resp3Type == ResultType.Null);
+
+            using var redisResp2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var resp2Result = redisResp2.GetDatabase().Execute("VINFO", ["nonexistent"]);
+            ClassicAssert.IsTrue(resp2Result.IsNull);
+            ClassicAssert.IsTrue(resp2Result.Resp2Type == ResultType.Array);
+        }
+
+        [Test]
+        public void VINFO()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            string[] quantizers = ["XPREQ8", "NOQUANT", "Q8", "BIN"];
+            int[] reduceValues = [0, 5];
+            int[] efValues = [0, 8];
+            int[] mValues = [0, 16];
+            int[] vectorDimensions = [9, 10];
+            var testCnt = 0;
+
+            foreach (var quantizer in quantizers)
+            {
+                var expectedQuantType = quantizer == "NOQUANT" ?
+                    "f32" : quantizer.ToLower();
+
+                foreach (var reduceValue in reduceValues)
+                {
+                    var reduceValueToUse = quantizer == "XPREQ8" ? 0 : reduceValue;
+                    foreach (var ef in efValues)
+                    {
+                        foreach (var numLinks in mValues)
+                        {
+                            foreach (var vectorDim in vectorDimensions)
+                            {
+                                testCnt++;
+                                string fooKey = $"foo:{testCnt}";
+
+                                // Generate vector values based on dimension
+                                var vectorValues = new List<object> { "VALUES", vectorDim.ToString() };
+                                for (int i = 1; i <= vectorDim; i++)
+                                {
+                                    vectorValues.Add($"{i}.0");
+                                }
+
+                                // Create a vector set with known parameters
+                                var res = db.Execute("VADD", GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorValues.ToArray(), [0, 0, 0, 0]));
+                                ClassicAssert.AreEqual(1, (int)res);
+
+                                string expectedEf = ef == 0 ? "200" : ef.ToString();
+                                string expectedNumLinks = numLinks == 0 ? "16" : numLinks.ToString();
+
+                                // Get VINFO - should return an array of 12 elements (6 key-value pairs)
+                                var vinfoRes = (RedisValue[])db.Execute("VINFO", [fooKey]);
+                                ClassicAssert.AreEqual(12, vinfoRes.Length);
+                                var values = BuildDictionaryFromResponse(vinfoRes);
+                                ClassicAssert.AreEqual(values["quant-type"], expectedQuantType);
+                                ClassicAssert.AreEqual(values["input-vector-dimensions"], vectorDim.ToString());
+                                ClassicAssert.AreEqual(values["reduced-dimensions"], reduceValueToUse.ToString());
+                                ClassicAssert.AreEqual(values["build-exploration-factor"], expectedEf);
+                                ClassicAssert.AreEqual(values["num-links"], expectedNumLinks);
+                                // TODO: Update once DiskANN exposes card()
+                                ClassicAssert.AreEqual(values["size"], "0");
+
+                                // Modify first value for second add (change from "1.0" to "2.0")
+                                vectorValues[2] = "2.0";
+
+                                // Add another element and try again
+                                res = db.Execute("VADD", GenerateVADDOptions(fooKey, quantizer, reduceValueToUse, ef, numLinks, vectorValues.ToArray(), [0, 0, 0, 1]));
+                                ClassicAssert.AreEqual(1, (int)res);
+
+                                vinfoRes = (RedisValue[])db.Execute(command: "VINFO", [fooKey]);
+                                ClassicAssert.AreEqual(12, vinfoRes.Length);
+                                values = BuildDictionaryFromResponse(vinfoRes);
+                                ClassicAssert.AreEqual(values["quant-type"], expectedQuantType);
+                                ClassicAssert.AreEqual(values["input-vector-dimensions"], vectorDim.ToString());
+                                ClassicAssert.AreEqual(values["reduced-dimensions"], reduceValueToUse.ToString());
+                                ClassicAssert.AreEqual(values["build-exploration-factor"], expectedEf);
+                                ClassicAssert.AreEqual(values["num-links"], expectedNumLinks);
+                                // TODO: Update once DiskANN exposes card()
+                                ClassicAssert.AreEqual(values["size"], "0");
+
+                                // Delete vector set
+                                db.KeyDelete(fooKey);
+                            }
+                        }
+                    }
+                }
+            }
+
+            static object[] GenerateVADDOptions(string key, string quantizer, int reduce, int buildExplorationFactor, int numLinks, object[] values, byte[] elementId)
+            {
+                if (quantizer == "XPREQ8")
+                {
+                    reduce = 0;
+                }
+
+                List<object> opts = [key];
+                if (reduce > 0)
+                {
+                    opts.Add("REDUCE");
+                    opts.Add(reduce.ToString());
+                }
+
+                opts.AddRange(values);
+                opts.Add(elementId);
+                opts.Add(quantizer);
+                if (buildExplorationFactor > 0)
+                {
+                    opts.Add("EF");
+                    opts.Add(buildExplorationFactor.ToString());
+                }
+
+                if (numLinks > 0)
+                {
+                    opts.Add("M");
+                    opts.Add(numLinks.ToString());
+                }
+
+                return opts.ToArray();
+            }
+
+            static Dictionary<string, string> BuildDictionaryFromResponse(RedisValue[] response)
+            {
+                Dictionary<string, string> values = new();
+                for (var i = 0; i < response.Length; i += 2)
+                {
+                    values[response[i]] = response[i + 1];
+                }
+
+                return values;
+            }
+        }
 
         [Test]
         public void VREM()
