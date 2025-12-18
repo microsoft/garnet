@@ -1692,7 +1692,7 @@ namespace Garnet.test
                 opts.Add(elementId);
                 opts.Add(quantizer);
                 if (buildExplorationFactor > 0)
-                                    {
+                {
                     opts.Add("EF");
                     opts.Add(buildExplorationFactor.ToString());
                 }
