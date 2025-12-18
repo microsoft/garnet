@@ -7720,6 +7720,204 @@
     "Complexity": "O(1)"
   },
   {
+    "Command": "VADD",
+    "Name": "VADD",
+    "Summary": "Add a new element into the vector set.",
+    "Group": "Vector",
+    "Complexity": "O(log(N))",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VCARD",
+    "Name": "VCARD",
+    "Summary": "Return the number of elements in a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VDIM",
+    "Name": "VDIM",
+    "Summary": "Return the number of dimensions in a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VEMB",
+    "Name": "VEMB",
+    "Summary": "Return the approximate vector associated with an element in a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VGETATTR",
+    "Name": "VGETATTR",
+    "Summary": "Return the JSON attributes associated with the element in the vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VINFO",
+    "Name": "VINFO",
+    "Summary": "Return details about a vector set, including dimensions, quantization, and structure.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VISMEMBER",
+    "Name": "VISMEMBER",
+    "Summary": "Determines whether a member belongs to vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ELEMENT",
+        "DisplayText": "element",
+        "Type": "String"
+      }
+    ]
+  },
+  {
+    "Command": "VLINKS",
+    "Name": "VLINKS",
+    "Summary": "Return the neighbors of an element in a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VRANDMEMBER",
+    "Name": "VRANDMEMBER",
+    "Summary": "Return some number of random elements from a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VREM",
+    "Name": "VREM",
+    "Summary": "Remove an element from a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(log(N))",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VSETATTR",
+    "Name": "VSETATTR",
+    "Summary": "Store attributes alongside a member of a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "VSIM",
+    "Name": "VSIM",
+    "Summary": "Return elements similar to a given vector or existing element of a vector set.",
+    "Group": "Vector",
+    "Complexity": "O(log(N))",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
     "Command": "WATCH",
     "Name": "WATCH",
     "Summary": "Monitors changes to keys to determine the execution of a transaction.",

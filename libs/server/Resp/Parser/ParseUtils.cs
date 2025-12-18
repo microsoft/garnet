@@ -132,6 +132,44 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Read a signed 32-bit float from a given ArgSlice.
+        /// </summary>
+        /// <param name="slice">Source</param>
+        /// <param name="canBeInfinite">Allow reading an infinity</param>
+        /// <returns>
+        /// Parsed double
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float ReadFloat(ref PinnedSpanByte slice, bool canBeInfinite)
+        {
+            if (!TryReadFloat(ref slice, out var number, canBeInfinite))
+            {
+                RespParsingException.ThrowNotANumber(slice.ptr, slice.length);
+            }
+            return number;
+        }
+
+        /// <summary>
+        /// Try to read a signed 32-bit float from a given ArgSlice.
+        /// </summary>
+        /// <param name="slice">Source</param>
+        /// <param name="number">Result</param>
+        /// <param name="canBeInfinite">Allow reading an infinity</param>
+        /// <returns>
+        /// True if float parsed successfully
+        /// </returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool TryReadFloat(ref PinnedSpanByte slice, out float number, bool canBeInfinite)
+        {
+            var sbNumber = slice.ReadOnlySpan;
+            if (Utf8Parser.TryParse(sbNumber, out number, out var bytesConsumed) &&
+                            bytesConsumed == sbNumber.Length)
+                return true;
+
+            return canBeInfinite && RespReadUtils.TryReadInfinity(sbNumber, out number);
+        }
+
+        /// <summary>
         /// Read an ASCII string from a given ArgSlice.
         /// </summary>
         /// <returns>

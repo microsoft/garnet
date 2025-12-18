@@ -384,5 +384,32 @@ namespace Garnet.server
         public bool ResetScratchBuffer(int offset)
             => storageSession.scratchBufferBuilder.ResetScratchBuffer(offset);
         #endregion
+
+        #region VectorSet commands
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        => storageSession.VectorSetAdd(key, reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks, out result, out errorMsg);
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element)
+        => storageSession.VectorSetRemove(key, element);
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte values, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
+        => storageSession.VectorSetValueSimilarity(key, valueType, values, count, delta, searchExplorationFactor, filter.ReadOnlySpan, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, out result);
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus VectorSetElementSimilarity(PinnedSpanByte key, PinnedSpanByte element, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
+        => storageSession.VectorSetElementSimilarity(key, element, count, delta, searchExplorationFactor, filter.ReadOnlySpan, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, out result);
+
+        /// <inheritdoc/>
+        public unsafe GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances)
+        => storageSession.VectorSetEmbedding(key, element, ref outputDistances);
+
+        /// <inheritdoc/>
+        public unsafe GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions)
+        => storageSession.VectorSetDimensions(key, out dimensions);
+        #endregion
     }
 }

@@ -178,6 +178,22 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Expand (if necessary) capacity of <see cref="SessionParseState"/>, preserving contents.
+        /// </summary>
+        public void EnsureCapacity(int count)
+        {
+            if (count <= Count)
+            {
+                return;
+            }
+
+            var oldBuffer = rootBuffer;
+            Initialize(count);
+
+            oldBuffer?.AsSpan().CopyTo(rootBuffer);
+        }
+
+        /// <summary>
         /// Limit access to the argument buffer to start at a specified index.
         /// </summary>
         /// <param name="idxOffset">Offset value to the underlying buffer</param>
@@ -416,6 +432,28 @@ namespace Garnet.server
         {
             Debug.Assert(i < Count);
             return ParseUtils.TryReadDouble(Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value, canBeInfinite);
+        }
+
+        /// <summary>
+        /// Get float argument at the given index
+        /// </summary>
+        /// <returns>True if double parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public float GetFloat(int i, bool canBeInfinite = true)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.ReadFloat(ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), canBeInfinite);
+        }
+
+        /// <summary>
+        /// Try to get double argument at the given index
+        /// </summary>
+        /// <returns>True if double parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGetFloat(int i, out float value, bool canBeInfinite = true)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.TryReadFloat(ref Unsafe.AsRef<PinnedSpanByte>(bufferPtr + i), out value, canBeInfinite);
         }
 
         /// <summary>

@@ -790,7 +790,7 @@ namespace Garnet.server
         GarnetStatus ListPosition(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
-        /// ListLeftPush ArgSlice version with OutputHeader output
+        /// ListLeftPush PinnedSpanByte version with OutputHeader output
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
@@ -799,7 +799,7 @@ namespace Garnet.server
         GarnetStatus ListLeftPush(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
-        /// ListLeftPush ArgSlice version, one element
+        /// ListLeftPush PinnedSpanByte version, one element
         /// </summary>
         /// <param name="key"></param>
         /// <param name="element"></param>
@@ -809,7 +809,7 @@ namespace Garnet.server
         GarnetStatus ListLeftPush(PinnedSpanByte key, PinnedSpanByte element, out int count, bool whenExists = false);
 
         /// <summary>
-        /// ListLeftPush ArgSlice version for multiple values
+        /// ListLeftPush PinnedSpanByte version for multiple values
         /// </summary>
         /// <param name="key"></param>
         /// <param name="elements"></param>
@@ -819,7 +819,7 @@ namespace Garnet.server
         GarnetStatus ListLeftPush(PinnedSpanByte key, PinnedSpanByte[] elements, out int count, bool whenExists = false);
 
         /// <summary>
-        /// ListRightPush ArgSlice version with OutputHeader output
+        /// ListRightPush PinnedSpanByte version with OutputHeader output
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
@@ -828,7 +828,7 @@ namespace Garnet.server
         public GarnetStatus ListRightPush(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
 
         /// <summary>
-        /// ListRightPush ArgSlice version, one element
+        /// ListRightPush PinnedSpanByte version, one element
         /// </summary>
         /// <param name="key"></param>
         /// <param name="element"></param>
@@ -838,7 +838,7 @@ namespace Garnet.server
         GarnetStatus ListRightPush(PinnedSpanByte key, PinnedSpanByte element, out int count, bool whenExists = false);
 
         /// <summary>
-        /// ListRightPush ArgSlice version for multiple values
+        /// ListRightPush PinnedSpanByte version for multiple values
         /// </summary>
         /// <param name="key"></param>
         /// <param name="elements"></param>
@@ -852,7 +852,7 @@ namespace Garnet.server
         #region ListPop Methods
 
         /// <summary>
-        /// ListLeftPop ArgSlice version, with ObjectOutput
+        /// ListLeftPop PinnedSpanByte version, with ObjectOutput
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
@@ -861,7 +861,7 @@ namespace Garnet.server
         GarnetStatus ListLeftPop(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
-        /// ListLeftPop ArgSlice version, one element
+        /// ListLeftPop PinnedSpanByte version, one element
         /// </summary>
         /// <param name="key"></param>
         /// <param name="element"></param>
@@ -869,7 +869,7 @@ namespace Garnet.server
         GarnetStatus ListLeftPop(PinnedSpanByte key, out PinnedSpanByte element);
 
         /// <summary>
-        /// ListLeftPop ArgSlice version for multiple values
+        /// ListLeftPop PinnedSpanByte version for multiple values
         /// </summary>
         /// <param name="key"></param>
         /// <param name="elements"></param>
@@ -878,7 +878,7 @@ namespace Garnet.server
         GarnetStatus ListLeftPop(PinnedSpanByte key, int count, out PinnedSpanByte[] elements);
 
         /// <summary>
-        /// ListLeftPop ArgSlice version for multiple keys and values
+        /// ListLeftPop PinnedSpanByte version for multiple keys and values
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="count"></param>
@@ -888,7 +888,7 @@ namespace Garnet.server
         GarnetStatus ListLeftPop(PinnedSpanByte[] keys, int count, out PinnedSpanByte key, out PinnedSpanByte[] elements);
 
         /// <summary>
-        /// ListRightPop ArgSlice version, with ObjectOutput
+        /// ListRightPop PinnedSpanByte version, with ObjectOutput
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
@@ -897,7 +897,7 @@ namespace Garnet.server
         GarnetStatus ListRightPop(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
-        /// ListRightPop ArgSlice version, one element
+        /// ListRightPop PinnedSpanByte version, one element
         /// </summary>
         /// <param name="key"></param>
         /// <param name="element"></param>
@@ -905,7 +905,7 @@ namespace Garnet.server
         GarnetStatus ListRightPop(PinnedSpanByte key, out PinnedSpanByte element);
 
         /// <summary>
-        /// ListRightPop ArgSlice version for multiple values
+        /// ListRightPop PinnedSpanByte version for multiple values
         /// </summary>
         /// <param name="key"></param>
         /// <param name="elements"></param>
@@ -915,7 +915,7 @@ namespace Garnet.server
 
 
         /// <summary>
-        /// ListRightPop ArgSlice version for multiple keys and values
+        /// ListRightPop PinnedSpanByte version for multiple keys and values
         /// </summary>
         /// <param name="keys"></param>
         /// <param name="count"></param>
@@ -1193,6 +1193,18 @@ namespace Garnet.server
         GarnetStatus HyperLogLogMerge(ref StringInput input, out bool error);
 
         #endregion
+
+        #region VectorSet Methods
+        /// <summary>
+        /// Adds to (and may create) a vector set with the given parameters.
+        /// </summary>
+        GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte value, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+
+        /// <summary>
+        /// Remove a member from a vector set, if it is present and the key exists.
+        /// </summary>
+        GarnetStatus VectorSetRemove(PinnedSpanByte key, PinnedSpanByte element);
+        #endregion
     }
 
     /// <summary>
@@ -1420,7 +1432,7 @@ namespace Garnet.server
         /// <summary>
         /// Performs a union of multiple sorted sets and stores the result in a dictionary.
         /// </summary>
-        /// <param name="keys">A read-only span of ArgSlice representing the keys of the sorted sets to union.</param>
+        /// <param name="keys">A read-only span of PinnedSpanByte representing the keys of the sorted sets to union.</param>
         /// <param name="pairs">An output sorted set where the result of the union will be stored.</param>
         /// <param name="weights">An optional array of doubles representing the weights to apply to each sorted set during the union.</param>
         /// <param name="aggregateType">The type of aggregation to use when combining scores from the sorted sets. Defaults to <see cref="SortedSetAggregateType.Sum"/>.</param>
@@ -1976,6 +1988,37 @@ namespace Garnet.server
 
         #endregion
 
+        #region Vector Sets
+
+        /// <summary>
+        /// Perform a similarity search given a vector and these parameters.
+        /// 
+        /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
+        /// Attributes are encoded in <paramref name="outputAttributes"/> as length prefixed blobs of bytes.
+        /// </summary>
+        GarnetStatus VectorSetValueSimilarity(PinnedSpanByte key, VectorValueType valueType, PinnedSpanByte value, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result);
+
+        /// <summary>
+        /// Perform a similarity search given an element already in the vector set and these parameters.
+        /// 
+        /// Ids are encoded in <paramref name="outputIds"/> as length prefixed blobs of bytes.
+        /// Attributes are encoded in <paramref name="outputAttributes"/> as length prefixed blobs of bytes.
+        /// </summary>
+        GarnetStatus VectorSetElementSimilarity(PinnedSpanByte key, PinnedSpanByte element, int count, float delta, int searchExplorationFactor, PinnedSpanByte filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result);
+
+        /// <summary>
+        /// Fetch the embedding of a given element in a Vector set.
+        /// </summary>
+        GarnetStatus VectorSetEmbedding(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputDistances);
+
+        /// <summary>
+        /// Fetch the dimensionality of the given Vector Set.
+        /// 
+        /// If the Vector Set was created with reduced dimensions, reports the reduced dimensions.
+        /// </summary>
+        GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions);
+
+        #endregion 
     }
 
     /// <summary>
