@@ -1587,7 +1587,8 @@ namespace Tsavorite.core
             return record;
         }
 
-        /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event</summary>
+        /// <summary>Read pages from specified device(s) for recovery, with no output of the countdown event (but it is still created in the <see cref="PageAsyncReadResult{TContext}"/>
+        ///     and thus must be Dispose()d).</summary>
         public void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, DeviceIOCompletionCallback callback,
                                 TContext context, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null)
             => AsyncReadPagesForRecovery(readPageStart, numPages, untilAddress, callback, context, out _, devicePageOffset, logDevice, objectLogDevice);

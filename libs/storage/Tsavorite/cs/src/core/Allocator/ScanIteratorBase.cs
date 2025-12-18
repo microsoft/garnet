@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Threading;
 using Microsoft.Extensions.Logging;
 
@@ -187,21 +188,19 @@ namespace Tsavorite.core
                     // try to atomically exchange it with the endAddress we need. If successful, issue the load.
                     if (val < pageEndAddress && Interlocked.CompareExchange(ref nextLoadedPages[nextFrame], pageEndAddress, val) == val)
                     {
-                        var tmp_page = i;
+                        Debug.Assert(loadCompletionEvents[nextFrame] is null || loadCompletionEvents[nextFrame].IsSet,
+                            $"i {i}, currentAddress {currentAddress}, currentFrame {currentFrame}, nextFrame {nextFrame} overwriting unset completion event");
                         var readBuffer = readBuffers is not null ? readBuffers[nextFrame] : default;
                         if (epoch != null)
-                        {
-                            epoch.BumpCurrentEpoch(() =>
-                            {
-                                AsyncReadPagesFromDeviceToFrame(readBuffer, tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress,
-                                        Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
-                                loadedPages[nextFrame] = pageEndAddress;
-                            });
-                        }
+                            epoch.BumpCurrentEpoch(() => DoReadPages());
                         else
+                            DoReadPages();
+
+                        void DoReadPages()
                         {
-                            AsyncReadPagesFromDeviceToFrame(readBuffer, tmp_page + GetPageOfAddress(currentAddress, logPageSizeBits), 1, endAddress,
-                                    Empty.Default, out loadCompletionEvents[nextFrame], 0, null, null, loadCTSs[nextFrame]);
+                            AsyncReadPagesFromDeviceToFrame(readBuffer, readPageStart: i + GetPageOfAddress(currentAddress, logPageSizeBits),
+                                    numPages:1, untilAddress:endAddress, context:Empty.Default, out loadCompletionEvents[nextFrame],
+                                    devicePageOffset:0, device:null, objectLogDevice:null, loadCTSs[nextFrame]);
                             loadedPages[nextFrame] = pageEndAddress;
                         }
                     }
@@ -302,12 +301,9 @@ namespace Tsavorite.core
                         loadCTSs[i]?.Dispose();
                         loadCTSs[i] = null;
                     }
-                    if (readBuffers is not null)
-                    {
-                        // Do not null this; we didn't hold onto the hlogBase to recreate. CircularDiskReadBuffer.Dispose() clears
-                        // things and leaves it in an "initialized" state.
-                        readBuffers[i]?.Dispose();
-                    }
+                    // Do not null this; we didn't hold onto the hlogBase to recreate. CircularDiskReadBuffer.Dispose() clears
+                    // things and leaves it in an "initialized" state.
+                    readBuffers?[i]?.Dispose();
                 }
                 catch { }
             }

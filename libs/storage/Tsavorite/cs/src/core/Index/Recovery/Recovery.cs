@@ -1439,6 +1439,8 @@ namespace Tsavorite.core
                 result.context.SignalReadError(pageIndex);
             else
                 result.context.SignalRead(pageIndex);
+
+            result.DisposeHandle();
         }
     }
 }

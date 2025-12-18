@@ -29,7 +29,7 @@ namespace Tsavorite.test.LockTable
     internal class OverflowBucketLockTableTests
     {
         IKeyComparer comparer = new LongKeyComparer();
-        long SingleBucketKey = 1;   // We use a single bucket here for most tests so this lets us use 'ref' easily
+        long singleBucketKey = 1;   // We use a single bucket here for most tests so this lets us use 'ref' easily
 
         // For OverflowBucketLockTable, we need an instance of TsavoriteKV
         private TsavoriteKV<LongStoreFunctions, SpanByteAllocator<LongStoreFunctions>> store;
@@ -171,7 +171,7 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void SingleKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref SingleBucketKey)));
+            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref singleBucketKey)));
             PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
@@ -207,7 +207,7 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void ThreeKeyTest([Values] UseSingleBucketComparer /* justToSignalSetup */ _)
         {
-            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref SingleBucketKey)));
+            HashEntryInfo hei = new(comparer.GetHashCode64(SpanByte.FromPinnedVariable(ref singleBucketKey)));
             PopulateHei(ref hei);
             AssertLockCounts(ref hei, false, 0);
 
@@ -283,12 +283,15 @@ namespace Tsavorite.test.LockTable
             AssertTotalLockCounts(0, 0);
         }
 
-        FixedLengthTransactionalKeyStruct[] CreateKeys(Random rng, int numKeys, int numRecords)
+        // Creates numRecords random keys in the range [0,numKeys) and returns both the array of key structs and the pinned array of longs used as storage for the keys.
+        (FixedLengthTransactionalKeyStruct[], long[]) CreateKeys(Random rng, int numKeys, int numRecords)
         {
-            FixedLengthTransactionalKeyStruct createKey()
+            // This needs to return the pinned source of the key longs so its lifetime is at least that of the output KeyStruct[].
+            var keyNums = GC.AllocateArray<long>(numRecords, pinned: true);
+            FixedLengthTransactionalKeyStruct createKey(int recordNum)
             {
-                long keyLong = rng.Next(numKeys);
-                var key = SpanByte.FromPinnedVariable(ref keyLong);
+                keyNums[recordNum] = rng.Next(numKeys);
+                var key = SpanByte.FromPinnedVariable(ref keyNums[recordNum]);
                 var keyHash = store.GetKeyHash(key);
                 return new()
                 {
@@ -298,7 +301,7 @@ namespace Tsavorite.test.LockTable
                     KeyHash = keyHash,
                 };
             }
-            return [.. Enumerable.Range(0, numRecords).Select(ii => createKey())];
+            return ([.. Enumerable.Range(0, numRecords).Select(createKey)], keyNums);
         }
 
         void AssertSorted(FixedLengthTransactionalKeyStruct[] keys, int count)
@@ -341,8 +344,10 @@ namespace Tsavorite.test.LockTable
         [Category(LockTestCategory), Category(LockTableTestCategory), Category(SmokeTestCategory)]
         public void FullArraySortTest()
         {
-            var keys = CreateKeys(new Random(101), 100, 1000);
-            store.LockTable.SortKeyHashes<FixedLengthTransactionalKeyStruct>(keys);
+            const int numRecords = 1000;
+            var (keys, keyNums) = CreateKeys(new Random(101), 100, numRecords);
+            Assert.That(keyNums.Length, Is.EqualTo(numRecords));
+            store.LockTable.SortKeyHashes(keys);
             AssertSorted(keys, keys.Length);
         }
 
@@ -351,7 +356,8 @@ namespace Tsavorite.test.LockTable
         public void PartialArraySortTest()
         {
             var numRecords = 1000;
-            var keys = CreateKeys(new Random(101), 100, numRecords);
+            var (keys, keyNums) = CreateKeys(new Random(101), 100, numRecords);
+            Assert.That(keyNums.Length, Is.EqualTo(numRecords));
             const int count = 800;
 
             // Make the later elements invalid.
@@ -377,7 +383,7 @@ namespace Tsavorite.test.LockTable
 
                 // maxNumKeys < 0 means use random number of keys. SpanByte requires persistent storage so we need the threadKeyNums vector in parallel with threadStructs.
                 int numKeys = maxNumKeys < 0 ? rng.Next(1, -maxNumKeys) : maxNumKeys;
-                var threadKeyNums = new long[numKeys];
+                var threadKeyNums = GC.AllocateArray<long>(numKeys, pinned: true);
                 var threadStructs = new FixedLengthTransactionalKeyStruct[numKeys];
 
                 long getNextKey()
@@ -395,10 +401,9 @@ namespace Tsavorite.test.LockTable
                     // Create key structs
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
-                        var keyNum = getNextKey();
-                        threadKeyNums[ii] = keyNum;
-                        var key = SpanByte.FromPinnedVariable(ref threadKeyNums[ii]);   // storage for the SpanByte
-                        threadStructs[ii] = new()                                       // local var for debugging
+                        threadKeyNums[ii] = getNextKey();
+                        var key = SpanByte.FromPinnedVariable(ref threadKeyNums[ii]);   // storage for the SpanByte in the pinned array
+                        threadStructs[ii] = new()
                         {
                             Key = PinnedSpanByte.FromPinnedSpan(key),
                             // LockType.None means split randomly between Shared and Exclusive
@@ -409,7 +414,7 @@ namespace Tsavorite.test.LockTable
                     }
 
                     // Sort and lock
-                    store.LockTable.SortKeyHashes<FixedLengthTransactionalKeyStruct>(threadStructs);
+                    store.LockTable.SortKeyHashes(threadStructs);
                     for (var ii = 0; ii < numKeys; ++ii)
                     {
                         HashEntryInfo hei = new(threadStructs[ii].KeyHash);

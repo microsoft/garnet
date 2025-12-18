@@ -662,6 +662,9 @@ namespace Tsavorite.core
                 return true;
             }
 
+            // Ensure we have finished all object reads
+            logReader.OnEndReadRecords();
+
             // If readBuffer.Read returned false it was due to an Overflow key mismatch or an Invalid record, so get the previous record.
             prevAddressToRead = (*(RecordInfo*)ctx.record.GetValidPointer()).PreviousAddress;
             return false;
@@ -738,6 +741,9 @@ namespace Tsavorite.core
                         _ = logReader.ReadRecordObjects(ref logRecord, noKey, startPosition.SegmentSizeBits);
                     }
                 }
+
+                // Ensure we have finished all object reads
+                logReader.OnEndReadRecords();
             }
 
             // Call the "real" page read callback

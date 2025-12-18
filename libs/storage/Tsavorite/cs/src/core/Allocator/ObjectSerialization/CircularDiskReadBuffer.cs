@@ -142,6 +142,18 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Called when one or more records with Objects have been read and via ReadAsync, e.g. being processed by AsyncReadPageWithObjectsCallback,
+        /// and we have completed reading and deserializing those objects.
+        /// </summary>
+        internal void OnEndReadRecords()
+        {
+            for (var ii = 0; ii < buffers.Length; ii++)
+            {
+                Debug.Assert(buffers[ii] is null || !buffers[ii].HasInFlightRead, $"All reads should have been completed by OnEndReadRecords()");
+            }
+        }
+
         internal bool OnBeginRecord(ObjectLogFilePositionInfo recordFilePosition)
         {
             var buffer = buffers[currentIndex] ?? throw new TsavoriteException($"Internal error in read buffer sequencing; empty buffer[{currentIndex}] encountered with unreadLengthRemaining {unreadLengthRemaining}");
@@ -187,7 +199,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="nextBuffer">The next buffer</param>
         /// <returns></returns>
-        internal unsafe bool MoveToNextBuffer(out DiskReadBuffer nextBuffer)
+        internal bool MoveToNextBuffer(out DiskReadBuffer nextBuffer)
         {
             // If we have more data to read, "backfill" this buffer with a read before departing it, else initialize it.
             if (unreadLengthRemaining > 0)
@@ -206,13 +218,15 @@ namespace Tsavorite.core
             return false;
         }
 
-        internal unsafe void ReadFromDeviceCallback(uint errorCode, uint numBytes, object context)
+        internal void ReadFromDeviceCallback(uint errorCode, uint numBytes, object context)
         {
             if (errorCode != 0)
                 logger?.LogError($"{nameof(ReadFromDeviceCallback)} error: {{errorCode}}", errorCode);
 
             // Finish setting up the buffer
             var buffer = (DiskReadBuffer)context;
+            if (buffer is null || buffer.memory is null)
+                Debugger.Launch();
             buffer.endPosition += (int)numBytes;
             if (buffer.endPosition == 0)
                 Debug.Assert(buffer.currentPosition == 0, $"buffer.currentPosition ({buffer.currentPosition}) must be 0 if buffer.endPosition ({buffer.endPosition}) is 0");

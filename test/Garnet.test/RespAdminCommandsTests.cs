@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -332,9 +333,14 @@ namespace Garnet.test
         [TestCase(63, 2, 1)]
         [TestCase(16, 16, 1)]
         [TestCase(5, 64, 1)]
+        //[Repeat(100)]
+        //[Explicit("TODO: intermittent null buffer or mem encountered in CircularDiskReadBuffers")]
         public void SeSaveRecoverMultipleObjectsTest(int memorySize, int recoveryMemorySize, int pageSize)
         {
-            string sizeToString(int size) => size + "k";
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
+
+            static string sizeToString(int size) => size + "k";
 
             server.Dispose();
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true, memorySize: sizeToString(memorySize), pageSize: sizeToString(pageSize));
@@ -345,16 +351,17 @@ namespace Garnet.test
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
-                for (int i = 0; i < 3000; i++)
-                    db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
+                for (var i = 0; i < 3000; i++)
+                    _ = db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
 
-                for (int i = 0; i < 3000; i++)
+                for (var i = 0; i < 3000; i++)
                     ClassicAssert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");
 
                 // Issue and wait for DB save
                 var server = redis.GetServer(TestUtils.EndPoint);
                 server.Save(SaveType.BackgroundSave);
-                while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks) Thread.Sleep(10);
+                while (server.LastSave().Ticks == DateTimeOffset.FromUnixTimeSeconds(0).Ticks)
+                    Thread.Sleep(10);
             }
 
             server.Dispose(false);
@@ -366,7 +373,7 @@ namespace Garnet.test
             {
                 var db = redis.GetDatabase(0);
                 for (var i = 3000; i < 3100; i++)
-                    db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
+                    _ = db.ListLeftPush($"SeSaveRecoverTestKey{i:0000}", ldata);
 
                 for (var i = 0; i < 3100; i++)
                     ClassicAssert.AreEqual(ldataArr, db.ListRange($"SeSaveRecoverTestKey{i:0000}"), $"key {i:0000}");

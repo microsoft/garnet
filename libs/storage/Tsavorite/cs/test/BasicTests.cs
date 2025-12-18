@@ -239,7 +239,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public unsafe void TestShiftHeadAddress([Values] TestDeviceType deviceType, [Values] BatchMode batchMode)
+        public void TestShiftHeadAddress([Values] TestDeviceType deviceType, [Values] BatchMode batchMode)
         {
             InputStruct input = default;
             const int RandSeed = 10;
