@@ -290,6 +290,13 @@ jobs:
           merge-multiple: true
         if: ${{ always() }}
 
+      - name: DEBUG DEBUG List contents of test/Allure/CombinedResults
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/CombinedResults"
+          Get-ChildItem -Path $target -Recurse
+        if: ${{ always() }}
+
       - name: DEBUG DEBUG Show working directory and contents
         shell: pwsh
         run: |
@@ -316,16 +323,23 @@ jobs:
           Get-ChildItem -Path $target -Recurse
         if: ${{ always() }}
 
-#      - name: Copy all results into one folder (CombinedResults)
-#        shell: pwsh
-#        run: |
-#          $source = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
-#          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/CombinedResults"
-#          New-Item -ItemType Directory -Path $target -Force
-#          Get-ChildItem -Path $source -Recurse -File | ForEach-Object {
-#            Copy-Item -Path $_.FullName -Destination $target -Force
-#          }          
-#        if: ${{ always() }}
+      - name: Copy all results into one folder (CombinedResults)
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
+          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/CombinedResults"
+          New-Item -ItemType Directory -Path $target -Force
+          Get-ChildItem -Path $source -Recurse -File | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination $target -Force
+          }          
+        if: ${{ always() }}
+
+      - name: DEBUG DEBUG List contents of test/Allure/CombinedResults
+        shell: pwsh
+        run: |
+          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/CombinedResults"
+          Get-ChildItem -Path $target -Recurse
+        if: ${{ always() }}
 
       - name: Final cleanup of stray allure-results folders
         shell: pwsh
