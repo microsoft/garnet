@@ -700,8 +700,8 @@ namespace Garnet.test
                             case RespCommand.VGETATTR:
                                 try
                                 {
-                                    var res = (RedisValue[])db.Execute("VGETATTR", [key, "wololo"]);
-                                    ClassicAssert.AreEqual(12, res.Length);
+                                    var res = db.Execute("VGETATTR", [key, "wololo"]);
+                                    ClassicAssert.IsTrue(res.IsNull);
                                 }
                                 catch (RedisServerException e)
                                 {
