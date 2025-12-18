@@ -22,6 +22,7 @@ namespace Tsavorite.core
 
         readonly DiskReadBuffer[] buffers;
         int currentIndex;
+        bool disposed;
 
         /// <summary>Device address to do the next read from (segment and offset); set at the start of a record by <see cref="ObjectLogReader{TStoreFunctions}"/>
         /// and incremented with each buffer read; all of these should be aligned to sector size, so this address remains sector-aligned.</summary>
@@ -225,20 +226,29 @@ namespace Tsavorite.core
 
             // Finish setting up the buffer
             var buffer = (DiskReadBuffer)context;
-            if (buffer is null || buffer.memory is null)
-                Debugger.Launch();
-            buffer.endPosition += (int)numBytes;
-            if (buffer.endPosition == 0)
-                Debug.Assert(buffer.currentPosition == 0, $"buffer.currentPosition ({buffer.currentPosition}) must be 0 if buffer.endPosition ({buffer.endPosition}) is 0");
-            else
-                Debug.Assert(buffer.endPosition > buffer.currentPosition, $"buffer.endPosition ({buffer.endPosition}) must be >= buffer.currentPosition ({buffer.currentPosition})");
 
-            // Signal the buffer's event to indicate the data is available.
-            _ = buffer.countdownEvent.Signal();
+            try
+            {
+                buffer.endPosition += (int)numBytes;
+                if (buffer.endPosition == 0)
+                    Debug.Assert(buffer.currentPosition == 0, $"buffer.currentPosition ({buffer.currentPosition}) must be 0 if buffer.endPosition ({buffer.endPosition}) is 0");
+                else
+                    Debug.Assert(buffer.endPosition > buffer.currentPosition, $"buffer.endPosition ({buffer.endPosition}) must be >= buffer.currentPosition ({buffer.currentPosition})");
+
+                // Signal the buffer's event to indicate the data is available.
+                _ = buffer.countdownEvent.Signal();
+            }
+            catch (Exception ex)
+            {
+                throw new TsavoriteException($"this.disposed: {disposed}, buffer is null: {buffer is null}, buffer.memory is null: {buffer?.memory is null}, buffer.countdownEvent is null: {buffer?.countdownEvent is null}", ex);
+            }
         }
 
         public void Dispose()
         {
+            if (disposed)
+                return;
+            disposed = true;
             for (var ii = 0; ii < buffers.Length; ii++)
                 buffers[ii]?.Dispose();
         }
