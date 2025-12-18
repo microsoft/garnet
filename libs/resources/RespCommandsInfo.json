@@ -1321,26 +1321,25 @@
     "Command": "EXECIFGREATER",
     "Name": "EXECIFGREATER",
     "Arity": -4,
-    "AclCategories": "Garnet, Meta"
+    "Flags": "Meta"
   },
   {
     "Command": "EXECIFMATCH",
     "Name": "EXECIFMATCH",
     "Arity": -4,
-    "AclCategories": "Garnet, Meta"
+    "Flags": "Meta"
   },
   {
     "Command": "EXECIFNOTMATCH",
     "Name": "EXECIFNOTMATCH",
     "Arity": -4,
-    "AclCategories": "Garnet, Meta"
+    "Flags": "Meta"
   },
   {
     "Command": "EXECWITHETAG",
     "Name": "EXECWITHETAG",
     "Arity": -3,
-    "Flags": "ReadOnly",
-    "AclCategories": "Read, Garnet, Meta"
+    "Flags": "Meta"
   },
   {
     "Command": "EXISTS",

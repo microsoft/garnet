@@ -90,8 +90,7 @@ namespace Garnet.test.Resp.ACL
             // TODO: See if these commands could be identified programmatically
             IEnumerable<string> withOnlySubCommands = ["ACL", "CLIENT", "CLUSTER", "CONFIG", "LATENCY", "MEMORY", "MODULE", "PUBSUB", "SCRIPT", "SLOWLOG"];
             IEnumerable<string> notCoveredByACLs = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.NoAuth)).Select(static kv => kv.Key);
-            IEnumerable<string> metaCommands = allInfo.Where(static x => (x.Value.AclCategories & RespAclCategories.Meta) == RespAclCategories.Meta)
-                .Select(static x => x.Key);
+            IEnumerable<string> metaCommands = allInfo.Where(static x => x.Value.Flags.HasFlag(RespCommandFlags.Meta)).Select(static x => x.Key);
 
             // Check tests against RespCommandsInfo
             {

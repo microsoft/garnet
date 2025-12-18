@@ -427,8 +427,7 @@
     "Name": "EXECIFGREATER",
     "IsInternal": false,
     "Arity": -4,
-    "Flags": "NONE",
-    "AclCategories": "Garnet, Meta",
+    "Flags": "Meta",
     "KeySpecifications": null
   },
   {
@@ -436,8 +435,7 @@
     "Name": "EXECIFMATCH",
     "IsInternal": false,
     "Arity": -4,
-    "Flags": "NONE",
-    "AclCategories": "Garnet, Meta",
+    "Flags": "Meta",
     "KeySpecifications": null
   },
   {
@@ -445,8 +443,7 @@
     "Name": "EXECIFNOTMATCH",
     "IsInternal": false,
     "Arity": -4,
-    "Flags": "NONE",
-    "AclCategories": "Garnet, Meta",
+    "Flags": "Meta",
     "KeySpecifications": null
   },
   {
@@ -454,8 +451,7 @@
     "Name": "EXECWITHETAG",
     "IsInternal": false,
     "Arity": -3,
-    "Flags": "ReadOnly",
-    "AclCategories": "Garnet, Meta, Read",
+    "Flags": "Meta",
     "KeySpecifications": null
   },
   {

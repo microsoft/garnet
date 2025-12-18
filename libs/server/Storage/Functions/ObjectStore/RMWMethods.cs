@@ -50,7 +50,7 @@ namespace Garnet.server
                 value = GarnetObject.Create(type);
 
                 var outputOffset = 0;
-                var updatedEtag = GetUpdatedEtag(LogRecord.NoETag, input.header.metaCmd, ref input.parseState, out var execCmd);
+                var updatedEtag = GetUpdatedEtag(LogRecord.NoETag, input.header.metaCmd, ref input.parseState, out var execCmd, init: true);
                 if (input.header.metaCmd.IsEtagCommand())
                     WriteEtagToOutput(updatedEtag, ref output, out outputOffset);
 

@@ -4757,7 +4757,7 @@ namespace Garnet.test
 
             mainDB.StringSet(key, val);
 
-            string result = (string)mainDB.Execute("GETSET", key, newValue);  // Don't use StringGetSet as SE.Redis can chnage the underlying command to nondeprecated one anytime
+            string result = (string)mainDB.Execute("GETSET", key, newValue);  // Don't use StringGetSet as SE.Redis can change the underlying command to nondeprecated one anytime
 
             ClassicAssert.AreEqual(val, result);
 
@@ -4775,7 +4775,7 @@ namespace Garnet.test
             var key = "myKey";
             var newValue = "myNewValue";
 
-            string result = (string)mainDB.Execute("GETSET", key, newValue);  // Don't use StringGetSet as SE.Redis can chnage the underlying command to nondeprecated one anytime
+            string result = (string)mainDB.Execute("GETSET", key, newValue);  // Don't use StringGetSet as SE.Redis can change the underlying command to nondeprecated one anytime
 
             ClassicAssert.IsNull(result);
 

@@ -55,6 +55,8 @@ namespace Garnet.server
         Write = 1 << 19,
         [Description("allow_busy")]
         AllowBusy = 1 << 20,
+        [Description("meta")]
+        Meta = 1 << 21,
     }
 
     /// <summary>
@@ -110,9 +112,7 @@ namespace Garnet.server
         Garnet = 1 << 21,
         [Description("custom")]
         Custom = 1 << 22, 
-        [Description("meta")]
-        Meta = 1 << 23,
         [Description("all")]
-        All = (Meta << 1) - 1,
+        All = (Custom << 1) - 1,
     }
 }
