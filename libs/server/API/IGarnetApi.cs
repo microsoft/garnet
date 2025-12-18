@@ -1212,6 +1212,11 @@ namespace Garnet.server
         /// Remove a member from a vector set, if it is present and the key exists.
         /// </summary>
         GarnetStatus VectorSetRemove(ArgSlice key, ArgSlice element);
+
+        /// <summary>
+        /// Set or update the attributes for an element in the Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetUpdateAttributes(ArgSlice key, ArgSlice elementId, ArgSlice attributes);
         #endregion
     }
 

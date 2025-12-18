@@ -543,6 +543,10 @@ namespace Garnet.server
         public unsafe GarnetStatus VectorSetGetAttribute(ArgSlice key, ArgSlice elementId, ref SpanByteAndMemory outputAttributes)
         => storageSession.VectorSetGetAttribute(SpanByte.FromPinnedPointer(key.ptr, key.length), elementId, ref outputAttributes);
 
+        /// <inheritdoc/>
+        public unsafe GarnetStatus VectorSetUpdateAttributes(ArgSlice key, ArgSlice elementId, ArgSlice attributes)
+        => storageSession.VectorSetUpdateAttributes(SpanByte.FromPinnedPointer(key.ptr, key.length), elementId, attributes);
+
         #endregion
     }
 }
