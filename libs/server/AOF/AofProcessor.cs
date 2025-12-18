@@ -242,7 +242,7 @@ namespace Garnet.server
                     if (shardedLog)
                     {
                         shardedHeader = *(AofShardedHeader*)ptr;
-                        storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
+                        storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
                     }
                     break;
                 case AofEntryType.CheckpointEndCommit:
@@ -321,7 +321,7 @@ namespace Garnet.server
                     if (shardedLog)
                     {
                         shardedHeader = *(AofShardedHeader*)ptr;
-                        storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
+                        storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
                     }
                     break;
                 case AofEntryType.FlushAll:
@@ -355,7 +355,7 @@ namespace Garnet.server
                 case AofEntryType.RefreshSublogTail:
                     shardedHeader = *(AofShardedHeader*)ptr;
                     //logger?.LogDebug("RefreshSublogTail {sublogIdx} {idx}", sublogIdx, extendedHeader.sequenceNumber);
-                    storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
+                    storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
                     break;
                 default:
                     _ = ReplayOp(sublogIdx, basicContext, objectStoreBasicContext, unifiedStoreBasicContext, ptr, length, asReplica);
@@ -454,7 +454,7 @@ namespace Garnet.server
             var shardedHeader = *(AofShardedHeader*)ptr;
             var curr = ptr + sizeof(AofShardedHeader);
             var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
-            storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateKeySequenceNumber(sublogIdx, key, shardedHeader.sequenceNumber);
+            storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateVirtualSublogKeySequenceNumber(sublogIdx, key, shardedHeader.sequenceNumber);
         }
 
         static void StoreUpsert<TContext>(

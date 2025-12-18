@@ -28,9 +28,9 @@ namespace Garnet.server
         readonly GarnetServerOptions serverOptions = serverOptions;
         readonly ILogger logger = logger;
 
-        readonly SublogReplayState[] srs = [.. Enumerable.Range(0, serverOptions.AofPhysicalSublogCount).Select(_ => new SublogReplayState(serverOptions))];
+        readonly VirtualSublogReplayState[] vsrs = [.. Enumerable.Range(0, serverOptions.AofVirtualSublogCount).Select(_ => new VirtualSublogReplayState())];
 
-        public long MaxSequenceNumber => srs.Select(sublog => sublog.Max).Max();
+        public long MaxSequenceNumber => vsrs.Select(sublog => sublog.Max).Max();
 
         /// <summary>
         /// Get snapshot of maximum replayed timestamp for all sublogs
@@ -38,9 +38,14 @@ namespace Garnet.server
         /// <returns></returns>
         public AofAddress GetSublogMaxKeySequenceNumber()
         {
-            var maxKeySeqNumVector = AofAddress.Create(appendOnlyFile.Log.Size, 0);
-            for (var i = 0; i < maxKeySeqNumVector.Length; i++)
-                maxKeySeqNumVector[i] = srs[i].GetSublogMaxSequenceNumber();
+            var physicalSublogCount = appendOnlyFile.Log.Size;
+            var replayTaskCount = appendOnlyFile.Log.ReplayTaskCount;
+            var maxKeySeqNumVector = AofAddress.Create(physicalSublogCount, 0);
+            for (var sublog = 0; sublog < physicalSublogCount; sublog++)
+            {
+                for (var rt = 0; rt < replayTaskCount; rt++)
+                    maxKeySeqNumVector[sublog] = Math.Max(maxKeySeqNumVector[sublog], vsrs[sublog * replayTaskCount + rt].Max);
+            }
             return maxKeySeqNumVector;
         }
 
@@ -52,8 +57,8 @@ namespace Garnet.server
         /// <returns></returns>
         long GetSublogFrontierSequenceNumber(long hash)
         {
-            var sublogIdx = (byte)(hash % serverOptions.AofPhysicalSublogCount);
-            return srs[sublogIdx].GetSublogFrontierSequenceNumber(hash);
+            var sublogIdx = (byte)(hash % serverOptions.AofVirtualSublogCount);
+            return vsrs[sublogIdx].GetFrontierSequenceNumber(hash);
         }
 
         /// <summary>
@@ -63,8 +68,8 @@ namespace Garnet.server
         /// <returns></returns>
         long GetKeySequenceNumber(long hash)
         {
-            var sublogIdx = (byte)(hash % serverOptions.AofPhysicalSublogCount);
-            return srs[sublogIdx].GetKeySequenceNumber(hash);
+            var sublogIdx = (byte)(hash % serverOptions.AofVirtualSublogCount);
+            return vsrs[sublogIdx].GetKeySequenceNumber(hash);
         }
 
         /// <summary>
@@ -72,15 +77,27 @@ namespace Garnet.server
         /// </summary>
         /// <param name="sublogIdx"></param>
         public void UpdateSublogMaxSequenceNumber(int sublogIdx)
-            => srs[sublogIdx].UpdateMaxSequenceNumber();
+        {
+            var replayTaskCount = appendOnlyFile.Log.ReplayTaskCount;
+            var physicalSublogOffset = sublogIdx * replayTaskCount;
+            var globalMaxSequenceNumber = 0L;
+
+            // Get maximum value across all virtual sublogs
+            for (var rt = 0; rt < replayTaskCount; rt++)
+                globalMaxSequenceNumber = Math.Max(globalMaxSequenceNumber, vsrs[physicalSublogOffset + rt].Max);
+
+            // Update virtual sublog maximum value to ensure time moves forward
+            for (var rt = 0; rt < replayTaskCount; rt++)
+                vsrs[physicalSublogOffset + rt].UpdateMaxSequenceNumber(globalMaxSequenceNumber);
+        }
 
         /// <summary>
         /// Update max sequence number of physical sublog associated with the specified sublogIdx.
         /// </summary>
         /// <param name="sublogIdx"></param>
         /// <param name="sequenceNumber"></param>
-        public void UpdateSublogMaxSequenceNumber(int sublogIdx, long sequenceNumber)
-            => srs[sublogIdx].UpdateMaxSequenceNumber(sequenceNumber);
+        public void UpdateVirtualSublogMaxSequenceNumber(int sublogIdx, long sequenceNumber)
+            => vsrs[sublogIdx].UpdateMaxSequenceNumber(sequenceNumber);
 
         /// <summary>
         /// Update sequence number for provided key (called after replay)
@@ -88,10 +105,10 @@ namespace Garnet.server
         /// <param name="sublogIdx"></param>
         /// <param name="key"></param>
         /// <param name="sequenceNumber"></param>
-        public void UpdateKeySequenceNumber(int sublogIdx, ReadOnlySpan<byte> key, long sequenceNumber)
+        public void UpdateVirtualSublogKeySequenceNumber(int sublogIdx, ReadOnlySpan<byte> key, long sequenceNumber)
         {
             var keyHash = GarnetLog.HASH(key);
-            srs[sublogIdx].UpdateKeySequenceNumber(keyHash, sequenceNumber);
+            vsrs[sublogIdx].UpdateKeySequenceNumber(keyHash, sequenceNumber);
         }
 
         /// <summary>
@@ -99,9 +116,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="keyHash"></param>
         /// <param name="sequenceNumber"></param>
-        public void UpdateKeySequenceNumber(long keyHash, long sequenceNumber)
+        public void UpdateVirtualSublogKeySequenceNumber(long keyHash, long sequenceNumber)
         {
-            srs[keyHash].UpdateKeySequenceNumber(keyHash, sequenceNumber);
+            var sublogIdx = (byte)(keyHash % serverOptions.AofVirtualSublogCount);
+            vsrs[sublogIdx].UpdateKeySequenceNumber(keyHash, sequenceNumber);
         }
 
         /// <summary>
@@ -117,32 +135,30 @@ namespace Garnet.server
         public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
         {
             var hash = GarnetLog.HASH(key);
-            var sublogIdx = (byte)(hash % serverOptions.AofPhysicalSublogCount);
-            var replayIdx = (byte)(hash % serverOptions.AofReplaySubtaskCount);
+            var virtualSublogIdx = (short)(hash % serverOptions.AofVirtualSublogCount);
 
             // If first time calling or version has been bumped reset read context
             // NOTE: version changes every time replica is reset and a attached to a new primary
             if (replicaReadSessionContext.sessionVersion == -1 || replicaReadSessionContext.sessionVersion != CurrentVersion)
             {
                 replicaReadSessionContext.sessionVersion = CurrentVersion;
-                replicaReadSessionContext.lastSublogIdx = -1;
+                replicaReadSessionContext.lastVirtualSublogIdx = -1;
                 replicaReadSessionContext.maximumSessionSequenceNumber = 0;
             }
 
             // If first read initialize context
-            if (replicaReadSessionContext.lastSublogIdx == -1)
+            if (replicaReadSessionContext.lastVirtualSublogIdx == -1)
                 goto updateContext;
 
             // Here we have to wait for replay to catch up
             // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
-            if (replicaReadSessionContext.lastSublogIdx != sublogIdx && replicaReadSessionContext.lastReplayIdx != replayIdx && replicaReadSessionContext.maximumSessionSequenceNumber > GetSublogFrontierSequenceNumber(hash))
+            if (replicaReadSessionContext.lastVirtualSublogIdx != virtualSublogIdx && replicaReadSessionContext.maximumSessionSequenceNumber > GetSublogFrontierSequenceNumber(hash))
             {
                 // Before adding to the waitQ set timestamp and reader associated information
                 readSessionWaiter.rrsc = new ReplicaReadSessionContext()
                 {
                     lastHash = hash,
-                    lastSublogIdx = sublogIdx,
-                    lastReplayIdx = replayIdx,
+                    lastVirtualSublogIdx = virtualSublogIdx,
                     maximumSessionSequenceNumber = replicaReadSessionContext.maximumSessionSequenceNumber
                 };
 
@@ -153,7 +169,7 @@ namespace Garnet.server
                 //    GetSublogFrontierSequenceNumber(hash));
 
                 // Enqueue waiter and wait
-                srs[sublogIdx].AddWaiter(hash, readSessionWaiter);
+                vsrs[virtualSublogIdx].AddWaiter(readSessionWaiter);
                 readSessionWaiter.Wait(TimeSpan.FromSeconds(1000));
 
                 //logger?.LogError("Resumed [{last}] {msn} > [{current}] {fsn}",
@@ -168,8 +184,7 @@ namespace Garnet.server
 
         updateContext:
             // Store for future update
-            replicaReadSessionContext.lastSublogIdx = sublogIdx;
-            replicaReadSessionContext.lastReplayIdx = replayIdx;
+            replicaReadSessionContext.lastVirtualSublogIdx = virtualSublogIdx;
             replicaReadSessionContext.lastHash = hash;
         }
 

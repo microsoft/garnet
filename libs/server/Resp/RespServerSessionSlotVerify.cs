@@ -15,7 +15,7 @@ namespace Garnet.server
         /// <summary>
         /// Replica read context used with sharded log
         /// </summary>
-        ReplicaReadSessionContext replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastSublogIdx = -1, lastReplayIdx = -1 };
+        ReplicaReadSessionContext replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastVirtualSublogIdx = -1 };
 
         /// <summary>
         /// Read session waiter used with sharded log to avoid spin-wait

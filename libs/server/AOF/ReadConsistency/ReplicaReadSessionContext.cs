@@ -30,12 +30,6 @@ namespace Garnet.server
         /// Last read sublogIdx
         /// </summary>
         [FieldOffset(24)]
-        public short lastSublogIdx;
-
-        /// <summary>
-        /// Last read replayIdx
-        /// </summary>
-        [FieldOffset(25)]
-        public int lastReplayIdx;
+        public short lastVirtualSublogIdx;
     }
 }

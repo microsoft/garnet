@@ -31,7 +31,7 @@ namespace Garnet.cluster
         const int ReplayBufferSize = 1 << 10;
         internal readonly ReplayRecordState[] replayBuffer;
         long replayBufferOffset = 0;
-        ReplicaReplayTask[] replayTasks;
+        readonly ReplicaReplayTask[] replayTasks;
 
         public ReplicaReplayDriver(int sublogIdx, ClusterProvider clusterProvider, INetworkSender respSessionNetworkSender, CancellationTokenSource cts, ILogger logger = null)
         {
