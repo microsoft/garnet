@@ -1860,17 +1860,15 @@ namespace Garnet.test
             for (var i = 0; i < attributeSizes.Length; i++)
             {
                 var attrSize = attributeSizes[i];
-                var attrData = Enumerable.Repeat((byte)'a', attrSize).ToArray();
-                attrData[0] = (byte)('0' + i);
-
-                var elementId = new byte[] { 0, 0, 0, (byte)(i + 10) };
+                var attrData = Enumerable.Repeat((byte)(i + '0'), attrSize).ToArray();
+                var elementId = new byte[] { 0, 0, 0, (byte)(i + 1) };
 
                 // Add element with attribute of specific size
                 var addRes = db.Execute("VADD", ["foo", "VALUES", "3", "4.0", "5.0", "6.0", elementId, "XPREQ8", "SETATTR", attrData]);
                 ClassicAssert.AreEqual(1, (int)addRes);
 
                 // Get and validate attribute
-                var getAttrRes = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+                var getAttrRes = (byte[])db.Execute(command: "VGETATTR", [vectorSetKey, elementId]);
                 ClassicAssert.AreEqual(attrSize, getAttrRes.Length, $"Attribute size mismatch for size {attrSize}");
                 ClassicAssert.IsTrue(attrData.SequenceEqual(getAttrRes), $"Attribute content mismatch for size {attrSize}");
             }
