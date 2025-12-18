@@ -23,7 +23,7 @@ namespace Garnet.test
     [AllureNUnit]
     [TestFixture(false)]
     [TestFixture(true)]
-    public class RespConfigTests
+    public class RespConfigTests : AllureTestBase
     {
         GarnetServer server;
         private string memorySize = "17g";

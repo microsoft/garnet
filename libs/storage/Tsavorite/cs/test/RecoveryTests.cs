@@ -26,7 +26,7 @@ namespace Tsavorite.test.recovery.sumstore
 
     [AllureNUnit]
     [TestFixture]
-    internal class DeviceTypeRecoveryTests
+    internal class DeviceTypeRecoveryTests : AllureTestBase
     {
         internal const long NumUniqueKeys = 1L << 12;
         internal const long KeySpace = 1L << 20;

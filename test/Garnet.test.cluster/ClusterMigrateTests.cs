@@ -23,7 +23,7 @@ namespace Garnet.test.cluster
 {
     [AllureNUnit]
     [TestFixture(false), NonParallelizable]
-    public class ClusterMigrateTests(bool UseTLS)
+    public class ClusterMigrateTests(bool UseTLS) : AllureTestBase
     {
         const int testTimeout = 100000;
 
