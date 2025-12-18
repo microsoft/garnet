@@ -102,11 +102,13 @@ jobs:
           $asmPath = "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll"
           $asm = [System.Reflection.Assembly]::LoadFrom($asmPath)
 
-          # when using .Net 90 it tries to resolve every referenced type in that assembly and some dependencies are missing by design so pops exception (we don't need those anyways)
+          # When using .Net 90 it tries to resolve every referenced type in that assembly and some dependencies are missing by design so pops exception.
+          # Since we don't want to fail on every 9.0 run (even when has Allure inheritance), we catch it here.  
           try {
-            $types = $asm.GetTypes()
+              $types = $asm.GetTypes()
           } catch [System.Reflection.ReflectionTypeLoadException] {
-            $types = $_.Exception.Types | Where-Object { $_ -ne $null }
+              # Keep only successfully loaded types, skip nulls
+              $types = $_.Exception.Types | Where-Object { $_ -ne $null }
           }
           $allureBase = $types | Where-Object { $_.Name -eq "AllureTestBase" }
 
