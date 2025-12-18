@@ -2038,7 +2038,7 @@ namespace Garnet.test.cluster
             ClassicAssert.IsFalse(primaryVectorManager.AreReplicationTasksActive);
             ClassicAssert.IsTrue(replicaVectorManager.AreReplicationTasksActive);
 
-            context.ClusterFailoveSpinWait(ReplicaIndex, NullLogger.Instance);
+            context.ClusterFailoverSpinWait(ReplicaIndex, NullLogger.Instance);
 
             context.clusterTestUtils.WaitForReplicaAofSync(ReplicaIndex, PrimaryIndex);
 

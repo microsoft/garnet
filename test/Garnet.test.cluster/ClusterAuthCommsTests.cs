@@ -183,7 +183,7 @@ namespace Garnet.test.cluster
             // Setup single primary populate and then attach replicas
             ClusterReplicationAuth();
 
-            context.ClusterFailoveSpinWait(replicaNodeIndex: 1, logger: context.logger);
+            context.ClusterFailoverSpinWait(replicaNodeIndex: 1, logger: context.logger);
 
             // Reconfigure slotMap to reflect new primary
             int[] slotMap = new int[16384];
