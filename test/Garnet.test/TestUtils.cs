@@ -125,6 +125,9 @@ namespace Garnet.test
             }
         }
 
+        internal static bool IsRunningAsGitHubAction
+        => "true".Equals(Environment.GetEnvironmentVariable("GITHUB_ACTIONS"), StringComparison.OrdinalIgnoreCase);
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static void AssertEqualUpToExpectedLength(string expectedResponse, byte[] response)
         {
@@ -268,7 +271,8 @@ namespace Garnet.test
             int expiredKeyDeletionScanFrequencySecs = -1,
             bool useReviv = false,
             bool useInChainRevivOnly = false,
-            bool useLogNullDevice = false
+            bool useLogNullDevice = false,
+            bool enableVectorSetPreview = true
             )
         {
             if (useAzureStorage)
@@ -354,6 +358,7 @@ namespace Garnet.test
                 UnixSocketPermission = unixSocketPermission,
                 SlowLogThreshold = slowLogThreshold,
                 ExpiredKeyDeletionScanFrequencySecs = expiredKeyDeletionScanFrequencySecs,
+                EnableVectorSetPreview = enableVectorSetPreview,
             };
 
             if (!string.IsNullOrEmpty(memorySize))

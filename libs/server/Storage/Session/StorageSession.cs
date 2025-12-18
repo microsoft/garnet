@@ -45,6 +45,12 @@ namespace Garnet.server
         public BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedBasicContext;
         public TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext;
 
+        /// <summary>
+        /// Session Contexts for vector store
+        /// </summary>
+        public BasicContext<VectorInput, PinnedSpanByte, long, VectorSessionFunctions, StoreFunctions, StoreAllocator> vectorContext;
+        public TransactionalContext<VectorInput, PinnedSpanByte, long, VectorSessionFunctions, StoreFunctions, StoreAllocator> vectorTransactionalContext;
+
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
 
@@ -57,6 +63,8 @@ namespace Garnet.server
         public int ObjectStoreSessionID => objectBasicContext.Session.ID;
 
         public readonly int ObjectScanCountLimit;
+
+        public readonly VectorManager vectorManager;
 
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferBuilder scratchBufferBuilder,

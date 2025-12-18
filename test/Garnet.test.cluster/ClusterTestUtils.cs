@@ -1852,12 +1852,22 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void WaitForMigrationCleanup(int nodeIndex, ILogger logger = null)
-            => WaitForMigrationCleanup(endpoints[nodeIndex].ToIPEndPoint(), logger);
+        public void WaitForMigrationCleanup(int nodeIndex, ILogger logger = null, CancellationToken cancellationToken = default)
+            => WaitForMigrationCleanup(endpoints[nodeIndex].ToIPEndPoint(), logger, cancellationToken);
 
-        public void WaitForMigrationCleanup(IPEndPoint endPoint, ILogger logger)
+        public void WaitForMigrationCleanup(IPEndPoint endPoint, ILogger logger, CancellationToken cancellationToken = default)
         {
-            while (MigrateTasks(endPoint, logger) > 0) { BackOff(cancellationToken: context.cts.Token); }
+            CancellationToken backoffToken;
+            if (cancellationToken.CanBeCanceled)
+            {
+                backoffToken = cancellationToken;
+            }
+            else
+            {
+                backoffToken = context.cts.Token;
+            }
+
+            while (MigrateTasks(endPoint, logger) > 0) { BackOff(cancellationToken: backoffToken); }
         }
 
         public void WaitForMigrationCleanup(ILogger logger)
