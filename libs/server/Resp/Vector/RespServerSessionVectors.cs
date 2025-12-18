@@ -1018,12 +1018,48 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments("VGETATTR");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+            var element = parseState.GetArgSliceByRef(1);
 
-            return true;
+            // Here we allocate some stack buffer to try to avoid allocations if the attributes are small
+            // However, if it's not enough, VectorSetGetAttribute will allocate and replace attributesOutput
+            // and attach a Memory to it - So we need to make sure to dispose of that if it happens
+            Span<byte> attributesBuffer = stackalloc byte[256];
+            SpanByteAndMemory attributesOutput = SpanByteAndMemory.FromPinnedSpan(attributesBuffer);
+
+            try
+            {
+                var res = storageApi.VectorSetGetAttribute(key, element, ref attributesOutput);
+
+                if (res == GarnetStatus.NOTFOUND)
+                {
+                    WriteNull();
+                    return true;
+                }
+                else if (res == GarnetStatus.WRONGTYPE)
+                {
+                    return AbortVectorSetWrongType();
+                }
+                else if (res == GarnetStatus.BADSTATE)
+                {
+                    return AbortVectorSetPartiallyDeleted(ref key);
+                }
+
+                WriteSimpleString(attributesOutput.AsReadOnlySpan());
+                return true;
+            }
+            finally
+            {
+                if (!attributesOutput.IsSpanByte)
+                {
+                    attributesOutput.Memory.Dispose();
+                }
+            }
         }
 
         private bool NetworkVINFO<TGarnetApi>(ref TGarnetApi storageApi)

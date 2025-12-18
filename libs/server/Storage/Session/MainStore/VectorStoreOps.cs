@@ -341,5 +341,28 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
         }
+
+        /// <summary>
+        /// Get the attributes associated with an element in the VectorSet
+        /// </summary>
+        [SkipLocalsInit]
+        internal unsafe GarnetStatus VectorSetGetAttribute(SpanByte key, ArgSlice elementId, ref SpanByteAndMemory outputAttributes)
+        {
+            parseState.InitializeWithArgument(new(ref key));
+
+            // Get the index
+            var input = new RawStringInput(RespCommand.VGETATTR, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                var result = vectorManager.FetchSingleVectorElementAttributes(indexSpan, elementId.SpanByte, ref outputAttributes);
+                return result == VectorManagerResult.OK ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
+            }
+        }
     }
 }

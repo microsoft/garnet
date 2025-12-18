@@ -687,6 +687,23 @@ namespace Garnet.server
             return VectorManagerResult.OK;
         }
 
+        /// <summary>
+        /// Fetch attributes for a single element id.
+        /// 
+        /// This must only be called while holding locks which prevent the Vector Set from being dropped.
+        /// 
+        /// IMPORTANT: outputAttributes may be replaced with an allocated memory, so the caller needs to check
+        /// if the buffer is stack-based or heap-based, and dispose if it's the latter.
+        /// </summary>
+        internal VectorManagerResult FetchSingleVectorElementAttributes(ReadOnlySpan<byte> indexValue, SpanByte elementId, ref SpanByteAndMemory outputAttributes)
+        {
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _);
+
+            // ReadSizeUnknown may allocate if outputAttributes doesn't 
+            var found = ReadSizeUnknown(context | DiskANNService.Attributes, elementId.AsReadOnlySpan(), ref outputAttributes);
+            return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
+        }
+
 
         /// <summary>
         /// Fetch attributes for a given set of element ids.

@@ -7594,10 +7594,8 @@ namespace Garnet.test.Resp.ACL
 
             static async Task DoVGetAttrAsync(GarnetClient client)
             {
-                // TODO: this is a placeholder implementation
-
-                string val = await client.ExecuteForStringResultAsync("VGETATTR", ["foo"]);
-                ClassicAssert.AreEqual("OK", val);
+                string val = await client.ExecuteForStringResultAsync("VGETATTR", ["foo", "wololo"]);
+                ClassicAssert.AreEqual(null, val);
             }
         }
 

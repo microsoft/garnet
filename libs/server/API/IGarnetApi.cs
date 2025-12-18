@@ -1212,6 +1212,7 @@ namespace Garnet.server
         /// Remove a member from a vector set, if it is present and the key exists.
         /// </summary>
         GarnetStatus VectorSetRemove(ArgSlice key, ArgSlice element);
+
         #endregion
     }
 
@@ -2067,7 +2068,12 @@ namespace Garnet.server
         /// Fetch debugging information about the Vector Set.
         /// </summary>
         GarnetStatus VectorSetInfo(ArgSlice key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size);
-        
+
+        /// <summary>
+        /// Get the attributes associated with an element in the Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetGetAttribute(ArgSlice key, ArgSlice elementId, ref SpanByteAndMemory outputAttributes);
+
         #endregion 
     }
 
