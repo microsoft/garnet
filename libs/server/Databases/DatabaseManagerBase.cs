@@ -299,8 +299,7 @@ namespace Garnet.server
         {
             if (db.AppendOnlyFile == null) return;
 
-
-            if (db.AppendOnlyFile.Log.Size == 1)
+            if (!db.AppendOnlyFile.serverOptions.MultiLogEnabled)
             {
                 var header = new AofHeader()
                 {
@@ -330,7 +329,7 @@ namespace Garnet.server
                             },
                             sequenceNumber = db.AppendOnlyFile.seqNumGen.GetSequenceNumber()
                         },
-                        participantCount = (short)(db.AppendOnlyFile.Log.Size * db.AppendOnlyFile.Log.ReplayTaskCount)
+                        participantCount = (short)db.AppendOnlyFile.serverOptions.AofVirtualSublogCount
                     };
                     unsafe
                     {

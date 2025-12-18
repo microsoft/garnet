@@ -336,7 +336,7 @@ namespace Garnet.server
 
             FlushDatabase(defaultDatabase, unsafeTruncateLog, !safeTruncateAof);
 
-            if (safeTruncateAof)
+            if (safeTruncateAof && StoreWrapper.serverOptions.EnableAOF)
                 SafeFlushAOF(AofEntryType.FlushDb, unsafeTruncateLog);
         }
 
@@ -399,7 +399,7 @@ namespace Garnet.server
             // Only enqueue operation if this is a primary
             if (StoreWrapper.clusterProvider.IsPrimary())
             {
-                if (AppendOnlyFile?.Log.Size == 1)
+                if (!AppendOnlyFile.serverOptions.MultiLogEnabled)
                 {
                     AofHeader header = new()
                     {
@@ -411,7 +411,7 @@ namespace Garnet.server
                     };
                     AppendOnlyFile.Log.SigleLog.Enqueue(header, out _);
                 }
-                else if (AppendOnlyFile != null)
+                else
                 {
                     var logAccessVector = AppendOnlyFile.Log.AllLogsBitmask();
                     try
@@ -433,7 +433,7 @@ namespace Garnet.server
                                 },
                                 sequenceNumber = storeWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber()
                             },
-                            participantCount = (short)(AppendOnlyFile.Log.Size * AppendOnlyFile.Log.ReplayTaskCount)
+                            participantCount = (short)AppendOnlyFile.serverOptions.AofVirtualSublogCount
                         };
                         new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize).Fill(0xFF);
 

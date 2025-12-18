@@ -324,7 +324,7 @@ namespace Garnet.server
 
             if (PerformWrites && appendOnlyFile != null)
             {
-                if (appendOnlyFile.Log.Size == 1)
+                if (!appendOnlyFile.serverOptions.MultiLogEnabled)
                 {
                     var header = new AofHeader
                     {
@@ -389,7 +389,7 @@ namespace Garnet.server
         {
             if (PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                if (appendOnlyFile.Log.Size == 1)
+                if (!appendOnlyFile.serverOptions.MultiLogEnabled)
                 {
                     var header = new AofHeader
                     {
@@ -546,7 +546,7 @@ namespace Garnet.server
             // Add TxnStart Marker
             if (PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
             {
-                if (appendOnlyFile.Log.Size == 1)
+                if (!appendOnlyFile.serverOptions.MultiLogEnabled)
                 {
                     var header = new AofHeader
                     {
@@ -610,7 +610,7 @@ namespace Garnet.server
             if (appendOnlyFile.Log.Size == 1)
                 return;
 
-            replayTaskAccessVector = Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorSize)).ToArray();
+            replayTaskAccessVector = [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorSize))];
             var hash = GarnetLog.HASH(key);
             if (proc.customProcTimestampBitmap == null)
             {
@@ -628,7 +628,7 @@ namespace Garnet.server
         void ComputeSublogAccessVector(out ulong sublogAccessVector, out BitVector[] replayTaskAccessVector)
         {
             sublogAccessVector = 0UL;
-            replayTaskAccessVector = Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorSize)).ToArray();
+            replayTaskAccessVector = [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorSize))];
             // Skip if AOF is disabled
             if (appendOnlyFile == null)
                 return;

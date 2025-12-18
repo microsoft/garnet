@@ -34,6 +34,7 @@ namespace Garnet.cluster
             try
             {
                 var sublogIdx = replayDriver.sublogIdx;
+                var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(sublogIdx, replayTaskIdx);
                 var reader = channel.Reader;
                 await foreach (var entry in reader.ReadAllAsync(cts.Token))
                 {

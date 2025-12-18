@@ -30,6 +30,9 @@ namespace Garnet.server
 
         readonly VirtualSublogReplayState[] vsrs = [.. Enumerable.Range(0, serverOptions.AofVirtualSublogCount).Select(_ => new VirtualSublogReplayState())];
 
+        /// <summary>
+        /// Get max sequence number across all sublogs
+        /// </summary>
         public long MaxSequenceNumber => vsrs.Select(sublog => sublog.Max).Max();
 
         /// <summary>
@@ -38,13 +41,13 @@ namespace Garnet.server
         /// <returns></returns>
         public AofAddress GetSublogMaxKeySequenceNumber()
         {
-            var physicalSublogCount = appendOnlyFile.Log.Size;
-            var replayTaskCount = appendOnlyFile.Log.ReplayTaskCount;
+            var physicalSublogCount = serverOptions.AofPhysicalSublogCount;
+            var replayTaskCount = serverOptions.AofReplaySubtaskCount;
             var maxKeySeqNumVector = AofAddress.Create(physicalSublogCount, 0);
             for (var sublog = 0; sublog < physicalSublogCount; sublog++)
             {
                 for (var rt = 0; rt < replayTaskCount; rt++)
-                    maxKeySeqNumVector[sublog] = Math.Max(maxKeySeqNumVector[sublog], vsrs[sublog * replayTaskCount + rt].Max);
+                    maxKeySeqNumVector[sublog] = Math.Max(maxKeySeqNumVector[sublog], vsrs[appendOnlyFile.GetVirtualSublogIdx(sublog, rt)].Max);
             }
             return maxKeySeqNumVector;
         }
@@ -74,45 +77,45 @@ namespace Garnet.server
 
         /// <summary>
         /// Update max sequence number of physical sublog associated with the specified sublogIdx.
+        /// NOTE: This will update all virtual sublogs max sequence number
         /// </summary>
         /// <param name="sublogIdx"></param>
         public void UpdateSublogMaxSequenceNumber(int sublogIdx)
         {
-            var replayTaskCount = appendOnlyFile.Log.ReplayTaskCount;
-            var physicalSublogOffset = sublogIdx * replayTaskCount;
+            var replayTaskCount = serverOptions.AofReplaySubtaskCount;
             var globalMaxSequenceNumber = 0L;
 
             // Get maximum value across all virtual sublogs
             for (var rt = 0; rt < replayTaskCount; rt++)
-                globalMaxSequenceNumber = Math.Max(globalMaxSequenceNumber, vsrs[physicalSublogOffset + rt].Max);
+                globalMaxSequenceNumber = Math.Max(globalMaxSequenceNumber, vsrs[appendOnlyFile.GetVirtualSublogIdx(sublogIdx, rt)].Max);
 
-            // Update virtual sublog maximum value to ensure time moves forward
+            // Update virtual sublog maximum value to ensure time moves forward when replaying with multiple tasks
             for (var rt = 0; rt < replayTaskCount; rt++)
-                vsrs[physicalSublogOffset + rt].UpdateMaxSequenceNumber(globalMaxSequenceNumber);
+                vsrs[appendOnlyFile.GetVirtualSublogIdx(sublogIdx, rt)].UpdateMaxSequenceNumber(globalMaxSequenceNumber);
         }
 
         /// <summary>
-        /// Update max sequence number of physical sublog associated with the specified sublogIdx.
+        /// Update max sequence number of virtual sublog associated with the specified virtual sublogIdx.
         /// </summary>
-        /// <param name="sublogIdx"></param>
+        /// <param name="virtualSublogIdx"></param>
         /// <param name="sequenceNumber"></param>
-        public void UpdateVirtualSublogMaxSequenceNumber(int sublogIdx, long sequenceNumber)
-            => vsrs[sublogIdx].UpdateMaxSequenceNumber(sequenceNumber);
+        public void UpdateVirtualSublogMaxSequenceNumber(int virtualSublogIdx, long sequenceNumber)
+            => vsrs[virtualSublogIdx].UpdateMaxSequenceNumber(sequenceNumber);
 
         /// <summary>
-        /// Update sequence number for provided key (called after replay)
+        /// Update key sequence number of virtual sublog associated with the specified virtual sublogIdx.
         /// </summary>
-        /// <param name="sublogIdx"></param>
+        /// <param name="virtualSublogIdx"></param>
         /// <param name="key"></param>
         /// <param name="sequenceNumber"></param>
-        public void UpdateVirtualSublogKeySequenceNumber(int sublogIdx, ReadOnlySpan<byte> key, long sequenceNumber)
+        public void UpdateVirtualSublogKeySequenceNumber(int virtualSublogIdx, ReadOnlySpan<byte> key, long sequenceNumber)
         {
             var keyHash = GarnetLog.HASH(key);
-            vsrs[sublogIdx].UpdateKeySequenceNumber(keyHash, sequenceNumber);
+            vsrs[virtualSublogIdx].UpdateKeySequenceNumber(keyHash, sequenceNumber);
         }
 
         /// <summary>
-        /// Update sequence number for provided key hash (called after replay)
+        /// Update key sequence number of virtual sublog associated with the specified keyHash.
         /// </summary>
         /// <param name="keyHash"></param>
         /// <param name="sequenceNumber"></param>

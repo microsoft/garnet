@@ -31,6 +31,22 @@ namespace Garnet.server
 
         public readonly ILogger logger;
 
+        /// <summary>
+        /// Calculate virtual sublog index provided physical sublog index and replay task index
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="replayIdx"></param>
+        /// <returns></returns>
+        public int GetVirtualSublogIdx(int sublogIdx, int replayIdx)
+            => (sublogIdx * serverOptions.AofReplaySubtaskCount) + replayIdx;
+
+
+        /// <summary>
+        /// Garnet append only file constructor
+        /// </summary>
+        /// <param name="serverOptions"></param>
+        /// <param name="logSettings"></param>
+        /// <param name="logger"></param>
         public GarnetAppendOnlyFile(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
         {
             Log = new(serverOptions, logSettings, logger);
