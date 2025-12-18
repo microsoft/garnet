@@ -157,6 +157,43 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// For replication purposes, we need a write against the main log.
+        /// 
+        /// But we don't actually want to do the (expensive) vector ops as part of a write.
+        /// 
+        /// So this fakes up a modify operation that we can then intercept as part of replication.
+        /// 
+        /// This the Primary part, on a Replica <see cref="HandleVectorUpdateAttributesReplication"/> runs.
+        /// </summary>
+        internal void ReplicateVectorUpdateAttributes<TContext>(ref SpanByte key, ref RawStringInput input, ref TContext context)
+            where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
+        {
+            Debug.Assert(input.header.cmd == RespCommand.VSETATTR, "Shouldn't be called with anything but VSETATTR inputs");
+
+            var inputCopy = input;
+            inputCopy.arg1 = VSETATTRAppendLogArg;
+
+            Span<byte> keyWithNamespaceBytes = stackalloc byte[key.Length + 1];
+            var keyWithNamespace = SpanByte.FromPinnedSpan(keyWithNamespaceBytes);
+            keyWithNamespace.MarkNamespace();
+            keyWithNamespace.SetNamespaceInPayload(0);
+            key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
+
+            var res = context.RMW(ref keyWithNamespace, ref inputCopy);
+
+            if (res.IsPending)
+            {
+                CompletePending(ref res, ref context);
+            }
+
+            if (!res.IsCompletedSuccessfully)
+            {
+                logger?.LogCritical("Failed to inject replication write for VSETATTR into log, result was {res}", res);
+                throw new GarnetException("Couldn't synthesize Vector Set update attributes operation for replication, data loss will occur");
+            }
+        }
+
+        /// <summary>
         /// After an index is dropped, called to cleanup state injected by <see cref="ReplicateVectorSetAdd"/>
         /// 
         /// Amounts to delete a synthetic key in namespace 0.
@@ -533,6 +570,37 @@ namespace Garnet.server
                 if (addRes != VectorManagerResult.OK)
                 {
                     throw new GarnetException("Failed to remove from vector set index during AOF sync, this should never happen but will cause data loss if it does");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Vector Set attribute updates are phrased as reads (once the index is created), so they require special handling.
+        /// 
+        /// Operations that are faked up by <see cref="ReplicateVectorUpdateAttributes"/> running on the Primary get diverted here on a Replica.
+        /// </summary>
+        internal void HandleVectorUpdateAttributesReplication(StorageSession storageSession, ref SpanByte key, ref RawStringInput input)
+        {
+            Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
+            var element = input.parseState.GetArgSliceByRef(0);
+            var attributes = input.parseState.GetArgSliceByRef(1);
+
+            // Replication adds a (0) namespace - remove it
+            Span<byte> keyWithoutNamespaceSpan = stackalloc byte[key.Length - 1];
+            key.AsReadOnlySpan().CopyTo(keyWithoutNamespaceSpan);
+            var keyWithoutNamespace = SpanByte.FromPinnedSpan(keyWithoutNamespaceSpan);
+
+            var inputCopy = input;
+            inputCopy.arg1 = default;
+
+            using (ReadVectorIndex(storageSession, ref keyWithoutNamespace, ref inputCopy, indexSpan, out var status))
+            {
+                Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when a VSETATTR is successful, so index must exist");
+
+                var result = TryUpdateElementAttributes(indexSpan, element.ReadOnlySpan, attributes.ReadOnlySpan);
+                if (result != VectorManagerResult.OK)
+                {
+                    throw new GarnetException("Failed VSETATTR during AOF sync, this should never happen but will cause data loss if it does");
                 }
             }
         }

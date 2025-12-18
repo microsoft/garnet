@@ -1224,11 +1224,31 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count != 3)
+            {
+                return AbortWithWrongNumberOfArguments("VSETATTR");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+            var element = parseState.GetArgSliceByRef(1);
+            var attributes = parseState.GetArgSliceByRef(2);
 
+            var res = storageApi.VectorSetUpdateAttributes(key, element, attributes);
+            if (res == GarnetStatus.NOTFOUND)
+            {
+                WriteBooleanFalse();
+                return true;
+            }
+            else if (res == GarnetStatus.WRONGTYPE)
+            {
+                return AbortVectorSetWrongType();
+            }
+            else if (res == GarnetStatus.BADSTATE)
+            {
+                return AbortVectorSetPartiallyDeleted(ref key);
+            }
+
+            WriteBooleanTrue();
             return true;
         }
 
