@@ -7,7 +7,7 @@ using Garnet.server.BTreeIndex;
 using Garnet.common;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 
 namespace Garnet.server
 {
@@ -29,6 +29,14 @@ namespace Garnet.server
         VALID,
         INVALID,
         NOT_GREATER,
+    }
+
+    // This is the layout that is put in the log for each stream entry
+    [StructLayout(LayoutKind.Sequential, Pack = 1, Size = 20)]
+    public struct StreamLogEntryHeader
+    {
+        public StreamID id;
+        public int numPairs;
     }
 
     public class StreamObject : IDisposable
@@ -249,16 +257,14 @@ namespace Garnet.server
         /// <summary>
         /// Adds an entry or item to the stream
         /// </summary>
-        /// <param name="value">byte array of the entry to store in the stream</param>
-        /// <returns>True if entry is added successfully</returns>
-        public unsafe void AddEntry(ReadOnlySpan<byte> value, int valueLength, PinnedSpanByte idSlice, int numPairs, ref SpanByteAndMemory output, byte respProtocolVersion)
+        public unsafe void AddEntry(PinnedSpanByte idSlice, int numPairs, ReadOnlySpan<byte> rawFieldValuePairs, ref SpanByteAndMemory output, byte respProtocolVersion)
         {
             byte* tmpPtr = null;
             StreamID id = default;
             using var writer = new RespMemoryWriter(respProtocolVersion, ref output);
+
             // take a lock to ensure thread safety
             _lock.WriteLock();
-
             try
             {
                 var parsedIDStatus = parseIDString(idSlice, ref id);
@@ -274,34 +280,38 @@ namespace Garnet.server
                 }
 
                 // add the entry to the log
+                StreamLogEntryHeader header = new StreamLogEntryHeader
                 {
-                    long retAddress = 0;
-                    bool enqueueInLog = false; //log.TryEnqueueStreamEntry(id.idBytes, sizeof(StreamID), numPairs, value, valueLength, out long retAddress);
-                    if (!enqueueInLog)
-                    {
-                        writer.WriteNull();
-                        return;
-                    }
+                    id = id,
+                    numPairs = numPairs,
+                };
 
-                    var streamValue = new Value((ulong)retAddress);
+                log.Enqueue<StreamLogEntryHeader>(header, item: rawFieldValuePairs, out long returnedLogicalAddr);
 
-                    bool added = index.Insert((byte*)Unsafe.AsPointer(ref id.idBytes[0]), streamValue);
+                var streamValue = new Value((ulong)returnedLogicalAddr);
 
-                    if (!added)
-                    {
-                        writer.WriteNull();
-                        return;
-                    }
-                    // copy encoded ms and seq
-                    lastId.ms = (id.ms);
-                    lastId.seq = (id.seq);
+                bool added = index.Insert((byte*)Unsafe.AsPointer(ref id.idBytes[0]), streamValue);
 
-                    totalEntriesAdded++;
-                    // write back the decoded ID of the entry added
-                    string idString = $"{id.getMS()}-{id.getSeq()}";
-                    // write id as bulk string
-                    writer.WriteAsciiBulkString(idString);
+                if (!added)
+                {
+                    writer.WriteNull();
+                    return;
                 }
+
+                // copy encoded ms and seq
+                lastId.ms = id.ms;
+                lastId.seq = id.seq;
+
+                totalEntriesAdded++;
+
+                ulong idMS = id.getMS();
+                ulong idSeq = id.getSeq();
+                Span<byte> outputBuffer = stackalloc byte[(NumUtils.MaximumFormatInt64Length * 2) + 1];
+                int len = NumUtils.WriteInt64((long)idMS, outputBuffer);
+                outputBuffer[len++] = (byte)'-';
+                len += NumUtils.WriteInt64((long)idSeq, outputBuffer.Slice(len));
+
+                writer.WriteBulkString(outputBuffer.Slice(0, len));
             }
             finally
             {
@@ -384,7 +394,8 @@ namespace Garnet.server
                     }
 
                     ReadOnlySpan<byte> entrySp = entry.AsSpan(sizeof(long), len - sizeof(long)); // skip the previousEntryAddress part
-                    WriteEntryToWriter(entrySp, ref writer, len);
+                    // HK TODO: this is broken atm
+                    //WriteEntryToWriter(entrySp, ref writer, len);
                 }
                 finally
                 {
@@ -487,8 +498,7 @@ namespace Garnet.server
                                     continue;
                                 }
 
-                                var entryBytes = entry.AsSpan(start: sizeof(long)); // skip the previousEntryAddress part
-                                WriteEntryToWriter(entryBytes, ref writer, entry.Length);
+                                WriteEntryToWriter(entry, ref writer);
 
                                 readCount++;
                                 if (limit != -1 && readCount == limit)
@@ -565,49 +575,27 @@ namespace Garnet.server
             return true;
         }
 
-        private unsafe void WriteEntryToWriter(ReadOnlySpan<byte> entryBytes, ref RespMemoryWriter writer, int entryLength)
+        unsafe void WriteEntryToWriter(ReadOnlySpan<byte> entryBytes, ref RespMemoryWriter writer)
         {
-            byte* tmpPtr = null;
-            int tmpSize = 0;
-            byte* e;
-
-            // check if the entry is actually one of the qualified keys 
-            // parse ID for the entry which is the first 16 bytes
-            ReadOnlySpan<byte> idBytes = entryBytes.Slice(0, 16);
-            ulong ts = BinaryPrimitives.ReadUInt64BigEndian(idBytes.Slice(0, 8));
-            ulong seq = BinaryPrimitives.ReadUInt64BigEndian(idBytes.Slice(8, 8));
-
-            string idString = $"{ts}-{seq}";
-            ReadOnlySpan<byte> numPairsBytes = entryBytes.Slice(16, 4);
-            int numPairs = BitConverter.ToInt32(numPairsBytes);
-            ReadOnlySpan<byte> value = entryBytes.Slice(20);
-
-            // we can already write back the ID that we read 
+            // each response entry is an array of two items: ID and array of key-value pairs
             writer.WriteArrayLength(2);
 
-            writer.WriteAsciiBulkString(idString);
+            // Read the first 20 bytes into our StreamLogEntryHeader struct
+            StreamLogEntryHeader streamLogEntryHeader = MemoryMarshal.Read<StreamLogEntryHeader>(entryBytes.Slice(0, sizeof(StreamLogEntryHeader)));
+            StreamID entryID = streamLogEntryHeader.id;
 
-            // print array length for the number of key-value pairs in the entry
+            // first item in the array is the ID
+            WriteStreamIdToWriter(entryID, ref writer);
+
+            // Second item is an array so write the subarray length
+            int numPairs = streamLogEntryHeader.numPairs;
             writer.WriteArrayLength(numPairs);
 
-            // write key-value pairs
-            fixed (byte* p = value)
-            {
-                e = p;
-                int read = 0;
-                read += (int)(e - p);
-                while (value.Length - read >= 4)
-                {
-                    var orig = e;
-                    if (!RespReadUtils.TryReadPtrWithLengthHeader(ref tmpPtr, ref tmpSize, ref e, e + entryLength))
-                    {
-                        return;
-                    }
-                    var o = new Span<byte>(tmpPtr, tmpSize).ToArray();
-                    writer.WriteBulkString(o);
-                    read += (int)(e - orig);
-                }
-            }
+            // this is a serialized ReadOnlySpan<byte> of field-value pairs, we want to copy it directly into the writer
+            int serializedSpanLength = MemoryMarshal.Read<int>(entryBytes.Slice(sizeof(StreamLogEntryHeader)));
+            int valueOffset = sizeof(StreamLogEntryHeader) + sizeof(int);
+            ReadOnlySpan<byte> value = entryBytes.Slice(valueOffset, serializedSpanLength);
+            writer.WriteDirect(value);
         }
 
 
@@ -696,6 +684,18 @@ namespace Garnet.server
                 return true;
             }
             return ParseCompleteStreamIDFromString(idString, out id);
+        }
+
+        // Util to write without doing temp heap allocations
+        private static void WriteStreamIdToWriter(StreamID id, ref RespMemoryWriter writer)
+        {
+            Span<byte> outputBuffer = stackalloc byte[(NumUtils.MaximumFormatInt64Length * 2) + 1];
+            ulong idMS = id.getMS();
+            ulong idSeq = id.getSeq();
+            int len = NumUtils.WriteInt64((long)idMS, outputBuffer);
+            outputBuffer[len++] = (byte)'-';
+            len += NumUtils.WriteInt64((long)idSeq, outputBuffer.Slice(len));
+            writer.WriteBulkString(outputBuffer.Slice(0, len));
         }
 
         /// <inheritdoc/>

@@ -31,8 +31,7 @@ namespace Garnet.common
             ptrHandle = default;
             resp3 = respVersion >= 3;
 
-            // HK TODO: not too sure about wth I am doing here below atm
-            ptr = (byte*)output.Memory.Memory.Pin().Pointer;
+            ptr = output.SpanByte.ToPointer();
             curr = ptr;
             end = curr + output.Length;
         }

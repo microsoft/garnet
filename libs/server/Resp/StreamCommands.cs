@@ -48,7 +48,7 @@ namespace Garnet.server
             byte* vPtr = parseState.GetArgSliceByRef(argsParsed).ptr - sizeof(int);
             int vsize = (int)(recvBufferPtr + endReadHead - vPtr);
             var streamDataSpan = new ReadOnlySpan<byte>(vPtr, vsize);
-            var _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr)));
+            var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var disabledStreams = streamManager == null;
             if (disabledStreams)
@@ -58,14 +58,13 @@ namespace Garnet.server
                 return true;
             }
 
-
             if (sessionStreamCache.TryGetStreamFromCache(key.Span, out StreamObject cachedStream))
             {
-                cachedStream.AddEntry(streamDataSpan, vsize, idGiven, numPairs, ref _output, respProtocolVersion);
+                cachedStream.AddEntry(idGiven, numPairs, streamDataSpan, ref _output, respProtocolVersion);
             }
             else
             {
-                streamManager.StreamAdd(key, idGiven, noMkStream, streamDataSpan, vsize, numPairs, ref _output, out byte[] lastStreamKey, out StreamObject lastStream, respProtocolVersion);
+                streamManager.StreamAdd(key, idGiven, noMkStream, streamDataSpan, numPairs, ref _output, out byte[] lastStreamKey, out StreamObject lastStream, respProtocolVersion);
                 // since we added to a new stream that was not in the cache, try adding it to the cache
                 if (lastStream != null)
                 {
@@ -147,7 +146,7 @@ namespace Garnet.server
                 }
             }
 
-            SpanByteAndMemory _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr)));
+            var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var disabledStreams = streamManager == null;
             if (disabledStreams)
@@ -316,7 +315,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            SpanByteAndMemory _output = new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(dcurr, (int)(dend - dcurr)));
+            var _output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var disabledStreams = streamManager == null;
             if (disabledStreams)

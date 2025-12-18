@@ -130,13 +130,12 @@ namespace Garnet.server
         /// <param name="idSlice">id of the stream entry</param>
         /// <param name="noMkStream">if true, do not create a new stream if it does not exist</param>
         /// <param name="value">payload to the stream</param>
-        /// <param name="valueLength">length of payload to the stream</param>
         /// <param name="numPairs"># k-v pairs in the payload</param>
         /// <param name="output"></param>
         /// <param name="streamKey">key of last stream accessed (for cache)</param>
         /// <param name="lastStream">reference to last stream accessed (for cache)</param>
         /// <param name="respProtocolVersion">RESP protocol version</param>
-        public void StreamAdd(PinnedSpanByte keySlice, PinnedSpanByte idSlice, bool noMkStream, ReadOnlySpan<byte> value, int valueLength, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream, byte respProtocolVersion)
+        public void StreamAdd(PinnedSpanByte keySlice, PinnedSpanByte idSlice, bool noMkStream, ReadOnlySpan<byte> value, int numPairs, ref SpanByteAndMemory output, out byte[] streamKey, out StreamObject lastStream, byte respProtocolVersion)
         {
             // copy key store this key in the dictionary
             byte[] key = keySlice.ToArray();
@@ -147,11 +146,11 @@ namespace Garnet.server
             streamKey = null;
             _lock.ReadLock();
             try
-            {
+            { // HK TODO: wth is this code block doing? Where it calls AddEntry seems weird
                 foundStream = streams.TryGetValue(key, out stream);
                 if (foundStream)
                 {
-                    stream.AddEntry(value, valueLength, idSlice, numPairs, ref output, respProtocolVersion);
+                    stream.AddEntry(idSlice, numPairs, value, ref output, respProtocolVersion);
                     // update last accessed stream key 
                     lastStream = stream;
                     streamKey = key;
@@ -161,10 +160,12 @@ namespace Garnet.server
             {
                 _lock.ReadUnlock();
             }
+
             if (foundStream)
             {
                 return;
             }
+
             // take a write lock 
             _lock.WriteLock();
             try
@@ -175,7 +176,7 @@ namespace Garnet.server
                 {
                     // stream was not found with this key so create a new one 
                     StreamObject newStream = new StreamObject(null, defPageSize, defMemorySize, safeTailRefreshFreqMs);
-                    newStream.AddEntry(value, valueLength, idSlice, numPairs, ref output, respProtocolVersion);
+                    newStream.AddEntry(idSlice, numPairs, value, ref output, respProtocolVersion);
                     streams.TryAdd(key, newStream);
                     streamKey = key;
                     lastStream = newStream;
@@ -189,7 +190,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    stream.AddEntry(value, valueLength, idSlice, numPairs, ref output, respProtocolVersion);
+                    stream.AddEntry(idSlice, numPairs, value, ref output, respProtocolVersion);
                     lastStream = stream;
                     streamKey = key;
                 }
