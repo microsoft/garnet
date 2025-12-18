@@ -1026,7 +1026,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
             var element = parseState.GetArgSliceByRef(1);
 
-            // Here we allocate some stack buffer to try to avoid allocations if the attributes are small
+            // Here we reserve some stack buffer to try to avoid allocations if the attributes are small
             // However, if it's not enough, VectorSetGetAttribute will allocate and replace attributesOutput
             // and attach a Memory to it - So we need to make sure to dispose of that if it happens
             Span<byte> attributesBuffer = stackalloc byte[256];
