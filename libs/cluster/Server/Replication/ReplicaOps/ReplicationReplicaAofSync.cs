@@ -33,8 +33,17 @@ namespace Garnet.cluster
         {
             // logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
+            var syncReplay = clusterProvider.serverOptions.ReplicationOffsetMaxLag == 0;
+
+            // Need to ensure that this replay task is allowed to complete before the replicaReplayGroup is disposed
+            // NOTE: this should not be expensive because every replay task has its own lock copy
+            // Cache invalidation happens only on dispose which is rare operation
+            var failReplay = syncReplay && !activeReplay.TryReadLock();
             try
             {
+                if (failReplay)
+                    throw new GarnetException($"Failed to acquire activeReplay lock!", LogLevel.Warning, clientResponse: false);
+
                 if (clusterProvider.replicationManager.CannotStreamAOF)
                 {
                     logger?.LogError("Replica is recovering cannot sync AOF");
@@ -120,8 +129,12 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "An exception occurred at ReplicationManager.ProcessPrimaryStream");
-                ResetReplayIterator();
                 throw new GarnetException(ex.Message, ex, LogLevel.Warning, clientResponse: false);
+            }
+            finally
+            {
+                if (syncReplay && !failReplay)
+                    activeReplay.ReadUnlock();
             }
         }
     }
