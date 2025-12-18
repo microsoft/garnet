@@ -199,8 +199,8 @@ namespace Tsavorite.core
                         void DoReadPages()
                         {
                             AsyncReadPagesFromDeviceToFrame(readBuffer, readPageStart: i + GetPageOfAddress(currentAddress, logPageSizeBits),
-                                    numPages:1, untilAddress:endAddress, context:Empty.Default, out loadCompletionEvents[nextFrame],
-                                    devicePageOffset:0, device:null, objectLogDevice:null, loadCTSs[nextFrame]);
+                                    numPages: 1, untilAddress: endAddress, context: Empty.Default, out loadCompletionEvents[nextFrame],
+                                    devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
                             loadedPages[nextFrame] = pageEndAddress;
                         }
                     }
