@@ -5,6 +5,8 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -29,8 +31,9 @@ namespace Tsavorite.test.LockTests
 {
     using StructStoreFunctions = StoreFunctions<int, int, LocalIntKeyComparer, DefaultRecordDisposer<int, int>>;
 
+    [AllureNUnit]
     [TestFixture]
-    public class BasicLockTests
+    public class BasicLockTests : AllureTestBase
     {
         internal class Functions : SimpleSimpleFunctions<int, int>
         {

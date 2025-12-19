@@ -3,14 +3,16 @@
 
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.client;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespListGarnetClientTests
+    public class RespListGarnetClientTests : AllureTestBase
     {
         private GarnetServer server;
 

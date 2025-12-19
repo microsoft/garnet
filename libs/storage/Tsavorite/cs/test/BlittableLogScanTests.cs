@@ -3,6 +3,8 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -33,8 +35,9 @@ namespace Tsavorite.test
     using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStructComparerModulo, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
     using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStructComparerModulo, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class BlittableLogScanTests
+    internal class BlittableLogScanTests : AllureTestBase
     {
         private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
         private IDevice log;

@@ -3,6 +3,8 @@
 
 using System.IO;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -12,8 +14,9 @@ namespace Tsavorite.test.recovery.objects
     using ClassAllocator = GenericAllocator<MyKey, MyValue, StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>>;
     using ClassStoreFunctions = StoreFunctions<MyKey, MyValue, MyKey.Comparer, DefaultRecordDisposer<MyKey, MyValue>>;
 
+    [AllureNUnit]
     [TestFixture]
-    public class ObjectRecoveryTests2
+    public class ObjectRecoveryTests2 : AllureTestBase
     {
         int iterations;
 
