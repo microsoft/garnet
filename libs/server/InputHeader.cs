@@ -601,7 +601,7 @@ namespace Garnet.server
         /// <param name="parseState">Parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public UnifiedInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0) 
+        public UnifiedInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0)
             : this(cmd, metaCmd, flags, arg1)
         {
             this.parseState = parseState;
@@ -616,7 +616,7 @@ namespace Garnet.server
         /// <param name="startIdx">First command argument index in parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public UnifiedInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0) 
+        public UnifiedInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0)
             : this(cmd, metaCmd, flags, arg1)
         {
             this.parseState = parseState.Slice(startIdx);

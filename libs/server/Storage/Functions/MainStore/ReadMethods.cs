@@ -68,7 +68,7 @@ namespace Garnet.server
             {
                 if (execCmd)
                     CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
-                else 
+                else
                     WriteValueAndEtagToDst(functionsState.nilResp, srcLogRecord.ETag, ref output, functionsState.memoryPool, writeDirect: true);
                 ETagState.ResetState(ref functionsState.etagState);
                 return true;

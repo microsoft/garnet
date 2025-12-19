@@ -2784,7 +2784,7 @@ namespace Garnet.server
 
                 // Attempt parsing nested main command
                 cmd = FastParseCommand(ref count);
-                if (cmd == RespCommand.SET) 
+                if (cmd == RespCommand.SET)
                     cmd = RespCommand.SETEXNX;
 
                 // If we have not found a command, continue parsing on slow path
@@ -2833,7 +2833,7 @@ namespace Garnet.server
                 throw new GarnetException($"Unable to retrieve simple command info for command: {cmd}");
 
             var argCount = info.Arity - 1;
-            
+
             metaCommand = cmd switch
             {
                 RespCommand.EXECWITHETAG => RespMetaCommand.ExecWithEtag,

@@ -111,7 +111,7 @@ namespace Garnet.server
         [Description("garnet")]
         Garnet = 1 << 21,
         [Description("custom")]
-        Custom = 1 << 22, 
+        Custom = 1 << 22,
         [Description("all")]
         All = (Custom << 1) - 1,
     }

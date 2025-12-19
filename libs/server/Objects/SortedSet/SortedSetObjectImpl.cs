@@ -48,7 +48,7 @@ namespace Garnet.server
             var metaCmd = input.header.MetaCmd;
 
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-            
+
             try
             {
                 // Try to parse a Score field
@@ -66,7 +66,7 @@ namespace Garnet.server
                     currTokenIdx++;
                 }
 
-                if  (!execOp)
+                if (!execOp)
                     continueProcessingInput = false;
 
                 if (continueProcessingInput)
@@ -174,7 +174,7 @@ namespace Garnet.server
         private void SortedSetRemove(ref ObjectInput input, ref ObjectOutput output, bool execOp, long updatedEtag, byte respProtocolVersion)
         {
             DeleteExpiredItems();
-            
+
             var removedItems = 0;
             if (execOp)
             {
@@ -512,7 +512,7 @@ namespace Garnet.server
             Debug.Assert(parseSuccessful);
             parseSuccessful = input.parseState.TryGetSortedSetMinMaxParameter(1, out var maxValue, out var maxExclusive);
             Debug.Assert(parseSuccessful);
-            
+
             var elementCount = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, false,
                 false, false, true).Count;
 

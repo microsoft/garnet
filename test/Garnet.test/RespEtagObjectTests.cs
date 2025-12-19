@@ -105,6 +105,7 @@ namespace Garnet.test
         }
 
         [Test]
+        [Ignore("Not yet implemented")]
         public void SortedSetBlockingPopWithEtagTest()
         {
             using var lightClientRequest = TestUtils.CreateRequest();

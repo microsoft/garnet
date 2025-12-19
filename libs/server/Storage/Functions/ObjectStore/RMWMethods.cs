@@ -50,7 +50,7 @@ namespace Garnet.server
                 value = GarnetObject.Create(type);
 
                 var updatedEtag = GetUpdatedEtag(LogRecord.NoETag, input.header.MetaCmd, ref input.parseState, out var execCmd, init: true);
-                
+
                 _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, updatedEtag, out _);
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
 

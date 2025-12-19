@@ -83,7 +83,8 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: memberStart,
-                arg1: (int)addOption) { SortedSetOp = SortedSetOperation.GEOADD };
+                arg1: (int)addOption)
+            { SortedSetOp = SortedSetOperation.GEOADD };
 
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
@@ -252,7 +253,8 @@ namespace Garnet.server
 
             // Prepare input and call the storage layer
             var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState,
-                startIdx: sourceIdx + 1, arg1: (int)command) { SortedSetOp = SortedSetOperation.GEOSEARCH };
+                startIdx: sourceIdx + 1, arg1: (int)command)
+            { SortedSetOp = SortedSetOperation.GEOSEARCH };
 
             var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 

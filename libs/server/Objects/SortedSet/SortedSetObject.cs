@@ -230,7 +230,7 @@ namespace Garnet.server
                 {
                     return sortedSetDict;
                 }
-                
+
                 var result = new Dictionary<byte[], double>(ByteArrayComparer.Instance);
                 foreach (var kvp in sortedSetDict)
                 {

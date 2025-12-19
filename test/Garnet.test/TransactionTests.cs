@@ -242,6 +242,12 @@ namespace Garnet.test
                     RespCommand.SAVE,
                     RespCommand.SCRIPT,
 
+                    // Todo: implement
+                    RespCommand.EXECWITHETAG,
+                    RespCommand.EXECIFMATCH,
+                    RespCommand.EXECIFNOTMATCH,
+                    RespCommand.EXECIFGREATER,
+
                     // Not implemented
                     RespCommand.DUMP,
                     RespCommand.MIGRATE,

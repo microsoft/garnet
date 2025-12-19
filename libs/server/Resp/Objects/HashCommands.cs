@@ -697,7 +697,8 @@ namespace Garnet.server
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: 3,
-                arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0) { HashOp = HashOperation.HTTL };
+                arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0)
+            { HashOp = HashOperation.HTTL };
 
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 

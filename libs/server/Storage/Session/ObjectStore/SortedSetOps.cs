@@ -1555,8 +1555,9 @@ namespace Garnet.server
 
             parseState.InitializeWithArguments(members);
 
-            var innerInput = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState, 
-                arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail) { SortedSetOp = SortedSetOperation.ZEXPIRE };
+            var innerInput = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState,
+                arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail)
+            { SortedSetOp = SortedSetOperation.ZEXPIRE };
 
             var output = new ObjectOutput();
             var status = RMWObjectStoreOperationWithOutput(key.ToArray(), ref innerInput, ref objectContext, ref output);

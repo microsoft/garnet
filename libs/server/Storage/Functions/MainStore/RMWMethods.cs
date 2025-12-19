@@ -467,7 +467,7 @@ namespace Garnet.server
                     // reset etag state after done using
                     ETagState.ResetState(ref functionsState.etagState);
                     shouldUpdateEtag = false;   // since we already updated the ETag
-                    
+
                     break;
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.SETKEEPTTL:

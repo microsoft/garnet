@@ -36,7 +36,7 @@ namespace Garnet.server
                 {
                     if (srcLogRecord.Info.HasETag)
                         ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
-                    
+
                     var execCmd = true;
                     var metaCmd = input.header.MetaCmd;
 

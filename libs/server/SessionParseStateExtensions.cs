@@ -773,7 +773,7 @@ namespace Garnet.server
                         error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
                         return false;
                     }
-                    
+
                     limit = (offset, count);
                 }
             }

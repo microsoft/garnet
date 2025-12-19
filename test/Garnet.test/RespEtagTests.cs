@@ -179,7 +179,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, etag);
 
             db.KeyDelete(key); // cleanup
-            
+
             // Scenario: SET without etag and without expiration when sent with setifmatch will add etag and retain the expiration too
             // copy update
             res = db.Execute("SET", key, "one");
@@ -294,7 +294,7 @@ namespace Garnet.test
 
             // Scenario: set withetag with expiration on non existing key 
             var key1 = "key1";
-            var res1 = db.Execute("EXECWITHETAG", "SET", key1, "value1","EX", 10);
+            var res1 = db.Execute("EXECWITHETAG", "SET", key1, "value1", "EX", 10);
             long etag1 = (long)res1;
             ClassicAssert.AreEqual(1, etag1);
             db.KeyDelete(key1); // Cleanup
@@ -2157,7 +2157,7 @@ namespace Garnet.test
             var key = "myKey";
             var val = "myKeyValue";
             var val2 = "myKeyValue2";
-             
+
             db.Execute("EXECWITHETAG", "SET", key, val);
 
             var len = db.StringAppend(key, val2);
