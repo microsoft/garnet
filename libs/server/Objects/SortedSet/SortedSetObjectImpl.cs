@@ -197,7 +197,14 @@ namespace Garnet.server
             var metaCmd = input.header.MetaCmd;
 
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-            writer.WriteInt32WithEtagIfNeeded(removedItems, metaCmd, updatedEtag);
+            try
+            {
+                writer.WriteInt32WithEtagIfNeeded(removedItems, metaCmd, updatedEtag);
+            }
+            finally
+            {
+                writer.Dispose();
+            }
 
             output.Header.result1 = removedItems;
         }
