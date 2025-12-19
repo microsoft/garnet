@@ -99,6 +99,35 @@ namespace Garnet.server
             return Read_UnifiedStore(key, ref input, ref output, ref unifiedContext);
         }
 
+        public unsafe GarnetStatus DEL_Conditional<TStringContext>(PinnedSpanByte key, ref UnifiedInput input, ref TStringContext context)
+            where TStringContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            var output = new UnifiedOutput();
+
+            var status = context.RMW(key, ref input, ref output);
+
+            if (status.IsPending)
+            {
+                StartPendingMetrics();
+                CompletePendingForUnifiedStoreSession(ref status, ref output, ref context);
+                StopPendingMetrics();
+            }
+
+            // Deletions in RMW are done by expiring the record, hence we use expiration as the indicator of success.
+            if (status.IsExpired)
+            {
+                incr_session_found();
+                return GarnetStatus.OK;
+            }
+            else
+            {
+                if (status.NotFound)
+                    incr_session_notfound();
+
+                return GarnetStatus.NOTFOUND;
+            }
+        }
+
         /// <summary>
         /// Deletes a key from the unified store context.
         /// </summary>

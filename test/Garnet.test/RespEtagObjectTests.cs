@@ -18,8 +18,11 @@ namespace Garnet.test
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
-            var useReviv = TestContext.CurrentContext.Test.Arguments.FirstOrDefault(a => a is RevivificationMode) is RevivificationMode revivMode
-                    ? revivMode == RevivificationMode.UseReviv : false;
+            var useReviv =
+                TestContext.CurrentContext.Test.Arguments.FirstOrDefault(a => a is RevivificationMode) is
+                    RevivificationMode revivMode
+                    ? revivMode == RevivificationMode.UseReviv
+                    : false;
 
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, disablePubSub: false, useReviv: useReviv);
             server.Start();
@@ -210,6 +213,22 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(3, long.Parse(results[0]!)); // Etag 3
             ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // 1 element added
+        }
+
+        [Test]
+        public void SortedSetRemoveConditionalEtagTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            db.SortedSetAdd("key1", [new SortedSetEntry("a", 1), new SortedSetEntry("b", 2)]);
+
+            // Remove item from sorted set without Etag when etag matches 0
+            var results = (string[])db.Execute("EXECIFMATCH", "0", "ZREM", "key1", "a");
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(2, results!.Length);
+            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // 1 element removed
         }
     }
 }

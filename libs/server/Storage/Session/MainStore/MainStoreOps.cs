@@ -246,36 +246,6 @@ namespace Garnet.server
             }
         }
 
-
-        public unsafe GarnetStatus DEL_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            Span<byte> outputSpan = stackalloc byte[8];
-            var output = SpanByteAndMemory.FromPinnedSpan(outputSpan);
-            var status = context.RMW(key, ref input, ref output);
-
-            if (status.IsPending)
-            {
-                StartPendingMetrics();
-                CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
-            }
-
-            // Deletions in RMW are done by expiring the record, hence we use expiration as the indicator of success.
-            if (status.IsExpired)
-            {
-                incr_session_found();
-                return GarnetStatus.OK;
-            }
-            else
-            {
-                if (status.NotFound)
-                    incr_session_notfound();
-
-                return GarnetStatus.NOTFOUND;
-            }
-        }
-
         public unsafe GarnetStatus SET_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {

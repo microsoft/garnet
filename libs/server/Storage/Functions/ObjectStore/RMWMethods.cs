@@ -139,7 +139,7 @@ namespace Garnet.server
             }
 
             // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
-            var inputHeaderHasEtag = input.header.IsWithEtag();
+            var inputHeaderHasEtag = input.header.MetaCmd.IsEtagCommand();
             var hadETagPreMutation = logRecord.Info.HasETag;
             if (!hadETagPreMutation && inputHeaderHasEtag)
                 return false;
@@ -151,8 +151,11 @@ namespace Garnet.server
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 var updatedEtag = GetUpdatedEtag(logRecord.ETag, input.header.MetaCmd, ref input.parseState, out var execCmd);
-                
+                shouldUpdateEtag = shouldUpdateEtag && execCmd;
+                Debug.Assert((shouldUpdateEtag && updatedEtag != logRecord.ETag) || (!shouldUpdateEtag && updatedEtag == logRecord.ETag));
+
                 var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, updatedEtag, out sizeChange);
+
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)
@@ -167,12 +170,15 @@ namespace Garnet.server
                     return false;
                 }
 
-                // Advance etag if the object was not explicitly marked as unchanged or if called with withetag and no previous etag was present.
-                if (execCmd && hadETagPreMutation)
+                if (shouldUpdateEtag)
+                {
                     logRecord.TrySetETag(updatedEtag);
-
-                if (execCmd || hadETagPreMutation)
                     ETagState.ResetState(ref functionsState.etagState);
+                }
+                else if (hadETagPreMutation)
+                {
+                    ETagState.ResetState(ref functionsState.etagState);
+                }
 
                 sizeInfo.AssertOptionals(logRecord.Info);
                 return operateSuccessful;
@@ -251,13 +257,16 @@ namespace Garnet.server
             }
 
             // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
-            var inputHeaderHasEtag = input.header.IsWithEtag();
+            var inputHeaderHasEtag = input.header.MetaCmd.IsEtagCommand();
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
                 var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, input.header.MetaCmd, ref input.parseState, out var execCmd);
+                shouldUpdateEtag = (shouldUpdateEtag || inputHeaderHasEtag) && execCmd;
+                Debug.Assert((shouldUpdateEtag && updatedEtag != srcLogRecord.ETag) || (!shouldUpdateEtag && updatedEtag == srcLogRecord.ETag));
 
                 value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, updatedEtag, out _);
+
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)
@@ -266,11 +275,15 @@ namespace Garnet.server
                     return false;
                 }
 
-                if (execCmd || (!recordHadEtagPreMutation && inputHeaderHasEtag))
+                if (shouldUpdateEtag)
+                {
                     dstLogRecord.TrySetETag(updatedEtag);
-
-                if (execCmd || recordHadEtagPreMutation || inputHeaderHasEtag)
                     ETagState.ResetState(ref functionsState.etagState);
+                }
+                else if (recordHadEtagPreMutation)
+                {
+                    ETagState.ResetState(ref functionsState.etagState);
+                }
             }
             else
             {
@@ -304,21 +317,6 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 WriteLogRMW(srcLogRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
             return true;
-        }
-
-        private void WriteEtagToOutput(long etag, ref ObjectOutput output, out int outputOffset)
-        {
-            var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
-            try
-            {
-                writer.WriteArrayLength(2);
-                writer.WriteInt64(etag);
-                outputOffset = writer.GetPosition();
-            }
-            finally
-            {
-                writer.Dispose();
-            }
         }
     }
 }

@@ -11,6 +11,16 @@ namespace Garnet.server
     /// </summary>
     public readonly unsafe partial struct UnifiedSessionFunctions : ISessionFunctions<UnifiedInput, UnifiedOutput, long>
     {
+        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref UnifiedInput input)
+        {
+            return new RecordFieldInfo
+            {
+                KeySize = key.Length,
+                ValueSize = 0,
+                HasETag = input.header.MetaCmd.IsEtagCommand()
+            };
+        }
+
         public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
             ref UnifiedInput input) where TSourceLogRecord : ISourceLogRecord
         {
@@ -19,7 +29,7 @@ namespace Garnet.server
                 KeySize = srcLogRecord.Key.Length,
                 ValueSize = srcLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : 0,
                 ValueIsObject = srcLogRecord.Info.ValueIsObject,
-                HasETag = !srcLogRecord.Info.ValueIsObject && (input.header.IsWithEtag() || srcLogRecord.Info.HasETag),
+                HasETag = SessionFunctionsUtils.CheckModifiedRecordHasEtag(srcLogRecord.ETag, input.header.MetaCmd, ref input.parseState),
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
 
@@ -29,6 +39,10 @@ namespace Garnet.server
 
                 switch (cmd)
                 {
+                    case RespCommand.DEL:
+                        // Min allocation (only metadata) needed since this is going to be used for tombstoning anyway.
+                        return fieldInfo;
+
                     case RespCommand.EXPIRE:
                         {
                             // Set HasExpiration to match with EvaluateExpireInPlace.
@@ -83,16 +97,6 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref UnifiedInput input)
-        {
-            return new RecordFieldInfo
-            {
-                KeySize = key.Length,
-                ValueSize = 0,
-                HasETag = input.header.IsWithEtag()
-            };
-        }
-
         public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value,
             ref UnifiedInput input)
         {
@@ -101,7 +105,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = value.Length,
                 ValueIsObject = false,
-                HasETag = input.header.IsWithEtag()
+                HasETag = input.header.MetaCmd.IsEtagCommand()
             };
         }
 
@@ -112,7 +116,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = false
+                HasETag = input.header.MetaCmd.IsEtagCommand()
             };
         }
 
@@ -125,7 +129,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = inputLogRecord.Info.ValueIsObject,
-                HasETag = input.header.IsWithEtag(),
+                HasETag = input.header.MetaCmd.IsEtagCommand(),
                 HasExpiration = inputLogRecord.Info.HasExpiration
             };
         }

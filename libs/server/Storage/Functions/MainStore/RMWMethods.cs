@@ -23,7 +23,6 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTLXX:
                 case RespCommand.GETDEL:
                 case RespCommand.GETEX:
-                case RespCommand.DEL:
                     return false;
                 case RespCommand.SETEXXX:
                     // when called withetag all output needs to be placed on the buffer
@@ -410,11 +409,6 @@ namespace Garnet.server
                     // Nothing is set because being in this block means NX was already violated
                     return IPUResult.NotUpdated;
 
-                case RespCommand.DEL:
-                    rmwInfo.Action = execCmd ? RMWAction.ExpireAndStop : RMWAction.CancelOperation;
-                    ETagState.ResetState(ref functionsState.etagState);
-                    return IPUResult.Failed;
-
                 case RespCommand.SET:
                 case RespCommand.SETEXXX:
                     if (!execCmd)
@@ -781,7 +775,7 @@ namespace Garnet.server
             // increment the Etag transparently if in place update happened
             if (shouldUpdateEtag)
             {
-                logRecord.TrySetETag(this.functionsState.etagState.ETag + 1);
+                logRecord.TrySetETag(updatedEtag);
                 ETagState.ResetState(ref functionsState.etagState);
             }
             else if (hadETagPreMutation)
@@ -807,16 +801,6 @@ namespace Garnet.server
 
             switch (input.header.cmd)
             {
-                case RespCommand.DEL:
-                    if (execCmd)
-                        rmwInfo.Action = RMWAction.ExpireAndStop;
-
-                    ETagState.ResetState(ref functionsState.etagState);
-                    // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
-                    // Setting no Action and returning false for non-delete case will shortcircuit the InternalRMW code to not run CU, and return SUCCESS.
-                    // If we want to delete the object setting the Action to ExpireAndStop will add the tombstone in hybrid log for us.
-                    return false;
-
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
                     // ExpireAndResume ensures that we set as new value, since it does not exist

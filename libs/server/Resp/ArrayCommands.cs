@@ -93,7 +93,7 @@ namespace Garnet.server
                 if (parseState.Count != 1)
                     return AbortWithWrongNumberOfArguments(nameof(RespCommand.DEL));
 
-                var input = new StringInput(RespCommand.DEL, metaCommand, ref parseState);
+                var input = new UnifiedInput(RespCommand.DEL, metaCommand, ref parseState);
                 var key = parseState.GetArgSliceByRef(0);
                 var status = storageApi.DEL_Conditional(key, ref input);
 

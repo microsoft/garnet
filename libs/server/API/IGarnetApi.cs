@@ -41,7 +41,7 @@ namespace Garnet.server
         /// <summary>
         /// DEL Conditional
         /// </summary>
-        GarnetStatus DEL_Conditional(PinnedSpanByte key, ref StringInput input);
+        GarnetStatus DEL_Conditional(PinnedSpanByte key, ref UnifiedInput input);
 
         /// <summary>
         /// SET Conditional
