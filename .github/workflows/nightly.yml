@@ -40,10 +40,6 @@ jobs:
               Write-Host "Unsupported OS: $env:RUNNER_OS"
               exit 1
             }
-      - name: DEBUG DEBUG Verify Allure installation
-        run: allure --version
-        shell: pwsh
-
       - name: Check out code
         uses: actions/checkout@v4
 
@@ -116,61 +112,6 @@ jobs:
           path: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
         if: ${{ always() }}
 
-      - name: DEBUG DEBUG path existence using matrix variables
-        shell: pwsh
-        run: |
-          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
-            $source = "${{ github.workspace }}/libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          } else {
-            $source = "${{ github.workspace }}/test/Allure/TestData/${{ matrix.framework }}/allure-results"
-          }
-
-          Write-Host "Checking source path: $source"
-          if (Test-Path $source) {
-            Write-Host "Source path exists."
-          } else {
-            Write-Host "Source path does NOT exist."
-          }
-        if: ${{ always() }}
-
-      - name: DEBUG DEBUG Check if allure-results exists
-        shell: pwsh
-        run: |
-          $base = $env:GITHUB_WORKSPACE
-
-          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
-            $path = Join-Path $base "libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          } else {
-            $path = Join-Path $base "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          }
-
-          Write-Host "Checking path: $path"
-          if (Test-Path $path) {
-            Write-Host "Found allure-results for this matrix combination."
-          } else {
-            Write-Host "No allure-results found at $path for this matrix combination."
-          }
-        if: ${{ always() }}
-
-      - name: DEBUG DEBUG Verify allure-results were copied
-        shell: pwsh
-        run: |
-          $base = $env:GITHUB_WORKSPACE
-
-          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
-            $dest = Join-Path $base "libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          } else {
-            $dest = Join-Path $base "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          }
-
-          Write-Host "Contents of ${dest}:"
-          if (Test-Path $dest) {
-            Get-ChildItem -Path $dest -Recurse | ForEach-Object { Write-Host $_.FullName }
-          } else {
-            Write-Host "No allure-results found at ${dest}"
-          }
-        if: ${{ always() }}
-
       - name: Stage allure-results into test/Allure/AllResults
         shell: pwsh
         run: |
@@ -220,26 +161,6 @@ jobs:
           }
         if: ${{ always() }}
 
-      - name: DEBUG DEBUG Verify allure-results were deleted by showing contents of folder
-        shell: pwsh
-        run: |
-          $base = $env:GITHUB_WORKSPACE
-
-          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
-            $dest = Join-Path $base "libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          } else {
-            $dest = Join-Path $base "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
-          }
-
-          Write-Host "Contents of ${dest}:"
-          if (Test-Path $dest) {
-            Get-ChildItem -Path $dest -Recurse | ForEach-Object { Write-Host $_.FullName }
-          } else {
-            Write-Host "No allure-results found at ${dest}"
-          }
-        if: ${{ always() }}
-
-
   generate-allure-report:
     name: Generate Allure Report
     runs-on: windows-latest  # only used to generate report - makes it easy on how calls made so don't have to worry about windows and linux 
@@ -257,12 +178,6 @@ jobs:
           ref: allure_data_history
           path: history-branch
           persist-credentials: true
-
-      - name: DEBUG DEBUG List files in history-branch root after check out
-        shell: pwsh
-        run: |
-          Get-ChildItem -Recurse -Path "${{ github.workspace }}/history-branch"
-        if: ${{ always() }}
 
       - name: Install Allure CLI
         shell: pwsh
@@ -289,39 +204,6 @@ jobs:
           pattern: AllureResults-*
         if: ${{ always() }}
 
-      - name: DEBUG DEBUG List contents of test/Allure/CombinedResults
-        shell: pwsh
-        run: |
-          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/CombinedResults"
-          Get-ChildItem -Path $target -Recurse
-        if: ${{ always() }}
-
-      - name: DEBUG DEBUG Show working directory and contents
-        shell: pwsh
-        run: |
-          $cwd = Get-Location
-          Write-Host "Current directory: $cwd"
-          Get-ChildItem -Force
-        if: ${{ always() }}
-
-      - name: DEBUG DEBUG Check if GenerateAllureReport.ps1 exists
-        shell: pwsh
-        run: |
-          $scriptPath = Join-Path $env:GITHUB_WORKSPACE "test/Allure/GenerateAllureReport.ps1"
-          if (Test-Path $scriptPath) {
-            Write-Host "Script found at $scriptPath"
-          } else {
-            Write-Host "Script NOT found at $scriptPath"
-          }
-        if: ${{ always() }}
-
-      - name: DEBUG DEBUG List contents of test/Allure/AllResults
-        shell: pwsh
-        run: |
-          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
-          Get-ChildItem -Path $target -Recurse
-        if: ${{ always() }}
-
       - name: Copy all results into one folder (CombinedResults)
         shell: pwsh
         run: |
@@ -331,13 +213,6 @@ jobs:
           Get-ChildItem -Path $source -Recurse -File | ForEach-Object {
             Copy-Item -Path $_.FullName -Destination $target -Force
           }          
-        if: ${{ always() }}
-
-      - name: DEBUG DEBUG List contents of test/Allure/CombinedResults
-        shell: pwsh
-        run: |
-          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/CombinedResults"
-          Get-ChildItem -Path $target -Recurse
         if: ${{ always() }}
 
       - name: Final cleanup of stray allure-results folders
@@ -359,49 +234,6 @@ jobs:
           }
         if: ${{ always() }}
 
-      - name: DEBUG DEBUG - maybe don't need - Clean up AllResults after staging into CombinedResults
-        shell: pwsh
-        run: |
-          $source = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
-          if (Test-Path $source) {
-            Write-Host "Removing $source"
-            Remove-Item $source -Recurse -Force
-          } else {
-            Write-Host "No AllResults folder found to remove"
-          }
-        if: ${{ always() }}
-
-      - name: DEBUG DEBUG List contents of test/Allure/AllResults (after deleted just to check)
-        shell: pwsh
-        run: |
-          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
-          Get-ChildItem -Path $target -Recurse
-        if: ${{ always() }}
-       
-
-      - name: DEBUG DEBUG List contents of test/Allure/CombinedResults BEFORE Copy previous history
-        shell: pwsh
-        run: |
-          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/CombinedResults"
-          Write-Host "=== CombinedResults ==="
-          Get-ChildItem -Path $target -Recurse
-
-          $history = Join-Path $target "history"
-          if (Test-Path $history) {
-            Write-Host "=== CombinedResults/history ==="
-            Get-ChildItem -Path $history -Recurse
-          } else {
-            Write-Host "No history folder found in CombinedResults"
-          }
-        if: ${{ always() }}
-
-      - name: DEBUG DEBUG List files in history-branch
-        shell: pwsh
-        run: |
-          $path = "${{ github.workspace }}/history-branch"
-          Write-Host "=== Listing contents of history-branch ==="
-          Get-ChildItem -Recurse -Path $path
-
       - name: Copy history from allure_data_history branch into CombinedResults
         shell: pwsh
         run: |
@@ -416,13 +248,6 @@ jobs:
           }        
         if: ${{ always() }}
 
-      - name: DEBUG DEBUG List contents of test/Allure/CombinedResults/history AFTER Copy previous history
-        shell: pwsh
-        run: |
-          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/CombinedResults/history"
-          Get-ChildItem -Path $target -Recurse          
-        if: ${{ always() }}
-
       - name: Run GenerateAllureReport.ps1
         shell: pwsh
         run: |
@@ -430,7 +255,7 @@ jobs:
           .\GenerateAllureReport.ps1
         if: ${{ always() }}
 
-      - name: DEBUG DEBUG Upload Allure history to artifacts so can use for debugging
+      - name: Upload Allure history to artifacts so can use for debugging if needed
         uses: actions/upload-artifact@v4
         with:
           name: allure-history
@@ -469,14 +294,6 @@ jobs:
           New-Item -ItemType Directory -Path $target -Force | Out-Null
           Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
           Write-Host "Allure report staged in website/static/allure"
-
-      - name: DEBUG DEBUG List contents of website/static to make sure Allure report copied
-        shell: pwsh
-        run: |
-          $static = Join-Path $env:GITHUB_WORKSPACE "website/static"
-          Write-Host "=== Listing contents of website/static ==="
-          Get-ChildItem -Path $static -Recurse
-        if: ${{ always() }}                    
 
       - name: Echo completion
         run: echo Done!

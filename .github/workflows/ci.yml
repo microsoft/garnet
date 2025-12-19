@@ -138,7 +138,7 @@ jobs:
           }
 
           if ($bad.Count -gt 0) {
-            Write-Host "These test fixtures are missing Allure setup from $asmPath"
+            Write-Host "These test fixtures are missing Allure setup from $asmPath. See Pull Request Protocol for details on how to set up Allure for new tests. https://microsoft.github.io/garnet/docs/dev/onboarding"
             $bad | ForEach-Object { Write-Host $_ }
             exit 1
           } else {

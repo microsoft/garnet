@@ -17,8 +17,6 @@ namespace Tsavorite.test.recovery
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
     using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
 
-    [AllureNUnit]
-    [TestFixture]
     public abstract class StateMachineDriverTestsBase : AllureTestBase
     {
         readonly int numOpThreads = 2;
