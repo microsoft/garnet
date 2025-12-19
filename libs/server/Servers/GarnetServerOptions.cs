@@ -89,12 +89,12 @@ namespace Garnet.server
         /// <summary>
         /// Number of replica replay tasks
         /// </summary>
-        public int AofReplaySubtaskCount = 1;
+        public int AofReplayTaskCount = 1;
 
         /// <summary>
         /// Delay for background task used to refresh tail timestamp for stalled sublogs when SharedLog is used.
         /// </summary>
-        public int AofRefreshSublogTailFrequencyMs = 100;
+        public int AofRefreshPhysicalSublogTailFrequencyMs = 100;
 
         /// <summary>
         /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.
@@ -861,12 +861,12 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         public bool MultiLogEnabled
-            => AofPhysicalSublogCount > 1 || AofReplaySubtaskCount > 1;
+            => AofPhysicalSublogCount > 1 || AofReplayTaskCount > 1;
 
         /// <summary>
         /// Number of virtual sublogs expected
         /// </summary>
         public int AofVirtualSublogCount
-            => AofPhysicalSublogCount * AofReplaySubtaskCount;
+            => AofPhysicalSublogCount * AofReplayTaskCount;
     }
 }

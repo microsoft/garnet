@@ -57,7 +57,7 @@ namespace Garnet.server
         {
             var proc = customCommandManagerSession
                 .GetCustomTransactionProcedure(id, this, txnManager, scratchBufferAllocator, out _);
-            proc.customProcTimestampBitmap = customProcTimestampBitmap;
+            proc.customProcKeyHashCollection = customProcTimestampBitmap;
             return txnManager.RunTransactionProc(id, ref procInput, proc, ref output, isRecovering);
         }
 

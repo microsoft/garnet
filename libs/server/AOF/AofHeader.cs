@@ -38,7 +38,7 @@ namespace Garnet.server
         /// Used to track replay task participating in the txn
         /// </summary>
         [FieldOffset(AofShardedHeader.TotalSize + 2)]
-        public fixed byte replayTaskAccessVector[ReplayTaskAccessVectorSize];
+        public fixed byte virtualSublogAccessVector[ReplayTaskAccessVectorSize];
     }
 
     /// <summary>

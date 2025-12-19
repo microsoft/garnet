@@ -28,29 +28,26 @@ namespace Garnet.cluster
         readonly ILogger logger;
         TsavoriteLogScanSingleIterator replayIterator;
         SingleWriterMultiReaderLock activeReplay;
-        const int ReplayBufferSize = 1 << 10;
-        internal readonly ReplayRecordState[] replayBuffer;
-        long replayBufferOffset = 0;
+        internal readonly ReplayWorkItem replayWorkItem;
         readonly ReplicaReplayTask[] replayTasks;
 
         public ReplicaReplayDriver(int sublogIdx, ClusterProvider clusterProvider, INetworkSender respSessionNetworkSender, CancellationTokenSource cts, ILogger logger = null)
         {
             this.sublogIdx = sublogIdx;
-            this.serverOptions = clusterProvider.serverOptions;
-            this.appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
-            this.replicationManager = clusterProvider.replicationManager;
-            this.cts = cts;
             this.respSessionNetworkSender = respSessionNetworkSender;
+            serverOptions = clusterProvider.serverOptions;
+            appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
+            replicationManager = clusterProvider.replicationManager;
+            replayIterator = null;
+            activeReplay = new SingleWriterMultiReaderLock();
+            this.cts = cts;
             this.logger = logger;
-            this.replayIterator = null;
-            this.activeReplay = new SingleWriterMultiReaderLock();
-            this.replayBuffer = [.. Enumerable.Range(0, ReplayBufferSize).Select(_ => new ReplayRecordState(clusterProvider.serverOptions.AofReplaySubtaskCount))];
-            this.replayBufferOffset = 0;
 
             // Initialize background replay tasks for this sublog replay driver
-            var replayTaskCount = serverOptions.AofReplaySubtaskCount;
+            var replayTaskCount = serverOptions.AofReplayTaskCount;
             if (replayTaskCount > 1)
             {
+                replayWorkItem = new ReplayWorkItem(replayTaskCount);
                 replayTasks = [.. Enumerable.Range(0, replayTaskCount).Select(i => new ReplicaReplayTask(i, this, clusterProvider, cts, logger))];
                 foreach (var replayTask in replayTasks)
                     _ = Task.Run(() => replayTask.Replay());
@@ -71,31 +68,31 @@ namespace Garnet.cluster
         #region IBulkLogEntryConsumer
         public unsafe void Consume(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
         {
-            if (serverOptions.AofReplaySubtaskCount == 1)
+            if (serverOptions.AofReplayTaskCount == 1)
             {
                 ConsumeDirect(record, recordLength, currentAddress, nextAddress, isProtected);
             }
             else
             {
-                var nextReplaySlot = replayBufferOffset % ReplayBufferSize;
                 // Wait for slot to become available
-                if (!replayBuffer[nextReplaySlot].Completed.Wait(serverOptions.ReplicaSyncTimeout, cts.Token))
+                if (!replayWorkItem.Completed.Wait(serverOptions.ReplicaSyncTimeout, cts.Token))
                     throw new GarnetException("Consume background replay timed-out!");
 
-                var replayBufferSlot = replayBuffer[nextReplaySlot];
+                replayWorkItem.Completed.Reset();
+                var replayBufferSlot = replayWorkItem;
                 replayBufferSlot.record = record;
                 replayBufferSlot.recordLength = recordLength;
                 replayBufferSlot.currentAddress = currentAddress;
                 replayBufferSlot.nextAddress = nextAddress;
                 replayBufferSlot.isProtected = isProtected;
+                replayBufferSlot.Completed.Reset();
                 replayBufferSlot.Reset();
-                replayBufferOffset++;
 
                 foreach (var replayTask in replayTasks)
-                    replayTask.Append(replayBuffer[nextReplaySlot]);
+                    replayTask.Append(replayWorkItem);
 
                 // Wait for replay to complete
-                if (!replayBuffer[nextReplaySlot].Completed.Wait(serverOptions.ReplicaSyncTimeout, cts.Token))
+                if (!replayWorkItem.Completed.Wait(serverOptions.ReplicaSyncTimeout, cts.Token))
                     throw new GarnetException("Consume background replay timed-out!");
             }
         }

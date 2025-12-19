@@ -15,10 +15,10 @@ namespace Garnet.server
 {
     public class GarnetLog(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
     {
-        readonly int replayTaskCount = serverOptions.AofReplaySubtaskCount;
+        readonly int replayTaskCount = serverOptions.AofReplayTaskCount;
         readonly int aofSublogCount = serverOptions.AofPhysicalSublogCount;
-        readonly SingleLog singleLog = serverOptions.AofPhysicalSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
-        readonly ShardedLog shardedLog = serverOptions.AofPhysicalSublogCount > 1 ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger) : null;
+        readonly SingleLog singleLog = serverOptions.AofVirtualSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
+        readonly ShardedLog shardedLog = serverOptions.AofVirtualSublogCount > 1 ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger) : null;
 
         public TsavoriteLog SigleLog => singleLog.log;
         public readonly BitVector[] AllParticipatingTasks;

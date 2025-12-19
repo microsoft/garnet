@@ -38,7 +38,7 @@ namespace Garnet.server
         /// <param name="replayIdx"></param>
         /// <returns></returns>
         public int GetVirtualSublogIdx(int sublogIdx, int replayIdx)
-            => (sublogIdx * serverOptions.AofReplaySubtaskCount) + replayIdx;
+            => (sublogIdx * serverOptions.AofReplayTaskCount) + replayIdx;
 
 
         /// <summary>

@@ -15,6 +15,7 @@ namespace Garnet.test.cluster
     public class ClusterReplicationShardedLog : ClusterReplicationBaseTests
     {
         const int TestSublogCount = 2;
+        const int TestReplayTaskCount = 2;
 
         public Dictionary<string, bool> enabledTests = new()
         {
@@ -205,6 +206,55 @@ namespace Garnet.test.cluster
             Array.Sort(keys);
             Array.Sort(expectedKeys);
             ClassicAssert.AreEqual(expectedKeys, keys);
+        }
+
+        [Test, Order(3)]
+        [Category("REPLICATION")]
+        public void ClusterReplicationSimpleMultiReplay()
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                sublogCount: 1,
+                replayTaskCount: TestReplayTaskCount);
+            context.CreateConnection(useTLS: useTLS);
+
+            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
+
+            // Setup cluster
+            context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, primaryNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaNodeIndex, replicaNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+
+            // Attach replica
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            var keyLength = 16;
+            var kvpairCount = 2;
+            context.kvPairs = [];
+
+            // Populate Primary
+            context.SimplePopulateDB(disableObjects: true, keyLength, kvpairCount, primaryNodeIndex);
+
+            // Wait for replica to sync
+            context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex);
+
+            // Validate database
+            context.SimpleValidateDB(disableObjects: true, replicaNodeIndex);
         }
     }
 

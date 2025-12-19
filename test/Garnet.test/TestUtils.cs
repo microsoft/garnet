@@ -495,7 +495,8 @@ namespace Garnet.test
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
-            int sublogCount = 1)
+            int sublogCount = 1,
+            int replayTaskCount = 1)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -558,7 +559,8 @@ namespace Garnet.test
                     checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                     clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                     replicaSyncTimeout: replicaSyncTimeout,
-                    sublogCount: sublogCount);
+                    sublogCount: sublogCount,
+                    replayTaskCount: replayTaskCount);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -635,7 +637,8 @@ namespace Garnet.test
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
-            int sublogCount = 1)
+            int sublogCount = 1,
+            int replayTaskCount = 1)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -755,7 +758,8 @@ namespace Garnet.test
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
-                AofPhysicalSublogCount = sublogCount
+                AofPhysicalSublogCount = sublogCount,
+                AofReplayTaskCount = replayTaskCount
             };
 
             if (lowMemory)

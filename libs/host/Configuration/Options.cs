@@ -200,11 +200,11 @@ namespace Garnet
 
         [IntRangeValidation(1, 64)]
         [Option("aof-replay-subtask-count", Required = false, HelpText = "Number of logical replay tasks per sublog at replica.")]
-        public int AofReplaySubtaskCount { get; set; }
+        public int AofReplayTaskCount { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("aof-sublog-refresh-tail-freq", Required = false, HelpText = "Refresh sublog tail background task execution frequency.")]
-        public int AofRefreshSublogTailFrequencyMs { get; set; }
+        [Option("aof-physical-sublog-refresh-tail-freq", Required = false, HelpText = "Refresh physical sublog tail background task execution frequency.")]
+        public int AofRefreshPhysicalSublogTailFrequencyMs { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("aof-commit-freq", Required = false, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
@@ -810,8 +810,8 @@ namespace Garnet
                 AofMemorySize = AofMemorySize,
                 AofPageSize = AofPageSize,
                 AofPhysicalSublogCount = AofPhysicalSublogCount,
-                AofReplaySubtaskCount = AofReplaySubtaskCount,
-                AofRefreshSublogTailFrequencyMs = AofRefreshSublogTailFrequencyMs,
+                AofReplayTaskCount = AofReplayTaskCount,
+                AofRefreshPhysicalSublogTailFrequencyMs = AofRefreshPhysicalSublogTailFrequencyMs,
                 AofReplicationRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),

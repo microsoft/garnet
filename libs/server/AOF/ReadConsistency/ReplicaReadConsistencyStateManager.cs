@@ -42,7 +42,7 @@ namespace Garnet.server
         public AofAddress GetSublogMaxKeySequenceNumber()
         {
             var physicalSublogCount = serverOptions.AofPhysicalSublogCount;
-            var replayTaskCount = serverOptions.AofReplaySubtaskCount;
+            var replayTaskCount = serverOptions.AofReplayTaskCount;
             var maxKeySeqNumVector = AofAddress.Create(physicalSublogCount, 0);
             for (var sublog = 0; sublog < physicalSublogCount; sublog++)
             {
@@ -82,7 +82,7 @@ namespace Garnet.server
         /// <param name="sublogIdx"></param>
         public void UpdateSublogMaxSequenceNumber(int sublogIdx)
         {
-            var replayTaskCount = serverOptions.AofReplaySubtaskCount;
+            var replayTaskCount = serverOptions.AofReplayTaskCount;
             var globalMaxSequenceNumber = 0L;
 
             // Get maximum value across all virtual sublogs

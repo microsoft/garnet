@@ -44,7 +44,7 @@ namespace Garnet.server
             txnManager.AddTransactionStoreType(storeType);
             txnManager.SaveKeyEntryToLock(key, type);
             txnManager.VerifyKeyOwnership(key, type);
-            txnManager.IterativeShardedLogAccess(key, ref sublogAccessVector, this, out replayTaskAccessVector);
+            txnManager.IterativeShardedLogAccess(key, this, ref sublogAccessVector);
         }
 
         /// <summary>

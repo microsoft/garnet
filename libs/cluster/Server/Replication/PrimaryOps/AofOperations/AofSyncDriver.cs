@@ -185,7 +185,7 @@ namespace Garnet.cluster
 
                 while (true)
                 {
-                    await Task.Delay(clusterProvider.serverOptions.AofRefreshSublogTailFrequencyMs, cts.Token);
+                    await Task.Delay(clusterProvider.serverOptions.AofRefreshPhysicalSublogTailFrequencyMs, cts.Token);
 
                     var tailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
                     var previousAddress = PreviousAddress;

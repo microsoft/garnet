@@ -448,7 +448,7 @@ namespace Garnet.server
             }
         }
 
-        void UpdateKeySequenceNumber(int sublogIdx, byte* ptr)
+        private void UpdateKeySequenceNumber(int sublogIdx, byte* ptr)
         {
             Debug.Assert(storeWrapper.serverOptions.AofPhysicalSublogCount > 1);
             var shardedHeader = *(AofShardedHeader*)ptr;
@@ -680,7 +680,28 @@ namespace Garnet.server
         public int GetReplayTask(byte* ptr)
         {
             var shardedHeader = *(AofShardedHeader*)ptr;
-            return shardedHeader.keyDigest % storeWrapper.serverOptions.AofReplaySubtaskCount;
+            return shardedHeader.keyDigest % storeWrapper.serverOptions.AofReplayTaskCount;
+        }
+
+        public bool ShouldReplay(byte* ptr, int replayTaskIdx)
+        {
+            var header = *(AofHeader*)ptr;
+            var replayHeaderType = (AofHeaderType)header.padding;
+            switch (replayHeaderType)
+            {
+                case AofHeaderType.ShardedHeader:
+                    var curr = AofHeader.SkipHeader(ptr);
+                    var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
+                    var hash = GarnetLog.HASH(key);
+                    var _replayTaskIdx = hash % storeWrapper.serverOptions.AofReplayTaskCount;
+                    return replayTaskIdx == _replayTaskIdx;
+                case AofHeaderType.TransactionHeader:
+                    var txnHeader = *(AofTransactionHeader*)ptr;
+                    var bitVector = BitVector.CopyFrom(new Span<byte>(ptr, AofTransactionHeader.ReplayTaskAccessVectorSize));
+                    return bitVector.IsSet(replayTaskIdx);
+                default:
+                    throw new GarnetException($"Replay header type {replayHeaderType} not supported!");
+            }
         }
     }
 }
