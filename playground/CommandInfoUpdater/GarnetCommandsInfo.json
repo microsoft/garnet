@@ -426,7 +426,7 @@
     "Command": "EXECIFGREATER",
     "Name": "EXECIFGREATER",
     "IsInternal": false,
-    "Arity": -4,
+    "Arity": 2,
     "Flags": "Meta",
     "KeySpecifications": null
   },
@@ -434,7 +434,7 @@
     "Command": "EXECIFMATCH",
     "Name": "EXECIFMATCH",
     "IsInternal": false,
-    "Arity": -4,
+    "Arity": 2,
     "Flags": "Meta",
     "KeySpecifications": null
   },
@@ -442,7 +442,7 @@
     "Command": "EXECIFNOTMATCH",
     "Name": "EXECIFNOTMATCH",
     "IsInternal": false,
-    "Arity": -4,
+    "Arity": 2,
     "Flags": "Meta",
     "KeySpecifications": null
   },
@@ -450,7 +450,7 @@
     "Command": "EXECWITHETAG",
     "Name": "EXECWITHETAG",
     "IsInternal": false,
-    "Arity": -3,
+    "Arity": 1,
     "Flags": "Meta",
     "KeySpecifications": null
   },

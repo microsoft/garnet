@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
+using Garnet.server.Objects.Types;
 using Limit = (int offset, int count);
 
 namespace Garnet.server
@@ -35,7 +36,7 @@ namespace Garnet.server
             InfiniteMax = 2
         }
 
-        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, bool execOp, byte respProtocolVersion)
+        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, bool execOp, long updatedEtag, byte respProtocolVersion)
         {
             DeleteExpiredItems();
 
@@ -44,9 +45,10 @@ namespace Garnet.server
 
             var options = SortedSetAddOption.None;
             var currTokenIdx = 0;
+            var metaCmd = input.header.MetaCmd;
 
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
+            
             try
             {
                 // Try to parse a Score field
@@ -133,7 +135,7 @@ namespace Garnet.server
                             {
                                 if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
                                 {
-                                    writer.WriteNull();
+                                    writer.WriteNullWithEtagIfNeeded(metaCmd, updatedEtag);
                                     return;
                                 }
 
@@ -156,15 +158,12 @@ namespace Garnet.server
 
                 if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
                 {
-                    writer.WriteDoubleNumeric(incrResult);
+                    writer.WriteDoubleNumericWithEtagIfNeeded(incrResult, metaCmd, updatedEtag);
                 }
                 else
                 {
-                    writer.WriteInt32(addedOrChanged);
+                    writer.WriteInt32WithEtagIfNeeded(addedOrChanged, metaCmd, updatedEtag);
                 }
-
-                if (addedOrChanged == 0)
-                    output.OutputFlags |= OutputFlags.ObjectUnchanged;
             }
             finally
             {
@@ -172,27 +171,35 @@ namespace Garnet.server
             }
         }
 
-        private void SortedSetRemove(ref ObjectInput input, ref ObjectOutput output)
+        private void SortedSetRemove(ref ObjectInput input, ref ObjectOutput output, bool execOp, long updatedEtag, byte respProtocolVersion)
         {
             DeleteExpiredItems();
-
-            for (var i = 0; i < input.parseState.Count; i++)
+            
+            var removedItems = 0;
+            if (execOp)
             {
-                var value = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
-                var valueArray = value.ToArray();
+                for (var i = 0; i < input.parseState.Count; i++)
+                {
+                    var value = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
+                    var valueArray = value.ToArray();
 
-                if (!sortedSetDict.Remove(valueArray, out var key))
-                    continue;
+                    if (!sortedSetDict.Remove(valueArray, out var key))
+                        continue;
 
-                output.Header.result1++;
-                sortedSet.Remove((key, valueArray));
-                _ = TryRemoveExpiration(valueArray);
+                    removedItems++;
+                    sortedSet.Remove((key, valueArray));
+                    _ = TryRemoveExpiration(valueArray);
 
-                this.UpdateSize(value, false);
+                    this.UpdateSize(value, false);
+                }
             }
 
-            if (output.Header.result1 == 0)
-                output.OutputFlags |= OutputFlags.ObjectUnchanged;
+            var metaCmd = input.header.MetaCmd;
+
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
+            writer.WriteInt32WithEtagIfNeeded(removedItems, metaCmd, updatedEtag);
+
+            output.Header.result1 = removedItems;
         }
 
         private void SortedSetLength(ref ObjectOutput output)
@@ -299,7 +306,6 @@ namespace Garnet.server
                 if (double.IsNaN(result))
                 {
                     writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
-                    output.OutputFlags |= OutputFlags.ObjectUnchanged;
                     return;
                 }
 
@@ -460,10 +466,7 @@ namespace Garnet.server
             var stop = input.parseState.GetInt(1);
 
             if (start > sortedSetDict.Count - 1)
-            {
-                output.OutputFlags |= OutputFlags.ObjectUnchanged;
                 return;
-            }
 
             // Shift from the end of the set
             start = start < 0 ? sortedSetDict.Count + start : start;
@@ -488,9 +491,6 @@ namespace Garnet.server
 
             // Write the number of elements
             writer.WriteInt32(elementCount);
-
-            if (elementCount == 0)
-                output.OutputFlags |= OutputFlags.ObjectUnchanged;
         }
 
         private void SortedSetRemoveRangeByScore(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -511,9 +511,6 @@ namespace Garnet.server
 
             // Write the number of elements
             writer.WriteInt32(elementCount);
-
-            if (elementCount == 0)
-                output.OutputFlags |= OutputFlags.ObjectUnchanged;
         }
 
         private void SortedSetRandomMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -579,9 +576,6 @@ namespace Garnet.server
             var rem = GetElementsInRangeByLex(ref input.parseState, false, false, isRemove);
 
             output.Header.result1 = rem.Count;
-
-            if (rem.Count == 0)
-                output.OutputFlags |= OutputFlags.ObjectUnchanged;
         }
 
         /// <summary>
@@ -691,7 +685,6 @@ namespace Garnet.server
             {
                 writer.WriteEmptyArray();
                 output.Header.result1 = 0;
-                output.OutputFlags |= OutputFlags.ObjectUnchanged;
                 return;
             }
 
@@ -741,8 +734,6 @@ namespace Garnet.server
                 writer.WriteInt32(result);
                 output.Header.result1++;
             }
-
-            output.OutputFlags |= OutputFlags.ObjectUnchanged;
         }
 
         private void SortedSetTimeToLive(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
@@ -801,8 +792,6 @@ namespace Garnet.server
                 writer.WriteInt32(result);
                 output.Header.result1++;
             }
-
-            output.OutputFlags |= OutputFlags.ObjectUnchanged;
         }
 
         private void SortedSetCollect(ref ObjectOutput output)

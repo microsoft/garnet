@@ -203,7 +203,7 @@ namespace Garnet.test
             StringInput input = new StringInput(RespCommand.SET);
             input.header.cmd = RespCommand.SET;
             // if we send a SET we must explictly ask it to retain etag, and use conditional set
-            input.header.metaCmd = RespMetaCommand.ExecWithEtag;
+            input.header.MetaCmd = RespMetaCommand.ExecWithEtag;
 
             fixed (byte* valuePtr = valueToMessWith.ToArray())
             {

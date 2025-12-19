@@ -155,7 +155,7 @@ namespace Garnet.server
         internal ListOperation ListOp;
 
         [FieldOffset(4)]
-        internal RespMetaCommand metaCmd;
+        internal RespMetaCommand MetaCmd;
 
         /// <summary>
         /// Create a new instance of RespInputHeader
@@ -166,7 +166,7 @@ namespace Garnet.server
         public RespInputHeader(RespCommand cmd, RespMetaCommand metaCmd, RespInputFlags flags = 0)
         {
             this.cmd = cmd;
-            this.metaCmd = metaCmd;
+            this.MetaCmd = metaCmd;
             this.flags = flags;
         }
 
@@ -179,7 +179,7 @@ namespace Garnet.server
         public RespInputHeader(GarnetObjectType type, RespMetaCommand metaCmd, RespInputFlags flags = 0)
         {
             this.type = type;
-            this.metaCmd = metaCmd;
+            this.MetaCmd = metaCmd;
             this.flags = flags;
         }
 
@@ -192,7 +192,7 @@ namespace Garnet.server
         public void SetHeader(ushort cmd, byte metaCmd, byte flags)
         {
             this.cmd = (RespCommand)cmd;
-            this.metaCmd = (RespMetaCommand)metaCmd;
+            this.MetaCmd = (RespMetaCommand)metaCmd;
             this.flags = (RespInputFlags)flags;
         }
 
@@ -210,7 +210,7 @@ namespace Garnet.server
         /// Check if meta command is ExecWithEtag
         /// </summary>
         /// <returns></returns>
-        internal bool IsWithEtag() => metaCmd == RespMetaCommand.ExecWithEtag;
+        internal bool IsWithEtag() => MetaCmd == RespMetaCommand.ExecWithEtag;
 
         /// <summary>
         /// Check if record is expired, either deterministically during log replay,

@@ -122,7 +122,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                     byte respProtocolVersion, bool execOp, out long memorySizeChange)
+                                     byte respProtocolVersion, bool execOp, long updatedEtag, out long memorySizeChange)
         {
             memorySizeChange = 0;
 

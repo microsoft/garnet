@@ -47,7 +47,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public override byte Type => type;
 
-        /// <summary>
+        /// <summary>  
         /// Serialize to giver writer
         /// </summary>
         public abstract void SerializeObject(BinaryWriter writer);
@@ -75,7 +75,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public sealed override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                            byte respProtocolVersion, bool execOp, out long sizeChange)
+                                            byte respProtocolVersion, bool execOp, long updatedEtag, out long sizeChange)
         {
             sizeChange = 0;
 

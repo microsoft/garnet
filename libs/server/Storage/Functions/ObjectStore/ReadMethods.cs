@@ -37,9 +37,8 @@ namespace Garnet.server
                     if (srcLogRecord.Info.HasETag)
                         ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
                     
-                    var outputOffset = 0;
                     var execCmd = true;
-                    var metaCmd = input.header.metaCmd;
+                    var metaCmd = input.header.MetaCmd;
 
                     if (metaCmd.IsEtagCondExecCommand())
                     {
@@ -47,10 +46,7 @@ namespace Garnet.server
                         execCmd = metaCmd.CheckConditionalExecution(srcLogRecord.ETag, inputEtag);
                     }
 
-                    if (input.header.metaCmd.IsEtagCommand())
-                        WriteEtagToOutput(srcLogRecord.ETag, ref output, out outputOffset);
-
-                    var opResult = garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, execOp: execCmd, out _);
+                    var opResult = garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, execOp: execCmd, srcLogRecord.ETag, out _);
 
                     if (srcLogRecord.Info.HasETag)
                         ETagState.ResetState(ref functionsState.etagState);

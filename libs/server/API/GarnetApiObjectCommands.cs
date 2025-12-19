@@ -45,8 +45,8 @@ namespace Garnet.server
             => storageSession.SortedSetRemove(key, members, out zaddCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemove(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.SortedSetRemove(key, ref input, out output, ref objectContext);
+        public GarnetStatus SortedSetRemove(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.SortedSetRemove(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetLength(PinnedSpanByte key, out int len)

@@ -540,7 +540,7 @@ namespace Garnet.server
                     switch (existOptions)
                     {
                         case ExistOptions.None:
-                            return getValue || metaCommand != RespMetaCommand.None
+                            return getValue || metaCommand.IsEtagCommand()
                                 ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue, isHighPrecision, ref storageApi)
                                 : NetworkSET_EX(RespCommand.SET, expOption, expiry, key, val, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
@@ -601,7 +601,7 @@ namespace Garnet.server
 
             var input = new StringInput(cmd, metaCommand, ref parseState, startIdx: 1, arg1: inputArg);
 
-            if (!getValue && metaCommand == RespMetaCommand.None)
+            if (!getValue && !metaCommand.IsEtagCommand())
             {
                 var status = storageApi.SET_Conditional(key, ref input);
 
@@ -641,8 +641,8 @@ namespace Garnet.server
                 SpanByteAndMemory outputBuffer = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
                 GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref outputBuffer);
 
-                // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
-                bool ok = status != GarnetStatus.NOTFOUND || metaCommand != RespMetaCommand.None;
+                // The data will be on the buffer either when we know the response is ok o  r when the withEtag flag is set.
+                bool ok = status != GarnetStatus.NOTFOUND || metaCommand.IsEtagCommand();
 
                 if (ok)
                 {

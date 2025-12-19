@@ -62,7 +62,7 @@ namespace Garnet.server
         {
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
-            var metaCmd = input.header.metaCmd;
+            var metaCmd = input.header.MetaCmd;
             var updatedEtag = GetUpdatedEtag(logRecord.ETag, metaCmd, ref input.parseState, out _, init: true);
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
@@ -126,8 +126,8 @@ namespace Garnet.server
                         ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
                     }
 
-                    if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater)
-                        WriteValueAndEtagToDst(functionsState.nilResp, updatedEtag, ref output, writeDirect: true);
+                    if (metaCmd.IsEtagCondExecCommand())
+                        WriteValueAndEtagToDst(functionsState.nilResp, updatedEtag, ref output, functionsState.memoryPool, writeDirect: true);
                     else if (metaCmd is RespMetaCommand.ExecWithEtag)
                         functionsState.CopyRespNumber(updatedEtag, ref output);
 
@@ -387,7 +387,7 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
             bool shouldCheckExpiration = true;
 
-            var metaCmd = input.header.metaCmd;
+            var metaCmd = input.header.MetaCmd;
             var updatedEtag = GetUpdatedEtag(logRecord.ETag, metaCmd, ref input.parseState, out var execCmd);
 
             switch (cmd)
@@ -464,7 +464,7 @@ namespace Garnet.server
                         return IPUResult.Failed;
 
                     if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater)
-                        WriteValueAndEtagToDst(functionsState.nilResp, updatedEtag, ref output, writeDirect: true);
+                        WriteValueAndEtagToDst(functionsState.nilResp, updatedEtag, ref output, functionsState.memoryPool, writeDirect: true);
                     else if (metaCmd is RespMetaCommand.ExecWithEtag)
                         functionsState.CopyRespNumber(updatedEtag, ref output);
                     else if (!logRecord.RemoveETag())
@@ -802,7 +802,7 @@ namespace Garnet.server
             if (srcLogRecord.Info.HasETag)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
-            var metaCmd = input.header.metaCmd;
+            var metaCmd = input.header.MetaCmd;
             var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, metaCmd, ref input.parseState, out var execCmd);
 
             switch (input.header.cmd)
@@ -865,7 +865,7 @@ namespace Garnet.server
                         if (input.header.CheckSetGetFlag())
                             CopyRespWithEtagData(srcLogRecord.ValueSpan, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
                         else
-                            WriteValueAndEtagToDst(functionsState.nilResp, updatedEtag, ref output, writeDirect: true);
+                            WriteValueAndEtagToDst(functionsState.nilResp, updatedEtag, ref output, functionsState.memoryPool, writeDirect: true);
 
                         ETagState.ResetState(ref functionsState.etagState);
                         return false;
@@ -927,7 +927,7 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
             }
 
-            var metaCmd = input.header.metaCmd;
+            var metaCmd = input.header.MetaCmd;
             var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, metaCmd, ref input.parseState, out _);
 
             switch (cmd)
@@ -960,7 +960,7 @@ namespace Garnet.server
                         return false;
 
                     if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater)
-                        WriteValueAndEtagToDst(functionsState.nilResp, updatedEtag, ref output, writeDirect: true);
+                        WriteValueAndEtagToDst(functionsState.nilResp, updatedEtag, ref output, functionsState.memoryPool, writeDirect: true);
                     else if (metaCmd is RespMetaCommand.ExecWithEtag)
                         functionsState.CopyRespNumber(updatedEtag, ref output);
                     else
@@ -1341,7 +1341,7 @@ namespace Garnet.server
 
             if (shouldUpdateEtag)
             {
-                if (!(cmd is RespCommand.SET && input.header.metaCmd == RespMetaCommand.ExecIfGreater))
+                if (!(cmd is RespCommand.SET && input.header.MetaCmd == RespMetaCommand.ExecIfGreater))
                     functionsState.etagState.ETag++;
                 dstLogRecord.TrySetETag(functionsState.etagState.ETag);
                 ETagState.ResetState(ref functionsState.etagState);

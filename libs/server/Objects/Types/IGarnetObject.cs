@@ -23,9 +23,10 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="respProtocolVersion"></param>
         /// <param name="execOp"></param>
+        /// <param name="updatedEtag"></param>
         /// <param name="sizeChange"></param>
         /// <returns></returns>
-        bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, bool execOp, out long sizeChange);
+        bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, bool execOp, long updatedEtag, out long sizeChange);
 
         /// <summary>
         /// Scan the items of the collection

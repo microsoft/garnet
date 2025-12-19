@@ -26,11 +26,6 @@ namespace Garnet.server
         /// Wrong type of value
         /// </summary>
         WrongType = 1 << 1,
-
-        /// <summary>
-        /// Value unchanged
-        /// </summary>
-        ObjectUnchanged = 1 << 2,
     }
 
     /// <summary>

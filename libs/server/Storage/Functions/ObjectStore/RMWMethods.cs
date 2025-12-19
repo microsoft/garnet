@@ -49,12 +49,9 @@ namespace Garnet.server
             {
                 value = GarnetObject.Create(type);
 
-                var outputOffset = 0;
-                var updatedEtag = GetUpdatedEtag(LogRecord.NoETag, input.header.metaCmd, ref input.parseState, out var execCmd, init: true);
-                if (input.header.metaCmd.IsEtagCommand())
-                    WriteEtagToOutput(updatedEtag, ref output, out outputOffset);
-
-                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out _);
+                var updatedEtag = GetUpdatedEtag(LogRecord.NoETag, input.header.MetaCmd, ref input.parseState, out var execCmd, init: true);
+                
+                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, updatedEtag, out _);
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
 
                 // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
@@ -153,9 +150,9 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var updatedEtag = GetUpdatedEtag(logRecord.ETag, input.header.metaCmd, ref input.parseState, out var execCmd);
+                var updatedEtag = GetUpdatedEtag(logRecord.ETag, input.header.MetaCmd, ref input.parseState, out var execCmd);
                 
-                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out sizeChange);
+                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, updatedEtag, out sizeChange);
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)
@@ -258,12 +255,9 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var outputOffset = 0;
-                var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, input.header.metaCmd, ref input.parseState, out var execCmd);
-                if (input.header.metaCmd.IsEtagCommand())
-                    WriteEtagToOutput(updatedEtag, ref output, out outputOffset);
+                var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, input.header.MetaCmd, ref input.parseState, out var execCmd);
 
-                value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, out _);
+                value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, updatedEtag, out _);
                 if (output.HasWrongType)
                     return true;
                 if (output.HasRemoveKey)

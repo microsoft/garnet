@@ -127,7 +127,7 @@ namespace Garnet.server
                 case RespCommand.SET:
                 case RespCommand.SETEXNX:
                     fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
-                    fieldInfo.HasETag = input.header.metaCmd.IsEtagCommand();
+                    fieldInfo.HasETag = input.header.MetaCmd.IsEtagCommand();
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
 
@@ -286,9 +286,9 @@ namespace Garnet.server
                     case RespCommand.SETEXXX:
                     case RespCommand.SETEXNX:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
-                        fieldInfo.HasETag = input.header.metaCmd.IsEtagCommand();
+                        fieldInfo.HasETag = input.header.MetaCmd.IsEtagCommand();
                         fieldInfo.HasExpiration = input.arg1 != 0 ||
-                                                  (input.header.metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater &&
+                                                  (input.header.MetaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater &&
                                                    srcLogRecord.Info.HasExpiration);
                         return fieldInfo;
 

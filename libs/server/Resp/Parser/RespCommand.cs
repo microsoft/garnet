@@ -2763,7 +2763,7 @@ namespace Garnet.server
             if (cmd.IsMetaCommand())
             {
                 // Get the meta command argument count (including the command itself)
-                metaCmdArgCount = UpdateMetaOpAndGetArgumentCount(cmd);
+                metaCmdArgCount = UpdateMetaCommandAndGetArgumentCount(cmd);
                 count -= metaCmdArgCount;
 
                 // Set up meta command parse state (to temporarily hold arguments until setting up the main parse state)
@@ -2827,25 +2827,23 @@ namespace Garnet.server
             return cmd;
         }
 
-        private int UpdateMetaOpAndGetArgumentCount(RespCommand cmd)
+        private int UpdateMetaCommandAndGetArgumentCount(RespCommand cmd)
         {
-            switch (cmd)
+            if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var info, logger: logger))
+                throw new GarnetException($"Unable to retrieve simple command info for command: {cmd}");
+
+            var argCount = info.Arity - 1;
+            
+            metaCommand = cmd switch
             {
-                case RespCommand.EXECWITHETAG:
-                    metaCommand = RespMetaCommand.ExecWithEtag;
-                    return 0;
-                case RespCommand.EXECIFMATCH:
-                    metaCommand = RespMetaCommand.ExecIfMatch;
-                    return 1;
-                case RespCommand.EXECIFNOTMATCH:
-                    metaCommand = RespMetaCommand.ExecIfNotMatch;
-                    return 1;
-                case RespCommand.EXECIFGREATER:
-                    metaCommand = RespMetaCommand.ExecIfGreater;
-                    return 1;
-                default:
-                    throw new GarnetException($"Invalid meta command: {cmd}");
-            }
+                RespCommand.EXECWITHETAG => RespMetaCommand.ExecWithEtag,
+                RespCommand.EXECIFMATCH => RespMetaCommand.ExecIfMatch,
+                RespCommand.EXECIFNOTMATCH => RespMetaCommand.ExecIfNotMatch,
+                RespCommand.EXECIFGREATER => RespMetaCommand.ExecIfGreater,
+                _ => throw new GarnetException($"Invalid meta command: {cmd}")
+            };
+
+            return argCount;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
