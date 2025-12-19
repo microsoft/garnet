@@ -5,7 +5,6 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Allure.Net.Commons;
-using Allure.NUnit;
 using NUnit.Framework;
 
 namespace Garnet.test
@@ -14,7 +13,6 @@ namespace Garnet.test
     /// <summary>
     /// Used as base class for Allure tests to label environment
     /// </summary>
-    [AllureNUnit]
     public abstract class AllureTestBase
     {
         [SetUp]
