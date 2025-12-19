@@ -1,11 +1,11 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-using Allure.NUnit;
 using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Allure.Net.Commons;
+using Allure.NUnit;
 using NUnit.Framework;
 
 namespace Garnet.test
