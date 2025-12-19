@@ -341,10 +341,10 @@ namespace Garnet
                 clusterFactory.CreateCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, isMainStore: true, logger) :
                 new GarnetCheckpointManager(opts.DeviceFactoryCreator, defaultNamingScheme, removeOutdated: true);
 
-            var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings
-                , Tsavorite.core.StoreFunctions.Create(new SpanByteComparer(),
-                    () => new GarnetObjectSerializer(customCommandManager))
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
+            var store = new TsavoriteKV<StoreFunctions, StoreAllocator>(kvSettings: kvSettings,
+                storeFunctions: Tsavorite.core.StoreFunctions.Create(new SpanByteComparer(),
+                    valueSerializerCreator: () => new GarnetObjectSerializer(customCommandManager)),
+                allocatorFactory: (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
 
             if (heapMemorySize > 0 || readCacheHeapMemorySize > 0)
                 sizeTracker = new CacheSizeTracker(store, heapMemorySize, readCacheHeapMemorySize, this.loggerFactory);

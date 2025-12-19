@@ -980,6 +980,92 @@ If **destination** already exists, it is overwritten.
 
 ---
 
+## Stream
+
+### XADD
+
+#### Syntax
+
+```bash
+    XADD key [NOMKSTREAM] <* | id> field value [field value ...]
+```
+Appends given stream entry to the stream at specified key. If the key does not exist, it is created when running the command. 
+Creation of the stream can be disabled with the `NOMKSTREAM` option. 
+
+Every entry in the stream is accompanied by a stream entry ID and consists of field-value pairs that are stored/read in the same order as provided by the user. 
+While the [XADD](#XADD) can auto-generate a unique ID using the `*` character, it is also possible to specify a user-defined ID specified by two 64-bit numbers separated by a `-` character. 
+The IDs are guaranteed to be incremental. 
+
+**Capped Streams** are not currently supported. 
+
+---
+
+### XLEN
+
+#### Syntax
+
+```bash
+    XLEN key
+```
+Returns the number of entries inside the stream specified by `key`. If the stream does not exist, returns 0. 
+
+---
+
+### XRANGE
+
+#### Syntax
+
+```bash
+    XRANGE key start end [COUNT count]
+```
+Returns stream entries matching a given range of IDs. 
+`start` and `end` can be special IDs (i.e, `-` and `+`) to specify the minimum possible ID and the maximum possible ID inside a stream respectively. 
+The IDs provided can also be incomplete (i.e., with only the first part of the ID).
+Using the `COUNT` option reduces the number of entries returned. 
+
+### XREVRANGE
+
+#### Syntax
+
+```bash
+    XRANGE key end start [COUNT count]
+```
+Returns stream entries in the order from end to start matching a given range of IDs.
+`start` and `end` can be special IDs (i.e, `-` and `+`) to specify the minimum possible ID and the maximum possible ID inside a stream respectively. 
+The IDs provided can also be incomplete (i.e., with only the first part of the ID).
+Using the `COUNT` option reduces the number of entries returned. 
+
+---
+
+### XDEL
+
+#### Syntax
+
+```bash
+    XDEL key id [id ...]
+```
+Removes the specified entries from a stream given by key, and returns the number of entries deleted. 
+If speficied IDs do not exist, the number of entries returned may be less than the number of IDs provided as they are not counted as deleted. 
+
+---
+
+### XTRIM
+
+#### Syntax
+
+```bash
+    XTRIM key <MAXLEN | MINID> threshold
+```
+Trims the stream by evicting older entries using two strategies: 
+
+- MAXLEN: evicts entries as long as stream's length exceeds specified threshold.
+- MINID: evicts entries with IDs lower than threshold where `threshold` is an entry ID. 
+
+`LIMIT` clause is not currently supported. 
+`MINID` defaults to exact trimming, meaning all entries having IDs lower than threshold will be deleted. 
+
+---
+
 ## Sorted Set
 
 ### ZADD

@@ -354,10 +354,10 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | [ZUNION](data-structures.md#zunion) | ➕ |  |
 |  | [ZUNIONSTORE](data-structures.md#zunionstore) | ➕ |  |
 | <span id="stream">**STREAM**</span> | XACK | ➖ |  |
-|  | XADD | ➖ |  |
+|  | XADD | ➕ | (Does not support Capped Streams) |
 |  | XAUTOCLAIM | ➖ |  |
 |  | XCLAIM | ➖ |  |
-|  | XDEL | ➖ |  |
+|  | XDEL | ➕ |  |
 |  | XGROUP CREATE | ➖ |  |
 |  | XGROUP CREATECONSUMER | ➖ |  |
 |  | XGROUP DELCONSUMER | ➖ |  |
@@ -368,14 +368,14 @@ Note that this list is subject to change as we continue to expand our API comman
 |  | XINFO GROUPS | ➖ |  |
 |  | XINFO HELP | ➖ |  |
 |  | XINFO STREAM | ➖ |  |
-|  | XLEN | ➖ |  |
+|  | XLEN | ➕ |  |
 |  | XPENDING | ➖ |  |
-|  | XRANGE | ➖ |  |
+|  | XRANGE | ➕ |  |
 |  | XREAD | ➖ |  |
 |  | XREADGROUP | ➖ |  |
-|  | XREVRANGE | ➖ |  |
+|  | XREVRANGE | + |  |
 |  | XSETID | ➖ |  |
-|  | XTRIM | ➖ |  |
+|  | XTRIM | ➕ | Does not support near-exact trimming |
 | <span id="string">**STRING**</span> | [APPEND](raw-string.md#append) | ➕ |  |
 |  | [DECR](raw-string.md#decr) | ➕ |  |
 |  | [DECRBY](raw-string.md#decrby) | ➕ |  |

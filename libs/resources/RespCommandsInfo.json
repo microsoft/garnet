@@ -5169,6 +5169,165 @@
     ]
   },
   {
+    "Command": "XADD",
+    "Name": "XADD",
+    "Arity": -5,
+    "Flags": "DenyOom, Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Stream, Write",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Notes": "UPDATE instead of INSERT because of the optional trimming feature",
+        "Flags": "RW, Update"
+      }
+    ],
+    "StoreType": "Object"
+  },
+  {
+    "Command": "XDEL",
+    "Name": "XDEL",
+    "Arity": -3,
+    "Flags": "Fast, Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Stream, Write",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Delete"
+      }
+    ]
+  },
+  {
+    "Command": "XLEN",
+    "Name": "XLEN",
+    "Arity": 2,
+    "Flags": "Fast, ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read, Stream",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO"
+      }
+    ],
+    "StoreType": "Object"
+  },
+  {
+    "Command": "XRANGE",
+    "Name": "XRANGE",
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Slow, Stream",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "XREVRANGE",
+    "Name": "XREVRANGE",
+    "Arity": -4,
+    "Flags": "ReadOnly",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Read, Slow, Stream",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ]
+  },
+  {
+    "Command": "XTRIM",
+    "Name": "XTRIM",
+    "Arity": -4,
+    "Flags": "Write",
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Slow, Stream, Write",
+    "Tips": [
+      "nondeterministic_output"
+    ],
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RW, Delete"
+      }
+    ]
+  },
+  {
     "Command": "ZADD",
     "Name": "ZADD",
     "Arity": -4,
@@ -5191,36 +5350,13 @@
         },
         "Flags": "RW, Update"
       }
-    ],
-    "StoreType": "Object"
+    ]
   },
   {
     "Command": "ZCARD",
     "Name": "ZCARD",
     "Arity": 2,
     "Flags": "Fast, ReadOnly",
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Fast, Read, SortedSet",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RO"
-      }
-    ],
-    "StoreType": "Object"
-  },
-  {
     "Command": "ZCOLLECT",
     "Name": "ZCOLLECT",
     "Arity": 2,

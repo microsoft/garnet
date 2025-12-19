@@ -194,8 +194,12 @@ namespace Tsavorite.core
             if (!SystemState.Equal(expectedState, systemState))
                 return;
 
+            // Get the next state from the state machine definition. Each state machine knows it's own transition flow. They define it and basically expose it for the driver
+            // to query and then execute the transitions by calling the 
             var nextState = stateMachine.NextState(systemState);
 
+            // The state machine internally holds an array of tasks. This will iterate over each of those tasks and call BeforeEnteringState on each of them.
+            // The tasks internally have logic that they may wish to perform before they can transition to the next state, so this is the hook for that.
             stateMachine.GlobalBeforeEnteringState(nextState, this);
 
             // Execute any additional registered callbacks
@@ -216,6 +220,10 @@ namespace Tsavorite.core
             waitForTransitionIn = new SemaphoreSlim(0);
 
             logger?.LogTrace("Moved to {0}, {1}", nextState.Phase, nextState.Version);
+
+            // Below we register the MakeTransitionWorker to be called when all threads have passed the epoch acquired at 227. That is to say they have all seen the changes till now, and this guarantees that MakeTransitionWorker is only called after
+            // everyone is seeing a view atleast fresh till this point in time.
+            // The same epoch object is shared with the TsavoriteStore internally as the one held here. So we are essentially trying to use it to lazily communicate with all threads, and synchronize when a callback can be called safely.
 
             Debug.Assert(!epoch.ThisInstanceProtected());
             try
@@ -261,6 +269,8 @@ namespace Tsavorite.core
 
         void MakeTransitionWorker(SystemState nextState)
         {
+            // notify each task within the state machine that we have entered the new state so they can call any logic they need to that they might have wanted to hook into.
+            // For example after the state machine enters In-Progress hybrid log checkpoint task
             stateMachine.GlobalAfterEnteringState(nextState, this);
             waitForTransitionIn.Release(int.MaxValue);
         }
@@ -280,9 +290,12 @@ namespace Tsavorite.core
             Exception ex = null;
             try
             {
+                // Crux of transitioning through states will run here
                 do
                 {
                     GlobalStateMachineStep(systemState);
+                    // wait for threads to say they have entered the new state, by releasing to waitForTransitionIn semaphore.
+                    // This is basically blocking till the callback MakeTransitionWorker is called by the epoch system after all threads have seen the new state.
                     await ProcessWaitingListAsync(token);
                 } while (systemState.Phase != Phase.REST);
             }

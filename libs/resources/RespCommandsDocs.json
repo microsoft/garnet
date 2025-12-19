@@ -7771,6 +7771,326 @@
     ]
   },
   {
+    "Command": "XADD",
+    "Name": "XADD",
+    "Summary": "Appends a new message to a stream. Creates the key if it doesn\u0027t exist.",
+    "Group": "Stream",
+    "Complexity": "O(1) when adding a new entry, O(N) when trimming where N being the number of entries evicted.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "NOMKSTREAM",
+        "DisplayText": "nomkstream",
+        "Type": "PureToken",
+        "Token": "NOMKSTREAM",
+        "ArgumentFlags": "Optional"
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "TRIM",
+        "Type": "Block",
+        "ArgumentFlags": "Optional",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "STRATEGY",
+            "Type": "OneOf",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "MAXLEN",
+                "DisplayText": "maxlen",
+                "Type": "PureToken",
+                "Token": "MAXLEN"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "MINID",
+                "DisplayText": "minid",
+                "Type": "PureToken",
+                "Token": "MINID"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "OPERATOR",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "EQUAL",
+                "DisplayText": "equal",
+                "Type": "PureToken",
+                "Token": "="
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "APPROXIMATELY",
+                "DisplayText": "approximately",
+                "Type": "PureToken",
+                "Token": "~"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "THRESHOLD",
+            "DisplayText": "threshold",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer",
+            "Token": "LIMIT",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "ID-SELECTOR",
+        "Type": "OneOf",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "AUTO-ID",
+            "DisplayText": "auto-id",
+            "Type": "PureToken",
+            "Token": "*"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "ID",
+            "DisplayText": "id",
+            "Type": "String"
+          }
+        ]
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "DATA",
+        "Type": "Block",
+        "ArgumentFlags": "Multiple",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "FIELD",
+            "DisplayText": "field",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "VALUE",
+            "DisplayText": "value",
+            "Type": "String"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Command": "XDEL",
+    "Name": "XDEL",
+    "Summary": "Returns the number of messages after removing them from a stream.",
+    "Group": "Stream",
+    "Complexity": "O(1) for each single item to delete in the stream, regardless of the stream size.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ID",
+        "DisplayText": "id",
+        "Type": "String",
+        "ArgumentFlags": "Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "XLEN",
+    "Name": "XLEN",
+    "Summary": "Return the number of messages in a stream.",
+    "Group": "Stream",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
+    "Command": "XRANGE",
+    "Name": "XRANGE",
+    "Summary": "Returns the messages from a stream within a range of IDs.",
+    "Group": "Stream",
+    "Complexity": "O(N) with N being the number of elements being returned. If N is constant (e.g. always asking for the first 10 elements with COUNT), you can consider it O(1).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "END",
+        "DisplayText": "end",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "XREVRANGE",
+    "Name": "XREVRANGE",
+    "Summary": "Returns the messages from a stream within a range of IDs in reverse order.",
+    "Group": "Stream",
+    "Complexity": "O(N) with N being the number of elements being returned. If N is constant (e.g. always asking for the first 10 elements with COUNT), you can consider it O(1).",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "END",
+        "DisplayText": "end",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "START",
+        "DisplayText": "start",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COUNT",
+        "DisplayText": "count",
+        "Type": "Integer",
+        "Token": "COUNT",
+        "ArgumentFlags": "Optional"
+      }
+    ]
+  },
+  {
+    "Command": "XTRIM",
+    "Name": "XTRIM",
+    "Summary": "Deletes messages from the beginning of a stream.",
+    "Group": "Stream",
+    "Complexity": "O(N), with N being the number of evicted entries. Constant times are very small however, since entries are organized in macro nodes containing multiple entries that can be released with a single deallocation.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      },
+      {
+        "TypeDiscriminator": "RespCommandContainerArgument",
+        "Name": "TRIM",
+        "Type": "Block",
+        "Arguments": [
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "STRATEGY",
+            "Type": "OneOf",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "MAXLEN",
+                "DisplayText": "maxlen",
+                "Type": "PureToken",
+                "Token": "MAXLEN"
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "MINID",
+                "DisplayText": "minid",
+                "Type": "PureToken",
+                "Token": "MINID"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandContainerArgument",
+            "Name": "OPERATOR",
+            "Type": "OneOf",
+            "ArgumentFlags": "Optional",
+            "Arguments": [
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "EQUAL",
+                "DisplayText": "equal",
+                "Type": "PureToken",
+                "Token": "="
+              },
+              {
+                "TypeDiscriminator": "RespCommandBasicArgument",
+                "Name": "APPROXIMATELY",
+                "DisplayText": "approximately",
+                "Type": "PureToken",
+                "Token": "~"
+              }
+            ]
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "THRESHOLD",
+            "DisplayText": "threshold",
+            "Type": "String"
+          },
+          {
+            "TypeDiscriminator": "RespCommandBasicArgument",
+            "Name": "COUNT",
+            "DisplayText": "count",
+            "Type": "Integer",
+            "Token": "LIMIT",
+            "ArgumentFlags": "Optional"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "Command": "ZADD",
     "Name": "ZADD",
     "Summary": "Adds one or more members to a sorted set, or updates their scores. Creates the key if it doesn\u0027t exist.",

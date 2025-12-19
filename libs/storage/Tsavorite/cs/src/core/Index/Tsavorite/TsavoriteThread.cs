@@ -40,6 +40,9 @@ namespace Tsavorite.core
                         // Session needs to wait in PREPARE_GROW phase unless it is in an active transaction.
                         // We cannot avoid spinning on hash table growth: operations (and transactions) in (v) have to drain
                         // out before we grow the hash table because the lock table is co-located with the hash table.
+                        // Essentially, we have to block all operations in (v) during growth,
+                        // but if the thread calling InternalRefresh is the active transaction in v then we need to let it proceed
+                        // so as to not block the draining of v operations.
                         if (!sessionFunctions.Ctx.isAcquiredTransactional)
                         {
                             epoch.ProtectAndDrain();
