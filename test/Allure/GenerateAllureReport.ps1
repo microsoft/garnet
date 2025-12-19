@@ -1,6 +1,6 @@
 #Requires -Version 7
 
-<#$f
+<#
 .SYNOPSIS
     This script is called after all the Allure data is merged into one location and generates the Allure report.
 
