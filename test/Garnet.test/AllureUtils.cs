@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
+using Allure.NUnit;
 using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -14,6 +14,7 @@ namespace Garnet.test
     /// <summary>
     /// Used as base class for Allure tests to label environment
     /// </summary>
+    [AllureNUnit]
     public abstract class AllureTestBase
     {
         [SetUp]
