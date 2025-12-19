@@ -73,7 +73,7 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir);
         }
 
-        internal struct GenericPushScanTestFunctions : IScanIteratorFunctions
+        internal struct ObjectPushScanTestFunctions : IScanIteratorFunctions
         {
             internal long numRecords;
 
@@ -136,7 +136,7 @@ namespace Tsavorite.test
 
             store.Log.FlushAndEvict(true);
 
-            GenericPushScanTestFunctions scanIteratorFunctions = new();
+            ObjectPushScanTestFunctions scanIteratorFunctions = new();
 
             void scanAndVerify(DiskScanBufferingMode sbm)
             {
@@ -260,7 +260,7 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         [Category("Smoke")]
 
-        public void GenericScanCursorTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        public void ObjectScanCursorTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             const int PageSizeBits = 9;
             const long PageSize = 1L << PageSizeBits;
@@ -374,7 +374,7 @@ namespace Tsavorite.test
         [Category("TsavoriteKV")]
         [Category("Smoke")]
 
-        public void GenericScanCursorFilterTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
+        public void ObjectScanCursorFilterTest([Values(HashModulo.NoMod, HashModulo.Hundred)] HashModulo hashMod)
         {
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"));
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.obj.log"));

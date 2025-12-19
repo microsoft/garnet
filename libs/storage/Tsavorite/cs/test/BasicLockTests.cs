@@ -82,7 +82,7 @@ namespace Tsavorite.test.LockTests
         public void Setup()
         {
             DeleteDirectory(MethodTestDir, wait: true);
-            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "GenericStringTests.log"), deleteOnClose: true);
+            log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "ObjectStringTests.log"), deleteOnClose: true);
             store = new(new()
             {
                 IndexSize = 1L << 26,
