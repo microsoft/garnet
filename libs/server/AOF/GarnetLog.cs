@@ -29,9 +29,14 @@ namespace Garnet.server
 
         public int ReplayTaskCount => replayTaskCount;
 
+        /// <summary>
+        /// Hash function used for sharded-log
+        /// </summary>
+        /// <param name="key"></param>
+        /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long HASH(ReadOnlySpan<byte> key)
-            => Utility.HashBytes(key) & long.MaxValue;
+            => (long)HashUtils.MurmurHash2x64A(key) & long.MaxValue;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public (int, int) HashKey(ReadOnlySpan<byte> key)
@@ -184,17 +189,26 @@ namespace Garnet.server
             }
         }
 
-        public unsafe int UnsafeGetLength(int sublogIdx, byte* headerPtr)
-            => GetSubLog(sublogIdx).UnsafeGetLength(headerPtr);
-
+        /// <summary>
+        /// Get log page size bits
+        /// TODO: Is this initialized only once? Is it same across sublogs?
+        /// </summary>
+        /// <returns></returns>
         public int UnsafeGetLogPageSizeBits()
             => GetSubLog(0).UnsafeGetLogPageSizeBits();
 
-        // FIXME: Is this safe given that ReadOnlyAddressLagOffset takes a lock
-        // but also in the old code it was only initialized onece
+        /// <summary>
+        /// Get read only address lag offset
+        /// TODO: Is this initialized only once? Is it same across sublogs?
+        /// </summary>
+        /// <returns></returns>
         public long UnsafeGetReadOnlyAddressLagOffset()
             => GetSubLog(0).UnsafeGetReadOnlyAddressLagOffset();
 
+        /// <summary>
+        /// Conditional initialize
+        /// </summary>
+        /// <param name="recoveredSafeAofAddress"></param>
         public void InitializeIf(ref AofAddress recoveredSafeAofAddress)
         {
             if (singleLog != null)
@@ -210,6 +224,12 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Initialize
+        /// </summary>
+        /// <param name="beginAddress"></param>
+        /// <param name="committedUntilAddress"></param>
+        /// <param name="lastCommitNum"></param>
         public void Initialize(in AofAddress beginAddress, in AofAddress committedUntilAddress, long lastCommitNum = 0)
         {
             if (singleLog != null)
@@ -225,7 +245,11 @@ namespace Garnet.server
             }
         }
 
-        // FIXME: should we pass AofAddress here?
+        /// <summary>
+        /// TODO: should we pass an AofAddress vector?
+        /// </summary>
+        /// <param name="untilAddress"></param>
+        /// <param name="commitNum"></param>
         public void WaitForCommit(long untilAddress = 0, long commitNum = -1)
         {
             if (singleLog != null)
@@ -239,6 +263,11 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Commit all physical sublogs
+        /// </summary>
+        /// <param name="spinWait"></param>
+        /// <param name="cookie"></param>
         public void Commit(bool spinWait = false, byte[] cookie = null)
         {
             if (singleLog != null)
@@ -252,44 +281,61 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Commit async all physical sublogs
+        /// </summary>
+        /// <param name="cookie"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async ValueTask CommitAsync(byte[] cookie = null, CancellationToken token = default)
         {
             if (singleLog != null)
             {
                 // Optimization for single log case
                 await singleLog.log.CommitAsync(cookie, token);
-                return;
             }
+            else
+            {
+                // Create tasks for all sublogs
+                var tasks = new Task[shardedLog.Length];
+                for (var i = 0; i < shardedLog.Length; i++)
+                    tasks[i] = shardedLog.sublog[i].CommitAsync(cookie, token).AsTask();
 
-            // Create tasks for all sublogs
-            var tasks = new ValueTask[shardedLog.Length];
-            for (var i = 0; i < shardedLog.Length; i++)
-                tasks[i] = shardedLog.sublog[i].CommitAsync(cookie, token);
-
-            // Wait for all commits to complete
-            for (var i = 0; i < tasks.Length; i++)
-                await tasks[i];
+                await Task.WhenAll(tasks);
+            }
         }
 
+        /// <summary>
+        /// Wait for commit asycn of all sublogs
+        /// </summary>
+        /// <param name="untilAddress"></param>
+        /// <param name="commitNum"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
         public async ValueTask WaitForCommitAsync(long untilAddress = 0, long commitNum = -1, CancellationToken token = default)
         {
             if (singleLog != null)
             {
                 // Optimization for single log case
                 await singleLog.log.WaitForCommitAsync(untilAddress, commitNum, token);
-                return;
             }
+            else
+            {
+                // Create tasks for all sublogs
+                var tasks = new Task[shardedLog.Length];
+                for (var i = 0; i < shardedLog.Length; i++)
+                    tasks[i] = shardedLog.sublog[i].WaitForCommitAsync(untilAddress, commitNum, token).AsTask();
 
-            // Create tasks for all sublogs
-            var tasks = new ValueTask[shardedLog.Length];
-            for (var i = 0; i < shardedLog.Length; i++)
-                tasks[i] = shardedLog.sublog[i].WaitForCommitAsync(untilAddress, commitNum, token);
-
-            // Wait for all commits to complete
-            for (var i = 0; i < tasks.Length; i++)
-                await tasks[i];
+                await Task.WhenAll(tasks);
+            }
         }
 
+        /// <summary>
+        /// Shift begin address of all physical sublogs
+        /// </summary>
+        /// <param name="untilAddress"></param>
+        /// <param name="snapToPageStart"></param>
+        /// <param name="truncateLog"></param>
         public void UnsafeShiftBeginAddress(AofAddress untilAddress, bool snapToPageStart = false, bool truncateLog = false)
         {
             if (singleLog != null)
@@ -303,6 +349,10 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Truncate until address for all physical sublogs
+        /// </summary>
+        /// <param name="untilAddress"></param>
         public void TruncateUntil(AofAddress untilAddress)
         {
             if (singleLog != null)
@@ -319,8 +369,8 @@ namespace Garnet.server
         internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
-            var (sublogIdx, keyDigest) = HashKey(key);
-            shardedHeader.keyDigest = (byte)keyDigest;
+            var hash = HASH(key);
+            var sublogIdx = hash % serverOptions.AofPhysicalSublogCount;
             shardedLog.sublog[sublogIdx].Enqueue(
                 shardedHeader,
                 key,
@@ -332,8 +382,8 @@ namespace Garnet.server
         internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
-            var (sublogIdx, keyDigest) = HashKey(key);
-            shardedHeader.keyDigest = (byte)keyDigest;
+            var hash = HASH(key);
+            var sublogIdx = hash % serverOptions.AofPhysicalSublogCount;
             shardedLog.sublog[sublogIdx].Enqueue(
                 shardedHeader,
                 key,
@@ -343,8 +393,8 @@ namespace Garnet.server
 
         internal void Enqueue(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out long logicalAddress)
         {
-            var (sublogIdx, keyDigest) = HashKey(key);
-            shardedHeader.keyDigest = (byte)keyDigest;
+            var hash = HASH(key);
+            var sublogIdx = hash % serverOptions.AofPhysicalSublogCount;
             shardedLog.sublog[sublogIdx].Enqueue(
                 shardedHeader,
                 key,

@@ -2054,7 +2054,9 @@ namespace Garnet.test.cluster
             }
 
             // Setup cluster
-            context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            var resp = context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
             context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, primaryNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.SetConfigEpoch(replicaNodeIndex, replicaNodeIndex + 1, logger: context.logger);
             context.clusterTestUtils.Meet(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
@@ -2062,7 +2064,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
 
             // Attach replica
-            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+            resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
             ClassicAssert.AreEqual("OK", resp);
 
             string[] keys = ["{_}a", "{_}b", "{_}c"];

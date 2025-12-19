@@ -11,6 +11,12 @@ namespace Garnet.common
     {
         readonly byte[] vector = new byte[((bitCount - 1) / 8) + 1];
 
+        void GetOffsets(int index, out int byteIndex, out int bitIndex)
+        {
+            byteIndex = index >> 3;
+            bitIndex = index & 7;
+        }
+
         /// <summary>
         /// Check if bit at index in the bit vector is set
         /// </summary>
@@ -18,8 +24,7 @@ namespace Garnet.common
         /// <returns></returns>
         public bool IsSet(int index)
         {
-            var byteIndex = index >> 3;
-            var bitIndex = index & 7;
+            GetOffsets(index, out var byteIndex, out var bitIndex);
             return (vector[byteIndex] & (byte)(1 << bitIndex)) > 0;
         }
 
@@ -27,12 +32,20 @@ namespace Garnet.common
         /// Set bit at index
         /// </summary>
         /// <param name="index"></param>
-        public void SetBit(int index)
+        /// <returns>True if bit was previously not set, false otherwise</returns>
+        public bool SetBit(int index)
         {
-            var byteIndex = index >> 3;
-            var bitIndex = index & 7;
+            GetOffsets(index, out var byteIndex, out var bitIndex);
+            var wasClear = (vector[byteIndex] & (byte)(1 << bitIndex)) == 0;
             vector[byteIndex] |= (byte)(1 << bitIndex);
+            return wasClear;
         }
+
+        /// <summary>
+        /// Clear all bits set in this bit vector
+        /// </summary>
+        public void Clear()
+            => Array.Clear(vector);
 
         /// <summary>
         /// Copy span to this BitVector

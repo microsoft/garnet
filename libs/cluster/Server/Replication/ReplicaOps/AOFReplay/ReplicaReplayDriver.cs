@@ -30,6 +30,7 @@ namespace Garnet.cluster
         SingleWriterMultiReaderLock activeReplay;
         internal readonly ReplayWorkItem replayWorkItem;
         readonly ReplicaReplayTask[] replayTasks;
+        readonly TsavoriteLog sublog;
 
         public ReplicaReplayDriver(int sublogIdx, ClusterProvider clusterProvider, INetworkSender respSessionNetworkSender, CancellationTokenSource cts, ILogger logger = null)
         {
@@ -39,6 +40,7 @@ namespace Garnet.cluster
             appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
             replicationManager = clusterProvider.replicationManager;
             replayIterator = null;
+            sublog = appendOnlyFile.Log.GetSubLog(sublogIdx);
             activeReplay = new SingleWriterMultiReaderLock();
             this.cts = cts;
             this.logger = logger;
@@ -107,7 +109,7 @@ namespace Garnet.cluster
             {
                 cts.Token.ThrowIfCancellationRequested();
                 var entryLength = appendOnlyFile.HeaderSize;
-                var payloadLength = appendOnlyFile.Log.GetSubLog(sublogIdx).UnsafeGetLength(ptr);
+                var payloadLength = sublog.UnsafeGetLength(ptr);
                 if (payloadLength > 0)
                 {
                     replicationManager.AofProcessor.ProcessAofRecordInternal(sublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
@@ -129,7 +131,7 @@ namespace Garnet.cluster
                     }
                     TsavoriteLogRecoveryInfo info = new();
                     info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                    appendOnlyFile.Log.GetSubLog(sublogIdx).UnsafeCommitMetadataOnly(info, isProtected);
+                    sublog.UnsafeCommitMetadataOnly(info, isProtected);
                     entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                 }
                 ptr += entryLength;

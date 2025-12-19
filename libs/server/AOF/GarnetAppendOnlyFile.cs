@@ -111,18 +111,58 @@ namespace Garnet.server
         public void SetLogShiftTailCallback(int sublogIdx, Action<long, long> SafeTailShiftCallback)
             => Log.GetSubLog(sublogIdx).SafeTailShiftCallback = SafeTailShiftCallback;
 
+        /// <summary>
+        /// TODO: Is this necessary for recover? Can we use ScanSingle?
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="beginAddress"></param>
+        /// <param name="endAddress"></param>
+        /// <param name="recover"></param>
+        /// <param name="scanBufferingMode"></param>
+        /// <param name="scanUncommitted"></param>
+        /// <param name="logger"></param>
+        /// <returns></returns>
         public TsavoriteLogIterator Scan(int sublogIdx, long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
             => Log.GetSubLog(sublogIdx).Scan(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
 
+        /// <summary>
+        /// TODO: same question as above but for replay? Why do we have 2 different methods?
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="beginAddress"></param>
+        /// <param name="endAddress"></param>
+        /// <param name="recover"></param>
+        /// <param name="scanBufferingMode"></param>
+        /// <param name="scanUncommitted"></param>
+        /// <param name="logger"></param>
+        /// <returns></returns>
         public TsavoriteLogScanSingleIterator ScanSingle(int sublogIdx, long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
             => Log.GetSubLog(sublogIdx).ScanSingle(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
 
+        /// <summary>
+        /// Safe initialize when FastAofTruncate is enabled
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="beginAddress"></param>
+        /// <param name="committedUntilAddress"></param>
+        /// <param name="lastCommitNum"></param>
         public void SafeInitialize(int sublogIdx, long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
             => Log.GetSubLog(sublogIdx).SafeInitialize(beginAddress, committedUntilAddress, lastCommitNum);
 
+        /// <summary>
+        /// Initialize sublog before attach
+        /// </summary>
+        /// <param name="beginAddress"></param>
+        /// <param name="committedUntilAddress"></param>
+        /// <param name="lastCommitNum"></param>
         public void Initialize(in AofAddress beginAddress, in AofAddress committedUntilAddress, long lastCommitNum = 0)
             => Log.Initialize(beginAddress, committedUntilAddress, lastCommitNum);
 
+        /// <summary>
+        /// Enqueue a signal to refresh sublog tail
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="sequenceNumber"></param>
         public void EnqueueRefreshSublogTail(int sublogIdx, long sequenceNumber)
         {
             var refreshSublogTailHeader = new AofShardedHeader
@@ -133,6 +173,19 @@ namespace Garnet.server
             Log.GetSubLog(sublogIdx).Enqueue(refreshSublogTailHeader, out _);
         }
 
+        /// <summary>
+        /// Compute AOF sync replay address at recovery
+        /// </summary>
+        /// <param name="recoverFromRemote"></param>
+        /// <param name="sameMainStoreCheckpointHistory"></param>
+        /// <param name="sameHistory2"></param>
+        /// <param name="replicationOffset2"></param>
+        /// <param name="replicaAofBeginAddress"></param>
+        /// <param name="replicaAofTailAddress"></param>
+        /// <param name="beginAddress"></param>
+        /// <param name="checkpointAofBeginAddress"></param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
         public ulong ComputeAofSyncReplayAddress(
             bool recoverFromRemote,
             bool sameMainStoreCheckpointHistory,
@@ -209,6 +262,13 @@ namespace Garnet.server
             }
         }
 
+        /// <summary>
+        /// Perform a data loss check at recovery
+        /// </summary>
+        /// <param name="possibleAofDataLoss"></param>
+        /// <param name="syncFromAofAddress"></param>
+        /// <param name="logger"></param>
+        /// <exception cref="Exception"></exception>
         public void DataLossCheck(bool possibleAofDataLoss, AofAddress syncFromAofAddress, ILogger logger = null)
         {
             var beginAddress = Log.BeginAddress;

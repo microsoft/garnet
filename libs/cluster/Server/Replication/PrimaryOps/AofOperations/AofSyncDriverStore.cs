@@ -62,7 +62,7 @@ namespace Garnet.cluster
                 logPageSizeBits = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetLogPageSizeBits();
                 var logPageSize = 1 << logPageSizeBits;
                 logPageSizeMask = logPageSize - 1;
-                TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetReadOnlyAddressLagOffset() - 2 * logPageSize;
+                TruncateLagAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.UnsafeGetReadOnlyAddressLagOffset() - (2 * logPageSize);
                 if (clusterProvider.serverOptions.FastAofTruncate)
                 {
                     for (var i = 0; i < clusterProvider.serverOptions.AofPhysicalSublogCount; i++)

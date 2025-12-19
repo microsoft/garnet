@@ -81,6 +81,7 @@ namespace Garnet.server
         private readonly GarnetAppendOnlyFile appendOnlyFile;
         internal readonly WatchedKeysContainer watchContainer;
         private readonly StateMachineDriver stateMachineDriver;
+        readonly GarnetServerOptions serverOptions;
         internal int txnStartHead;
         internal int operationCntTxn;
 
@@ -124,6 +125,7 @@ namespace Garnet.server
             ILogger logger = null,
             int dbId = 0)
         {
+            serverOptions = storeWrapper.serverOptions;
             var session = storageSession.basicContext.Session;
             basicContext = session.BasicContext;
             transactionalContext = session.TransactionalContext;
@@ -254,8 +256,16 @@ namespace Garnet.server
                 ResetCacheSlotVerificationResult();
 
                 // Reset logAccess for sharded log
-                proc.sublogAccessVector = 0UL;
-                proc.replayTaskAccessVector = null;
+                if (serverOptions.MultiLogEnabled)
+                {
+                    proc.physicalSublogAccessVector = 0UL;
+                    proc.virtualSublogParticipantCount = 0;
+                    if (proc.virtualSublogAccessVector != null)
+                    {
+                        foreach (var vector in proc.virtualSublogAccessVector)
+                            vector.Clear();
+                    }
+                }
 
                 functionsState.StoredProcMode = true;
 
@@ -286,7 +296,7 @@ namespace Garnet.server
                 proc.Main(garnetTxRunApi, ref procInput, ref output);
 
                 // Log the transaction to AOF
-                Log(id, ref procInput, proc.sublogAccessVector, proc.replayTaskAccessVector);
+                Log(id, ref procInput, proc);
 
                 // Transaction Commit
                 Commit();
@@ -319,7 +329,7 @@ namespace Garnet.server
             return true;
         }
 
-        void Log(byte id, ref CustomProcedureInput procInput, ulong sublogAccessVector, BitVector[] replayTaskAccessVector)
+        void Log(byte id, ref CustomProcedureInput procInput, CustomTransactionProcedure proc)
         {
             Debug.Assert(functionsState.StoredProcMode);
 
@@ -340,8 +350,8 @@ namespace Garnet.server
                 {
                     try
                     {
-                        appendOnlyFile.Log.LockSublogs(sublogAccessVector);
-                        var _sublogAccessVector = sublogAccessVector;
+                        appendOnlyFile.Log.LockSublogs(proc.physicalSublogAccessVector);
+                        var _physicalSublogAccessVector = proc.physicalSublogAccessVector;
                         var header = new AofTransactionHeader
                         {
                             shardedHeader = new AofShardedHeader
@@ -356,20 +366,20 @@ namespace Garnet.server
                                 },
                                 sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                             },
-                            participantCount = (short)replayTaskAccessVector.Select(bitVector => bitVector.PopCount()).Sum()
+                            participantCount = (short)proc.virtualSublogParticipantCount
                         };
 
-                        while (_sublogAccessVector > 0)
+                        while (_physicalSublogAccessVector > 0)
                         {
-                            var sublogIdx = _sublogAccessVector.GetNextOffset();
+                            var sublogIdx = _physicalSublogAccessVector.GetNextOffset();
                             // Update corresponding sublog participating vector before enqueue to related physical sublog
-                            replayTaskAccessVector[sublogIdx].CopyTo(new Span<byte>(header.virtualSublogAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize));
+                            proc.virtualSublogAccessVector[sublogIdx].CopyTo(new Span<byte>(header.virtualSublogAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize));
                             appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, ref procInput, out _);
                         }
                     }
                     finally
                     {
-                        appendOnlyFile.Log.UnlockSublogs(sublogAccessVector);
+                        appendOnlyFile.Log.UnlockSublogs(proc.physicalSublogAccessVector);
                     }
                 }
             }
@@ -402,7 +412,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector);
+                    ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
 
                     try
                     {
@@ -421,7 +431,7 @@ namespace Garnet.server
                                 },
                                 sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
                             },
-                            participantCount = (short)virtualSublogAccessVector.Select(bitVector => bitVector.PopCount()).Sum()
+                            participantCount = (short)virtualSublogParticipantCount
                         };
 
                         while (_physicalSublogAccessVector > 0)
@@ -559,7 +569,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector);
+                    ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
 
                     try
                     {
@@ -578,7 +588,7 @@ namespace Garnet.server
                                 },
                                 sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
                             },
-                            participantCount = (short)virtualSublogAccessVector.Select(bitVector => bitVector.PopCount()).Sum()
+                            participantCount = (short)virtualSublogParticipantCount
                         };
 
                         while (_physicalSublogAccessVector > 0)
@@ -604,8 +614,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="proc"></param>
-        /// <param name="physicalSublogAccessVector"></param>
-        public void IterativeShardedLogAccess(PinnedSpanByte key, CustomTransactionProcedure proc, ref ulong physicalSublogAccessVector)
+        public void IterativeShardedLogAccess(PinnedSpanByte key, CustomTransactionProcedure proc)
         {
             // Skip if AOF is disabled
             if (appendOnlyFile == null)
@@ -618,22 +627,23 @@ namespace Garnet.server
             var hash = GarnetLog.HASH(key);
             if (proc.customProcKeyHashCollection == null)
             {
-                proc.replayTaskAccessVector ??= [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorSize))];
-                var virtualSublogIdx = (int)(hash % appendOnlyFile.Log.Size);
+                proc.virtualSublogAccessVector ??= [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorSize))];
+                var physicalSublogIdx = (int)(hash % appendOnlyFile.Log.Size);
                 var replayIdx = (int)(hash % appendOnlyFile.Log.ReplayTaskCount);
                 // Mark sublog participating in custom txn proc to help with replay coordination
-                physicalSublogAccessVector |= 1UL << virtualSublogIdx;
-                proc.replayTaskAccessVector[virtualSublogIdx].SetBit(replayIdx);
+                proc.physicalSublogAccessVector |= 1UL << physicalSublogIdx;
+                proc.virtualSublogParticipantCount += proc.virtualSublogAccessVector[physicalSublogIdx].SetBit(replayIdx) ? 1 : 0;
             }
             else
                 // Keep track of key hashes to update sequence numbers of keys at end of replay
                 proc.customProcKeyHashCollection.AddHash(hash);
         }
 
-        void ComputeSublogAccessVector(out ulong physicalSublogAccessVector, out BitVector[] virtualSublogAccessVector)
+        void ComputeSublogAccessVector(out ulong physicalSublogAccessVector, out BitVector[] virtualSublogAccessVector, out int participantCount)
         {
             physicalSublogAccessVector = 0UL;
             virtualSublogAccessVector = [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorSize))];
+            participantCount = 0;
             // Skip if AOF is disabled
             if (appendOnlyFile == null)
                 return;
@@ -646,11 +656,11 @@ namespace Garnet.server
             for (var i = 0; i < keyCount; i++)
             {
                 var hash = GarnetLog.HASH(keys[i]);
-                var virtualSublogIdx = (int)(hash % appendOnlyFile.Log.Size);
+                var physicalSublogIdx = (int)(hash % appendOnlyFile.Log.Size);
                 var replayIdx = (int)(hash % appendOnlyFile.Log.ReplayTaskCount);
-                physicalSublogAccessVector |= 1UL << virtualSublogIdx;
+                physicalSublogAccessVector |= 1UL << physicalSublogIdx;
                 // Calculate sublog access vector for participating replay tasks
-                virtualSublogAccessVector[virtualSublogIdx].SetBit(replayIdx);
+                participantCount += virtualSublogAccessVector[physicalSublogIdx].SetBit(replayIdx) ? 1 : 0;
             }
         }
     }

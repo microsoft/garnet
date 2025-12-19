@@ -38,6 +38,7 @@ namespace Garnet.cluster
         readonly GarnetAppendOnlyFile appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
         readonly Channel<ReplayWorkItem> channel = Channel.CreateUnbounded<ReplayWorkItem>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
         readonly CancellationTokenSource cts = cts;
+        readonly TsavoriteLog replaySublog = clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(replayDriver.sublogIdx);
         readonly ILogger logger = logger;
 
         internal void Append(ReplayWorkItem item)
@@ -72,7 +73,7 @@ namespace Garnet.cluster
                         {
                             cts.Token.ThrowIfCancellationRequested();
                             var entryLength = appendOnlyFile.HeaderSize;
-                            var payloadLength = appendOnlyFile.Log.GetSubLog(physicalSublogIdx).UnsafeGetLength(ptr);
+                            var payloadLength = replaySublog.UnsafeGetLength(ptr);
                             if (payloadLength > 0)
                             {
                                 var entryPtr = ptr + entryLength;
@@ -97,7 +98,7 @@ namespace Garnet.cluster
                                 {
                                     TsavoriteLogRecoveryInfo info = new();
                                     info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                                    appendOnlyFile.Log.GetSubLog(physicalSublogIdx).UnsafeCommitMetadataOnly(info, isProtected);
+                                    replaySublog.UnsafeCommitMetadataOnly(info, isProtected);
                                 }
                                 entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                             }

@@ -37,6 +37,9 @@ namespace Garnet.server
         /// </summary>
         public bool inFuzzyRegion = false;
 
+        /// <summary>
+        /// AOF replay context constructor
+        /// </summary>
         public AofReplayContext()
         {
             parseState.Initialize();

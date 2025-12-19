@@ -307,7 +307,7 @@ namespace Garnet.server
                     storeVersion = version,
                     sessionID = -1
                 };
-                db.AppendOnlyFile.Log.GetSubLog(0).Enqueue(header, out _);
+                db.AppendOnlyFile.Log.SigleLog.Enqueue(header, out _);
             }
             else
             {

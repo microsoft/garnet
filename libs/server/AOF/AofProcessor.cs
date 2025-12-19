@@ -673,28 +673,27 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Get subtask idx from header key digest
+        /// Check if the calling parallel replay task should replay this entry
         /// </summary>
         /// <param name="ptr"></param>
+        /// <param name="replayTaskIdx"></param>
         /// <returns></returns>
-        public int GetReplayTask(byte* ptr)
-        {
-            var shardedHeader = *(AofShardedHeader*)ptr;
-            return shardedHeader.keyDigest % storeWrapper.serverOptions.AofReplayTaskCount;
-        }
-
+        /// <exception cref="GarnetException"></exception>
         public bool ShouldReplay(byte* ptr, int replayTaskIdx)
         {
             var header = *(AofHeader*)ptr;
             var replayHeaderType = (AofHeaderType)header.padding;
             switch (replayHeaderType)
             {
+                // Check if should replay entry by inspecting key
                 case AofHeaderType.ShardedHeader:
                     var curr = AofHeader.SkipHeader(ptr);
                     var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
                     var hash = GarnetLog.HASH(key);
                     var _replayTaskIdx = hash % storeWrapper.serverOptions.AofReplayTaskCount;
                     return replayTaskIdx == _replayTaskIdx;
+                // If no key to inspect, check bit vector for participating replay tasks in the transaction
+                // NOTE: HeaderType transactions include MULTI-EXEC transactions, custom txn procedures, and any operation that executes across physical and virtual sublogs (e.g. checkpoint, flushdb)
                 case AofHeaderType.TransactionHeader:
                     var txnHeader = *(AofTransactionHeader*)ptr;
                     var bitVector = BitVector.CopyFrom(new Span<byte>(ptr, AofTransactionHeader.ReplayTaskAccessVectorSize));

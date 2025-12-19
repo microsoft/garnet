@@ -47,7 +47,7 @@ namespace Garnet.server
     [StructLayout(LayoutKind.Explicit, Size = TotalSize)]
     struct AofShardedHeader
     {
-        public const int TotalSize = AofHeader.TotalSize + 8 + 1;
+        public const int TotalSize = AofHeader.TotalSize + 8;
 
         /// <summary>
         /// AofHeader used with singleLog
@@ -60,12 +60,6 @@ namespace Garnet.server
         /// </summary>
         [FieldOffset(AofHeader.TotalSize)]
         public long sequenceNumber;
-
-        /// <summary>
-        /// Used for marking an entry for replay to a specific subtask
-        /// </summary>
-        [FieldOffset(AofHeader.TotalSize + 8)]
-        public byte keyDigest;
     };
 
     /// <summary>
