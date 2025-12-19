@@ -113,6 +113,9 @@ namespace Garnet.server
                     ndigits = NumUtils.CountCharsInDouble(incrByFloat, out var _, out var _, out var _);
 
                     return sizeof(int) + ndigits;
+                case RespCommand.VADD:
+                    return sizeof(int) + VectorManager.IndexSizeBytes;
+
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -235,6 +238,9 @@ namespace Garnet.server
                     case RespCommand.DELIFGREATER:
                         // Min allocation (only metadata) needed since this is going to be used for tombstoning anyway.
                         return sizeof(int);
+
+                    case RespCommand.VADD:
+                        return t.Length;
 
                     default:
                         if (cmd > RespCommandExtensions.LastValidCommand)

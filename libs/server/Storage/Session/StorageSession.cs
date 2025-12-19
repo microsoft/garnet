@@ -42,6 +42,12 @@ namespace Garnet.server
         public BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
         public LockableContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreLockableContext;
 
+        /// <summary>
+        /// Session Contexts for vector ops against the main store
+        /// </summary>
+        public BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator> vectorContext;
+        public LockableContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator> vectorLockableContext;
+
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
 
@@ -55,11 +61,14 @@ namespace Garnet.server
 
         public readonly int ObjectScanCountLimit;
 
+        public readonly VectorManager vectorManager;
+
         public StorageSession(StoreWrapper storeWrapper,
             ScratchBufferBuilder scratchBufferBuilder,
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             int dbId,
+            VectorManager vectorManager,
             ILogger logger = null,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
@@ -68,6 +77,7 @@ namespace Garnet.server
             this.scratchBufferBuilder = scratchBufferBuilder;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
+            this.vectorManager = vectorManager;
             parseState.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
@@ -83,6 +93,9 @@ namespace Garnet.server
             var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
             var objectStoreSession = db.ObjectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions);
 
+            var vectorFunctions = new VectorSessionFunctions(functionsState);
+            var vectorSession = db.MainStore.NewSession<VectorInput, SpanByte, long, VectorSessionFunctions>(vectorFunctions);
+
             basicContext = session.BasicContext;
             lockableContext = session.LockableContext;
             if (objectStoreSession != null)
@@ -90,6 +103,8 @@ namespace Garnet.server
                 objectStoreBasicContext = objectStoreSession.BasicContext;
                 objectStoreLockableContext = objectStoreSession.LockableContext;
             }
+            vectorContext = vectorSession.BasicContext;
+            vectorLockableContext = vectorSession.LockableContext;
 
             HeadAddress = db.MainStore.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;
