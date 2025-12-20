@@ -116,8 +116,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ETag", "samples\ETag\ETag.c
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Garnet.fuzz", "test\Garnet.fuzz\Garnet.fuzz.csproj", "{7A42F7AA-EE93-49B1-8711-A1D6D948F5FC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AofExplorer", "playground\AofExplorer\AofExplorer.csproj", "{9C1DB013-EC92-4372-BFA8-995D331851EF}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -464,18 +462,6 @@ Global
 		{7A42F7AA-EE93-49B1-8711-A1D6D948F5FC}.Release|x64.Build.0 = Release|Any CPU
 		{7A42F7AA-EE93-49B1-8711-A1D6D948F5FC}.Release|x86.ActiveCfg = Release|Any CPU
 		{7A42F7AA-EE93-49B1-8711-A1D6D948F5FC}.Release|x86.Build.0 = Release|Any CPU
-		{9C1DB013-EC92-4372-BFA8-995D331851EF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9C1DB013-EC92-4372-BFA8-995D331851EF}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9C1DB013-EC92-4372-BFA8-995D331851EF}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{9C1DB013-EC92-4372-BFA8-995D331851EF}.Debug|x64.Build.0 = Debug|Any CPU
-		{9C1DB013-EC92-4372-BFA8-995D331851EF}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{9C1DB013-EC92-4372-BFA8-995D331851EF}.Debug|x86.Build.0 = Debug|Any CPU
-		{9C1DB013-EC92-4372-BFA8-995D331851EF}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9C1DB013-EC92-4372-BFA8-995D331851EF}.Release|Any CPU.Build.0 = Release|Any CPU
-		{9C1DB013-EC92-4372-BFA8-995D331851EF}.Release|x64.ActiveCfg = Release|Any CPU
-		{9C1DB013-EC92-4372-BFA8-995D331851EF}.Release|x64.Build.0 = Release|Any CPU
-		{9C1DB013-EC92-4372-BFA8-995D331851EF}.Release|x86.ActiveCfg = Release|Any CPU
-		{9C1DB013-EC92-4372-BFA8-995D331851EF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
