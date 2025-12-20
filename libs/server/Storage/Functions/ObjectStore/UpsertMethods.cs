@@ -16,7 +16,6 @@ namespace Garnet.server
         {
             if (!dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
-            // TODO ETag
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
             sizeInfo.AssertOptionals(dstLogRecord.Info);
@@ -28,7 +27,6 @@ namespace Garnet.server
         {
             if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo))
                 return false;
-            // TODO ETag
             if (input.arg1 != 0 && !dstLogRecord.TrySetExpiration(input.arg1))
                 return false;
             sizeInfo.AssertOptionals(dstLogRecord.Info);
@@ -98,6 +96,11 @@ namespace Garnet.server
             _ = logRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
+
+            if ((input.header.IsWithEtag() || logRecord.Info.HasETag) &&
+                !logRecord.TrySetETag(functionsState.etagState.ETag + 1))
+                return false;
+
             sizeInfo.AssertOptionals(logRecord.Info);
 
             if (!logRecord.Info.Modified)
@@ -123,6 +126,11 @@ namespace Garnet.server
             _ = logRecord.TrySetValueObjectAndPrepareOptionals(srcValue, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
+
+            if ((input.header.IsWithEtag() || logRecord.Info.HasETag) &&
+                !logRecord.TrySetETag(functionsState.etagState.ETag + 1))
+                return false;
+
             sizeInfo.AssertOptionals(logRecord.Info);
 
             if (!logRecord.Info.Modified)
@@ -145,6 +153,11 @@ namespace Garnet.server
             _ = logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
+
+            if ((input.header.IsWithEtag() || logRecord.Info.HasETag) &&
+                !logRecord.TrySetETag(functionsState.etagState.ETag + 1))
+                return false;
+
             sizeInfo.AssertOptionals(logRecord.Info);
 
             if (!logRecord.Info.Modified)

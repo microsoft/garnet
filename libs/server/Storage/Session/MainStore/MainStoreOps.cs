@@ -246,38 +246,6 @@ namespace Garnet.server
             }
         }
 
-
-        public unsafe GarnetStatus DEL_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            Debug.Assert(input.header.cmd is RespCommand.DELIFGREATER);
-
-            Span<byte> outputSpan = stackalloc byte[8];
-            var output = SpanByteAndMemory.FromPinnedSpan(outputSpan);
-            var status = context.RMW(key, ref input, ref output);
-
-            if (status.IsPending)
-            {
-                StartPendingMetrics();
-                CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
-            }
-
-            // Deletions in RMW are done by expiring the record, hence we use expiration as the indicator of success.
-            if (status.IsExpired)
-            {
-                incr_session_found();
-                return GarnetStatus.OK;
-            }
-            else
-            {
-                if (status.NotFound)
-                    incr_session_notfound();
-
-                return GarnetStatus.NOTFOUND;
-            }
-        }
-
         public unsafe GarnetStatus SET_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
@@ -378,7 +346,7 @@ namespace Garnet.server
         public GarnetStatus SETEX<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var input = new StringInput(RespCommand.SETEX, ref parseState, arg1: DateTimeOffset.UtcNow.Ticks + expiry.Ticks);
+            var input = new StringInput(RespCommand.SETEX, RespMetaCommand.None, ref parseState, arg1: DateTimeOffset.UtcNow.Ticks + expiry.Ticks);
             return SET(key, ref input, value, ref context);
         }
 
@@ -397,7 +365,7 @@ namespace Garnet.server
             var _output = new SpanByteAndMemory(output);
 
             parseState.InitializeWithArgument(value);
-            var input = new StringInput(RespCommand.APPEND, ref parseState);
+            var input = new StringInput(RespCommand.APPEND, RespMetaCommand.None, ref parseState);
 
             return APPEND(key, ref input, ref _output, ref context);
         }
@@ -489,7 +457,7 @@ namespace Garnet.server
                 increment = -increment;
             }
 
-            var input = new StringInput(cmd, 0, increment);
+            var input = new StringInput(cmd, arg1: increment);
 
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
             var outputBuffer = stackalloc byte[outputBufferLength];

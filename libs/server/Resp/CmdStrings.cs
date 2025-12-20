@@ -116,7 +116,6 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> NX => "NX"u8;
         public static ReadOnlySpan<byte> XX => "XX"u8;
         public static ReadOnlySpan<byte> CH => "CH"u8;
-        public static ReadOnlySpan<byte> WITHETAG => "WITHETAG"u8;
         public static ReadOnlySpan<byte> UNSAFETRUNCATELOG => "UNSAFETRUNCATELOG"u8;
         public static ReadOnlySpan<byte> SAMPLES => "SAMPLES"u8;
         public static ReadOnlySpan<byte> RANK => "RANK"u8;
@@ -153,18 +152,13 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> IDX => "IDX"u8;
         public static ReadOnlySpan<byte> MINMATCHLEN => "MINMATCHLEN"u8;
         public static ReadOnlySpan<byte> WITHMATCHLEN => "WITHMATCHLEN"u8;
-        public static ReadOnlySpan<byte> GETWITHETAG => "GETWITHETAG"u8;
-        public static ReadOnlySpan<byte> GETIFNOTMATCH => "GETIFNOTMATCH"u8;
-        public static ReadOnlySpan<byte> SETIFMATCH => "SETIFMATCH"u8;
-        public static ReadOnlySpan<byte> SETIFGREATER => "SETIFGREATER"u8;
-        public static ReadOnlySpan<byte> DELIFGREATER => "DELIFGREATER"u8;
+        public static ReadOnlySpan<byte> GETETAG => "GETETAG"u8;
         public static ReadOnlySpan<byte> FIELDS => "FIELDS"u8;
         public static ReadOnlySpan<byte> MEMBERS => "MEMBERS"u8;
         public static ReadOnlySpan<byte> TIMEOUT => "TIMEOUT"u8;
         public static ReadOnlySpan<byte> ERROR => "ERROR"u8;
         public static ReadOnlySpan<byte> LOG => "LOG"u8;
         public static ReadOnlySpan<byte> INCRBY => "INCRBY"u8;
-        public static ReadOnlySpan<byte> NOGET => "NOGET"u8;
         public static ReadOnlySpan<byte> SCHEDULE => "SCHEDULE"u8;
 
         /// <summary>
@@ -211,7 +205,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_WATCH_IN_MULTI => "ERR WATCH inside MULTI is not allowed"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_INVALIDEXP_IN_SET => "ERR invalid expire time in 'set' command"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SYNTAX_ERROR => "ERR syntax error"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_WITHETAG_AND_GETVALUE => "ERR WITHETAG option not allowed with GET inside of SET"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_WITHETAG_AND_GETVALUE => "ERR EXECWITHETAG not allowed with GET inside of SET"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NAN_INFINITY => "ERR value is NaN or Infinity"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_NAN_INFINITY_INCR => "ERR increment would produce NaN or Infinity"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GENERIC_SCORE_NAN => "ERR resulting score is not a number (NaN)"u8;
@@ -286,6 +280,8 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_ACL_AUTH_FILE_DISABLED => "ERR This Garnet instance is not configured to use an ACL file. Please restart server with --acl-file option."u8;
         public static ReadOnlySpan<byte> RESP_ERR_XX_NX_NOT_COMPATIBLE => "ERR XX and NX options at the same time are not compatible"u8;
         public static ReadOnlySpan<byte> RESP_ERR_GT_LT_NX_NOT_COMPATIBLE => "ERR GT, LT, and/or NX options at the same time are not compatible"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_IFETAGGREATER_IFETAGMATCH_NOT_COMPATIBLE => "ERR IFETAGGREATER and IFETAGMATCH at the same time are not compatible"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_OR_MISSING_ETAG => "ERR Invalid or missing etag following IFETAGGREATER or IFETAGMATCH option"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR => "ERR INCR option supports a single increment-element pair"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_BITFIELD_TYPE => "ERR Invalid bitfield type. Use something like i16 u8. Note that u64 is not supported but i64 is"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_OVERFLOW_TYPE => "ERR Invalid OVERFLOW type specified"u8;

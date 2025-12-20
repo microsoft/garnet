@@ -45,8 +45,8 @@ namespace Garnet.server
             => storageSession.SortedSetRemove(key, members, out zaddCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemove(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.SortedSetRemove(key, ref input, out output, ref objectContext);
+        public GarnetStatus SortedSetRemove(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.SortedSetRemove(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetLength(PinnedSpanByte key, out int len)
@@ -552,8 +552,8 @@ namespace Garnet.server
             => storageSession.ObjectScan(GarnetObjectType.Hash, key, cursor, match, count, out items, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashTimeToLive(PinnedSpanByte key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref ObjectOutput output)
-            => storageSession.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref output, ref objectContext);
+        public GarnetStatus HashTimeToLive(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.HashTimeToLive(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashCollect(ReadOnlySpan<PinnedSpanByte> keys, ref ObjectInput input)

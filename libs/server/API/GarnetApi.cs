@@ -101,10 +101,6 @@ namespace Garnet.server
             => storageSession.SET_Conditional(key, ref input, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus DEL_Conditional(PinnedSpanByte key, ref StringInput input)
-            => storageSession.DEL_Conditional(key, ref input, ref stringContext);
-
-        /// <inheritdoc />
         public GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
             => storageSession.SET_Conditional(key, ref input, ref output, ref stringContext);
 
@@ -165,16 +161,6 @@ namespace Garnet.server
 
         #endregion
 
-        #region RENAME
-        /// <inheritdoc />
-        public GarnetStatus RENAME(PinnedSpanByte oldKey, PinnedSpanByte newKey, bool withEtag = false)
-            => storageSession.RENAME(oldKey, newKey, withEtag);
-
-        /// <inheritdoc />
-        public GarnetStatus RENAMENX(PinnedSpanByte oldKey, PinnedSpanByte newKey, out int result, bool withEtag = false)
-            => storageSession.RENAMENX(oldKey, newKey, out result, withEtag);
-        #endregion
-
         #region Increment (INCR, INCRBY, DECR, DECRBY)
         /// <inheritdoc />
         public GarnetStatus Increment(PinnedSpanByte key, ref StringInput input, ref PinnedSpanByte output)
@@ -193,7 +179,7 @@ namespace Garnet.server
         {
             SessionParseState parseState = default;
 
-            var input = new StringInput(RespCommand.INCRBYFLOAT, ref parseState, BitConverter.DoubleToInt64Bits(val));
+            var input = new StringInput(RespCommand.INCRBYFLOAT, RespMetaCommand.None, ref parseState, arg1: BitConverter.DoubleToInt64Bits(val));
             _ = Increment(key, ref input, ref output);
 
             if (output.Length != NumUtils.MaximumFormatDoubleLength + 1)

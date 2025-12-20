@@ -109,7 +109,7 @@ public class Caching
             string key = i.ToString();
             MovieReview movieReview = MovieReview.CreateRandomReview(random);
             string value = JsonSerializer.Serialize(movieReview);
-            long etag = (long)await db.ExecuteAsync("SET", key, value, "WITHETAG");
+            long etag = (long)await db.ExecuteAsync("EXECWITHETAG", "SET", key, value);
             localApplicationState.Add(i, (etag, movieReview));
             Console.WriteLine($"Seeded {i}");
         }
@@ -130,10 +130,10 @@ public class Caching
             string serverToMessWith = random.Next(19).ToString();
             var (etag, movieReview) = await ETagAbstractions.GetWithEtag<MovieReview>(db, serverToMessWith);
             await ETagAbstractions.PerformLockFreeSafeUpdate<MovieReview>(db, serverToMessWith, etag, movieReview!,
-            (moviewReview) =>
+            (movieReview) =>
             {
-                // the application server decides to reduce or increase the moview review rating
-                moviewReview.Review += random.Next(-2, 2);
+                // the application server decides to reduce or increase the movie review rating
+                movieReview.Review += random.Next(-2, 2);
             });
 
             // sleep anywhere from 10-60 seconds

@@ -1223,31 +1223,6 @@
     "StoreType": "All"
   },
   {
-    "Command": "DELIFGREATER",
-    "Name": "DELIFGREATER",
-    "Arity": 2,
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RM, Delete"
-      }
-    ],
-    "StoreType": "Main"
-  },
-  {
     "Command": "DISCARD",
     "Name": "DISCARD",
     "Arity": 1,
@@ -1341,6 +1316,30 @@
     "Arity": 1,
     "Flags": "Loading, NoScript, SkipSlowLog, Stale",
     "AclCategories": "Slow, Transaction"
+  },
+  {
+    "Command": "EXECIFGREATER",
+    "Name": "EXECIFGREATER",
+    "Arity": 2,
+    "Flags": "Meta"
+  },
+  {
+    "Command": "EXECIFMATCH",
+    "Name": "EXECIFMATCH",
+    "Arity": 2,
+    "Flags": "Meta"
+  },
+  {
+    "Command": "EXECIFNOTMATCH",
+    "Name": "EXECIFNOTMATCH",
+    "Arity": 2,
+    "Flags": "Meta"
+  },
+  {
+    "Command": "EXECWITHETAG",
+    "Name": "EXECWITHETAG",
+    "Arity": 1,
+    "Flags": "Meta"
   },
   {
     "Command": "EXISTS",
@@ -1907,6 +1906,31 @@
     "StoreType": "Main"
   },
   {
+    "Command": "GETETAG",
+    "Name": "GETETAG",
+    "Arity": 2,
+    "FirstKey": 1,
+    "LastKey": 1,
+    "Step": 1,
+    "AclCategories": "Fast, Read",
+    "KeySpecifications": [
+      {
+        "BeginSearch": {
+          "TypeDiscriminator": "BeginSearchIndex",
+          "Index": 1
+        },
+        "FindKeys": {
+          "TypeDiscriminator": "FindKeysRange",
+          "LastKey": 0,
+          "KeyStep": 1,
+          "Limit": 0
+        },
+        "Flags": "RO, Access"
+      }
+    ],
+    "StoreType": "All"
+  },
+  {
     "Command": "GETEX",
     "Name": "GETEX",
     "Arity": -2,
@@ -1929,31 +1953,6 @@
         },
         "Notes": "RW and UPDATE because it changes the TTL",
         "Flags": "RW, Access, Update"
-      }
-    ],
-    "StoreType": "Main"
-  },
-  {
-    "Command": "GETIFNOTMATCH",
-    "Name": "GETIFNOTMATCH",
-    "Arity": 3,
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Fast, Read, String",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RO, Access"
       }
     ],
     "StoreType": "Main"
@@ -2006,31 +2005,6 @@
           "Limit": 0
         },
         "Flags": "RW, Access, Update"
-      }
-    ],
-    "StoreType": "Main"
-  },
-  {
-    "Command": "GETWITHETAG",
-    "Name": "GETWITHETAG",
-    "Arity": 2,
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Fast, Read, String",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RO, Access"
       }
     ],
     "StoreType": "Main"
@@ -4314,56 +4288,6 @@
           "Limit": 0
         },
         "Flags": "OW, Update"
-      }
-    ],
-    "StoreType": "Main"
-  },
-  {
-    "Command": "SETIFGREATER",
-    "Name": "SETIFGREATER",
-    "Arity": -4,
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RW, Access, Update, VariableFlags"
-      }
-    ],
-    "StoreType": "Main"
-  },
-  {
-    "Command": "SETIFMATCH",
-    "Name": "SETIFMATCH",
-    "Arity": -4,
-    "FirstKey": 1,
-    "LastKey": 1,
-    "Step": 1,
-    "AclCategories": "Slow, String, Write",
-    "KeySpecifications": [
-      {
-        "BeginSearch": {
-          "TypeDiscriminator": "BeginSearchIndex",
-          "Index": 1
-        },
-        "FindKeys": {
-          "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
-          "KeyStep": 1,
-          "Limit": 0
-        },
-        "Flags": "RW, Access, Update, VariableFlags"
       }
     ],
     "StoreType": "Main"

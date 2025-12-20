@@ -74,6 +74,8 @@ namespace Garnet.server
 
         internal SessionParseState parseState;
         internal SessionParseState customCommandParseState;
+        internal RespMetaCommand metaCommand;
+        SessionParseState metaParseState;
 
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
@@ -738,8 +740,8 @@ namespace Garnet.server
                 RespCommand.PSETEX => NetworkSETEX(true, ref storageApi),
                 RespCommand.SETEXNX => NetworkSETEXNX(ref storageApi),
                 RespCommand.DEL => NetworkDEL(ref storageApi),
-                RespCommand.RENAME => NetworkRENAME(ref storageApi),
-                RespCommand.RENAMENX => NetworkRENAMENX(ref storageApi),
+                RespCommand.RENAME => NetworkRENAME(cmd, ref storageApi),
+                RespCommand.RENAMENX => NetworkRENAME(cmd, ref storageApi),
                 RespCommand.EXISTS => NetworkEXISTS(ref storageApi),
                 RespCommand.EXPIRE => NetworkEXPIRE(RespCommand.EXPIRE, ref storageApi),
                 RespCommand.PEXPIRE => NetworkEXPIRE(RespCommand.PEXPIRE, ref storageApi),
@@ -1011,11 +1013,7 @@ namespace Garnet.server
                 RespCommand.LCS => NetworkLCS(ref storageApi),
 
                 // Etag related commands
-                RespCommand.GETWITHETAG => NetworkGETWITHETAG(ref storageApi),
-                RespCommand.GETIFNOTMATCH => NetworkGETIFNOTMATCH(ref storageApi),
-                RespCommand.SETIFMATCH => NetworkSETIFMATCH(ref storageApi),
-                RespCommand.SETIFGREATER => NetworkSETIFGREATER(ref storageApi),
-                RespCommand.DELIFGREATER => NetworkDELIFGREATER(ref storageApi),
+                RespCommand.GETETAG => NetworkGETETAG(ref storageApi),
 
                 _ => Process(command, ref storageApi)
             };

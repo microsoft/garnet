@@ -197,11 +197,7 @@ namespace Garnet.server
                     }
 
                     // Prepare the input
-                    var zAddInput = new ObjectInput(new RespInputHeader
-                    {
-                        type = GarnetObjectType.SortedSet,
-                        SortedSetOp = SortedSetOperation.ZADD,
-                    }, ref parseState);
+                    var zAddInput = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZADD };
 
                     var zAddOutput = new ObjectOutput();
                     RMWObjectStoreOperationWithOutput(destination, ref zAddInput, ref geoObjectTransactionalContext, ref zAddOutput);

@@ -51,6 +51,14 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus GETETAG(PinnedSpanByte key, ref UnifiedInput input,
+            ref UnifiedOutput output)
+        {
+            garnetApi.WATCH(key, StoreType.All);
+            return garnetApi.GETETAG(key, ref input, ref output);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
         {
             garnetApi.WATCH(key1, StoreType.Object);
@@ -496,10 +504,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashTimeToLive(PinnedSpanByte key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref ObjectOutput output)
+        public GarnetStatus HashTimeToLive(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref output);
+            return garnetApi.HashTimeToLive(key, ref input, ref output);
         }
 
         #endregion

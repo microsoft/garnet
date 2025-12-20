@@ -54,7 +54,7 @@ namespace Garnet.server
     /// Options for specifying the range in sorted set operations.
     /// </summary>
     [Flags]
-    public enum SortedSetRangeOpts : byte
+    public enum SortedSetRangeOptions : byte
     {
         /// <summary>
         /// No options specified.
@@ -79,11 +79,15 @@ namespace Garnet.server
         /// <summary>
         /// Include scores in the result.
         /// </summary>
-        WithScores = 1 << 4
+        WithScores = 1 << 4,
+        /// <summary>
+        /// Obtain a sub-range from the matching elements
+        /// </summary>
+        Limit = 1 << 5,
     }
 
     [Flags]
-    public enum SortedSetAddOption
+    public enum SortedSetAddOption : ushort
     {
         None = 0,
         /// <summary>
@@ -116,7 +120,7 @@ namespace Garnet.server
     /// <summary>
     /// Order variations for sorted set commands
     /// </summary>
-    public enum SortedSetOrderOperation
+    public enum SortedSetOrderOperation : byte
     {
         /// <summary>
         /// Rank(by index of the elements)
@@ -316,7 +320,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                     byte respProtocolVersion, out long memorySizeChange)
+                                     byte respProtocolVersion, bool execOp, long updatedEtag, out long memorySizeChange)
         {
             memorySizeChange = 0;
 
@@ -334,10 +338,10 @@ namespace Garnet.server
             switch (op)
             {
                 case SortedSetOperation.ZADD:
-                    SortedSetAdd(ref input, ref output, respProtocolVersion);
+                    SortedSetAdd(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZREM:
-                    SortedSetRemove(ref input, ref output);
+                    SortedSetRemove(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZCARD:
                     SortedSetLength(ref output);
@@ -370,7 +374,7 @@ namespace Garnet.server
                     SortedSetPersist(ref input, ref output, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZCOLLECT:
-                    SortedSetCollect(ref input, ref output);
+                    SortedSetCollect(ref output);
                     break;
                 case SortedSetOperation.GEOADD:
                     GeoAdd(ref input, ref output, respProtocolVersion);
@@ -412,7 +416,7 @@ namespace Garnet.server
                     Scan(ref input, ref output, respProtocolVersion);
                     break;
                 default:
-                    throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");
+                    throw new GarnetException($"Unsupported operation {op} in {nameof(SortedSetObject)}.{nameof(Operate)}");
             }
 
             memorySizeChange = HeapMemorySize - prevMemorySize;

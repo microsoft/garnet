@@ -82,7 +82,7 @@ public static class ETagAbstractions
     /// </returns>
     public static async Task<(long, T?)> GetWithEtag<T>(IDatabase db, string key)
     {
-        var executeResult = await db.ExecuteAsync("GETWITHETAG", key);
+        var executeResult = await db.ExecuteAsync("EXECWITHETAG", "GET", key);
         // If key is not found we get null
         if (executeResult.IsNull)
             return (-1, default(T));
@@ -96,7 +96,7 @@ public static class ETagAbstractions
     private static async Task<(bool updated, long etag, T)> _updateItemIfMatch<T>(IDatabase db, long etag, string key, T value)
     {
         string serializedItem = JsonSerializer.Serialize<T>(value);
-        RedisResult[] res = (RedisResult[])(await db.ExecuteAsync("SETIFMATCH", key, serializedItem, etag))!;
+        RedisResult[] res = (RedisResult[])(await db.ExecuteAsync("EXECIFMATCH", etag, "SET", key, serializedItem))!;
         // successful update does not return updated value so we can just return what was passed for value. 
         if (res[1].IsNull)
             return (true, (long)res[0], value);

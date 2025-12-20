@@ -34,16 +34,35 @@ namespace Garnet.server
                 var garnetObject = (IGarnetObject)srcLogRecord.ValueObject;
                 if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
-                    var opResult = garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
-                    if (output.HasWrongType)
-                        return true;
+                    if (srcLogRecord.Info.HasETag)
+                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
-                    return opResult;
+                    var execCmd = true;
+                    var metaCmd = input.header.MetaCmd;
+
+                    if (metaCmd.IsEtagCondExecCommand())
+                    {
+                        var inputEtag = input.parseState.GetLong(0, isMetaArg: true);
+                        execCmd = metaCmd.CheckConditionalExecution(srcLogRecord.ETag, inputEtag);
+                    }
+
+                    var opResult = garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, execOp: execCmd, srcLogRecord.ETag, out _);
+
+                    if (srcLogRecord.Info.HasETag)
+                        ETagState.ResetState(ref functionsState.etagState);
+
+                    return output.HasWrongType || opResult;
                 }
 
-                if (IncorrectObjectType(ref input, garnetObject, ref output.SpanByteAndMemory))
+                if (IncorrectObjectType(ref input, (IGarnetObject)srcLogRecord.ValueObject, ref output.SpanByteAndMemory))
                 {
                     output.OutputFlags |= OutputFlags.WrongType;
+                    return true;
+                }
+
+                if (srcLogRecord.Info.HasETag)
+                {
+                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
                     return true;
                 }
 
