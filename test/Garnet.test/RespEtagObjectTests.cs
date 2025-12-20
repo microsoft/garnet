@@ -100,8 +100,6 @@ namespace Garnet.test
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // Etag 2
             ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // 1 element added
-
-            var redisResults = db.Execute("EXECIFMATCH", "2", "ZRANGE", "key2", "1", "2");
         }
 
         [Test]

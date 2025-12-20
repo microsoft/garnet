@@ -850,14 +850,11 @@ namespace Garnet.server
                     return false;
             }
 
-            if (limitChars.Length == 1)
+            if (limitChars.Length == 1 && ((limitChars[0] == '-') || (limitChars[0] == '+')))
             {
-                if ((limitChars[0] == '-') || (limitChars[0] == '+'))
-                {
-                    // Redis accepts [+ yet in practice seems to treat it as a minimum.
-                    specialRanges = SpecialRanges.InfiniteMin;
-                    limitChars = default;
-                }
+                // Redis accepts [+ yet in practice seems to treat it as a minimum.
+                specialRanges = SpecialRanges.InfiniteMin;
+                limitChars = default;
             }
 
             return true;
