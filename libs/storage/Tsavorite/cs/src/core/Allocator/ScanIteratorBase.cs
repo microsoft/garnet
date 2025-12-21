@@ -158,7 +158,7 @@ namespace Tsavorite.core
         /// <param name="endAddress">Address to stop the scan at</param>
         /// <returns>True we had to await the event here; </returns>
         /// <returns></returns>
-        protected unsafe bool BufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
+        protected bool BufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
         {
             for (var i = 0; i < frameSize; i++)
             {
@@ -192,15 +192,14 @@ namespace Tsavorite.core
                             $"i {i}, currentAddress {currentAddress}, currentFrame {currentFrame}, nextFrame {nextFrame} overwriting unset completion event");
                         var readBuffer = readBuffers is not null ? readBuffers[nextFrame] : default;
                         if (epoch != null)
-                            epoch.BumpCurrentEpoch(() => DoReadPages());
+                            epoch.BumpCurrentEpoch(() => DoReadPage());
                         else
-                            DoReadPages();
+                            DoReadPage();
 
-                        void DoReadPages()
+                        void DoReadPage()
                         {
-                            AsyncReadPagesFromDeviceToFrame(readBuffer, readPageStart: i + GetPageOfAddress(currentAddress, logPageSizeBits),
-                                    numPages: 1, untilAddress: endAddress, context: Empty.Default, out loadCompletionEvents[nextFrame],
-                                    devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
+                            AsyncReadPageFromDeviceToFrame(readBuffer, readPage: i + GetPageOfAddress(currentAddress, logPageSizeBits), untilAddress: endAddress,
+                                context: Empty.Default, out loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
                             loadedPages[nextFrame] = pageEndAddress;
                         }
                     }
@@ -243,8 +242,22 @@ namespace Tsavorite.core
             return false;
         }
 
-        internal abstract void AsyncReadPagesFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+        internal abstract void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, out CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null);
+
+        protected void AsyncReadPageFromDeviceToFrameCallback(uint errorCode, uint numBytes, object context)
+        {
+            var result = (PageAsyncReadResult<Empty>)context;
+
+            if (errorCode == 0)
+                _ = result.handle?.Signal();
+            else
+            {
+                logger?.LogError($"{nameof(AsyncReadPageFromDeviceToFrameCallback)} error: {{errorCode}}", errorCode);
+                result.cts?.Cancel();
+            }
+            Interlocked.MemoryBarrier();
+        }
 
         /// <summary>
         /// Wait for the current frame to complete loading

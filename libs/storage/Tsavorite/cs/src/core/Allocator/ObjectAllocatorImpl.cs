@@ -353,10 +353,10 @@ namespace Tsavorite.core
             return objectLogSegment;
         }
 
-        protected override void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
-            => WriteAsync(flushBuffers, flushPage, (ulong)(AlignedPageSizeBytes * flushPage), (uint)PageSize, callback, asyncResult, device, objectLogDevice);
+        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+            => WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * flushPage), (uint)PageSize, callback, asyncResult, device, objectLogDevice);
 
-        protected override void WriteAsyncToDevice<TContext>(CircularDiskWriteBuffer flushBuffers, long startPage, long flushPage, int possiblyPartialPageSize, DeviceIOCompletionCallback callback,
+        protected override void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int possiblyPartialPageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
@@ -373,7 +373,7 @@ namespace Tsavorite.core
                 else
                 {
                     // We are writing to a separate device which starts at "startPage" (this is probably from checkpointing)
-                    WriteAsync(flushBuffers, flushPage, (ulong)(AlignedPageSizeBytes * (flushPage - startPage)), (uint)possiblyPartialPageSize,
+                    WriteAsync(flushPage, (ulong)(AlignedPageSizeBytes * (flushPage - startPage)), (uint)possiblyPartialPageSize,
                                callback, asyncResult, device, objectLogDevice, fuzzyStartLogicalAddress);
                 }
             }
@@ -427,7 +427,7 @@ namespace Tsavorite.core
         /// <summary>Object log segment size</summary>
         public override long GetObjectLogSegmentSize() => ObjectLogSegmentSize;
 
-        private void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
+        private void WriteAsync<TContext>(long flushPage, ulong alignedMainLogFlushPageAddress, uint numBytesToWrite,
                         DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult,
                         IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress = long.MaxValue)
         {
@@ -441,7 +441,7 @@ namespace Tsavorite.core
             }
 
             // Short circuit if we are not using flushBuffers and not in recovery (e.g. using ObjectAllocator for string-only purposes).
-            if (flushBuffers is null)
+            if (asyncResult.flushBuffers is null)
             {
                 if (!asyncResult.isForRecovery)
                 {
@@ -531,9 +531,9 @@ namespace Tsavorite.core
                 allocatorPageSpan.CopyTo(srcBuffer.TotalValidSpan.Slice(startPadding));
                 srcBuffer.available_bytes = (int)numBytesToWrite + startPadding;
 
-                if (flushBuffers is not null)
+                if (asyncResult.flushBuffers is not null)
                 {
-                    logWriter = new(device, flushBuffers, storeFunctions);
+                    logWriter = new(device, asyncResult.flushBuffers, storeFunctions);
                     _ = logWriter.OnBeginPartialFlush(objectLogTail);
                 }
 
@@ -648,6 +648,7 @@ namespace Tsavorite.core
             var startPosition = new ObjectLogFilePositionInfo(ctx.diskLogRecord.logRecord.GetObjectLogRecordStartPositionAndLengths(out var keyLength, out var valueLength), objectLogTail.SegmentSizeBits);
             var totalBytesToRead = (ulong)keyLength + valueLength;
 
+            // 'using' is OK here as we complete the object reads before returning.
             using var readBuffers = CreateCircularReadBuffers(objectLogDevice, logger);
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
@@ -670,14 +671,13 @@ namespace Tsavorite.core
             return false;
         }
 
-        protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
+        protected override void ReadAsync<TContext>(ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device)
         {
             //TODO("Add CancellationToken to the ReadAsync and WriteAsync paths");
 
             asyncResult.callback = callback;
             asyncResult.destinationPtr = destinationPtr;
-            asyncResult.readBuffers = readBuffers;
             asyncResult.maxAddressOffsetOnPage = aligned_read_length;
 
             device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
