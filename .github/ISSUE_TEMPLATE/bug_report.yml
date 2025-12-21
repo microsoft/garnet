@@ -37,7 +37,7 @@ body:
       label: IDE
       description: Which IDE versions did you see the issue on?
       placeholder: |
-        Visual Studio 2022-preview
+        Visual Studio 2026
   - type: textarea
     attributes:
       label: OS version

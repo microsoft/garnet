@@ -1,4 +1,4 @@
-# Garnet Native Device (C++)
+# Tsavorite Native Device (C++)
 
 We use CMake to build the native device (optionally used on Linux). To build, create
 one or more build directories and use CMake to set up build scripts for your target OS. 
@@ -22,8 +22,8 @@ cmake .. -G "Visual Studio 17 2022"
 ```
 
 That will create build scripts inside your new "build" directory, including
-a "Garnet.sln" file that you can use inside Visual Studio. CMake will add several
-build profiles to Garnet.sln, including Debug/x64 and Release/x64.
+a `Tsavorite.sln` file that you can use inside Visual Studio. CMake will add several
+build profiles to `Tsavorite.sln`, including Debug/x64 and Release/x64.
 
 ### Building on Linux
 

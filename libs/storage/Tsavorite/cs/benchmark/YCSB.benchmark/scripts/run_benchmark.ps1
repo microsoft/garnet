@@ -14,7 +14,7 @@
             directory to traverse to Tsavorite.benchmark.exe. Name these folders something that indicates their role, such as 'baseline', 'main' / 'branch', etc.
             -or-
         B. Supply branch names to be built: In the ExeDirs argument, pass the names of all branches you want to run. For each branch name, this script will clone that branch into
-           a directory named as that branch, build Tsavorite.sln for Release, and run the Tsavorite.benchmark.exe from its built location.
+           a directory named as that branch, build Tsavorite.slnx for Release, and run the Tsavorite.benchmark.exe from its built location.
     3. Copy this script and, if you will want to compare runs on the perf machine, compare_runs.ps1 to the perf folder.
     4. In a remote desktop on the perf machine, change to your folder, and run this file with those directory names. See .EXAMPLE for details.
 
@@ -110,7 +110,7 @@ if ($CloneAndBuild) {
         git clone https://github.com/microsoft/Garnet.git $branch
         cd $branch
         git checkout $branch
-        dotnet build libs\storage\Tsavorite\cs\Tsavorite.sln -c Release
+        dotnet build libs\storage\Tsavorite\cs\Tsavorite.slnx -c Release
         cd ..
     }
 } else {
