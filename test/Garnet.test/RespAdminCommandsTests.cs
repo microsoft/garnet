@@ -333,8 +333,6 @@ namespace Garnet.test
         [TestCase(63, 2, 1)]
         [TestCase(16, 16, 1)]
         [TestCase(5, 64, 1)]
-        //[Repeat(100)]
-        //[Explicit("TODO: intermittent null buffer or mem encountered in CircularDiskReadBuffers")]
         public void SeSaveRecoverMultipleObjectsTest(int memorySize, int recoveryMemorySize, int pageSize)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)

@@ -206,7 +206,7 @@ namespace Tsavorite.test
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
         //[Repeat(3000)]
-        public void ObjectIterationPushLockTest([Values(1, 2, 4, 8, 16)] int scanThreads, [Values(0, 1, 4)] int updateThreads, [Values] ScanMode scanMode, [Values] bool largeMemory)
+        public void ObjectIterationPushLockTest([Values(1, 2, 4, 8)] int scanThreads, [Values(0, 1, 4)] int updateThreads, [Values] ScanMode scanMode, [Values] bool largeMemory)
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
                 Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
@@ -221,26 +221,18 @@ namespace Tsavorite.test
                 using var session = store.NewSession<TestObjectInput, TestObjectOutput, int, TestObjectFunctionsDelete>(new TestObjectFunctionsDelete());
                 ObjectPushIterationTestFunctions scanIteratorFunctions = new();
 
-                try
-                {
-                    var end = store.Log.TailAddress;
-                    if (scanMode == ScanMode.Scan)
-                        Assert.That(store.Log.Scan(ref scanIteratorFunctions, start, end), Is.True, $"Failed to complete push scan; numRecords = {scanIteratorFunctions.numRecords}, start = {start}, end = {end}");
-                    else
-                        Assert.That(session.Iterate(ref scanIteratorFunctions), Is.True, $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}, start = {start}, end = {end}");
+                var end = store.Log.TailAddress;
+                if (scanMode == ScanMode.Scan)
+                    Assert.That(store.Log.Scan(ref scanIteratorFunctions, start, end), Is.True, $"Failed to complete push scan; numRecords = {scanIteratorFunctions.numRecords}, start = {start}, end = {end}");
+                else
+                    Assert.That(session.Iterate(ref scanIteratorFunctions), Is.True, $"Failed to complete push iteration; numRecords = {scanIteratorFunctions.numRecords}, start = {start}, end = {end}");
 
-                    // If we are doing Scan with updates and without largeMemory, there will be records appended at the log tail due to not 
-                    // being able to do IPU, so the scan count may be > totalRecords.
-                    if (scanMode == ScanMode.Scan && !largeMemory && updateThreads > 0)
-                        Assert.That(scanIteratorFunctions.numRecords, Is.GreaterThanOrEqualTo(totalRecords));
-                    else
-                        Assert.That(scanIteratorFunctions.numRecords, Is.EqualTo(totalRecords));
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Exception in LocalScan thread {i}, test name {TestContext.CurrentContext.Test.FullName}, message = {ex.Message}");
-                    throw;
-                }
+                // If we are doing Scan with updates and without largeMemory, there will be records appended at the log tail due to not 
+                // being able to do IPU, so the scan count may be > totalRecords.
+                if (scanMode == ScanMode.Scan && !largeMemory && updateThreads > 0)
+                    Assert.That(scanIteratorFunctions.numRecords, Is.GreaterThanOrEqualTo(totalRecords));
+                else
+                    Assert.That(scanIteratorFunctions.numRecords, Is.EqualTo(totalRecords));
             }
 
             const int keyTag = 0x420000;

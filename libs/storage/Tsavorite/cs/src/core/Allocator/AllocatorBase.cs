@@ -1519,7 +1519,6 @@ namespace Tsavorite.core
             // Don't change GetTailAddress() as that may affect other calculations; instead, ensure it's set correctly here.
             if (pageHeaderSize > 0 && TailPageOffset.Offset == 0)
                 TailPageOffset.Offset = pageHeaderSize;
-            Debug.Assert(TailPageOffset.Offset >= pageHeaderSize, $"TODOtestonly: localTailPageOffset.Offset ({TailPageOffset.Offset}) must be >= pageHeaderSize ({pageHeaderSize}), pt 0");
 
             // Allocate current page if necessary
             var pageIndex = TailPageOffset.Page % BufferSize;
@@ -1668,6 +1667,9 @@ namespace Tsavorite.core
             // queue for previous pages indexes. Also, flush callbacks will attempt to dequeue from PendingFlushes for FlushedUntilAddress, which again
             // increases monotonically.
 
+            // For OA, create the buffers we will use for all ranges of the flush. This calls our callback and disposes itself when the last write of a range completes.
+            using var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
+
             // Request asynchronous writes to the device. If waitForPendingFlushComplete is set, then a CountDownEvent is set in the callback handle.
             for (long flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
             {
@@ -1681,7 +1683,8 @@ namespace Tsavorite.core
                     count = 1,
                     partial = false,
                     fromAddress = pageStartAddress,
-                    untilAddress = pageEndAddress
+                    untilAddress = pageEndAddress,
+                    flushBuffers = flushBuffers
                 };
 
                 // If either fromAddress or untilAddress is in the middle of the page, this will be a partial page flush.
@@ -1717,9 +1720,6 @@ namespace Tsavorite.core
 
                 if (skip)
                     continue;
-
-                // Now that we will do the flush, allocate this.
-                asyncResult.flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
 
                 // Partial page starting point, need to wait until the ongoing adjacent flush is completed to ensure correctness
                 if (GetOffsetOnPage(asyncResult.fromAddress) > 0)
@@ -1830,7 +1830,7 @@ namespace Tsavorite.core
                         fromAddress = flushPageAddress,
                         untilAddress = flushPageAddress + pageSize,
                         count = 1,
-                        flushBuffers = flushBuffers, // TODO: Needs to be a separate buffer per page, like AsyncFlushPagesForReadOnly
+                        flushBuffers = flushBuffers
                     };
 
                     // Intended destination is flushPage

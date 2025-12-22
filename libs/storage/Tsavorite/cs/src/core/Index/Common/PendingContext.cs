@@ -85,7 +85,7 @@ namespace Tsavorite.core
             internal ScanCursorState scanCursorState;
 
             /// <inheritdoc/>
-            public override string ToString()
+            public override readonly string ToString()
             {
                 var keyStr = requestKey is not null ? SpanByte.ToShortString(requestKey.Get(), 12) : "<null>";
                 var keyHashStr = GetHashString(keyHash);
@@ -162,8 +162,10 @@ namespace Tsavorite.core
             /// <summary>Copy the passed key into our <see cref="requestKey"/></summary>
             internal void CopyKey(ReadOnlySpan<byte> key, SectorAlignedBufferPool bufferPool)
             {
-                requestKey?.Dispose();
-                requestKey = new(key, bufferPool);
+                if (requestKey is null)
+                    requestKey = new(key, bufferPool);
+                else
+                    Debug.Assert(requestKey.Get().ReadOnlySpan.SequenceEqual(key), "pendingContext.requestKey should not change keys");
             }
 
             /// <summary>

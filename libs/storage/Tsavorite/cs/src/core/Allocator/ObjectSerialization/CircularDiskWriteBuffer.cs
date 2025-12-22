@@ -276,6 +276,8 @@ namespace Tsavorite.core
                     buffer = null;
                 }
             }
+
+            // Restore the now-cleared buffers array.
             buffers = localBuffers;
         }
 
