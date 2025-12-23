@@ -705,11 +705,11 @@ namespace Garnet.server
             return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
 
+        /// <summary>
         /// Add a vector to a vector set encoded by <paramref name="indexValue"/>.
         /// 
         /// Assumes that the index is locked in the Tsavorite store.
         /// </summary>
-        /// <returns>Result of the operation.</returns>
         internal VectorManagerResult TryUpdateElementAttributes(
             scoped ReadOnlySpan<byte> indexValue,
             ReadOnlySpan<byte> element,

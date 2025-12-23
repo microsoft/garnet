@@ -389,7 +389,7 @@ namespace Garnet.server
                 if (result == VectorManagerResult.OK)
                 {
                     // On successful attribute, we need to manually replicate it
-                    vectorManager.ReplicateVectorUpdateAttributes(ref key, ref input, ref basicContext);
+                    //vectorManager.ReplicateVectorUpdateAttributes(ref key, ref input, ref basicContext);
                     return GarnetStatus.OK;
                 }
 

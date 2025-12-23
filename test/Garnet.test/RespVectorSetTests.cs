@@ -1885,6 +1885,107 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VSETATTR_NotFound()
+        {
+            var vectorSetKey = "foo";
+            var elementId1 = new byte[] { 0, 0, 0, 0 };
+            var nonExistentElementId = new byte[] { 9, 9, 9, 9 };
+            var attrData = "test attribute"u8.ToArray();
+
+            // Test not found case - non-existent vector set (RESP3)
+            using var redisResp3 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp3));
+            var dbResp3 = redisResp3.GetDatabase();
+
+            var resp3Result1 = dbResp3.Execute("VSETATTR", [vectorSetKey, elementId1, attrData]);
+            ClassicAssert.IsTrue(resp3Result1.Resp3Type == ResultType.Boolean);
+            ClassicAssert.IsFalse((bool)resp3Result1);
+
+            // Test not found case - non-existent vector set (RESP2)
+            using var redisResp2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var dbResp2 = redisResp2.GetDatabase();
+
+            var resp2Result1 = dbResp2.Execute("VSETATTR", [vectorSetKey, elementId1, attrData]);
+            ClassicAssert.IsTrue(resp2Result1.Resp2Type == ResultType.Integer);
+            ClassicAssert.AreEqual(0, (int)resp2Result1);
+
+            // Create a vector set with first element
+            var res1 = dbResp3.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", elementId1, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Test not found case - non-existent element (RESP3)
+            var resp3Result2 = dbResp3.Execute("VSETATTR", [vectorSetKey, nonExistentElementId, attrData]);
+            ClassicAssert.IsTrue(resp3Result2.Resp3Type == ResultType.Boolean);
+            ClassicAssert.IsTrue((bool)resp3Result2);
+
+            // Test not found case - non-existent element (RESP2)
+            var resp2Result2 = dbResp2.Execute("VSETATTR", [vectorSetKey, nonExistentElementId, attrData]);
+            ClassicAssert.IsTrue(resp2Result2.Resp2Type == ResultType.Integer);
+            ClassicAssert.IsTrue((int)resp2Result2.Resp2Type == 0);
+        }
+
+        [Test]
+        public void VSETATTR()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var vectorSetKey = "foo";
+            var elementId = new byte[] { 0, 0, 0, 0 };
+
+            // Create a vector set with first element (no attribute)
+            var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", elementId, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Confirm no attribute initially
+            var res2 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.AreEqual(0, res2.Length);
+
+            // Set initial attribute
+            var attrData1 = "initial attribute"u8.ToArray();
+            var res3 = db.Execute("VSETATTR", [vectorSetKey, elementId, attrData1]);
+            ClassicAssert.IsFalse(res3.IsNull);
+
+            // Verify attribute was set
+            var res4 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.AreEqual(attrData1.Length, res4.Length);
+            ClassicAssert.IsTrue(attrData1.SequenceEqual(res4));
+
+            // Test updating with various attribute sizes
+            int[] attributeSizes = [64, 128, 256, 257, 512, 1024];
+
+            for (var i = 0; i < attributeSizes.Length; i++)
+            {
+                var attrSize = attributeSizes[i];
+                var attrData = Enumerable.Repeat((byte)(i + 'A'), attrSize).ToArray();
+
+                // Update attribute using VSETATTR
+                var setRes = db.Execute("VSETATTR", [vectorSetKey, elementId, attrData]);
+                ClassicAssert.IsFalse(setRes.IsNull);
+
+                // Verify updated attribute
+                var getAttrRes = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+                ClassicAssert.AreEqual(attrSize, getAttrRes.Length, $"Attribute size mismatch for size {attrSize}");
+                ClassicAssert.IsTrue(attrData.SequenceEqual(getAttrRes), $"Attribute content mismatch for size {attrSize}");
+            }
+
+            // Test setting empty attribute (removes attribute)
+            var res5 = db.Execute("VSETATTR", [vectorSetKey, elementId, Array.Empty<byte>()]);
+            ClassicAssert.IsFalse(res5.IsNull);
+
+            var res6 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.AreEqual(0, res6.Length);
+
+            // Set attribute again after clearing
+            var attrData2 = "restored attribute"u8.ToArray();
+            var res7 = db.Execute("VSETATTR", [vectorSetKey, elementId, attrData2]);
+            ClassicAssert.IsFalse(res7.IsNull);
+
+            var res8 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.AreEqual(attrData2.Length, res8.Length);
+            ClassicAssert.IsTrue(attrData2.SequenceEqual(res8));
+        }
+
+        [Test]
         public void VREM()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
