@@ -1668,7 +1668,7 @@ namespace Tsavorite.core
             // increases monotonically.
 
             // For OA, create the buffers we will use for all ranges of the flush. This calls our callback and disposes itself when the last write of a range completes.
-            using var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
+            var flushBuffers = CreateCircularFlushBuffers(objectLogDevice: null, logger);
 
             // Request asynchronous writes to the device. If waitForPendingFlushComplete is set, then a CountDownEvent is set in the callback handle.
             for (long flushPage = startPage; flushPage < (startPage + numPages); flushPage++)
