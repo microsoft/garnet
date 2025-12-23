@@ -19,7 +19,7 @@ namespace Tsavorite.test
 
         public long GetHashCode64(ReadOnlySpan<byte> key) => forceCollisionHash ?? Utility.GetHashCode(key.AsRef<KeyStruct>().kfield1);
 
-        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) => 
+        public bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2) =>
             k1.AsRef<KeyStruct>().kfield1 == k2.AsRef<KeyStruct>().kfield1 && k1.AsRef<KeyStruct>().kfield2 == k2.AsRef<KeyStruct>().kfield2;
 
         public override string ToString() => $"forceHashCollision: {forceCollisionHash}";
