@@ -24,6 +24,8 @@ namespace Tsavorite.core
         DiskReadBuffer[] buffers;
         int currentIndex;
 
+        bool disposed;
+
         /// <summary>Device address to do the next read from (segment and offset); set at the start of a record by <see cref="ObjectLogReader{TStoreFunctions}"/>
         /// and incremented with each buffer read; all of these should be aligned to sector size, so this address remains sector-aligned.</summary>
         internal ObjectLogFilePositionInfo nextFileReadPosition;
@@ -42,7 +44,12 @@ namespace Tsavorite.core
             currentIndex = 0;
         }
 
-        internal DiskReadBuffer GetCurrentBuffer() => buffers[currentIndex];
+        internal DiskReadBuffer GetCurrentBuffer()
+        {
+            if (disposed)
+                throw new ObjectDisposedException(nameof(CircularDiskReadBuffer));
+            return buffers[currentIndex];
+        }
 
         int GetNextBufferIndex(int curIndex)
         {
@@ -239,6 +246,8 @@ namespace Tsavorite.core
 
         public void Dispose()
         {
+            disposed = true;
+            
             // Atomic swap to avoid clearing twice.
             var localBuffers = Interlocked.Exchange(ref buffers, null);
             if (localBuffers == null)
@@ -248,7 +257,7 @@ namespace Tsavorite.core
                 localBuffers[ii]?.Dispose();
 
             // Restore the now-cleared buffers array.
-            buffers = localBuffers;
+            //buffers = localBuffers;
         }
 
         /// <inheritdoc/>
