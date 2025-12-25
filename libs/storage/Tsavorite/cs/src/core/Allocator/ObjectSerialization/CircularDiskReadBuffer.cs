@@ -247,7 +247,7 @@ namespace Tsavorite.core
         public void Dispose()
         {
             disposed = true;
-            
+
             // Atomic swap to avoid clearing twice.
             var localBuffers = Interlocked.Exchange(ref buffers, null);
             if (localBuffers == null)
