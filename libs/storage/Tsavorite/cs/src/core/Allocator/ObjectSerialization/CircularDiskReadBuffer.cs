@@ -124,6 +124,9 @@ namespace Tsavorite.core
         ///     in the ReadAsync call.</param>
         internal void OnBeginReadRecords(ObjectLogFilePositionInfo startFilePosition, ulong totalLength)
         {
+            if (disposed)
+                throw new ObjectDisposedException(nameof(CircularDiskReadBuffer));
+
             Debug.Assert(totalLength > 0, "TotalLength cannot be 0");
             nextFileReadPosition = startFilePosition;
             unreadLengthRemaining = totalLength;
