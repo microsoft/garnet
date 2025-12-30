@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -34,7 +32,7 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < 5 * numEntries; i++)
-                log.Enqueue(entry);
+                _ = log.Enqueue(entry);
 
             // for comparison, insert some entries without any commit records
             var referenceTailLength = log.TailAddress;
@@ -56,7 +54,7 @@ namespace Tsavorite.test
                 t.Start();
             for (int i = 0; i < 5 * numEntries; i++)
             {
-                log.Enqueue(entry);
+                _ = log.Enqueue(entry);
             }
             enqueueDone.Set();
 
@@ -70,5 +68,3 @@ namespace Tsavorite.test
         }
     }
 }
-
-#endif // LOGRECORD_TODO

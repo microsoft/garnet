@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -17,32 +15,32 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.ReadCacheTests
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class RandomReadCacheTests
     {
         class Functions : SpanByteFunctions<Empty>
         {
-            public override bool Reader(ref SpanByte key, ref SpanByte input, ref SpanByte value, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
             {
-                var keyString = new string(MemoryMarshal.Cast<byte, char>(key.AsReadOnlySpan()));
-                var inputString = new string(MemoryMarshal.Cast<byte, char>(input.AsReadOnlySpan()));
-                var valueString = new string(MemoryMarshal.Cast<byte, char>(value.AsReadOnlySpan()));
+                var keyString = new string(MemoryMarshal.Cast<byte, char>(srcLogRecord.Key));
+                var inputString = new string(MemoryMarshal.Cast<byte, char>(input.ReadOnlySpan));
+                var valueString = new string(MemoryMarshal.Cast<byte, char>(srcLogRecord.ValueSpan));
                 var actualValue = long.Parse(valueString);
                 ClassicAssert.AreEqual(long.Parse(keyString) * 2, actualValue);
                 ClassicAssert.AreEqual(long.Parse(inputString), actualValue);
 
-                value.CopyTo(ref dst, MemoryPool<byte>.Shared);
+                srcLogRecord.ValueSpan.CopyTo(ref dst, MemoryPool<byte>.Shared);
                 return true;
             }
 
-            public override void ReadCompletionCallback(ref SpanByte key, ref SpanByte input, ref SpanByteAndMemory output, Empty context, Status status, RecordMetadata recordMetadata)
+            public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, Empty context, Status status, RecordMetadata recordMetadata)
             {
                 ClassicAssert.IsTrue(status.Found);
-                var keyString = new string(MemoryMarshal.Cast<byte, char>(key.AsReadOnlySpan()));
-                var inputString = new string(MemoryMarshal.Cast<byte, char>(input.AsReadOnlySpan()));
-                var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
+                var keyString = new string(MemoryMarshal.Cast<byte, char>(diskLogRecord.Key));
+                var inputString = new string(MemoryMarshal.Cast<byte, char>(input.ReadOnlySpan));
+                var outputString = new string(MemoryMarshal.Cast<byte, char>(output.ReadOnlySpan));
                 var actualValue = long.Parse(outputString);
                 ClassicAssert.AreEqual(long.Parse(keyString) * 2, actualValue);
                 ClassicAssert.AreEqual(long.Parse(inputString), actualValue);
@@ -51,7 +49,7 @@ namespace Tsavorite.test.ReadCacheTests
         }
 
         IDevice log = default;
-        TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store = default;
+        TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store = default;
 
         [SetUp]
         public void Setup()
@@ -90,7 +88,7 @@ namespace Tsavorite.test.ReadCacheTests
             kvSettings.LogDevice = log ??= Devices.CreateLogDevice(filename, deleteOnClose: true);
 
             store = new(kvSettings
-                , StoreFunctions<SpanByte, SpanByte>.Create()
+                , StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -110,7 +108,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
         //[Repeat(300)]
-        public unsafe void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode, [Values] ReadCacheMode readCacheMode)
+        public void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode, [Values] ReadCacheMode readCacheMode)
         {
             if (numThreads == 1 && keyContentionMode == KeyContentionMode.Contention)
                 Assert.Ignore("Skipped because 1 thread cannot have contention");
@@ -121,32 +119,27 @@ namespace Tsavorite.test.ReadCacheTests
 
             const int PendingMod = 16;
 
-            void LocalRead(BasicContext<SpanByte, SpanByte, SpanByte, SpanByteAndMemory, Empty, Functions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> sessionContext, int i, ref int numPending, bool isLast)
+            void LocalRead(BasicContext<PinnedSpanByte, SpanByteAndMemory, Empty, Functions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> sessionContext, int i, ref int numPending, bool isLast)
             {
                 var keyString = $"{i}";
                 var inputString = $"{i * 2}";
                 var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
-                var input = MemoryMarshal.Cast<char, byte>(inputString.AsSpan());
+                var input = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<char, byte>(inputString.AsSpan()));
 
-                fixed (byte* kptr = key, iptr = input)
+                SpanByteAndMemory output = default;
+
+                var status = sessionContext.Read(key, ref input, ref output);
+
+                if (status.Found)
                 {
-                    var sbKey = SpanByte.FromPinnedSpan(key);
-                    var sbInput = SpanByte.FromPinnedSpan(input);
-                    SpanByteAndMemory output = default;
-
-                    var status = sessionContext.Read(ref sbKey, ref sbInput, ref output);
-
-                    if (status.Found)
-                    {
-                        var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
-                        ClassicAssert.AreEqual(i * 2, long.Parse(outputString));
-                        output.Memory.Dispose();
-                    }
-                    else
-                    {
-                        ClassicAssert.IsTrue(status.IsPending, $"was not Pending: {keyString}; status {status}");
-                        ++numPending;
-                    }
+                    var outputString = new string(MemoryMarshal.Cast<byte, char>(output.ReadOnlySpan));
+                    ClassicAssert.AreEqual(i * 2, long.Parse(outputString));
+                    output.Memory.Dispose();
+                }
+                else
+                {
+                    ClassicAssert.IsTrue(status.IsPending, $"was not Pending: {keyString}; status {status}");
+                    ++numPending;
                 }
 
                 if (numPending > 0 && ((numPending % PendingMod) == 0 || isLast))
@@ -156,14 +149,14 @@ namespace Tsavorite.test.ReadCacheTests
                     {
                         while (completedOutputs.Next())
                         {
-                            var status = completedOutputs.Current.Status;
-                            var output = completedOutputs.Current.Output;
+                            status = completedOutputs.Current.Status;
+                            output = completedOutputs.Current.Output;
                             // Note: do NOT overwrite 'key' here
-                            long keyLong = long.Parse(new string(MemoryMarshal.Cast<byte, char>(completedOutputs.Current.Key.AsReadOnlySpan())));
+                            long keyLong = long.Parse(new string(MemoryMarshal.Cast<byte, char>(completedOutputs.Current.Key)));
 
                             ClassicAssert.IsTrue(status.Found, $"key {keyLong}, {status}, wasPending {true}, pt 1");
                             ClassicAssert.IsNotNull(output.Memory, $"key {keyLong}, wasPending {true}, pt 2");
-                            var outputString = new string(MemoryMarshal.Cast<byte, char>(output.AsReadOnlySpan()));
+                            var outputString = new string(MemoryMarshal.Cast<byte, char>(output.ReadOnlySpan));
                             ClassicAssert.AreEqual(keyLong * 2, long.Parse(outputString), $"key {keyLong}, wasPending {true}, pt 3");
                             output.Memory.Dispose();
                         }
@@ -173,7 +166,7 @@ namespace Tsavorite.test.ReadCacheTests
 
             void LocalRun(int startKey, int endKey)
             {
-                var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, Functions>(new Functions());
+                var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, Functions>(new Functions());
                 var sessionContext = session.BasicContext;
 
                 int numPending = 0;
@@ -191,7 +184,7 @@ namespace Tsavorite.test.ReadCacheTests
             const int MaxKeys = 8000;
 
             { // Write the values first (single-threaded, all keys)
-                var session = store.NewSession<SpanByte, SpanByteAndMemory, Empty, Functions>(new Functions());
+                var session = store.NewSession<PinnedSpanByte, SpanByteAndMemory, Empty, Functions>(new Functions());
                 var bContext = session.BasicContext;
                 for (int i = 0; i < MaxKeys; i++)
                 {
@@ -199,13 +192,9 @@ namespace Tsavorite.test.ReadCacheTests
                     var valueString = $"{i * 2}";
                     var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
                     var value = MemoryMarshal.Cast<char, byte>(valueString.AsSpan());
-                    fixed (byte* k = key, v = value)
-                    {
-                        var sbKey = SpanByte.FromPinnedSpan(key);
-                        var sbValue = SpanByte.FromPinnedSpan(value);
-                        var status = bContext.Upsert(sbKey, sbValue);
-                        ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
-                    }
+
+                    var status = bContext.Upsert(key, value);
+                    ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
                 }
             }
 
@@ -230,5 +219,3 @@ namespace Tsavorite.test.ReadCacheTests
         }
     }
 }
-
-#endif // LOGRECORD_TODO

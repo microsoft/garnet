@@ -7,7 +7,7 @@ using System.Buffers;
 namespace Tsavorite.core
 {
     /// <summary>
-    /// Callback functions for <see cref="Span{_byte_}"/> Value and Input; <see cref="SpanByteAndMemory"/> Output; and specified <typeparamref name="TContext"/>
+    /// Callback functions for <see cref="ReadOnlySpan{_byte_}"/> Value and <see cref="PinnedSpanByte"/> Input; <see cref="SpanByteAndMemory"/> Output; and specified <typeparamref name="TContext"/>
     /// </summary>
     public class SpanByteFunctions<TContext> : SessionFunctionsBase<PinnedSpanByte, SpanByteAndMemory, TContext>
     {

@@ -136,18 +136,15 @@ namespace Tsavorite.core
         {
             var offset = hlogBase.GetOffsetOnPage(logicalAddress);
 
-            // Subtracting offset means this physicalAddress is at the start of the page.
-            var physicalAddress = GetPhysicalAddress(logicalAddress, headAddress, currentPage, offset) - offset;
-            long totalSizes = 0;
+            // Subtracting offset means this physicalAddress is at the start of the page. Adjust for PageHeader.
+            long totalSizes = PageHeader.Size;
             if (currentPage == 0)
             {
                 if (logicalAddress < hlogBase.BeginAddress)
                     return logicalAddress = hlogBase.BeginAddress;
-
-                // Bump past the FirstValidAddress offset
-                physicalAddress += hlogBase.BeginAddress;
                 totalSizes = (int)hlogBase.BeginAddress;
             }
+            var physicalAddress = GetPhysicalAddress(logicalAddress, headAddress, currentPage, offset) - offset + totalSizes;
 
             while (totalSizes <= offset)
             {
