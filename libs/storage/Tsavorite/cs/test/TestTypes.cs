@@ -293,7 +293,7 @@ namespace Tsavorite.test
         public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref InputStruct input)
             => new() { KeySize = key.Length, ValueSize = sizeof(ValueStruct) };
         /// <inheritdoc/>
-        public override unsafe RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref InputStruct input)
+        public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref InputStruct input)
             => new() { KeySize = key.Length, ValueSize = value.Length };
     }
 

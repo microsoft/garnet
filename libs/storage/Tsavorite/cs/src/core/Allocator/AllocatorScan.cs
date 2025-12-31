@@ -268,7 +268,7 @@ namespace Tsavorite.core
             {
                 // If a more recent version of the record exists, do not push this one. Start by searching in-memory.
                 if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord.Key, ref stackCtx,
-                        currentAddress, minAddress, maxAddress, out internalStatus, out needIO))
+                      currentAddress, minAddress, maxAddress, out internalStatus, out needIO))
                     return Status.CreateFound();
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
@@ -316,7 +316,7 @@ namespace Tsavorite.core
         {
             var status = store.PrepareIOForConditionalOperation(ref pendingContext, in srcLogRecord, ref stackCtx, minAddress, maxAddress, OperationType.CONDITIONAL_SCAN_PUSH);
             pendingContext.scanCursorState = scanCursorState;
-            pendingContext.logicalAddress = originalAddress;        // stackCtx is the tag-chain tail or ongoing chain backtrack (as is request.logicalAddress); this is the address we will push if it is not found later
+            pendingContext.originalAddress = originalAddress;
             return status;
         }
 

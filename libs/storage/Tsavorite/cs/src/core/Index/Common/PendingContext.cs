@@ -15,7 +15,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        internal unsafe struct PendingContext<TInput, TOutput, TContext>// : ISourceLogRecord
+        internal struct PendingContext<TInput, TOutput, TContext>// : ISourceLogRecord
         {
             // User provided information
             internal OperationType type;
@@ -53,6 +53,10 @@ namespace Tsavorite.core
 
             /// <summary>The logical address of the found record, if any; used to create <see cref="RecordMetadata"/>.</summary>
             internal long logicalAddress;
+
+            /// <summary>The logical address of the original record for conditional scan push. <see cref="logicalAddress"/> must be the one we pass to request; this retains
+            /// the address of the record we will push to the caller if it is not found later in the log.</summary>
+            internal long originalAddress;
 
             /// <summary>The record's ETag, if any; used to create <see cref="RecordMetadata"/> output in RUMD.</summary>
             internal long eTag;
