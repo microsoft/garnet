@@ -337,7 +337,7 @@ namespace Tsavorite.core
             // and thus the request was not populated. The new minAddress should be the highest logicalAddress we previously saw, because we need to make sure the
             // record was not added to the log after we initialized the pending IO.
             _ = hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(sessionFunctions, pendingContext.scanCursorState,
-                in pendingContext.diskLogRecord, originalAddress: pendingContext.logicalAddress, currentAddress: request.logicalAddress,
+                in pendingContext.diskLogRecord, originalAddress: pendingContext.originalAddress, currentAddress: request.logicalAddress,
                 minAddress: pendingContext.initialLatestLogicalAddress + 1, maxAddress: pendingContext.maxAddress);
 
             // ConditionalScanPush has already called HandleOperationStatus, so return SUCCESS here.
