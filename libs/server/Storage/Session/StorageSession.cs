@@ -71,6 +71,7 @@ namespace Garnet.server
             GarnetSessionMetrics sessionMetrics,
             GarnetLatencyMetricsSession LatencyMetrics,
             int dbId,
+            VectorManager vectorManager,
             ILogger logger = null,
             byte respProtocolVersion = ServerOptions.DEFAULT_RESP_VERSION)
         {
@@ -79,6 +80,7 @@ namespace Garnet.server
             this.scratchBufferBuilder = scratchBufferBuilder;
             this.logger = logger;
             this.itemBroker = storeWrapper.itemBroker;
+            this.vectorManager = vectorManager;
             parseState.Initialize();
 
             functionsState = storeWrapper.CreateFunctionsState(dbId, respProtocolVersion);
@@ -103,11 +105,17 @@ namespace Garnet.server
             var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState);
             var unifiedStoreSession = db.Store.NewSession<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions);
 
+            var vectorFunctions = new VectorSessionFunctions(functionsState);
+            var vectorSession = db.Store.NewSession<VectorInput, PinnedSpanByte, long, VectorSessionFunctions>(vectorFunctions);
+
             stringBasicContext = session.BasicContext;
             stringTransactionalContext = session.TransactionalContext;
 
             unifiedBasicContext = unifiedStoreSession.BasicContext;
             unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
+
+            vectorContext = vectorSession.BasicContext;
+            vectorTransactionalContext = vectorSession.TransactionalContext;
 
             HeadAddress = db.Store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;

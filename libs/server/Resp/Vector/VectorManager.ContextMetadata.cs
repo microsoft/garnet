@@ -8,7 +8,9 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
 #pragma warning disable CS0169
@@ -342,7 +344,47 @@ namespace Garnet.server
         /// </summary>
         private ulong NextVectorSetContext(ushort hashSlot)
         {
-            throw new NotImplementedException();
+            var start = Stopwatch.GetTimestamp();
+
+            // TODO: This retry is no good, but will go away when namespaces >= 256 are possible
+            while (true)
+            {
+                // Lock isn't amazing, but _new_ vector set creation should be rare
+                // So just serializing it all is easier.
+                try
+                {
+                    ulong nextFree;
+                    lock (this)
+                    {
+                        nextFree = contextMetadata.NextNotInUse();
+
+                        contextMetadata.MarkInUse(nextFree, hashSlot);
+                    }
+                    return nextFree;
+                }
+                catch (Exception e)
+                {
+                    logger?.LogError(e, "NextContext not available, delaying and retrying");
+                }
+
+                if (Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(30))
+                {
+                    lock (this)
+                    {
+                        if (contextMetadata.GetNeedCleanup() == null)
+                        {
+                            throw new GarnetException("No available Vector Sets contexts to allocate, none scheduled for cleanup");
+                        }
+                    }
+
+                    // Wait a little bit for cleanup to make progress
+                    Thread.Sleep(1_000);
+                }
+                else
+                {
+                    throw new GarnetException("No available Vector Sets contexts to allocate, timeout reached");
+                }
+            }
         }
 
         /// <summary>
@@ -360,7 +402,33 @@ namespace Garnet.server
         /// </summary>
         private void UpdateContextMetadata(ref BasicContext<VectorInput, PinnedSpanByte, long, VectorSessionFunctions, StoreFunctions, StoreAllocator> ctx)
         {
-            throw new NotImplementedException();
+            Span<byte> key = stackalloc byte[1];
+            Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
+
+            lock (this)
+            {
+                MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0] = contextMetadata;
+            }
+
+            //key.MarkNamespace();
+            //key.SetNamespaceInPayload(0);
+
+            VectorInput input = default;
+            input.Callback = 0;
+            input.WriteDesiredSize = ContextMetadata.Size;
+            unsafe
+            {
+                input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));
+            }
+
+            var data = PinnedSpanByte.FromPinnedSpan(dataSpan);
+
+            var status = ctx.RMW(key, ref input);
+
+            if (status.IsPending)
+            {
+                CompletePending(ref status, ref data, ref ctx);
+            }
         }
 
         /// <summary>
@@ -370,7 +438,10 @@ namespace Garnet.server
         /// </summary>
         public HashSet<ulong> GetNamespacesForHashSlots(HashSet<int> hashSlots)
         {
-            throw new NotImplementedException();
+            lock (this)
+            {
+                return contextMetadata.GetNamespacesForHashSlots(hashSlots);
+            }
         }
     }
 }
