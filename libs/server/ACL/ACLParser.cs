@@ -36,6 +36,7 @@ namespace Garnet.server.ACL
             ["write"] = RespAclCategories.Write,
             ["garnet"] = RespAclCategories.Garnet,
             ["custom"] = RespAclCategories.Custom,
+            ["vector"] = RespAclCategories.Vector,
             ["all"] = RespAclCategories.All,
         };
 

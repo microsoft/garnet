@@ -22,6 +22,8 @@ namespace Garnet.server
         public nint CallbackContext { get; set; }
         public nint Callback { get; set; }
 
+        public ulong Namespace { get; set; }
+
         public VectorInput()
         {
         }

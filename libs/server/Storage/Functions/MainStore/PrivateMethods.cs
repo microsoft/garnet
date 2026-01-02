@@ -100,6 +100,11 @@ namespace Garnet.server
                     CopyRespTo(value, ref output);
                     break;
 
+                case RespCommand.VADD:
+                case RespCommand.VDIM:
+                case RespCommand.VEMB:
+                case RespCommand.VREM:
+                case RespCommand.VSIM:
                 case RespCommand.GET:
                     // Get value without RESP header; exclude expiration
                     if (value.Length <= output.Length)

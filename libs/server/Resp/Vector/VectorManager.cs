@@ -24,6 +24,8 @@ namespace Garnet.server
     /// </summary>
     public sealed partial class VectorManager : IDisposable
     {
+        internal const byte VectorSetRecordType = 1;
+
         internal const int IndexSizeBytes = Index.Size;
         internal const long VADDAppendLogArg = long.MinValue;
         internal const long DeleteAfterDropArg = VADDAppendLogArg + 1;

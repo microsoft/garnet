@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -303,6 +304,38 @@ namespace Garnet.server
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
                     if (!TryCopyUpdateNumber(incrByFloat, logRecord.ValueSpan, ref output))
                         return false;
+                    break;
+                case RespCommand.VADD:
+                    {
+                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg)
+                        {
+                            // Synthetic op, do nothing
+                            break;
+                        }
+
+                        var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
+                        var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
+                        // ValueType is here, skipping during index creation
+                        // Values is here, skipping during index creation
+                        // Element is here, skipping during index creation
+                        var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
+                        var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
+                        // Attributes is here, skipping during index creation
+                        var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
+
+                        // Pre-allocated by caller because DiskANN needs to be able to call into Garnet as part of create_index
+                        // and thus we can't call into it from session functions
+                        var context = MemoryMarshal.Read<ulong>(input.parseState.GetArgSliceByRef(9).Span);
+                        var index = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(10).Span);
+
+                        // TODO: How do we set RecordType?
+                        //recordInfo.VectorSet = true;
+
+                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, context, index, logRecord.ValueSpan);
+                    }
+                    break;
+                case RespCommand.VREM:
+                    Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Should only see VREM writes as part of replication");
                     break;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
@@ -786,6 +819,41 @@ namespace Garnet.server
                     // reset etag state that may have been initialized earlier, but don't update etag
                     ETagState.ResetState(ref functionsState.etagState);
                     return TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output) ? IPUResult.Succeeded : IPUResult.Failed;
+
+
+                case RespCommand.VADD:
+                    // Adding to an existing VectorSet is modeled as a read operations
+                    //
+                    // However, we do synthesize some (pointless) writes to implement replication
+                    // and a "make me delete=able"-update during drop.
+                    //
+                    // Another "not quite write" is the recreate an index write operation
+                    // that occurs if we're adding to an index that was restored from disk 
+                    // or a primary node.
+
+                    // Handle "make me delete-able"
+                    if (input.arg1 == VectorManager.DeleteAfterDropArg)
+                    {
+                        logRecord.ValueSpan.Clear();
+                    }
+                    else if (input.arg1 == VectorManager.RecreateIndexArg)
+                    {
+                        var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(10).Span);
+
+                        functionsState.vectorManager.RecreateIndex(newIndexPtr, logRecord.ValueSpan);
+                    }
+
+                    // Ignore everything else
+                    return IPUResult.Succeeded;
+                case RespCommand.VREM:
+                    // Removing from a VectorSet is modeled as a read operations
+                    //
+                    // However, we do synthesize some (pointless) writes to implement replication
+                    // in a similar manner to VADD.
+
+                    Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "VREM in place update should only happen for replication");                    // Ignore everything else
+                    return IPUResult.Succeeded;
+
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {

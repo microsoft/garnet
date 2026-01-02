@@ -7,7 +7,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -53,11 +52,9 @@ namespace Garnet.server
             uint numLinks,
             ulong newContext,
             nint newIndexPtr,
-            ref PinnedSpanByte indexValue)
+            Span<byte> indexSpan)
         {
             AssertHaveStorageSession();
-
-            var indexSpan = indexValue.Span;
 
             Debug.Assert((newContext % 8) == 0 && newContext != 0, "Illegal context provided");
             Debug.Assert(Unsafe.SizeOf<Index>() == Index.Size, "Constant index size is incorrect");
@@ -84,11 +81,9 @@ namespace Garnet.server
         /// 
         /// This implies the index still has element data, but the pointer is garbage.
         /// </summary>
-        internal void RecreateIndex(nint newIndexPtr, ref PinnedSpanByte indexValue)
+        internal void RecreateIndex(nint newIndexPtr, Span<byte> indexSpan)
         {
             AssertHaveStorageSession();
-
-            var indexSpan = indexValue.Span;
 
             if (indexSpan.Length != Index.Size)
             {
