@@ -703,7 +703,7 @@ namespace Garnet.server
             if (!success)
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
-            return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper, memoryPool: null, db.SizeTracker, Logger, respProtocolVersion);
+            return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper, memoryPool: null, db.SizeTracker, db.VectorManager, Logger, respProtocolVersion);
         }
 
         /// <inheritdoc/>

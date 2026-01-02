@@ -402,7 +402,7 @@ namespace Garnet.server
         /// </summary>
         private void UpdateContextMetadata(ref BasicContext<VectorInput, PinnedSpanByte, long, VectorSessionFunctions, StoreFunctions, StoreAllocator> ctx)
         {
-            Span<byte> key = stackalloc byte[1];
+            Span<byte> key = default;
             Span<byte> dataSpan = stackalloc byte[ContextMetadata.Size];
 
             lock (this)
@@ -410,12 +410,10 @@ namespace Garnet.server
                 MemoryMarshal.Cast<byte, ContextMetadata>(dataSpan)[0] = contextMetadata;
             }
 
-            //key.MarkNamespace();
-            //key.SetNamespaceInPayload(0);
-
             VectorInput input = default;
             input.Callback = 0;
             input.WriteDesiredSize = ContextMetadata.Size;
+            input.Namespace = 0;
             unsafe
             {
                 input.CallbackContext = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(dataSpan));

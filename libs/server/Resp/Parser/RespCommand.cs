@@ -85,7 +85,6 @@ namespace Garnet.server
         VDIM,
         VEMB,
         VGETATTR,
-        VINFO,
         VISMEMBER,
         VLINKS,
         VRANDMEMBER,
@@ -645,7 +644,7 @@ namespace Garnet.server
         /// Returns true if this command can operate on a Vector Set.
         /// </summary>
         public static bool IsLegalOnVectorSet(this RespCommand cmd)
-        => cmd is RespCommand.DEL or server.RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or server.RespCommand.VISMEMBER or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
+        => cmd is RespCommand.DEL or server.RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or server.RespCommand.VISMEMBER or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
     }
 
     /// <summary>
@@ -1187,10 +1186,6 @@ namespace Garnet.server
                                         if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nVCARD\r\n"u8))
                                         {
                                             return RespCommand.VCARD;
-                                        }
-                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nVINFO\r\n"u8))
-                                        {
-                                            return RespCommand.VINFO;
                                         }
                                         break;
 

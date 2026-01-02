@@ -49,12 +49,12 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            ReadOnlySpan<RespCommand> vectorSetCommands = [RespCommand.VADD, RespCommand.VCARD, RespCommand.VDIM, RespCommand.VEMB, RespCommand.VGETATTR, RespCommand.VINFO, RespCommand.VISMEMBER, RespCommand.VLINKS, RespCommand.VRANDMEMBER, RespCommand.VREM, RespCommand.VSETATTR, RespCommand.VSIM];
+            ReadOnlySpan<RespCommand> vectorSetCommands = [RespCommand.VADD, RespCommand.VCARD, RespCommand.VDIM, RespCommand.VEMB, RespCommand.VGETATTR, RespCommand.VISMEMBER, RespCommand.VLINKS, RespCommand.VRANDMEMBER, RespCommand.VREM, RespCommand.VSETATTR, RespCommand.VSIM];
             foreach (var cmd in vectorSetCommands)
             {
                 // Should all fault before any validation
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmd.ToString()));
-                ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", exc.Message);
+                ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", exc.Message, $"For {cmd}");
             }
 
         }
@@ -90,9 +90,6 @@ namespace Garnet.test
                             exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]));
                             break;
                         case RespCommand.VGETATTR:
-                            // TODO: Implement when VGETATTR works
-                            continue;
-                        case RespCommand.VINFO:
                             // TODO: Implement when VGETATTR works
                             continue;
                         case RespCommand.VISMEMBER:
@@ -697,9 +694,6 @@ namespace Garnet.test
                                 break;
                             case RespCommand.VGETATTR:
                                 // TODO: Implement once VGETATTR is implemented
-                                continue;
-                            case RespCommand.VINFO:
-                                // TODO: Implement once VINFO is implemented
                                 continue;
                             case RespCommand.VISMEMBER:
                                 // TODO: Implement once VISMEMBER is implemented

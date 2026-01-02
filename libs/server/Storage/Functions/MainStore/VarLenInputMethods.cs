@@ -177,6 +177,10 @@ namespace Garnet.server
                     fieldInfo.ValueSize = NumUtils.CountCharsInDouble(incrByFloat, out var _, out var _, out var _);
                     return fieldInfo;
 
+                case RespCommand.VADD:
+                    fieldInfo.ValueSize = VectorManager.IndexSizeBytes;
+                    return fieldInfo;
+
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -332,6 +336,10 @@ namespace Garnet.server
                     case RespCommand.GETDEL:
                     case RespCommand.DELIFGREATER:
                         // Min allocation (only metadata) needed since this is going to be used for tombstoning anyway.
+                        return fieldInfo;
+
+                    case RespCommand.VADD:
+                        fieldInfo.ValueSize = VectorManager.IndexSizeBytes;
                         return fieldInfo;
 
                     default:

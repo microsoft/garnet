@@ -26,6 +26,38 @@ namespace Garnet.server
                 return false;
 
             var cmd = input.header.cmd;
+
+            // TODO: Restore once RecordType is set
+            // Ignore special Vector Set logic if we're scanning, detected with cmd == NONE
+            //if (cmd != RespCommand.NONE)
+            //{
+            //    // Vector sets are reachable (key not mangled) and hidden.
+            //    // So we can use that to detect type mismatches.
+            //    if (srcLogRecord.RecordType == VectorManager.VectorSetRecordType && !cmd.IsLegalOnVectorSet())
+            //    {
+            //        // Attempted an illegal op on a VectorSet
+            //        readInfo.Action = ReadAction.CancelOperation;
+            //        return false;
+            //    }
+            //    else if (srcLogRecord.RecordType != VectorManager.VectorSetRecordType && cmd.IsLegalOnVectorSet())
+            //    {
+            //        // Attempted a vector set op on a non-VectorSet
+            //        readInfo.Action = ReadAction.CancelOperation;
+            //        return false;
+            //    }
+            //}
+
+            // GET is used in a number of non-RESP contexts, which messes up existing logic
+            //
+            // Easiest to mark the actually-RESP commands with a < 0 arg1 and roll back to old logic
+            // after the Vector Set checks
+            //
+            // TODO: This is quite hacky, but requires a bunch of non-Vector Set changes - do those and remove
+            if (input.arg1 < 0 && cmd == RespCommand.GET)
+            {
+                cmd = RespCommand.NONE;
+            }
+
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
             if (cmd == RespCommand.GETIFNOTMATCH)
             {

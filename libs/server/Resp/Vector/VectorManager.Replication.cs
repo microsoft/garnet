@@ -56,7 +56,8 @@ namespace Garnet.server
         /// </summary>
         internal void ReplicateVectorSetAdd(ref PinnedSpanByte key, ref StringInput input, ref BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> context)
         {
-            throw new NotImplementedException();
+            // TODO: Move implementation over
+            //throw new NotImplementedException();
         }
 
         /// <summary>

@@ -108,9 +108,8 @@ namespace Garnet.server
 
                 AdvanceTo(i);
 
-                key = PinnedSpanByte.FromPinnedPointer(currentPtr + 3, currentLen + 1);
-                //key.MarkNamespace();
-                //key.SetNamespaceInPayload((byte)context);
+                VectorInput ignored = default;
+                key = MarkDiskANNKeyWithNamespace(context, (nint)(currentPtr+4), (nuint)currentLen, ref ignored);
             }
 
             /// <inheritdoc/>
@@ -122,6 +121,7 @@ namespace Garnet.server
                 input.CallbackContext = callbackContext;
                 input.Callback = (nint)callback;
                 input.Index = i;
+                input.Namespace = context;
             }
 
             /// <inheritdoc/>
@@ -196,10 +196,11 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
         {
-            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength);
+            VectorInput input = default;
+            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength, ref input);
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
-            VectorInput input = default;
+            
             var valueSpan = PinnedSpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
             PinnedSpanByte outputSpan = default;
 
@@ -215,10 +216,12 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe byte DeleteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength)
         {
-            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength);
+            VectorInput input = default;
+            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength, ref input);
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
 
+            // TODO: Input needs to be passed to delete!
             var status = ctx.Delete(keyWithNamespace);
             Debug.Assert(!status.IsPending, "Deletes should never go async");
 
@@ -228,11 +231,11 @@ namespace Garnet.server
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe byte ReadModifyWriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nuint writeLength, nint dataCallback, nint dataCallbackContext)
         {
-            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength);
+            VectorInput input = default;
+            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength, ref input);
 
             ref var ctx = ref ActiveThreadSession.vectorContext;
 
-            VectorInput input = default;
             input.Callback = dataCallback;
             input.CallbackContext = dataCallbackContext;
             input.WriteDesiredSize = (int)writeLength;
@@ -259,21 +262,20 @@ namespace Garnet.server
         /// Attempts to do this in place.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe PinnedSpanByte MarkDiskANNKeyWithNamespace(ulong context, nint keyData, nuint keyLength)
+        private static unsafe PinnedSpanByte MarkDiskANNKeyWithNamespace(ulong context, nint keyData, nuint keyLength, ref VectorInput input)
         {
             // DiskANN guarantees we have 4-bytes worth of unused data right before the key
+            // 
+            // We don't use it right now, but we used to use it for namespaces
             var keyPtr = (byte*)keyData;
-            var keyNamespaceByte = keyPtr - 1;
+            var nsPtr = keyPtr - 1;
 
-            // TODO: if/when namespace can be > 4-bytes, we'll need to copy here
+            *nsPtr = (byte)context;
 
-            //var keyWithNamespace = SpanByte.FromPinnedPointer(keyNamespaceByte, (int)(keyLength + 1));
-            //keyWithNamespace.MarkNamespace();
-            //keyWithNamespace.SetNamespaceInPayload((byte)context);
+            // Save namespace
+            input.Namespace = context;
 
-            //return keyWithNamespace;
-
-            throw new NotImplementedException();
+            return PinnedSpanByte.FromPinnedPointer(nsPtr, (int)(keyLength + 1));
         }
     }
 }

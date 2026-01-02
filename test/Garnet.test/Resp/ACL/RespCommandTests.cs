@@ -7602,23 +7602,6 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
-        public async Task VInfoACLsAsync()
-        {
-            await CheckCommandsAsync(
-                "VINFO",
-                [DoVInfoAsync]
-            );
-
-            static async Task DoVInfoAsync(GarnetClient client)
-            {
-                // TODO: this is a placeholder implementation
-
-                string val = await client.ExecuteForStringResultAsync("VINFO", ["foo"]);
-                ClassicAssert.AreEqual("OK", val);
-            }
-        }
-
-        [Test]
         public async Task VIsMemberACLsAsync()
         {
             await CheckCommandsAsync(
