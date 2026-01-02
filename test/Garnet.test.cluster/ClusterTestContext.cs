@@ -16,6 +16,7 @@ using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test.cluster
 {
@@ -179,7 +180,7 @@ namespace Garnet.test.cluster
         /// <param name="luaMemoryLimit"></param>
         /// <param name="useHostname"></param>
         /// <param name="luaTransactionMode"></param>
-        /// <param name="useNativeDeviceLinux"></param>
+        /// <param name="deviceType"></param>
         /// <param name="sublogCount"></param>
         public void CreateInstances(
             int shards,
@@ -217,7 +218,7 @@ namespace Garnet.test.cluster
             string luaMemoryLimit = "",
             bool useHostname = false,
             bool luaTransactionMode = false,
-            bool useNativeDeviceLinux = false,
+            DeviceType deviceType = DeviceType.Default,
             int clusterReplicationReestablishmentTimeout = 0,
             string aofSizeLimit = "",
             int compactionFrequencySecs = 0,
@@ -273,7 +274,7 @@ namespace Garnet.test.cluster
                 luaMemoryMode: luaMemoryMode,
                 luaMemoryLimit: luaMemoryLimit,
                 luaTransactionMode: luaTransactionMode,
-                useNativeDeviceLinux: useNativeDeviceLinux,
+                deviceType: deviceType,
                 clusterReplicationReestablishmentTimeout: clusterReplicationReestablishmentTimeout,
                 aofSizeLimit: aofSizeLimit,
                 compactionFrequencySecs: compactionFrequencySecs,

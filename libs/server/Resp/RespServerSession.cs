@@ -593,7 +593,7 @@ namespace Garnet.server
         internal void SetTransactionMode(bool enable)
             => txnManager.state = enable ? TxnState.Running : TxnState.None;
 
-        private void ProcessMessages<TBasicApi, TTxnApi>(ref TBasicApi basicApi, ref TTxnApi txnApi)
+        private void ProcessMessages<TBasicApi, TTxnApi>(ref TBasicApi basicApi, ref TTxnApi transactionalApi)
             where TBasicApi : IGarnetApi
             where TTxnApi : IGarnetApi
         {
@@ -629,7 +629,7 @@ namespace Garnet.server
                         {
                             if (txnManager.state == TxnState.Running)
                             {
-                                _ = ProcessBasicCommands(cmd, ref txnApi);
+                                _ = ProcessBasicCommands(cmd, ref transactionalApi);
                             }
                             else _ = cmd switch
                             {
@@ -1280,7 +1280,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SendAndReset(IMemoryOwner<byte> memory, int length)
+        internal void SendAndReset(IMemoryOwner<byte> memory, int length)
         {
             // Copy allocated memory to main buffer and send
             fixed (byte* _src = memory.Memory.Span)
@@ -1537,11 +1537,11 @@ namespace Garnet.server
                 consistentReadContextCallbacks: null,
                 logger,
                 respProtocolVersion);
-            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext,
-                dbStorageSession.objectStoreBasicContext, dbStorageSession.unifiedStoreBasicContext);
+            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.stringBasicContext,
+                dbStorageSession.objectBasicContext, dbStorageSession.unifiedBasicContext);
             var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession,
-                dbStorageSession.transactionalContext, dbStorageSession.objectStoreTransactionalContext,
-                dbStorageSession.unifiedStoreTransactionalContext);
+                dbStorageSession.stringTransactionalContext, dbStorageSession.objectTransactionalContext,
+                dbStorageSession.unifiedTransactionalContext);
 
             var transactionManager = new TransactionManager(storeWrapper, this, dbGarnetApi, dbLockableGarnetApi,
                 dbStorageSession, scratchBufferAllocator, storeWrapper.serverOptions.EnableCluster, logger: logger, dbId: dbId);
@@ -1572,11 +1572,11 @@ namespace Garnet.server
                 logger,
                 respProtocolVersion);
 
-            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.basicContext,
-                dbStorageSession.objectStoreBasicContext, dbStorageSession.unifiedStoreBasicContext);
+            var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.stringBasicContext,
+                dbStorageSession.objectBasicContext, dbStorageSession.unifiedBasicContext);
             var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession,
-                dbStorageSession.transactionalContext, dbStorageSession.objectStoreTransactionalContext,
-                dbStorageSession.unifiedStoreTransactionalContext);
+                dbStorageSession.stringTransactionalContext, dbStorageSession.objectTransactionalContext,
+                dbStorageSession.unifiedTransactionalContext);
 
             var consistentReadGarnetApi = new ConsistentReadGarnetApi(dbStorageSession, dbStorageSession.consistentReadContext,
                 dbStorageSession.objectStoreConsistentReadContext, dbStorageSession.unifiedStoreConsistentReadContext);

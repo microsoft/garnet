@@ -59,7 +59,8 @@ namespace Tsavorite.core
             while (true)
             {
                 InternalCompletePendingRequests(sessionFunctions, completedOutputs);
-                if (wait) sessionFunctions.Ctx.WaitPending(epoch);
+                if (wait)
+                    sessionFunctions.Ctx.WaitPending(epoch);
 
                 if (sessionFunctions.Ctx.HasNoPendingRequests)
                     return true;
@@ -81,7 +82,8 @@ namespace Tsavorite.core
         {
             _ = hlogBase.TryComplete();
 
-            if (sessionFunctions.Ctx.readyResponses.Count == 0) return;
+            if (sessionFunctions.Ctx.readyResponses.Count == 0)
+                return;
 
             while (sessionFunctions.Ctx.readyResponses.TryDequeue(out AsyncIOContext request))
                 InternalCompletePendingRequest(sessionFunctions, request, completedOutputs);
@@ -102,7 +104,7 @@ namespace Tsavorite.core
                 }
                 if (!status.IsPending)
                 {
-                    DisposeRecord(ref pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);
+                    DisposeRecord(ref pendingContext.diskLogRecord, DisposeReason.DeserializedFromDisk);    // TODO: This may have been the source of a conditional insert or push, so the reason may be different.
                     pendingContext.Dispose();
                 }
             }
@@ -118,8 +120,10 @@ namespace Tsavorite.core
             Debug.Assert(epoch.ThisInstanceProtected(), "InternalCompletePendingRequestFromContext requires epoch acquisition");
             newRequest = default;
 
-            if (request.diskLogRecord.IsSet)
-                pendingContext.TransferFrom(ref request.diskLogRecord);
+            // If this was an operation that was trying to retrieve a target record, copy it into the pendingContext.
+            // CONDITIONAL_* operations do not care about the retrieved data; they only care whether a record was found.
+            if (request.diskLogRecord.IsSet && !pendingContext.IsConditionalOp)
+                pendingContext.TransferFrom(ref request.diskLogRecord, hlogBase.bufferPool);
 
             var internalStatus = pendingContext.type switch
             {
@@ -142,7 +146,7 @@ namespace Tsavorite.core
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
                                                      status,
-                                                     new RecordMetadata(pendingContext.logicalAddress, pendingContext.ETag));
+                                                     new RecordMetadata(pendingContext.logicalAddress, pendingContext.eTag));
                 }
                 else if (pendingContext.type == OperationType.RMW)
                 {
@@ -151,7 +155,7 @@ namespace Tsavorite.core
                                                      ref pendingContext.output,
                                                      pendingContext.userContext,
                                                      status,
-                                                     new RecordMetadata(pendingContext.logicalAddress, pendingContext.ETag));
+                                                     new RecordMetadata(pendingContext.logicalAddress, pendingContext.eTag));
                 }
             }
 

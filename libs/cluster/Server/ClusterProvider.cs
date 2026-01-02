@@ -2,13 +2,13 @@
 // Licensed under the MIT license.
 
 global using BasicGarnetApi = Garnet.server.GarnetApi<
-        Tsavorite.core.BasicContext<Garnet.server.RawStringInput, Tsavorite.core.SpanByteAndMemory, long, Garnet.server.MainSessionFunctions,
+        Tsavorite.core.BasicContext<Garnet.server.StringInput, Tsavorite.core.SpanByteAndMemory, long, Garnet.server.MainSessionFunctions,
             /* MainStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
             Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>,
-        Tsavorite.core.BasicContext<Garnet.server.ObjectInput, Garnet.server.GarnetObjectStoreOutput, long, Garnet.server.ObjectSessionFunctions,
+        Tsavorite.core.BasicContext<Garnet.server.ObjectInput, Garnet.server.ObjectOutput, long, Garnet.server.ObjectSessionFunctions,
             /* ObjectStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
             Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>,
-        Tsavorite.core.BasicContext<Garnet.server.UnifiedStoreInput, Garnet.server.GarnetUnifiedStoreOutput, long, Garnet.server.UnifiedSessionFunctions,
+        Tsavorite.core.BasicContext<Garnet.server.UnifiedInput, Garnet.server.UnifiedOutput, long, Garnet.server.UnifiedSessionFunctions,
             /* UnifiedStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
             Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>>;
 
@@ -417,10 +417,13 @@ namespace Garnet.cluster
         public void ClusterPublish(RespCommand cmd, ref Span<byte> channel, ref Span<byte> message)
             => clusterManager.TryClusterPublish(cmd, ref channel, ref message);
 
-        internal GarnetClusterCheckpointManager GetReplicationLogCheckpointManager()
+        internal GarnetClusterCheckpointManager ReplicationLogCheckpointManager
         {
-            Debug.Assert(serverOptions.EnableCluster);
-            return (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
+            get
+            {
+                Debug.Assert(serverOptions.EnableCluster);
+                return (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
+            }
         }
 
         /// <summary>

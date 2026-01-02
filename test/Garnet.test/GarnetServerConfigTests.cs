@@ -314,7 +314,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(options.MemorySize == "16g");
             ClassicAssert.IsNull(options.AzureStorageServiceUri);
             ClassicAssert.IsNull(options.AzureStorageManagedIdentity);
-            ClassicAssert.IsFalse(options.UseAzureStorage);
+            ClassicAssert.AreNotEqual(DeviceType.AzureStorage, options.GetDeviceType());
 
             var args = new[] { "--storage-string", AzureEmulatedStorageString, "--use-azure-storage-for-config-export", "true", "--config-export-path", configPath, "-p", "4m", "-m", "128m", "--storage-service-uri", "https://demo.blob.core.windows.net", "--storage-managed-identity", "demo" };
             parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out options, out invalidOptions, out _, out _, silentMode: true);

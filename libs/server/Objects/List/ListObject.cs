@@ -127,7 +127,7 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new ListObject(list, HeapMemorySize);
 
         /// <inheritdoc />
-        public override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+        public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
                                      byte respProtocolVersion, out long memorySizeChange)
         {
             memorySizeChange = 0;

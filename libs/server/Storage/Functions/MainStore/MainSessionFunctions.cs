@@ -8,7 +8,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
     {
         readonly FunctionsState functionsState;
 
@@ -22,7 +22,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public void ConvertOutputToHeap(ref RawStringInput input, ref SpanByteAndMemory output)
+        public void ConvertOutputToHeap(ref StringInput input, ref SpanByteAndMemory output)
         {
             // TODO: Inspect input to determine whether we're in a context requiring ConvertToHeap.
             //output.ConvertToHeap();

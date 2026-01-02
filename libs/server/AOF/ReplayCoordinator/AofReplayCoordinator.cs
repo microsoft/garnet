@@ -64,6 +64,9 @@ namespace Garnet.server
                 return sublogReplayBuffers;
             }
 
+            /// <summary>
+            /// Dispose
+            /// </summary>
             public void Dispose()
             {
                 foreach (var replayContext in aofReplayContext)
@@ -197,7 +200,7 @@ namespace Garnet.server
                 foreach (var entry in fuzzyRegionOps)
                 {
                     fixed (byte* entryPtr = entry)
-                        _ = aofProcessor.ReplayOp(sublogIdx, aofProcessor.basicContext, aofProcessor.objectStoreBasicContext, aofProcessor.unifiedStoreBasicContext, entryPtr, entry.Length, asReplica);
+                        _ = aofProcessor.ReplayOp(sublogIdx, aofProcessor.stringBasicContext, aofProcessor.objectBasicContext, aofProcessor.unifiedBasicContext, entryPtr, entry.Length, asReplica);
                 }
             }
 
@@ -209,6 +212,7 @@ namespace Garnet.server
             /// <param name="asReplica"></param>
             internal void ProcessFuzzyRegionTransactionGroup(int sublogIdx, byte* ptr, bool asReplica)
             {
+                Debug.Assert(aofReplayContext[sublogIdx].txnGroupBuffer != null);
                 // Process transaction groups in FIFO order
                 var txnGroup = aofReplayContext[sublogIdx].txnGroupBuffer.Dequeue();
                 ProcessTransactionGroup(sublogIdx, ptr, asReplica, txnGroup);
@@ -226,7 +230,7 @@ namespace Garnet.server
                 {
                     // If recovering reads will not expose partial transactions so we can replay without locking.
                     // Also we don't have to synchronize replay of sublogs because write ordering has been established at the time of enqueue.
-                    ProcessTransactionGroupOperations(aofProcessor, aofProcessor.basicContext, aofProcessor.objectStoreBasicContext, aofProcessor.unifiedStoreBasicContext, txnGroup, asReplica);
+                    ProcessTransactionGroupOperations(aofProcessor, aofProcessor.stringBasicContext, aofProcessor.objectBasicContext, aofProcessor.unifiedBasicContext, txnGroup, asReplica);
                 }
                 else
                 {
@@ -241,9 +245,9 @@ namespace Garnet.server
                     // Process in parallel transaction group
                     ProcessTransactionGroupOperations(
                         aofProcessor,
-                        txnManager.TransactionalContext,
-                        txnManager.ObjectStoreTransactionalContext,
-                        txnManager.UnifiedStoreTransactionalContext,
+                        txnManager.StringTransactionalContext,
+                        txnManager.ObjectTransactionalContext,
+                        txnManager.UnifiedTransactionalContext,
                         txnGroup,
                         asReplica);
 
@@ -277,22 +281,18 @@ namespace Garnet.server
                     }
                 }
 
-                // Process transaction 
-                static void ProcessTransactionGroupOperations<TContext, TObjectContext, TUnifiedContext>(
-                    AofProcessor aofProcessor,
-                    TContext context,
-                    TObjectContext objectContext,
-                    TUnifiedContext unifiedContext,
-                    TransactionGroup txnGroup,
-                    bool asReplica)
-                    where TContext : ITsavoriteContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-                    where TObjectContext : ITsavoriteContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-                    where TUnifiedContext : ITsavoriteContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
+                // Process transaction
+                static void ProcessTransactionGroupOperations<TStringContext, TObjectContext, TUnifiedContext>(AofProcessor aofProcessor,
+                        TStringContext stringContext, TObjectContext objectContext, TUnifiedContext unifiedContext,
+                        TransactionGroup txnGroup, bool asReplica)
+                    where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+                    where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+                    where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
                 {
                     foreach (var entry in txnGroup.operations)
                     {
                         fixed (byte* entryPtr = entry)
-                            _ = aofProcessor.ReplayOp(txnGroup.sublogIdx, context, objectContext, unifiedContext, entryPtr, entry.Length, asReplica: asReplica);
+                            _ = aofProcessor.ReplayOp(txnGroup.sublogIdx, stringContext, objectContext, unifiedContext, entryPtr, entry.Length, asReplica: asReplica);
                     }
                 }
             }

@@ -35,6 +35,9 @@ namespace Tsavorite.core
         /// <summary>The position information for the next write to the object log.</summary>
         ObjectLogFilePositionInfo objectLogTail;
 
+        /// <summary>The lowest object-log segment in use; adjusted with Truncate to remain consistent with BeginAddress.</summary>
+        internal int lowestObjectLogSegmentInUse = 0;
+
         // Default to max sizes so testing a size as "greater than" will always be false
         readonly int maxInlineKeySize;
         readonly int maxInlineValueSize;
@@ -268,20 +271,86 @@ namespace Tsavorite.core
             }
         }
 
-        protected override void TruncateUntilAddress(long toAddress)
-        {
-            base.TruncateUntilAddress(toAddress);
-        }
-
         protected override void TruncateUntilAddressBlocking(long toAddress)
         {
+            // First get the segment of the object log to remove. We've put the lowest object log position used by a page into its PageHeader.
+            // If toAddress is in the middle of a main log page, we must limit objectlog truncation to the lowest segment used by the that page.
+            // If toAddress is not past the PageHeader, then assume it is the start of the page and its PageHeader hasn't been written, so use
+            // the previous page.
+            var objectLogSegment = -1;
+            if (objectLogDevice is not null)
+            {
+                var addressOfStartOfMainLogPage = GetAddressOfStartOfPageOfAddress(toAddress);
+                if (GetOffsetOnPage(toAddress) <= PageHeader.Size && addressOfStartOfMainLogPage >= PageSize)
+                    addressOfStartOfMainLogPage -= PageSize;
+                objectLogSegment = GetLowestObjectLogSegmentInUse(addressOfStartOfMainLogPage);
+            }
+
+            // Now do the actual truncations.
             base.TruncateUntilAddressBlocking(toAddress);
+            if (objectLogSegment >= 0)
+            {
+                objectLogDevice.TruncateUntilSegment(objectLogSegment);
+                _ = MonotonicUpdate(ref lowestObjectLogSegmentInUse, objectLogSegment, out _);
+            }
         }
 
         protected override void RemoveSegment(int segment)
         {
-            //TODOnow("Get the object log segment information from this main-log segment's last PageHeader");
+            // if segment is not the last segment (which should be the case), we can use the page header of the start of the segment to get
+            // the highest object log segment to remove because we know its PageHeader has been written. Otherwise, we have to use the previous
+            // page's PageHeader to get the object log segment to remove.
+            var objectLogSegment = -1;
+            if (objectLogDevice is not null)
+            {
+                var addressOfStartOfMainLogPage = GetStartLogicalAddressOfSegment(segment);
+                if (segment >= device.EndSegment)
+                    addressOfStartOfMainLogPage -= PageSize;
+                objectLogSegment = GetLowestObjectLogSegmentInUse(addressOfStartOfMainLogPage);
+            }
+
+            // Now do the actual truncations; TruncateUntilSegment does not remove the passed segment.
             base.RemoveSegment(segment);
+            if (objectLogSegment >= 0)
+            {
+                objectLogDevice.TruncateUntilSegment(objectLogSegment);
+                _ = MonotonicUpdate(ref lowestObjectLogSegmentInUse, objectLogSegment, out _);
+            }
+        }
+
+        private int GetLowestObjectLogSegmentInUse(long addressOfStartOfMainLogPage)
+        {
+            Debug.Assert(objectLogDevice is not null, "GetHighestObjectLogSegmentToRemove should not be called if there is no objectLogDevice");
+            var objectLogSegment = -1;
+
+            // If we're on the first main-log page, we won't be able to remove any object log segments.
+            // If we're not past the PageHeader of the second page, then the PageHeader probably hasn't been written, so we can't read it.
+            if (addressOfStartOfMainLogPage <= PageSize + PageHeader.Size)
+                return objectLogSegment;
+
+            var buffer = bufferPool.Get(sectorSize);
+            PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
+            try
+            {
+                device.ReadAsync((ulong)addressOfStartOfMainLogPage, (IntPtr)buffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);
+                result.handle.Wait();
+                if (result.numBytesRead >= PageHeader.Size)
+                {
+                    var pageHeader = *(PageHeader*)buffer.aligned_pointer;
+                    if (pageHeader.objectLogLowestPositionWord != ObjectLogFilePositionInfo.NotSet)
+                    {
+                        var objectLogPosition = new ObjectLogFilePositionInfo(pageHeader.objectLogLowestPositionWord, objectLogTail.SegmentSizeBits);   // TODO verify SegmentSizeBits is correct
+                        objectLogSegment = objectLogPosition.SegmentId;
+                    }
+                }
+            }
+            finally
+            {
+                bufferPool.Return(buffer);
+                result.DisposeHandle();
+            }
+
+            return objectLogSegment;
         }
 
         protected override void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
@@ -303,7 +372,7 @@ namespace Tsavorite.core
                 }
                 else
                 {
-                    // We are writing to a separate device which starts at "startPage"
+                    // We are writing to a separate device which starts at "startPage" (this is probably from checkpointing)
                     WriteAsync(flushBuffers, flushPage, (ulong)(AlignedPageSizeBytes * (flushPage - startPage)), (uint)possiblyPartialPageSize,
                                callback, asyncResult, device, objectLogDevice, fuzzyStartLogicalAddress);
                 }
@@ -345,9 +414,15 @@ namespace Tsavorite.core
             => new(bufferPool, IStreamBuffer.BufferSize, numberOfDeserializationBuffers, objectLogDevice, logger);
 
         /// <inheritdoc/>
+        internal override int LowestObjectLogSegmentInUse => lowestObjectLogSegmentInUse;
+        /// <inheritdoc/>
         internal override ObjectLogFilePositionInfo GetObjectLogTail() => objectLogTail;
         /// <inheritdoc/>
-        internal override void SetObjectLogTail(ObjectLogFilePositionInfo tail) => objectLogTail = tail;
+        internal override void SetObjectLogTail(ObjectLogFilePositionInfo tail)
+        {
+            Debug.Assert(!objectLogTail.HasData, $"SetObjectLogTail should be called only when we have not already set objectLogTail, such as in Recovery");
+            objectLogTail = tail;
+        }
 
         /// <summary>Object log segment size</summary>
         public override long GetObjectLogSegmentSize() => ObjectLogSegmentSize;
@@ -365,12 +440,15 @@ namespace Tsavorite.core
                 return;
             }
 
-            // Short circuit if we are not using flushBuffers (e.g. using ObjectAllocator for string-only purposes).
+            // Short circuit if we are not using flushBuffers and not in recovery (e.g. using ObjectAllocator for string-only purposes).
             if (flushBuffers is null)
             {
-                WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage),
-                                (uint)AlignedPageSizeBytes, callback, asyncResult, device);
-                return;
+                if (!asyncResult.isForRecovery)
+                {
+                    WriteInlinePageAsync((nint)pagePointers[flushPage % BufferSize], (ulong)(AlignedPageSizeBytes * flushPage), (uint)AlignedPageSizeBytes, callback, asyncResult, device);
+                    return;
+                }
+                Debug.Assert(!asyncResult.partial, "Partial flush should not be requested for recovery flushes");
             }
 
             Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
@@ -410,6 +488,8 @@ namespace Tsavorite.core
                     numBytesToWrite = (uint)(endOffset - startOffset);
                 }
             }
+            else
+                Debug.Assert(!asyncResult.isForRecovery, "asyncResult.isForRecovery should always be done an entire page at a time");
 
             var alignedStartOffset = RoundDown(startOffset, (int)device.SectorSize);
             var startPadding = startOffset - alignedStartOffset;
@@ -438,7 +518,7 @@ namespace Tsavorite.core
                 // Read back the first sector if the start is not aligned (this means we already wrote a partially-filled sector with ObjectLog fields set).
                 if (startPadding > 0)
                 {
-                    // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
+                    // TODO: This will potentially overwrite partial sectors (with the same data) if this is a partial flush; a workaround would be difficult.
                     // TODO: Cache the last sector flushed in readBuffers so we can avoid this Read.
                     PageAsyncReadResult<Empty> result = new() { handle = new CountdownEvent(1) };
                     device.ReadAsync(alignedMainLogFlushPageAddress + (ulong)alignedStartOffset, (IntPtr)srcBuffer.aligned_pointer, (uint)sectorSize, AsyncReadPageCallback, result);
@@ -460,16 +540,22 @@ namespace Tsavorite.core
                 // Include page header when calculating end address.
                 var endPhysicalAddress = (long)srcBuffer.GetValidPointer() + startPadding + numBytesToWrite;
                 var physicalAddress = (long)srcBuffer.GetValidPointer() + firstRecordOffset - alignedStartOffset;
+
+                // For recovery flushes we don't re-serialize; rather we just update the object lengths and positions in the log file using deserialized
+                // Overflow and/or Object information. That means we also have to track the increasing object log position "as if" we were re-serializing
+                // the objects (because it is recovery, the lengths will not change--even if this is a page from snapshot, in which case we still don't
+                // want to write to an object-log segment; that is ONLY done on OnPagesMarkedReadOnly.
+                ref var pageHeader = ref *(PageHeader*)srcBuffer.GetValidPointer();
+                var recoveryOngoingPageHeader = asyncResult.isForRecovery ? pageHeader.GetLowestObjectLogPosition(objectLogTail.SegmentSizeBits) : default;
                 while (physicalAddress < endPhysicalAddress)
                 {
                     // LogRecord is in the *copy of* the log buffer. We will update it (for objectIds) without affecting the actual record in the log.
+                    // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
                     var logRecord = new LogRecord(physicalAddress, objectIdMap);
-
-                    // Use allocatedSize here because that is what LogicalAddress is based on.
                     var logRecordSize = logRecord.AllocatedSize;
 
                     // Do not write Invalid records. This includes IsNull records.
-                    if (!logRecord.Info.Invalid)
+                    if (logRecord.Info.Valid)
                     {
                         // Do not write v+1 records (e.g. during a checkpoint)
                         if (logicalAddress < fuzzyStartLogicalAddress || !logRecord.Info.IsInNewVersion)
@@ -478,14 +564,25 @@ namespace Tsavorite.core
                             // which would be the case where we were created to be used for inline string records only.
                             if (logRecord.Info.RecordHasObjects)
                             {
-                                var recordStartPosition = logWriter.GetNextRecordStartPosition();
-                                if (isFirstRecordOnPage)
+                                if (!asyncResult.isForRecovery)
                                 {
-                                    ((PageHeader*)srcBuffer.GetValidPointer())->SetLowestObjectLogPosition(recordStartPosition);
-                                    isFirstRecordOnPage = false;
+                                    var recordStartPosition = logWriter.GetNextRecordStartPosition();
+                                    if (isFirstRecordOnPage)
+                                        pageHeader.SetLowestObjectLogPosition(recordStartPosition);
+
+                                    var valueObjectLength = logWriter.WriteRecordObjects(in logRecord);
+                                    logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength);
                                 }
-                                var valueObjectLength = logWriter.WriteRecordObjects(in logRecord);
-                                logRecord.SetObjectLogRecordStartPositionAndLength(recordStartPosition, valueObjectLength);
+                                else
+                                {
+                                    // In recovery we just need to update the disk-image LogRecord with the object lengths and file position, and then
+                                    // advance the recoveryOngoingPageHeader position. This advancement will also take care of segment breaks if needed.
+                                    var objectLengths = logRecord.SetRecoveredObjectLogRecordStartPosition(recoveryOngoingPageHeader);
+                                    recoveryOngoingPageHeader.Advance(objectLengths);
+                                }
+
+                                // Do this for both cases so it's clear when debugging
+                                isFirstRecordOnPage = false;
                             }
                         }
                         else
@@ -511,8 +608,7 @@ namespace Tsavorite.core
                 // Finally write the main log page as part of OnPartialFlushComplete, or directly if we had no flushBuffers.
                 // TODO: This will potentially overwrite partial sectors if this is a partial flush; a workaround would be difficult.
                 if (logWriter is not null)
-                    logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset,
-                        callback, asyncResult, out objectLogTail);
+                    logWriter.OnPartialFlushComplete(srcBuffer.GetValidPointer(), alignedBufferSize, device, alignedMainLogFlushPageAddress + (uint)alignedStartOffset, callback, asyncResult, ref objectLogTail);
                 else
                     device.WriteAsync((IntPtr)srcBuffer.GetValidPointer(), alignedMainLogFlushPageAddress + (uint)alignedStartOffset, (uint)alignedBufferSize, callback, asyncResult);
             }
@@ -531,6 +627,7 @@ namespace Tsavorite.core
 
             // Set the page status to flushed
             var result = (PageAsyncReadResult<Empty>)context;
+            result.numBytesRead = numBytes;
             _ = result.handle.Signal();
         }
 
@@ -555,7 +652,7 @@ namespace Tsavorite.core
 
             var logReader = new ObjectLogReader<TStoreFunctions>(readBuffers, storeFunctions);
             logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
-            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.request_key, startPosition.SegmentSizeBits))
+            if (logReader.ReadRecordObjects(ref diskLogRecord.logRecord, ctx.requestKey, startPosition.SegmentSizeBits))
             {
                 // Success; set the DiskLogRecord objectDisposer. We dispose the object here because it is read from the disk, unless we transfer it such as by CopyToTail.
                 ctx.diskLogRecord.objectDisposer = obj => storeFunctions.DisposeValueObject(obj, DisposeReason.DeserializedFromDisk);
@@ -573,12 +670,12 @@ namespace Tsavorite.core
         protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
             DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device)
         {
-            //TODOnow("Add CancellationToken to the ReadAsync path");
+            //TODO("Add CancellationToken to the ReadAsync and WriteAsync paths");
 
             asyncResult.callback = callback;
             asyncResult.destinationPtr = destinationPtr;
             asyncResult.readBuffers = readBuffers;
-            asyncResult.maxPtr = aligned_read_length;
+            asyncResult.maxAddressOffsetOnPage = aligned_read_length;
 
             device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, AsyncReadPageWithObjectsCallback<TContext>, asyncResult);
         }
@@ -590,8 +687,6 @@ namespace Tsavorite.core
 
             var result = (PageAsyncReadResult<TContext>)context;
             var pageStartAddress = (long)result.destinationPtr;
-            if (numBytes < result.maxPtr)
-                result.maxPtr = numBytes;
 
             // Iterate all records in range to determine how many bytes we need to read from objlog.
             ObjectLogFilePositionInfo startPosition = new(), endPosition = new();
@@ -599,21 +694,15 @@ namespace Tsavorite.core
             ulong endValueLength = 0;
             ulong totalBytesToRead = 0;
             var recordAddress = pageStartAddress + PageHeader.Size;
-            var endAddress = pageStartAddress + result.maxPtr;
+            var endAddress = pageStartAddress + result.maxAddressOffsetOnPage;
 
             while (recordAddress < endAddress)
             {
+                // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
                 var logRecord = new LogRecord(recordAddress);
-
-                // Use allocatedSize here because that is what LogicalAddress is based on.
-                if (logRecord.Info.RecordIsInline)
-                {
-                    recordAddress += logRecord.AllocatedSize;
-                    continue;
-                }
-
                 recordAddress += logRecord.AllocatedSize;
-                if (logRecord.Info.Valid)
+
+                if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
                 {
                     if (!startPosition.IsSet)
                         startPosition = new(logRecord.GetObjectLogRecordStartPositionAndLengths(out _, out _), objectLogTail.SegmentSizeBits);
@@ -634,26 +723,15 @@ namespace Tsavorite.core
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
                 logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
 
-                var objectIdMapToUse = transientObjectIdMap;
-                if (result.isForRecovery)
-                {
-                    objectIdMapToUse = pages[result.page % BufferSize].objectIdMap;
-                    _ = MonotonicUpdate(ref objectLogTail.word, endPosition.word, out _);
-                }
+                var objectIdMapToUse = result.isForRecovery ? pages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
 
                 while (recordAddress < endAddress)
                 {
+                    // Increment for next iteration; use allocatedSize because that is what LogicalAddress is based on.
                     var logRecord = new LogRecord(recordAddress, objectIdMapToUse);
-
-                    // Use allocatedSize here because that is what LogicalAddress is based on.
-                    if (logRecord.Info.RecordIsInline)
-                    {
-                        recordAddress += logRecord.AllocatedSize;
-                        continue;
-                    }
-
                     recordAddress += logRecord.AllocatedSize;
-                    if (logRecord.Info.Valid)
+
+                    if (logRecord.Info.RecordHasObjects && logRecord.Info.Valid)
                     {
                         // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
                         // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
@@ -717,7 +795,7 @@ namespace Tsavorite.core
             observer?.OnNext(iter);
         }
 
-        internal override void AsyncFlushDeltaToDevice(long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
+        internal override void AsyncFlushDeltaToDevice(CircularDiskWriteBuffer flushBuffers, long startAddress, long endAddress, long prevEndAddress, long version, DeltaLog deltaLog, out SemaphoreSlim completedSemaphore, int throttleCheckpointFlushDelayMs)
         {
             throw new TsavoriteException("Incremental snapshots not supported with generic allocator");
         }

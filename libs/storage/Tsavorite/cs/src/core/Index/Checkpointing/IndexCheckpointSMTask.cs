@@ -28,7 +28,7 @@ namespace Tsavorite.core
             switch (next.Phase)
             {
                 case Phase.PREPARE:
-                    Debug.Assert(store._indexCheckpoint.IsDefault());
+                    Debug.Assert(store._indexCheckpoint.IsDefault);
                     store._indexCheckpointToken = guid;
                     store.InitializeIndexCheckpoint(store._indexCheckpointToken);
                     store._indexCheckpoint.info.startLogicalAddress = store.hlogBase.GetTailAddress();

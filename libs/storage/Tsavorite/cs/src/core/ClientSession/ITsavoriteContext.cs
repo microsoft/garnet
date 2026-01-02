@@ -175,6 +175,16 @@ namespace Tsavorite.core
         Status ReadAtAddress(long address, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default);
 
         /// <summary>
+        /// Read batch operation, which attempts to prefetch as an optimization.
+        /// </summary>
+        void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext = default)
+            where TBatch : IReadArgBatch<TInput, TOutput>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+            ;
+
+        /// <summary>
         /// Upsert operation
         /// </summary>
         /// <param name="key"></param>
@@ -314,7 +324,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Upsert operation with a disk log record and user-supplied key
         /// </summary>
+        /// <param name="input"></param>
         /// <param name="diskLogRecord">Log record that was read from disk</param>
+        /// <param name="output"></param>
+        /// <param name="upsertOptions"></param>
+        /// <param name="userContext"></param>
         /// <returns></returns>
         Status Upsert<TSourceLogRecord>(ref TInput input, in TSourceLogRecord diskLogRecord, ref TOutput output, ref UpsertOptions upsertOptions, TContext userContext = default)
             where TSourceLogRecord : ISourceLogRecord;

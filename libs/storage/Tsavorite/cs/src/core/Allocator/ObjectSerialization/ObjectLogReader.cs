@@ -115,8 +115,8 @@ namespace Tsavorite.core
                 }
                 else if (logRecord.Info.ValueIsObject)
                 {
-                    // Info.ValueIsObject is true. This assignment also allocates the slot in ObjectIdMap and updates the value length to be ObjectIdSize.
-                    logRecord.ValueObject = DoDeserialize();
+                    // Info.ValueIsObject is true. DoDeserialize() also allocates the slot in ObjectIdMap and updates the value length to be ObjectIdSize.
+                    DoDeserialize(ref logRecord);
                 }
                 return true;
             }
@@ -137,6 +137,8 @@ namespace Tsavorite.core
 
             // Read from the circular buffer.
             var buffer = readBuffers.GetCurrentBuffer();
+            if (buffer is null || !buffer.HasData)
+                return 0;
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();   // IDevice does not support cancellation, so just check this here
@@ -165,7 +167,7 @@ namespace Tsavorite.core
             }
         }
 
-        IHeapObject DoDeserialize()
+        void DoDeserialize(ref LogRecord logRecord)
         {
             deserializedLength = 0;
             inDeserialize = true;
@@ -179,8 +181,8 @@ namespace Tsavorite.core
             }
 
             valueObjectSerializer.Deserialize(out var valueObject);
+            logRecord.SetDeserializedValueObject(valueObject, deserializedLength);
             OnDeserializeComplete(valueObject);
-            return valueObject;
         }
 
         void OnDeserializeComplete(IHeapObject valueObject)
@@ -188,6 +190,7 @@ namespace Tsavorite.core
             // TODO add size tracking; do not track deserialization size changes if we are deserializing to a frame
 
             inDeserialize = false;
+            deserializedLength = 0;
         }
 
         /// <inheritdoc/>

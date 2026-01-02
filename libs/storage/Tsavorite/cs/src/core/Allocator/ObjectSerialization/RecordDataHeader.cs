@@ -103,8 +103,13 @@ namespace Tsavorite.core
         /// <summary>The number of data header indicator bytes; currently 3 for the length indicator, Namespace, RecordType.</summary>
         internal const int NumIndicatorBytes = 3;
 
-        /// <summary>The flag indicating that the namespace is more that sbyte.MaxValue, in which case there is extended data before the key.</summary>
-        internal const byte ExtendedNamespaceFlag = 1 << 7;
+        /// <summary>If the <see cref="ExtendedNamespaceIndicatorBit"/> is not set, then the <see cref="NamespaceIndicatorMask"/> bits
+        /// contain the full namespace as a single byte; otherwise those bits are the length of the extended namespace data preceding the key data.</summary>
+        internal const byte ExtendedNamespaceIndicatorBit = 1 << 7;
+        /// <summary>If the <see cref="ExtendedNamespaceIndicatorBit"/> is not set, then the <see cref="NamespaceIndicatorMask"/> bits
+        /// contain the full namespace as a single byte; otherwise those bits are the length of the extended namespace data preceding the key data.</summary>
+        internal const byte NamespaceIndicatorMask = ExtendedNamespaceIndicatorBit - 1;
+
         /// <summary>Offset of the nameSpace byte in the header.</summary>
         internal const byte NamespaceOffsetInHeader = 1;
         /// <summary>Offset of the recordType byte in the header.</summary>
@@ -146,7 +151,7 @@ namespace Tsavorite.core
             get
             {
                 var nameSpace = *(HeaderPtr + NamespaceOffsetInHeader);
-                return (nameSpace & ExtendedNamespaceFlag) == 0 ? nameSpace : nameSpace & ~ExtendedNamespaceFlag;
+                return (nameSpace & ExtendedNamespaceIndicatorBit) == 0 ? nameSpace : nameSpace & NamespaceIndicatorMask;
             }
         }
 
@@ -156,7 +161,7 @@ namespace Tsavorite.core
             get
             {
                 var nameSpace = *(HeaderPtr + NamespaceOffsetInHeader);
-                if ((nameSpace & ExtendedNamespaceFlag) != 0)
+                if ((nameSpace & ExtendedNamespaceIndicatorBit) != 0)
                     throw new TsavoriteException("Cannot get NamespaceByte when ExtendedNamespaceFlag is set");
                 return nameSpace;
             }
@@ -183,12 +188,23 @@ namespace Tsavorite.core
             var recordLength = sizeInfo.AllocatedInlineRecordSize;
             var numRecordLengthBytes = GetByteCount(recordLength);
             var numKeyLengthBytes = GetByteCount(keyLength);
+
+            // If this was from revivification, we should have <= keyLengthBytes and == recordLengthBytes. Don't change keyLengthBytes, as that would move the RecordLength
+            // field in the header and that might not be an atomic update if it crosses a ulong boundary.
+            if (sizeInfo.IsRevivifiedRecord)
+            {
+                var (revivKeyLenBytes, revivRecLenBytes) = DeconstructKVByteLengths(out _ /*headerLength*/);
+                if (numKeyLengthBytes > revivKeyLenBytes || numRecordLengthBytes != revivRecLenBytes)
+                    throw new TsavoriteException($"In revivification, cannot exceed previous KeyLengthBytes {revivKeyLenBytes} or change RecordLengthBytes {revivRecLenBytes}");
+                numKeyLengthBytes = revivKeyLenBytes;
+            }
+
             *HeaderPtr = (byte)(((numRecordLengthBytes - 1) << kRecordLengthIndicatorShift) | ((numKeyLengthBytes - 1) >> kKeyLengthIndicatorShift));
 
             // TODO: Pass in the actual Span<byte>Namespace to VarLenMethods to set sizeInfo.FieldInfo.ExtendedNamespaceSize. Here we are only concerned
             // with setting the correct length indicators; LogRecord.InitializeRecord will set the actual data for it. sizeInfo.FieldInfo.ExtendedNamespaceSize
             // has been verified by RecordSizeInfo.CalculateSizes to be within byte range.
-            *(HeaderPtr + NamespaceOffsetInHeader) = (byte)(sizeInfo.FieldInfo.ExtendedNamespaceSize > 0 ? (ExtendedNamespaceFlag | (sizeInfo.FieldInfo.ExtendedNamespaceSize & 0x7f)) : 0);
+            *(HeaderPtr + NamespaceOffsetInHeader) = (byte)(sizeInfo.FieldInfo.ExtendedNamespaceSize > 0 ? (ExtendedNamespaceIndicatorBit | (sizeInfo.FieldInfo.ExtendedNamespaceSize & NamespaceIndicatorMask)) : 0);
             *(HeaderPtr + RecordTypeOffsetInHeader) = recordType;
 
             // Calculate and store the filler length, if any. Filler includes any space for optionals that won't have been set this early in the initialization process.
@@ -227,8 +243,8 @@ namespace Tsavorite.core
             Debug.Assert(!recordInfo.HasETag && !recordInfo.HasExpiration, "Expected no optionals in InitializeForRevivification");
 
             // See Initialize() for formatting notes.
-            // The keyLengthBytes and RecordLength must be less than or equal to those before revivification (even if we could fit a larger Key, the movement
-            // of RecordLength might not be atomic if it crosses the ulong boundary).
+            // The keyLengthBytes and RecordLength must be less than or equal to those before revivification (even if we could fit a larger Key, any movement
+            // of RecordLength might not be atomic if it crosses the ulong boundary, so we just don't allow it).
             var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
             var keyLength = GetKeyLength(numKeyLengthBytes, numRecordLengthBytes);
             Debug.Assert(GetByteCount(sizeInfo.InlineKeySize) <= numKeyLengthBytes, "Cannot exceed previous Key size bytes in InitializeForRevivification");
@@ -245,6 +261,7 @@ namespace Tsavorite.core
             // RecordLength is already set and we don't set key here; we wait for Revivification to do that. But we must update the sizeInfo
             // to ensure the AllocatedInlineRecordSize retains recordLength when LogRecord.InitializeRecord is called.
             sizeInfo.AllocatedInlineRecordSize = recordLength;
+            sizeInfo.IsRevivifiedRecord = true;
         }
 
         /// <summary>Set the record length; this is ONLY to be used for temporary copies (e.g. serialization for Migration and Replication).</summary>
@@ -284,7 +301,7 @@ namespace Tsavorite.core
         private readonly int GetFillerLength(int recordLength)
         {
             var fillerLen = (*HeaderPtr >> kFillerLengthIndicatorShift) & kFillerLengthIndicatorBitMask;
-            return fillerLen < 3 ? fillerLen + 1: *(int*)((long)RecordInfoPtr + recordLength - LogRecord.FillerLengthSize);
+            return fillerLen < 3 ? fillerLen + 1 : *(int*)((long)RecordInfoPtr + recordLength - LogRecord.FillerLengthSize);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

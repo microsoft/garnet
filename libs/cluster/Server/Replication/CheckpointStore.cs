@@ -84,7 +84,7 @@ namespace Garnet.cluster
 
             void PurgeAllCheckpointsExceptTokens(Guid logToken, Guid indexToken)
             {
-                var ckptManager = clusterProvider.GetReplicationLogCheckpointManager();
+                var ckptManager = clusterProvider.ReplicationLogCheckpointManager;
 
                 // Delete log checkpoints
                 foreach (var toDeletelogToken in ckptManager.GetLogCheckpointTokens())
@@ -180,11 +180,11 @@ namespace Garnet.cluster
                 // Below check each checkpoint token separately if it is eligible for deletion
                 if (!CanDeleteToken(curr, CheckpointFileType.STORE_HLOG))
                     break;
-                clusterProvider.GetReplicationLogCheckpointManager().DeleteLogCheckpoint(curr.metadata.storeHlogToken);
+                clusterProvider.ReplicationLogCheckpointManager.DeleteLogCheckpoint(curr.metadata.storeHlogToken);
 
                 if (!CanDeleteToken(curr, CheckpointFileType.STORE_INDEX))
                     break;
-                clusterProvider.GetReplicationLogCheckpointManager().DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
+                clusterProvider.ReplicationLogCheckpointManager.DeleteIndexCheckpoint(curr.metadata.storeIndexToken);
 
                 logger?.LogCheckpointEntry(LogLevel.Warning, "Deleting outdated checkpoint", curr);
 
@@ -277,7 +277,7 @@ namespace Garnet.cluster
             {
                 RecoveredReplicationId = null;
                 if (fileToken == default) return;
-                var ckptManager = clusterProvider.GetReplicationLogCheckpointManager();
+                var ckptManager = clusterProvider.ReplicationLogCheckpointManager;
                 var pageSizeBits = clusterProvider.serverOptions.PageSizeBits();
 
                 using (var deltaFileDevice = ckptManager.GetDeltaLogDevice(fileToken))

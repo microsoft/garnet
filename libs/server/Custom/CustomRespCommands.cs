@@ -95,7 +95,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             var inputArg = expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + expirationTicks : expirationTicks;
-            var input = new RawStringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
+            var input = new StringInput(cmd, ref parseState, startIdx: 1, arg1: inputArg);
 
             var output = new SpanByteAndMemory(null);
             if (type == CommandType.ReadModifyWrite)
@@ -145,7 +145,7 @@ namespace Garnet.server
             var header = new RespInputHeader(objType) { SubId = subid };
             var input = new ObjectInput(header, ref parseState, startIdx: 1);
 
-            var output = new GarnetObjectStoreOutput();
+            var output = new ObjectOutput();
 
             GarnetStatus status;
 
@@ -227,12 +227,12 @@ namespace Garnet.server
             var inputArg = customCommand.expirationTicks > 0 ? DateTimeOffset.UtcNow.Ticks + customCommand.expirationTicks : customCommand.expirationTicks;
             customCommandParseState.InitializeWithArguments(args);
             var cmd = customCommandManagerSession.GetCustomRespCommand(customCommand.id);
-            var rawStringInput = new RawStringInput(cmd, ref customCommandParseState, arg1: inputArg);
+            var stringInput = new StringInput(cmd, ref customCommandParseState, arg1: inputArg);
 
             var _output = new SpanByteAndMemory(null);
             if (customCommand.type == CommandType.ReadModifyWrite)
             {
-                _ = storageApi.RMW_MainStore(key, ref rawStringInput, ref _output);
+                _ = storageApi.RMW_MainStore(key, ref stringInput, ref _output);
                 Debug.Assert(!_output.IsSpanByte);
 
                 if (_output.Memory != null)
@@ -247,7 +247,7 @@ namespace Garnet.server
             }
             else
             {
-                var status = storageApi.Read_MainStore(key, ref rawStringInput, ref _output);
+                var status = storageApi.Read_MainStore(key, ref stringInput, ref _output);
                 Debug.Assert(!_output.IsSpanByte);
 
                 if (status == GarnetStatus.OK)
@@ -296,7 +296,7 @@ namespace Garnet.server
             customCommandParseState.InitializeWithArguments(args);
             var input = new ObjectInput(header, ref customCommandParseState);
 
-            var _output = new GarnetObjectStoreOutput();
+            var _output = new ObjectOutput();
             GarnetStatus status;
             if (customObjCommand.type == CommandType.ReadModifyWrite)
             {

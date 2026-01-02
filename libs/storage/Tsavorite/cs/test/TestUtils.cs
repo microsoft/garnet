@@ -121,7 +121,7 @@ namespace Tsavorite.test
 
         // Used to test the various devices by using the same test with VALUES parameter
         // Cannot use LocalStorageDevice from non-Windows OS platform
-        public enum DeviceType
+        public enum TestDeviceType
         {
             LSD,
             EmulatedAzure,
@@ -131,7 +131,7 @@ namespace Tsavorite.test
 
         internal const int DefaultLocalMemoryDeviceLatencyMs = 20;   // latencyMs only applies to DeviceType = LocalMemory
 
-        internal static IDevice CreateTestDevice(DeviceType testDeviceType, string filename, int latencyMs = DefaultLocalMemoryDeviceLatencyMs, bool deleteOnClose = false, bool omitSegmentIdFromFilename = false)
+        internal static IDevice CreateTestDevice(TestDeviceType testDeviceType, string filename, int latencyMs = DefaultLocalMemoryDeviceLatencyMs, bool deleteOnClose = false, bool omitSegmentIdFromFilename = false)
         {
             IDevice device = null;
             bool preallocateFile = false;
@@ -140,23 +140,23 @@ namespace Tsavorite.test
 
             switch (testDeviceType)
             {
-                case DeviceType.LSD when !OperatingSystem.IsWindows():
-                    Assert.Ignore($"Skipping {nameof(DeviceType.LSD)} on non-Windows platforms");
+                case TestDeviceType.LSD when !OperatingSystem.IsWindows():
+                    Assert.Ignore($"Skipping {nameof(TestDeviceType.LSD)} on non-Windows platforms");
                     break;
-                case DeviceType.LSD when OperatingSystem.IsWindows():
+                case TestDeviceType.LSD when OperatingSystem.IsWindows():
                     bool useIoCompletionPort = false;
                     bool disableFileBuffering = true;
                     device = new LocalStorageDevice(filename, preallocateFile, deleteOnClose, disableFileBuffering, capacity, recoverDevice, useIoCompletionPort);
                     break;
-                case DeviceType.EmulatedAzure:
+                case TestDeviceType.EmulatedAzure:
                     IgnoreIfNotRunningAzureTests();
                     device = new AzureStorageDevice(AzureEmulatedStorageString, AzureTestContainer, AzureTestDirectory, Path.GetFileName(filename), deleteOnClose: deleteOnClose, logger: TestLoggerFactory.CreateLogger("asd"));
                     break;
-                case DeviceType.MLSD:
+                case TestDeviceType.MLSD:
                     device = new ManagedLocalStorageDevice(filename, preallocateFile, deleteOnClose, true, capacity, recoverDevice);
                     break;
                 // Emulated higher latency storage device - takes a disk latency arg (latencyMs) and emulates an IDevice using main memory, serving data at specified latency
-                case DeviceType.LocalMemory:
+                case TestDeviceType.LocalMemory:
                     device = new LocalMemoryDevice(1L << 28, 1L << 25, 2, sector_size: 512, latencyMs: latencyMs);  // 64 MB (1L << 26) is enough for our test cases
                     break;
             }
@@ -214,7 +214,7 @@ namespace Tsavorite.test
             Object
         }
 
-        internal enum CompletionSyncMode { Sync, Async }
+        public enum CompletionSyncMode { Sync, Async }
 
         public enum ReadCopyDestination { Tail, ReadCache }
 
@@ -237,6 +237,8 @@ namespace Tsavorite.test
         public enum ScanMode { Scan, Iterate }
 
         public enum WaitMode { Wait, NoWait }
+
+        public enum RandomMode { Rng, NoRng }
 
         internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext>(CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);

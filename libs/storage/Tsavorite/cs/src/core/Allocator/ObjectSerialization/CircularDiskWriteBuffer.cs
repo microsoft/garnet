@@ -46,6 +46,11 @@ namespace Tsavorite.core
         /// so this address remains sector-aligned.</summary>
         internal ObjectLogFilePositionInfo filePosition;
 
+        /// <summary>If true, we own the file position and have initialized it, and we ignore the allocator's on PartialFlush begin and end. This is done for 
+        /// writes to an objectLog device that is not the allocator's. If false, then we are using the allocator's and will initialize from it when begging a PartialFlush
+        /// and update it when ending the PartialFlush.</summary>
+        bool ownFilePosition;
+
         /// <summary>Countdown event for global count of all buffers and all direct writes. Also triggers the external callback of a partial-flush sequence.</summary>
         /// <remarks>This is passed to all disk-write operations; multiple pending flushes may be in-flight with the callback unset; when the final flush (which may be a buffer-span, a direct write, or the
         /// final sector-aligning partial-flush completion flush), it allows the final pending flush to complete to know it *is* the final one and the callback can be called.</remarks>
@@ -77,14 +82,12 @@ namespace Tsavorite.core
             return GetAndInitializeCurrentBuffer();
         }
 
+        private DiskWriteBuffer GetOrAllocateCurrentBuffer()
+            => buffers[currentIndex] ?? (buffers[currentIndex] = new DiskWriteBuffer(bufferPool.Get(bufferSize), device, logger));
+
         internal DiskWriteBuffer GetAndInitializeCurrentBuffer()
         {
-            var buffer = GetCurrentBuffer();
-            if (buffer is null)
-            {
-                buffer = new DiskWriteBuffer(bufferPool.Get(bufferSize), device, logger);
-                buffers[currentIndex] = buffer;
-            }
+            var buffer = GetOrAllocateCurrentBuffer();
 
             // By this time the next device file write position has been updated, even if some of the preceding writes are still in-flight.
             var endPosition = filePosition.SegmentSize - filePosition.Offset;
@@ -103,11 +106,22 @@ namespace Tsavorite.core
             return startFilePos;
         }
 
+        internal void InitializeOwnObjectLogFilePosition(long segmentSize)
+        {
+            filePosition = new(word: 0, segSizeBits: GetLogBase2(segmentSize));
+            ownFilePosition = true;
+        }
+
         /// <summary>Resets start positions for the next partial flush.</summary>
         internal DiskWriteBuffer OnBeginPartialFlush(ObjectLogFilePositionInfo filePos)
         {
             // We start every partial flush with the first buffer, starting at position 0.
-            filePosition = filePos;
+            if (!ownFilePosition)
+            {
+                filePosition = filePos;
+                Debug.Assert(IsAligned(filePosition.Offset, (int)device.SectorSize), $"OnBeginPartialFlush file flush position ({filePosition}) is not sector-aligned");
+            }
+
             currentIndex = 0;
             countdownCallbackAndContext = new();
             return GetAndInitializeCurrentBuffer();
@@ -135,7 +149,7 @@ namespace Tsavorite.core
         /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
         /// <param name="endObjectLogFilePosition">The ending file position after the partial flush is complete</param>
         internal unsafe void OnPartialFlushComplete(byte* mainLogPageSpanPtr, int mainLogPageSpanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress,
-                DeviceIOCompletionCallback externalCallback, object externalContext, out ObjectLogFilePositionInfo endObjectLogFilePosition)
+                DeviceIOCompletionCallback externalCallback, object externalContext, ref ObjectLogFilePositionInfo endObjectLogFilePosition)
         {
             // Lock this with a reference until we have set the callback and issue the write. This callback is for the main log page write, and
             // when the countdownCallbackAndContext.Decrement hits 0 again, we're done with this partial flush range and will call the external callback.
@@ -165,8 +179,9 @@ namespace Tsavorite.core
                 buffer.FlushToDevice(ref filePosition, FlushToDeviceCallback, CreateDiskWriteCallbackContext());
             }
 
-            // Update the object log file position for the caller.
-            endObjectLogFilePosition = filePosition;
+            // Update the object log file position for the caller, unless we are using our own.
+            if (!ownFilePosition)
+                endObjectLogFilePosition = filePosition;
 
             // Write the main log page to the mainLogDevice.
             FlushToMainLogDevice(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress, CreateDiskWriteCallbackContext());
@@ -229,8 +244,9 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Dispose()
         {
-            // If we are here, then we have returned from the partial-flush loop and will not be incrementing numInFlightRangeBatches again, so if it is 0
-            // we are done and can free the buffers.
+            // If we are here, then we have returned from the partial-flush loop and will not be incrementing numInFlightRangeBatches again, so if it is 0 we are
+            // done and can free the buffers. If numInFlightWrites > 0, then we have pending writes and will free the buffers when they complete, but will not initiate
+            // any further writes. For this class, "disposed" means "we're done issuing writes". And filePosition must be preserved; checkpoints will retrieve it later.
             disposed = true;
             if (numInFlightWrites == 0)
                 ClearBuffers();

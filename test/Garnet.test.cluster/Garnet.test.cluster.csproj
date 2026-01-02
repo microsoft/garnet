@@ -15,7 +15,7 @@
     <Compile Include="..\..\test\Garnet.test\ServerCredential.cs" Link="ServerCredential.cs" />
     <Compile Include="..\..\test\Garnet.test\NUnitLoggerProvider.cs" Link="NUnitLoggerProvider.cs" />
     <Compile Include="..\..\test\Garnet.test\Extensions\RateLimiterTxn.cs" Link="RateLimiterTxn.cs" />
-    <Compile Include="..\..\test\Garnet.test\Extensions\BulkIncrementBy.cs" Link="BulkIncrementBy.cs" />
+		<Compile Include="..\..\test\Garnet.test\Extensions\BulkIncrementBy.cs" Link="BulkIncrementBy.cs" />
 		<Compile Include="..\..\test\Garnet.test\Extensions\BulkRead.cs" Link="BulkRead.cs" />
   </ItemGroup>
 

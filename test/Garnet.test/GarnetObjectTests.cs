@@ -146,7 +146,7 @@ namespace Garnet.test
             public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref IGarnetObject input, ref IGarnetObject output, ref RMWInfo rmwInfo)
             {
                 Assert.That(dstLogRecord.Info.ValueIsObject, Is.True);
-                dstLogRecord.TrySetValueObject(srcLogRecord.ValueObject);
+                dstLogRecord.TrySetValueObject(srcLogRecord.ValueObject.Clone());
                 return true;
             }
 

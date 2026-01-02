@@ -153,7 +153,7 @@ namespace Garnet.cluster
                         if (pstate != MigrateCmdParseState.SUCCESS) continue;
 
                         // Check if all keys are local R/W because we migrate keys and need to be able to delete them
-                        var slot = HashSlotUtils.HashSlot(currKeySlice.ToPointer(), currKeySlice.Length);
+                        var slot = HashSlotUtils.HashSlot(currKeySlice);
                         if (!current.IsLocal(slot, readWriteSession: false))
                         {
                             pstate = MigrateCmdParseState.SLOTNOTLOCAL;

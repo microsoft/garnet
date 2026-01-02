@@ -222,6 +222,8 @@ namespace Garnet.test.cluster
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
+            var primaryIndex = 0;
+            var replicaIndex = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
             context.CreateInstances(nodes_count, disableObjects: disableObjects, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
@@ -243,20 +245,18 @@ namespace Garnet.test.cluster
             var kvpairCount = keyCount;
             var addCount = 5;
             context.kvPairs = [];
+            context.kvPairsObj = [];
 
             // Populate Primary
-            if (!performRMW)
-                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
-            else
-                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, 0, addCount);
+            context.SimplePopulateDB(disableObjects, keyLength, kvpairCount, primaryIndex, performRMW: performRMW, addCount: addCount);
 
             var primaryLastSaveTime = context.clusterTestUtils.LastSave(0, logger: context.logger);
             var replicaLastSaveTime = context.clusterTestUtils.LastSave(1, logger: context.logger);
             context.clusterTestUtils.Checkpoint(0, logger: context.logger);
 
             // Populate Primary
-            context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
-            context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
+            context.SimplePopulateDB(disableObjects, keyLength, kvpairCount, primaryIndex, performRMW: performRMW, addCount: addCount);
+            context.SimpleValidateDB(disableObjects, replicaIndex);
 
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
             context.clusterTestUtils.WaitCheckpoint(0, primaryLastSaveTime, logger: context.logger);
@@ -267,10 +267,7 @@ namespace Garnet.test.cluster
             Thread.Sleep(TimeSpan.FromSeconds(2));
 
             // New insert
-            if (!performRMW)
-                context.PopulatePrimary(ref context.kvPairs, keyLength, kvpairCount, 0);
-            else
-                context.PopulatePrimaryRMW(ref context.kvPairs, keyLength, kvpairCount, 0, addCount);
+            context.SimplePopulateDB(disableObjects, keyLength, kvpairCount, primaryIndex, performRMW: performRMW, addCount: addCount);
 
             // Restart secondary
             context.nodes[1] = context.CreateInstance(
@@ -292,6 +289,7 @@ namespace Garnet.test.cluster
             // Validate synchronization was success
             context.clusterTestUtils.WaitForReplicaAofSync(0, 1, context.logger);
             context.ValidateKVCollectionAgainstReplica(ref context.kvPairs, 1);
+            context.SimpleValidateDB(disableObjects, replicaIndex);
         }
 
         [Test, Order(4)]
@@ -760,7 +758,7 @@ namespace Garnet.test.cluster
                 enableAOF: true,
                 useTLS: useTLS,
                 asyncReplay: asyncReplay,
-                useNativeDeviceLinux: true,
+                deviceType: Tsavorite.core.DeviceType.Native,
                 sublogCount: sublogCount);
             context.CreateConnection(useTLS: useTLS);
             ClassicAssert.AreEqual("OK", context.clusterTestUtils.AddDelSlotsRange(0, [(0, 16383)], true, context.logger));
@@ -1424,6 +1422,9 @@ namespace Garnet.test.cluster
         [CancelAfter(30_000)]
         public async Task ClusterReplicationMultiRestartRecover(CancellationToken cancellationToken)
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);

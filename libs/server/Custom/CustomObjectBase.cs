@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System.IO;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -60,7 +61,7 @@ namespace Garnet.server
         /// Clone object (shallow copy)
         /// </summary>
         /// <returns></returns>
-        public sealed override GarnetObjectBase Clone() => CloneObject();
+        public sealed override IHeapObject Clone() => CloneObject();
 
         /// <inheritdoc />
         public sealed override void DoSerialize(BinaryWriter writer)
@@ -73,7 +74,7 @@ namespace Garnet.server
         public abstract override void Dispose();
 
         /// <inheritdoc />
-        public sealed override bool Operate(ref ObjectInput input, ref GarnetObjectStoreOutput output,
+        public sealed override bool Operate(ref ObjectInput input, ref ObjectOutput output,
                                             byte respProtocolVersion, out long sizeChange)
         {
             sizeChange = 0;

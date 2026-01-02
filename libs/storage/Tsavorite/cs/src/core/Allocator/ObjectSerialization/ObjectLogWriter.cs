@@ -80,9 +80,9 @@ namespace Tsavorite.core
         /// <param name="externalContext">Context sent to <paramref name="externalCallback"/>.</param>
         /// <param name="endFilePosition">The ending file position after the partial flush is complete</param>
         internal unsafe void OnPartialFlushComplete(byte* mainLogPageSpanPtr, int mainLogPageSpanLength, IDevice mainLogDevice, ulong alignedMainLogFlushAddress,
-                DeviceIOCompletionCallback externalCallback, object externalContext, out ObjectLogFilePositionInfo endFilePosition)
+                DeviceIOCompletionCallback externalCallback, object externalContext, ref ObjectLogFilePositionInfo endFilePosition)
             => flushBuffers.OnPartialFlushComplete(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress,
-                externalCallback, externalContext, out endFilePosition);
+                externalCallback, externalContext, ref endFilePosition);
 
         /// <summary>
         /// Write Overflow and Object Keys and values in a <see cref="LogRecord"/> to the device.
@@ -139,7 +139,7 @@ namespace Tsavorite.core
                 // 2. Flush the sector-aligned span interior. We are writing direct to the device from a byte[], so we have to pin the array.
                 //    We may have to split across multiple segments.
                 var interiorLen = RoundDown(overflow.Array.Length - dataStart, (int)device.SectorSize);
-                var segmentRemainingLen = flushBuffers.filePosition.RemainingSize;
+                var segmentRemainingLen = flushBuffers.filePosition.RemainingSizeInSegment;
                 var gcHandle = (refCountedGCHandle is null) ? GCHandle.Alloc(overflow.Array, GCHandleType.Pinned) : default;
                 var localGcHandle = refCountedGCHandle?.gcHandle ?? gcHandle;
                 var overflowStartPtr = (byte*)localGcHandle.AddrOfPinnedObject() + overflow.StartOffset;
@@ -174,15 +174,15 @@ namespace Tsavorite.core
                         flushBuffers.FlushToDevice(overflowStartPtr + dataStart, (int)segmentRemainingLen, writeCallback);
                         dataStart += (int)segmentRemainingLen;
 
-                        Debug.Assert(flushBuffers.filePosition.RemainingSize == 0, $"Expected to be at end of segment but there were {flushBuffers.filePosition.RemainingSize} bytes remaining");
+                        Debug.Assert(flushBuffers.filePosition.RemainingSizeInSegment == 0, $"Expected to be at end of segment but there were {flushBuffers.filePosition.RemainingSizeInSegment} bytes remaining");
                         flushBuffers.filePosition.AdvanceToNextSegment();
-                        segmentRemainingLen = flushBuffers.filePosition.RemainingSize;
+                        segmentRemainingLen = flushBuffers.filePosition.RemainingSizeInSegment;
                     }
 
                     // Now we know we will fit in the last segment, so call recursively to optimize the "copy vs. direct" final fragment.
                     // First adjust the endPosition in case we don't have a full buffer of space remaining in the segment.
-                    if ((ulong)writeBuffer.RemainingCapacity > flushBuffers.filePosition.RemainingSize)
-                        writeBuffer.endPosition = (int)flushBuffers.filePosition.RemainingSize - writeBuffer.currentPosition;
+                    if ((ulong)writeBuffer.RemainingCapacity > flushBuffers.filePosition.RemainingSizeInSegment)
+                        writeBuffer.endPosition = (int)flushBuffers.filePosition.RemainingSizeInSegment - writeBuffer.currentPosition;
                     WriteDirect(overflow, fullDataSpan.Slice(dataStart), refCountedGCHandle);
                 }
 
@@ -203,6 +203,7 @@ namespace Tsavorite.core
 
             // Copy to the buffer. If it does not fit in the remaining capacity, we will write as much as does, flush the buffer, and move to next buffer.
             var dataStart = 0;
+            var segmentRemainingLen = flushBuffers.filePosition.SegmentSize - flushBuffers.GetNextRecordStartPosition().Offset;
             while (data.Length - dataStart > 0)
             {
                 Debug.Assert(writeBuffer.RemainingCapacity > 0,
@@ -210,23 +211,34 @@ namespace Tsavorite.core
                 cancellationToken.ThrowIfCancellationRequested();   // IDevice does not support cancellation, so just check this here
 
                 // If it won't all fit in the remaining buffer, write as much as will.
-                var requestLength = data.Length - dataStart;
+                var requestLength = (uint)(data.Length - dataStart);
                 if (requestLength > writeBuffer.RemainingCapacity)
-                    requestLength = writeBuffer.RemainingCapacity;
+                    requestLength = (uint)writeBuffer.RemainingCapacity;
 
-                data.Slice(dataStart, requestLength).CopyTo(writeBuffer.memory.TotalValidSpan.Slice(writeBuffer.currentPosition));
-                dataStart += requestLength;
-                writeBuffer.currentPosition += requestLength;
+                // If it won't all fit in the remaining segment, write as much as will.
+                if ((ulong)requestLength > segmentRemainingLen)
+                    requestLength = (uint)segmentRemainingLen;
+                segmentRemainingLen -= requestLength;
+
+                data.Slice(dataStart, (int)requestLength).CopyTo(writeBuffer.memory.TotalValidSpan.Slice(writeBuffer.currentPosition));
+                dataStart += (int)requestLength;
+                writeBuffer.currentPosition += (int)requestLength;
                 if (inSerialize)
                 {
-                    valueObjectBytesWritten += (uint)requestLength;
+                    valueObjectBytesWritten += requestLength;
                     if (valueObjectBytesWritten >= IHeapObject.MaxSerializedObjectSize)
                         throw new TsavoriteException($"Object serialized size currently at {valueObjectBytesWritten} which exceeds max serialization limit of {IHeapObject.MaxSerializedObjectSize}");
                 }
 
-                // See if we're at the end of the buffer.
-                if (writeBuffer.RemainingCapacity == 0)
+                // See if we're at the end of the buffer or segment.
+                if (writeBuffer.RemainingCapacity == 0 || segmentRemainingLen == 0)
                     OnBufferComplete();
+
+                if (segmentRemainingLen == 0)
+                {
+                    flushBuffers.filePosition.AdvanceToNextSegment();
+                    segmentRemainingLen = flushBuffers.filePosition.RemainingSizeInSegment;
+                }
             }
         }
 

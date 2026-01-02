@@ -111,14 +111,14 @@ namespace Tsavorite.core
             where TAllocator : IAllocator<TStoreFunctions>
         {
             // Transfers the containers from the pendingContext, then null them; this is called before pendingContext.Dispose().
-            keyContainer = pendingContext.request_key;
-            pendingContext.request_key = null;
+            keyContainer = pendingContext.requestKey;
+            pendingContext.requestKey = null;
             inputContainer = pendingContext.input;
             pendingContext.input = default;
 
             Output = pendingContext.output;
             Context = pendingContext.userContext;
-            RecordMetadata = new(pendingContext.logicalAddress, pendingContext.ETag);
+            RecordMetadata = new(pendingContext.logicalAddress, pendingContext.eTag);
             Status = status;
         }
 

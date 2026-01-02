@@ -188,7 +188,7 @@ namespace Resp.benchmark
                             var kvPair = kvPairs[kvOffset++ % kvPairs.Count];
                             var keyData = kvPair.Item1;
                             var valueData = kvPair.Item2;
-                            RawStringInput input = default;
+                            StringInput input = default;
                             fixed (byte* keyPtr = keyData)
                             fixed (byte* valuePtr = valueData)
                             {

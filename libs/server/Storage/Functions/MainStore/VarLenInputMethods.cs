@@ -10,7 +10,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<RawStringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
     {
         /// <summary>
         /// Parse ASCII byte array into long and validate that only contains ASCII decimal characters
@@ -97,7 +97,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref RawStringInput input)
+        public RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref StringInput input)
         {
             var cmd = input.header.cmd;
             var fieldInfo = new RecordFieldInfo()
@@ -126,7 +126,7 @@ namespace Garnet.server
 
                 case RespCommand.SETIFGREATER:
                 case RespCommand.SETIFMATCH:
-                    fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
+                    fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                     fieldInfo.HasETag = true;
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
@@ -143,7 +143,7 @@ namespace Garnet.server
                     return fieldInfo;
                 case RespCommand.SETRANGE:
                     var offset = input.parseState.GetInt(0);
-                    var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                    var newValue = input.parseState.GetArgSliceByRef(1);
                     fieldInfo.ValueSize = newValue.Length + offset;
                     return fieldInfo;
 
@@ -184,7 +184,7 @@ namespace Garnet.server
                         fieldInfo.ValueSize = functions.GetInitialLength(ref input);
                     }
                     else
-                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
+                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                     fieldInfo.HasETag = input.header.CheckWithETagFlag();
                     fieldInfo.HasExpiration = input.arg1 != 0;
                     return fieldInfo;
@@ -192,7 +192,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref RawStringInput input)
+        public RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input)
             where TSourceLogRecord : ISourceLogRecord
         {
             var fieldInfo = new RecordFieldInfo()
@@ -295,61 +295,16 @@ namespace Garnet.server
                         fieldInfo.HasExpiration = input.arg1 != 0;
                         return fieldInfo;
 
-                    case RespCommand.PERSIST:
-                        fieldInfo.HasExpiration = false;
-                        fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
-                        return fieldInfo;
-
                     case RespCommand.SETIFGREATER:
                     case RespCommand.SETIFMATCH:
-                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).ReadOnlySpan.Length;
+                        fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                         fieldInfo.HasETag = true;
                         fieldInfo.HasExpiration = input.arg1 != 0 || srcLogRecord.Info.HasExpiration;
                         return fieldInfo;
 
-                    case RespCommand.EXPIRE:
-                    case RespCommand.PEXPIRE:
-                    case RespCommand.EXPIREAT:
-                    case RespCommand.PEXPIREAT:
-                        {
-                            // Set HasExpiration to match with EvaluateExpireInPlace.
-                            if (srcLogRecord.Info.HasExpiration)
-                            {
-                                // case ExpireOption.NX:                // HasExpiration is true so we will retain it
-                                // case ExpireOption.XX:
-                                // case ExpireOption.None:
-                                // case ExpireOption.GT:
-                                // case ExpireOption.XXGT:
-                                // case ExpireOption.LT:
-                                // case ExpireOption.XXLT:
-                                fieldInfo.HasExpiration = true;         // Will update or retain
-                            }
-                            else
-                            {
-                                var expirationWithOption = new ExpirationWithOption(input.arg1);
-                                switch (expirationWithOption.ExpireOption)
-                                {
-                                    case ExpireOption.NX:
-                                    case ExpireOption.None:
-                                    case ExpireOption.LT:                   // If expiry doesn't exist, LT should treat the current expiration as infinite, so the new value must be less
-                                        fieldInfo.HasExpiration = true;     // Will update or retain
-                                        break;
-                                    default:
-                                        // case ExpireOption.XX:
-                                        // case ExpireOption.GT:            // If expiry doesn't exist, GT should treat the current expiration as infinite, so the new value cannot be greater
-                                        // case ExpireOption.XXGT:
-                                        // case ExpireOption.XXLT:
-                                        fieldInfo.HasExpiration = false;    // Will not add one and there is not one there now
-                                        break;
-                                }
-                            }
-                        }
-                        fieldInfo.ValueSize = srcLogRecord.ValueSpan.Length;
-                        return fieldInfo;
-
                     case RespCommand.SETRANGE:
                         var offset = input.parseState.GetInt(0);
-                        var newValue = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
+                        var newValue = input.parseState.GetArgSliceByRef(1);
 
                         fieldInfo.ValueSize = newValue.Length + offset;
                         if (fieldInfo.ValueSize < srcLogRecord.ValueSpan.Length)
@@ -396,7 +351,7 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref RawStringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref StringInput input)
         {
             var fieldInfo = new RecordFieldInfo()
             {
@@ -416,10 +371,10 @@ namespace Garnet.server
             return fieldInfo;
         }
 
-        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref RawStringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref StringInput input)
             => throw new GarnetException("String store should not be called with IHeapObject");
 
-        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref RawStringInput input)
+        public RecordFieldInfo GetUpsertFieldInfo<TSourceLogRecord>(ReadOnlySpan<byte> key, in TSourceLogRecord inputLogRecord, ref StringInput input)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (inputLogRecord.Info.ValueIsObject)

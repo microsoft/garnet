@@ -221,21 +221,21 @@ namespace Tsavorite.core
         /// <param name="result"></param>
         public void TruncateUntilSegmentAsync(int toSegment, AsyncCallback callback, IAsyncResult result)
         {
-            // Reset begin range to at least toAddress
+            // Reset begin range to at least toSegment
             if (!Utility.MonotonicUpdate(ref startSegment, toSegment, out int oldStart))
             {
                 // If no-op, invoke callback and return immediately
                 callback(result);
                 return;
             }
+
+            // We will delete segments in parallel; create a countdown event that will signal when all are completed.
             CountdownEvent countdown = new(toSegment - oldStart);
+
             // This action needs to be epoch-protected because readers may be issuing reads to the deleted segment, unaware of the delete.
             // Because of earlier compare-and-swap, the caller has exclusive access to the range [oldStartSegment, newStartSegment), and there will
             // be no double deletes.
-
-            bool isProtected = epoch.ThisInstanceProtected();
-            if (!isProtected)
-                epoch.Resume();
+            var suspendEpochWhenDone = epoch.ResumeIfNotProtected();
             try
             {
                 epoch.BumpCurrentEpoch(() =>
@@ -255,7 +255,8 @@ namespace Tsavorite.core
             }
             finally
             {
-                if (!isProtected) epoch.Suspend();
+                if (suspendEpochWhenDone)
+                    epoch.Suspend();
             }
         }
 

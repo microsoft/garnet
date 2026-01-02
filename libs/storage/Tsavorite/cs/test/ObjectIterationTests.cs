@@ -246,7 +246,7 @@ namespace Tsavorite.test
                 for (int i = 0; i < totalRecords; i++)
                 {
                     var key1 = new TestObjectKey { key = i + keyTag };
-                    var value = new TestObjectValue { value = i + 340000};
+                    var value = new TestObjectValue { value = i + 340000 };
                     _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), value);
                 }
             }

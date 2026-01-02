@@ -178,3 +178,7 @@ NOTES:
 </ul></ul>
 
 - [ ] KEYS will return out of order result as observed by the PRIMARY vs the REPLICA since REPLICA replays SET in parallel.
+
+- AofProcessor replay should use a separate basic context for replay?
+
+-

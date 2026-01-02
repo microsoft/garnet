@@ -25,41 +25,43 @@ namespace Garnet.server
     /// </summary>
     public sealed unsafe partial class TransactionManager
     {
+        internal bool AofEnabled => appendOnlyFile != null;
+
         /// <summary>
         /// Basic context for main store
         /// </summary>
-        readonly BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> basicContext;
+        readonly BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringBasicContext;
 
         /// <summary>
         /// Transactional context for main store
         /// </summary>
-        readonly TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalContext;
+        readonly TransactionalContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringTransactionalContext;
 
         /// <summary>
         /// Basic context for object store
         /// </summary>
-        readonly BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreBasicContext;
+        readonly BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectBasicContext;
 
         /// <summary>
         /// Transactional context for object store
         /// </summary>
-        readonly TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext;
+        readonly TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectTransactionalContext;
 
         /// <summary>
         /// Basic context for unified store
         /// </summary>
-        readonly BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreBasicContext;
+        readonly BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedBasicContext;
 
         /// <summary>
         /// Transactional context for unified store
         /// </summary>
-        readonly TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext;
+        readonly TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext;
 
         // Not readonly to avoid defensive copy
         GarnetWatchApi<BasicGarnetApi> garnetTxPrepareApi;
 
         // Not readonly to avoid defensive copy
-        TransactionalGarnetApi garnetTxRunApi;
+        TransactionalGarnetApi garnetTxMainApi;
 
         // Not readonly to avoid defensive copy
         BasicGarnetApi garnetTxFinalizeApi;
@@ -98,21 +100,22 @@ namespace Garnet.server
         long txnVersion;
         private TransactionStoreTypes storeTypes;
 
-        internal TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalContext
-            => transactionalContext;
-        internal TransactionalUnsafeContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalUnsafeContext
-            => basicContext.Session.TransactionalUnsafeContext;
-        internal TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> ObjectStoreTransactionalContext
-            => objectStoreTransactionalContext;
-        internal TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedStoreTransactionalContext
-            => unifiedStoreTransactionalContext;
+        internal TransactionalContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> StringTransactionalContext
+            => stringTransactionalContext;
+        internal TransactionalUnsafeContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> TransactionalUnsafeContext
+            => stringBasicContext.Session.TransactionalUnsafeContext;
+        internal TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> ObjectTransactionalContext
+            => objectTransactionalContext;
+        internal TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedTransactionalContext
+            => unifiedTransactionalContext;
 
         /// <summary>
         /// Array to keep pointer keys in keyBuffer
         /// </summary>
         private TxnKeyEntries keyEntries;
 
-        internal TransactionManager(StoreWrapper storeWrapper,
+        internal TransactionManager(
+            StoreWrapper storeWrapper,
             RespServerSession respSession,
             BasicGarnetApi garnetApi,
             TransactionalGarnetApi transactionalGarnetApi,
@@ -126,17 +129,20 @@ namespace Garnet.server
             int dbId = 0)
         {
             serverOptions = storeWrapper.serverOptions;
-            var session = storageSession.basicContext.Session;
-            basicContext = session.BasicContext;
-            transactionalContext = session.TransactionalContext;
+            var session = storageSession.stringBasicContext.Session;
+            stringBasicContext = session.BasicContext;
+            stringTransactionalContext = session.TransactionalContext;
 
-            var objectStoreSession = storageSession.objectStoreBasicContext.Session;
-            objectStoreBasicContext = objectStoreSession.BasicContext;
-            objectStoreTransactionalContext = objectStoreSession.TransactionalContext;
+            if (!storeWrapper.serverOptions.DisableObjects)
+            {
+                var objectSession = storageSession.objectBasicContext.Session;
+                objectBasicContext = objectSession.BasicContext;
+                objectTransactionalContext = objectSession.TransactionalContext;
+            }
 
-            var unifiedStoreSession = storageSession.unifiedStoreBasicContext.Session;
-            unifiedStoreBasicContext = unifiedStoreSession.BasicContext;
-            unifiedStoreTransactionalContext = unifiedStoreSession.TransactionalContext;
+            var unifiedStoreSession = storageSession.unifiedBasicContext.Session;
+            unifiedBasicContext = unifiedStoreSession.BasicContext;
+            unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
 
             this.functionsState = storageSession.functionsState;
             this.appendOnlyFile = functionsState.appendOnlyFile;
@@ -145,14 +151,14 @@ namespace Garnet.server
             this.respSession = respSession;
 
             watchContainer = new WatchedKeysContainer(initialSliceBufferSize, functionsState.watchVersionMap);
-            keyEntries = new TxnKeyEntries(initialSliceBufferSize, transactionalContext, objectStoreTransactionalContext, unifiedStoreTransactionalContext);
+            keyEntries = new TxnKeyEntries(initialSliceBufferSize, unifiedTransactionalContext);
             this.scratchBufferAllocator = scratchBufferAllocator;
 
             var dbFound = storeWrapper.TryGetDatabase(dbId, out var db);
             Debug.Assert(dbFound);
             this.stateMachineDriver = db.StateMachineDriver;
 
-            garnetTxRunApi = transactionalGarnetApi;
+            garnetTxMainApi = transactionalGarnetApi;
             garnetTxPrepareApi = new GarnetWatchApi<BasicGarnetApi>(garnetApi);
             garnetTxFinalizeApi = garnetApi;
 
@@ -183,10 +189,10 @@ namespace Garnet.server
 
                     // Release contexts
                     if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
-                        transactionalContext.EndTransaction();
-                    if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object)
-                        objectStoreTransactionalContext.EndTransaction();
-                    unifiedStoreTransactionalContext.EndTransaction();
+                        stringTransactionalContext.EndTransaction();
+                    if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
+                        objectTransactionalContext.EndTransaction();
+                    unifiedTransactionalContext.EndTransaction();
                 }
                 finally
                 {
@@ -224,7 +230,7 @@ namespace Garnet.server
             {
                 return RunTransactionProcInternal(
                     ref garnetTxPrepareApi,
-                    ref garnetTxRunApi,
+                    ref garnetTxMainApi,
                     ref garnetTxFinalizeApi,
                     id,
                     ref procInput,
@@ -342,7 +348,7 @@ namespace Garnet.server
                         opType = AofEntryType.StoredProcedure,
                         procedureId = id,
                         storeVersion = txnVersion,
-                        sessionID = basicContext.Session.ID,
+                        sessionID = stringBasicContext.Session.ID,
                     };
                     appendOnlyFile.Log.GetSubLog(0).Enqueue(header, ref procInput, out _);
                 }
@@ -362,7 +368,7 @@ namespace Garnet.server
                                     opType = AofEntryType.StoredProcedure,
                                     procedureId = id,
                                     storeVersion = txnVersion,
-                                    sessionID = basicContext.Session.ID,
+                                    sessionID = stringBasicContext.Session.ID,
                                 },
                                 sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                             },
@@ -406,7 +412,7 @@ namespace Garnet.server
                     {
                         opType = AofEntryType.TxnCommit,
                         storeVersion = txnVersion,
-                        txnID = basicContext.Session.ID,
+                        txnID = stringBasicContext.Session.ID,
                     };
                     appendOnlyFile.Log.GetSubLog(0).Enqueue(header, out _);
                 }
@@ -427,7 +433,7 @@ namespace Garnet.server
                                     padding = (byte)AofHeaderType.TransactionHeader,
                                     opType = AofEntryType.TxnCommit,
                                     storeVersion = txnVersion,
-                                    txnID = basicContext.Session.ID,
+                                    txnID = stringBasicContext.Session.ID,
                                 },
                                 sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
                             },
@@ -459,10 +465,10 @@ namespace Garnet.server
 
             // Release context
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
-                transactionalContext.ResetModified(key.ReadOnlySpan);
-            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object)
-                objectStoreTransactionalContext.ResetModified(key.ReadOnlySpan);
-            unifiedStoreTransactionalContext.ResetModified(key.ReadOnlySpan);
+                stringTransactionalContext.ResetModified(key.ReadOnlySpan);
+            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
+                objectTransactionalContext.ResetModified(key.ReadOnlySpan);
+            unifiedTransactionalContext.ResetModified(key.ReadOnlySpan);
         }
 
         internal void AddTransactionStoreTypes(TransactionStoreTypes transactionStoreTypes)
@@ -497,19 +503,19 @@ namespace Garnet.server
         void BeginTransaction()
         {
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
-                transactionalContext.BeginTransaction();
-            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object)
-                objectStoreTransactionalContext.BeginTransaction();
-            unifiedStoreTransactionalContext.BeginTransaction();
+                stringTransactionalContext.BeginTransaction();
+            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
+                objectTransactionalContext.BeginTransaction();
+            unifiedTransactionalContext.BeginTransaction();
         }
 
         void LocksAcquired(long txnVersion)
         {
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
-                transactionalContext.LocksAcquired(txnVersion);
-            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object)
-                objectStoreTransactionalContext.LocksAcquired(txnVersion);
-            unifiedStoreTransactionalContext.LocksAcquired(txnVersion);
+                stringTransactionalContext.LocksAcquired(txnVersion);
+            if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
+                objectTransactionalContext.LocksAcquired(txnVersion);
+            unifiedTransactionalContext.LocksAcquired(txnVersion);
         }
 
         internal bool Run(bool internal_txn = false, bool fail_fast_on_lock = false, TimeSpan lock_timeout = default)
@@ -563,7 +569,7 @@ namespace Garnet.server
                     {
                         opType = AofEntryType.TxnStart,
                         storeVersion = txnVersion,
-                        txnID = basicContext.Session.ID
+                        txnID = stringBasicContext.Session.ID
                     };
                     appendOnlyFile.Log.GetSubLog(0).Enqueue(header, out _);
                 }
@@ -584,7 +590,7 @@ namespace Garnet.server
                                     padding = (byte)AofHeaderType.TransactionHeader,
                                     opType = AofEntryType.TxnStart,
                                     storeVersion = txnVersion,
-                                    txnID = basicContext.Session.ID
+                                    txnID = stringBasicContext.Session.ID
                                 },
                                 sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
                             },

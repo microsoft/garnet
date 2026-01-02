@@ -27,13 +27,11 @@ namespace Tsavorite.core
         public int length;
 
         /// <summary>
-        /// Get and set length of ArgSlice. TODO: Replace length and pointer field accesses with properties
+        /// Get and set length of ArgSlice.
         /// </summary>
         public int Length
         {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             readonly get => length;
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             set => length = value;
         }
 
@@ -45,12 +43,6 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public readonly byte* ToPointer() => ptr;
-
-        /// <summary>
-        /// Get pointer to the start of the slice
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SetPointer(byte* newPtr) => ptr = newPtr;
 
         /// <summary>
         /// Reset the contained Span
@@ -65,11 +57,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Total size of the contained span, including the length prefix.
         /// </summary>
-        public readonly int TotalSize
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get { return sizeof(int) + length; }
-        }
+        public readonly int TotalSize => sizeof(int) + length;
 
         /// <summary>
         /// Set this as invalid; used by <see cref="SpanByteAndMemory"/> to indicate the <see cref="Memory{_byte_}"/> should be used.
@@ -80,11 +68,7 @@ namespace Tsavorite.core
         /// <summary>
         /// If the pointer is null, this PinnedSpanByte is not valid
         /// </summary>
-        public readonly bool IsValid
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get { return ptr != null; }
-        }
+        public readonly bool IsValid => ptr != null;
 
         /// <summary>
         /// Defines an implicit conversion to a <see cref="ReadOnlySpan{T}"/>
@@ -94,20 +78,36 @@ namespace Tsavorite.core
         /// <summary>
         /// Get slice as ReadOnlySpan
         /// </summary>
-        public readonly ReadOnlySpan<byte> ReadOnlySpan
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => new(ptr, length);
-        }
+        public readonly ReadOnlySpan<byte> ReadOnlySpan => new(ptr, length);
+
+        /// <summary>
+        /// Get slice as ReadOnlySpan
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly ReadOnlySpan<byte> AsReadOnlySpan(int start) => start <= length ? new(ptr + start, length - start) : throw new ArgumentOutOfRangeException(nameof(start));
+
+        /// <summary>
+        /// Get slice as ReadOnlySpan
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly ReadOnlySpan<byte> AsReadOnlySpan(int start, int len) => ((ulong)(uint)start + (uint)len <= (uint)length) ? new(ptr + start, len) : throw new ArgumentOutOfRangeException($"start {nameof(start)} + len {len} exceeds length {length}");
 
         /// <summary>
         /// Get slice as Span
         /// </summary>
-        public readonly Span<byte> Span
-        {
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get { return new(ptr, length); }
-        }
+        public readonly Span<byte> Span => new(ptr, length);
+
+        /// <summary>
+        /// Get slice as Span
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly Span<byte> AsSpan(int start) => start <= length ? new(ptr + start, length - start) : throw new ArgumentOutOfRangeException(nameof(start));
+
+        /// <summary>
+        /// Get slice as Span
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly Span<byte> AsSpan(int start, int len) => ((ulong)(uint)start + (uint)len <= (uint)length) ? new(ptr + start, len) : throw new ArgumentOutOfRangeException($"start {nameof(start)} + len {len} exceeds length {length}");
 
         /// <summary>
         /// Copies the contents of this slice into a new array.
@@ -129,8 +129,7 @@ namespace Tsavorite.core
         /// SAFETY: The <paramref name="span"/> MUST point to pinned memory.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static PinnedSpanByte FromPinnedSpan(ReadOnlySpan<byte> span)
-            => FromPinnedPointer((byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(span)), span.Length);
+        public static PinnedSpanByte FromPinnedSpan(ReadOnlySpan<byte> span) => FromPinnedPointer((byte*)Unsafe.AsPointer(ref MemoryMarshal.GetReference(span)), span.Length);
 
         /// <summary>
         /// Create new ArgSlice from given pointer and length
@@ -139,8 +138,7 @@ namespace Tsavorite.core
         /// SAFETY: The <paramref name="ptr"/> MUST point to pinned memory.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static PinnedSpanByte FromPinnedPointer(byte* ptr, int length)
-            => new() { ptr = ptr, length = length };
+        public static PinnedSpanByte FromPinnedPointer(byte* ptr, int length) => new() { ptr = ptr, length = length };
 
         /// <summary>
         /// Create a SpanByte around a pinned memory <paramref name="pointer"/> whose first sizeof(int) bytes are the length (i.e. serialized form).
@@ -165,7 +163,7 @@ namespace Tsavorite.core
         /// SAFETY: The <paramref name="destination"/> MUST point to pinned memory of at least <see cref="TotalSize"/> length.
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void SerializeTo(byte* destination)
+        public readonly void SerializeTo(byte* destination)
         {
             *(int*)destination = length;
             Buffer.MemoryCopy(ptr, destination + sizeof(int), Length, Length);
@@ -174,11 +172,11 @@ namespace Tsavorite.core
         /// <summary>
         /// Copy non-serialized version to specified memory location (do not copy the length prefix space)
         /// </summary>
-        public void CopyTo(Span<byte> destination) => ReadOnlySpan.CopyTo(destination);
+        public readonly void CopyTo(Span<byte> destination) => ReadOnlySpan.CopyTo(destination);
 
         /// <summary>
         /// Copy non-serialized version to specified <see cref="SpanByteAndMemory"/> (do not copy the length prefix space)
         /// </summary>
-        public void CopyTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool) => ReadOnlySpan.CopyTo(ref dst, memoryPool);
+        public readonly void CopyTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool) => ReadOnlySpan.CopyTo(ref dst, memoryPool);
     }
 }

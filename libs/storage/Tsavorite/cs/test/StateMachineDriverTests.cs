@@ -34,7 +34,7 @@ namespace Tsavorite.test.recovery
             opsDone = false;
             expectedV1Count = new long[numKeys];
             expectedV2Count = new long[numKeys];
-            log = CreateTestDevice(DeviceType.LSD, Path.Join(MethodTestDir, "Test.log"));
+            log = CreateTestDevice(TestDeviceType.LSD, Path.Join(MethodTestDir, "Test.log"));
         }
 
         protected void BaseTearDown()
@@ -48,6 +48,9 @@ namespace Tsavorite.test.recovery
 
         public async ValueTask DoCheckpointVersionSwitchEquivalenceCheck(CheckpointType checkpointType, long indexSize, bool useTimingFuzzing)
         {
+            if (TestContext.CurrentContext.CurrentRepeatCount > 0)
+                System.Diagnostics.Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
+
             // Create the original store
             using var store1 = new TsavoriteKV<LongStoreFunctions, LongAllocator>(new()
             {
@@ -299,6 +302,7 @@ namespace Tsavorite.test.recovery
         }
 
         [Test]
+        //[Repeat(1000)]
         public async ValueTask CheckpointVersionSwitchRmwTest(
             [Values(CheckpointType.Snapshot, CheckpointType.FoldOver)] CheckpointType checkpointType,
             [Values(1L << 13, 1L << 16)] long indexSize,
@@ -306,6 +310,7 @@ namespace Tsavorite.test.recovery
             => await DoCheckpointVersionSwitchEquivalenceCheck(checkpointType, indexSize, timeFuzzMode == TimeFuzzMode.TimeFuzz);
 
         [Test]
+        //[Repeat(1000)]
         public async ValueTask GrowIndexVersionSwitchRmwTest(
             [Values(1L << 13, 1L << 16)] long indexSize,
             [Values] TimeFuzzMode timeFuzzMode)

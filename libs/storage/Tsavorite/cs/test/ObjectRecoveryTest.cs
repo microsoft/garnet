@@ -40,8 +40,8 @@ namespace Tsavorite.test.recovery.objects
             if (deleteDir)
                 TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
 
-            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.log"), false);
-            objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.obj.log"), false);
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.log"));
+            objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.obj.log"));
 
             store = new(new()
             {
@@ -97,7 +97,7 @@ namespace Tsavorite.test.recovery.objects
             var inputArray = GC.AllocateArray<StructTuple<AdId, Input>>((int)NumOps);
             for (int i = 0; i < NumOps; i++)
             {
-                inputArray[i] = new ()
+                inputArray[i] = new()
                 {
                     Item1 = new AdId { adId = i % NumUniqueKeys },
                     Item2 = new Input { numClicks = new NumClicksObj { numClicks = 1 } }
@@ -117,7 +117,7 @@ namespace Tsavorite.test.recovery.objects
                 if ((i + 1) % CheckpointInterval == 0)
                 {
                     if (first)
-                        while (!store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot));
+                        while (!store.TryInitiateFullCheckpoint(out token, CheckpointType.Snapshot)) ;
                     else
                         while (!store.TryInitiateFullCheckpoint(out _, CheckpointType.Snapshot)) ;
 
@@ -141,7 +141,7 @@ namespace Tsavorite.test.recovery.objects
             var inputArray = GC.AllocateArray<StructTuple<AdId, Input>>((int)NumUniqueKeys);
             for (int i = 0; i < NumUniqueKeys; i++)
             {
-                inputArray[i] = new ()
+                inputArray[i] = new()
                 {
                     Item1 = new AdId { adId = i },
                     Item2 = new Input { numClicks = new NumClicksObj { numClicks = 0 } }

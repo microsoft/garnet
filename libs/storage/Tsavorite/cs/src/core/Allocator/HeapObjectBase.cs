@@ -33,7 +33,7 @@ namespace Tsavorite.core
         /// Create a cloned (shallow copy) of this object
         /// </summary>
         /// <remarks>The implementation of this method should NOT copy <see cref="serializedBytes"/>.</remarks>
-        public abstract HeapObjectBase Clone();
+        public abstract IHeapObject Clone();
 
         /// <summary>
         /// Serialize to the binary writer.
@@ -107,7 +107,10 @@ namespace Tsavorite.core
             // probably (but not necessarily) be another Overflow.)
             Debug.Assert(ReferenceEquals(this, srcLogRecord.ValueObject), $"{GetCurrentMethodName()} must be called on the Source LogRecord's ValueObject.");
             Debug.Assert(dstLogRecord.Info.ValueIsObject, $"{GetCurrentMethodName()} must be called for non-object {nameof(dstLogRecord)}.");
-            _ = dstLogRecord.TrySetValueObject(srcLogRecord.ValueObject.Clone());
+
+            // CopyUpdater may have already set the ValueObject so only set if not already set.
+            if (!dstLogRecord.ValueObjectIsSet)
+                _ = dstLogRecord.TrySetValueObject(srcLogRecord.ValueObject.Clone());
 
             // If we are not currently taking a checkpoint, we can delete the old version
             // since the new version of the object is already created.

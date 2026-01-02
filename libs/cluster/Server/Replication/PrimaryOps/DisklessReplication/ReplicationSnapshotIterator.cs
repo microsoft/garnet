@@ -108,8 +108,9 @@ namespace Garnet.cluster
                 firstRead = true;
             }
 
-            // Note: We may be sending to multiple replicas, so cannot serialize LogRecords directly to the network buffer
-            DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize: -1, valueObjectSerializer: default, memoryPool, ref serializationOutput);
+            // Note: We may be sending to multiple replicas, so serialize LogRecords to a local then copy to the multiple network buffers
+            // rather than issuing multiple serialization calls.
+            _ = DiskLogRecord.Serialize(in srcLogRecord, maxHeapAllocationSize: -1, valueObjectSerializer: default, memoryPool, ref serializationOutput);
 
             var needToFlush = false;
             while (true)

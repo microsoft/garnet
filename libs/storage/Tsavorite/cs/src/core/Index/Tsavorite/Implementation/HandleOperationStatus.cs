@@ -137,14 +137,20 @@ namespace Tsavorite.core
                 pendingContext.id = sessionCtx.totalPending++;
                 sessionCtx.ioPendingRequests.Add(pendingContext.id, pendingContext);
 
-                // We may have come from an already-pending operation, in which case we don't want to copy the diskLogRecord into the queue.
-                // But we do want to keep the diskLogRecord in the incoming "ref pendingContext" for disposal, so clear it in the dictionary.
-                // (We know this will not be a nullref because we just added it).
-                CollectionsMarshal.GetValueRefOrNullRef(sessionCtx.ioPendingRequests, pendingContext.id).diskLogRecord = default;
+                if (!pendingContext.IsConditionalOp)
+                {
+                    // We may have come from an already-pending operation, in which case we don't want to copy the diskLogRecord into the queue.
+                    // But we do want to keep the diskLogRecord in the incoming "ref pendingContext" for disposal, so clear it in the dictionary.
+                    // (We know this will not be a nullref because we just added it). Don't do this for CONDITIONAL_*; the diskLogRecord is what
+                    // we'll insert or push if an overriding record is not found.
+                    CollectionsMarshal.GetValueRefOrNullRef(sessionCtx.ioPendingRequests, pendingContext.id).diskLogRecord = default;
+                }
 
                 // Issue asynchronous I/O request
                 request.id = pendingContext.id;
-                request.request_key = pendingContext.request_key is null ? default : pendingContext.request_key.Get();
+
+                // Copying the key is stable; the pendingContext.requestKey will remain valid until it is freed (after the callback is invoked).
+                request.requestKey = pendingContext.requestKey is null ? default : pendingContext.requestKey.Get();
                 request.logicalAddress = pendingContext.logicalAddress;
                 request.minAddress = pendingContext.minAddress;
                 request.record = default;

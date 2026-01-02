@@ -141,10 +141,6 @@ namespace Garnet.cluster
             return cEntry;
         }
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <returns></returns>
         public override string ToString() => $"{metadata},readers={_lock}";
     }
 }

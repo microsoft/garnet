@@ -149,7 +149,8 @@ namespace Garnet.cluster
                                     Buffer.MemoryCopy((void*)physicalAddress, m, entryLength, entryLength);
                             }
                             hlri = ConvertMetadata(metadata);
-                            if (hlri.version == recoverTo || hlri.version < recoverTo && hlri.nextVersion > recoverTo) goto LoopEnd;
+                            if (hlri.version == recoverTo || hlri.version < recoverTo && hlri.nextVersion > recoverTo)
+                                goto LoopEnd;
                             continue;
                         default:
                             throw new GarnetException("Unexpected entry type");

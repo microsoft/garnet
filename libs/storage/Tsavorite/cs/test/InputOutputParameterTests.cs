@@ -80,7 +80,7 @@ namespace Tsavorite.test.InputOutputParameterTests
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
 
-            log = TestUtils.CreateTestDevice(TestUtils.DeviceType.LocalMemory, Path.Combine(TestUtils.MethodTestDir, "Device.log"));
+            log = TestUtils.CreateTestDevice(TestUtils.TestDeviceType.LocalMemory, Path.Combine(TestUtils.MethodTestDir, "Device.log"));
             store = new(new()
             {
                 IndexSize = 1L << 13,

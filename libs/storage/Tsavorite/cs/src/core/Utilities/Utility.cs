@@ -304,6 +304,10 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLogBase2(int x) => BitOperations.Log2((uint)x);
 
+        /// <inheritdoc cref="BitOperations.Log2(uint)"/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int GetLogBase2(long x) => BitOperations.Log2((ulong)x);
+
         /// <inheritdoc cref="BitOperations.Log2(ulong)"/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int GetLogBase2(ulong value) => BitOperations.Log2(value);

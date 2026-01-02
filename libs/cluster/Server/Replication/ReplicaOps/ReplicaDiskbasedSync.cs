@@ -192,7 +192,7 @@ namespace Garnet.cluster
             var ckptManager = fileType switch
             {
                 CheckpointFileType.STORE_SNAPSHOT or
-                CheckpointFileType.STORE_INDEX => clusterProvider.GetReplicationLogCheckpointManager(),
+                CheckpointFileType.STORE_INDEX => clusterProvider.ReplicationLogCheckpointManager,
                 _ => throw new Exception($"Invalid checkpoint filetype {fileType}"),
             };
 
@@ -212,17 +212,16 @@ namespace Garnet.cluster
         /// <summary>
         /// Check if device needs to be initialized with a specifi segment size depending on the checkpoint file type
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
-        public static bool ShouldInitialize(CheckpointFileType type)
+        /// <param name="type">Checkpoint type</param>
+        /// <param name="serverOptions">Server options to acquire segment bit counts</param>
+        /// <returns>A tuple indicating whether to initialize and, if so, the segment size bits</returns>
+        public static (bool shouldInitialize, int segmentSizeBits) ShouldInitialize(CheckpointFileType type, GarnetServerOptions serverOptions)
         {
-            //TODO: verify that the below checkpoint file types require initialization with segment size given as option
             return type switch
             {
-                CheckpointFileType.STORE_HLOG or
-                CheckpointFileType.STORE_SNAPSHOT
-                => true,
-                _ => false,
+                CheckpointFileType.STORE_HLOG or CheckpointFileType.STORE_SNAPSHOT => (true, serverOptions.SegmentSizeBits(isObj: false)),
+                CheckpointFileType.STORE_HLOG_OBJ or CheckpointFileType.STORE_SNAPSHOT_OBJ => (true, serverOptions.SegmentSizeBits(isObj: true)),
+                _ => (false, 0)
             };
         }
 
@@ -238,11 +237,12 @@ namespace Garnet.cluster
             {
                 CheckpointFileType.STORE_HLOG => GetStoreHLogDevice(isObj: false),
                 CheckpointFileType.STORE_HLOG_OBJ => GetStoreHLogDevice(isObj: true),
-                _ => clusterProvider.GetReplicationLogCheckpointManager().GetDevice(type, token),
+                _ => clusterProvider.ReplicationLogCheckpointManager.GetDevice(type, token),
             };
 
-            if (ShouldInitialize(type))
-                device.Initialize(segmentSize: 1L << clusterProvider.serverOptions.SegmentSizeBits());
+            var (shouldInitialize, segmentSizeBits) = ShouldInitialize(type, clusterProvider.serverOptions);
+            if (shouldInitialize)
+                device.Initialize(segmentSize: 1L << segmentSizeBits);
             return device;
 
             IDevice GetStoreHLogDevice(bool isObj)
@@ -250,14 +250,11 @@ namespace Garnet.cluster
                 var opts = clusterProvider.serverOptions;
                 if (opts.EnableStorageTier)
                 {
-                    var LogDir = opts.LogDir;
-                    if (LogDir is null or "") LogDir = Directory.GetCurrentDirectory();
+                    var LogDir = !string.IsNullOrEmpty(opts.LogDir) ? opts.LogDir : Directory.GetCurrentDirectory();
                     var logFactory = opts.GetInitializedDeviceFactory(LogDir);
 
                     // These must match GarnetServerOptions.GetSettings, EnableStorageTier
-                    return isObj
-                        ? logFactory.Get(new FileDescriptor("Store", "hlog_objs"))
-                        : logFactory.Get(new FileDescriptor("Store", "hlog"));
+                    return logFactory.Get(new FileDescriptor("Store", isObj ? "hlog_objs" : "hlog"));
                 }
                 return null;
             }
@@ -266,7 +263,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Process request from primary to start recovery process from the retrieved checkpoint.
         /// </summary>
-        /// <param name="recoverMainStoreFromToken"></param>
+        /// <param name="recoverStoreFromToken"></param>
         /// <param name="replayAOFMap"></param>
         /// <param name="primaryReplicationId"></param>
         /// <param name="remoteCheckpoint"></param>
@@ -275,7 +272,7 @@ namespace Garnet.cluster
         /// <param name="errorMessage"></param>
         /// <returns></returns>
         public AofAddress TryReplicaDiskbasedRecovery(
-            bool recoverMainStoreFromToken,
+            bool recoverStoreFromToken,
             ulong replayAOFMap,
             string primaryReplicationId,
             CheckpointEntry remoteCheckpoint,
@@ -295,7 +292,7 @@ namespace Garnet.cluster
 
                 storeWrapper.RecoverCheckpoint(
                     replicaRecover: true,
-                    recoverMainStoreFromToken,
+                    recoverStoreFromToken,
                     remoteCheckpoint.metadata);
 
                 if (replayAOFMap > 0)
@@ -315,7 +312,7 @@ namespace Garnet.cluster
                 logger?.LogInformation("ReplicaRecover: ReplicaReplicationOffset = {ReplicaReplicationOffset}", replicationOffset);
 
                 // If checkpoint for main store was send add its token here in preparation for purge later on
-                if (recoverMainStoreFromToken)
+                if (recoverStoreFromToken)
                 {
                     cEntry.metadata.storeIndexToken = remoteCheckpoint.metadata.storeIndexToken;
                     cEntry.metadata.storeHlogToken = remoteCheckpoint.metadata.storeHlogToken;

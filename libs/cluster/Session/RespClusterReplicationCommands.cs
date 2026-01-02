@@ -320,7 +320,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            if (!parseState.TryGetBool(0, out var recoverMainStoreFromToken) || !parseState.TryGetLong(1, out var replayAOFMap))
+            if (!parseState.TryGetBool(0, out var recoverStoreFromToken) || !parseState.TryGetLong(1, out var replayAOFMap))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_BOOLEAN, ref dcurr, dend))
                     SendAndReset();
@@ -335,7 +335,7 @@ namespace Garnet.cluster
 
             var entry = CheckpointEntry.FromByteArray(checkpointEntryBytes);
             var replicationOffset = clusterProvider.replicationManager.TryReplicaDiskbasedRecovery(
-                recoverMainStoreFromToken,
+                recoverStoreFromToken,
                 (ulong)replayAOFMap,
                 primaryReplicaId,
                 entry,
@@ -404,8 +404,7 @@ namespace Garnet.cluster
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
         /// <seealso cref="T:Garnet.cluster.SnapshotIteratorManager"/>
-        /// <seealso cref="T:Garnet.cluster.ReplicaSyncSession.TryWriteKeyValueSpanByte"/>
-        /// <seealso cref="T:Garnet.cluster.ReplicaSyncSession.TryWriteKeyValueByteArray"/>
+        /// <seealso cref="T:Garnet.cluster.ReplicaSyncSession.TryWriteRecordSpan"/>        
         /// <seealso cref="T:Garnet.client.GarnetClientSession.SetClusterSyncHeader"/>
         private bool NetworkClusterSync(out bool invalidParameters)
         {
@@ -431,7 +430,6 @@ namespace Garnet.cluster
             var storeWrapper = clusterProvider.storeWrapper;
             var transientObjectIdMap = storeWrapper.store.Log.TransientObjectIdMap;
 
-            // Use try/finally instead of "using" because we don't want the boxing that an interface call would entail. Double-Dispose() is OK for DiskLogRecord.
             DiskLogRecord diskLogRecord = default;
             try
             {
@@ -440,17 +438,17 @@ namespace Garnet.cluster
                     if (!RespReadUtils.GetSerializedRecordSpan(out var recordSpan, ref payloadPtr, payloadEndPtr))
                         return false;
 
-                    diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer,
-                        transientObjectIdMap, storeWrapper.storeFunctions);
-
+                    diskLogRecord = DiskLogRecord.Deserialize(recordSpan, storeWrapper.GarnetObjectSerializer, transientObjectIdMap, storeWrapper.storeFunctions);
                     _ = basicGarnetApi.SET(in diskLogRecord);
                     diskLogRecord.Dispose();
                     i++;
                 }
             }
-            finally
+            catch
             {
+                // Dispose the diskLogRecord if there was an exception in SET
                 diskLogRecord.Dispose();
+                throw;
             }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))

@@ -14,7 +14,7 @@ namespace Tsavorite.benchmark
             if (!srcLogRecord.Info.ValueIsObject)
                 srcLogRecord.ValueSpan.CopyTo(output.SpanByte.Span);
             else                                    // Slice the output because it is a larger buffer
-                output.SpanByte.Span.Slice(0, sizeof(long)).AsRef<long>() = ((ObjectValue)srcLogRecord.ValueObject).value;
+                output.SpanByte.AsSpan(0, sizeof(long)).AsRef<long>() = ((ObjectValue)srcLogRecord.ValueObject).value;
             return true;
         }
 

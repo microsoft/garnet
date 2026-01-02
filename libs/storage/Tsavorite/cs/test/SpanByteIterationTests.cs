@@ -86,7 +86,7 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public unsafe void SpanByteIterationBasicTest([Values] DeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
+        public unsafe void SpanByteIterationBasicTest([Values] TestDeviceType deviceType, [Values] ScanIteratorType scanIteratorType)
         {
             log = CreateTestDevice(deviceType, $"{MethodTestDir}{deviceType}.log");
             store = new(new()
@@ -185,7 +185,7 @@ namespace Tsavorite.test
         [Test]
         [Category(TsavoriteKVTestCategory)]
         [Category(SmokeTestCategory)]
-        public void SpanByteIterationPushStopTest([Values] DeviceType deviceType)
+        public void SpanByteIterationPushStopTest([Values] TestDeviceType deviceType)
         {
             log = CreateTestDevice(deviceType, Path.Join(MethodTestDir, $"{deviceType}.log"));
             store = new(new()

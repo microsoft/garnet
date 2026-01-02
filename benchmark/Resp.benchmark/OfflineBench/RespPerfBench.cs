@@ -356,7 +356,7 @@ namespace Resp.benchmark
             var workers = new Thread[NumThreads];
 
             // Run the experiment.
-            for (var idx = 0; idx < NumThreads; ++idx)
+            for (var idx = 0; idx < NumThreads; idx++)
             {
                 var x = idx;
                 workers[idx] = opts.Client switch

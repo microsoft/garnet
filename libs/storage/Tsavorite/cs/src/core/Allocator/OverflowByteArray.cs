@@ -27,19 +27,48 @@ namespace Tsavorite.core
 
         internal readonly int StartOffset => Unsafe.As<byte, OverflowHeader>(ref Array[0]).startOffset + OverflowHeader.Size;
 
-        public int TotalSize => Array.Length;
+        public readonly int TotalSize => Array.Length;
 
         readonly int EndOffset => Unsafe.As<byte, OverflowHeader>(ref Array[0]).endOffset;
 
         internal readonly int Length => Array.Length - StartOffset - EndOffset;
 
+        /// <summary>ReadOnlySpan of data between offsets</summary>
+        internal readonly ReadOnlySpan<byte> ReadOnlySpan => Array.AsSpan(StartOffset, Length);
+        /// <summary>ReadOnlySpan of data between offsets</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly ReadOnlySpan<byte> AsReadOnlySpan(int start)
+        {
+            var length = Length;
+            return start <= length ? Array.AsSpan(StartOffset + start, length - start) : throw new ArgumentOutOfRangeException(nameof(start));
+        }
+        /// <summary>ReadOnlySpan of data between offsets</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly ReadOnlySpan<byte> AsReadOnlySpan(int start, int len)
+        {
+            var length = Length;
+            return ((ulong)(uint)start + (uint)len <= (uint)length) ? Array.AsSpan(StartOffset + start, len) : throw new ArgumentOutOfRangeException($"start {nameof(start)} + len {len} exceeds length {length}");
+        }
+
         /// <summary>Span of data between offsets</summary>
-        internal readonly ReadOnlySpan<byte> ReadOnlySpan => Array.AsSpan().Slice(StartOffset, Length);
+        internal readonly Span<byte> Span => Array.AsSpan(StartOffset, Length);
         /// <summary>Span of data between offsets</summary>
-        internal readonly Span<byte> Span => Array.AsSpan().Slice(StartOffset, Length);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly Span<byte> AsSpan(int start)
+        {
+            var length = Length;
+            return start <= length ? Array.AsSpan(StartOffset + start, length - start) : throw new ArgumentOutOfRangeException(nameof(start));
+        }
+        /// <summary>ReadOnlySpan of data between offsets</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public readonly Span<byte> AsSpan(int start, int len)
+        {
+            var length = Length;
+            return ((ulong)(uint)start + (uint)len <= (uint)length) ? Array.AsSpan(StartOffset + start, len) : throw new ArgumentOutOfRangeException($"start {nameof(start)} + len {len} exceeds length {length}");
+        }
 
         /// <summary>Span of all data, including before and after offsets; this is for aligned Read from the device.</summary>
-        internal readonly Span<byte> AlignedReadSpan => Array.AsSpan().Slice(OverflowHeader.Size);
+        internal readonly Span<byte> AlignedReadSpan => Array.AsSpan(OverflowHeader.Size);
 
         /// <summary>Construct an <see cref="OverflowByteArray"/> from a byte[] allocated by <see cref="OverflowByteArray(int, int, int, bool)"/>.</summary>
         internal OverflowByteArray(byte[] data) => Array = data;

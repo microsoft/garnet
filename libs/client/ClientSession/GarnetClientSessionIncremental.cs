@@ -51,16 +51,6 @@ namespace Garnet.client
             curr += size;
         }
 
-        private void EnsureTcsIsEnqueued()
-        {
-            // See comments in SetClusterMigrateHeader() as to why this is decoupled from the header initialization.
-            if (recordCount > 0 && currTcsIterationTask == null)
-            {
-                currTcsIterationTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-                tcsQueue.Enqueue(currTcsIterationTask);
-            }
-        }
-
         /// <summary>
         /// Flush and initialize buffers/parameters used for Migrate and Replica commands
         /// </summary>
@@ -121,13 +111,11 @@ namespace Garnet.client
         /// <summary>
         /// Try to write the span for the entire record directly to the client buffer
         /// </summary>
-        /// <param name="recordSpan"></param>
-        /// <param name="task"></param>
-        /// <returns></returns>
         public bool TryWriteRecordSpan(ReadOnlySpan<byte> recordSpan, out Task<string> task)
         {
             // We include space for newline at the end, to be added before sending
-            var totalLen = recordSpan.TotalSize() + 2;
+            var recordSpanSize = recordSpan.TotalSize();
+            var totalLen = recordSpanSize + 2;
             if (totalLen > (int)(end - curr))
             {
                 // If there is no space left, send outstanding data and return the send-completion task.
@@ -137,15 +125,15 @@ namespace Garnet.client
             }
 
             recordSpan.SerializeTo(curr);
-            curr += recordSpan.TotalSize();
+            curr += recordSpanSize;
             ++recordCount;
             task = null;
             return true;
         }
 
-        long lastLog = 0;
-        long totalKeyCount = 0;
-        long totalPayloadSize = 0;
+        long lastLog;
+        long totalKeyCount;
+        long totalPayloadSize;
         TimeSpan iterationProgressFreq;
 
         /// <summary>
@@ -166,6 +154,16 @@ namespace Garnet.client
                     totalKeyCount.ToString("N0"),
                     ((long)((double)totalPayloadSize / 1024)).ToString("N0"));
                 lastLog = Stopwatch.GetTimestamp();
+            }
+        }
+
+        private void EnsureTcsIsEnqueued()
+        {
+            // See comments in SetClusterMigrateHeader() as to why this is decoupled from the header initialization.
+            if (recordCount > 0 && currTcsIterationTask == null)
+            {
+                currTcsIterationTask = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+                tcsQueue.Enqueue(currTcsIterationTask);
             }
         }
     }

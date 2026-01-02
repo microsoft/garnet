@@ -5,7 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -93,19 +92,17 @@ namespace Garnet.cluster
         /// </summary>
         public RecoveryStatus currentRecoveryStatus;
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public GarnetClusterCheckpointManager GetCkptManager()
-            => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
+        public GarnetClusterCheckpointManager CheckpointManager => (GarnetClusterCheckpointManager)storeWrapper.store.CheckpointManager;
 
         public AofAddress GetRecoveredSafeAofAddress()
         {
-            var storeAofAddress = clusterProvider.replicationManager.GetCkptManager().RecoveredSafeAofAddress;
+            var storeAofAddress = clusterProvider.replicationManager.CheckpointManager.RecoveredSafeAofAddress;
             return storeAofAddress;
         }
 
         public AofAddress GetCurrentSafeAofAddress()
         {
-            var storeAofAddress = clusterProvider.replicationManager.GetCkptManager().CurrentSafeAofAddress;
+            var storeAofAddress = clusterProvider.replicationManager.CheckpointManager.CurrentSafeAofAddress;
             return storeAofAddress;
         }
 
@@ -129,8 +126,8 @@ namespace Garnet.cluster
             ReplicationCheckpointStartOffset = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, kFirstValidAofAddress);
 
             // Set the appendOnlyFile field for all stores
-            clusterProvider.GetReplicationLogCheckpointManager().checkpointVersionShiftStart = CheckpointVersionShiftStart;
-            clusterProvider.GetReplicationLogCheckpointManager().checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
+            clusterProvider.ReplicationLogCheckpointManager.checkpointVersionShiftStart = CheckpointVersionShiftStart;
+            clusterProvider.ReplicationLogCheckpointManager.checkpointVersionShiftEnd = CheckpointVersionShiftEnd;
 
             // If this node starts as replica, it cannot serve requests until it is connected to primary
             if (clusterProvider.clusterManager.CurrentConfig.LocalNodeRole == NodeRole.REPLICA && clusterProvider.serverOptions.Recover && !BeginRecovery(RecoveryStatus.InitializeRecover, upgradeLock: false))

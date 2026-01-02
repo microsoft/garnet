@@ -12,6 +12,8 @@ using NUnit.Framework.Legacy;
 using Tsavorite.core;
 using Tsavorite.devices;
 
+#pragma warning disable IDE1006 // Naming Styles
+
 namespace Tsavorite.test
 {
     [TestFixture]
@@ -69,7 +71,7 @@ namespace Tsavorite.test
             for (int i = 0; i < entryLength; i++)
             {
                 entry[i] = (byte)i;
-                LocalMemorylog.Enqueue(entry);
+                _ = LocalMemorylog.Enqueue(entry);
             }
 
             // Commit to the log

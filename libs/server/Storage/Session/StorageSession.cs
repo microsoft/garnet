@@ -23,10 +23,10 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for main store
         /// </summary>
-        public BasicContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> basicContext;
-        public TransactionalContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalContext;
-        public ConsistentReadContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> consistentReadContext;
-        public TransactionalConsistentReadContext<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalConsistentReadContext;
+        public BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringBasicContext;
+        public TransactionalContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringTransactionalContext;
+        public ConsistentReadContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> consistentReadContext;
+        public TransactionalConsistentReadContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalConsistentReadContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll1;
         SectorAlignedMemory sectorAlignedMemoryHll2;
@@ -38,18 +38,18 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for object store
         /// </summary>
-        public BasicContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreBasicContext;
-        public TransactionalContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalContext;
-        public ConsistentReadContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreConsistentReadContext;
-        public TransactionalConsistentReadContext<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalConsistentReadContext;
+        public BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectBasicContext;
+        public TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectTransactionalContext;
+        public ConsistentReadContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreConsistentReadContext;
+        public TransactionalConsistentReadContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalConsistentReadContext;
 
         /// <summary>
         /// Session Contexts for unified store
         /// </summary>
-        public BasicContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreBasicContext;
-        public TransactionalContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalContext;
-        public ConsistentReadContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreConsistentReadContext;
-        public TransactionalConsistentReadContext<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalConsistentReadContext;
+        public BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedBasicContext;
+        public TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext;
+        public ConsistentReadContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreConsistentReadContext;
+        public TransactionalConsistentReadContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalConsistentReadContext;
 
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
@@ -59,8 +59,8 @@ namespace Garnet.server
         readonly ILogger logger;
         private readonly CollectionItemBroker itemBroker;
 
-        public int SessionID => basicContext.Session.ID;
-        public int ObjectStoreSessionID => objectStoreBasicContext.Session.ID;
+        public int SessionID => stringBasicContext.Session.ID;
+        public int ObjectStoreSessionID => objectBasicContext.Session.ID;
 
         public readonly int ObjectScanCountLimit;
 
@@ -95,27 +95,26 @@ namespace Garnet.server
             Debug.Assert(dbFound);
 
             this.stateMachineDriver = db.StateMachineDriver;
-            var enableConsistentRead = consistentReadContextCallbacks != null;
-            var session = db.Store.NewSession<RawStringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions, enableConsistentRead);
-
-            var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
-            var objectStoreSession = db.Store.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objectStoreFunctions, enableConsistentRead);
-
-            var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState);
-            var unifiedStoreSession = db.Store.NewSession<UnifiedStoreInput, GarnetUnifiedStoreOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions, enableConsistentRead);
-
-            basicContext = session.BasicContext;
-            transactionalContext = session.TransactionalContext;
+            var session = db.Store.NewSession<StringInput, SpanByteAndMemory, long, MainSessionFunctions>(functions, IsConsistentReadSession);
+            stringBasicContext = session.BasicContext;
+            stringTransactionalContext = session.TransactionalContext;
             consistentReadContext = session.ConsistentReadContext;
             transactionalConsistentReadContext = session.TransactionalConsistentReadContext;
 
-            objectStoreBasicContext = objectStoreSession.BasicContext;
-            objectStoreTransactionalContext = objectStoreSession.TransactionalContext;
-            objectStoreConsistentReadContext = objectStoreSession.ConsistentReadContext;
-            objectStoreTransactionalConsistentReadContext = objectStoreSession.TransactionalConsistentReadContext;
+            if (!storeWrapper.serverOptions.DisableObjects)
+            {
+                var objectStoreFunctions = new ObjectSessionFunctions(functionsState);
+                var objectStoreSession = db.Store.NewSession<ObjectInput, ObjectOutput, long, ObjectSessionFunctions>(objectStoreFunctions, IsConsistentReadSession);
+                objectBasicContext = objectStoreSession.BasicContext;
+                objectTransactionalContext = objectStoreSession.TransactionalContext;
+                objectStoreConsistentReadContext = objectStoreSession.ConsistentReadContext;
+                objectStoreTransactionalConsistentReadContext = objectStoreSession.TransactionalConsistentReadContext;
+            }
 
-            unifiedStoreBasicContext = unifiedStoreSession.BasicContext;
-            unifiedStoreTransactionalContext = unifiedStoreSession.TransactionalContext;
+            var unifiedStoreFunctions = new UnifiedSessionFunctions(functionsState);
+            var unifiedStoreSession = db.Store.NewSession<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions>(unifiedStoreFunctions, IsConsistentReadSession);
+            unifiedBasicContext = unifiedStoreSession.BasicContext;
+            unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
             unifiedStoreConsistentReadContext = unifiedStoreSession.ConsistentReadContext;
             unifiedStoreTransactionalConsistentReadContext = unifiedStoreSession.TransactionalConsistentReadContext;
 
@@ -134,9 +133,9 @@ namespace Garnet.server
             _hcollectTaskLock.CloseLock();
 
             sectorAlignedMemoryBitmap?.Dispose();
-            basicContext.Session.Dispose();
-            objectStoreBasicContext.Session?.Dispose();
-            unifiedStoreBasicContext.Session?.Dispose();
+            stringBasicContext.Session.Dispose();
+            objectBasicContext.Session?.Dispose();
+            unifiedBasicContext.Session?.Dispose();
             sectorAlignedMemoryHll1?.Dispose();
             sectorAlignedMemoryHll2?.Dispose();
         }

@@ -119,6 +119,18 @@ namespace Tsavorite.core
         public Status ReadAtAddress(long address, ReadOnlySpan<byte> key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, out RecordMetadata recordMetadata, TContext userContext = default)
             => throw new TsavoriteException("Consistent read context does not allow reads from address!");
 
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext = default)
+            where TBatch : IReadArgBatch<TInput, TOutput>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+        {
+            // TODO: implement
+            throw new NotImplementedException();
+        }
+
         #endregion
 
         #region ITsavoriteContext
@@ -257,7 +269,6 @@ namespace Tsavorite.core
         /// <inheritdoc/>
         public void Refresh()
             => throw new TsavoriteException("Consistent read context does not reset Refresh!");
-
         #endregion
     }
 }

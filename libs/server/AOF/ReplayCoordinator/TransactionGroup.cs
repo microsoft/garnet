@@ -17,6 +17,9 @@ namespace Garnet.server
 
         public List<byte[]> operations = [];
 
+        /// <summary>
+        /// Clear the underlying buffer that holds the individual transaction operations
+        /// </summary>
         public void Clear() => operations.Clear();
     }
 }
