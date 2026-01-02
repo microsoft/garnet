@@ -54,7 +54,7 @@ namespace Garnet.server
         /// 
         /// This the Primary part, on a Replica <see cref="HandleVectorSetAddReplication"/> runs.
         /// </summary>
-        internal void ReplicateVectorSetAdd(ref PinnedSpanByte key, ref StringInput input, ref BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> context)
+        internal void ReplicateVectorSetAdd(ref PinnedSpanByte key, ref StringInput input, ref BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> context)
         {
             throw new NotImplementedException();
         }
@@ -68,7 +68,7 @@ namespace Garnet.server
         /// 
         /// This the Primary part, on a Replica <see cref="HandleVectorSetRemoveReplication"/> runs.
         /// </summary>
-        internal void ReplicateVectorSetRemove(ref PinnedSpanByte key, ref PinnedSpanByte element, ref StringInput input, ref BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> context)
+        internal void ReplicateVectorSetRemove(ref PinnedSpanByte key, ref PinnedSpanByte element, ref StringInput input, ref BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> context)
         {
             throw new NotImplementedException();
         }
@@ -78,7 +78,7 @@ namespace Garnet.server
         /// 
         /// Amounts to delete a synthetic key in namespace 0.
         /// </summary>
-        internal bool TryDropVectorSetReplicationKey(PinnedSpanByte key, ref BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> context)
+        internal bool TryDropVectorSetReplicationKey(PinnedSpanByte key, ref BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> context)
         {
             throw new NotImplementedException();
         }

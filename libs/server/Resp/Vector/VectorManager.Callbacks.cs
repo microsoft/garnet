@@ -108,11 +108,9 @@ namespace Garnet.server
 
                 AdvanceTo(i);
 
-                //key = SpanByte.FromPinnedPointer(currentPtr + 3, currentLen + 1);
+                key = PinnedSpanByte.FromPinnedPointer(currentPtr + 3, currentLen + 1);
                 //key.MarkNamespace();
                 //key.SetNamespaceInPayload((byte)context);
-
-                throw new NotImplementedException();
             }
 
             /// <inheritdoc/>

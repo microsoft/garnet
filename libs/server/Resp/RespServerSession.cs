@@ -932,6 +932,19 @@ namespace Garnet.server
                 RespCommand.SUNIONSTORE => SetUnionStore(ref storageApi),
                 RespCommand.SDIFF => SetDiff(ref storageApi),
                 RespCommand.SDIFFSTORE => SetDiffStore(ref storageApi),
+                // Vector Commands
+                RespCommand.VADD => NetworkVADD(ref storageApi),
+                RespCommand.VCARD => NetworkVCARD(ref storageApi),
+                RespCommand.VDIM => NetworkVDIM(ref storageApi),
+                RespCommand.VEMB => NetworkVEMB(ref storageApi),
+                RespCommand.VGETATTR => NetworkVGETATTR(ref storageApi),
+                RespCommand.VISMEMBER => NetworkVISMEMBER(ref storageApi),
+                RespCommand.VLINKS => NetworkVLINKS(ref storageApi),
+                RespCommand.VRANDMEMBER => NetworkVRANDMEMBER(ref storageApi),
+                RespCommand.VREM => NetworkVREM(ref storageApi),
+                RespCommand.VSETATTR => NetworkVSETATTR(ref storageApi),
+                RespCommand.VSIM => NetworkVSIM(ref storageApi),
+                // Everything else
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
             return success;
@@ -1478,7 +1491,10 @@ namespace Garnet.server
         /// <returns>New database session</returns>
         private GarnetDatabaseSession CreateDatabaseSession(int dbId)
         {
-            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId, logger, respProtocolVersion);
+            var dbRes = storeWrapper.TryGetOrAddDatabase(dbId, out var database, out _);
+            Debug.Assert(dbRes, "Should always find database if we're switching to it");
+
+            var dbStorageSession = new StorageSession(storeWrapper, scratchBufferBuilder, sessionMetrics, LatencyMetrics, dbId, database.VectorManager, logger, respProtocolVersion);
             var dbGarnetApi = new BasicGarnetApi(dbStorageSession, dbStorageSession.stringBasicContext,
                 dbStorageSession.objectBasicContext, dbStorageSession.unifiedBasicContext);
             var dbLockableGarnetApi = new TransactionalGarnetApi(dbStorageSession,

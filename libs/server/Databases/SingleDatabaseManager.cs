@@ -86,6 +86,9 @@ namespace Garnet.server
                 if (StoreWrapper.serverOptions.FailOnRecoveryError)
                     throw;
             }
+
+            // Once everything is setup, initialize the VectorManager
+            defaultDatabase.VectorManager.Initialize();
         }
 
         /// <inheritdoc/>

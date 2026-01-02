@@ -125,7 +125,7 @@ namespace Garnet.server
                 if (result == VectorManagerResult.OK)
                 {
                     // On successful addition, we need to manually replicate the write
-                    vectorManager.ReplicateVectorSetAdd(ref key, ref input, ref unifiedBasicContext);
+                    vectorManager.ReplicateVectorSetAdd(ref key, ref input, ref stringBasicContext);
                 }
 
                 return GarnetStatus.OK;
@@ -156,7 +156,7 @@ namespace Garnet.server
                 if (res == VectorManagerResult.OK)
                 {
                     // On successful removal, we need to manually replicate the write
-                    vectorManager.ReplicateVectorSetRemove(ref key, ref element, ref input, ref unifiedBasicContext);
+                    vectorManager.ReplicateVectorSetRemove(ref key, ref element, ref input, ref stringBasicContext);
 
                     return GarnetStatus.OK;
                 }

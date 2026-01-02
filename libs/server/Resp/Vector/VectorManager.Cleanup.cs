@@ -26,7 +26,8 @@ namespace Garnet.server
         {
             await Task.Yield();
 
-            throw new NotImplementedException();
+            // TODO: Move implementation over
+            //throw new NotImplementedException();
         }
 
         /// <summary>
