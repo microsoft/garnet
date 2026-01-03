@@ -181,4 +181,7 @@ NOTES:
 
 - AofProcessor replay should use a separate basic context for replay?
 
--
+- When running a custom transaction proc, we need to wait on a barrier for all replay tasks associated with that sublog.
+  The dictionary holding the shared barriers is indexed on sessionID. Across sessions this should be fine. 
+  However, for the same session it might create a problem because two separate transactions executing on the same session one after the other
+  that operate on disjoint sublogs might get mixed because they will attempt to get indexed on the same sessionID.

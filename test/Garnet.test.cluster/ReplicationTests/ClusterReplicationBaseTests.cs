@@ -1178,6 +1178,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(24)]
         [Category("REPLICATION")]
+        [CancelAfter(30_000)]
         public void ClusterReplicationStoredProc([Values] bool enableDisklessSync, [Values] bool attachFirst)
         {
             var replica_count = 1;// Per primary
@@ -1226,17 +1227,27 @@ namespace Garnet.test.cluster
             if (!attachFirst)
             {
                 // Issue replicate
-                context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+                var attachResp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+                ClassicAssert.AreEqual("OK", attachResp);
             }
 
             // Validate primary keys
             var resp = primaryServer.Execute("KEYS", ["*"]);
             ClassicAssert.AreEqual(expectedKeys, (string[])resp);
-
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
             replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
-            resp = replicaServer.Execute("KEYS", ["*"]);
-            ClassicAssert.AreEqual(expectedKeys, (string[])resp);
+            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            while (true)
+            {
+                resp = replicaServer.Execute("KEYS", ["*"]);
+                if (expectedKeys.Length == ((string[])resp).Length)
+                    break;
+                ClusterTestUtils.BackOff(cts.Token);
+            }
+
+            var actual = (string[])resp;
+            Array.Sort(actual);
+            ClassicAssert.AreEqual(expectedKeys, actual);
 
             void ExecuteRateLimit()
             {
@@ -1248,14 +1259,13 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(24)]
+        [Test, Order(25)]
         [Category("REPLICATION")]
         public void ClusterReplicationManualCheckpointing()
         {
             // Use case here is, outside of the cluster, period COMMITAOFs are requested.
             // Done so in recovery scenarios, if a primary does NOT come back there's still confidence
             // a replica has recent data.
-
             var replica_count = 1;// Per primary
             var primary_count = 1;
             var nodes_count = primary_count + primary_count * replica_count;
@@ -1321,7 +1331,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(25)]
+        [Test, Order(26)]
         [Category("CLUSTER")]
         [CancelAfter(30_000)]
         [TestCase(ExceptionInjectionType.Divergent_AOF_Stream)]
@@ -1417,7 +1427,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(26)]
+        [Test, Order(27)]
         [Category("REPLICATION")]
         [CancelAfter(30_000)]
         public async Task ClusterReplicationMultiRestartRecover(CancellationToken cancellationToken)
@@ -1526,7 +1536,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(27)]
+        [Test, Order(28)]
         [Category("CLUSTER")]
         [CancelAfter(30_000)]
         public async Task ReplicasRestartAsReplicasAsync(CancellationToken cancellation)
@@ -1570,7 +1580,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(replica).Value);
         }
 
-        [Test, Order(28)]
+        [Test, Order(29)]
         [Category("CLUSTER")]
         [CancelAfter(30_000)]
         [TestCase(ExceptionInjectionType.None, true)]
@@ -1925,7 +1935,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(29)]
+        [Test, Order(30)]
         [Category("CLUSTER")]
         [Category("REPLICATION")]
         public void ClusterReplicationDivergentHistoryWithoutCheckpoint()
@@ -2028,7 +2038,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        [Test, Order(28)]
+        [Test, Order(31)]
         [Category("REPLICATION")]
         public void ClusterReplicationSimpleTransactionTest([Values] bool storedProcedure)
         {
