@@ -124,6 +124,17 @@ namespace Tsavorite.test.LockTable
             ClassicAssert.AreEqual(expectedS, lockState.NumLockedShared, "SLock mismatch");
         }
 
+        internal static void AssertLockCounts<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ReadOnlySpan<byte> key, bool expectedX, bool expectedS)
+            where TStoreFunctions : IStoreFunctions
+            where TAllocator : IAllocator<TStoreFunctions>
+        {
+            HashEntryInfo hei = new(store.storeFunctions.GetKeyHashCode64(key));
+            PopulateHei(store, ref hei);
+            var lockState = store.LockTable.GetLockState(ref hei);
+            ClassicAssert.AreEqual(expectedX, lockState.IsLockedExclusive, "XLock mismatch");
+            ClassicAssert.AreEqual(expectedS, lockState.NumLockedShared > 0, "SLock mismatch");
+        }
+
         internal static void AssertLockCounts<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, ref FixedLengthTransactionalKeyStruct keyStruct, bool expectedX, bool expectedS)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>

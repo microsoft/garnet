@@ -107,7 +107,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
-        //[Repeat(300)]
+        [Repeat(1000)]
         public void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode, [Values] ReadCacheMode readCacheMode)
         {
             if (numThreads == 1 && keyContentionMode == KeyContentionMode.Contention)
@@ -115,12 +115,13 @@ namespace Tsavorite.test.ReadCacheTests
             if (numThreads > 2 && IsRunningAzureTests)
                 Assert.Ignore("Skipped because > 2 threads when IsRunningAzureTests");
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
-                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1} ***");
+                Debug.WriteLine($"*** Current test iteration: {TestContext.CurrentContext.CurrentRepeatCount + 1}, name = {TestContext.CurrentContext.Test.Name} ***");
 
             const int PendingMod = 16;
 
             void LocalRead(BasicContext<PinnedSpanByte, SpanByteAndMemory, Empty, Functions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> sessionContext, int i, ref int numPending, bool isLast)
             {
+                // These are OK to be local to this LocalRead call; if it goes pending, they will be copied into IHeapContainers.
                 var keyString = $"{i}";
                 var inputString = $"{i * 2}";
                 var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
@@ -172,13 +173,13 @@ namespace Tsavorite.test.ReadCacheTests
                 int numPending = 0;
 
                 // read through the keys in order (works)
-                for (int i = startKey; i < endKey; i++)
-                    LocalRead(sessionContext, i, ref numPending, i == endKey - 1);
+                for (int keyNum = startKey; keyNum < endKey; keyNum++)
+                    LocalRead(sessionContext, keyNum, ref numPending, keyNum == endKey - 1);
 
                 // pick random keys to read
                 var r = new Random(2115);
-                for (int i = startKey; i < endKey; i++)
-                    LocalRead(sessionContext, r.Next(startKey, endKey), ref numPending, i == endKey - 1);
+                for (int keyNum = startKey; keyNum < endKey; keyNum++)
+                    LocalRead(sessionContext, r.Next(startKey, endKey), ref numPending, keyNum == endKey - 1);
             }
 
             const int MaxKeys = 8000;

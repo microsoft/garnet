@@ -1,8 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
+using System;
 using System.IO;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -11,13 +10,13 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using IntAllocator = BlittableAllocator<int, int, StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>>;
-    using IntStoreFunctions = StoreFunctions<int, int, IntKeyComparer, DefaultRecordDisposer<int, int>>;
+    using IntAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordDisposer>>;
+    using IntStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class PostOperationsTests
     {
-        class PostFunctions : SimpleLongSimpleFunctions<int, int>
+        class PostFunctions : SimpleIntSimpleFunctions
         {
             internal long pswAddress;
             internal long piuAddress;
@@ -27,26 +26,39 @@ namespace Tsavorite.test
 
             internal void Clear()
             {
-                pswAddress = Constants.kInvalidAddress;
-                piuAddress = Constants.kInvalidAddress;
-                pcuAddress = Constants.kInvalidAddress;
-                psdAddress = Constants.kInvalidAddress;
+                pswAddress = LogAddress.kInvalidAddress;
+                piuAddress = LogAddress.kInvalidAddress;
+                pcuAddress = LogAddress.kInvalidAddress;
+                psdAddress = LogAddress.kInvalidAddress;
             }
 
             internal PostFunctions() : base() { }
 
-            public override void PostInitialWriter(ref int key, ref int input, ref int src, ref int dst, ref int output, ref UpsertInfo upsertInfo) { pswAddress = upsertInfo.Address; }
+            public override void PostInitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ReadOnlySpan<byte> src, ref int output, ref UpsertInfo upsertInfo)
+                => pswAddress = upsertInfo.Address;
 
-            public override bool InitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) { value = input; return true; }
-            /// <inheritdoc/>
-            public override void PostInitialUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo) { piuAddress = rmwInfo.Address; }
+            public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            {
+                dstLogRecord.ValueSpan.AsRef<int>() = input;
+                return true;
+            }
 
-            public override bool InPlaceUpdater(ref int key, ref int input, ref int value, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => false; // For this test, we want this to fail and lead to InitialUpdater
+            /// <inheritdoc/>
+            public override void PostInitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int value, ref int output, ref RMWInfo rmwInfo)
+                => piuAddress = rmwInfo.Address;
+
+            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+                => false; // For this test, we want this to fail and lead to InitialUpdater
 
             /// <inheritdoc/>
-            public override bool CopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) { newValue = oldValue; return true; }
+            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
+            {
+                dstLogRecord.ValueSpan.AsRef<int>() = srcLogRecord.ValueSpan.AsRef<int>();
+                return true;
+            }
+
             /// <inheritdoc/>
-            public override bool PostCopyUpdater(ref int key, ref int input, ref int oldValue, ref int newValue, ref int output, ref RMWInfo rmwInfo)
+            public override bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref int input, ref int output, ref RMWInfo rmwInfo)
             {
                 pcuAddress = rmwInfo.Address;
                 if (returnFalseFromPCU)
@@ -54,13 +66,16 @@ namespace Tsavorite.test
                 return !returnFalseFromPCU;
             }
 
-            public override void PostInitialDeleter(ref int key, ref DeleteInfo deleteInfo) { psdAddress = deleteInfo.Address; }
-            public override bool InPlaceDeleter(ref int key, ref int value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => false;
+            public override void PostInitialDeleter(ref LogRecord dstLogRecord, ref DeleteInfo deleteInfo)
+                => psdAddress = deleteInfo.Address;
+
+            public override bool InPlaceDeleter(ref LogRecord dstLogRecord, ref DeleteInfo deleteInfo)
+                => false;
         }
 
-        private TsavoriteKV<int, int, IntStoreFunctions, IntAllocator> store;
-        private ClientSession<int, int, int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator> session;
-        private BasicContext<int, int, int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator> bContext;
+        private TsavoriteKV<IntStoreFunctions, IntAllocator> store;
+        private ClientSession<int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator> session;
+        private BasicContext<int, int, Empty, PostFunctions, IntStoreFunctions, IntAllocator> bContext;
         private IDevice log;
 
         const int NumRecords = 100;
@@ -80,7 +95,7 @@ namespace Tsavorite.test
                 LogDevice = log,
                 MemorySize = 1L << 15,
                 PageSize = 1L << 10
-            }, StoreFunctions<int, int>.Create(IntKeyComparer.Instance)
+            }, StoreFunctions.Create(IntKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
             session = store.NewSession<int, int, Empty, PostFunctions>(new PostFunctions());
@@ -105,7 +120,10 @@ namespace Tsavorite.test
             for (var key = 0; key < NumRecords; ++key)
             {
                 expectedAddress = store.Log.TailAddress;
-                _ = bContext.Upsert(key, key * 100);
+                if ((expectedAddress % store.hlogBase.PageSize) == 0)
+                    expectedAddress += PageHeader.Size;
+                var value = key * 100;
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
                 ClassicAssert.AreEqual(expectedAddress, session.functions.pswAddress);
             }
 
@@ -130,7 +148,8 @@ namespace Tsavorite.test
 
             // Execute the ReadOnly (InternalInsert) test
             store.Log.FlushAndEvict(wait: true);
-            _ = bContext.Upsert(TargetKey, TargetKey * 1000);
+            int key = TargetKey, value = TargetKey * 100;
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
             _ = bContext.CompletePending(wait: true);
             ClassicAssert.AreEqual(expectedAddress, session.functions.pswAddress);
         }
@@ -141,21 +160,25 @@ namespace Tsavorite.test
         public void PostInitialUpdaterTest()
         {
             // Execute the not-found test (InternalRMW).
-            _ = bContext.RMW(NumRecords + 1, (NumRecords + 1) * 1000);
+            int key = NumRecords + 1, value = (NumRecords + 1) * 1000;
+            _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
             ClassicAssert.AreEqual(expectedAddress, session.functions.piuAddress);
             session.functions.Clear();
 
             // Now cause an attempt at InPlaceUpdater, which we've set to fail, so CopyUpdater is done (InternalInsert).
             expectedAddress = store.Log.TailAddress;
-            _ = bContext.RMW(TargetKey, TargetKey * 1000);
+            key = TargetKey;
+            value = TargetKey * 1000;
+
+            _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
             ClassicAssert.AreEqual(expectedAddress, session.functions.pcuAddress);
 
             // Execute the not-in-memory test (InternalContinuePendingRMW). First delete the record so it has a tombstone; this will go to InitialUpdater.
-            _ = bContext.Delete(TargetKey);
+            _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
 
-            _ = bContext.RMW(TargetKey, TargetKey * 1000);
+            _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
             CompletePendingAndVerifyInsertedAddress();
             ClassicAssert.AreEqual(expectedAddress, session.functions.piuAddress);
         }
@@ -166,14 +189,16 @@ namespace Tsavorite.test
         public void PostCopyUpdaterTest()
         {
             // First try to modify in-memory, readonly (InternalRMW).
+            var key = TargetKey;
+            var value = TargetKey * 1000;
             store.Log.ShiftReadOnlyAddress(store.Log.ReadOnlyAddress, wait: true);
-            _ = bContext.RMW(TargetKey, TargetKey * 1000);
+            _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
             ClassicAssert.AreEqual(expectedAddress, session.functions.pcuAddress);
 
             // Execute the not-in-memory test (InternalContinuePendingRMW).
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
-            _ = bContext.RMW(TargetKey, TargetKey * 1000);
+            _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
             CompletePendingAndVerifyInsertedAddress();
             ClassicAssert.AreEqual(expectedAddress, session.functions.pcuAddress);
         }
@@ -184,7 +209,9 @@ namespace Tsavorite.test
         public void PostCopyUpdaterFalseTest([Values(FlushMode.ReadOnly, FlushMode.OnDisk)] FlushMode flushMode)
         {
             // Verify the key exists
-            var (status, output) = bContext.Read(TargetKey);
+            var key = TargetKey;
+            var value = TargetKey * 1000;
+            var (status, output) = bContext.Read(SpanByte.FromPinnedVariable(ref key));
             ClassicAssert.IsTrue(status.Found, "Expected the record to exist");
             session.functions.returnFalseFromPCU = true;
 
@@ -195,10 +222,10 @@ namespace Tsavorite.test
                 store.Log.FlushAndEvict(wait: true);
 
             // Call RMW
-            _ = bContext.RMW(TargetKey, TargetKey * 1000);
+            _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
 
             // Verify the key no longer exists.
-            (status, output) = bContext.Read(TargetKey);
+            (status, output) = bContext.Read(SpanByte.FromPinnedVariable(ref key));
             ClassicAssert.IsFalse(status.Found, "Expected the record to no longer exist");
         }
 
@@ -208,16 +235,16 @@ namespace Tsavorite.test
         public void PostInitialDeleterTest()
         {
             // Execute the not-in-memory test (InternalDelete); InPlaceDeleter returns false to force a new record to be added.
-            _ = bContext.Delete(TargetKey);
+            var key = TargetKey;
+            _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
             ClassicAssert.AreEqual(expectedAddress, session.functions.psdAddress);
 
             // Execute the not-in-memory test (InternalDelete).
             store.Log.FlushAndEvict(wait: true);
             expectedAddress = store.Log.TailAddress;
-            _ = bContext.Delete(TargetKey + 1);
+            key++;
+            _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
             ClassicAssert.AreEqual(expectedAddress, session.functions.psdAddress);
         }
     }
 }
-
-#endif // LOGRECORD_TODO

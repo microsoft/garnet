@@ -20,7 +20,7 @@ namespace Tsavorite.core
         /// <remarks>
         /// SAFETY: The <paramref name="stackVar"/> MUST be non-movable, such as on the stack.
         /// </remarks>
-        public static unsafe Span<byte> FromPinnedVariable<T>(ref T stackVar) where T : unmanaged
+        public static Span<byte> FromPinnedVariable<T>(ref T stackVar) where T : unmanaged
             => new(Unsafe.AsPointer(ref stackVar), Unsafe.SizeOf<T>());
 
         /// <summary>

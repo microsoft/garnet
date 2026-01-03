@@ -53,9 +53,7 @@ namespace Tsavorite.test
             foreach (var t in commitThreads)
                 t.Start();
             for (int i = 0; i < 5 * numEntries; i++)
-            {
                 _ = log.Enqueue(entry);
-            }
             enqueueDone.Set();
 
             foreach (var t in commitThreads)
