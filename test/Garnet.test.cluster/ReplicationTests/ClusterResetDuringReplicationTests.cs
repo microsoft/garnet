@@ -5,6 +5,7 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -16,8 +17,10 @@ namespace Garnet.test.cluster.ReplicationTests
     /// These tests simulate scenarios where a replica gets stuck or is in replication attach and verify that
     /// CLUSTER RESET HARD can properly cancel ongoing operations and allow the replica to be reused.
     /// </summary>
+    [AllureNUnit]
+    [TestFixture]
     [NonParallelizable]
-    public class ClusterResetDuringReplicationTests
+    public class ClusterResetDuringReplicationTests : AllureTestBase
     {
         ClusterTestContext context;
 

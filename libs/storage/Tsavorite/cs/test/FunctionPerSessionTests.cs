@@ -3,6 +3,8 @@
 
 using System.IO;
 using System.Threading;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -108,8 +110,9 @@ namespace Tsavorite.test
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
-    public class FunctionPerSessionTests
+    public class FunctionPerSessionTests : AllureTestBase
     {
         private IDevice _log;
         private TsavoriteKV<int, RefCountedValueStruct, StructStoreFunctions, StructAllocator> store;

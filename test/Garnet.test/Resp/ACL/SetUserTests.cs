@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -12,6 +13,7 @@ namespace Garnet.test.Resp.ACL
     /// <summary>
     /// Tests for ACL SETUSER operations.
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
     class SetUserTests : AclTest
     {

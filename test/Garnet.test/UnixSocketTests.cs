@@ -6,14 +6,16 @@ using System.Buffers;
 using System.IO;
 using System.Net.Sockets;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class UnixSocketTests
+    public class UnixSocketTests : AllureTestBase
     {
         [SetUp]
         public void Setup()

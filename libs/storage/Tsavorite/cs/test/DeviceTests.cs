@@ -6,14 +6,17 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class DeviceTests
+    public class DeviceTests : AllureTestBase
     {
         const int entryLength = 1024;
         SectorAlignedBufferPool bufferPool;

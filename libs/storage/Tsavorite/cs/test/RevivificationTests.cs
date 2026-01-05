@@ -8,6 +8,8 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -230,8 +232,9 @@ namespace Tsavorite.test.Revivification
             => numRecords - GetRevivifiableRecordCount(store, numRecords);
     }
 
+    [AllureNUnit]
     [TestFixture]
-    class RevivificationFixedLenTests
+    class RevivificationFixedLenTests : AllureTestBase
     {
         internal class RevivificationFixedLenFunctions : SimpleSimpleFunctions<int, int>
         {
@@ -437,8 +440,9 @@ namespace Tsavorite.test.Revivification
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
-    class RevivificationSpanByteTests
+    class RevivificationSpanByteTests : AllureTestBase
     {
         const int KeyLength = 10;
         const int InitialLength = 50;
@@ -1773,8 +1777,9 @@ namespace Tsavorite.test.Revivification
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
-    class RevivificationObjectTests
+    class RevivificationObjectTests : AllureTestBase
     {
         const int NumRecords = 1000;
         internal const int ValueMult = 1_000_000;
@@ -1865,8 +1870,9 @@ namespace Tsavorite.test.Revivification
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
-    class RevivificationSpanByteStressTests
+    class RevivificationSpanByteStressTests : AllureTestBase
     {
         const int KeyLength = 10;
         const int InitialLength = 50;

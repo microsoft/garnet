@@ -1,13 +1,16 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
-    public class ScratchBufferAllocatorTests
+    [AllureNUnit]
+    [TestFixture]
+    public class ScratchBufferAllocatorTests : AllureTestBase
     {
         [Test]
 
