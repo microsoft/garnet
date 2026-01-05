@@ -293,7 +293,7 @@ namespace Garnet.server
 
                 ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
 
-                if (!TryMarkDeleteInProgress(ref storageSession.vectorContext, ref key, context))
+                if (!TryMarkDeleteInProgress(ref storageSession.vectorContext, key, context))
                 {
                     // We can't recover from a crash or error, so fail the delete for safety
                     return Status.CreateError();
@@ -336,7 +336,7 @@ namespace Garnet.server
                 // Delete has finished, so remove the in progress metadata
                 //
                 // A crash or error before this will cause some work to be retried, but no correctness issues
-                ClearDeleteInProgress(ref storageSession.vectorContext, ref key, context);
+                ClearDeleteInProgress(ref storageSession.vectorContext, key, context);
 
                 return Status.CreateFound();
             }

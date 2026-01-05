@@ -71,7 +71,8 @@ namespace Garnet.server
         /// </summary>
         internal void ReplicateVectorSetRemove(ref PinnedSpanByte key, ref PinnedSpanByte element, ref StringInput input, ref BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> context)
         {
-            throw new NotImplementedException();
+            // TODO: Move implementation over
+            //throw new NotImplementedException();
         }
 
         /// <summary>
@@ -81,7 +82,9 @@ namespace Garnet.server
         /// </summary>
         internal bool TryDropVectorSetReplicationKey(PinnedSpanByte key, ref BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> context)
         {
-            throw new NotImplementedException();
+            // TODO: Move implementation over
+            //throw new NotImplementedException();
+            return true;
         }
 
         /// <summary>
@@ -91,17 +94,21 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetAddReplication(StorageSession currentSession, Func<RespServerSession> obtainServerSession, ref PinnedSpanByte keyWithNamespace, ref StringInput input)
         {
-            throw new NotImplementedException();
+            // TODO: Move implementation over
+            //throw new NotImplementedException();
         }
 
         /// <summary>
         /// Cancels replication tasks, resetting enough state that they can be resumed by a future call to <see cref="HandleVectorSetAddReplication"/>.
         /// 
-        /// Returns the number of abanded VADDs.
+        /// Returns the number of abandoned VADDs.
         /// </summary>
         internal int ResetReplayTasks()
         {
-            throw new NotImplementedException();
+            // TODO: Move implementation over
+            //throw new NotImplementedException();
+
+            return 0;
         }
 
         /// <summary>
@@ -111,7 +118,8 @@ namespace Garnet.server
         /// </summary>
         internal void HandleVectorSetRemoveReplication(StorageSession storageSession, ref PinnedSpanByte key, ref StringInput input)
         {
-            throw new NotImplementedException();
+            // TODO: Move implementation over
+            //throw new NotImplementedException();
         }
 
         /// <summary>
@@ -119,12 +127,8 @@ namespace Garnet.server
         /// </summary>
         public void WaitForVectorOperationsToComplete()
         {
-            throw new NotImplementedException();
-        }
-        // Helper to complete read/writes during vector set synthetic op goes async
-        private static void CompletePending(ref Status status, ref BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> context)
-        {
-            throw new NotImplementedException();
+            // TODO: Move implementation over
+            //throw new NotImplementedException();
         }
     }
 }

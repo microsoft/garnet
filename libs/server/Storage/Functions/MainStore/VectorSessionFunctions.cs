@@ -16,7 +16,7 @@ namespace Garnet.server
     /// </summary>
     public readonly struct VectorSessionFunctions : ISessionFunctions<VectorInput, PinnedSpanByte, long>
     {
-        private const byte AlignmentPadding = 2;
+        private const int ValueAlignmentBytes = 4;
 
         private readonly FunctionsState functionsState;
 
@@ -37,17 +37,16 @@ namespace Garnet.server
 
             var value = srcLogRecord.ValueSpan;
 
+            value = Align(value);
+
             unsafe
             {
                 if (input.Callback != 0)
                 {
-                    value = Align(value);
-
                     var callback = (delegate* unmanaged[Cdecl, SuppressGCTransition]<int, nint, nint, nuint, void>)input.Callback;
 
                     var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
                     var dataLen = (nuint)value.Length;
-                    AssertAlignment(dataPtr, dataLen);
 
                     callback(input.Index, input.CallbackContext, dataPtr, dataLen);
                     return true;
@@ -114,9 +113,12 @@ namespace Garnet.server
         {
             //Debug.Assert(key.MetadataSize == 1, "Should never write a non-namespaced value with VectorSessionFunctions");
 
-            newValue.CopyTo(logRecord.ValueSpan);
+            var rawValue = logRecord.ValueSpan;
+            var value = Align(rawValue);
 
-            return logRecord.TrySetContentLengths(logRecord.ValueSpan.Length, in sizeInfo);
+            newValue.CopyTo(value);
+
+            return logRecord.TrySetContentLengths(rawValue.Length, in sizeInfo);
         }
 
         /// <inheritdoc/>
@@ -144,7 +146,7 @@ namespace Garnet.server
             }
 
             // Constant size indicated
-            return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize + AlignmentPadding };
+            return new RecordFieldInfo() { KeySize = srcLogRecord.Key.Length, ValueSize = input.WriteDesiredSize + ValueAlignmentBytes };
         }
 
         /// <summary>Initial expected length of value object when populated by RMW using given input</summary>
@@ -157,12 +159,12 @@ namespace Garnet.server
                 effectiveWriteDesiredSize = -effectiveWriteDesiredSize;
             }
 
-            return new() { KeySize = key.Length, ValueSize = effectiveWriteDesiredSize + AlignmentPadding };
+            return new() { KeySize = key.Length, ValueSize = effectiveWriteDesiredSize + ValueAlignmentBytes };
         }
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
         public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref VectorInput input)
-        => new() { KeySize = key.Length, ValueSize = value.Length + AlignmentPadding };
+        => new() { KeySize = key.Length, ValueSize = value.Length + ValueAlignmentBytes };
 
         /// <summary>Length of value object, when populated by Upsert using given value and input</summary>
         public readonly RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, IHeapObject value, ref VectorInput input)
@@ -190,7 +192,9 @@ namespace Garnet.server
             //Debug.Assert(key.MetadataSize == 1, "Should never write a non-namespaced value with VectorSessionFunctions");
 
             var key = logRecord.Key;
-            var value = logRecord.ValueSpan;
+            var rawValue = logRecord.ValueSpan;
+
+            var value = Align(rawValue);
 
             if (input.Callback == 0)
             {
@@ -207,7 +211,7 @@ namespace Garnet.server
                     }
 
                     newMetadataValue.CopyTo(value);
-                    return logRecord.TrySetContentLengths(value.Length, in sizeInfo);
+                    return logRecord.TrySetContentLengths(rawValue.Length, in sizeInfo);
                 }
                 else
                 {
@@ -237,7 +241,7 @@ namespace Garnet.server
                         return false;
                     }
 
-                    var fits = VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref logRecord, ref rmwInfo);
+                    var fits = VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref logRecord, in sizeInfo);
                     Debug.Assert(fits, "Initial size of record should have been correct for in progress deletes");
 
                     return true;
@@ -259,11 +263,9 @@ namespace Garnet.server
 
                     var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
                     var dataLen = (nuint)input.WriteDesiredSize;
-                    AssertAlignment(dataPtr, dataLen);
-
                     callback(input.CallbackContext, dataPtr, dataLen);
 
-                    return logRecord.TrySetContentLengths(input.WriteDesiredSize, in sizeInfo);
+                    return logRecord.TrySetContentLengths(rawValue.Length, in sizeInfo);
                 }
             }
         }
@@ -345,7 +347,7 @@ namespace Garnet.server
                         inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
                     }
 
-                    var fits = VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref dstLogRecord, ref rmwInfo);
+                    var fits = VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref dstLogRecord, in sizeInfo);
                     Debug.Assert(fits, "Copy update should have allocated enough space for in progress deletes");
 
                     return true;
@@ -367,7 +369,6 @@ namespace Garnet.server
 
                     var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(newValue));
                     var dataLen = (nuint)input.WriteDesiredSize;
-                    AssertAlignment(dataPtr, dataLen);
 
                     callback(input.CallbackContext, dataPtr, dataLen);
                 }
@@ -443,7 +444,7 @@ namespace Garnet.server
                         inProgressDeleteUpdateData = new Span<byte>((byte*)input.CallbackContext, sizeof(ulong) + sizeof(int) + len);
                     }
 
-                    return VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref logRecord, ref rmwInfo);
+                    return VectorManager.TryUpdateInProgressDeletes(inProgressDeleteUpdateData, ref logRecord, in sizeInfo);
                 }
             }
             else
@@ -459,7 +460,6 @@ namespace Garnet.server
 
                     var dataPtr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(value));
                     var dataLen = (nuint)input.WriteDesiredSize;
-                    AssertAlignment(dataPtr, dataLen);
 
                     callback(input.CallbackContext, dataPtr, dataLen);
                 }
@@ -506,18 +506,34 @@ namespace Garnet.server
         private static TReturn ObjectOperationsNotExpected<TReturn>([CallerMemberName] string callerName = null, [CallerLineNumber] int lineNum = -1)
         => throw new InvalidOperationException($"Object related operations are not expected, was: {callerName} on {lineNum}");
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe Span<byte> Align(Span<byte> unaligned)
-        {
-            Debug.Assert(((nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(unaligned)) % 4) == (4 - AlignmentPadding), "Shouldn't adjust unless necessary");
+        // TODO: Remove all this alignment hackery
 
-            return unaligned.Slice(AlignmentPadding);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe Span<byte> Align(Span<byte> maybeUnaligned)
+        {
+            Span<byte> ret;
+
+            var leading = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(maybeUnaligned)) % 4;
+            if (leading == 0)
+            {
+                ret = maybeUnaligned[..^ValueAlignmentBytes];
+            }
+            else
+            {
+                var skip = (int)(ValueAlignmentBytes - leading);
+                var tail = ValueAlignmentBytes - skip;
+                ret = maybeUnaligned[skip..^tail];
+            }
+
+            AssertAlignment(ret);
+            return ret;
         }
 
         [Conditional("DEBUG")]
-        private static void AssertAlignment(nint ptr, nuint len)
+        private static unsafe void AssertAlignment(ReadOnlySpan<byte> aligned)
         {
-            Debug.Assert((ptr % 4) == 0, "Must guarantee 4-byte alignment before invoking callback");
+            var ptr = (nint)Unsafe.AsPointer(ref MemoryMarshal.GetReference(aligned));
+            Debug.Assert((ptr % ValueAlignmentBytes) == 0, "Must guarantee 4-byte alignment before invoking callback");
         }
     }
 }
