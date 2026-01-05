@@ -148,28 +148,35 @@ namespace Tsavorite.core
             return !stop;
         }
 
-        internal unsafe bool GetFromDiskAndPushToReader<TScanFunctions>(ReadOnlySpan<byte> key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
+        internal bool GetFromDiskAndPushToReader<TScanFunctions>(ReadOnlySpan<byte> key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
                 AsyncIOContextCompletionEvent completionEvent, out bool stop)
             where TScanFunctions : IScanIteratorFunctions
         {
-            completionEvent.Prepare(PinnedSpanByte.FromPinnedSpan(key), logicalAddress);
+            stop = false;
+            if (logicalAddress < BeginAddress)
+                return false;
 
+            completionEvent.Prepare(PinnedSpanByte.FromPinnedSpan(key), logicalAddress);
             AsyncGetFromDisk(logicalAddress, IStreamBuffer.InitialIOSize, completionEvent.request);
             completionEvent.Wait();
 
-            stop = false;
-            if (completionEvent.exception is not null)
+            ref var request = ref completionEvent.request;
+            try
             {
-                scanFunctions.OnException(completionEvent.exception, numRecords);
-                return false;
-            }
-            if (completionEvent.request.logicalAddress < BeginAddress)
-                return false;
+                if (completionEvent.exception is not null)
+                {
+                    scanFunctions.OnException(completionEvent.exception, numRecords);
+                    return false;
+                }
 
-            var logRecord = DiskLogRecord.TransferFrom(ref completionEvent.request.record, transientObjectIdMap);
-            logRecord.InfoRef.ClearBitsForDiskImages();
-            stop = !scanFunctions.Reader(in logRecord, new RecordMetadata(completionEvent.request.logicalAddress, logRecord.ETag), numRecords, out _);
-            logicalAddress = logRecord.Info.PreviousAddress;
+                request.diskLogRecord.InfoRef.ClearBitsForDiskImages();
+                stop = !scanFunctions.Reader(in request.diskLogRecord, new RecordMetadata(request.logicalAddress, request.diskLogRecord.ETag), numRecords, out _);
+                logicalAddress = request.diskLogRecord.Info.PreviousAddress;
+            }
+            finally
+            {
+                request.DisposeRecord();
+            }
             return !stop;
         }
 

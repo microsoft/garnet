@@ -31,7 +31,7 @@ namespace Tsavorite.core
         internal Action<IHeapObject> objectDisposer;
 
         public override readonly string ToString()
-            => $"logRec [{logRecord}], recordBuffer [{(recordBuffer.ToString() ?? "<null>")}], objDisp [{(objectDisposer.ToString() ?? "<null>")}]";
+            => $"logRec [{logRecord}], recordBuffer [{recordBuffer?.ToString() ?? "<null>"}], objDisp [{objectDisposer?.ToString() ?? "<null>"}]";
 
         /// <summary>
         /// Constructor taking the record buffer and out-of-line objects. Private; use either CopyFrom or TransferFrom.

@@ -94,9 +94,6 @@ namespace Tsavorite.core
                         }
                     }
 
-                    if (!memoryRecord.IsSet && pendingContext.diskLogRecord.Info.Tombstone)
-                        goto NotFound;
-
                     ReadInfo readInfo = new()
                     {
                         Version = sessionFunctions.Ctx.version,
@@ -104,6 +101,16 @@ namespace Tsavorite.core
                         IsFromPending = pendingContext.type != OperationType.NONE,
                     };
                     pendingContext.logicalAddress = request.logicalAddress;
+
+                    if (!memoryRecord.IsSet && pendingContext.diskLogRecord.Info.Tombstone)
+                    {
+                        if (pendingContext.IsReadAtAddress)
+                        {
+                            // Be consistent with InternalReadAtAddress and return the tombstoned record we retrieved from disk.
+                            _ = sessionFunctions.Reader(in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
+                        }
+                        goto NotFound;
+                    }
 
                     var success = false;
                     if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
@@ -120,7 +127,7 @@ namespace Tsavorite.core
                         // This may be in the immutable region, which means it may be an updated version of the record.
                         success = sessionFunctions.Reader(in memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
                     }
-                    else
+                    else // Not found in memory so return the disk copy.
                         success = sessionFunctions.Reader(in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
 
                     if (!success)

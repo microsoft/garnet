@@ -1555,17 +1555,16 @@ namespace Tsavorite.core
 
         /// <summary>Read a main log record to <see cref="SectorAlignedMemory"/> - used for RUMD operations.</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal unsafe void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
+        internal void AsyncReadRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref AsyncIOContext context)
         {
-            var asyncResult = default(AsyncGetFromDiskResult<AsyncIOContext>);
-            asyncResult.context = context;
-            asyncResult.context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
+            context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
+            var asyncResult = new AsyncGetFromDiskResult<AsyncIOContext> { context = context };
             device.ReadAsync(alignedFileOffset, (IntPtr)asyncResult.context.record.aligned_pointer, alignedReadLength, callback, asyncResult);
         }
 
         /// <summary>Read inline blittable record to <see cref="SectorAlignedMemory"/>> - simple read context version. Used by TsavoriteLog.</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        internal unsafe void AsyncReadBlittableRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
+        internal void AsyncReadBlittableRecordToMemory(long fromLogicalAddress, int numBytes, DeviceIOCompletionCallback callback, ref SimpleReadContext context)
         {
             context.record = GetAndPopulateReadBuffer(fromLogicalAddress, numBytes, out var alignedFileOffset, out var alignedReadLength);
             device.ReadAsync(alignedFileOffset, (IntPtr)context.record.aligned_pointer, alignedReadLength, callback, context);
@@ -1845,6 +1844,13 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>
+        /// Get a single record from the disk.
+        /// </summary>
+        /// <param name="fromLogicalAddress">Start of the record</param>
+        /// <param name="numBytes">Number of bytes to be read (may be less than actual record size)</param>
+        /// <param name="context">The <see cref="AsyncIOContext"/> of the operation. This is passed by value, not reference; in the iterator case, it is
+        ///     the completionEvent's contained request, and populating it will result in prematurely freeing the record.</param>
         internal void AsyncGetFromDisk(long fromLogicalAddress, int numBytes, AsyncIOContext context)
         {
             // If this is a protected thread, we must wait to issue the Read operation. Spin until the device is not throttled,
@@ -1935,6 +1941,8 @@ namespace Tsavorite.core
         ///     <see cref="ObjectAllocatorImpl{TStoreFunctions}"/>) which will issue additional reads to retrieve those objects.</remarks>
         private protected virtual bool VerifyRecordFromDiskCallback(ref AsyncIOContext ctx, out long prevAddressToRead, out int prevLengthToRead)
         {
+            // TODO: Optimize for non-ReadAtAddress tombstoned records to not have to retrieve the full record or, if we have it, not deserialize objects.
+
             // Initialize to "key is not present (data too small) or does not match so get previous record" length to read
             prevLengthToRead = IStreamBuffer.InitialIOSize;
 
@@ -2005,7 +2013,7 @@ namespace Tsavorite.core
 
                 if (!VerifyRecordFromDiskCallback(ref ctx, out var prevAddressToRead, out var prevLengthToRead))
                 {
-                    Debug.Assert(!(*(RecordInfo*)ctx.record.GetValidPointer()).Invalid, "Invalid records should not be in the hash chain for pending IO");
+                    Debug.Assert(!(*(RecordInfo*)ctx.record.GetValidPointer()).Invalid, $"Invalid records should not be in the hash chain for pending IO; address {ctx.logicalAddress}");
 
                     // Either we had an incomplete record and we're re-reading the current record, or the record Key didn't match and we're reading the previous record
                     // in the chain. If the record to read is in the range to resolve then issue the read, else fall through to signal "IO complete".

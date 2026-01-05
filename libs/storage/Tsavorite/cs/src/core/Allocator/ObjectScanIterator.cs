@@ -180,7 +180,7 @@ namespace Tsavorite.core
         /// Get next record in iterator
         /// </summary>
         /// <returns>True if record found, false if end of scan</returns>
-        public unsafe bool GetNext()
+        public bool GetNext()
         {
             while (true)
             {
@@ -289,8 +289,9 @@ namespace Tsavorite.core
 
                 logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress);
                 nextAddress = logRecord.Info.PreviousAddress;
-                var skipOnScan = !includeClosedRecords && logRecord.Info.SkipOnScan;
-                if (skipOnScan || logRecord.Info.IsNull || !hlogBase.storeFunctions.KeysEqual(logRecord.Key, key))
+
+                // Do not SkipOnScan here; we Seal previous versions.
+                if (logRecord.Info.IsNull || !hlogBase.storeFunctions.KeysEqual(logRecord.Key, key))
                 {
                     epoch?.Suspend();
                     continue;
