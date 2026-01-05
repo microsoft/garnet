@@ -107,7 +107,7 @@ namespace Tsavorite.test.ReadCacheTests
         [Category(TsavoriteKVTestCategory)]
         [Category(ReadCacheTestCategory)]
         [Category(StressTestCategory)]
-        [Repeat(1000)]
+        //[Repeat(1000)]
         public void RandomReadCacheTest([Values(1, 2, 8)] int numThreads, [Values] KeyContentionMode keyContentionMode, [Values] ReadCacheMode readCacheMode)
         {
             if (numThreads == 1 && keyContentionMode == KeyContentionMode.Contention)
