@@ -17,12 +17,12 @@
     <PackageVersion Include="NUnit" Version="4.1.0" />
     <PackageVersion Include="NUnit3TestAdapter" Version="4.6.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis" Version="5.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging" Version="9.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Configuration" Version="9.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="9.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="9.0.9" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.9" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.6.1" />
     <PackageVersion Include="Microsoft.IdentityModel.Validators" Version="8.6.1" />
     <PackageVersion Include="StackExchange.Redis" Version="2.9.25" />
