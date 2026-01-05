@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -253,7 +254,45 @@ namespace Garnet.server
 
         private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
         {
-            throw new NotImplementedException();
+            VectorInput input = default;
+            Span<byte> distinctKey = stackalloc byte[key.Length + 1];
+            key.CopyTo(distinctKey[1..]);
+
+            var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, (nint)Unsafe.AsPointer(ref distinctKey[1]), (nuint)key.Length, ref input);
+
+            ref var ctx = ref ActiveThreadSession.vectorContext;
+
+            while (true)
+            {
+                input.ReadDesiredSize = -1;
+                fixed (byte* ptr = value.Span)
+                {
+                    var asSpanByte = PinnedSpanByte.FromPinnedPointer(ptr, value.Length);
+
+                    var status = ctx.Read(keyWithNamespace, ref input, ref asSpanByte);
+                    if (status.IsPending)
+                    {
+                        CompletePending(ref status, ref asSpanByte, ref ctx);
+                    }
+
+                    if (!status.Found)
+                    {
+                        value.Length = 0;
+                        return false;
+                    }
+
+                    if (input.ReadDesiredSize > asSpanByte.Length)
+                    {
+                        value.Memory?.Dispose();
+                        var newAlloc = MemoryPool<byte>.Shared.Rent(input.ReadDesiredSize);
+                        value = new(newAlloc, newAlloc.Memory.Length);
+                        continue;
+                    }
+
+                    value.Length = asSpanByte.Length;
+                    return true;
+                }
+            }
         }
 
         /// <summary>

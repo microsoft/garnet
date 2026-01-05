@@ -11,6 +11,7 @@ using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test
 {
@@ -908,7 +909,423 @@ namespace Garnet.test
         [Test]
         public unsafe void VectorReadBatchVariants()
         {
-            throw new NotImplementedException();
+            // Single key, 4 byte keys
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+                var data = new int[] { 4, 1234 };
+                fixed (int* dataPtr = data)
+                {
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 64, 1, keyData);
+
+                    var iters = 0;
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        iters++;
+
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(64, inputCopy.Namespace);
+                        ClassicAssert.AreEqual(64, keyCopy.ReadOnlySpan[0]); // TODO: remove once namespaces are handled properly
+                        ClassicAssert.IsTrue(keyCopy.ReadOnlySpan[1..].SequenceEqual(MemoryMarshal.Cast<int, byte>(data.AsSpan().Slice(1, 1))));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+                    }
+
+                    ClassicAssert.AreEqual(1, iters);
+                }
+            }
+
+            // Multiple keys, 4 byte keys
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+                var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
+                fixed (int* dataPtr = data)
+                {
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 32, 7, keyData);
+
+                    var iters = 0;
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        iters++;
+
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(32, inputCopy.Namespace);
+                        ClassicAssert.AreEqual(32, keyCopy.ReadOnlySpan[0]); // TODO: remove once namespaces are handled properly
+
+                        var offset = i * 2 + 1;
+                        var keyCopyData = keyCopy.ReadOnlySpan[1..];
+                        var expectedData = MemoryMarshal.Cast<int, byte>(data.AsSpan().Slice(offset, 1));
+                        ClassicAssert.IsTrue(keyCopyData.SequenceEqual(expectedData));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+                    }
+
+                    ClassicAssert.AreEqual(7, iters);
+                }
+            }
+
+            // Multiple keys, 4 byte keys, random order
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+                var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
+                fixed (int* dataPtr = data)
+                {
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 16, 7, keyData);
+
+                    var rand = new Random(2025_10_06_00);
+
+                    for (var j = 0; j < 1_000; j++)
+                    {
+                        var i = rand.Next(batch.Count);
+
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(16, inputCopy.Namespace);
+                        ClassicAssert.AreEqual(16, keyCopy.ReadOnlySpan[0]); // TODO: remove once namespaces are handled properly
+
+                        var offset = i * 2 + 1;
+                        var keyCopyData = keyCopy.ReadOnlySpan[1..];
+                        var expectedData = MemoryMarshal.Cast<int, byte>(data.AsSpan().Slice(offset, 1));
+                        ClassicAssert.IsTrue(keyCopyData.SequenceEqual(expectedData));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+                    }
+                }
+            }
+
+            // Single key, variable length
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+                var key0 = "hello"u8.ToArray();
+                var data =
+                    MemoryMarshal.Cast<int, byte>([key0.Length])
+                        .ToArray()
+                        .Concat(key0)
+                        .ToArray();
+                fixed (byte* dataPtr = data)
+                {
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, 1, keyData);
+
+                    var iters = 0;
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        iters++;
+
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        var expectedLength =
+                            i switch
+                            {
+                                0 => key0.Length,
+                                _ => throw new InvalidOperationException("Unexpected index"),
+                            };
+                        var expectedStart =
+                            i switch
+                            {
+                                0 => 0 + 1 * sizeof(int),
+                                _ => throw new InvalidOperationException("Unexpected index"),
+                            };
+
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(8, inputCopy.Namespace);
+                        ClassicAssert.AreEqual(8, keyCopy.ReadOnlySpan[0]); // TODO: remove once namespaces are handled properly
+
+
+                        var keyCopyData = keyCopy.ReadOnlySpan[1..];
+                        var expectedData = data.AsSpan().Slice(expectedStart, expectedLength);
+                        ClassicAssert.IsTrue(expectedData.SequenceEqual(keyCopyData));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+                    }
+
+                    ClassicAssert.AreEqual(1, iters);
+                }
+            }
+
+            // Multiple keys, variable length
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+                var key0 = "hello"u8.ToArray();
+                var key1 = "fizz"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog"u8.ToArray();
+                var key3 = "CF29E323-E376-4BC4-AB63-FCFD371EB445"u8.ToArray();
+                var key4 = Array.Empty<byte>();
+                var key5 = new byte[] { 1 };
+                var key6 = new byte[] { 2, 3 };
+                var key7 = new byte[] { 4, 5, 6 };
+                var data =
+                    MemoryMarshal.Cast<int, byte>([key0.Length])
+                        .ToArray()
+                        .Concat(key0)
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key1.Length]).ToArray()
+                        )
+                        .Concat(
+                            key1
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key2.Length]).ToArray()
+                        )
+                        .Concat(
+                            key2
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key3.Length]).ToArray()
+                        )
+                        .Concat(
+                            key3
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key4.Length]).ToArray()
+                        )
+                        .Concat(
+                            key4
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key5.Length]).ToArray()
+                        )
+                        .Concat(
+                            key5
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key6.Length]).ToArray()
+                        )
+                        .Concat(
+                            key6
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key7.Length]).ToArray()
+                        )
+                        .Concat(
+                            key7
+                        )
+                        .ToArray();
+                fixed (byte* dataPtr = data)
+                {
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+
+                    var iters = 0;
+                    for (var i = 0; i < batch.Count; i++)
+                    {
+                        iters++;
+
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        var expectedLength =
+                            i switch
+                            {
+                                0 => key0.Length,
+                                1 => key1.Length,
+                                2 => key2.Length,
+                                3 => key3.Length,
+                                4 => key4.Length,
+                                5 => key5.Length,
+                                6 => key6.Length,
+                                7 => key7.Length,
+                                _ => throw new InvalidOperationException("Unexpected index"),
+                            };
+                        var expectedStart =
+                            i switch
+                            {
+                                0 => 0 + 1 * sizeof(int),
+                                1 => key0.Length + 2 * sizeof(int),
+                                2 => key0.Length + key1.Length + 3 * sizeof(int),
+                                3 => key0.Length + key1.Length + key2.Length + 4 * sizeof(int),
+                                4 => key0.Length + key1.Length + key2.Length + key3.Length + 5 * sizeof(int),
+                                5 => key0.Length + key1.Length + key2.Length + key3.Length + key4.Length + 6 * sizeof(int),
+                                6 => key0.Length + key1.Length + key2.Length + key3.Length + key4.Length + key5.Length + 7 * sizeof(int),
+                                7 => key0.Length + key1.Length + key2.Length + key3.Length + key4.Length + key5.Length + key6.Length + 8 * sizeof(int),
+                                _ => throw new InvalidOperationException("Unexpected index"),
+                            };
+
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(4, inputCopy.Namespace);
+                        ClassicAssert.AreEqual(4, keyCopy.ReadOnlySpan[0]); // TODO: remove once namespaces are handled properly
+
+                        var keyCopyData = keyCopy.ReadOnlySpan[1..];
+                        var expectedData = data.AsSpan().Slice(expectedStart, expectedLength);
+                        ClassicAssert.IsTrue(expectedData.SequenceEqual(keyCopyData));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+                    }
+
+                    ClassicAssert.AreEqual(8, iters);
+                }
+            }
+
+            // Multiple keys, variable length, random access
+            {
+                VectorInput input = default;
+                input.Callback = 5678;
+                input.CallbackContext = 9012;
+
+                var key0 = "hello"u8.ToArray();
+                var key1 = "fizz"u8.ToArray();
+                var key2 = "the quick brown fox jumps over the lazy dog"u8.ToArray();
+                var key3 = "CF29E323-E376-4BC4-AB63-FCFD371EB445"u8.ToArray();
+                var key4 = Array.Empty<byte>();
+                var key5 = new byte[] { 1 };
+                var key6 = new byte[] { 2, 3 };
+                var key7 = new byte[] { 4, 5, 6 };
+                var data =
+                    MemoryMarshal.Cast<int, byte>([key0.Length])
+                        .ToArray()
+                        .Concat(key0)
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key1.Length]).ToArray()
+                        )
+                        .Concat(
+                            key1
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key2.Length]).ToArray()
+                        )
+                        .Concat(
+                            key2
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key3.Length]).ToArray()
+                        )
+                        .Concat(
+                            key3
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key4.Length]).ToArray()
+                        )
+                        .Concat(
+                            key4
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key5.Length]).ToArray()
+                        )
+                        .Concat(
+                            key5
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key6.Length]).ToArray()
+                        )
+                        .Concat(
+                            key6
+                        )
+                        .Concat(
+                            MemoryMarshal.Cast<int, byte>([key7.Length]).ToArray()
+                        )
+                        .Concat(
+                            key7
+                        )
+                        .ToArray();
+                fixed (byte* dataPtr = data)
+                {
+                    var keyData = PinnedSpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
+                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+
+                    var rand = new Random(2025_10_06_01);
+
+                    for (var j = 0; j < 1_000; j++)
+                    {
+                        var i = rand.Next(batch.Count);
+
+                        // Validate Input
+                        batch.GetInput(i, out var inputCopy);
+                        ClassicAssert.AreEqual((nint)input.Callback, (nint)inputCopy.Callback);
+                        ClassicAssert.AreEqual(input.CallbackContext, inputCopy.CallbackContext);
+                        ClassicAssert.AreEqual(i, inputCopy.Index);
+
+                        // Validate key
+                        var expectedLength =
+                            i switch
+                            {
+                                0 => key0.Length,
+                                1 => key1.Length,
+                                2 => key2.Length,
+                                3 => key3.Length,
+                                4 => key4.Length,
+                                5 => key5.Length,
+                                6 => key6.Length,
+                                7 => key7.Length,
+                                _ => throw new InvalidOperationException("Unexpected index"),
+                            };
+                        var expectedStart =
+                            i switch
+                            {
+                                0 => 0 + 1 * sizeof(int),
+                                1 => key0.Length + 2 * sizeof(int),
+                                2 => key0.Length + key1.Length + 3 * sizeof(int),
+                                3 => key0.Length + key1.Length + key2.Length + 4 * sizeof(int),
+                                4 => key0.Length + key1.Length + key2.Length + key3.Length + 5 * sizeof(int),
+                                5 => key0.Length + key1.Length + key2.Length + key3.Length + key4.Length + 6 * sizeof(int),
+                                6 => key0.Length + key1.Length + key2.Length + key3.Length + key4.Length + key5.Length + 7 * sizeof(int),
+                                7 => key0.Length + key1.Length + key2.Length + key3.Length + key4.Length + key5.Length + key6.Length + 8 * sizeof(int),
+                                _ => throw new InvalidOperationException("Unexpected index"),
+                            };
+
+                        batch.GetKey(i, out var keyCopy);
+                        ClassicAssert.AreEqual(4, inputCopy.Namespace);
+                        ClassicAssert.AreEqual(4, keyCopy.ReadOnlySpan[0]); // TODO: remove once namespaces are handled properly
+
+                        var keyCopyData = keyCopy.ReadOnlySpan[1..];
+                        var expectedData = data.AsSpan().Slice(expectedStart, expectedLength);
+                        ClassicAssert.IsTrue(expectedData.SequenceEqual(keyCopyData));
+
+                        // Validate output doesn't throw
+                        batch.GetOutput(i, out _);
+                    }
+                }
+            }
         }
 
         [Test]

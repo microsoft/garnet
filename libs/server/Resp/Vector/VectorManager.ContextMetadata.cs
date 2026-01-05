@@ -394,7 +394,18 @@ namespace Garnet.server
         /// </summary>
         public bool TryReserveContextsForMigration(ref BasicContext<VectorInput, PinnedSpanByte, long, VectorSessionFunctions, StoreFunctions, StoreAllocator> ctx, int count, out List<ulong> contexts)
         {
-            throw new NotImplementedException();
+            lock (this)
+            {
+                if (!contextMetadata.TryReserveForMigration(count, out contexts))
+                {
+                    contexts = null;
+                    return false;
+                }
+            }
+
+            UpdateContextMetadata(ref ctx);
+
+            return true;
         }
 
         /// <summary>
