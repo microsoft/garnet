@@ -31,14 +31,14 @@ global using TransactionalGarnetApi = Garnet.server.GarnetApi<
         /* UnifiedStoreFunctions */ Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
         Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>>;
 
-global using StoreBasicContext = Tsavorite.core.BasicContext<
+global using StringBasicContext = Tsavorite.core.BasicContext<
     Garnet.server.StringInput,
     Tsavorite.core.SpanByteAndMemory,
     long, Garnet.server.MainSessionFunctions,
     Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
     Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
 
-global using StoreTransactionalContext = Tsavorite.core.TransactionalContext<
+global using StringTransactionalContext = Tsavorite.core.TransactionalContext<
     Garnet.server.StringInput,
     Tsavorite.core.SpanByteAndMemory,
     long, Garnet.server.MainSessionFunctions,

@@ -20,8 +20,8 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for main store
         /// </summary>
-        public StoreBasicContext stringBasicContext;
-        public StoreTransactionalContext stringTransactionalContext;
+        public StringBasicContext stringBasicContext;
+        public StringTransactionalContext stringTransactionalContext;
 
         SectorAlignedMemory sectorAlignedMemoryHll1;
         SectorAlignedMemory sectorAlignedMemoryHll2;

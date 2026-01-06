@@ -29,9 +29,9 @@ namespace Garnet.server
         public void SetReadWriteSession() => respServerSession.clusterSession.SetReadWriteSession();
 
         /// <summary>Basic (Ephemeral locking) Session Context for main store</summary>
-        StoreBasicContext stringBasicContext;
+        StringBasicContext stringBasicContext;
         /// <summary>Transactional Session Context for main store</summary>
-        StoreTransactionalContext stringTransactionalContext;
+        StringTransactionalContext stringTransactionalContext;
 
         /// <summary>Basic (Ephemeral locking) Session Context for object store</summary>
         ObjectBasicContext objectBasicContext;

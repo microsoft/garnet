@@ -29,12 +29,12 @@ namespace Garnet.server
         /// <summary>
         /// Basic context for main store
         /// </summary>
-        readonly StoreBasicContext stringBasicContext;
+        readonly StringBasicContext stringBasicContext;
 
         /// <summary>
         /// Transactional context for main store
         /// </summary>
-        readonly StoreTransactionalContext stringTransactionalContext;
+        readonly StringTransactionalContext stringTransactionalContext;
 
         /// <summary>
         /// Basic context for object store
