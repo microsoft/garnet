@@ -995,6 +995,66 @@ namespace Garnet.test
             }
         }
 
+        [Test]
+        public void MinimumPageSizeWithVectorSetPreview()
+        {
+            // Command line args
+            {
+                // Allow exactly minimum
+                {
+                    var args = new[] { "--enable-vector-set-preview", "--page", "16k" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
+                    ClassicAssert.AreEqual("16k", options.PageSize);
+                }
+
+                // Allow lower than minimum if preview not enabled
+                {
+                    var args = new[] { "--page", "1k" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
+                    ClassicAssert.AreEqual("1k", options.PageSize);
+                }
+
+                // Reject too small
+                {
+                    var args = new[] { "--enable-vector-set-preview", "--page", "4k" };
+                    var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out _, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+
+            // JSON args
+            {
+                // Allow exactly minimum
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": true, ""PageSize"": ""16k"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsTrue(options.EnableVectorSetPreview);
+                    ClassicAssert.AreEqual("16k", options.PageSize);
+                }
+
+                // Allow lower than minimum if preview not enabled
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": false, ""PageSize"": ""1k"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out var options, out _, out _);
+                    ClassicAssert.IsTrue(parseSuccessful);
+                    ClassicAssert.IsFalse(options.EnableVectorSetPreview);
+                    ClassicAssert.AreEqual("1k", options.PageSize);
+                }
+
+                // Reject too small
+                {
+                    const string JSON = @"{ ""EnableVectorSetPreview"": true, ""PageSize"": ""4k"" }";
+                    var parseSuccessful = TryParseGarnetConfOptions(JSON, out _, out _, out _);
+                    ClassicAssert.IsFalse(parseSuccessful);
+                }
+            }
+        }
+
         /// <summary>
         /// Import a garnet.conf file with the given contents
         /// </summary>
