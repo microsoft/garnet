@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
@@ -58,7 +59,28 @@ namespace Garnet.test
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmd.ToString()));
                 ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", exc.Message);
             }
+        }
 
+        [Test]
+        public void OversizedRejected()
+        {
+            var options = GetOpts(server);
+
+            var overflowSizeBytes = (int)(GarnetServerOptions.ParseSize(options.PageSize, out _) * 2);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var oversizedVectorData = Enumerable.Repeat<byte>(1, overflowSizeBytes).ToArray();
+            var oversideAttribute = Enumerable.Repeat<byte>(2, overflowSizeBytes).ToArray();
+
+            var exc1 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "XB8", oversizedVectorData, new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
+            ClassicAssert.AreEqual("ERR Vector exceed configured page size", exc1.Message);
+
+            var basicVectorData = Enumerable.Repeat<byte>(3, 75).ToArray();
+
+            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["foo", "XB8", basicVectorData, new byte[] { 0, 0, 0, 1 }, "XPREQ8", "SETATTR", oversideAttribute]));
+            ClassicAssert.AreEqual("ERR Attribute exceed configured page size", exc2.Message);
         }
 
         [Test]
@@ -1754,5 +1776,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, res6.Length);
             ClassicAssert.IsTrue(res6.Any(static x => x.SequenceEqual(new byte[] { 1, 0, 0, 0 })));
         }
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "opts")]
+        private static extern ref GarnetServerOptions GetOpts(GarnetServer server);
     }
 }

@@ -226,6 +226,8 @@ namespace Garnet.server
         // Threshold for slow log in ticks (0 means disabled)
         readonly long slowLogThreshold;
 
+        private readonly long maximumVectorSetValueBytes;
+
         /// <summary>
         /// Create a new RESP server session
         /// </summary>
@@ -306,6 +308,8 @@ namespace Garnet.server
                 if (this.networkSender.GetMaxSizeSettings?.MaxOutputSize < sizeof(int))
                     this.networkSender.GetMaxSizeSettings.MaxOutputSize = sizeof(int);
             }
+
+            maximumVectorSetValueBytes = GarnetServerOptions.ParseSize(storeWrapper.serverOptions.PageSize, out _) - 16; // Just assume header is 16-ish bytes for now
         }
 
         /// <summary>
