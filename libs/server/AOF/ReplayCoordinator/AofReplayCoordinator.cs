@@ -26,6 +26,21 @@ namespace Garnet.server
         CUSTOM_STORED_PROC = -5,
     }
 
+    struct BarrierId : IEquatable<BarrierId>
+    {
+        public int sessionId;
+        public long sequenceNumber;
+
+        public bool Equals(BarrierId other)
+            => sessionId == other.sessionId && sequenceNumber == other.sequenceNumber;
+
+        public override bool Equals(object obj)
+            => obj is BarrierId other && Equals(other);
+
+        public override int GetHashCode()
+            => HashCode.Combine(sessionId, sequenceNumber);
+    }
+
     public sealed unsafe partial class AofProcessor
     {
         /// <summary>
@@ -43,7 +58,7 @@ namespace Garnet.server
         public class AofReplayCoordinator(GarnetServerOptions serverOptions, AofProcessor aofProcessor, ILogger logger = null) : IDisposable
         {
             readonly GarnetServerOptions serverOptions = serverOptions;
-            readonly ConcurrentDictionary<int, EventBarrier> eventBarriers = [];
+            readonly ConcurrentDictionary<BarrierId, EventBarrier> eventBarriers = [];
             readonly AofProcessor aofProcessor = aofProcessor;
             readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(
                 serverOptions.AofVirtualSublogCount, serverOptions.AofReplayTaskCount);
@@ -73,11 +88,17 @@ namespace Garnet.server
                     replayContext.output.MemoryOwner?.Dispose();
             }
 
-            EventBarrier GetBarrier(int id, int participantCount)
-                => eventBarriers.GetOrAdd(id, _ => new EventBarrier(participantCount));
+            EventBarrier GetBarrier(int sessionId, long sequenceNumber, int participantCount)
+            {
+                var barrierID = new BarrierId() { sessionId = sessionId, sequenceNumber = sequenceNumber };
+                return eventBarriers.GetOrAdd(barrierID, _ => new EventBarrier(participantCount));
+            }
 
-            bool TryRemoveBarrier(int id, out EventBarrier eventBarrier)
-                => eventBarriers.TryRemove(id, out eventBarrier);
+            bool TryRemoveBarrier(int sessionId, long sequenceNumber, out EventBarrier eventBarrier)
+            {
+                var barrierID = new BarrierId() { sessionId = sessionId, sequenceNumber = sequenceNumber };
+                return eventBarriers.TryRemove(barrierID, out eventBarrier);
+            }
 
             /// <summary>
             /// Get fuzzy region buffer count
@@ -365,7 +386,7 @@ namespace Garnet.server
                 var txnHeader = *(AofTransactionHeader*)ptr;
 
                 // Synchronize execution across sublogs
-                var eventBarrier = GetBarrier(barrierId, txnHeader.participantCount);
+                var eventBarrier = GetBarrier(barrierId, txnHeader.shardedHeader.sequenceNumber, txnHeader.participantCount);
                 var isLeader = eventBarrier.TrySignalAndWait(out var signalException, serverOptions.ReplicaSyncTimeout);
                 Exception removeBarrierException = null;
 
@@ -391,7 +412,7 @@ namespace Garnet.server
                     // The leader will always perform a cleanup
                     if (isLeader)
                     {
-                        if (!TryRemoveBarrier(barrierId, out _))
+                        if (!TryRemoveBarrier(barrierId, txnHeader.shardedHeader.sequenceNumber, out _))
                             removeBarrierException = new GarnetException($"RemoveBarrier failed when processing {barrierId}");
 
                         // Release participants if any
