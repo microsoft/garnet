@@ -1,7 +1,12 @@
 <Project>
   <!-- Import the global Directory.Build.props -->
   <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
-  
+
+	<!-- Define compilation symbol for cluster project -->
+	<PropertyGroup>
+		<DefineConstants>$(DefineConstants);CLUSTER_PROJECT</DefineConstants>
+	</PropertyGroup>
+	
   <!-- Include shared global usings file for server projects -->
   <ItemGroup>
 		<Compile Include="$(MSBuildThisFileDirectory)../GlobalUsings.cs" Link="GlobalUsings.cs" />
