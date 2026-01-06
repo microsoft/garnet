@@ -51,7 +51,7 @@ namespace Tsavorite.core
         private long[] nextLoadedPages;
 
         /// <summary>The circular buffer we cycle through for object-log deserialization.</summary>
-        CircularDiskReadBuffer[] readBuffers;
+        CircularDiskReadBuffer[] objectReadBuffers;
 
         /// <summary>Number of bits in the size of the log page</summary>
         private readonly int logPageSizeBits;
@@ -143,22 +143,22 @@ namespace Tsavorite.core
         /// <summary>Initialize read buffers</summary>
         public virtual void InitializeReadBuffers(AllocatorBase allocatorBase = default)
         {
-            readBuffers = new CircularDiskReadBuffer[frameSize];
+            objectReadBuffers = new CircularDiskReadBuffer[frameSize];
             for (var i = 0; i < frameSize; i++)
-                readBuffers[i] = allocatorBase?.CreateCircularReadBuffers();
+                objectReadBuffers[i] = allocatorBase?.CreateCircularReadBuffers();
         }
 
         /// <summary>
         /// Buffer and load
         /// </summary>
-        /// <param name="currentAddress">The current logical address</param>
+        /// <param name="currentIterationAddress">The current logical address</param>
         /// <param name="currentPage">The page containing the current logical address</param>
         /// <param name="currentFrame">The frame index of the current page (the page modulo the number of frames)</param>
         /// <param name="headAddress">Head address of the log</param>
-        /// <param name="endAddress">Address to stop the scan at</param>
+        /// <param name="endIterationAddress">Address to stop the scan at</param>
         /// <returns>True we had to await the event here; </returns>
         /// <returns></returns>
-        protected bool BufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
+        protected bool BufferAndLoad(long currentIterationAddress, long currentPage, long currentFrame, long headAddress, long endIterationAddress)
         {
             for (var i = 0; i < frameSize; i++)
             {
@@ -166,12 +166,12 @@ namespace Tsavorite.core
 
                 // Cannot load page if it is entirely in memory or beyond the end address
                 var pageStartAddress = GetLogicalAddressOfStartOfPage(nextPage, logPageSizeBits);
-                if (pageStartAddress >= headAddress || pageStartAddress >= endAddress)
+                if (pageStartAddress >= headAddress || pageStartAddress >= endIterationAddress)
                     continue;
 
                 var pageEndAddress = GetLogicalAddressOfStartOfPage(nextPage + 1, logPageSizeBits);
-                if (endAddress < pageEndAddress)
-                    pageEndAddress = endAddress;
+                if (endIterationAddress < pageEndAddress)
+                    pageEndAddress = endIterationAddress;
                 if (headAddress < pageEndAddress)
                     pageEndAddress = headAddress;
 
@@ -189,8 +189,8 @@ namespace Tsavorite.core
                     if (val < pageEndAddress && Interlocked.CompareExchange(ref nextLoadedPages[nextFrame], pageEndAddress, val) == val)
                     {
                         Debug.Assert(loadCompletionEvents[nextFrame] is null || loadCompletionEvents[nextFrame].IsSet,
-                            $"i {i}, currentAddress {currentAddress}, currentFrame {currentFrame}, nextFrame {nextFrame} overwriting unset completion event");
-                        var readBuffer = readBuffers is not null ? readBuffers[nextFrame] : default;
+                            $"i {i}, currentAddress {currentIterationAddress}, currentFrame {currentFrame}, nextFrame {nextFrame} overwriting unset completion event");
+                        var readBuffer = objectReadBuffers is not null ? objectReadBuffers[nextFrame] : default;
                         if (epoch != null)
                             epoch.BumpCurrentEpoch(() => DoReadPage());
                         else
@@ -198,7 +198,7 @@ namespace Tsavorite.core
 
                         void DoReadPage()
                         {
-                            AsyncReadPageFromDeviceToFrame(readBuffer, readPage: i + GetPageOfAddress(currentAddress, logPageSizeBits), untilAddress: endAddress,
+                            AsyncReadPageFromDeviceToFrame(readBuffer, readPage: i + GetPageOfAddress(currentIterationAddress, logPageSizeBits), untilAddress: endIterationAddress,
                                 context: Empty.Default, out loadCompletionEvents[nextFrame], devicePageOffset: 0, device: null, objectLogDevice: null, loadCTSs[nextFrame]);
                             loadedPages[nextFrame] = pageEndAddress;
                         }
@@ -210,7 +210,7 @@ namespace Tsavorite.core
                     }
                 }
             }
-            return WaitForFrameLoad(currentAddress, currentFrame);
+            return WaitForFrameLoad(currentIterationAddress, currentFrame);
         }
 
         /// <summary>
@@ -316,7 +316,7 @@ namespace Tsavorite.core
                     }
                     // Do not null this; we didn't hold onto the hlogBase to recreate. CircularDiskReadBuffer.Dispose() clears
                     // things and leaves it in an "initialized" state.
-                    readBuffers?[i]?.Dispose();
+                    objectReadBuffers?[i]?.Dispose();
                 }
                 catch { }
             }

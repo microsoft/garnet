@@ -134,10 +134,9 @@ namespace Tsavorite.test.recovery.sumstore
                     }
                 }
 
-                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                    LogDevice = new ManagedLocalStorageDevice(deviceFileName, deleteOnClose: true);
-                else
-                    LogDevice = new LocalStorageDevice(deviceFileName, deleteOnClose: true, disableFileBuffering: false, initialLogFileHandles: initialHandles);
+                LogDevice = !RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? new ManagedLocalStorageDevice(deviceFileName, deleteOnClose: true)
+                    : new LocalStorageDevice(deviceFileName, deleteOnClose: true, disableFileBuffering: false, initialLogFileHandles: initialHandles);
 
                 Store = new(new()
                 {

@@ -10,15 +10,13 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using ClassAllocator = ObjectAllocator<StoreFunctions<IntKeyComparer, DefaultRecordDisposer>>;
-    using ClassStoreFunctions = StoreFunctions<IntKeyComparer, DefaultRecordDisposer>;
     using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>>;
     using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class MiscTests
     {
-        private TsavoriteKV<ClassStoreFunctions, ClassAllocator> store;
+        private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
         private IDevice log, objlog;
 
         [SetUp]
@@ -27,18 +25,6 @@ namespace Tsavorite.test
             DeleteDirectory(MethodTestDir, wait: true);
             log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "MiscTests.log"), deleteOnClose: true);
             objlog = Devices.CreateLogDevice(Path.Join(MethodTestDir, "MiscTests.obj.log"), deleteOnClose: true);
-
-            store = new(new()
-            {
-                IndexSize = 1L << 13,
-                LogDevice = log,
-                ObjectLogDevice = objlog,
-                MutableFraction = 0.1,
-                MemorySize = 1L << 15,
-                PageSize = 1L << 10
-            }, StoreFunctions.Create(IntKeyComparer.Instance, () => new TestObjectValue.Serializer())
-                , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
-            );
         }
 
         [TearDown]
@@ -58,10 +44,6 @@ namespace Tsavorite.test
         public void ForceRCUAndRecover([Values(UpdateOp.Upsert, UpdateOp.Delete)] UpdateOp updateOp)
         {
             var copyOnWrite = new FunctionsCopyOnWrite();
-
-            // FunctionsCopyOnWrite
-            var log = default(IDevice);
-            TsavoriteKV<StructStoreFunctions, StructAllocator> store = default;
             ClientSession<InputStruct, OutputStruct, Empty, FunctionsCopyOnWrite, StructStoreFunctions, StructAllocator> session = default;
 
             try
@@ -119,7 +101,9 @@ namespace Tsavorite.test
                 store.CompleteCheckpointAsync().AsTask().GetAwaiter().GetResult();
 
                 session.Dispose();
+                session = null;
                 store.Dispose();
+                store = null;
 
                 store = new(new()
                 {
@@ -146,8 +130,6 @@ namespace Tsavorite.test
             finally
             {
                 session?.Dispose();
-                store?.Dispose();
-                log?.Dispose();
             }
         }
     }

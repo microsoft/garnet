@@ -1593,9 +1593,9 @@ namespace Tsavorite.core
         /// <summary>Read pages from specified device for recovery, returning the countdown event</summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private void AsyncReadPagesForRecovery<TContext>(long readPageStart, int numPages, long untilAddress, TContext context,
-            out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null)
+            out CountdownEvent completed, long devicePageOffset = 0, IDevice logDevice = null, IDevice objectLogDevice = null)
         {
-            var usedDevice = device ?? this.device;
+            var usedDevice = logDevice ?? this.device;
 
             completed = new CountdownEvent(numPages);
             for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
@@ -1629,7 +1629,7 @@ namespace Tsavorite.core
 
                 // If device != null then it is the snapshot file device. In that case we may have an offset into it due to FlushedUntilAddress
                 // having advanced; see Recovery.cs:RecoverHybridLog.
-                if (device != null)
+                if (logDevice != null)
                     offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
 
                 // Create separate readBuffers for each main-log page, as each page launches its own async read and callbacks are on different threads.

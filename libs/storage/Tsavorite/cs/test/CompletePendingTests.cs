@@ -282,7 +282,7 @@ namespace Tsavorite.test
             // Flush to make the Read() go pending.
             store.Log.FlushAndEvict(wait: true);
 
-            var (status, outputStruct) = bContext.Read(SpanByte.FromPinnedVariable(ref keyStruct));
+            var (status, _ /*outputStruct*/) = bContext.Read(SpanByte.FromPinnedVariable(ref keyStruct));
             ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
 
             // Insert next record with the same key and flush this too if requested.
@@ -292,7 +292,7 @@ namespace Tsavorite.test
             if (secondRecordFlushMode == FlushMode.OnDisk)
                 store.Log.FlushAndEvict(wait: true);
 
-            (status, outputStruct) = bContext.GetSinglePendingResult();
+            (status, var outputStruct) = bContext.GetSinglePendingResult();
             ClassicAssert.AreEqual(secondValue * valueMult, outputStruct.value.vfield2, "Should have returned second value");
         }
 
@@ -317,7 +317,7 @@ namespace Tsavorite.test
             // Flush to make the Read() go pending.
             store.Log.FlushAndEvict(wait: true);
 
-            var (status, outputStruct) = bContext.Read(SpanByte.FromPinnedVariable(ref keyStruct));
+            var (status, _ /*outputStruct*/) = bContext.Read(SpanByte.FromPinnedVariable(ref keyStruct));
             ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
 
             // Insert next record with a different key and flush this too if requested.
@@ -328,7 +328,7 @@ namespace Tsavorite.test
             if (secondRecordFlushMode == FlushMode.OnDisk)
                 store.Log.FlushAndEvict(wait: true);
 
-            (status, outputStruct) = bContext.GetSinglePendingResult();
+            (status, var outputStruct) = bContext.GetSinglePendingResult();
             ClassicAssert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "Should have returned first value");
         }
 
@@ -351,10 +351,11 @@ namespace Tsavorite.test
             // Flush to make the Read() go pending.
             store.Log.FlushAndEvict(wait: true);
 
-            var (status, outputStruct) = bContext.Read(SpanByte.FromPinnedVariable(ref keyStruct));
+            var (status, _ /*outputStruct*/) = bContext.Read(SpanByte.FromPinnedVariable(ref keyStruct));
             ClassicAssert.IsTrue(status.IsPending, $"Expected status.IsPending: {status}");
 
-            (status, outputStruct) = bContext.GetSinglePendingResult();
+            (status, var outputStruct) = bContext.GetSinglePendingResult();
+            ClassicAssert.IsTrue(status.Found, $"Expected status.Found: {status}");
             ClassicAssert.AreEqual(firstValue * valueMult, outputStruct.value.vfield2, "Should have returned first value");
         }
     }

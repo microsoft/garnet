@@ -211,7 +211,7 @@ namespace Tsavorite.test
             // Verify the key exists
             var key = TargetKey;
             var value = TargetKey * 1000;
-            var (status, output) = bContext.Read(SpanByte.FromPinnedVariable(ref key));
+            var (status, _ /*output*/) = bContext.Read(SpanByte.FromPinnedVariable(ref key));
             ClassicAssert.IsTrue(status.Found, "Expected the record to exist");
             session.functions.returnFalseFromPCU = true;
 
@@ -225,7 +225,7 @@ namespace Tsavorite.test
             _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
 
             // Verify the key no longer exists.
-            (status, output) = bContext.Read(SpanByte.FromPinnedVariable(ref key));
+            (status, _ /*output*/) = bContext.Read(SpanByte.FromPinnedVariable(ref key));
             ClassicAssert.IsFalse(status.Found, "Expected the record to no longer exist");
         }
 

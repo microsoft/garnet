@@ -79,9 +79,9 @@ namespace Tsavorite.test.ModifiedBit
             ClassicAssert.AreEqual(modified, isM, "modified mismatch");
         }
 
-        void AssertLockandModified(ClientSession<int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> session, int key, bool xlock, bool slock, bool modified = false)
+        void AssertLockandModified(ClientSession<int, int, Empty, SimpleIntSimpleFunctions, IntStoreFunctions, IntAllocator> intSession, int key, bool xlock, bool slock, bool modified = false)
         {
-            var luContext = session.TransactionalUnsafeContext;
+            var luContext = intSession.TransactionalUnsafeContext;
             luContext.BeginUnsafe();
 
             OverflowBucketLockTableTests.AssertLockCounts(store, SpanByte.FromPinnedVariable(ref key), xlock, slock);

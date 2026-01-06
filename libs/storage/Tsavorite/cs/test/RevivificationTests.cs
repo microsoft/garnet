@@ -2224,21 +2224,20 @@ namespace Tsavorite.test.Revivification
             var expectedTakes = revivStats.successfulTakes;
             var minAddress = AddressIncrement;
             ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeRecordSize, minAddress, out var address, ref revivStats));
-            ClassicAssert.AreEqual(4, address -= AddressIncrement);
+            ClassicAssert.AreEqual(4, address - AddressIncrement);
             ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeRecordSize, minAddress, out address, ref revivStats));
-            ClassicAssert.AreEqual(5, address -= AddressIncrement);
+            ClassicAssert.AreEqual(5, address - AddressIncrement);
             ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeRecordSize, minAddress, out address, ref revivStats));
-            ClassicAssert.AreEqual(1, address -= AddressIncrement);
+            ClassicAssert.AreEqual(1, address - AddressIncrement);
 
             // Now that we've taken the first item, the new first-fit will be moved up one, which brings the last exact-fit into scanLimit range.
             ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeRecordSize, minAddress, out address, ref revivStats));
-            ClassicAssert.AreEqual(6, address -= AddressIncrement);
-
+            ClassicAssert.AreEqual(6, address - AddressIncrement);
             // Now Take will return them in order until we have no more
             ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeRecordSize, minAddress, out address, ref revivStats));
-            ClassicAssert.AreEqual(2, address -= AddressIncrement);
+            ClassicAssert.AreEqual(2, address - AddressIncrement);
             ClassicAssert.IsTrue(freeRecordPool.TryTake(TakeRecordSize, minAddress, out address, ref revivStats));
-            ClassicAssert.AreEqual(3, address -= AddressIncrement);
+            ClassicAssert.AreEqual(3, address - AddressIncrement);
             ClassicAssert.IsFalse(freeRecordPool.TryTake(TakeRecordSize, minAddress, out address, ref revivStats));
             expectedTakes += 6; // Plus one failure
 
