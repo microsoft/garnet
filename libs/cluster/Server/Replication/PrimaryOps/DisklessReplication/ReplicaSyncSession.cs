@@ -109,7 +109,7 @@ namespace Garnet.cluster
         /// <param name="error"></param>
         public void SetStatus(SyncStatus status, string error = null)
         {
-            ssInfo.error = error;
+            ssInfo.error ??= error;
             // NOTE: set this after error to signal complete state change
             ssInfo.syncStatus = status;
 
