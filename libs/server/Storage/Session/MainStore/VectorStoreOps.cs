@@ -272,5 +272,44 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
         }
+        /// <summary>
+        /// Get debugging information about the VectorSet
+        /// </summary>
+        [SkipLocalsInit]
+        internal unsafe GarnetStatus VectorSetInfo(
+            PinnedSpanByte key,
+            out VectorQuantType quantType,
+            out uint vectorDimensions,
+            out uint reducedDimensions,
+            out uint buildExplorationFactor,
+            out uint numberOfLinks,
+            out long size)
+        {
+            parseState.InitializeWithArgument(key);
+
+            var input = new StringInput(RespCommand.VINFO, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    quantType = VectorQuantType.Invalid;
+                    vectorDimensions = 0;
+                    reducedDimensions = 0;
+                    buildExplorationFactor = 0;
+                    numberOfLinks = 0;
+                    size = 0;
+                    return status;
+                }
+
+                // After a successful read we extract metadata
+                VectorManager.ReadIndex(indexSpan, out _, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out _, out _);
+
+                // TODO: fetch VectorSet size from DiskANN
+                size = 0;
+
+                return GarnetStatus.OK;
+            }
+        }
     }
 }

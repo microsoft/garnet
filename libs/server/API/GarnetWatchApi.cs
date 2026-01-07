@@ -653,6 +653,13 @@ namespace Garnet.server
             garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.VectorSetDimensions(key, out dimensions);
         }
+
+        /// <inheritdoc/>
+        GarnetStatus IGarnetReadApi.VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetInfo(key, out quantType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
+        }
         #endregion
     }
 }
