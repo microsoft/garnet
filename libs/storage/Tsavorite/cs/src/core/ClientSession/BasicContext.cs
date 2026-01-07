@@ -84,6 +84,25 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ReadWithPrefetch<TBatch>(ref TBatch batch, TContext userContext = default)
+            where TBatch : IReadArgBatch<TKey, TInput, TOutput>
+#if NET9_0_OR_GREATER
+            , allows ref struct
+#endif
+        {
+            UnsafeResumeThread();
+            try
+            {
+                clientSession.store.ContextReadWithPrefetch<TBatch, TInput, TOutput, TContext, SessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TKey, TValue, TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>>(ref batch, userContext, sessionFunctions);
+            }
+            finally
+            {
+                UnsafeSuspendThread();
+            }
+        }
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Status Read(ref TKey key, ref TInput input, ref TOutput output, ref ReadOptions readOptions, TContext userContext = default)
             => Read(ref key, ref input, ref output, ref readOptions, out _, userContext);
 

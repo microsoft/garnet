@@ -144,7 +144,11 @@ namespace Garnet.server
                     case RespCommand.INCRBY:
                         var incrByValue = input.header.cmd == RespCommand.INCRBY ? input.arg1 : 1;
 
-                        var curr = NumUtils.ReadInt64(t.AsSpan(functionsState.etagState.etagOffsetForVarlen));
+                        if (!NumUtils.TryReadInt64(t.AsSpan(functionsState.etagState.etagOffsetForVarlen), out var curr))
+                        {
+                            // Return enough space to copy over old value
+                            return sizeof(int) + t.Length + functionsState.etagState.etagOffsetForVarlen;
+                        }
                         var next = curr + incrByValue;
 
                         var ndigits = NumUtils.CountDigits(next, out var isNegative);

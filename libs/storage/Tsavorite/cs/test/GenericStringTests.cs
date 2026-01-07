@@ -44,7 +44,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void StringBasicTest([Values] DeviceType deviceType)
+        public void StringBasicTest([Values] TestDeviceType deviceType)
         {
             string logfilename = Path.Join(MethodTestDir, "GenericStringTests" + deviceType.ToString() + ".log");
             string objlogfilename = Path.Join(MethodTestDir, "GenericStringTests" + deviceType.ToString() + ".obj.log");

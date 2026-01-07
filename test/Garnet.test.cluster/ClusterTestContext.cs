@@ -16,6 +16,7 @@ using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
+using Tsavorite.core;
 
 namespace Garnet.test.cluster
 {
@@ -179,7 +180,6 @@ namespace Garnet.test.cluster
         /// <param name="luaMemoryLimit"></param>
         /// <param name="useHostname"></param>
         /// <param name="luaTransactionMode"></param>
-        /// <param name="useNativeDeviceLinux"></param>
         /// <param name="sublogCount"></param>
         public void CreateInstances(
             int shards,
@@ -217,7 +217,7 @@ namespace Garnet.test.cluster
             string luaMemoryLimit = "",
             bool useHostname = false,
             bool luaTransactionMode = false,
-            bool useNativeDeviceLinux = false,
+            DeviceType deviceType = DeviceType.Default,
             int clusterReplicationReestablishmentTimeout = 0,
             string aofSizeLimit = "",
             int compactionFrequencySecs = 0,
@@ -272,7 +272,7 @@ namespace Garnet.test.cluster
                 luaMemoryMode: luaMemoryMode,
                 luaMemoryLimit: luaMemoryLimit,
                 luaTransactionMode: luaTransactionMode,
-                useNativeDeviceLinux: useNativeDeviceLinux,
+                deviceType: deviceType,
                 clusterReplicationReestablishmentTimeout: clusterReplicationReestablishmentTimeout,
                 aofSizeLimit: aofSizeLimit,
                 compactionFrequencySecs: compactionFrequencySecs,
@@ -479,6 +479,35 @@ namespace Garnet.test.cluster
 
                 if (incrementalSnapshots && i == kvpairCount / 2)
                     clusterTestUtils.Checkpoint(ckptNode, logger: logger);
+            }
+        }
+
+        public void SimplePopulateDB(bool disableObjects, int keyLength, int kvpairCount, int primaryIndex, int addCount = 0, bool performRMW = false)
+        {
+            //Populate Primary
+            if (disableObjects)
+            {
+                PopulatePrimary(ref kvPairs, keyLength, kvpairCount, primaryIndex);
+            }
+            else
+            {
+                if (!performRMW)
+                    PopulatePrimaryWithObjects(ref kvPairsObj, keyLength, kvpairCount, primaryIndex);
+                else
+                    PopulatePrimaryRMW(ref kvPairs, keyLength, kvpairCount, primaryIndex, addCount);
+            }
+        }
+
+        public void SimpleValidateDB(bool disableObjects, int replicaIndex)
+        {
+            // Validate database
+            if (disableObjects)
+            {
+                ValidateKVCollectionAgainstReplica(ref kvPairs, replicaIndex);
+            }
+            else
+            {
+                ValidateNodeObjects(ref kvPairsObj, replicaIndex);
             }
         }
 
@@ -723,6 +752,85 @@ namespace Garnet.test.cluster
                 values.Add(valueBuffer.ToArray());
             }
             return values;
+        }
+
+        public void ExecuteTxnBulkIncrement(string[] keys, string[] values)
+        {
+            try
+            {
+                var db = clusterTestUtils.GetDatabase();
+                var txn = db.CreateTransaction();
+                for (var i = 0; i < keys.Length; i++)
+                    _ = txn.StringIncrementAsync(keys[i], long.Parse(values[i]));
+                _ = txn.Execute();
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail(ex.Message);
+            }
+        }
+
+        public string[] ExecuteTxnBulkRead(IServer server, string[] keys)
+        {
+            try
+            {
+                var resp = server.Execute("MULTI");
+                ClassicAssert.AreEqual("OK", (string)resp);
+
+                foreach (var key in keys)
+                {
+                    resp = server.Execute("GET", key);
+                    ClassicAssert.AreEqual("QUEUED", (string)resp);
+                }
+
+                resp = server.Execute("EXEC");
+                return (string[])resp;
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail(ex.Message);
+            }
+            return null;
+        }
+
+        public static void ExecuteStoredProcBulkIncrement(IServer server, string[] keys, string[] values)
+        {
+            try
+            {
+                var args = new object[1 + (keys.Length * 2)];
+                args[0] = keys.Length;
+                for (var i = 0; i < keys.Length; i++)
+                {
+                    args[1 + (i * 2)] = keys[i];
+                    args[1 + (i * 2) + 1] = values[i];
+                }
+                var resp = server.Execute("BULKINCRBY", args);
+                ClassicAssert.AreEqual("OK", (string)resp);
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail(ex.Message);
+            }
+        }
+
+        public static string[] ExecuteBulkReadStoredProc(IServer server, string[] keys)
+        {
+            try
+            {
+                var args = new object[1 + keys.Length];
+                args[0] = keys.Length;
+                for (var i = 0; i < keys.Length; i++)
+                    args[1 + i] = keys[i];
+                var resp = server.Execute("BULKREAD", args);
+                var result = (string[])resp;
+                ClassicAssert.AreEqual(keys.Length, result.Length);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Assert.Fail(ex.Message);
+            }
+            return null;
         }
     }
 }

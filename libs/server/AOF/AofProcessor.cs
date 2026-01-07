@@ -50,6 +50,9 @@ namespace Garnet.server
         /// </summary>
         BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator> objectStoreBasicContext;
 
+        readonly StoreWrapper replayAofStoreWrapper;
+        readonly IClusterProvider clusterProvider;
+
         readonly ILogger logger;
 
         /// <summary>
@@ -63,18 +66,11 @@ namespace Garnet.server
         {
             this.storeWrapper = storeWrapper;
 
-            var replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
+            this.clusterProvider = clusterProvider;
+            replayAofStoreWrapper = new StoreWrapper(storeWrapper, recordToAof);
 
             this.activeDbId = 0;
-            this.respServerSessions = [ .. Enumerable.Range(0, storeWrapper.serverOptions.AofSublogCount).Select(
-                    _ => new RespServerSession(
-                        0,
-                        networkSender: null,
-                        storeWrapper: replayAofStoreWrapper,
-                        subscribeBroker: null,
-                        authenticator: null,
-                        enableScripts: false,
-                        clusterProvider: clusterProvider))];
+            this.respServerSessions = [.. Enumerable.Range(0, storeWrapper.serverOptions.AofSublogCount).Select(_ => ObtainServerSession())];
 
             // Switch current contexts to match the default database
             SwitchActiveDatabaseContext(storeWrapper.DefaultDatabase, true);
@@ -82,6 +78,9 @@ namespace Garnet.server
             aofReplayCoordinator = new AofReplayCoordinator(this, logger);
             this.logger = logger;
         }
+
+        private RespServerSession ObtainServerSession()
+            => new(0, networkSender: null, storeWrapper: replayAofStoreWrapper, subscribeBroker: null, authenticator: null, enableScripts: false, clusterProvider: clusterProvider);
 
         /// <summary>
         /// Dispose
@@ -166,7 +165,6 @@ namespace Garnet.server
                             if (count % 100_000 == 0)
                                 logger?.LogTrace("Completed AOF replay of {count} records, until AOF address {nextAofAddress} (DB ID: {id})", count, nextAofAddress, db.Id);
                         }
-
                         logger?.LogInformation("Completed full AOF sublog {taskId} replay of {count:N0} records (DB ID: {id})", sublogIdx, count, db.Id);
                         _ = Interlocked.Add(ref total_number_of_replayed_records, count);
                     }
@@ -245,7 +243,6 @@ namespace Garnet.server
                         }
                         else
                         {
-                            Debug.Assert(replayContext.inFuzzyRegion);
                             replayContext.inFuzzyRegion = false;
                             // Take checkpoint after the fuzzy region
                             if (asReplica && header.storeVersion > storeWrapper.store.CurrentVersion)
@@ -394,7 +391,6 @@ namespace Garnet.server
                 var extendedHeader = *(AofExtendedHeader*)entryPtr;
                 storeWrapper.appendOnlyFile.replayTimestampManager.UpdateKeySequenceNumber(sublogIdx, ref key, extendedHeader.sequenceNumber);
             }
-
             return true;
         }
 
@@ -466,7 +462,7 @@ namespace Garnet.server
             var output = new SpanByteAndMemory(pbOutput, 32);
 
             if (basicContext.RMW(ref key, ref storeInput, ref output).IsPending)
-                basicContext.CompletePending(true);
+                _ = basicContext.CompletePending(true);
             if (!output.IsSpanByte)
                 output.Memory.Dispose();
             return ref key;
@@ -499,7 +495,7 @@ namespace Garnet.server
             var valB = garnetObjectSerializer.Deserialize(value.ToByteArray());
 
             var output = new GarnetObjectStoreOutput(new(outputPtr, outputLength));
-            basicContext.Upsert(ref keyB, ref valB);
+            _ = basicContext.Upsert(ref keyB, ref valB);
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Memory.Dispose();
             return ref key;
@@ -525,7 +521,7 @@ namespace Garnet.server
             // Call RMW with the reconstructed key & ObjectInput
             var output = new GarnetObjectStoreOutput(new(outputPtr, outputLength));
             if (basicContext.RMW(ref keyB, ref objectStoreInput, ref output).IsPending)
-                basicContext.CompletePending(true);
+                _ = basicContext.CompletePending(true);
 
             if (!output.SpanByteAndMemory.IsSpanByte)
                 output.SpanByteAndMemory.Memory.Dispose();

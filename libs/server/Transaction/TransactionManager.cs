@@ -35,6 +35,8 @@ namespace Garnet.server
     /// </summary>
     public sealed unsafe partial class TransactionManager
     {
+        internal bool AofEnabled => appendOnlyFile != null;
+
         /// <summary>
         /// Basic context for main store
         /// </summary>
@@ -73,6 +75,9 @@ namespace Garnet.server
         internal int txnStartHead;
         internal int operationCntTxn;
 
+        // Track whether transaction contains write operations
+        internal bool PerformWrites;
+
         /// <summary>
         /// State
         /// </summary>
@@ -95,7 +100,8 @@ namespace Garnet.server
         /// </summary>
         private TxnKeyEntries keyEntries;
 
-        internal TransactionManager(StoreWrapper storeWrapper,
+        internal TransactionManager(
+            StoreWrapper storeWrapper,
             RespServerSession respSession,
             BasicGarnetApi garnetApi,
             LockableGarnetApi lockableGarnetApi,
@@ -170,6 +176,7 @@ namespace Garnet.server
             this.state = TxnState.None;
             this.transactionStoreType = 0;
             functionsState.StoredProcMode = false;
+            this.PerformWrites = false;
 
             // Reset cluster variables used for slot verification
             this.saveKeyRecvBufferPtr = null;
@@ -253,7 +260,7 @@ namespace Garnet.server
         {
             Debug.Assert(functionsState.StoredProcMode);
 
-            if (appendOnlyFile != null)
+            if (PerformWrites && appendOnlyFile != null)
             {
                 if (appendOnlyFile.Log.Size == 1)
                 {
@@ -307,7 +314,7 @@ namespace Garnet.server
 
         internal void Commit(bool internal_txn = false)
         {
-            if (appendOnlyFile != null && !functionsState.StoredProcMode)
+            if (PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
             {
                 ComputeShardedLogAccess(out var logAccessMap);
 
@@ -461,8 +468,8 @@ namespace Garnet.server
             // Update sessions with transaction version
             LocksAcquired(transactionStoreType, txnVersion);
 
-            // Add TxnStart Marker
-            if (appendOnlyFile != null && !functionsState.StoredProcMode)
+            // Do not write to AOF if no write operations
+            if (PerformWrites && appendOnlyFile != null && !functionsState.StoredProcMode)
             {
                 ComputeShardedLogAccess(out var logAccessMap);
 

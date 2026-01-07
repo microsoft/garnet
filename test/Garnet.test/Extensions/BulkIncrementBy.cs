@@ -9,7 +9,9 @@ namespace Garnet
 {
     sealed class BulkIncrementBy : CustomTransactionProcedure
     {
-        // BULKINCRBY 3 a 10 b 7 c 3
+        // BULKINCRBY 2 a 10 [b 15] [c 25] ...
+        public static readonly RespCommandsInfo CommandInfo = new() { Arity = -4 };
+
         public override bool Prepare<TGarnetReadApi>(TGarnetReadApi api, ref CustomProcedureInput procInput)
         {
             var offset = 0;

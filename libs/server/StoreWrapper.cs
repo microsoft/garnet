@@ -927,6 +927,7 @@ namespace Garnet.server
 
             clusterProvider?.Dispose();
             itemBroker?.Dispose();
+            clusterProvider?.Dispose();
             monitor?.Dispose();
             luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();

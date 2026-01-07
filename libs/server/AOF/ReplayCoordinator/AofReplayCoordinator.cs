@@ -157,7 +157,6 @@ namespace Garnet.server
                         // Continue processing
                         return false;
                 }
-
                 // Processed this record succesfully
                 return true;
             }

@@ -38,8 +38,8 @@ namespace Tsavorite.test.recovery.objects
             if (deleteDir)
                 TestUtils.RecreateDirectory(TestUtils.MethodTestDir);
 
-            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.log"), false);
-            objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.obj.log"), false);
+            log = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.log"));
+            objlog = Devices.CreateLogDevice(Path.Join(TestUtils.MethodTestDir, "ObjectRecoveryTests.obj.log"));
 
             store = new(new()
             {

@@ -25,7 +25,7 @@ namespace Tsavorite.test.UnsafeContext
         private ClientSession<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> fullSession;
         private UnsafeContext<KeyStruct, ValueStruct, InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> uContext;
         private IDevice log;
-        DeviceType deviceType;
+        TestDeviceType deviceType;
 
         [SetUp]
         public void Setup()
@@ -34,7 +34,7 @@ namespace Tsavorite.test.UnsafeContext
             DeleteDirectory(MethodTestDir, wait: true);
         }
 
-        private void Setup(KVSettings<KeyStruct, ValueStruct> kvSettings, DeviceType deviceType)
+        private void Setup(KVSettings<KeyStruct, ValueStruct> kvSettings, TestDeviceType deviceType)
         {
             string filename = Path.Join(MethodTestDir, TestContext.CurrentContext.Test.Name + deviceType.ToString() + ".log");
             log = CreateTestDevice(deviceType, filename);
@@ -78,7 +78,7 @@ namespace Tsavorite.test.UnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteRead([Values] DeviceType deviceType)
+        public void NativeInMemWriteRead([Values] TestDeviceType deviceType)
         {
             Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
             uContext.BeginUnsafe();
@@ -107,7 +107,7 @@ namespace Tsavorite.test.UnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void NativeInMemWriteReadDelete([Values] DeviceType deviceType)
+        public void NativeInMemWriteReadDelete([Values] TestDeviceType deviceType)
         {
             Setup(new() { PageSize = 1L << 10, MemorySize = 1L << 12, SegmentSize = 1L << 22 }, deviceType);
             uContext.BeginUnsafe();
@@ -152,7 +152,7 @@ namespace Tsavorite.test.UnsafeContext
         public void NativeInMemWriteReadDelete2()
         {
             // Just set this one since Write Read Delete already does all four devices
-            deviceType = DeviceType.MLSD;
+            deviceType = TestDeviceType.MLSD;
 
             const int count = 10;
 
@@ -209,7 +209,7 @@ namespace Tsavorite.test.UnsafeContext
         public unsafe void NativeInMemWriteRead2()
         {
             // Just use this one instead of all four devices since InMemWriteRead covers all four devices
-            deviceType = DeviceType.MLSD;
+            deviceType = TestDeviceType.MLSD;
 
             int count = 200;
 
@@ -267,7 +267,7 @@ namespace Tsavorite.test.UnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public async Task TestShiftHeadAddressUC([Values] DeviceType deviceType, [Values] CompletionSyncMode syncMode)
+        public async Task TestShiftHeadAddressUC([Values] TestDeviceType deviceType, [Values] CompletionSyncMode syncMode)
         {
             InputStruct input = default;
             const int RandSeed = 10;
@@ -364,7 +364,7 @@ namespace Tsavorite.test.UnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public unsafe void NativeInMemRMWRefKeys([Values] DeviceType deviceType)
+        public unsafe void NativeInMemRMWRefKeys([Values] TestDeviceType deviceType)
         {
             InputStruct input = default;
             OutputStruct output = default;
@@ -437,7 +437,7 @@ namespace Tsavorite.test.UnsafeContext
         // Tests the overload where no reference params used: key,input,userContext
         [Test]
         [Category("TsavoriteKV")]
-        public unsafe void NativeInMemRMWNoRefKeys([Values] DeviceType deviceType)
+        public unsafe void NativeInMemRMWNoRefKeys([Values] TestDeviceType deviceType)
         {
             InputStruct input = default;
 
@@ -503,7 +503,7 @@ namespace Tsavorite.test.UnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void ReadNoRefKeyInputOutput([Values] DeviceType deviceType)
+        public void ReadNoRefKeyInputOutput([Values] TestDeviceType deviceType)
         {
             InputStruct input = default;
 
@@ -534,7 +534,7 @@ namespace Tsavorite.test.UnsafeContext
         // Test the overload call of .Read (key, out output, userContext)
         [Test]
         [Category("TsavoriteKV")]
-        public void ReadNoRefKey([Values] DeviceType deviceType)
+        public void ReadNoRefKey([Values] TestDeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             uContext.BeginUnsafe();
@@ -565,7 +565,7 @@ namespace Tsavorite.test.UnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void ReadWithoutInput([Values] DeviceType deviceType)
+        public void ReadWithoutInput([Values] TestDeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             uContext.BeginUnsafe();
@@ -597,7 +597,7 @@ namespace Tsavorite.test.UnsafeContext
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void ReadBareMinParams([Values] DeviceType deviceType)
+        public void ReadBareMinParams([Values] TestDeviceType deviceType)
         {
             Setup(new() { MemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
             uContext.BeginUnsafe();

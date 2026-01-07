@@ -146,7 +146,6 @@ namespace Garnet.server
             }
         }
 
-
         // Track whether the incoming network batch contains slow commands that should not be counter in NET_RS histogram
         bool containsSlowCommand;
 
@@ -1254,7 +1253,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void SendAndReset(IMemoryOwner<byte> memory, int length)
+        internal void SendAndReset(IMemoryOwner<byte> memory, int length)
         {
             // Copy allocated memory to main buffer and send
             fixed (byte* _src = memory.Memory.Span)
