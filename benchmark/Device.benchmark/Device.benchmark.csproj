@@ -2,12 +2,13 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+		<ImplicitUsings>enable</ImplicitUsings>
     <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
     <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Resp.benchmark\BenchmarkLoggerProvider.cs" Link="BenchmarkLoggerProvider.cs" />
+    <Compile Include="..\Resp.benchmark\Common\BenchmarkLoggerProvider.cs" Link="BenchmarkLoggerProvider.cs" />
   </ItemGroup>
 
   <ItemGroup>

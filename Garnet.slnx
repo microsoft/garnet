@@ -1,4 +1,5 @@
 <Solution>
+  <Folder Name="/.azure/" />
   <Folder Name="/.azure/pipelines/">
     <File Path=".azure/pipelines/azure-pipelines-compliance-policheck.yml" />
     <File Path=".azure/pipelines/azure-pipelines-compliance.yml" />
@@ -17,6 +18,7 @@
     <Project Path="benchmark/Device.benchmark/Device.benchmark.csproj" />
     <Project Path="benchmark/Resp.benchmark/Resp.benchmark.csproj" />
   </Folder>
+  <Folder Name="/hosting/" />
   <Folder Name="/hosting/Windows/">
     <Project Path="hosting/Windows/Garnet.worker/Garnet.worker.csproj" />
   </Folder>
@@ -29,12 +31,8 @@
     <Project Path="libs/server/Garnet.server.csproj" />
   </Folder>
   <Folder Name="/libs/Tsavorite/">
-    <Project Path="libs/storage/Tsavorite/cs/src/core/Tsavorite.core.csproj">
-      <Platform Solution="*|x64" Project="x64" />
-    </Project>
-    <Project Path="libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/Tsavorite.devices.AzureStorageDevice.csproj">
-      <Platform Solution="*|x64" Project="x64" />
-    </Project>
+    <Project Path="libs/storage/Tsavorite/cs/src/core/Tsavorite.core.csproj" />
+    <Project Path="libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/Tsavorite.devices.AzureStorageDevice.csproj" />
   </Folder>
   <Folder Name="/main/">
     <Project Path="main/GarnetServer/GarnetServer.csproj" />
@@ -48,7 +46,6 @@
   <Folder Name="/playground/">
     <Project Path="modules/NoOpModule/NoOpModule.csproj" />
     <Project Path="playground/Bitmap/Bitmap.csproj" />
-    <Project Path="playground/ClusterStress/ClusterStress.csproj" />
     <Project Path="playground/CommandInfoUpdater/CommandInfoUpdater.csproj" />
     <Project Path="playground/Embedded.perftest/Embedded.perftest.csproj" />
     <Project Path="playground/GarnetClientStress/GarnetClientStress.csproj" />
