@@ -38,9 +38,5 @@
     <ProjectReference Include="..\..\libs\server\Garnet.server.csproj" />
     <ProjectReference Include="..\..\metrics\HdrHistogram\HdrHistogram.csproj" />     
   </ItemGroup>
-
-	<ItemGroup>
-		<Folder Include="Embedded\" />
-	</ItemGroup>
 	
 </Project>
