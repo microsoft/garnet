@@ -16,7 +16,6 @@ namespace Garnet.server
     public class GarnetLog(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
     {
         readonly int replayTaskCount = serverOptions.AofReplayTaskCount;
-        readonly int aofSublogCount = serverOptions.AofPhysicalSublogCount;
         readonly SingleLog singleLog = serverOptions.AofVirtualSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
         readonly ShardedLog shardedLog = serverOptions.AofVirtualSublogCount > 1 ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger) : null;
 
@@ -37,13 +36,6 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long HASH(ReadOnlySpan<byte> key)
             => (long)HashUtils.MurmurHash2x64A(key) & long.MaxValue;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (int, int) HashKey(ReadOnlySpan<byte> key)
-        {
-            var hash = HASH(key);
-            return ((int)(((ulong)hash) % (ulong)aofSublogCount), (int)(((ulong)hash) % 0xFF));
-        }
 
         public AofAddress BeginAddress
         {

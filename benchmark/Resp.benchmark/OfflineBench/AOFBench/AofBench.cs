@@ -35,7 +35,7 @@ namespace Resp.benchmark
                 AofMemorySize = options.AofMemorySize,
                 AofPageSize = options.AofPageSize,
                 CommitFrequencyMs = options.CommitFrequencyMs,
-                AofPhysicalSublogCount = options.AofSublogCount,
+                AofPhysicalSublogCount = options.AofPhysicalSublogCount,
                 ReplicationOffsetMaxLag = 0,
                 CheckpointDir = OperatingSystem.IsLinux() ? "/tmp" : null
             };
@@ -76,9 +76,9 @@ namespace Resp.benchmark
             }
 
             server = new EmbeddedRespServer(serverOptions, Program.loggerFactory, new GarnetServerEmbedded());
-            sessions = server.GetRespSessions(options.AofSublogCount);
+            sessions = server.GetRespSessions(options.AofPhysicalSublogCount);
             aofGen = new AofGen(options);
-            aofSync = [.. Enumerable.Range(0, options.AofSublogCount).Select(x => new AofSync(this, threadId: x, startAddress: 64, options, aofGen))];
+            aofSync = [.. Enumerable.Range(0, options.AofPhysicalSublogCount).Select(x => new AofSync(this, threadId: x, startAddress: 64, options, aofGen))];
         }
 
         public void GenerateData() => aofGen.GenerateData();

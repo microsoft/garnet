@@ -137,8 +137,8 @@ namespace Resp.benchmark
         [Option("aof-commit-freq", Required = false, Default = 0, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
         public int CommitFrequencyMs { get; set; }
 
-        [Option("aof-sublog-count", Required = false, Default = 1, HelpText = "Number of sublogs used for AOF.")]
-        public int AofSublogCount { get; set; }
+        [Option("aof-physical-sublog-count", Required = false, Default = 1, HelpText = "Number of sublogs used for AOF.")]
+        public int AofPhysicalSublogCount { get; set; }
 
         [Option("aof-memory-size", Required = false, Default = "64m", HelpText = "Total AOF memory buffer used in bytes (rounds down to power of 2) - spills to disk after this limit.")]
         public string AofMemorySize { get; set; }

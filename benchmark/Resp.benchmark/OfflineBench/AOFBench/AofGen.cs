@@ -58,7 +58,7 @@ namespace Resp.benchmark
                 AofReplicationRefreshFrequencyMs = 10,
                 EnableCluster = true,
                 ReplicationOffsetMaxLag = 0,
-                AofPhysicalSublogCount = options.AofSublogCount
+                AofPhysicalSublogCount = options.AofPhysicalSublogCount
             };
             aofServerOptions.GetAofSettings(0, out var logSettings);
             garnetLog = new GarnetLog(aofServerOptions, logSettings);
@@ -67,14 +67,14 @@ namespace Resp.benchmark
 
             if (options.AofBenchType == AofBenchType.Replay)
             {
-                pageBuffers = new Page[options.AofSublogCount][];
+                pageBuffers = new Page[options.AofPhysicalSublogCount][];
             }
             else
             {
                 kvPairBuffers = new List<(byte[], byte[])>[options.NumThreads.Max()];
             }
 
-            if (options.AofSublogCount != options.NumThreads.Max() && options.AofBenchType == AofBenchType.EnqueueSharded)
+            if (options.AofPhysicalSublogCount != options.NumThreads.Max() && options.AofBenchType == AofBenchType.EnqueueSharded)
                 throw new Exception("Use --threads(MAX)== --aof-sublog-count to generated perfectly sharded data!");
         }
 
@@ -117,7 +117,7 @@ namespace Resp.benchmark
         {
             var seqNumGen = new SequenceNumberGenerator(0);
             Console.WriteLine($"Generating AoFBench Data!");
-            var threads = options.AofBenchType == AofBenchType.Replay ? options.AofSublogCount : options.NumThreads.Max();
+            var threads = options.AofBenchType == AofBenchType.Replay ? options.AofPhysicalSublogCount : options.NumThreads.Max();
             var workers = new Thread[threads];
 
             // Run the experiment.
@@ -161,7 +161,7 @@ namespace Resp.benchmark
             {
                 var number_of_aof_records = 0L;
                 var number_of_aof_bytes = 0L;
-                var kvPairs = GenerateKVPairs(threadId, options.AofSublogCount == 1);
+                var kvPairs = GenerateKVPairs(threadId, options.AofPhysicalSublogCount == 1);
                 //Console.WriteLine($"[{threadId}] {string.Join(',', kvPairs.Select(x => Encoding.ASCII.GetString(x.Item1) + "=" + Encoding.ASCII.GetString(x.Item2)))}");
                 var pages = options.DbSize;
                 pageBuffers[threadId] = new Page[pages];
@@ -195,7 +195,7 @@ namespace Resp.benchmark
                                 var key = SpanByte.FromPinnedPointer(keyPtr, keyData.Length);
                                 var value = SpanByte.FromPinnedPointer(valuePtr, valueData.Length);
                                 var aofHeader = new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = 1, sessionID = 0 };
-                                if (options.AofSublogCount == 1)
+                                if (options.AofPhysicalSublogCount == 1)
                                 {
                                     if (!garnetLog.GetSubLog(threadId).DummyEnqueue(
                                         ref pageOffset,

@@ -101,7 +101,7 @@ namespace Resp.benchmark
                 Console.WriteLine($"aof-page-size:{opts.AofPageSize}");
                 Console.WriteLine($"cluster:{opts.EnableCluster}");
                 Console.WriteLine($"index:{opts.IndexSize}");
-                Console.WriteLine($"aof-sublog-count:{opts.AofSublogCount}");
+                Console.WriteLine($"aof-sublog-count:{opts.AofPhysicalSublogCount}");
                 Console.WriteLine("----------------------------------");
             }
         }
@@ -271,7 +271,7 @@ namespace Resp.benchmark
                 {
                     var bench = new AofBench(opts);
                     bench.GenerateData();
-                    bench.Run(opts.AofSublogCount);
+                    bench.Run(opts.AofPhysicalSublogCount);
                 }
                 else
                 {

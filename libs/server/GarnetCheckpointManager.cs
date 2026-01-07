@@ -21,19 +21,19 @@ namespace Garnet.server
         /// <summary>
         /// Create new instance of Garnet checkpoint manager
         /// </summary>
-        /// <param name="AofSublogCount">Number of sublog for Aof</param>
+        /// <param name="AofPhysicalSublogCount">Number of sublog for Aof</param>
         /// <param name="deviceFactoryCreator">Factory for getting devices</param>
         /// <param name="checkpointNamingScheme">Checkpoint naming helper</param>
         /// <param name="removeOutdated">Remove older Tsavorite log commits</param>
         /// <param name="fastCommitThrottleFreq">FastCommit throttle frequency - use only in FastCommit mode</param>
         /// <param name="logger">Logger</param>
-        public GarnetCheckpointManager(int AofSublogCount, INamedDeviceFactoryCreator deviceFactoryCreator, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, int fastCommitThrottleFreq = 0, ILogger logger = null)
+        public GarnetCheckpointManager(int AofPhysicalSublogCount, INamedDeviceFactoryCreator deviceFactoryCreator, ICheckpointNamingScheme checkpointNamingScheme, bool removeOutdated = true, int fastCommitThrottleFreq = 0, ILogger logger = null)
             : base(deviceFactoryCreator, checkpointNamingScheme, removeOutdated, fastCommitThrottleFreq, logger)
         {
             CurrentHistoryId = null;
             RecoveredHistoryId = null;
-            CurrentSafeAofAddress = AofAddress.Create(AofSublogCount, 0);
-            RecoveredSafeAofAddress = AofAddress.Create(AofSublogCount, 0);
+            CurrentSafeAofAddress = AofAddress.Create(AofPhysicalSublogCount, 0);
+            RecoveredSafeAofAddress = AofAddress.Create(AofPhysicalSublogCount, 0);
         }
 
         /// <summary>

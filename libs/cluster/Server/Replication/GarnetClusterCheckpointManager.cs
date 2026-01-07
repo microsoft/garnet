@@ -25,14 +25,14 @@ namespace Garnet.cluster
         readonly ILogger logger;
 
         public GarnetClusterCheckpointManager(
-            int aofSublogCount,
+            int aofPhysicalSublogCount,
             INamedDeviceFactoryCreator deviceFactoryCreator,
             ICheckpointNamingScheme checkpointNamingScheme,
             bool isMainStore,
             bool safelyRemoveOutdated = false,
             int fastCommitThrottleFreq = 0,
             ILogger logger = null)
-            : base(aofSublogCount, deviceFactoryCreator, checkpointNamingScheme, removeOutdated: false, fastCommitThrottleFreq, logger)
+            : base(aofPhysicalSublogCount, deviceFactoryCreator, checkpointNamingScheme, removeOutdated: false, fastCommitThrottleFreq, logger)
         {
             this.isMainStore = isMainStore;
             this.safelyRemoveOutdated = safelyRemoveOutdated;

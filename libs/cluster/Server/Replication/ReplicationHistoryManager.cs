@@ -21,12 +21,12 @@ namespace Garnet.cluster
         AofAddress replicationOffset;
         public AofAddress replicationOffset2;
 
-        public ReplicationHistory(int aofSublogCount)
+        public ReplicationHistory(int aofPhysicalSublogCount)
         {
             primary_replid = Generator.CreateHexId();
             primary_replid2 = String.Empty;
-            replicationOffset = AofAddress.Create(aofSublogCount, 0);
-            replicationOffset2 = AofAddress.Create(aofSublogCount, long.MaxValue);
+            replicationOffset = AofAddress.Create(aofPhysicalSublogCount, 0);
+            replicationOffset2 = AofAddress.Create(aofPhysicalSublogCount, long.MaxValue);
         }
 
         public ReplicationHistory Copy()
@@ -96,9 +96,9 @@ namespace Garnet.cluster
         readonly IDevice replicationConfigDevice;
         readonly SectorAlignedBufferPool replicationConfigDevicePool;
 
-        private void InitializeReplicationHistory(int aofSublogCount)
+        private void InitializeReplicationHistory(int aofPhysicalSublogCount)
         {
-            currentReplicationConfig = new ReplicationHistory(aofSublogCount);
+            currentReplicationConfig = new ReplicationHistory(aofPhysicalSublogCount);
             FlushConfig();
         }
 
