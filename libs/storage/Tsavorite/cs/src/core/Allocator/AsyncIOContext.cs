@@ -12,7 +12,7 @@ namespace Tsavorite.core
     /// <summary>
     /// Async IO context for PMM
     /// </summary>
-    public unsafe struct AsyncIOContext
+    public struct AsyncIOContext
     {
         /// <summary>
         /// Id
@@ -28,7 +28,7 @@ namespace Tsavorite.core
         public DiskLogRecord diskLogRecord;
 
         /// <summary>
-        /// Logical address
+        /// Logical address that was requested
         /// </summary>
         public long logicalAddress;
 

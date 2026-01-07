@@ -1,10 +1,9 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -12,7 +11,7 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Expiration
 {
-    using SpanByteStoreFunctions = StoreFunctions<SpanByte, SpanByteComparer, SpanByteRecordDisposer>;
+    using SpanByteStoreFunctions = StoreFunctions<SpanByteComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class ExpirationTests
@@ -156,18 +155,11 @@ namespace Tsavorite.test.Expiration
 #pragma warning restore format
         };
 
-        public class ExpirationFunctions : SessionFunctionsBase<SpanByte, ExpirationInput, ExpirationOutput, Empty>
+        public class ExpirationFunctions : SessionFunctionsBase<ExpirationInput, ExpirationOutput, Empty>
         {
-            private static unsafe void VerifyValue(int key, ref SpanByte valueSpanByte)
-            {
-                Span<int> valueSpan = valueSpanByte.AsSpan<int>();
-                for (int j = 0; j < valueSpan.Length; j++)
-                    ClassicAssert.AreEqual(key, valueSpan[j]);
-            }
+            static bool ShouldExpire(int key, int value) => value == GetValue(key) + 2;
 
-            static bool IsExpired(int key, int value) => value == GetValue(key) + 2;
-
-            public override unsafe bool NeedInitialUpdate(ref SpanByte key, ref ExpirationInput input, ref ExpirationOutput output, ref RMWInfo rmwInfo)
+            public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref ExpirationInput input, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
                 output.AddFunc(Funcs.NeedInitialUpdate);
                 switch (input.testOp)
@@ -212,9 +204,9 @@ namespace Tsavorite.test.Expiration
                 }
             }
 
-            public override unsafe bool NeedCopyUpdate(ref SpanByte key, ref ExpirationInput input, ref SpanByte oldValue, ref ExpirationOutput output, ref RMWInfo rmwInfo)
+            public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord logRecord, ref ExpirationInput input, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
-                int field1 = oldValue.AsSpan<int>()[0];
+                int field1 = logRecord.ValueSpan.UncheckedCast<int>()[0];
 
                 output.AddFunc(Funcs.NeedCopyUpdate);
                 switch (input.testOp)
@@ -249,11 +241,11 @@ namespace Tsavorite.test.Expiration
             }
 
             /// <inheritdoc/>
-            public override unsafe bool CopyUpdater(ref SpanByte key, ref ExpirationInput input, ref SpanByte oldValue, ref SpanByte newValue, ref ExpirationOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ExpirationInput input, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
-                int key1 = key.AsSpan<int>()[0];
-                int oldField1 = oldValue.AsSpan<int>()[0];
-                ref int newField1 = ref newValue.AsSpan<int>()[0];
+                int key1 = srcLogRecord.Key.AsRef<int>();
+                var oldField1 = srcLogRecord.ValueSpan.AsRef<int>();
+                ref int newField1 = ref dstLogRecord.ValueSpan.AsRef<int>();
 
                 output.AddFunc(Funcs.CopyUpdater);
                 switch (input.testOp)
@@ -344,12 +336,12 @@ namespace Tsavorite.test.Expiration
                 }
             }
 
-            public override unsafe bool InitialUpdater(ref SpanByte key, ref ExpirationInput input, ref SpanByte value, ref ExpirationOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ExpirationInput input, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
-                ref int field1 = ref value.AsSpan<int>()[0];
+                ref int newField1 = ref logRecord.ValueSpan.AsRef<int>();
 
                 output.AddFunc(Funcs.InitialUpdater);
-                field1 = input.value;
+                newField1 = input.value;
 
                 // If InPlaceUpdater returned Delete, let the caller know both operations happened. Similarly, we may be 
                 output.result = output.result switch
@@ -359,7 +351,7 @@ namespace Tsavorite.test.Expiration
                     ExpirationResult.DeletedThenUpdateRejected => ExpirationResult.DeletedThenInserted,
                     _ => ExpirationResult.Updated
                 };
-                output.retrievedValue = field1;
+                output.retrievedValue = newField1;
 
                 // If this is the first InitialUpdater after a Delete and the testOp is *ThenInsert, we have to fail the first InitialUpdater
                 // (which is the InitialUpdater call on the deleted record's space) and will pass the second InitialUpdater (which is into a new record).
@@ -369,65 +361,65 @@ namespace Tsavorite.test.Expiration
                 return true;
             }
 
-            public override unsafe bool InPlaceUpdater(ref SpanByte key, ref ExpirationInput input, ref SpanByte value, ref ExpirationOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ExpirationInput input, ref ExpirationOutput output, ref RMWInfo rmwInfo)
             {
-                int key1 = key.AsSpan<int>()[0];
-                ref int field1 = ref value.AsSpan<int>()[0];
+                int key1 = logRecord.Key.AsRef<int>();
+                ref int newField1 = ref logRecord.ValueSpan.AsRef<int>();
 
                 output.AddFunc(Funcs.InPlaceUpdater);
                 switch (input.testOp)
                 {
                     case TestOp.Increment:
-                        ClassicAssert.AreEqual(GetValue(key1), field1);
+                        ClassicAssert.AreEqual(GetValue(key1), newField1);
                         goto case TestOp.PassiveExpire;
                     case TestOp.PassiveExpire:
-                        ++field1;
+                        ++newField1;
                         output.result = ExpirationResult.Incremented;
                         return true;
                     case TestOp.ExpireDelete:
-                        ClassicAssert.AreEqual(GetValue(key1) + 1, field1);            // For this test we only call this operation when the value will expire
-                        ++field1;
+                        ClassicAssert.AreEqual(GetValue(key1) + 1, newField1);            // For this test we only call this operation when the value will expire
+                        ++newField1;
                         rmwInfo.Action = RMWAction.ExpireAndStop;
                         output.result = ExpirationResult.ExpireDelete;
                         return false;
                     case TestOp.ExpireRollover:
-                        ClassicAssert.AreEqual(GetValue(key1) + 1, field1);            // For this test we only call this operation when the value will expire
-                        field1 = GetValue(key1);
+                        ClassicAssert.AreEqual(GetValue(key1) + 1, newField1);            // For this test we only call this operation when the value will expire
+                        newField1 = GetValue(key1);
                         output.result = ExpirationResult.ExpireRollover;
-                        output.retrievedValue = field1;
+                        output.retrievedValue = newField1;
                         return true;
                     case TestOp.SetIfKeyExists:
-                        field1 = input.value;
+                        newField1 = input.value;
                         output.result = ExpirationResult.Updated;
-                        output.retrievedValue = field1;
+                        output.retrievedValue = newField1;
                         return true;
                     case TestOp.SetIfKeyNotExists:
                         // No-op
                         return true;
                     case TestOp.SetIfValueEquals:
-                        if (field1 == input.comparisonValue)
+                        if (newField1 == input.comparisonValue)
                         {
-                            field1 = input.value;
+                            newField1 = input.value;
                             output.result = ExpirationResult.Updated;
                         }
                         else
                             output.result = ExpirationResult.NotUpdated;
-                        output.retrievedValue = field1;
+                        output.retrievedValue = newField1;
                         return true;
                     case TestOp.SetIfValueNotEquals:
-                        if (field1 != input.comparisonValue)
+                        if (newField1 != input.comparisonValue)
                         {
-                            field1 = input.value;
+                            newField1 = input.value;
                             output.result = ExpirationResult.Updated;
                         }
                         else
                             output.result = ExpirationResult.NotUpdated;
-                        output.retrievedValue = field1;
+                        output.retrievedValue = newField1;
                         return true;
                     case TestOp.DeleteIfValueEqualsThenUpdate:
                     case TestOp.DeleteIfValueEqualsThenInsert:
                     case TestOp.DeleteIfValueEqualsAndStop:
-                        if (field1 == input.comparisonValue)
+                        if (newField1 == input.comparisonValue)
                         {
                             // Both "ThenXxx" options will go to InitialUpdater; that will decide whether to return false
                             rmwInfo.Action = input.testOp == TestOp.DeleteIfValueEqualsAndStop ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
@@ -435,13 +427,13 @@ namespace Tsavorite.test.Expiration
                             return false;
                         }
                         output.result = ExpirationResult.NotDeleted;
-                        output.retrievedValue = field1;
+                        output.retrievedValue = newField1;
                         return true;
 
                     case TestOp.DeleteIfValueNotEqualsThenUpdate:
                     case TestOp.DeleteIfValueNotEqualsThenInsert:
                     case TestOp.DeleteIfValueNotEqualsAndStop:
-                        if (field1 != input.comparisonValue)
+                        if (newField1 != input.comparisonValue)
                         {
                             // Both "ThenXxx" options will go to InitialUpdater; that will decide whether to return false
                             rmwInfo.Action = input.testOp == TestOp.DeleteIfValueNotEqualsAndStop ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
@@ -449,7 +441,7 @@ namespace Tsavorite.test.Expiration
                             return false;
                         }
                         output.result = ExpirationResult.NotDeleted;
-                        output.retrievedValue = field1;
+                        output.retrievedValue = newField1;
                         return true;
                     case TestOp.Revivify:
                         Assert.Fail($"{input.testOp} should not get here");
@@ -460,33 +452,36 @@ namespace Tsavorite.test.Expiration
                 }
             }
 
-            public override void RMWCompletionCallback(ref SpanByte key, ref ExpirationInput input, ref ExpirationOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref ExpirationInput input, ref ExpirationOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 output.AddFunc(Funcs.RMWCompletionCallback);
             }
 
-            public override void ReadCompletionCallback(ref SpanByte key, ref ExpirationInput input, ref ExpirationOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref ExpirationInput input, ref ExpirationOutput output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
                 output.AddFunc(Funcs.ReadCompletionCallback);
             }
 
             /// <inheritdoc/>
-            public override int GetRMWModifiedValueLength(ref SpanByte value, ref ExpirationInput input) => value.TotalSize;
+            public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ExpirationInput input)
+                => new() { KeySize = srcLogRecord.Key.Length, ValueSize = srcLogRecord.ValueSpan.Length, ValueIsObject = false };
 
             /// <inheritdoc/>
-            public override int GetRMWInitialValueLength(ref ExpirationInput input) => MinValueLen;
+            public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref ExpirationInput input)
+                => new() { KeySize = key.Length, ValueSize = MinValueLen, ValueIsObject = false };
 
             /// <inheritdoc/>
-            public override int GetUpsertValueLength(ref SpanByte value, ref ExpirationInput input) => value.TotalSize;
+            public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref ExpirationInput input)
+                => new() { KeySize = key.Length, ValueSize = value.Length, ValueIsObject = false };
 
             // Read functions
-            public override unsafe bool Reader(ref SpanByte key, ref ExpirationInput input, ref SpanByte value, ref ExpirationOutput output, ref ReadInfo readInfo)
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ExpirationInput input, ref ExpirationOutput output, ref ReadInfo readInfo)
             {
-                int key1 = key.AsSpan<int>()[0];
-                ref int field1 = ref value.AsSpan<int>()[0];
+                int key1 = srcLogRecord.Key.AsRef<int>();
+                ref int field1 = ref srcLogRecord.ValueSpan.AsRef<int>();
 
                 output.AddFunc(Funcs.Reader);
-                if (IsExpired(key1, field1))
+                if (ShouldExpire(key1, field1))
                 {
                     readInfo.Action = ReadAction.Expire;
                     return false;
@@ -496,18 +491,18 @@ namespace Tsavorite.test.Expiration
             }
 
             // Upsert functions
-            public override bool InitialWriter(ref SpanByte key, ref ExpirationInput input, ref SpanByte src, ref SpanByte dst, ref ExpirationOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-                => SpanByteFunctions<Empty>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo);
+            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ExpirationInput input, ReadOnlySpan<byte> srcValue, ref ExpirationOutput output, ref UpsertInfo upsertInfo)
+                => dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
 
-            public override bool InPlaceWriter(ref SpanByte key, ref ExpirationInput input, ref SpanByte src, ref SpanByte dst, ref ExpirationOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
-                => SpanByteFunctions<Empty>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo);
+            public override bool InPlaceWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ExpirationInput input, ReadOnlySpan<byte> srcValue, ref ExpirationOutput output, ref UpsertInfo upsertInfo)
+                => dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcValue, in sizeInfo);
         }
 
         IDevice log;
         ExpirationFunctions functions;
-        TsavoriteKV<SpanByte, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
-        ClientSession<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
-        BasicContext<SpanByte, SpanByte, ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
+        TsavoriteKV<SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> store;
+        ClientSession<ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> session;
+        BasicContext<ExpirationInput, ExpirationOutput, Empty, ExpirationFunctions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> bContext;
 
         [SetUp]
         public void Setup()
@@ -521,7 +516,7 @@ namespace Tsavorite.test.Expiration
                 LogDevice = log,
                 MemorySize = 1L << 19,
                 PageSize = 1L << 14
-            }, StoreFunctions<SpanByte, SpanByte>.Create()
+            }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
 
@@ -542,7 +537,7 @@ namespace Tsavorite.test.Expiration
             DeleteDirectory(MethodTestDir);
         }
 
-        private unsafe void Populate(Random rng)
+        private void Populate(Random rng)
         {
             // Single alloc outside the loop, to the max length we'll need.
             Span<int> keySpan = stackalloc int[1];
@@ -551,28 +546,28 @@ namespace Tsavorite.test.Expiration
             for (int i = 0; i < NumRecs; i++)
             {
                 keySpan[0] = i;
-                var keySpanByte = keySpan.AsSpanByte();
+                var keySpanByte = MemoryMarshal.Cast<int, byte>(keySpan);
 
                 var valueLen = GetRandomLength(rng);
                 for (int j = 0; j < valueLen; j++)
                     valueSpan[j] = GetValue(i);
-                var valueSpanByte = valueSpan.AsSpanByte();
+                var valueSpanByte = MemoryMarshal.Cast<int, byte>(valueSpan);
 
-                bContext.Upsert(ref keySpanByte, ref valueSpanByte, Empty.Default);
+                _ = bContext.Upsert(keySpanByte, valueSpanByte, Empty.Default);
             }
         }
 
-        private unsafe ExpirationOutput GetRecord(int key, Status expectedStatus, FlushMode flushMode)
+        private ExpirationOutput GetRecord(int key, Status expectedStatus, FlushMode flushMode)
         {
             Span<int> keySpan = [key];
-            var keySpanByte = keySpan.AsSpanByte();
+            var keySpanByte = MemoryMarshal.Cast<int, byte>(keySpan);
             ExpirationOutput output = new();
 
-            var status = bContext.Read(ref keySpanByte, ref output, Empty.Default);
+            var status = bContext.Read(keySpanByte, ref output, Empty.Default);
             if (status.IsPending)
             {
                 ClassicAssert.AreNotEqual(FlushMode.NoFlush, flushMode);
-                bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 (status, output) = GetSinglePendingResult(completedOutputs);
             }
 
@@ -583,19 +578,19 @@ namespace Tsavorite.test.Expiration
         private unsafe ExpirationOutput ExecuteRMW(int key, ref ExpirationInput input, FlushMode flushMode, Status expectedStatus = default)
         {
             Span<int> keySpan = [key];
-            var keySpanByte = keySpan.AsSpanByte();
+            var keySpanByte = MemoryMarshal.Cast<int, byte>(keySpan);
 
             ExpirationOutput output = new();
-            var status = bContext.RMW(ref keySpanByte, ref input, ref output);
+            var status = bContext.RMW(keySpanByte, ref input, ref output);
             if (status.IsPending)
             {
                 ClassicAssert.AreNotEqual(FlushMode.NoFlush, flushMode);
-                bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                 (status, output) = GetSinglePendingResult(completedOutputs);
             }
 
             ClassicAssert.AreEqual(expectedStatus, status, status.ToString());
-            ClassicAssert.AreEqual(expectedStatus.Expired, status.Expired, status.ToString());
+            ClassicAssert.AreEqual(expectedStatus.IsExpired, status.IsExpired, status.ToString());
             return output;
         }
 
@@ -693,7 +688,7 @@ namespace Tsavorite.test.Expiration
             MaybeEvict(flushMode);
             IncrementValue(TestOp.PassiveExpire, flushMode);
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
-            GetRecord(ModifyKey, new(StatusCode.NotFound | StatusCode.Expired), flushMode);
+            _ = GetRecord(ModifyKey, new(StatusCode.NotFound | StatusCode.Expired), flushMode);
         }
 
         [Test]
@@ -720,10 +715,9 @@ namespace Tsavorite.test.Expiration
             ClassicAssert.AreEqual(ExpirationResult.ExpireDelete, output.result);
 
             // Verify it's not there
-            if (flushMode == FlushMode.NoFlush)
-                GetRecord(key, new(StatusCode.NotFound), flushMode);    // Expiration was IPU-deletion
-            else
-                GetRecord(key, new(StatusCode.NotFound | StatusCode.Expired), flushMode);
+            _ = flushMode == FlushMode.NoFlush
+                ? GetRecord(key, new(StatusCode.NotFound), flushMode)   // Expiration was IPU-deletion
+                : GetRecord(key, new(StatusCode.NotFound | StatusCode.Expired), flushMode);
         }
 
         [Test]
@@ -796,7 +790,7 @@ namespace Tsavorite.test.Expiration
             ClassicAssert.AreEqual(expectedFuncs, output.functionsCalled);
 
             // Verify it's not there
-            GetRecord(key, new(StatusCode.NotFound), flushMode);
+            _ = GetRecord(key, new(StatusCode.NotFound), flushMode);
         }
 
         [Test]
@@ -1051,7 +1045,7 @@ namespace Tsavorite.test.Expiration
             ClassicAssert.AreEqual(ExpirationResult.Deleted, output.result);
 
             // Verify it's not there
-            GetRecord(key, new(StatusCode.NotFound), flushMode);
+            _ = GetRecord(key, new(StatusCode.NotFound), flushMode);
 
             // Value doesn't equal - no-op
             key += 1;   // We deleted ModifyKey so get the next-higher key
@@ -1078,7 +1072,7 @@ namespace Tsavorite.test.Expiration
 
             // For this test, IPU will Cancel rather than go to the IPU path
             Status expectedFoundRmwStatus = flushMode == FlushMode.NoFlush ? new(StatusCode.InPlaceUpdatedRecord | StatusCode.Expired) : new(StatusCode.CreatedRecord | StatusCode.Expired);
-            ClassicAssert.IsTrue(expectedFoundRmwStatus.Expired, expectedFoundRmwStatus.ToString());
+            ClassicAssert.IsTrue(expectedFoundRmwStatus.IsExpired, expectedFoundRmwStatus.ToString());
 
             VerifyKeyNotCreated(testOp, flushMode);
             session.ctx.SessionState = SystemState.Make(phase, session.ctx.version);
@@ -1109,9 +1103,7 @@ namespace Tsavorite.test.Expiration
             ClassicAssert.AreEqual(ExpirationResult.Deleted, output.result);
 
             // Verify it's not there
-            GetRecord(key, new(StatusCode.NotFound), flushMode);
+            _ = GetRecord(key, new(StatusCode.NotFound), flushMode);
         }
     }
 }
-
-#endif // LOGRECORD_TODO
