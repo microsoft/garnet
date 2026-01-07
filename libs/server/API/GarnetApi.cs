@@ -410,6 +410,10 @@ namespace Garnet.server
         /// <inheritdoc/>
         public unsafe GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions)
         => storageSession.VectorSetDimensions(key, out dimensions);
+
+        /// <inheritdoc/>
+        public unsafe GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size)
+        => storageSession.VectorSetInfo(key, out quantType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
         #endregion
     }
 }

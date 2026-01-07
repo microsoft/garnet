@@ -7800,6 +7800,22 @@
     ]
   },
   {
+    "Command": "VINFO",
+    "Name": "VINFO",
+    "Summary": "Return details about a vector set, including dimensions, quantization, and structure.",
+    "Group": "Vector",
+    "Complexity": "O(1)",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandKeyArgument",
+        "Name": "KEY",
+        "DisplayText": "key",
+        "Type": "Key",
+        "KeySpecIndex": 0
+      }
+    ]
+  },
+  {
     "Command": "VISMEMBER",
     "Name": "VISMEMBER",
     "Summary": "Determines whether a member belongs to vector set.",

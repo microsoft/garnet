@@ -2017,6 +2017,10 @@ namespace Garnet.server
         /// If the Vector Set was created with reduced dimensions, reports the reduced dimensions.
         /// </summary>
         GarnetStatus VectorSetDimensions(PinnedSpanByte key, out int dimensions);
+        /// <summary>
+        /// Fetch debugging information about the Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size);
 
         #endregion 
     }

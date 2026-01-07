@@ -938,6 +938,7 @@ namespace Garnet.server
                 RespCommand.VDIM => NetworkVDIM(ref storageApi),
                 RespCommand.VEMB => NetworkVEMB(ref storageApi),
                 RespCommand.VGETATTR => NetworkVGETATTR(ref storageApi),
+                RespCommand.VINFO => NetworkVINFO(ref storageApi),
                 RespCommand.VISMEMBER => NetworkVISMEMBER(ref storageApi),
                 RespCommand.VLINKS => NetworkVLINKS(ref storageApi),
                 RespCommand.VRANDMEMBER => NetworkVRANDMEMBER(ref storageApi),
