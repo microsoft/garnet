@@ -41,7 +41,7 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, lowMemory: true);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
         }
 
