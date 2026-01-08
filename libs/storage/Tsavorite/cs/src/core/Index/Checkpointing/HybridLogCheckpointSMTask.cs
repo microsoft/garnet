@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Tsavorite.core
@@ -112,10 +113,9 @@ namespace Tsavorite.core
                     if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
                     {
                         stateMachineDriver.lastVersion = lastVersion;
-                        stateMachineDriver.lastVersionTransactionsDone = new(0);
-                    }
-                    if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
+                        stateMachineDriver.lastVersionTransactionsDone = new SemaphoreSlim(0);
                         stateMachineDriver.AddToWaitingList(stateMachineDriver.lastVersionTransactionsDone);
+                    }
                     break;
             }
         }

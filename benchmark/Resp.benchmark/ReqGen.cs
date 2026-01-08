@@ -268,6 +268,11 @@ namespace Resp.benchmark
                     for (int i = 0; i < bytesRead; i++)
                         if (buf[i] == '*') count++;
                     break;
+                case OpType.XADD:
+                    // XADD returns a bulk string with the stream ID
+                    for (int i = 0; i < bytesRead; i++)
+                        if (buf[i] == '$') count++;
+                    break;
                 default:
                     break;
             }

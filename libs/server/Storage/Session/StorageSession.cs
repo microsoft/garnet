@@ -47,6 +47,7 @@ namespace Garnet.server
 
         public readonly ScratchBufferBuilder scratchBufferBuilder;
         public readonly FunctionsState functionsState;
+        public readonly StreamManager streamManager;
 
         public TransactionManager txnManager;
         public StateMachineDriver stateMachineDriver;
@@ -100,6 +101,8 @@ namespace Garnet.server
 
             unifiedBasicContext = unifiedStoreSession.BasicContext;
             unifiedTransactionalContext = unifiedStoreSession.TransactionalContext;
+
+            streamManager = storeWrapper.streamManager;
 
             HeadAddress = db.Store.Log.HeadAddress;
             ObjectScanCountLimit = storeWrapper.serverOptions.ObjectScanCountLimit;

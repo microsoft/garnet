@@ -616,6 +616,10 @@ namespace Garnet
         [Option("expired-key-deletion-scan-freq", Required = false, HelpText = "Frequency of background scan for expired key deletion, in seconds")]
         public int ExpiredKeyDeletionScanFrequencySecs { get; set; }
 
+        [OptionValidation]
+        [Option("streams", Required = false, HelpText = "Enable streams on server.")]
+        public bool? EnableStreams { get; set; }
+
         [IntRangeValidation(0, int.MaxValue, includeMin: true, isRequired: false)]
         [Option("cluster-replication-reestablishment-timeout")]
         public int ClusterReplicationReestablishmentTimeout { get; set; }
@@ -893,6 +897,7 @@ namespace Garnet
                 UnixSocketPermission = unixSocketPermissions,
                 MaxDatabases = MaxDatabases,
                 ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
+                EnableStreams = EnableStreams.GetValueOrDefault(),
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
             };

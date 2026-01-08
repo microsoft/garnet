@@ -212,6 +212,7 @@ namespace Resp.benchmark
                 }
                 break;
             }
+            Console.WriteLine($"Successfully connected to Redis instance at {opts.Address}:{opts.Port}");
         }
 
         static void RunBasicCommandsBenchmark(Options opts)
@@ -220,7 +221,7 @@ namespace Resp.benchmark
             int keyLen = opts.KeyLength;
             int valueLen = opts.ValueLength;
 
-            if (opts.Op == OpType.PUBLISH || opts.Op == OpType.SPUBLISH || opts.Op == OpType.ZADD || opts.Op == OpType.ZREM || opts.Op == OpType.ZADDREM || opts.Op == OpType.PING || opts.Op == OpType.GEOADD || opts.Op == OpType.GEOADDREM || opts.Op == OpType.SETEX || opts.Op == OpType.ZCARD || opts.Op == OpType.ZADDCARD)
+            if (opts.Op == OpType.PUBLISH || opts.Op == OpType.SPUBLISH || opts.Op == OpType.ZADD || opts.Op == OpType.ZREM || opts.Op == OpType.ZADDREM || opts.Op == OpType.PING || opts.Op == OpType.GEOADD || opts.Op == OpType.GEOADDREM || opts.Op == OpType.SETEX || opts.Op == OpType.ZCARD || opts.Op == OpType.ZADDCARD || opts.Op == OpType.XADD)
                 opts.SkipLoad = true;
 
             //if we have scripts ops we need to load them in memory

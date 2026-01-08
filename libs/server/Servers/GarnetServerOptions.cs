@@ -520,6 +520,19 @@ namespace Garnet.server
         public string GetAppendOnlyFileDirectory(int dbId) =>
             Path.Combine(AppendOnlyFileBaseDirectory, GetAppendOnlyFileDirectoryName(dbId));
 
+        // Enable STREAMS on server
+        public bool EnableStreams = false;
+
+        /// <summary>
+        /// Page size for BTree index for STREAM
+        /// </summary>
+        public string StreamPageSize = "4m";
+
+        /// <summary>
+        /// Memory for STREAM
+        /// </summary>
+        public string StreamMemorySize = "1g";
+
         /// <summary>
         /// Constructor
         /// </summary>
@@ -703,6 +716,32 @@ namespace Garnet.server
             }
 
             return kvSettings;
+        }
+
+        /// <summary>
+        /// Get stream page size
+        /// </summary>
+        /// <returns></returns>
+        public long StreamPageSizeBytes()
+        {
+            long size = ParseSize(StreamPageSize, out int _);
+            long adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                logger?.LogInformation($"Warning: using lower stream page size than specified (power of 2)");
+            return adjustedSize;
+        }
+
+        /// <summary>
+        /// Get stream memory size
+        /// </summary>
+        /// <returns></returns>
+        public long StreamMemorySizeBytes()
+        {
+            long size = ParseSize(StreamMemorySize, out int _);
+            long adjustedSize = PreviousPowerOf2(size);
+            if (size != adjustedSize)
+                logger?.LogInformation($"Warning: using lower stream page size than specified (power of 2)");
+            return adjustedSize;
         }
 
         /// <summary>

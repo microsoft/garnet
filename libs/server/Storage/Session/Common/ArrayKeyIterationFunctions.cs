@@ -27,6 +27,15 @@ namespace Garnet.server
         long lastScanCursor;
         List<byte[]> Keys;
 
+
+        private const long ObjectStoreCursorBitMask = (1L << 49) - 1; // bits 0-48 set to 1
+        private const long StreamStoreCursorBitMask = (1L << 50) - 1; // bits 0-49 set to 1
+
+        private long GetObjectStoreCursor(long cursor) => cursor & ObjectStoreCursorBitMask;
+        private long GetStreamStoreCursor(long cursor) => cursor & StreamStoreCursorBitMask;
+        private bool IsNotObjectStoreCursorAndNotStreamCursor(long cursor) => (cursor & (1L << 49)) == 0 && (cursor & (1L << 50)) == 0;
+        private bool IsNotStreamCursor(long cursor) => (cursor & (1L << 50)) == 0;
+
         /// <summary>
         ///  Gets keys matching the pattern with a limit of count in every iteration
         ///  when using pattern
