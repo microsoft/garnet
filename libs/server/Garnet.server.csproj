@@ -22,6 +22,7 @@
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     <PackageReference Include="System.Numerics.Tensors" />
     <PackageReference Include="KeraLua" />
+	  <PackageReference Include="diskann-garnet" />
   </ItemGroup>
 
 </Project>

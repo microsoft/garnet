@@ -36,8 +36,11 @@ namespace Garnet.cluster
                     try
                     {
                         activeReplay.WriteLock();
+
                         replicaReplayTaskCts.Dispose();
                         replicaReplayTaskCts = CancellationTokenSource.CreateLinkedTokenSource(ctsRepManager.Token);
+
+                        aofProcessor.ResetVectorSetReplication(wait: false);
                     }
                     finally
                     {

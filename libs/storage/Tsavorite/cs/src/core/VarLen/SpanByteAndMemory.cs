@@ -84,6 +84,12 @@ namespace Tsavorite.core
         public ReadOnlySpan<byte> AsReadOnlySpan() => IsSpanByte ? SpanByte.AsReadOnlySpan() : Memory.Memory.Span.Slice(0, Length);
 
         /// <summary>
+        /// As a span of the contained data. Use this when you haven't tested <see cref="IsSpanByte"/>.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public Span<byte> AsSpan() => IsSpanByte ? SpanByte.AsSpan() : Memory.Memory.Span.Slice(0, Length);
+
+        /// <summary>
         /// As a span of the contained data. Use this when you have already tested <see cref="IsSpanByte"/>.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

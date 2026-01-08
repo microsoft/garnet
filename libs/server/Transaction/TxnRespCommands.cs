@@ -60,7 +60,7 @@ namespace Garnet.server
                 endReadHead = txnManager.txnStartHead;
 
                 txnManager.GetKeysForValidation(recvBufferPtr, out var keys, out int keyCount, out bool readOnly);
-                if (NetworkKeyArraySlotVerify(keys, readOnly, keyCount))
+                if (NetworkKeyArraySlotVerify(keys, readOnly, waitForStableSlot: false, keyCount)) // TODO: We should actually verify if commands contained are Vector Set writes
                 {
                     logger?.LogWarning("Failed CheckClusterTxnKeys");
                     txnManager.Reset(false);
