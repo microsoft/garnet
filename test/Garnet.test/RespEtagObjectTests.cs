@@ -229,5 +229,43 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
             ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // 1 element removed
         }
+
+        [Test]  
+        public void SortedSetLengthConditionalEtagTest()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key = "key1";
+
+            db.SortedSetAdd(key, [new SortedSetEntry("a", 1), new SortedSetEntry("b", 2)]);
+
+            // Get sorted set length with Etag when etag matches 0
+            var results = (string[])db.Execute("EXECIFMATCH", 0, "ZCARD", key);
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(2, results!.Length);
+            ClassicAssert.AreEqual(0, long.Parse(results[0]!)); // Etag 0
+            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // Length 2
+
+            results = (string[])db.Execute("EXECWITHETAG", "ZADD", key, "1", "a", "2", "b", "3", "c", "4", "d");
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(2, results!.Length);
+            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
+            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // 2 elements added
+
+            // Get sorted set length with Etag when etag matches 1
+            results = (string[])db.Execute("EXECIFMATCH", 1, "ZCARD", key);
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(2, results!.Length);
+            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
+            ClassicAssert.AreEqual(4, long.Parse(results[1]!)); // Length 4
+
+            // Get sorted set length with Etag when etag does not match
+            results = (string[])db.Execute("EXECIFMATCH", 2, "ZCARD", key);
+            ClassicAssert.IsNotNull(results);
+            ClassicAssert.AreEqual(2, results!.Length);
+            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
+            ClassicAssert.IsNull(results[1]); // Null result
+        }
     }
 }

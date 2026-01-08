@@ -158,15 +158,15 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState) { SortedSetOp = SortedSetOperation.ZCARD };
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
-            var status = storageApi.SortedSetLength(key, ref input, out var output);
+            var status = storageApi.SortedSetLength(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
                     // Process output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))

@@ -1300,7 +1300,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Returns the specified range of elements in the sorted set stored at key.

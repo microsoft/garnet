@@ -53,8 +53,8 @@ namespace Garnet.server
             => storageSession.SortedSetLength(key, out len, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.SortedSetLength(key, ref input, out output, ref objectContext);
+        public GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.SortedSetLength(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRange(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)

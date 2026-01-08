@@ -24,23 +24,19 @@ namespace Garnet.server
         None = 0,
 
         /// <summary>
-        /// Flag indicating an operation intending to add an etag for a RAWSTRING command.
-        /// </summary>
-        WithEtag = 1,
-
-        /// <summary>
         /// Flag indicating a SET operation that returns the previous value (for strings).
         /// </summary>
-        SetGet = 1 << 1,
+        SetGet = 1,
 
         /// <summary>
         /// Deterministic
         /// </summary>
-        Deterministic = 1 << 2,
+        Deterministic = 1 << 1,
+
         /// <summary>
         /// Expired
         /// </summary>
-        Expired = 1 << 3,
+        Expired = 1 << 2,
     }
 
     /// <summary>

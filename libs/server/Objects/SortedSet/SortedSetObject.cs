@@ -323,7 +323,7 @@ namespace Garnet.server
                                      byte respProtocolVersion, bool execOp, long updatedEtag, out long memorySizeChange)
         {
             memorySizeChange = 0;
-
+            
             var header = input.header;
             if (header.type != GarnetObjectType.SortedSet)
             {
@@ -344,34 +344,36 @@ namespace Garnet.server
                     SortedSetRemove(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZCARD:
-                    SortedSetLength(ref output);
+                    SortedSetLength(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
+                case SortedSetOperation.ZPOPMIN:
                 case SortedSetOperation.ZPOPMAX:
-                    SortedSetPopMinOrMaxCount(ref input, ref output, respProtocolVersion, op);
+                    SortedSetPopMinOrMaxCount(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZSCORE:
-                    SortedSetScore(ref input, ref output, respProtocolVersion);
+                    SortedSetScore(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZMSCORE:
-                    SortedSetScores(ref input, ref output, respProtocolVersion);
+                    SortedSetScores(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZCOUNT:
-                    SortedSetCount(ref input, ref output, respProtocolVersion);
+                    SortedSetCount(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZINCRBY:
-                    SortedSetIncrement(ref input, ref output, respProtocolVersion);
+                    SortedSetIncrement(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZRANK:
-                    SortedSetRank(ref input, ref output, respProtocolVersion);
+                case SortedSetOperation.ZREVRANK:
+                    SortedSetRank(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZEXPIRE:
-                    SortedSetExpire(ref input, ref output, respProtocolVersion);
+                    SortedSetExpire(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZTTL:
-                    SortedSetTimeToLive(ref input, ref output, respProtocolVersion);
+                    SortedSetTimeToLive(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZPERSIST:
-                    SortedSetPersist(ref input, ref output, respProtocolVersion);
+                    SortedSetPersist(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
                     break;
                 case SortedSetOperation.ZCOLLECT:
                     SortedSetCollect(ref output);
@@ -391,9 +393,6 @@ namespace Garnet.server
                 case SortedSetOperation.ZRANGE:
                     SortedSetRange(ref input, ref output, respProtocolVersion);
                     break;
-                case SortedSetOperation.ZREVRANK:
-                    SortedSetRank(ref input, ref output, respProtocolVersion, ascending: false);
-                    break;
                 case SortedSetOperation.ZREMRANGEBYLEX:
                     SortedSetRemoveOrCountRangeByLex(ref input, ref output, op);
                     break;
@@ -405,9 +404,6 @@ namespace Garnet.server
                     break;
                 case SortedSetOperation.ZLEXCOUNT:
                     SortedSetRemoveOrCountRangeByLex(ref input, ref output, op);
-                    break;
-                case SortedSetOperation.ZPOPMIN:
-                    SortedSetPopMinOrMaxCount(ref input, ref output, respProtocolVersion, op);
                     break;
                 case SortedSetOperation.ZRANDMEMBER:
                     SortedSetRandomMember(ref input, ref output, respProtocolVersion);
