@@ -11,13 +11,6 @@ using Tsavorite.core;
 
 namespace Resp.benchmark
 {
-    public enum AofBenchType
-    {
-        EnqueueRandom,
-        EnqueueSharded,
-        Replay
-    }
-
     public class AofBench
     {
         public static GarnetServerOptions GetServerOptions(Options options)
