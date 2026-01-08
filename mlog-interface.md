@@ -185,3 +185,14 @@ NOTES:
   The dictionary holding the shared barriers is indexed on sessionID. Across sessions this should be fine. 
   However, for the same session it might create a problem because two separate transactions executing on the same session one after the other
   that operate on disjoint sublogs might get mixed because they will attempt to get indexed on the same sessionID.
+
+- What if replica metadata (i.e checkpoint entry and aof address range) is not valid? Valid means that aofBeginAddress < checkpointCoveredAofAddress < aofEndAddress. This is probably a bug for main also.
+- What happens when two write operations acquire the same timestamp?
+<ul><ul>
+Assume the following writes; a1,t1 and a2,t2
+If the granularity of the clock is coarse (i.e. 10 sec) then it is possible for t1 == t2. In that case, we cannot differentiate on the ordering of a1 and a2 despite the fact that they might have happened one after the other.
+In that situation, possible solutions include
+1. Higher clock granularity/ unique sequence number generation. What is the scalability of this approach.
+2. Include sessionId and dedicated counter per session to resolve ordering at the replica (i.e. consistent read) (ts, sid, ctr)
+3. Use the concept of closing down timestamp. We only read at t-1 and read at t only when all sublogs have replayed t. Is that correct what are th caveats
+</ul></ul>

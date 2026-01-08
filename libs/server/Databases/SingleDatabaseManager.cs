@@ -28,7 +28,6 @@ namespace Garnet.server
 
         readonly StoreWrapper storeWrapper;
 
-
         public SingleDatabaseManager(StoreWrapper.DatabaseCreatorDelegate createDatabaseDelegate, StoreWrapper storeWrapper, bool createDefaultDatabase = true) :
             base(createDatabaseDelegate, storeWrapper)
         {

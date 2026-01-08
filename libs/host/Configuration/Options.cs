@@ -420,7 +420,7 @@ namespace Garnet
         public bool? FastAofTruncate { get; set; }
 
         [OptionValidation]
-        [Option("on-demand-checkpoint", Required = false, HelpText = "Used with main-memory replication model. Take on demand checkpoint to avoid missing data when attaching")]
+        [Option("on-demand-checkpoint", Required = false, HelpText = "Used with fast-aof-truncate replication model. Take on demand checkpoint to avoid missing data when attaching")]
         public bool? OnDemandCheckpoint { get; set; }
 
         [OptionValidation]
@@ -444,7 +444,7 @@ namespace Garnet
         public string ReplicaDisklessSyncFullSyncAofThreshold { get; set; }
 
         [OptionValidation]
-        [Option("aof-null-device", Required = false, HelpText = "With main-memory replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
+        [Option("aof-null-device", Required = false, HelpText = "With fast-aof-truncate replication, use null device for AOF. Ensures no disk IO, but can cause data loss during replication.")]
         public bool? UseAofNullDevice { get; set; }
 
         [System.Text.Json.Serialization.JsonIgnore]
