@@ -326,13 +326,13 @@ namespace Tsavorite.core
         public readonly bool IsMemoryLogRecord => true;
 
         /// <inheritdoc/>
-        public readonly unsafe ref LogRecord AsMemoryLogRecordRef() => ref Unsafe.AsRef(in this);
+        public readonly ref LogRecord AsMemoryLogRecordRef() => ref Unsafe.AsRef(in this);
 
         /// <inheritdoc/>
         public readonly bool IsDiskLogRecord => false;
 
         /// <inheritdoc/>
-        public readonly unsafe ref DiskLogRecord AsDiskLogRecordRef() => throw new InvalidOperationException("Cannot cast a memory LogRecord to a DiskLogRecord.");
+        public readonly ref DiskLogRecord AsDiskLogRecordRef() => throw new InvalidOperationException("Cannot cast a memory LogRecord to a DiskLogRecord.");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

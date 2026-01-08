@@ -149,7 +149,7 @@ namespace Tsavorite.core
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             // Caller checks for UseFreeRecordPool
-            if (RevivificationManager.TryTake(in sizeInfo, minRevivAddress, out logicalAddress, ref sessionFunctions.Ctx.RevivificationStats))
+            if (RevivificationManager.TryTake(sizeInfo.ActualInlineRecordSize, minRevivAddress, out logicalAddress, ref sessionFunctions.Ctx.RevivificationStats))
             {
                 var logRecord = hlog.CreateLogRecord(logicalAddress);
                 Debug.Assert(logRecord.Info.IsSealed, "TryTakeFreeRecord: recordInfo should still have the revivification Seal");

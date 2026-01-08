@@ -5,7 +5,6 @@ using System;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO;
-using System.Text;
 
 namespace Tsavorite.core
 {
@@ -78,62 +77,33 @@ namespace Tsavorite.core
             UntilAddress = BinaryPrimitives.ReadInt64LittleEndian(input);
             input = input.Slice(sizeof(long));
 
-            if (version > 0)
-            {
-                CommitNum = BinaryPrimitives.ReadInt64LittleEndian(input);
-                input = input.Slice(sizeof(long));
-            }
-            else
-            {
-                CommitNum = -1;
-            }
+            CommitNum = BinaryPrimitives.ReadInt64LittleEndian(input);
+            input = input.Slice(sizeof(long));
 
             if (version < 0 || version > TsavoriteLogRecoveryVersion)
                 throw new TsavoriteException("Invalid version found during commit recovery");
 
-            if (BinaryPrimitives.TryReadInt32LittleEndian(input, out var iteratorCount))
-                input = input.Slice(sizeof(int));
-
-            if (iteratorCount > 0)
-            {
-                for (var i = 0; i < iteratorCount; i++)
-                {
-                    var keyLength = BinaryPrimitives.ReadInt32LittleEndian(input);
-                    input = input.Slice(sizeof(int));
-
-                    var iteratorKey = Encoding.UTF8.GetString(input.Slice(0, keyLength));
-                    input = input.Slice(keyLength);
-
-                    var iteratorValue = BinaryPrimitives.ReadInt64LittleEndian(input);
-                    input = input.Slice(sizeof(long));
-                }
-            }
-
             int cookieLength = -1;
             long cookieChecksum = 0;
-            if (version >= TsavoriteLogRecoveryVersion)
-            {
-                if (BinaryPrimitives.TryReadInt32LittleEndian(input, out cookieLength))
-                    input = input.Slice(sizeof(int));
 
-                if (cookieLength >= 0)
+            if (BinaryPrimitives.TryReadInt32LittleEndian(input, out cookieLength))
+                input = input.Slice(sizeof(int));
+
+            if (cookieLength >= 0)
+            {
+                Cookie = input.Slice(0, cookieLength).ToArray();
+                unsafe
                 {
-                    Cookie = input.Slice(0, cookieLength).ToArray();
-                    unsafe
-                    {
-                        fixed (byte* ptr = Cookie)
-                            cookieChecksum = (long)Utility.XorBytes(ptr, cookieLength);
-                    }
+                    fixed (byte* ptr = Cookie)
+                        cookieChecksum = (long)Utility.XorBytes(ptr, cookieLength);
                 }
             }
 
-            long computedChecksum = BeginAddress ^ UntilAddress;
-            if (version >= TsavoriteLogRecoveryVersion)
-                computedChecksum ^= CommitNum ^ iteratorCount ^ cookieLength ^ cookieChecksum;
+            long computedChecksum = BeginAddress ^ UntilAddress ^ CommitNum ^ cookieLength ^ cookieChecksum;
 
             // Handle case where all fields are zero
-            if (version == 0 && BeginAddress == 0 && UntilAddress == 0 && iteratorCount == 0)
-                throw new TsavoriteException("Invalid checksum found during commit recovery");
+            if (version == 0 && BeginAddress == 0 && UntilAddress == 0)
+                throw new TsavoriteException("Invalid all-fields-zero found during commit recovery");
 
             if (checkSum != computedChecksum)
                 throw new TsavoriteException("Invalid checksum found during commit recovery");
@@ -157,7 +127,6 @@ namespace Tsavorite.core
             {
                 writer.Write(TsavoriteLogRecoveryVersion); // version
 
-                int iteratorCount = 0;
                 int cookieLength = -1;
                 long cookieChecksum = 0;
                 if (Cookie != null)
@@ -171,11 +140,10 @@ namespace Tsavorite.core
                         }
                 }
 
-                writer.Write(BeginAddress ^ UntilAddress ^ CommitNum ^ iteratorCount ^ cookieLength ^ cookieChecksum); // checksum
+                writer.Write(BeginAddress ^ UntilAddress ^ CommitNum ^ cookieLength ^ cookieChecksum); // checksum
                 writer.Write(BeginAddress);
                 writer.Write(UntilAddress);
                 writer.Write(CommitNum);
-                writer.Write(iteratorCount); // leaving this field for backwards compatibility
                 writer.Write(cookieLength);
                 if (cookieLength > 0)
                     writer.Write(Cookie);
@@ -188,7 +156,7 @@ namespace Tsavorite.core
         /// <returns> size of this recovery info serialized </returns>
         public int SerializedSize()
         {
-            return sizeof(int) + 4 * sizeof(long) + sizeof(int) + sizeof(int) + (Cookie?.Length ?? 0);
+            return sizeof(int) + 4 * sizeof(long) + sizeof(int) + (Cookie?.Length ?? 0);
         }
 
         /// <summary>

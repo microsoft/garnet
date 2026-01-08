@@ -136,18 +136,15 @@ namespace Tsavorite.core
         {
             var offset = hlogBase.GetOffsetOnPage(logicalAddress);
 
-            // Subtracting offset means this physicalAddress is at the start of the page.
-            var physicalAddress = GetPhysicalAddress(logicalAddress, headAddress, currentPage, offset) - offset;
-            long totalSizes = 0;
+            // Subtracting offset means this physicalAddress is at the start of the page. Adjust for PageHeader.
+            long totalSizes = PageHeader.Size;
             if (currentPage == 0)
             {
                 if (logicalAddress < hlogBase.BeginAddress)
                     return logicalAddress = hlogBase.BeginAddress;
-
-                // Bump past the FirstValidAddress offset
-                physicalAddress += hlogBase.BeginAddress;
                 totalSizes = (int)hlogBase.BeginAddress;
             }
+            var physicalAddress = GetPhysicalAddress(logicalAddress, headAddress, currentPage, offset) - offset + totalSizes;
 
             while (totalSizes <= offset)
             {
@@ -183,7 +180,7 @@ namespace Tsavorite.core
         /// Get next record in iterator
         /// </summary>
         /// <returns>True if record found, false if end of scan</returns>
-        public unsafe bool GetNext()
+        public bool GetNext()
         {
             while (true)
             {
@@ -292,8 +289,9 @@ namespace Tsavorite.core
 
                 logRecord = hlogBase._wrapper.CreateLogRecord(currentAddress);
                 nextAddress = logRecord.Info.PreviousAddress;
-                var skipOnScan = !includeClosedRecords && logRecord.Info.SkipOnScan;
-                if (skipOnScan || logRecord.Info.IsNull || !hlogBase.storeFunctions.KeysEqual(logRecord.Key, key))
+
+                // Do not SkipOnScan here; we Seal previous versions.
+                if (logRecord.Info.IsNull || !hlogBase.storeFunctions.KeysEqual(logRecord.Key, key))
                 {
                     epoch?.Suspend();
                     continue;
@@ -406,22 +404,8 @@ namespace Tsavorite.core
             frame?.Dispose();
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+        internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress, TContext context, out CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => hlogBase.AsyncReadPagesFromDeviceToFrame(readBuffers, readPageStart, numPages, untilAddress, AsyncReadPagesCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
-
-        private unsafe void AsyncReadPagesCallback(uint errorCode, uint numBytes, object context)
-        {
-            var result = (PageAsyncReadResult<Empty>)context;
-
-            if (errorCode == 0)
-                _ = result.handle?.Signal();
-            else
-            {
-                logger?.LogError($"{nameof(AsyncReadPagesCallback)} error: {{errorCode}}", errorCode);
-                result.cts?.Cancel();
-            }
-            Interlocked.MemoryBarrier();
-        }
+            => hlogBase.AsyncReadPageFromDeviceToFrame(readBuffers, readPage, untilAddress, AsyncReadPageFromDeviceToFrameCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
     }
 }

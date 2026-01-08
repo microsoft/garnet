@@ -122,6 +122,7 @@ namespace Tsavorite.core
                 Debug.Assert(IsAligned(filePosition.Offset, (int)device.SectorSize), $"OnBeginPartialFlush file flush position ({filePosition}) is not sector-aligned");
             }
 
+            disposed = false;
             currentIndex = 0;
             countdownCallbackAndContext = new();
             return GetAndInitializeCurrentBuffer();
@@ -129,7 +130,7 @@ namespace Tsavorite.core
 
         /// <summary>Called when a <see cref="LogRecord"/> Write is completed.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal unsafe void OnRecordComplete()
+        internal void OnRecordComplete()
         {
             // Currently nothing to do. We do not do end-of-record alignment in the ObjectLog file.
         }
@@ -187,7 +188,7 @@ namespace Tsavorite.core
             FlushToMainLogDevice(mainLogPageSpanPtr, mainLogPageSpanLength, mainLogDevice, alignedMainLogFlushAddress, CreateDiskWriteCallbackContext());
 
             // We added a count to countdownCallbackAndContext at the start, and the callback state creation also added a count. Remove the one we added at the start.
-            countdownCallbackAndContext.Decrement();
+            _ = countdownCallbackAndContext.Decrement();
         }
 
         internal DiskWriteCallbackContext CreateDiskWriteCallbackContext() => new(countdownCallbackAndContext);
@@ -246,7 +247,8 @@ namespace Tsavorite.core
         {
             // If we are here, then we have returned from the partial-flush loop and will not be incrementing numInFlightRangeBatches again, so if it is 0 we are
             // done and can free the buffers. If numInFlightWrites > 0, then we have pending writes and will free the buffers when they complete, but will not initiate
-            // any further writes. For this class, "disposed" means "we're done issuing writes". And filePosition must be preserved; checkpoints will retrieve it later.
+            // any further writes. For this class, "disposed" means "we're done issuing writes". And filePosition must be preserved; checkpoints will retrieve it later,
+            // and chained partial flushes will append to it.
             disposed = true;
             if (numInFlightWrites == 0)
                 ClearBuffers();
@@ -274,6 +276,8 @@ namespace Tsavorite.core
                     buffer = null;
                 }
             }
+
+            // Restore the now-cleared buffers array.
             buffers = localBuffers;
         }
 

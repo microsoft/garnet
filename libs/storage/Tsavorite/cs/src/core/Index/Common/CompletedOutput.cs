@@ -19,8 +19,7 @@ namespace Tsavorite.core
         internal int maxIndex = -1;
         internal int currentIndex = -1;
 
-        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext,
-                Status status, SectorAlignedBufferPool bufferPool)
+        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {
@@ -28,7 +27,7 @@ namespace Tsavorite.core
             if (maxIndex >= vector.Length - 1)
                 Array.Resize(ref vector, vector.Length * kReallocMultuple);
             ++maxIndex;
-            vector[maxIndex].TransferFrom(ref pendingContext, status, bufferPool);
+            vector[maxIndex].TransferFrom(ref pendingContext, status);
         }
 
         /// <summary>
@@ -78,12 +77,12 @@ namespace Tsavorite.core
         /// <summary>
         /// The key for this pending operation.
         /// </summary>
-        public ReadOnlySpan<byte> Key => keyContainer.Get().ReadOnlySpan;
+        public readonly ReadOnlySpan<byte> Key => keyContainer.Get().ReadOnlySpan;
 
         /// <summary>
         /// The input for this pending operation.
         /// </summary>
-        public ref TInput Input => ref inputContainer.Get();
+        public readonly ref TInput Input => ref inputContainer.Get();
 
         /// <summary>
         /// The output for this pending operation. It is the caller's responsibility to dispose this if necessary; <see cref="Dispose()"/> will not try to dispose this member.
@@ -105,8 +104,7 @@ namespace Tsavorite.core
         /// </summary>
         public Status Status;
 
-        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext,
-                Status status, SectorAlignedBufferPool bufferPool)
+        internal void TransferFrom<TStoreFunctions, TAllocator>(ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, Status status)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
         {

@@ -353,6 +353,7 @@ namespace Tsavorite.core
             snapshotFileObjectLogDevice?.Dispose();
             deltaLog?.Dispose();
             deltaFileDevice?.Dispose();
+            objectLogFlushBuffers?.Dispose();
             this = default;
         }
 
