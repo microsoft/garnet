@@ -45,30 +45,30 @@ namespace Garnet.test
             var results = (string[])db.Execute("EXECWITHETAG", "ZADD", "key1", "1", "a", "2", "b");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
-            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // 2 elements added
+            ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // 2 elements added
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
             // Add existing field to sorted set with Etag flag
             results = (string[])db.Execute("EXECWITHETAG", "ZADD", "key1", "1", "a");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // Etag 2
-            ClassicAssert.AreEqual(0, long.Parse(results[1]!)); // 0 elements added
+            ClassicAssert.AreEqual(0, long.Parse(results[0]!)); // 0 elements added
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
             // Add existing field to sorted set without Etag flag
             var result = (string)db.Execute("ZADD", "key1", "2", "b");
             ClassicAssert.AreEqual(0, long.Parse(result!)); // 0 elements added
 
-            // Verify Etag advanced
+            // Verify Etag did not advance
             result = (string)db.Execute("GETETAG", "key1");
-            ClassicAssert.AreEqual(3, long.Parse(result!)); // Etag 3
+            ClassicAssert.AreEqual(1, long.Parse(result!)); // Etag 1
 
             // Add non-existing field to sorted set with Etag flag
             results = (string[])db.Execute("EXECWITHETAG", "ZADD", "key1", "3", "c");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(4, long.Parse(results[0]!)); // Etag 4
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // 1 element added
+            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // 1 element added
+            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // Etag 2
 
             // Add non-existing field to sorted set without Etag flag
             result = (string)db.Execute("ZADD", "key1", "4", "d");
@@ -76,7 +76,7 @@ namespace Garnet.test
 
             // Verify Etag advanced
             result = (string)db.Execute("GETETAG", "key1");
-            ClassicAssert.AreEqual(5, long.Parse(result!)); // Etag 5
+            ClassicAssert.AreEqual(3, long.Parse(result!)); // Etag 3
 
             // Add new sorted set without Etag
             result = (string)db.Execute("ZADD", "key2", "1", "a", "2", "b");
@@ -91,15 +91,15 @@ namespace Garnet.test
             results = (string[])db.Execute("EXECWITHETAG", "ZADD", "key2", "1", "a");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
-            ClassicAssert.AreEqual(0, long.Parse(results[1]!)); // 0 elements added
+            ClassicAssert.AreEqual(0, long.Parse(results[0]!)); // 0 elements added
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
             // Add non-existing field to sorted set with Etag flag
             results = (string[])db.Execute("EXECWITHETAG", "ZADD", "key2", "3", "c");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // Etag 2
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // 1 element added
+            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // 1 element added
+            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // Etag 2
         }
 
         [Test]
@@ -115,8 +115,8 @@ namespace Garnet.test
             var results = (string[])db.Execute("EXECWITHETAG", "ZADD", key, "1", "a", "2", "b", "3", "c");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
-            ClassicAssert.AreEqual(3, long.Parse(results[1]!)); // 3 elements added
+            ClassicAssert.AreEqual(3, long.Parse(results[0]!)); // 3 elements added
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
             // Perform a blocking pop
             var response = lightClientRequest.SendCommand($"BZMPOP 1 1 {key} MIN", 2);
@@ -144,8 +144,8 @@ namespace Garnet.test
             var results = (string[])db.Execute("EXECWITHETAG", "ZADD", key, "1", "a", "2", "b", "3", "c", "4", "d");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
-            ClassicAssert.AreEqual(4, long.Parse(results[1]!)); // 3 elements added
+            ClassicAssert.AreEqual(4, long.Parse(results[0]!)); // 3 elements added
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
             // ZINCRBY
             var score = db.SortedSetIncrement(key, "a", 1);
@@ -182,36 +182,36 @@ namespace Garnet.test
             var results = (string[])db.Execute("EXECIFMATCH", "0", "ZADD", "key1", "1", "a", "2", "b");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
-            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // 2 elements added
+            ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // 2 elements added
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
             // Add new sorted set with Etag when etag matches 1
             results = (string[])db.Execute("EXECIFMATCH", "1", "ZADD", "key2", "1", "a", "2", "b");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // Etag 2
-            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // 2 elements added
+            ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // 2 elements added
+            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // Etag 2
 
             // Add non-existing field to sorted set when etag < 1
             results = (string[])db.Execute("EXECIFGREATER", "1", "ZADD", "key1", "3", "c");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
-            ClassicAssert.AreEqual(0, long.Parse(results[1]!)); // 0 elements added
+            ClassicAssert.IsNull(results[0]); // Command not executed
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
             // Add non-existing field to sorted set when etag < 2
             results = (string[])db.Execute("EXECIFGREATER", "2", "ZADD", "key1", "3", "c");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // Etag 2
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // 1 element added
+            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // 1 element added
+            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // Etag 2
 
             // Add new sorted set with Etag when etag matches 2
             results = (string[])db.Execute("EXECIFMATCH", "2", "ZADD", "key1", "4", "d");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(3, long.Parse(results[0]!)); // Etag 3
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // 1 element added
+            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // 1 element added
+            ClassicAssert.AreEqual(3, long.Parse(results[1]!)); // Etag 3
         }
 
         [Test]
@@ -226,8 +226,8 @@ namespace Garnet.test
             var results = (string[])db.Execute("EXECIFMATCH", "0", "ZREM", "key1", "a");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // 1 element removed
+            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // 1 element removed
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
         }
 
         [Test]  
@@ -244,28 +244,28 @@ namespace Garnet.test
             var results = (string[])db.Execute("EXECIFMATCH", 0, "ZCARD", key);
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(0, long.Parse(results[0]!)); // Etag 0
-            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // Length 2
+            ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // Length 2
+            ClassicAssert.AreEqual(0, long.Parse(results[1]!)); // Etag 0
 
             results = (string[])db.Execute("EXECWITHETAG", "ZADD", key, "1", "a", "2", "b", "3", "c", "4", "d");
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
-            ClassicAssert.AreEqual(2, long.Parse(results[1]!)); // 2 elements added
+            ClassicAssert.AreEqual(2, long.Parse(results[0]!)); // 2 elements added
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
             // Get sorted set length with Etag when etag matches 1
             results = (string[])db.Execute("EXECIFMATCH", 1, "ZCARD", key);
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
-            ClassicAssert.AreEqual(4, long.Parse(results[1]!)); // Length 4
+            ClassicAssert.AreEqual(4, long.Parse(results[0]!)); // Length 4
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
             // Get sorted set length with Etag when etag does not match
             results = (string[])db.Execute("EXECIFMATCH", 2, "ZCARD", key);
             ClassicAssert.IsNotNull(results);
             ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // Etag 1
-            ClassicAssert.IsNull(results[1]); // Null result
+            ClassicAssert.IsNull(results[0]); // Command not executed
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
         }
     }
 }

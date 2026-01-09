@@ -49,9 +49,8 @@ namespace Garnet.server
             {
                 value = GarnetObject.Create(type);
 
-                var updatedEtag = GetUpdatedEtag(LogRecord.NoETag, input.header.MetaCmd, ref input.parseState, out var execCmd, init: true);
-
-                _ = value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, updatedEtag, out _);
+                var updatedEtag = HandleMetaCommandAndOperate(value, ref input, ref output, LogRecord.NoETag, out _, init: true);
+               
                 _ = logRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo);
 
                 // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
@@ -60,6 +59,7 @@ namespace Garnet.server
                     functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
                     return false;
                 }
+
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
 
                 return true;
@@ -139,7 +139,8 @@ namespace Garnet.server
             }
 
             // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
-            var inputHeaderHasEtag = input.header.MetaCmd.IsEtagCommand();
+            var metaCmd = input.header.MetaCmd;
+            var inputHeaderHasEtag = metaCmd.IsEtagCommand();
             var hadETagPreMutation = logRecord.Info.HasETag;
             if (!hadETagPreMutation && inputHeaderHasEtag)
                 return false;
@@ -150,11 +151,8 @@ namespace Garnet.server
 
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var updatedEtag = GetUpdatedEtag(logRecord.ETag, input.header.MetaCmd, ref input.parseState, out var execCmd);
-                shouldUpdateEtag = shouldUpdateEtag && execCmd;
-                Debug.Assert((shouldUpdateEtag && updatedEtag != logRecord.ETag) || (!shouldUpdateEtag && updatedEtag == logRecord.ETag));
-
-                var operateSuccessful = ((IGarnetObject)logRecord.ValueObject).Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, updatedEtag, out sizeChange);
+                var updatedEtag = HandleMetaCommandAndOperate((IGarnetObject)logRecord.ValueObject, ref input, ref output, logRecord.ETag, out sizeChange);
+                shouldUpdateEtag |= (updatedEtag != logRecord.ETag);
 
                 if (output.HasWrongType)
                     return true;
@@ -181,7 +179,7 @@ namespace Garnet.server
                 }
 
                 sizeInfo.AssertOptionals(logRecord.Info);
-                return operateSuccessful;
+                return true;
             }
 
             var garnetValueObject = Unsafe.As<IGarnetObject>(logRecord.ValueObject);
@@ -256,16 +254,10 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
             }
 
-            // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
-            var inputHeaderHasEtag = input.header.MetaCmd.IsEtagCommand();
-
             if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
             {
-                var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, input.header.MetaCmd, ref input.parseState, out var execCmd);
-                shouldUpdateEtag = (shouldUpdateEtag || inputHeaderHasEtag) && execCmd;
-                Debug.Assert((shouldUpdateEtag && updatedEtag != srcLogRecord.ETag) || (!shouldUpdateEtag && updatedEtag == srcLogRecord.ETag));
-
-                value.Operate(ref input, ref output, functionsState.respProtocolVersion, execCmd, updatedEtag, out _);
+                var updatedEtag = HandleMetaCommandAndOperate(value, ref input, ref output, srcLogRecord.ETag, out _);
+                shouldUpdateEtag |= (srcLogRecord.ETag != updatedEtag);
 
                 if (output.HasWrongType)
                     return true;
@@ -317,6 +309,43 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 WriteLogRMW(srcLogRecord.Key, ref input, rmwInfo.Version, rmwInfo.SessionID);
             return true;
+        }
+
+        private long HandleMetaCommandAndOperate(IGarnetObject value, ref ObjectInput input, ref ObjectOutput output,
+            long currEtag, out long sizeChange, bool init = false, bool readOnly = false)
+        {
+            sizeChange = 0;
+
+            var metaCmd = input.header.MetaCmd;
+            var updatedEtag = GetUpdatedEtag(currEtag, metaCmd, ref input.parseState, out var execCmd, init, readOnly);
+
+            var isEtagCmd = metaCmd.IsEtagCommand();
+            var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
+            try
+            {
+                if (isEtagCmd)
+                    writer.WriteArrayLength(2);
+
+                if (execCmd)
+                {
+                    value.Operate(ref input, ref output, ref writer, out sizeChange);
+
+                    if (!readOnly && (currEtag != LogRecord.NoETag) && (output.OutputFlags & OutputFlags.ValueUnchanged) == OutputFlags.ValueUnchanged)
+                        updatedEtag = currEtag;
+                }
+                else
+                    writer.WriteNull();
+
+                if (isEtagCmd)
+                    writer.WriteInt64(updatedEtag);
+            }
+            finally
+            {
+                writer.Dispose();
+            }
+
+            return updatedEtag;
         }
     }
 }

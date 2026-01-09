@@ -121,8 +121,9 @@ namespace Garnet.server
         /// <param name="init">True if method called from initial update context</param>
         /// <param name="parseState">Input parse state</param>
         /// <param name="execCmd">Execute command</param>
+        /// <param name="readOnly">True if method called from read-only context</param>
         /// <returns>Updated etag</returns>
-        public static long GetUpdatedEtag(long currEtag, RespMetaCommand metaCmd, ref SessionParseState parseState, out bool execCmd, bool init = false)
+        public static long GetUpdatedEtag(long currEtag, RespMetaCommand metaCmd, ref SessionParseState parseState, out bool execCmd, bool init = false, bool readOnly = false)
         {
             execCmd = true;
             var updatedEtag = currEtag;
@@ -139,7 +140,7 @@ namespace Garnet.server
                     execCmd = metaCmd.CheckConditionalExecution(currEtag, inputEtag);
             }
 
-            if (execCmd)
+            if (execCmd && !readOnly)
             {
                 updatedEtag = metaCmd switch
                 {

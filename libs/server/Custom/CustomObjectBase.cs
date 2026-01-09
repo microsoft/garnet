@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System.IO;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -75,9 +76,11 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public sealed override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                            byte respProtocolVersion, bool execOp, long updatedEtag, out long sizeChange)
+                                            ref RespMemoryWriter writer, out long sizeChange)
         {
             sizeChange = 0;
+
+            var respProtocolVersion = (byte)2;
 
             switch (input.header.cmd)
             {

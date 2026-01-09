@@ -37,21 +37,12 @@ namespace Garnet.server
                     if (srcLogRecord.Info.HasETag)
                         ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
-                    var execCmd = true;
-                    var metaCmd = input.header.MetaCmd;
-
-                    if (metaCmd.IsEtagCondExecCommand())
-                    {
-                        var inputEtag = input.parseState.GetLong(0, isMetaArg: true);
-                        execCmd = metaCmd.CheckConditionalExecution(srcLogRecord.ETag, inputEtag);
-                    }
-
-                    var opResult = garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, execOp: execCmd, srcLogRecord.ETag, out _);
+                    _ = HandleMetaCommandAndOperate(garnetObject, ref input, ref output, srcLogRecord.ETag, out _, readOnly: true);
 
                     if (srcLogRecord.Info.HasETag)
                         ETagState.ResetState(ref functionsState.etagState);
 
-                    return output.HasWrongType || opResult;
+                    return true;
                 }
 
                 if (IncorrectObjectType(ref input, (IGarnetObject)srcLogRecord.ValueObject, ref output.SpanByteAndMemory))

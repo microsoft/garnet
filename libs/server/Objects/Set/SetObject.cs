@@ -122,7 +122,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                     byte respProtocolVersion, bool execOp, long updatedEtag, out long memorySizeChange)
+                                     ref RespMemoryWriter writer, out long memorySizeChange)
         {
             memorySizeChange = 0;
 
@@ -134,6 +134,7 @@ namespace Garnet.server
                 return true;
             }
 
+            var respProtocolVersion = (byte)2;
             var prevMemorySize = HeapMemorySize;
             switch (input.header.SetOp)
             {

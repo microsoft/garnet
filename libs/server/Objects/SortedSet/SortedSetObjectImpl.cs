@@ -36,7 +36,7 @@ namespace Garnet.server
             InfiniteMax = 2
         }
 
-        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, bool execOp, long updatedEtag, byte respProtocolVersion)
+        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
 
@@ -45,197 +45,158 @@ namespace Garnet.server
 
             var options = SortedSetAddOption.None;
             var currTokenIdx = 0;
-            var metaCmd = input.header.MetaCmd;
 
-            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
-            try
+            // Try to parse a Score field
+            var isFirstScoreParsed = false;
+            if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
             {
-                // Try to parse a Score field
-                var isFirstScoreParsed = false;
-                var continueProcessingInput = true;
-                if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
-                {
-                    // Try to get and validate options before the Score field, if any
-                    options = input.parseState.GetSortedSetAddOptions(currTokenIdx, out var nextIdxStep);
-                    currTokenIdx += nextIdxStep;
-                }
-                else
-                {
-                    isFirstScoreParsed = true;
-                    currTokenIdx++;
-                }
+                // Try to get and validate options before the Score field, if any
+                options = input.parseState.GetSortedSetAddOptions(currTokenIdx, out var nextIdxStep);
+                currTokenIdx += nextIdxStep;
+            }
+            else
+            {
+                isFirstScoreParsed = true;
+                currTokenIdx++;
+            }
 
-                if (!execOp)
-                    continueProcessingInput = false;
-
-                if (continueProcessingInput)
+            while (currTokenIdx < input.parseState.Count)
+            {
+                if (!isFirstScoreParsed)
                 {
-                    while (currTokenIdx < input.parseState.Count)
+                    if (!input.parseState.TryGetDouble(currTokenIdx++, out score))
                     {
-                        if (!isFirstScoreParsed)
-                        {
-                            if (!input.parseState.TryGetDouble(currTokenIdx++, out score))
-                            {
-                                // Invalid Score encountered
-                                writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
-                                return;
-                            }
-                        }
-                        else
-                        {
-                            isFirstScoreParsed = false;
-                        }
-
-                        // Member
-                        var memberSpan = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                        var member = memberSpan.ToArray();
-
-                        // Add new member
-                        if (!sortedSetDict.TryGetValue(member, out var scoreStored))
-                        {
-                            // Don't add new member if XX flag is set
-                            if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
-
-                            incrResult = score;
-                            sortedSetDict.Add(member, score);
-                            if (sortedSet.Add((score, member)))
-                                addedOrChanged++;
-
-                            UpdateSize(memberSpan);
-                        }
-                        // Update existing member
-                        else
-                        {
-                            // Update new score if INCR flag is set
-                            if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
-                            {
-                                score += scoreStored;
-                                incrResult = score;
-
-                                if (double.IsNaN(score))
-                                {
-                                    writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
-                                    return;
-                                }
-                            }
-
-                            // No need for update
-                            if (score == scoreStored)
-                            {
-                                _ = TryRemoveExpiration(member);
-                                continue;
-                            }
-
-                            // Don't update existing member if NX flag is set
-                            // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
-                            if ((options & SortedSetAddOption.NX) == SortedSetAddOption.NX ||
-                                ((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && scoreStored > score) ||
-                                ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score))
-                            {
-                                if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
-                                {
-                                    writer.WriteNullWithEtagIfNeeded(metaCmd, updatedEtag);
-                                    return;
-                                }
-
-                                continue;
-                            }
-
-                            sortedSetDict[member] = score;
-                            var success = sortedSet.Remove((scoreStored, member));
-                            Debug.Assert(success);
-                            success = sortedSet.Add((score, member));
-                            _ = TryRemoveExpiration(member);
-                            Debug.Assert(success);
-
-                            // If CH flag is set, add changed member to final count
-                            if ((options & SortedSetAddOption.CH) == SortedSetAddOption.CH)
-                                addedOrChanged++;
-                        }
+                        // Invalid Score encountered
+                        writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                        output.OutputFlags |= OutputFlags.ValueUnchanged;
+                        return;
                     }
                 }
-
-                if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
-                {
-                    writer.WriteDoubleNumericWithEtagIfNeeded(incrResult, metaCmd, updatedEtag);
-                }
                 else
                 {
-                    writer.WriteInt32WithEtagIfNeeded(addedOrChanged, metaCmd, updatedEtag);
+                    isFirstScoreParsed = false;
+                }
+
+                // Member
+                var memberSpan = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                var member = memberSpan.ToArray();
+
+                // Add new member
+                if (!sortedSetDict.TryGetValue(member, out var scoreStored))
+                {
+                    // Don't add new member if XX flag is set
+                    if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
+
+                    incrResult = score;
+                    sortedSetDict.Add(member, score);
+                    if (sortedSet.Add((score, member)))
+                        addedOrChanged++;
+
+                    UpdateSize(memberSpan);
+                }
+                // Update existing member
+                else
+                {
+                    // Update new score if INCR flag is set
+                    if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
+                    {
+                        score += scoreStored;
+                        incrResult = score;
+
+                        if (double.IsNaN(score))
+                        {
+                            output.OutputFlags |= OutputFlags.ValueUnchanged;
+                            writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
+                            return;
+                        }
+                    }
+
+                    // No need for update
+                    if (score == scoreStored)
+                    {
+                        _ = TryRemoveExpiration(member);
+                        continue;
+                    }
+
+                    // Don't update existing member if NX flag is set
+                    // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
+                    if ((options & SortedSetAddOption.NX) == SortedSetAddOption.NX ||
+                        ((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && scoreStored > score) ||
+                        ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score))
+                    {
+                        if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
+                        {
+                            writer.WriteNull();
+                            output.OutputFlags |= OutputFlags.ValueUnchanged;
+                            return;
+                        }
+
+                        continue;
+                    }
+
+                    sortedSetDict[member] = score;
+                    var success = sortedSet.Remove((scoreStored, member));
+                    Debug.Assert(success);
+                    success = sortedSet.Add((score, member));
+                    _ = TryRemoveExpiration(member);
+                    Debug.Assert(success);
+
+                    // If CH flag is set, add changed member to final count
+                    if ((options & SortedSetAddOption.CH) == SortedSetAddOption.CH)
+                        addedOrChanged++;
                 }
             }
-            finally
+
+            if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
             {
-                writer.Dispose();
+                writer.WriteDoubleNumeric(incrResult);
+            }
+            else
+            {
+                writer.WriteInt32(addedOrChanged);
+                
+                if (addedOrChanged == 0)
+                    output.OutputFlags |= OutputFlags.ValueUnchanged;
             }
         }
 
-        private void SortedSetRemove(ref ObjectInput input, ref ObjectOutput output, bool execOp, long updatedEtag, byte respProtocolVersion)
+        private void SortedSetRemove(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
+            DeleteExpiredItems();
+
             var removedItems = 0;
-            if (execOp)
+
+            for (var i = 0; i < input.parseState.Count; i++)
             {
-                DeleteExpiredItems();
+                var value = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
+                var valueArray = value.ToArray();
 
-                for (var i = 0; i < input.parseState.Count; i++)
-                {
-                    var value = input.parseState.GetArgSliceByRef(i).ReadOnlySpan;
-                    var valueArray = value.ToArray();
+                if (!sortedSetDict.Remove(valueArray, out var key))
+                    continue;
 
-                    if (!sortedSetDict.Remove(valueArray, out var key))
-                        continue;
+                removedItems++;
+                sortedSet.Remove((key, valueArray));
+                _ = TryRemoveExpiration(valueArray);
 
-                    removedItems++;
-                    sortedSet.Remove((key, valueArray));
-                    _ = TryRemoveExpiration(valueArray);
-
-                    this.UpdateSize(value, false);
-                }
+                this.UpdateSize(value, false);
             }
 
-            var metaCmd = input.header.MetaCmd;
+            writer.WriteInt32(removedItems);
 
-            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-            try
-            {
-                writer.WriteInt32WithEtagIfNeeded(removedItems, metaCmd, updatedEtag);
-            }
-            finally
-            {
-                writer.Dispose();
-            }
+            if (removedItems == 0)
+                output.OutputFlags |= OutputFlags.ValueUnchanged;
 
             output.Header.result1 = removedItems;
         }
 
-        private void SortedSetLength(ref ObjectInput input, ref ObjectOutput output, bool execOp, long updatedEtag, byte respProtocolVersion)
+        private void SortedSetLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             // Check both objects
             Debug.Assert(sortedSetDict.Count == sortedSet.Count, "SortedSet object is not in sync.");
 
-            var metaCmd = input.header.MetaCmd;
-
-            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
-            try
-            {
-                if (execOp)
-                {
-                    var length = Count();
-                    writer.WriteInt64WithEtagIfNeeded(length, metaCmd, updatedEtag);
-                    output.Header.result1 = length;
-                }
-                else
-                {
-                    writer.WriteNullWithEtagIfNeeded(metaCmd, updatedEtag);
-                    output.Header.result1 = 0;
-                }
-            }
-            finally
-            {
-                writer.Dispose();
-            }
+            var length = Count();
+            writer.WriteInt64(length);
+            output.Header.result1 = length;
         }
 
         private void SortedSetScore(ref ObjectInput input, ref ObjectOutput output, bool execOp, long updatedEtag, byte respProtocolVersion)
@@ -675,7 +636,6 @@ namespace Garnet.server
             var metaCmd = input.header.MetaCmd;
 
             var member = input.parseState.GetArgSliceByRef(0).ToArray();
-
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             try

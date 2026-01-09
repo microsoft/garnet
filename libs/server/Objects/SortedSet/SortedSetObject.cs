@@ -320,7 +320,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                     byte respProtocolVersion, bool execOp, long updatedEtag, out long memorySizeChange)
+                                     ref RespMemoryWriter writer, out long memorySizeChange)
         {
             memorySizeChange = 0;
             
@@ -335,82 +335,83 @@ namespace Garnet.server
 
             var prevMemorySize = HeapMemorySize;
             var op = header.SortedSetOp;
+
             switch (op)
             {
                 case SortedSetOperation.ZADD:
-                    SortedSetAdd(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                    SortedSetAdd(ref input, ref output, ref writer);
                     break;
                 case SortedSetOperation.ZREM:
-                    SortedSetRemove(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                    SortedSetRemove(ref input, ref output, ref writer);
                     break;
                 case SortedSetOperation.ZCARD:
-                    SortedSetLength(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                    SortedSetLength(ref input, ref output, ref writer);
                     break;
-                case SortedSetOperation.ZPOPMIN:
-                case SortedSetOperation.ZPOPMAX:
-                    SortedSetPopMinOrMaxCount(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZSCORE:
-                    SortedSetScore(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZMSCORE:
-                    SortedSetScores(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZCOUNT:
-                    SortedSetCount(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZINCRBY:
-                    SortedSetIncrement(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZRANK:
-                case SortedSetOperation.ZREVRANK:
-                    SortedSetRank(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZEXPIRE:
-                    SortedSetExpire(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZTTL:
-                    SortedSetTimeToLive(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZPERSIST:
-                    SortedSetPersist(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZCOLLECT:
-                    SortedSetCollect(ref output);
-                    break;
-                case SortedSetOperation.GEOADD:
-                    GeoAdd(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.GEOHASH:
-                    GeoHash(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.GEODIST:
-                    GeoDistance(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.GEOPOS:
-                    GeoPosition(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZRANGE:
-                    SortedSetRange(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZREMRANGEBYLEX:
-                    SortedSetRemoveOrCountRangeByLex(ref input, ref output, op);
-                    break;
-                case SortedSetOperation.ZREMRANGEBYRANK:
-                    SortedSetRemoveRangeByRank(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZREMRANGEBYSCORE:
-                    SortedSetRemoveRangeByScore(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZLEXCOUNT:
-                    SortedSetRemoveOrCountRangeByLex(ref input, ref output, op);
-                    break;
-                case SortedSetOperation.ZRANDMEMBER:
-                    SortedSetRandomMember(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZSCAN:
-                    Scan(ref input, ref output, respProtocolVersion);
-                    break;
+                //case SortedSetOperation.ZPOPMIN:
+                //case SortedSetOperation.ZPOPMAX:
+                //    SortedSetPopMinOrMaxCount(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZSCORE:
+                //    SortedSetScore(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZMSCORE:
+                //    SortedSetScores(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZCOUNT:
+                //    SortedSetCount(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZINCRBY:
+                //    SortedSetIncrement(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZRANK:
+                //case SortedSetOperation.ZREVRANK:
+                //    SortedSetRank(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZEXPIRE:
+                //    SortedSetExpire(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZTTL:
+                //    SortedSetTimeToLive(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZPERSIST:
+                //    SortedSetPersist(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZCOLLECT:
+                //    SortedSetCollect(ref output);
+                //    break;
+                //case SortedSetOperation.GEOADD:
+                //    GeoAdd(ref input, ref output, execOp, updatedEtag, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.GEOHASH:
+                //    GeoHash(ref input, ref output, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.GEODIST:
+                //    GeoDistance(ref input, ref output, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.GEOPOS:
+                //    GeoPosition(ref input, ref output, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZRANGE:
+                //    SortedSetRange(ref input, ref output, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZREMRANGEBYLEX:
+                //    SortedSetRemoveOrCountRangeByLex(ref input, ref output, op);
+                //    break;
+                //case SortedSetOperation.ZREMRANGEBYRANK:
+                //    SortedSetRemoveRangeByRank(ref input, ref output, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZREMRANGEBYSCORE:
+                //    SortedSetRemoveRangeByScore(ref input, ref output, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZLEXCOUNT:
+                //    SortedSetRemoveOrCountRangeByLex(ref input, ref output, op);
+                //    break;
+                //case SortedSetOperation.ZRANDMEMBER:
+                //    SortedSetRandomMember(ref input, ref output, respProtocolVersion);
+                //    break;
+                //case SortedSetOperation.ZSCAN:
+                //    Scan(ref input, ref output, respProtocolVersion);
+                //    break;
                 default:
                     throw new GarnetException($"Unsupported operation {op} in {nameof(SortedSetObject)}.{nameof(Operate)}");
             }

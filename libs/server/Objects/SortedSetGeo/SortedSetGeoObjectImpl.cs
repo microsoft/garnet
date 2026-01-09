@@ -27,7 +27,7 @@ namespace Garnet.server
             public (double Latitude, double Longitude) Coordinates;
         }
 
-        private void GeoAdd(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void GeoAdd(ref ObjectInput input, ref ObjectOutput output, bool execOp, long updatedEtag, byte respProtocolVersion)
         {
             DeleteExpiredItems();
 

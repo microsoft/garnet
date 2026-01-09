@@ -182,7 +182,7 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new HashObject(hash, expirationTimes, expirationQueue, HeapMemorySize);
 
         /// <inheritdoc />
-        public override bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, bool execOp, long updatedEtag, out long memorySizeChange)
+        public override bool Operate(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer, out long memorySizeChange)
         {
             memorySizeChange = 0;
 
@@ -193,6 +193,8 @@ namespace Garnet.server
                 output.SpanByteAndMemory.Length = 0;
                 return true;
             }
+
+            var respProtocolVersion = (byte)2;
 
             var previousMemorySize = HeapMemorySize;
             switch (input.header.HashOp)
