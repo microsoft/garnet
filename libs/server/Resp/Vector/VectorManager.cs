@@ -44,6 +44,8 @@ namespace Garnet.server
         internal const long VREMAppendLogArg = RecreateIndexArg + 1;
         internal const long MigrateElementKeyLogArg = VREMAppendLogArg + 1;
         internal const long MigrateIndexKeyLogArg = MigrateElementKeyLogArg + 1;
+        internal const long VSETATTRAppendLogArg = MigrateIndexKeyLogArg + 1;
+
 
         /// <summary>
         /// Minimum size of an id is assumed to be at least 4 bytes + a length prefix.
@@ -692,6 +694,36 @@ namespace Garnet.server
             return VectorManagerResult.OK;
         }
 
+        /// <summary>
+        /// Fetch attributes for a single element id.
+        /// 
+        /// This must only be called while holding locks which prevent the Vector Set from being dropped.
+        /// 
+        /// IMPORTANT: outputAttributes may be replaced with an allocated memory, so the caller needs to check
+        /// if the buffer is stack-based or heap-based, and dispose if it's the latter.
+        /// </summary>
+        internal VectorManagerResult FetchSingleVectorElementAttributes(ReadOnlySpan<byte> indexValue, SpanByte elementId, ref SpanByteAndMemory outputAttributes)
+        {
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _);
+            var found = ReadSizeUnknown(context | DiskANNService.Attributes, elementId.AsReadOnlySpan(), ref outputAttributes);
+            return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
+        }
+
+        /// Add a vector to a vector set encoded by <paramref name="indexValue"/>.
+        /// 
+        /// Assumes that the index is locked in the Tsavorite store.
+        /// </summary>
+        /// <returns>Result of the operation.</returns>
+        internal VectorManagerResult TryUpdateElementAttributes(
+            scoped ReadOnlySpan<byte> indexValue,
+            ReadOnlySpan<byte> element,
+            ReadOnlySpan<byte> attributes)
+        {
+            AssertHaveStorageSession();
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out var indexPtr, out _);
+            var found = Service.TryUpdateAtttributes(context, indexPtr, element, attributes);
+            return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
+        }
 
         /// <summary>
         /// Fetch attributes for a given set of element ids.
