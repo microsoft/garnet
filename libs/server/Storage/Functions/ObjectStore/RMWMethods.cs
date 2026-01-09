@@ -320,7 +320,8 @@ namespace Garnet.server
             var updatedEtag = GetUpdatedEtag(currEtag, metaCmd, ref input.parseState, out var execCmd, init, readOnly);
 
             var isEtagCmd = metaCmd.IsEtagCommand();
-            var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+            var respProtocolVersion = GetRespProtocolVersion(ref input);
+            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             try
             {
@@ -346,6 +347,18 @@ namespace Garnet.server
             }
 
             return updatedEtag;
+        }
+
+        private byte GetRespProtocolVersion(ref ObjectInput input)
+        {
+            return input.header.SortedSetOp switch
+            {
+                SortedSetOperation.ZINCRBY or
+                SortedSetOperation.ZPOPMIN or
+                SortedSetOperation.ZPOPMAX => input.arg2 > 0 ? (byte)input.arg2 : functionsState.respProtocolVersion,
+                SortedSetOperation.ZRANGE => ((SortedSetRangeOptions)input.arg2 & SortedSetRangeOptions.Store) != 0 ? (byte)2 : functionsState.respProtocolVersion,
+                _ => functionsState.respProtocolVersion
+            };
         }
     }
 }

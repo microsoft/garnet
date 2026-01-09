@@ -89,12 +89,12 @@ namespace Garnet.server
             => storageSession.SortedSetCount(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.SortedSetLengthByValue(key, ref input, out output, ref objectContext);
+        public GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.SortedSetLengthByValue(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetRemoveRangeByLex(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.SortedSetRemoveRangeByLex(key, ref input, out output, ref objectContext);
+        public GarnetStatus SortedSetRemoveRangeByLex(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.SortedSetRemoveRangeByLex(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetRemoveRangeByLex(PinnedSpanByte key, string min, string max, out int countRemoved)

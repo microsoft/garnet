@@ -649,16 +649,16 @@ namespace Garnet.server
             long etag = hasETag ? functionsState.etagState.ETag : LogRecord.NoETag;
 
             // here we know the value span has first bytes set to etag so we hardcode skipping past the bytes for the etag below
-            // *2\r\n :(etag digits)\r\n $(val Len digits)\r\n (value len)\r\n
-            desiredLength += 1 + NumUtils.CountDigits(etag) + 2 + 1 + NumUtils.CountDigits(valueLength) + 2 + valueLength + 2;
+            // *2\r\n $(val Len digits)\r\n (value len)\r\n :(etag digits)\r\n
+            desiredLength += 1 + NumUtils.CountDigits(valueLength) + 2 + valueLength + 2 + 1 + NumUtils.CountDigits(etag) + 2;
 
             WriteValueAndEtagToDst(desiredLength, value, etag, ref dst, memoryPool);
         }
 
         static void WriteValueAndEtagToDst(ReadOnlySpan<byte> result, long etag, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool, bool writeDirect = false)
         {
-            // *2\r\n + : + <numDigitsInEtag> + \r\n + <result.Length>
-            var desiredLength = 4 + 1 + NumUtils.CountDigits(etag) + 2 + result.Length;
+            // *2\r\n + <result.Length> + : + <numDigitsInEtag> + \r\n
+            var desiredLength = 4 + result.Length + 1 + NumUtils.CountDigits(etag) + 2;
 
             WriteValueAndEtagToDst(desiredLength, result, etag, ref dst, memoryPool, writeDirect);
         }

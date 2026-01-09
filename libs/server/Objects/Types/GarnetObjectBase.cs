@@ -60,11 +60,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input"></param>
         /// <param name="output"></param>
-        /// <param name="respProtocolVersion"></param>
-        protected unsafe void Scan(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        /// <param name="writer"></param>
+        protected unsafe void Scan(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             if (ReadScanInput(ref input, ref output.SpanByteAndMemory, out var cursorInput, out var pattern,
                               out var patternLength, out var limitCount, out var isNoValue, out var error))
             {

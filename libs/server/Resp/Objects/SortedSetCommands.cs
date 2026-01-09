@@ -636,25 +636,18 @@ namespace Garnet.server
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: 1) { SortedSetOp = op };
 
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
             var status = op == SortedSetOperation.ZREMRANGEBYLEX ?
-                storageApi.SortedSetRemoveRangeByLex(key, ref input, out var output) :
-                storageApi.SortedSetLengthByValue(key, ref input, out output);
+                storageApi.SortedSetRemoveRangeByLex(key, ref input, ref output) :
+                storageApi.SortedSetLengthByValue(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
                     // Process response
-                    if (output.result1 == int.MaxValue)
-                    {
-                        // Error in arguments
-                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else if (output.result1 == int.MinValue)  // command partially executed
-                        return false;
-                    else
-                        while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                            SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
