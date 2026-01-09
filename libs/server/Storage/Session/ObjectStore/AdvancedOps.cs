@@ -6,9 +6,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     sealed partial class StorageSession : IDisposable
     {
         public GarnetStatus RMW_ObjectStore<TObjectContext>(ReadOnlySpan<byte> key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)

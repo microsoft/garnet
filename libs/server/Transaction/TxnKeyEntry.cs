@@ -8,9 +8,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     /// <summary>
     /// Entry for a key to lock and unlock in transactions
     /// </summary>

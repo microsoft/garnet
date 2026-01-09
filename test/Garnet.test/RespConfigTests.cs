@@ -13,9 +13,6 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     /// <summary>
     /// Test dynamically changing server configuration using CONFIG SET command.
     /// </summary>

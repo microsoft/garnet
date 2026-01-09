@@ -6,9 +6,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     internal sealed class TxnKeyComparison
     {
         public TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> UnifiedTransactionalContext;

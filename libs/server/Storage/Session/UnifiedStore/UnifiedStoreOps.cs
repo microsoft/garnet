@@ -8,9 +8,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-#pragma warning disable IDE0065 // Misplaced using directive
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
 
     sealed partial class StorageSession : IDisposable
     {

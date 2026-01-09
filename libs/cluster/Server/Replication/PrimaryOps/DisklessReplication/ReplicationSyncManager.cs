@@ -250,7 +250,7 @@ namespace Garnet.cluster
                         // to avoid waiting for other replicas which may need to receive the latest checkpoint
                         if (!Sessions[i].NeedToFullSync())
                         {
-                            Sessions[i]?.SetStatus(SyncStatus.SUCCESS, "Partial sync");
+                            Sessions[i]?.SetStatus(SyncStatus.SUCCESS);
                             Sessions[i] = null;
                         }
                         else
@@ -277,15 +277,15 @@ namespace Garnet.cluster
             // Stream Diskless
             async Task TakeStreamingCheckpoint()
             {
-                // Main snapshot iterator manager
+                // Store snapshot iterator manager
                 var manager = new SnapshotIteratorManager(this, cts.Token, logger);
 
-                // Iterate through main store
+                // Iterate through store
                 var mainStoreCheckpointTask = ClusterProvider.storeWrapper.store.
                     TakeFullCheckpointAsync(CheckpointType.StreamingSnapshot, cancellationToken: cts.Token, streamingSnapshotIteratorFunctions: manager.StoreSnapshotIterator);
 
-                var result = await WaitOrDie(checkpointTask: mainStoreCheckpointTask, iteratorManager: manager);
-                if (!result.success)
+                var (success, _) = await WaitOrDie(checkpointTask: mainStoreCheckpointTask, iteratorManager: manager);
+                if (!success)
                     throw new GarnetException("Main store checkpoint stream failed!");
 
                 // Note: We do not truncate the AOF here as this was just a "virtual" checkpoint
@@ -323,6 +323,8 @@ namespace Garnet.cluster
                     catch (Exception ex)
                     {
                         logger?.LogError(ex, "{method} faulted", nameof(WaitOrDie));
+                        for (var i = 0; i < NumSessions; i++)
+                            Sessions[i]?.SetStatus(SyncStatus.FAILED, ex.Message);
                         cts.Cancel();
                     }
 

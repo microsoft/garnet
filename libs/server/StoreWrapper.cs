@@ -19,9 +19,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     /// <summary>
     /// Wrapper for store and store-specific information
     /// </summary>   

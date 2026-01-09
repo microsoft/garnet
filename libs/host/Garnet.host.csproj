@@ -45,6 +45,16 @@
 		<None Include="..\..\README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
+	<!-- Define compilation symbol for server project -->
+	<PropertyGroup>
+		<DefineConstants>$(DefineConstants);HOST_PROJECT</DefineConstants>
+	</PropertyGroup>
+
+	<!-- Include shared global usings file for server projects -->
+	<ItemGroup>
+		<Compile Include="$(MSBuildThisFileDirectory)../../libs/GlobalUsings.cs" Link="GlobalUsings.cs" />
+	</ItemGroup>	
+
 	<PropertyGroup>
 		<NoWarn>$(NoWarn);NU5118</NoWarn>
 	</PropertyGroup>
