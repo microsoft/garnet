@@ -557,5 +557,103 @@ namespace Garnet.test.cluster
                 Assert.That(nodes_count, Is.EqualTo(context.clusterTestUtils.ClusterNodes(i).Nodes.Count));
             }
         }
+
+        [Test, CancelAfter(60_000)]
+        public void ReplicaWithHashslotAfterFailovers(CancellationToken cancellationToken)
+        {
+            var nodes_count = 4;
+            context.CreateInstances(
+                nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                timeout: timeout,
+                OnDemandCheckpoint: true,
+                FastAofTruncate: true,
+                CommitFrequencyMs: -1,
+                useAofNullDevice: true);
+            context.CreateConnection();
+
+            context.clusterTestUtils.SetConfigEpoch(0, 1);
+            context.clusterTestUtils.SetConfigEpoch(1, 2);
+            context.clusterTestUtils.SetConfigEpoch(2, 3);
+            context.clusterTestUtils.SetConfigEpoch(3, 4);
+
+            context.clusterTestUtils.AddSlotsRange(0, [(0, 8191)], logger: context.logger);
+            context.clusterTestUtils.AddSlotsRange(1, [(8192, 16383)], logger: context.logger);
+
+            context.clusterTestUtils.Meet(1, 0, logger: context.logger);
+            context.clusterTestUtils.Meet(2, 0, logger: context.logger);
+            context.clusterTestUtils.Meet(3, 0, logger: context.logger);
+            context.clusterTestUtils.WaitClusterNodesSync(0, 4, context.logger);
+
+            context.clusterTestUtils.ClusterReplicate(2, 0, logger: context.logger);
+            context.clusterTestUtils.ClusterReplicate(3, 1, logger: context.logger);
+
+            context.clusterTestUtils.WaitClusterNodesSync(2, 4, context.logger);
+            context.clusterTestUtils.WaitClusterNodesSync(3, 4, context.logger);
+
+            for (int i = 0; i < nodes_count; i++)
+            {
+                Assert.That(nodes_count, Is.EqualTo(context.clusterTestUtils.ClusterNodes(i).Nodes.Count));
+            }
+
+            for (int failoverCount = 0; failoverCount < 10; failoverCount++)
+            {
+                //PrintClusterView(context);
+
+                var index = IndexOfRandomReplica(context, nodes_count);
+                Console.WriteLine($"Failover on node {index}");
+                context.clusterTestUtils.ClusterFailover(index);
+                context.clusterTestUtils.WaitClusterNodesSync(index, 4, context.logger);
+
+                for (int i = 0; i < nodes_count; i++)
+                {
+                    var result = context.clusterTestUtils.ClusterNodes(i);
+                    foreach (var node in result.Nodes)
+                    {
+                        if (node.Slots.Count > 0 && node.IsReplica)
+                        {
+                            Console.WriteLine("cluster view before failure: ");
+                            Console.WriteLine($"replica with hashslots: {node.Raw}");
+                            PrintClusterView(context);
+
+                            Assert.Fail($"Failed, there's a replica with hashslots: {node.Raw}");
+                        }
+                    }
+                }
+
+                // wait a bit and then run another failover.
+                Thread.Sleep(100);
+            }
+        }
+
+        private static void PrintClusterView(ClusterTestContext context)
+        {
+            Console.WriteLine("=================================");
+            for (int i = 0; i < context.clusterTestUtils.ClusterNodes(0).Nodes.Count; i++)
+            {
+                Console.WriteLine($"Cluster view from node {i}:");
+                var nodes = context.clusterTestUtils.ClusterNodes(i);
+                foreach (var node in nodes.Nodes)
+                {
+                    Console.WriteLine(node.Raw);
+                }
+            }
+        }
+
+        private static int IndexOfRandomReplica(ClusterTestContext context, int nodeCount)
+        {
+            List<int> replicaIndexes = [];
+
+            for (int i = 0; i < nodeCount; i++)
+            {
+                if (context.clusterTestUtils.ClusterNodes(i).Nodes.First().IsReplica)
+                {
+                    replicaIndexes.Add(i);
+                }
+            }
+
+            return replicaIndexes[Random.Shared.Next(replicaIndexes.Count)];
+        }
     }
 }
