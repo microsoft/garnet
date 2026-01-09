@@ -2,7 +2,7 @@ cmake_minimum_required (VERSION 3.2.2)
 
 set(CMAKE_CXX_STANDARD 14)
 
-project(Garnet)
+project(Tsavorite)
 
 OPTION(USE_URING "Enable io_uring based IO handler" OFF)
 

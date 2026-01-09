@@ -20,7 +20,7 @@ namespace Tsavorite.core
         /// <remarks>
         /// SAFETY: The <paramref name="stackVar"/> MUST be non-movable, such as on the stack.
         /// </remarks>
-        public static unsafe Span<byte> FromPinnedVariable<T>(ref T stackVar) where T : unmanaged
+        public static Span<byte> FromPinnedVariable<T>(ref T stackVar) where T : unmanaged
             => new(Unsafe.AsPointer(ref stackVar), Unsafe.SizeOf<T>());
 
         /// <summary>
@@ -89,21 +89,11 @@ namespace Tsavorite.core
         /// SAFETY: The <paramref name="destination"/> MUST point to pinned memory of at least source.TotalSize().
         /// </remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SerializeTo(this ReadOnlySpan<byte> source, byte* destination)
+        public static void SerializeTo(this ReadOnlySpan<byte> source, byte* destination, int destinationSize)
         {
             *(int*)destination = source.Length;
-            source.CopyTo(new Span<byte>(destination + sizeof(int), source.Length));
+            source.CopyTo(new Span<byte>(destination + sizeof(int), destinationSize - sizeof(int)));
         }
-
-        /// <summary>
-        /// Copy serialized version to specified memory location
-        /// </summary>
-        /// <remarks>
-        /// SAFETY: The <paramref name="destination"/> MUST point to pinned memory of at least source.TotalSize().
-        /// </remarks>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SerializeTo(this Span<byte> source, byte* destination)
-            => ((ReadOnlySpan<byte>)source).SerializeTo(destination);
 
         /// <summary>
         /// Copy serialized version to specified memory location
@@ -119,16 +109,6 @@ namespace Tsavorite.core
             Unsafe.As<byte, int>(ref destination[0]) = source.Length;
             source.CopyTo(destination.Slice(sizeof(int)));
         }
-
-        /// <summary>
-        /// Copy serialized version to specified memory location
-        /// </summary>
-        /// <remarks>
-        /// SAFETY: The <paramref name="destination"/> MUST point to pinned memory of at least source.TotalSize().
-        /// </remarks>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static void SerializeTo(this Span<byte> source, Span<byte> destination)
-            => ((ReadOnlySpan<byte>)source).SerializeTo(destination);
 
         /// <summary>Length-limited string representation of a Span</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

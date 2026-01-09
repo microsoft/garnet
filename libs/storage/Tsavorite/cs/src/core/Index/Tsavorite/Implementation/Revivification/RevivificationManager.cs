@@ -10,12 +10,12 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        internal FreeRecordPool<TStoreFunctions, TAllocator> FreeRecordPool;
-        internal readonly bool UseFreeRecordPool => FreeRecordPool is not null;
+        internal FreeRecordPool<TStoreFunctions, TAllocator> freeRecordPool;
+        internal readonly bool UseFreeRecordPool => freeRecordPool is not null;
 
         internal RevivificationStats stats = new();
 
-        internal bool IsEnabled => revivSuspendCount == 0;
+        internal readonly bool IsEnabled => revivSuspendCount == 0;
         internal bool restoreDeletedRecordsIfBinIsFull;
         internal bool useFreeRecordPoolForCTT;
 
@@ -43,7 +43,7 @@ namespace Tsavorite.core
             revivSuspendCount = 0;
             if (revivSettings.FreeRecordBins?.Length > 0)
             {
-                FreeRecordPool = new FreeRecordPool<TStoreFunctions, TAllocator>(store, revivSettings);
+                freeRecordPool = new FreeRecordPool<TStoreFunctions, TAllocator>(store, revivSettings);
                 restoreDeletedRecordsIfBinIsFull = revivSettings.RestoreDeletedRecordsIfBinIsFull;
                 useFreeRecordPoolForCTT = revivSettings.UseFreeRecordPoolForCopyToTail;
             }
@@ -55,14 +55,14 @@ namespace Tsavorite.core
 
         // Method redirectors
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryAdd(long logicalAddress, ref LogRecord logRecord, ref RevivificationStats revivStats)
-            => UseFreeRecordPool && FreeRecordPool.TryAdd(logicalAddress, ref logRecord, ref revivStats);
+        public readonly bool TryAdd(long logicalAddress, ref LogRecord logRecord, ref RevivificationStats revivStats)
+            => UseFreeRecordPool && freeRecordPool.TryAdd(logicalAddress, ref logRecord, ref revivStats);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryTake(in RecordSizeInfo sizeInfo, long minAddress, out long address, ref RevivificationStats revivStats)
+        public readonly bool TryTake(int actualInlineRecordSize, long minAddress, out long address, ref RevivificationStats revivStats)
         {
             if (UseFreeRecordPool)
-                return FreeRecordPool.TryTake(in sizeInfo, minAddress, out address, ref revivStats);
+                return freeRecordPool.TryTake(actualInlineRecordSize, minAddress, out address, ref revivStats);
             address = 0;
             return false;
         }
@@ -70,7 +70,7 @@ namespace Tsavorite.core
         public void Dispose()
         {
             if (UseFreeRecordPool)
-                FreeRecordPool.Dispose();
+                freeRecordPool.Dispose();
         }
     }
 }
