@@ -80,13 +80,11 @@ namespace Garnet.server
         {
             sizeChange = 0;
 
-            var respProtocolVersion = (byte)2;
-
             switch (input.header.cmd)
             {
                 // Scan Command
                 case RespCommand.COSCAN:
-                    Scan(ref input, ref output, respProtocolVersion);
+                    Scan(ref input, ref output, ref writer);
                     break;
                 default:
                     if ((byte)input.header.type != this.type)

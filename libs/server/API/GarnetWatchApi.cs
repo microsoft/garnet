@@ -128,10 +128,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetLengthByValue(key, ref input, out output);
+            return garnetApi.SortedSetLengthByValue(key, ref input, ref output);
         }
 
         /// <inheritdoc />

@@ -577,7 +577,7 @@ namespace Garnet.server
                     rank++;
                 }
 
-                if (input.header.cmd == RespCommand.ZREVRANK)
+                if (input.header.SortedSetOp == SortedSetOperation.ZREVRANK)
                     rank = Count() - rank - 1;
 
                 if (withScore)
