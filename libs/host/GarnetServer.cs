@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using Garnet.cluster;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
@@ -10,7 +11,6 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
-using Garnet.cluster;
 using Garnet.common;
 using Garnet.networking;
 using Garnet.server;

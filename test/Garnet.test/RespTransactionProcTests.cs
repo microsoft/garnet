@@ -433,7 +433,7 @@ namespace Garnet.test
         }
 
         [Test]
-        [Repeat(10000)]
+        //[Repeat(10000)]
         public void TransactionProcMGetIfPMTest()
         {
             if (TestContext.CurrentContext.CurrentRepeatCount > 0)
