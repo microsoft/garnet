@@ -145,6 +145,9 @@ namespace Garnet.cluster
                 if (!clusterProvider.replicationManager.InitializeCheckpointStore())
                     logger?.LogWarning("Failed acquiring latest memory checkpoint metadata at {method}", nameof(TakeOverAsPrimary));
                 _ = clusterProvider.BumpAndWaitForEpochTransition();
+
+                // Resume all background maintenance that were possibly shutdown when this node became a replica
+                clusterProvider.storeWrapper.StartBackgroundMaintenanceTasksAsPrimary().Wait();
             }
             finally
             {

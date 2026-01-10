@@ -40,10 +40,9 @@ namespace Garnet.server
             if (dispose.TryWriteLock())
                 return;
 
-            // Cancel clobal task
+            // Cancel global cts
             cts.Cancel();
-            foreach(var taskType in tasks.Keys)
-                TryCancelTask(taskType).Wait();
+            TryCancelAllTasks();
             cts.Dispose();
         }
 
@@ -113,6 +112,16 @@ namespace Garnet.server
                 }
                 taskInfo.Item1.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Try cancel all background tasks
+        /// </summary>
+        /// <returns></returns>
+        public async Task TryCancelAllTasks()
+        {
+            foreach (var taskType in tasks.Keys)
+                TryCancelTask(taskType).Wait();
         }
     }
 }

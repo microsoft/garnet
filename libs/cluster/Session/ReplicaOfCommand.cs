@@ -45,6 +45,7 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.TryUpdateForFailover();
                     clusterProvider.replicationManager.ResetReplayIterator();
                     UnsafeBumpAndWaitForEpochTransition();
+                    clusterProvider.storeWrapper.StartBackgroundMaintenanceTasksAsPrimary().Wait();
                 }
                 finally
                 {

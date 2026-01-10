@@ -807,36 +807,8 @@ namespace Garnet.server
             clusterProvider?.Start();
             luaTimeoutManager?.Start();
 
-            if (serverOptions.AofSizeLimit.Length > 0)
-            {
-                var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
-                taskManager.Register(TaskType.AofSizeLimitTask, (token) => AutoCheckpointBasedOnAofSizeLimit(aofSizeLimitBytes, token, logger));
-            }
-
-            if (serverOptions.CommitFrequencyMs > 0 && serverOptions.EnableAOF)
-            {
-                taskManager.Register(TaskType.CommitTask, (token) => CommitTask(serverOptions.CommitFrequencyMs, token, logger));
-            }
-
-            if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
-            {
-                taskManager.Register(TaskType.CompactionTask, (token) => CompactionTask(serverOptions.CompactionFrequencySecs, token));
-            }
-
-            if (serverOptions.ExpiredObjectCollectionFrequencySecs > 0)
-            {
-                taskManager.Register(TaskType.ObjectCollectTask, (token) => ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, token));
-            }
-
-            if (serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
-            {
-                taskManager.Register(TaskType.ExpiredKeyDeletionTask, (token) => ExpiredKeyDeletionScanTask(serverOptions.ExpiredObjectCollectionFrequencySecs, token));
-            }
-
-            if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
-            {
-                taskManager.Register(TaskType.IndexAutoGrowTask, (token) => IndexAutoGrowTask(token));
-            }
+            // Resume background maintenance tasks
+            StartBackgroundMaintenanceTasksAsPrimary().Wait();
 
             databaseManager.StartObjectSizeTrackers(ctsCommit.Token);
         }
@@ -934,7 +906,45 @@ namespace Garnet.server
         /// <returns></returns>
         public async Task SuspendBackgroundTaskAsReplica()
         {
-            await taskManager.TryCancelTask(TaskType.ObjectCollectTask);
+            await taskManager.TryCancelAllTasks();
+        }
+
+        /// <summary>
+        /// Start all background maintenance tasks
+        /// </summary>
+        /// <returns></returns>
+        public async Task StartBackgroundMaintenanceTasksAsPrimary()
+        {
+            if (serverOptions.AofSizeLimit.Length > 0)
+            {
+                var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
+                taskManager.Register(TaskType.AofSizeLimitTask, (token) => AutoCheckpointBasedOnAofSizeLimit(aofSizeLimitBytes, token, logger));
+            }
+
+            if (serverOptions.CommitFrequencyMs > 0 && serverOptions.EnableAOF)
+            {
+                taskManager.Register(TaskType.CommitTask, (token) => CommitTask(serverOptions.CommitFrequencyMs, token, logger));
+            }
+
+            if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
+            {
+                taskManager.Register(TaskType.CompactionTask, (token) => CompactionTask(serverOptions.CompactionFrequencySecs, token));
+            }
+
+            if (serverOptions.ExpiredObjectCollectionFrequencySecs > 0)
+            {
+                taskManager.Register(TaskType.ObjectCollectTask, (token) => ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, token));
+            }
+
+            if (serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
+            {
+                taskManager.Register(TaskType.ExpiredKeyDeletionTask, (token) => ExpiredKeyDeletionScanTask(serverOptions.ExpiredObjectCollectionFrequencySecs, token));
+            }
+
+            if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
+            {
+                taskManager.Register(TaskType.IndexAutoGrowTask, (token) => IndexAutoGrowTask(token));
+            }
         }
     }
 }
