@@ -927,5 +927,14 @@ namespace Garnet.server
 
             ctsCommit?.Dispose();
         }
+
+        /// <summary>
+        /// Suspend background task that may interfere with the replicas AOF
+        /// </summary>
+        /// <returns></returns>
+        public async Task SuspendBackgroundTaskAsReplica()
+        {
+            await taskManager.TryCancelTask(TaskType.ObjectCollectTask);
+        }
     }
 }

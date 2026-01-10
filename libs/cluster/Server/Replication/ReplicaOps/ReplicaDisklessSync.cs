@@ -78,6 +78,9 @@ namespace Garnet.cluster
                     if (!disklessSync)
                         storeWrapper.Reset();
 
+                    // Suspend background tasks that may interfere with AOF
+                    await storeWrapper.SuspendBackgroundTaskAsReplica();
+
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data
                     //
