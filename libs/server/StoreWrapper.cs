@@ -130,6 +130,11 @@ namespace Garnet.server
         /// </summary>
         internal readonly LuaTimeoutManager luaTimeoutManager;
 
+        /// <summary>
+        /// Background task manager instance
+        /// </summary>
+        internal readonly TaskManager taskManager;
+
         private IDatabaseManager databaseManager;
         SingleWriterMultiReaderLock databaseManagerLock;
 
@@ -151,7 +156,9 @@ namespace Garnet.server
 
         internal readonly CancellationTokenSource ctsCommit;
 
-        // True if StoreWrapper instance is disposed
+        /// <summary>
+        /// True if StoreWrapper instance is disposed
+        /// </summary>
         bool disposed;
 
         /// <summary>
@@ -197,6 +204,7 @@ namespace Garnet.server
             this.sessionLogger = loggerFactory?.CreateLogger("Session");
             this.accessControlList = accessControlList;
             this.GarnetObjectSerializer = new GarnetObjectSerializer(this.customCommandManager);
+            this.taskManager = new TaskManager(loggerFactory.CreateLogger("TaskManager"));
             this.loggingFrequency = TimeSpan.FromSeconds(serverOptions.LoggingFrequency);
 
             logger?.LogTrace("StoreWrapper logging frequency: {loggingFrequency} seconds.", this.loggingFrequency);
@@ -654,7 +662,7 @@ namespace Garnet.server
             }
         }
 
-        async Task CommitTask(int commitFrequencyMs, ILogger logger = null, CancellationToken token = default)
+        async Task CommitTask(int commitFrequencyMs, CancellationToken token = default, ILogger logger = null)
         {
             try
             {
@@ -770,7 +778,7 @@ namespace Garnet.server
 
         /// <summary>Grows indexes of both main store and object store if current size is too small.</summary>
         /// <param name="token"></param>
-        private async void IndexAutoGrowTask(CancellationToken token)
+        private async Task IndexAutoGrowTask(CancellationToken token)
         {
             try
             {
@@ -802,32 +810,32 @@ namespace Garnet.server
             if (serverOptions.AofSizeLimit.Length > 0)
             {
                 var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
-                Task.Run(async () => await AutoCheckpointBasedOnAofSizeLimit(aofSizeLimitBytes, ctsCommit.Token, logger));
+                taskManager.Register(TaskType.AofSizeLimitTask, (token) => AutoCheckpointBasedOnAofSizeLimit(aofSizeLimitBytes, token, logger));
             }
 
             if (serverOptions.CommitFrequencyMs > 0 && serverOptions.EnableAOF)
             {
-                Task.Run(async () => await CommitTask(serverOptions.CommitFrequencyMs, logger, ctsCommit.Token));
+                taskManager.Register(TaskType.CommitTask, (token) => CommitTask(serverOptions.CommitFrequencyMs, token, logger));
             }
 
             if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
             {
-                Task.Run(async () => await CompactionTask(serverOptions.CompactionFrequencySecs, ctsCommit.Token));
+                taskManager.Register(TaskType.CompactionTask, (token) => CompactionTask(serverOptions.CompactionFrequencySecs, token));
             }
 
             if (serverOptions.ExpiredObjectCollectionFrequencySecs > 0)
             {
-                Task.Run(async () => await ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, ctsCommit.Token));
+                taskManager.Register(TaskType.ObjectCollectTask, (token) => ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, token));
             }
 
             if (serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
             {
-                Task.Run(async () => await ExpiredKeyDeletionScanTask(serverOptions.ExpiredKeyDeletionScanFrequencySecs, ctsCommit.Token));
+                taskManager.Register(TaskType.ExpiredKeyDeletionTask, (token) => ExpiredKeyDeletionScanTask(serverOptions.ExpiredObjectCollectionFrequencySecs, token));
             }
 
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
             {
-                Task.Run(() => IndexAutoGrowTask(ctsCommit.Token));
+                taskManager.Register(TaskType.IndexAutoGrowTask, (token) => IndexAutoGrowTask(token));
             }
 
             databaseManager.StartObjectSizeTrackers(ctsCommit.Token);
@@ -914,6 +922,7 @@ namespace Garnet.server
             monitor?.Dispose();
             luaTimeoutManager?.Dispose();
             ctsCommit?.Cancel();
+            taskManager.Dispose();
             databaseManager.Dispose();
 
             ctsCommit?.Dispose();
