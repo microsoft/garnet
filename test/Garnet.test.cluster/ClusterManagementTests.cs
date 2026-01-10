@@ -8,6 +8,7 @@ using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -43,31 +44,52 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(1)]
-        [TestCase(0, 16383)]
-        [TestCase(1234, 5678)]
-        public void ClusterSlotsTest(int startSlot, int endSlot)
+        [TestCase(0, 16383, ClusterPreferredEndpointType.Ip, true)]
+        [TestCase(0, 16383, ClusterPreferredEndpointType.Ip, false)]
+        [TestCase(1234, 5678, ClusterPreferredEndpointType.Ip, false)]
+        [TestCase(1234, 5678, ClusterPreferredEndpointType.Ip, true)]
+        [TestCase(0, 16383, ClusterPreferredEndpointType.Hostname, true)]
+        [TestCase(0, 16383, ClusterPreferredEndpointType.Hostname, false)]
+        [TestCase(1234, 5678, ClusterPreferredEndpointType.Hostname, true)]
+        [TestCase(1234, 5678, ClusterPreferredEndpointType.Hostname, false)]
+        [TestCase(0, 16383, ClusterPreferredEndpointType.UnknownEndpoint, true)]
+        [TestCase(0, 16383, ClusterPreferredEndpointType.UnknownEndpoint, false)]
+        [TestCase(1234, 5678, ClusterPreferredEndpointType.UnknownEndpoint, true)]
+        [TestCase(1234, 5678, ClusterPreferredEndpointType.UnknownEndpoint, false)]
+        public void ClusterSlotsTest(int startSlot, int endSlot, ClusterPreferredEndpointType preferredType, bool useClusterAnnounceHostname)
         {
             var slotRanges = new List<(int, int)>[1];
             slotRanges[0] = [(startSlot, endSlot)];
-            context.CreateInstances(defaultShards);
+            context.CreateInstances(defaultShards, clusterPreferredEndpointType: preferredType, useClusterAnnounceHostname: useClusterAnnounceHostname);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(customSlotRanges: slotRanges, logger: context.logger);
-
+            var targetEndpoint = GetTargetEndpoint(preferredType, useClusterAnnounceHostname);
+                
             var slotsResult = context.clusterTestUtils.ClusterSlots(0, context.logger);
             ClassicAssert.IsTrue(slotsResult.Count == 1);
             ClassicAssert.AreEqual(startSlot, slotsResult[0].startSlot);
             ClassicAssert.AreEqual(endSlot, slotsResult[0].endSlot);
             ClassicAssert.IsTrue(slotsResult[0].nnInfo.Length == 1);
             ClassicAssert.IsTrue(slotsResult[0].nnInfo[0].isPrimary);
-            ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].address, context.clusterTestUtils.GetEndPoint(0).Address.ToString());
+            ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].enpoint, targetEndpoint);
             ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].port, context.clusterTestUtils.GetEndPoint(0).Port);
             ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].nodeid, context.clusterTestUtils.GetNodeIdFromNode(0, context.logger));
+            // CheckMetadata(preferredType, useCl ,slotsResult[0].nnInfo[0]);
         }
 
         [Test, Order(2)]
-        public void ClusterSlotRangesTest()
+        [TestCase(ClusterPreferredEndpointType.Ip,true)]
+        [TestCase(ClusterPreferredEndpointType.Ip,false)]
+        [TestCase(ClusterPreferredEndpointType.Hostname, true)]
+        [TestCase(ClusterPreferredEndpointType.Hostname, false)]
+        [TestCase(ClusterPreferredEndpointType.UnknownEndpoint, true)]
+        [TestCase(ClusterPreferredEndpointType.UnknownEndpoint, false)]
+        public void ClusterSlotRangesTest(
+            ClusterPreferredEndpointType preferredType,
+            bool useClusterAnnounceHostname
+        )
         {
-            context.CreateInstances(defaultShards);
+            context.CreateInstances(defaultShards, clusterPreferredEndpointType: preferredType, useClusterAnnounceHostname: useClusterAnnounceHostname);
             context.CreateConnection();
             var slotRanges = new List<(int, int)>[3];
             slotRanges[0] = [(5680, 6150), (12345, 14567)];
@@ -91,18 +113,71 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(slotsResult.Count == ranges.Count);
             for (var i = 0; i < slotsResult.Count; i++)
             {
+                var targetEndpoint = GetTargetEndpoint(preferredType, useClusterAnnounceHostname);
+                
                 var origRange = ranges[i];
                 var retRange = slotsResult[i];
                 ClassicAssert.AreEqual(origRange.Item2.Item1, retRange.startSlot);
                 ClassicAssert.AreEqual(origRange.Item2.Item2, retRange.endSlot);
                 ClassicAssert.IsTrue(retRange.nnInfo.Length == 1);
                 ClassicAssert.IsTrue(retRange.nnInfo[0].isPrimary);
-                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(origRange.Item1).Address.ToString(), retRange.nnInfo[0].address);
+                ClassicAssert.AreEqual(targetEndpoint, retRange.nnInfo[0].enpoint);
                 ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(origRange.Item1).Port, retRange.nnInfo[0].port);
                 ClassicAssert.AreEqual(context.clusterTestUtils.GetNodeIdFromNode(origRange.Item1, context.logger), retRange.nnInfo[0].nodeid);
+
+                CheckMetadata(preferredType, useClusterAnnounceHostname, retRange.nnInfo[0]);
             }
         }
+        
+        private string GetTargetEndpoint(ClusterPreferredEndpointType preferredType, bool useClusterAnnounceHostname)
+        {
+            if (preferredType == ClusterPreferredEndpointType.Ip)
+            {
+                return context.clusterTestUtils.GetEndPoint(0).Address.ToString();
+            }
 
+            if (preferredType == ClusterPreferredEndpointType.Hostname)
+            {
+                if (useClusterAnnounceHostname)
+                {
+                    return context.nodeOptions[0].ClusterAnnounceHostname;
+                }
+
+                return "?";
+            }
+
+            return null;
+        }
+        
+        private void CheckMetadata(ClusterPreferredEndpointType preferredType, bool useClusterAnnounceHostname, NodeNetInfo nodeNetInfo)
+        {
+            if (preferredType == ClusterPreferredEndpointType.Ip)
+            {
+                if (useClusterAnnounceHostname)
+                {
+                    ClassicAssert.AreEqual(context.nodeOptions[0].ClusterAnnounceHostname, nodeNetInfo.hostname);
+                }
+                else
+                {
+                    ClassicAssert.AreEqual(null, nodeNetInfo.hostname);
+                }
+                
+                ClassicAssert.Null(nodeNetInfo.ip);
+            }
+
+            if (preferredType == ClusterPreferredEndpointType.Hostname)
+            {
+                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(0).Address.ToString(), nodeNetInfo.ip);
+            }
+                
+            if (preferredType == ClusterPreferredEndpointType.UnknownEndpoint)
+            {
+                var hostname = useClusterAnnounceHostname ? context.nodeOptions[0].ClusterAnnounceHostname : null;
+                ClassicAssert.AreEqual(hostname, nodeNetInfo.hostname);
+                ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(0).Address.ToString(), nodeNetInfo.ip);
+            }
+        }
+        
         [Test, Order(3)]
         public void ClusterForgetTest()
         {

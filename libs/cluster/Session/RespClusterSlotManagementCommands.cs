@@ -142,6 +142,8 @@ namespace Garnet.cluster
             }
 
             var current = clusterProvider.clusterManager.CurrentConfig;
+            var preferredType = clusterProvider.serverOptions.ClusterPreferredEndpointType;
+            
             if (!parseState.TryGetInt(0, out var slot))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
@@ -158,7 +160,7 @@ namespace Garnet.cluster
 
             if (!current.IsLocal((ushort)slot))
             {
-                Redirect((ushort)slot, current);
+                Redirect((ushort)slot, current, preferredType);
             }
             else
             {
@@ -350,6 +352,8 @@ namespace Garnet.cluster
             }
 
             var current = clusterProvider.clusterManager.CurrentConfig;
+            var preferredType = clusterProvider.serverOptions.ClusterPreferredEndpointType;
+            
             if (!parseState.TryGetInt(0, out var slot))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
@@ -373,7 +377,7 @@ namespace Garnet.cluster
 
             if (!current.IsLocal((ushort)slot))
             {
-                Redirect((ushort)slot, current);
+                Redirect((ushort)slot, current, preferredType);
             }
             else
             {
@@ -618,8 +622,8 @@ namespace Garnet.cluster
                 invalidParameters = true;
                 return true;
             }
-
-            var slotsInfo = clusterProvider.clusterManager.CurrentConfig.GetSlotsInfo();
+            var preferredType = clusterProvider.serverOptions.ClusterPreferredEndpointType;
+            var slotsInfo = clusterProvider.clusterManager.CurrentConfig.GetSlotsInfo(preferredType);
             while (!RespWriteUtils.TryWriteAsciiDirect(slotsInfo, ref dcurr, dend))
                 SendAndReset();
 

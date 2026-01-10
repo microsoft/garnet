@@ -120,7 +120,8 @@ namespace Garnet.cluster
                     var endpoint = clusterProvider.storeWrapper.GetClusterEndpoint();
                     var address = endpoint.Address.ToString();
                     var port = endpoint.Port;
-
+                    var hostname = serverOptions.ClusterAnnounceHostname;
+                    
                     var configEpoch = soft ? current.LocalNodeConfigEpoch : 0;
                     var expiry = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expirySeconds).Ticks;
                     var newConfig = new ClusterConfig().InitializeLocalWorker(
@@ -130,7 +131,7 @@ namespace Garnet.cluster
                         configEpoch: configEpoch,
                         role: NodeRole.PRIMARY,
                         replicaOfNodeId: null,
-                        Format.GetHostName());
+                        hostname: string.IsNullOrEmpty(hostname) ? Format.GetHostName() : hostname);
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
                 }
