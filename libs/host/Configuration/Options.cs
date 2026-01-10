@@ -831,12 +831,10 @@ namespace Garnet
                 return new AzureStorageNamedDeviceFactoryCreator(AzureStorageServiceUri, credential, logger);
             };
 
-            if (EnumUtils.TryParseEnumFromDescription<ClusterPreferredEndpointType>(ClusterPreferredEndpointType,
-                    out var clusterPreferredEndpointType))
+            if (!EnumUtils.TryParseEnumFromDescription<ClusterPreferredEndpointType>(ClusterPreferredEndpointType, out var clusterPreferredEndpointType))
             {
-                throw new Exception("Invalid ClusterPreferredEndpointType .");
+                throw new Exception("Invalid ClusterPreferredEndpointType. Valid values: ip, hostname, unknown-endpoint.");
             }
-            
             
             return new GarnetServerOptions(logger)
             {

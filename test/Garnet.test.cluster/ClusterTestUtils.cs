@@ -51,7 +51,7 @@ namespace Garnet.test.cluster
 
     public struct NodeNetInfo
     {
-        public string enpoint;
+        public string endpoint;
         public int port;
         public string nodeid;
         public string hostname;
@@ -1650,16 +1650,22 @@ namespace Garnet.test.cluster
 
             var endpointSplit = data[2].Split(':');
             
-            var hostAddresses = Dns.GetHostAddresses(endpointSplit[0]);
-            var ip = hostAddresses.FirstOrDefault(x => x.AddressFamily == AddressFamily.InterNetwork);
-            if (ip == null)
+            IPAddress ip;
+            try
+            {
+                var hostAddresses = Dns.GetHostAddresses(endpointSplit[0]);
+                ip = hostAddresses.FirstOrDefault(x => x.AddressFamily == AddressFamily.InterNetwork);
+                if (ip == null)
+                {
+                    ip = IPAddress.Parse(endpointSplit[0]);
+                }
+            }
+            catch (Exception)
             {
                 ip = IPAddress.Parse(endpointSplit[0]);
             }
             
-            endpoint = new IPEndPoint(
-                ip,
-                int.Parse(endpointSplit[1].Split('\r')[0]));
+            endpoint = new IPEndPoint(ip, int.Parse(endpointSplit[1].Split('\r')[0]));
         }
 
         public string AddDelSlots(int nodeIndex, List<int> slots, bool addslot, ILogger logger = null)
@@ -1955,7 +1961,7 @@ namespace Garnet.test.cluster
                             }
                         }
                         
-                        slotItem.nnInfo[i - 2].enpoint = endpoint;
+                        slotItem.nnInfo[i - 2].endpoint = endpoint;
                         slotItem.nnInfo[i - 2].port = port;
                         slotItem.nnInfo[i - 2].nodeid = nodeid;
                         slotItem.nnInfo[i - 2].hostname = hostname;

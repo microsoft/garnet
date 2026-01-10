@@ -71,7 +71,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(endSlot, slotsResult[0].endSlot);
             ClassicAssert.IsTrue(slotsResult[0].nnInfo.Length == 1);
             ClassicAssert.IsTrue(slotsResult[0].nnInfo[0].isPrimary);
-            ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].enpoint, targetEndpoint);
+            ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].endpoint, targetEndpoint);
             ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].port, context.clusterTestUtils.GetEndPoint(0).Port);
             ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].nodeid, context.clusterTestUtils.GetNodeIdFromNode(0, context.logger));
             // CheckMetadata(preferredType, useCl ,slotsResult[0].nnInfo[0]);
@@ -121,7 +121,7 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(origRange.Item2.Item2, retRange.endSlot);
                 ClassicAssert.IsTrue(retRange.nnInfo.Length == 1);
                 ClassicAssert.IsTrue(retRange.nnInfo[0].isPrimary);
-                ClassicAssert.AreEqual(targetEndpoint, retRange.nnInfo[0].enpoint);
+                ClassicAssert.AreEqual(targetEndpoint, retRange.nnInfo[0].endpoint);
                 ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(origRange.Item1).Port, retRange.nnInfo[0].port);
                 ClassicAssert.AreEqual(context.clusterTestUtils.GetNodeIdFromNode(origRange.Item1, context.logger), retRange.nnInfo[0].nodeid);
 

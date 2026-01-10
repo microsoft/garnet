@@ -800,7 +800,7 @@ namespace Garnet.cluster
         /// <summary>
         /// Get formatted (using CLUSTER SLOTS format) cluster config info.
         /// Ip, endpoint is ip address
-        /// hostname is maybe null and  included in metadata
+        /// hostname may be null and included in metadata
         /// Hostname, endpoint is hostname
         /// if hostname is not existing, endpoint is "?"
         /// metadata includes ip address
