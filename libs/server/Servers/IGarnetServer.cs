@@ -46,5 +46,11 @@ namespace Garnet.server
         /// Start server
         /// </summary>
         public void Start();
+
+        /// <summary>
+        /// Stop accepting new connections (for graceful shutdown).
+        /// Existing connections remain active until they complete or are disposed.
+        /// </summary>
+        public void StopListening();
     }
 }
