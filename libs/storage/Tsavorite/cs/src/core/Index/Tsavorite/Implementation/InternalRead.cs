@@ -105,6 +105,7 @@ namespace Tsavorite.core
                 if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
                     return OperationStatus.CPR_SHIFT_DETECTED; // Pivot thread; retry
 
+                pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.SafeReadOnlyAddress)
                 {
                     // Mutable region (even fuzzy region is included here)
@@ -121,7 +122,6 @@ namespace Tsavorite.core
                 // Pending (and CopyFromImmutable may go pending) must track the latest searched-below addresses. They are the same if there are no readcache records.
                 pendingContext.initialEntryAddress = stackCtx.hei.Address;
                 pendingContext.initialLatestLogicalAddress = stackCtx.recSrc.LatestLogicalAddress;
-                pendingContext.logicalAddress = stackCtx.recSrc.LogicalAddress;
 
                 if (stackCtx.recSrc.LogicalAddress >= hlogBase.HeadAddress)
                 {

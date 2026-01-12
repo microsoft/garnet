@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System;
 using System.Buffers;
 using System.Collections.Generic;
@@ -53,7 +51,7 @@ namespace Tsavorite.test
                 {
                     for (int i = 0; i < numEntries; i++)
                     {
-                        log.Enqueue(entry);
+                        _ = log.Enqueue(entry);
                     }
 
                     if (isAsync)
@@ -106,7 +104,7 @@ namespace Tsavorite.test
                     {
                         for (int i = 0; i < numEntries; i++)
                         {
-                            log.Enqueue(entry);
+                            _ = log.Enqueue(entry);
                             // create randomly interleaved concurrent writes
                             if (random.NextDouble() < 0.1)
                                 log.Commit();
@@ -164,7 +162,7 @@ namespace Tsavorite.test
             // Ensure we write enough to trigger errors
             for (int i = 0; i < 1000; i++)
             {
-                log.Enqueue(entry);
+                _ = log.Enqueue(entry);
                 try
                 {
                     if (IsAsync(iteratorType))
@@ -186,11 +184,11 @@ namespace Tsavorite.test
             switch (iteratorType)
             {
                 case IteratorType.AsyncByteVector:
-                    await foreach ((byte[] result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable())
+                    await foreach ((byte[] result, int _, long _, long _ /*nextAddress*/) in iter.GetAsyncEnumerable())
                         ClassicAssert.IsTrue(result.SequenceEqual(entry));
                     break;
                 case IteratorType.AsyncMemoryOwner:
-                    await foreach ((IMemoryOwner<byte> result, int _, long _, long nextAddress) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
+                    await foreach ((IMemoryOwner<byte> result, int _, long _, long _ /*nextAddress*/) in iter.GetAsyncEnumerable(MemoryPool<byte>.Shared))
                     {
                         ClassicAssert.IsTrue(result.Memory.Span.ToArray().Take(entry.Length).SequenceEqual(entry));
                         result.Dispose();
@@ -209,5 +207,3 @@ namespace Tsavorite.test
 
     }
 }
-
-#endif // LOGRECORD_TODO

@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -40,9 +38,7 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             var cookie1 = new byte[100];
             new Random().NextBytes(cookie1);
@@ -50,9 +46,7 @@ namespace Tsavorite.test
             ClassicAssert.IsTrue(commitSuccessful);
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             var cookie2 = new byte[100];
             new Random().NextBytes(cookie2);
@@ -60,9 +54,7 @@ namespace Tsavorite.test
             ClassicAssert.IsTrue(commitSuccessful);
 
             for (int i = 0; i < numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
 
             var cookie6 = new byte[100];
             new Random().NextBytes(cookie6);
@@ -115,7 +107,7 @@ namespace Tsavorite.test
                 entry[i] = (byte)i;
 
             for (int i = 0; i < 5 * numEntries; i++)
-                log.Enqueue(entry);
+                _ = log.Enqueue(entry);
 
             // for comparison, insert some entries without any commit records
             var referenceTailLength = log.TailAddress;
@@ -136,16 +128,13 @@ namespace Tsavorite.test
             foreach (var t in commitThreads)
                 t.Start();
             for (int i = 0; i < 5 * numEntries; i++)
-            {
-                log.Enqueue(entry);
-            }
+                _ = log.Enqueue(entry);
             enqueueDone.Set();
 
             foreach (var t in commitThreads)
                 t.Join();
 
-
-            // TODO: Hardcoded constant --- if this number changes in TsavoriteLogRecoverInfo, it needs to be updated here too
+            // TODO: Hardcoded constant --- if this number changes in TsavoriteLogRecoveryInfo, it needs to be updated here too
             var commitRecordSize = 44;
             var logTailGrowth = log.TailAddress - referenceTailLength;
             // Check that we are not growing the log more than one commit record per user entry
@@ -156,5 +145,3 @@ namespace Tsavorite.test
         }
     }
 }
-
-#endif // LOGRECORD_TODO

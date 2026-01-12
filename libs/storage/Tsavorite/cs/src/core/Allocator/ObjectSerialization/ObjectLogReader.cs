@@ -47,7 +47,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Called when one or more records are to be read via ReadAsync.
+        /// Called when one or more records with Objects have been read via ReadAsync, e.g. being processed by AsyncReadPageWithObjectsCallback.
         /// </summary>
         /// <param name="filePosition">The initial file position to read</param>
         /// <param name="totalLength">The cumulative length of all object-log entries for the span of records to be read. We read ahead for all record
@@ -58,6 +58,12 @@ namespace Tsavorite.core
             deserializedLength = 0UL;
             readBuffers.OnBeginReadRecords(filePosition, totalLength);
         }
+
+        /// <summary>
+        /// Called when one or more records with Objects have been read and via ReadAsync, e.g. being processed by AsyncReadPageWithObjectsCallback,
+        /// and we have completed reading and deserializing those objects.
+        /// </summary>
+        internal void OnEndReadRecords() => readBuffers.OnEndReadRecords();
 
         /// <inheritdoc/>
         public void FlushAndReset(CancellationToken cancellationToken = default) => throw new InvalidOperationException("FlushAndReset is not supported for DiskStreamReadBuffer");
@@ -190,7 +196,7 @@ namespace Tsavorite.core
             // TODO add size tracking; do not track deserialization size changes if we are deserializing to a frame
 
             inDeserialize = false;
-            deserializedLength = 0;
+            deserializedLength = 0UL;
         }
 
         /// <inheritdoc/>

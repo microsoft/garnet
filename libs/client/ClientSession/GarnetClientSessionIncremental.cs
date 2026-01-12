@@ -124,7 +124,7 @@ namespace Garnet.client
                 return false;
             }
 
-            recordSpan.SerializeTo(curr);
+            recordSpan.SerializeTo(curr, recordSpanSize);
             curr += recordSpanSize;
             ++recordCount;
             task = null;

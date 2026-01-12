@@ -92,6 +92,8 @@ namespace Tsavorite.core
             return true;
         }
 
+        internal bool HasInFlightRead => countdownEvent is not null && !countdownEvent.IsSet;
+
         internal ObjectLogFilePositionInfo GetCurrentFilePosition()
         {
             var bufferFilePos = startFilePosition;

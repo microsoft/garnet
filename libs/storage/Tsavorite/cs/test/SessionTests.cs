@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System.IO;
 using System.Threading.Tasks;
 using NUnit.Framework;
@@ -12,13 +10,13 @@ using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test.Session
 {
-    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>>;
+    using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class SessionTests
     {
-        private TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
+        private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
         private IDevice log;
 
         [SetUp]
@@ -31,7 +29,7 @@ namespace Tsavorite.test.Session
                 IndexSize = 1L << 13,
                 LogDevice = log,
                 MemorySize = 1L << 29,
-            }, StoreFunctions<KeyStruct, ValueStruct>.Create(new KeyStruct.Comparer())
+            }, StoreFunctions.Create(KeyStruct.Comparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -60,8 +58,8 @@ namespace Tsavorite.test.Session
             var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
             var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-            _ = bContext.Upsert(ref key1, ref value, Empty.Default);
-            var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+            var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
@@ -90,10 +88,10 @@ namespace Tsavorite.test.Session
             var key2 = new KeyStruct { kfield1 = 15, kfield2 = 16 };
             var value2 = new ValueStruct { vfield1 = 25, vfield2 = 26 };
 
-            _ = bContext1.Upsert(ref key1, ref value1, Empty.Default);
-            _ = bContext2.Upsert(ref key2, ref value2, Empty.Default);
+            _ = bContext1.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value1), Empty.Default);
+            _ = bContext2.Upsert(SpanByte.FromPinnedVariable(ref key2), SpanByte.FromPinnedVariable(ref value2), Empty.Default);
 
-            var status = bContext1.Read(ref key1, ref input, ref output, Empty.Default);
+            var status = bContext1.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
@@ -105,7 +103,7 @@ namespace Tsavorite.test.Session
             ClassicAssert.AreEqual(value1.vfield1, output.value.vfield1);
             ClassicAssert.AreEqual(value1.vfield2, output.value.vfield2);
 
-            status = bContext2.Read(ref key2, ref input, ref output, Empty.Default);
+            status = bContext2.Read(SpanByte.FromPinnedVariable(ref key2), ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
@@ -133,8 +131,8 @@ namespace Tsavorite.test.Session
                 var key1 = new KeyStruct { kfield1 = 13, kfield2 = 14 };
                 var value = new ValueStruct { vfield1 = 23, vfield2 = 24 };
 
-                _ = bContext.Upsert(ref key1, ref value, Empty.Default);
-                var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+                _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value), Empty.Default);
+                var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
@@ -164,8 +162,8 @@ namespace Tsavorite.test.Session
                 var key1 = new KeyStruct { kfield1 = 14, kfield2 = 15 };
                 var value1 = new ValueStruct { vfield1 = 24, vfield2 = 25 };
 
-                _ = bContext1.Upsert(ref key1, ref value1, Empty.Default);
-                var status = bContext1.Read(ref key1, ref input, ref output, Empty.Default);
+                _ = bContext1.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value1), Empty.Default);
+                var status = bContext1.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
@@ -186,9 +184,9 @@ namespace Tsavorite.test.Session
                 var key2 = new KeyStruct { kfield1 = 15, kfield2 = 16 };
                 var value2 = new ValueStruct { vfield1 = 25, vfield2 = 26 };
 
-                _ = bContext2.Upsert(ref key2, ref value2, Empty.Default);
+                _ = bContext2.Upsert(SpanByte.FromPinnedVariable(ref key2), SpanByte.FromPinnedVariable(ref value2), Empty.Default);
 
-                var status = bContext2.Read(ref key2, ref input, ref output, Empty.Default);
+                var status = bContext2.Read(SpanByte.FromPinnedVariable(ref key2), ref input, ref output, Empty.Default);
 
                 if (status.IsPending)
                 {
@@ -219,8 +217,8 @@ namespace Tsavorite.test.Session
             var key1 = new KeyStruct { kfield1 = 16, kfield2 = 17 };
             var value1 = new ValueStruct { vfield1 = 26, vfield2 = 27 };
 
-            _ = bContext.Upsert(ref key1, ref value1, Empty.Default);
-            var status = bContext.Read(ref key1, ref input, ref output, Empty.Default);
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key1), SpanByte.FromPinnedVariable(ref value1), Empty.Default);
+            var status = bContext.Read(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
@@ -240,9 +238,9 @@ namespace Tsavorite.test.Session
             var key2 = new KeyStruct { kfield1 = 17, kfield2 = 18 };
             var value2 = new ValueStruct { vfield1 = 27, vfield2 = 28 };
 
-            _ = bContext.Upsert(ref key2, ref value2, Empty.Default);
+            _ = bContext.Upsert(SpanByte.FromPinnedVariable(ref key2), SpanByte.FromPinnedVariable(ref value2), Empty.Default);
 
-            status = bContext.Read(ref key2, ref input, ref output, Empty.Default);
+            status = bContext.Read(SpanByte.FromPinnedVariable(ref key2), ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
@@ -251,7 +249,7 @@ namespace Tsavorite.test.Session
             }
             ClassicAssert.IsTrue(status.Found);
 
-            status = bContext.Read(ref key2, ref input, ref output, Empty.Default);
+            status = bContext.Read(SpanByte.FromPinnedVariable(ref key2), ref input, ref output, Empty.Default);
 
             if (status.IsPending)
             {
@@ -267,5 +265,3 @@ namespace Tsavorite.test.Session
         }
     }
 }
-
-#endif // LOGRECORD_TODO

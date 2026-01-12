@@ -82,7 +82,7 @@ namespace Tsavorite.core
         internal int OverflowPageCount => freePagePool.Count;
 
         /// <inheritdoc/>
-        protected override void WriteAsync<TContext>(CircularDiskWriteBuffer flushBuffers, long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
+        protected override void WriteAsync<TContext>(long flushPage, DeviceIOCompletionCallback callback, PageAsyncFlushResult<TContext> asyncResult)
         {
             WriteInlinePageAsync((IntPtr)pagePointers[flushPage % BufferSize],
                     (ulong)(AlignedPageSizeBytes * flushPage),
@@ -92,7 +92,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        protected override void WriteAsyncToDevice<TContext>(CircularDiskWriteBuffer flushBuffers, long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
+        protected override void WriteAsyncToDevice<TContext>(long startPage, long flushPage, int pageSize, DeviceIOCompletionCallback callback,
             PageAsyncFlushResult<TContext> asyncResult, IDevice device, IDevice objectLogDevice, long fuzzyStartLogicalAddress)
         {
             VerifyCompatibleSectorSize(device);
@@ -111,7 +111,7 @@ namespace Tsavorite.core
                 ReturnPage((int)(page % BufferSize));
         }
 
-        protected override void ReadAsync<TContext>(CircularDiskReadBuffer readBuffers, ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
+        protected override void ReadAsync<TContext>(ulong alignedSourceAddress, IntPtr destinationPtr, uint aligned_read_length,
                 DeviceIOCompletionCallback callback, PageAsyncReadResult<TContext> asyncResult, IDevice device)
             => device.ReadAsync(alignedSourceAddress, destinationPtr, aligned_read_length, callback, asyncResult);
 
@@ -154,9 +154,8 @@ namespace Tsavorite.core
         /// <summary>
         /// Read pages from specified device
         /// </summary>
-        internal void AsyncReadPagesFromDeviceToFrame<TContext>(
-                                        long readPageStart,
-                                        int numPages,
+        internal void AsyncReadPageFromDeviceToFrame<TContext>(
+                                        long readPage,
                                         long untilAddress,
                                         DeviceIOCompletionCallback callback,
                                         TContext context,
@@ -169,39 +168,37 @@ namespace Tsavorite.core
         {
             var usedDevice = device ?? this.device;
 
-            completed = new CountdownEvent(numPages);
-            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
+            completed = new CountdownEvent(1);
+
+            int pageIndex = (int)(readPage % frame.frameSize);
+            if (frame.frame[pageIndex] == null)
+                frame.Allocate(pageIndex);
+            else
+                frame.Clear(pageIndex);
+
+            var asyncResult = new PageAsyncReadResult<TContext>()
             {
-                int pageIndex = (int)(readPage % frame.frameSize);
-                if (frame.frame[pageIndex] == null)
-                    frame.Allocate(pageIndex);
-                else
-                    frame.Clear(pageIndex);
+                page = readPage,
+                context = context,
+                handle = completed,
+                cts = cts
+            };
 
-                var asyncResult = new PageAsyncReadResult<TContext>()
-                {
-                    page = readPage,
-                    context = context,
-                    handle = completed,
-                    cts = cts
-                };
+            ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
 
-                ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+            uint readLength = (uint)AlignedPageSizeBytes;
+            long adjustedUntilAddress = AlignedPageSizeBytes * GetPage(untilAddress) + GetOffsetOnPage(untilAddress);
 
-                uint readLength = (uint)AlignedPageSizeBytes;
-                long adjustedUntilAddress = AlignedPageSizeBytes * GetPage(untilAddress) + GetOffsetOnPage(untilAddress);
-
-                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
-                {
-                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
-                    readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
-                }
-
-                if (device != null)
-                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
-
-                usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
+            if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
+            {
+                readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                readLength = (uint)((readLength + (sectorSize - 1)) & ~(sectorSize - 1));
             }
+
+            if (device != null)
+                offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
+
+            usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, callback, asyncResult);
         }
     }
 }

@@ -148,28 +148,35 @@ namespace Tsavorite.core
             return !stop;
         }
 
-        internal unsafe bool GetFromDiskAndPushToReader<TScanFunctions>(ReadOnlySpan<byte> key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
+        internal bool GetFromDiskAndPushToReader<TScanFunctions>(ReadOnlySpan<byte> key, ref long logicalAddress, ref TScanFunctions scanFunctions, long numRecords,
                 AsyncIOContextCompletionEvent completionEvent, out bool stop)
             where TScanFunctions : IScanIteratorFunctions
         {
-            completionEvent.Prepare(PinnedSpanByte.FromPinnedSpan(key), logicalAddress);
+            stop = false;
+            if (logicalAddress < BeginAddress)
+                return false;
 
+            completionEvent.Prepare(PinnedSpanByte.FromPinnedSpan(key), logicalAddress);
             AsyncGetFromDisk(logicalAddress, IStreamBuffer.InitialIOSize, completionEvent.request);
             completionEvent.Wait();
 
-            stop = false;
-            if (completionEvent.exception is not null)
+            ref var request = ref completionEvent.request;
+            try
             {
-                scanFunctions.OnException(completionEvent.exception, numRecords);
-                return false;
-            }
-            if (completionEvent.request.logicalAddress < BeginAddress)
-                return false;
+                if (completionEvent.exception is not null)
+                {
+                    scanFunctions.OnException(completionEvent.exception, numRecords);
+                    return false;
+                }
 
-            var logRecord = DiskLogRecord.TransferFrom(ref completionEvent.request.record, transientObjectIdMap);
-            logRecord.InfoRef.ClearBitsForDiskImages();
-            stop = !scanFunctions.Reader(in logRecord, new RecordMetadata(completionEvent.request.logicalAddress, logRecord.ETag), numRecords, out _);
-            logicalAddress = logRecord.Info.PreviousAddress;
+                request.diskLogRecord.InfoRef.ClearBitsForDiskImages();
+                stop = !scanFunctions.Reader(in request.diskLogRecord, new RecordMetadata(request.logicalAddress, request.diskLogRecord.ETag), numRecords, out _);
+                logicalAddress = request.diskLogRecord.Info.PreviousAddress;
+            }
+            finally
+            {
+                request.DisposeRecord();
+            }
             return !stop;
         }
 
@@ -254,12 +261,12 @@ namespace Tsavorite.core
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal Status ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, TSourceLogRecord>(TSessionFunctionsWrapper sessionFunctions,
-                ScanCursorState scanCursorState, in TSourceLogRecord srcLogRecord, long currentAddress, long minAddress, long maxAddress)
+                ScanCursorState scanCursorState, in TSourceLogRecord srcLogRecord, long originalAddress, long currentAddress, long minAddress, long maxAddress)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from ScanLookup so the epoch should be protected");
-            TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext = new(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
+            var pendingContext = new TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext>(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
 
             OperationStatus internalStatus;
             OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
@@ -268,7 +275,7 @@ namespace Tsavorite.core
             {
                 // If a more recent version of the record exists, do not push this one. Start by searching in-memory.
                 if (sessionFunctions.Store.TryFindRecordInMainLogForConditionalOperation<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, srcLogRecord.Key, ref stackCtx,
-                        currentAddress, minAddress, maxAddress, out internalStatus, out needIO))
+                      currentAddress, minAddress, maxAddress, out internalStatus, out needIO))
                     return Status.CreateFound();
             }
             while (sessionFunctions.Store.HandleImmediateNonPendingRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(internalStatus, sessionFunctions));
@@ -276,16 +283,16 @@ namespace Tsavorite.core
             if (needIO)
             {
                 // A more recent version of the key was not (yet) found and we need another IO to continue searching.
-                internalStatus = PrepareIOForConditionalScan(sessionFunctions.Store, ref pendingContext, in srcLogRecord, ref stackCtx, minAddress, maxAddress, scanCursorState);
+                internalStatus = PrepareIOForConditionalScan(sessionFunctions.Store, ref pendingContext, in srcLogRecord, ref stackCtx, originalAddress, minAddress, maxAddress, scanCursorState);
             }
             else
             {
-                // A more recent version of the key was not found. recSrc.LogicalAddress is the correct address, because minAddress was examined
-                // and this is the previous record in the tag chain. Push this record to the user.
+                // A more recent version of the key was not found, so push the original record (with its originalAddress).
+                RecordMetadata recordMetadata = new(originalAddress, srcLogRecord.ETag);
+
                 epoch.Suspend();
                 try
                 {
-                    RecordMetadata recordMetadata = new(stackCtx.recSrc.LogicalAddress, srcLogRecord.ETag);
                     var stop = !scanCursorState.functions.Reader(in srcLogRecord, recordMetadata, scanCursorState.acceptedCount, out var cursorRecordResult);
                     if (stop)
                         scanCursorState.stop = true;
@@ -311,11 +318,12 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static OperationStatus PrepareIOForConditionalScan<TInput, TOutput, TContext, TSourceLogRecord>(TsavoriteKV<TStoreFunctions, TAllocator> store,
                                         ref TsavoriteKV<TStoreFunctions, TAllocator>.PendingContext<TInput, TOutput, TContext> pendingContext, in TSourceLogRecord srcLogRecord,
-                                        ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress, long maxAddress, ScanCursorState scanCursorState)
+                                        ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long originalAddress, long minAddress, long maxAddress, ScanCursorState scanCursorState)
             where TSourceLogRecord : ISourceLogRecord
         {
             var status = store.PrepareIOForConditionalOperation(ref pendingContext, in srcLogRecord, ref stackCtx, minAddress, maxAddress, OperationType.CONDITIONAL_SCAN_PUSH);
             pendingContext.scanCursorState = scanCursorState;
+            pendingContext.originalAddress = originalAddress;
             return status;
         }
 

@@ -100,7 +100,7 @@ namespace Tsavorite.core
                 if (completedOutputs is not null && status.IsCompletedSuccessfully)
                 {
                     // Transfer things to outputs from pendingContext before we dispose it.
-                    completedOutputs.TransferFrom(ref pendingContext, status, hlogBase.bufferPool);
+                    completedOutputs.TransferFrom(ref pendingContext, status);
                 }
                 if (!status.IsPending)
                 {

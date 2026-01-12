@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -19,13 +17,6 @@ namespace Tsavorite.test.readaddress
         public long key = first;
 
         public override readonly string ToString() => key.ToString();
-
-        internal struct Comparer : IKeyComparer<KeyStruct>
-        {
-            public readonly long GetHashCode64(ref KeyStruct key) => Utility.GetHashCode(key.key);
-
-            public readonly bool Equals(ref KeyStruct k1, ref KeyStruct k2) => k1.key == k2.key;
-        }
     }
 
     public struct ValueStruct(long value)
@@ -38,8 +29,8 @@ namespace Tsavorite.test.readaddress
 
 namespace Tsavorite.test.readaddress
 {
-    using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
-    using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
+    using StructAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
+    using StructStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
 
     [TestFixture]
     internal class ReadAddressTests
@@ -56,20 +47,21 @@ namespace Tsavorite.test.readaddress
         {
             public long value;
             public long address;
+            public RecordInfo recordInfo;
 
-            public override readonly string ToString() => $"val {value}; addr {address}";
+            public override readonly string ToString() => $"val {value}; addr {address}; RecordInfo {recordInfo}";
         }
 
         private static long SetReadOutput(long key, long value) => (key << 32) | value;
 
         public enum UseReadCache { NoReadCache, ReadCache }
 
-        internal class Functions : SessionFunctionsBase<KeyStruct, ValueStruct, ValueStruct, Output, Empty>
+        internal class Functions : SessionFunctionsBase<ValueStruct, Output, Empty>
         {
-            internal long lastWriteAddress = Constants.kInvalidAddress;
+            internal long lastWriteAddress = LogAddress.kInvalidAddress;
             readonly bool useReadCache;
             internal ReadCopyOptions readCopyOptions = ReadCopyOptions.None;
-            bool preserveCopyUpdaterSource;
+            readonly bool preserveCopyUpdaterSource;
 
             internal Functions(bool preserveCopyUpdaterSource = false)
             {
@@ -84,57 +76,73 @@ namespace Tsavorite.test.readaddress
                 }
             }
 
-            public override bool Reader(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref ReadInfo readInfo)
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ValueStruct input, ref Output output, ref ReadInfo readInfo)
             {
-                output.value = SetReadOutput(key.key, value.value);
+                output.value = SetReadOutput(srcLogRecord.Key.AsRef<KeyStruct>().key, srcLogRecord.ValueSpan.AsRef<ValueStruct>().value);
                 output.address = readInfo.Address;
+                output.recordInfo = srcLogRecord.Info;
                 return true;
             }
 
             // Return false to force a chain of values.
-            public override bool InPlaceWriter(ref KeyStruct key, ref ValueStruct input, ref ValueStruct src, ref ValueStruct dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => false;
+            public override bool InPlaceWriter(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ReadOnlySpan<byte> src, ref Output output, ref UpsertInfo upsertInfo) => false;
 
-            public override bool InPlaceUpdater(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => false;
+            public override bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ref Output output, ref RMWInfo rmwInfo) => false;
 
             // Record addresses
-            public override bool InitialWriter(ref KeyStruct key, ref ValueStruct input, ref ValueStruct src, ref ValueStruct dst, ref Output output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo)
+            public override bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ReadOnlySpan<byte> src, ref Output output, ref UpsertInfo upsertInfo)
             {
-                dst = src;
+                dstLogRecord.ValueSpan.AsRef<ValueStruct>() = src.AsRef<ValueStruct>();
                 output.address = upsertInfo.Address;
+                output.recordInfo = dstLogRecord.Info;
                 lastWriteAddress = upsertInfo.Address;
                 return true;
             }
 
-            public override bool InitialUpdater(ref KeyStruct key, ref ValueStruct input, ref ValueStruct value, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ref Output output, ref RMWInfo rmwInfo)
             {
                 lastWriteAddress = rmwInfo.Address;
                 output.address = rmwInfo.Address;
-                output.value = value.value = input.value;
+                output.value = logRecord.ValueSpan.AsRef<ValueStruct>().value = input.value;
+                output.recordInfo = logRecord.Info;
                 return true;
             }
 
-            public override bool CopyUpdater(ref KeyStruct key, ref ValueStruct input, ref ValueStruct oldValue, ref ValueStruct newValue, ref Output output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ValueStruct input, ref Output output, ref RMWInfo rmwInfo)
             {
                 lastWriteAddress = rmwInfo.Address;
                 output.address = rmwInfo.Address;
-                output.value = newValue.value = input.value;
+                output.value = dstLogRecord.ValueSpan.AsRef<ValueStruct>().value = input.value;
+                output.recordInfo = dstLogRecord.Info;
                 rmwInfo.PreserveCopyUpdaterSourceRecord = preserveCopyUpdaterSource;
                 return true;
             }
 
-            public override void ReadCompletionCallback(ref KeyStruct key, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            /// <inheritdoc/>
+            public override unsafe RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref ValueStruct input)
+                => new() { KeySize = srcLogRecord.Key.Length, ValueSize = sizeof(ValueStruct), ValueIsObject = false };
+            /// <inheritdoc/>
+            public override unsafe RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref ValueStruct input)
+                => new() { KeySize = key.Length, ValueSize = sizeof(ValueStruct), ValueIsObject = false };
+            /// <inheritdoc/>
+            public override RecordFieldInfo GetUpsertFieldInfo(ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref ValueStruct input)
+                => new() { KeySize = key.Length, ValueSize = value.Length, ValueIsObject = false };
+
+            public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
+                Assert.That(output.recordInfo.IsNull, Is.Not.True);
                 if (status.Found)
                 {
                     if (useReadCache && readCopyOptions.CopyTo == ReadCopyTo.ReadCache)
-                        ClassicAssert.AreEqual(Constants.kInvalidAddress, recordMetadata.Address, $"key {key}");
+                        ClassicAssert.AreEqual(LogAddress.kInvalidAddress, recordMetadata.Address, $"key {diskLogRecord.Key.ToShortString()}");
                     else
-                        ClassicAssert.AreEqual(output.address, recordMetadata.Address, $"key {key}");  // Should agree with what InitialWriter set
+                        ClassicAssert.AreEqual(output.address, recordMetadata.Address, $"key {diskLogRecord.Key.ToShortString()}");  // Should agree with what InitialWriter set
                 }
             }
 
-            public override void RMWCompletionCallback(ref KeyStruct key, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
+            public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref ValueStruct input, ref Output output, Empty ctx, Status status, RecordMetadata recordMetadata)
             {
+                Assert.That(output.recordInfo.IsNull, Is.Not.True);
                 if (status.Found)
                     ClassicAssert.AreEqual(output.address, recordMetadata.Address);
             }
@@ -142,7 +150,7 @@ namespace Tsavorite.test.readaddress
 
         private class TestStore : IDisposable
         {
-            internal TsavoriteKV<KeyStruct, ValueStruct, StructStoreFunctions, StructAllocator> store;
+            internal TsavoriteKV<StructStoreFunctions, StructAllocator> store;
             internal IDevice logDevice;
             private readonly bool flush;
 
@@ -165,7 +173,7 @@ namespace Tsavorite.test.readaddress
                     MemorySize = 1L << 20, // (1M memory for main log)
 
                     CheckpointDir = Path.Join(MethodTestDir, "chkpt")
-                }, StoreFunctions<KeyStruct, ValueStruct>.Create(new KeyStruct.Comparer())
+                }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
                 );
             }
@@ -202,8 +210,8 @@ namespace Tsavorite.test.readaddress
                     var value = new ValueStruct(key.key + LapOffset(lap));
 
                     var status = useRMW
-                        ? bContext.RMW(ref key, ref value)
-                        : bContext.Upsert(ref key, ref value);
+                        ? bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value)
+                        : bContext.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
 
                     if (status.IsPending)
                         await bContext.CompletePendingAsync();
@@ -213,15 +221,15 @@ namespace Tsavorite.test.readaddress
 
                     // Illustrate that deleted records can be shown as well (unless overwritten by in-place operations, which are not done here)
                     if (lap == DeleteLap)
-                        _ = bContext.Delete(ref key);
+                        _ = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
                 }
 
                 await Flush();
             }
 
-            internal bool ProcessChainRecord(Status status, RecordMetadata recordMetadata, int lap, ref Output actualOutput)
+            internal bool ProcessChainRecord(int lap, ref Output actualOutput)
             {
-                var recordInfo = recordMetadata.RecordInfo;
+                var recordInfo = actualOutput.recordInfo;
                 ClassicAssert.GreaterOrEqual(lap, 0);
                 long expectedValue = SetReadOutput(DefaultKeyToScan, LapOffset(lap) + DefaultKeyToScan);
 
@@ -233,7 +241,7 @@ namespace Tsavorite.test.readaddress
                 return recordInfo.PreviousAddress >= store.Log.BeginAddress;
             }
 
-            internal static void ProcessNoKeyRecord(bool useRMW, Status status, RecordInfo recordInfo, ref Output actualOutput, int keyOrdinal)
+            internal static void ProcessNoKeyRecord(Status status, RecordInfo recordInfo, ref Output actualOutput, int keyOrdinal)
             {
                 if (status.Found)
                 {
@@ -286,8 +294,8 @@ namespace Tsavorite.test.readaddress
                 {
                     // We need a non-AtAddress read to start the loop of returning the previous address to read at.
                     var status = readAtAddress == 0
-                        ? bContext.Read(ref key, ref input, ref output, ref readOptions, out _)
-                        : bContext.ReadAtAddress(readAtAddress, ref key, ref input, ref output, ref readOptions, out _);
+                        ? bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, ref readOptions, out _)
+                        : bContext.ReadAtAddress(readAtAddress, SpanByte.FromPinnedVariable(ref key), ref input, ref output, ref readOptions, out _);
 
                     if (status.IsPending)
                     {
@@ -295,14 +303,14 @@ namespace Tsavorite.test.readaddress
                         _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
                         (status, output) = GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
+                    if (!testStore.ProcessChainRecord(lap, ref output))
                         break;
-                    readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
+                    readAtAddress = output.recordInfo.PreviousAddress;
                 }
             }
         }
 
-        struct IterateKeyTestScanIteratorFunctions : IScanIteratorFunctions<KeyStruct, ValueStruct>
+        struct IterateKeyTestScanIteratorFunctions : IScanIteratorFunctions
         {
             readonly TestStore testStore;
             internal int numRecords;
@@ -312,12 +320,13 @@ namespace Tsavorite.test.readaddress
 
             public readonly bool OnStart(long beginAddress, long endAddress) => true;
 
-            public bool Reader(ref KeyStruct key, ref ValueStruct value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+            public bool Reader<TSourceLogRecord>(in TSourceLogRecord logRecord, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
+                where TSourceLogRecord : ISourceLogRecord
             {
                 cursorRecordResult = CursorRecordResult.Accept; // default; not used here
-                Output output = new() { address = recordMetadata.Address, value = SetReadOutput(key.key, value.value) };
+                Output output = new() { address = recordMetadata.Address, value = SetReadOutput(logRecord.Key.AsRef<KeyStruct>().key, logRecord.ValueSpan.AsRef<ValueStruct>().value), recordInfo = logRecord.Info };
                 int lap = MaxLap - ++numRecords;
-                ClassicAssert.AreEqual(lap != 0, testStore.ProcessChainRecord(new(StatusCode.Found), recordMetadata, lap, ref output), $"lap ({lap}) == 0 != ProcessChainRecord(...)");
+                ClassicAssert.AreEqual(lap != 0, testStore.ProcessChainRecord(lap, ref output), $"lap ({lap}) == 0 != ProcessChainRecord(...)");
                 ClassicAssert.AreEqual(numRecords, numberOfRecords, "mismatched record count");
                 return stopAt != numRecords;
             }
@@ -341,7 +350,7 @@ namespace Tsavorite.test.readaddress
             {
                 var key = new KeyStruct(DefaultKeyToScan);
                 IterateKeyTestScanIteratorFunctions scanFunctions = new(testStore);
-                ClassicAssert.IsTrue(testStore.store.Log.IterateKeyVersions(ref scanFunctions, ref key));
+                ClassicAssert.IsTrue(testStore.store.Log.IterateKeyVersions(ref scanFunctions, SpanByte.FromPinnedVariable(ref key)));
                 ClassicAssert.AreEqual(MaxLap, scanFunctions.numRecords);
             }
         }
@@ -360,7 +369,7 @@ namespace Tsavorite.test.readaddress
             {
                 var key = new KeyStruct(DefaultKeyToScan);
                 IterateKeyTestScanIteratorFunctions scanFunctions = new(testStore) { stopAt = 4 };
-                ClassicAssert.IsFalse(testStore.store.Log.IterateKeyVersions(ref scanFunctions, ref key));
+                ClassicAssert.IsFalse(testStore.store.Log.IterateKeyVersions(ref scanFunctions, SpanByte.FromPinnedVariable(ref key)));
                 ClassicAssert.AreEqual(scanFunctions.stopAt, scanFunctions.numRecords);
             }
         }
@@ -395,7 +404,7 @@ namespace Tsavorite.test.readaddress
                 for (int lap = MaxLap - 1; /* tested in loop */; --lap)
                 {
                     var status = readAtAddress == 0
-                        ? bContext.Read(ref key, ref input, ref output, ref readOptions, out recordMetadata)
+                        ? bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, ref readOptions, out recordMetadata)
                         : bContext.ReadAtAddress(readAtAddress, ref input, ref output, ref readOptions, out recordMetadata);
                     if (status.IsPending)
                     {
@@ -404,9 +413,9 @@ namespace Tsavorite.test.readaddress
                         (status, output) = GetSinglePendingResult(completedOutputs, out recordMetadata);
                     }
 
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
+                    if (!testStore.ProcessChainRecord(lap, ref output))
                         break;
-                    readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
+                    readAtAddress = output.recordInfo.PreviousAddress;
                 }
             }
         }
@@ -441,14 +450,14 @@ namespace Tsavorite.test.readaddress
                 {
                     Output output = new();
                     Status status = readAtAddress == 0
-                        ? bContext.Read(ref key, ref input, ref output, ref readOptions, out recordMetadata)
+                        ? bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, ref readOptions, out recordMetadata)
                         : bContext.ReadAtAddress(readAtAddress, ref input, ref output, ref readOptions, out recordMetadata);
                     if (status.IsPending)
                         (status, output) = bContext.GetSinglePendingResult(out recordMetadata);
 
-                    if (!testStore.ProcessChainRecord(status, recordMetadata, lap, ref output))
+                    if (!testStore.ProcessChainRecord(lap, ref output))
                         break;
-                    readAtAddress = recordMetadata.RecordInfo.PreviousAddress;
+                    readAtAddress = output.recordInfo.PreviousAddress;
                 }
             }
         }
@@ -493,7 +502,7 @@ namespace Tsavorite.test.readaddress
                         (status, output) = GetSinglePendingResult(completedOutputs);
                     }
 
-                    TestStore.ProcessNoKeyRecord(updateOp == UpdateOp.RMW, status, recordMetadata.RecordInfo, ref output, keyOrdinal);
+                    TestStore.ProcessNoKeyRecord(status, output.recordInfo, ref output, keyOrdinal);
                 }
 
                 await testStore.Flush().AsTask();
@@ -571,5 +580,3 @@ namespace Tsavorite.test.readaddress
         }
     }
 }
-
-#endif // LOGRECORD_TODO

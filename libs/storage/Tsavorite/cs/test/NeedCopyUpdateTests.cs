@@ -1,27 +1,25 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
+using System;
 using System.IO;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
-//  using static Tsavorite.test.NeedCopyUpdateTests;
 using static Tsavorite.test.TestUtils;
 
 namespace Tsavorite.test
 {
-    using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
-    using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
+    using LongAllocator = SpanByteAllocator<StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>>;
+    using LongStoreFunctions = StoreFunctions<LongKeyComparer, SpanByteRecordDisposer>;
 
-    using RMWValueAllocator = GenericAllocator<int, RMWValueObj, StoreFunctions<int, RMWValueObj, IntKeyComparer, DefaultRecordDisposer<int, RMWValueObj>>>;
-    using RMWValueStoreFunctions = StoreFunctions<int, RMWValueObj, IntKeyComparer, DefaultRecordDisposer<int, RMWValueObj>>;
+    using RMWValueAllocator = ObjectAllocator<StoreFunctions<IntKeyComparer, DefaultRecordDisposer>>;
+    using RMWValueStoreFunctions = StoreFunctions<IntKeyComparer, DefaultRecordDisposer>;
 
     [TestFixture]
     internal class NeedCopyUpdateTests
     {
-        private TsavoriteKV<int, RMWValueObj, RMWValueStoreFunctions, RMWValueAllocator> store;
+        private TsavoriteKV<RMWValueStoreFunctions, RMWValueAllocator> store;
         private IDevice log, objlog;
 
         [SetUp]
@@ -39,7 +37,7 @@ namespace Tsavorite.test
                 MutableFraction = 0.1,
                 MemorySize = 1L << 15,
                 PageSize = 1L << 10
-            }, StoreFunctions<int, RMWValueObj>.Create(IntKeyComparer.Instance, keySerializerCreator: null, () => new RMWValueSerializer())
+            }, StoreFunctions.Create(IntKeyComparer.Instance, () => new RMWValueSerializer())
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -71,24 +69,24 @@ namespace Tsavorite.test
             var value2 = new RMWValueObj { value = 2 };
 
             functions.noNeedInitialUpdater = true;
-            status = bContext.RMW(ref key, ref value1); // needInitialUpdater false + NOTFOUND
+            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value1); // needInitialUpdater false + NOTFOUND
             ClassicAssert.IsFalse(status.Found, status.ToString());
             ClassicAssert.IsFalse(value1.flag); // InitialUpdater is not called
             functions.noNeedInitialUpdater = false;
 
-            status = bContext.RMW(ref key, ref value1); // InitialUpdater + NotFound
+            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value1); // InitialUpdater + NotFound
             ClassicAssert.IsFalse(status.Found, status.ToString());
             ClassicAssert.IsTrue(value1.flag); // InitialUpdater is called
 
-            status = bContext.RMW(ref key, ref value2); // InPlaceUpdater + Found
+            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value2); // InPlaceUpdater + Found
             ClassicAssert.IsTrue(status.Record.InPlaceUpdated, status.ToString());
 
             store.Log.Flush(true);
-            status = bContext.RMW(ref key, ref value2); // NeedCopyUpdate returns false, so RMW returns simply Found
+            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value2); // NeedCopyUpdate returns false, so RMW returns simply Found
             ClassicAssert.IsTrue(status.Found, status.ToString());
 
             store.Log.FlushAndEvict(true);
-            status = bContext.RMW(ref key, ref value2, new(StatusCode.Found)); // PENDING + NeedCopyUpdate + Found
+            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value2, new(StatusCode.Found)); // PENDING + NeedCopyUpdate + Found
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext.CompletePendingWithOutputs(out var outputs, true);
 
@@ -97,33 +95,38 @@ namespace Tsavorite.test
             ClassicAssert.IsTrue(status.Found, status.ToString()); // NeedCopyUpdate returns false, so RMW returns simply Found
 
             // Test stored value. Should be value1
-            status = bContext.Read(ref key, ref value1, ref output, new(StatusCode.Found));
+            status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref value1, ref output, new(StatusCode.Found));
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext.CompletePending(true);
 
-            status = bContext.Delete(ref key);
+            status = bContext.Delete(SpanByte.FromPinnedVariable(ref key));
             ClassicAssert.IsTrue(!status.Found && status.Record.Created, status.ToString());
             _ = bContext.CompletePending(true);
             store.Log.FlushAndEvict(true);
-            status = bContext.RMW(ref key, ref value2, new(StatusCode.NotFound | StatusCode.CreatedRecord)); // PENDING + InitialUpdater + NOTFOUND
+            status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value2, new(StatusCode.NotFound | StatusCode.CreatedRecord)); // PENDING + InitialUpdater + NOTFOUND
             ClassicAssert.IsTrue(status.IsPending, status.ToString());
             _ = bContext.CompletePending(true);
         }
 
-        internal class RMWValueObj
+        internal class RMWValueObj : HeapObjectBase
         {
             public int value;
             public bool flag;
+
+            public override IHeapObject Clone() => throw new System.NotImplementedException();
+            public override void Dispose() => throw new System.NotImplementedException();
+            public override void DoSerialize(BinaryWriter writer) => throw new System.NotImplementedException();
+            public override void WriteType(BinaryWriter writer, bool isNull) => throw new System.NotImplementedException();
         }
 
-        internal class RMWValueSerializer : BinaryObjectSerializer<RMWValueObj>
+        internal class RMWValueSerializer : BinaryObjectSerializer<IHeapObject>
         {
-            public override void Serialize(ref RMWValueObj value)
+            public override void Serialize(IHeapObject value)
             {
-                writer.Write(value.value);
+                writer.Write(((RMWValueObj)value).value);
             }
 
-            public override void Deserialize(out RMWValueObj value)
+            public override void Deserialize(out IHeapObject value)
             {
                 value = new RMWValueObj
                 {
@@ -132,29 +135,44 @@ namespace Tsavorite.test
             }
         }
 
-        internal class TryAddTestFunctions : TryAddFunctions<int, RMWValueObj, Status>
+        internal class TryAddTestFunctions : SessionFunctionsBase<RMWValueObj, RMWValueObj, Status>
         {
             internal bool noNeedInitialUpdater;
 
-            public override bool NeedInitialUpdate(ref int key, ref RMWValueObj input, ref RMWValueObj output, ref RMWInfo rmwInfo)
+            public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref RMWValueObj input, ref RMWValueObj output, ref ReadInfo readInfo)
             {
-                return !noNeedInitialUpdater && base.NeedInitialUpdate(ref key, ref input, ref output, ref rmwInfo);
-            }
-
-            public override bool InitialUpdater(ref int key, ref RMWValueObj input, ref RMWValueObj value, ref RMWValueObj output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
-            {
-                input.flag = true;
-                _ = base.InitialUpdater(ref key, ref input, ref value, ref output, ref rmwInfo, ref recordInfo);
+                output = (RMWValueObj)srcLogRecord.ValueObject;
                 return true;
             }
 
-            public override bool CopyUpdater(ref int key, ref RMWValueObj input, ref RMWValueObj oldValue, ref RMWValueObj newValue, ref RMWValueObj output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
+            public override bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref RMWValueObj input, ref RMWValueObj output, ref RMWInfo rmwInfo)
+                => !noNeedInitialUpdater;
+
+            public override bool InitialUpdater(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref RMWValueObj input, ref RMWValueObj output, ref RMWInfo rmwInfo)
             {
-                Assert.Fail("CopyUpdater");
+                input.flag = true;
+                Assert.That(dstLogRecord.TrySetValueObjectAndPrepareOptionals(input, in sizeInfo));
+                output = input;
+                return true;
+            }
+
+            public override bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref RMWValueObj input, ref RMWValueObj output, ref RMWInfo rmwInfo)
+                => false;
+
+            public override bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref RMWValueObj input, ref RMWValueObj output, ref RMWInfo rmwInfo)
+            {
+                Assert.Fail("CopyUpdater should not be called here");
                 return false;
             }
 
-            public override void RMWCompletionCallback(ref int key, ref RMWValueObj input, ref RMWValueObj output, Status ctx, Status status, RecordMetadata recordMetadata)
+            public override RecordFieldInfo GetRMWModifiedFieldInfo<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref RMWValueObj input)
+                => new() { KeySize = srcLogRecord.Key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            /// <inheritdoc/>
+            public override RecordFieldInfo GetRMWInitialFieldInfo(ReadOnlySpan<byte> key, ref RMWValueObj input)
+                => new() { KeySize = key.Length, ValueSize = ObjectIdMap.ObjectIdSize, ValueIsObject = true };
+            /// <inheritdoc/>
+
+            public override void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref RMWValueObj input, ref RMWValueObj output, Status ctx, Status status, RecordMetadata recordMetadata)
             {
                 ClassicAssert.AreEqual(ctx, status);
 
@@ -162,7 +180,7 @@ namespace Tsavorite.test
                     ClassicAssert.IsTrue(input.flag); // InitialUpdater is called.
             }
 
-            public override void ReadCompletionCallback(ref int key, ref RMWValueObj input, ref RMWValueObj output, Status ctx, Status status, RecordMetadata recordMetadata)
+            public override void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref RMWValueObj input, ref RMWValueObj output, Status ctx, Status status, RecordMetadata recordMetadata)
             {
                 ClassicAssert.AreEqual(output.value, input.value);
             }
@@ -172,7 +190,7 @@ namespace Tsavorite.test
     [TestFixture]
     internal class NeedCopyUpdateTestsSinglePage
     {
-        private TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store;
+        private TsavoriteKV<LongStoreFunctions, LongAllocator> store;
         private IDevice log;
 
         const int PageSizeBits = 16;
@@ -191,7 +209,7 @@ namespace Tsavorite.test
                 MutableFraction = 0.1,
                 MemorySize = 1L << (PageSizeBits + 1),
                 PageSize = 1L << PageSizeBits
-            }, StoreFunctions<long, long>.Create(LongKeyComparer.Instance)
+            }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );
         }
@@ -220,27 +238,27 @@ namespace Tsavorite.test
             // caused the HeadAddress to be moved above logicalAddress in CreateNewRecordRMW.
             const int padding = 2;
 
-            for (int key = 0; key < RecsPerPage - padding; key++)
+            for (long key = 0; key < RecsPerPage - padding; key++)
             {
-                var status = bContext.RMW(key, key << 32 + key);
+                long value = ((int)key << 32) + key;
+                var status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
                 ClassicAssert.IsTrue(status.IsCompletedSuccessfully, status.ToString());
             }
 
             store.Log.ShiftReadOnlyAddress(store.Log.TailAddress, wait: true);
 
             // This should trigger CopyUpdater, after flushing the oldest page (closest to HeadAddress).
-            for (int key = 0; key < RecsPerPage - padding; key++)
+            for (long key = 0; key < RecsPerPage - padding; key++)
             {
-                var status = bContext.RMW(key, key << 32 + key);
+                long value = ((int)key << 32) + key;
+                var status = bContext.RMW(SpanByte.FromPinnedVariable(ref key), ref value);
                 if (status.IsPending)
                     _ = bContext.CompletePending(wait: true);
             }
         }
 
-        internal class RMWSinglePageFunctions : SimpleLongSimpleFunctions<long, long>
+        internal class RMWSinglePageFunctions : SimpleLongSimpleFunctions
         {
         }
     }
 }
-
-#endif // LOGRECORD_TODO

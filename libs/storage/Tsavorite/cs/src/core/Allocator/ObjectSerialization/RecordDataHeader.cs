@@ -267,7 +267,7 @@ namespace Tsavorite.core
         /// <summary>Set the record length; this is ONLY to be used for temporary copies (e.g. serialization for Migration and Replication).</summary>
         /// <param name="newRecordLength"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetRecordLength(int newRecordLength)
+        internal readonly void SetRecordLength(int newRecordLength)
         {
             // This might leave extra bytes in the record length field if the new length uses fewer bytes than the previous length but this is only
             // temporary so it is acceptable.

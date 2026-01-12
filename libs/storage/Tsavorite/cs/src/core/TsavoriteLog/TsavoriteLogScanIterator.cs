@@ -162,7 +162,7 @@ namespace Tsavorite.core
                 // Ignore commit exceptions, except when the token is signaled
                 try
                 {
-                    await commitTask.WithCancellationAsync(token).ConfigureAwait(false);
+                    _ = await commitTask.WithCancellationAsync(token).ConfigureAwait(false);
                 }
                 catch (ObjectDisposedException) { return false; }
                 catch when (!token.IsCancellationRequested) { }
@@ -173,25 +173,25 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                if (this.disposed)
+                if (disposed)
                     return false;
-                if (this.Ended) return false;
+                if (Ended) return false;
 
-                var tcs = this.tsavoriteLog.refreshUncommittedTcs;
+                var tcs = tsavoriteLog.refreshUncommittedTcs;
                 if (tcs == null)
                 {
                     var newTcs = new TaskCompletionSource<Empty>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    tcs = Interlocked.CompareExchange(ref this.tsavoriteLog.refreshUncommittedTcs, newTcs, null);
+                    tcs = Interlocked.CompareExchange(ref tsavoriteLog.refreshUncommittedTcs, newTcs, null);
                     tcs ??= newTcs; // successful CAS so update the local var
                 }
 
-                if (this.NextAddress < this.tsavoriteLog.SafeTailAddress)
+                if (NextAddress < tsavoriteLog.SafeTailAddress)
                     return true;
 
                 // Ignore refresh-uncommitted exceptions, except when the token is signaled
                 try
                 {
-                    await tcs.Task.WithCancellationAsync(token).ConfigureAwait(false);
+                    _ = await tcs.Task.WithCancellationAsync(token).ConfigureAwait(false);
                 }
                 catch (ObjectDisposedException) { return false; }
                 catch when (!token.IsCancellationRequested) { }
@@ -397,7 +397,7 @@ namespace Tsavorite.core
                     long physicalAddress;
                     bool isCommitRecord;
                     int entryLength;
-                    bool onFrame = false;
+                    var onFrame = false;
                     try
                     {
                         var hasNext = GetNextInternal(out physicalAddress, out entryLength, out currentAddress,
@@ -482,7 +482,7 @@ namespace Tsavorite.core
                     // If initializing wait for completion
                     while (tsavoriteLog.Initializing)
                     {
-                        Thread.Yield();
+                        _ = Thread.Yield();
                         epoch.ProtectAndDrain();
                     }
 
@@ -495,7 +495,7 @@ namespace Tsavorite.core
                     }
 
                     // GetNextInternal returns only the payload length, so adjust the totalLength
-                    int totalLength = headerSize + Align(newEntryLength);
+                    var totalLength = headerSize + Align(newEntryLength);
 
                     // Expand the records in iteration, as long as as they are on the same physical page
                     while (ExpandGetNextInternal(startPhysicalAddress, ref totalLength, out _, out endLogicalAddress, out isCommitRecord))
@@ -633,9 +633,9 @@ namespace Tsavorite.core
             }
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(CircularDiskReadBuffer _ /*readBuffers*/, long readPageStart, int numPages, long untilAddress, TContext context, out CountdownEvent completed,
+        internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer _ /*readBuffers*/, long readPage, long untilAddress, TContext context, out CountdownEvent completed,
                 long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
-            => allocator.AsyncReadPagesFromDeviceToFrame(readPageStart, numPages, untilAddress, AsyncReadPagesToFrameCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
+            => allocator.AsyncReadPageFromDeviceToFrame(readBuffers: null, readPage, untilAddress, AsyncReadPagesToFrameCallback, context, frame, out completed, devicePageOffset, device, objectLogDevice, cts);
 
         private unsafe void AsyncReadPagesToFrameCallback(uint errorCode, uint numBytes, object context)
         {

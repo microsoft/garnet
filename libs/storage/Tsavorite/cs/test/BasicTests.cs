@@ -28,7 +28,6 @@ namespace Tsavorite.test
         private ClientSession<InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> session;
         private BasicContext<InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> bContext;
         private IDevice log;
-        TestDeviceType deviceType;
 
         [SetUp]
         public void Setup()
@@ -139,7 +138,7 @@ namespace Tsavorite.test
         public void NativeInMemWriteReadDelete2()
         {
             // Just set this one since Write Read Delete already does all four devices
-            deviceType = TestDeviceType.MLSD;
+            var deviceType = TestDeviceType.MLSD;
 
             const int count = 10;
 
@@ -187,7 +186,7 @@ namespace Tsavorite.test
         public unsafe void NativeInMemWriteRead2()
         {
             // Just use this one instead of all four devices since InMemWriteRead covers all four devices
-            deviceType = TestDeviceType.MLSD;
+            var deviceType = TestDeviceType.MLSD;
 
             const int count = 200;
 
@@ -239,7 +238,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public unsafe void TestShiftHeadAddress([Values] TestDeviceType deviceType, [Values] BatchMode batchMode)
+        public void TestShiftHeadAddress([Values] TestDeviceType deviceType, [Values] BatchMode batchMode)
         {
             InputStruct input = default;
             const int RandSeed = 10;
@@ -539,7 +538,7 @@ namespace Tsavorite.test
         public void ReadAtAddressDefaultOptions()
         {
             // Just functional test of ReadFlag so one device is enough
-            deviceType = TestDeviceType.MLSD;
+            var deviceType = TestDeviceType.MLSD;
 
             Setup(new() { MemorySize = 1L << 29 }, deviceType);
 
@@ -584,7 +583,7 @@ namespace Tsavorite.test
         public void ReadAtAddressIgnoreReadCache()
         {
             // Another ReadFlag functional test so one device is enough
-            deviceType = TestDeviceType.MLSD;
+            var deviceType = TestDeviceType.MLSD;
 
             Setup(new() { MemorySize = 1L << 29, ReadCacheEnabled = true }, deviceType);
 
@@ -721,7 +720,7 @@ namespace Tsavorite.test
 
             string testDir = new('x', Native32.WIN32_MAX_PATH - 11);                       // As in LSD, -11 for ".<segment>"
             using var log = Devices.CreateLogDevice(testDir, deleteOnClose: true);     // Should succeed
-            _ = Assert.Throws(typeof(TsavoriteException), () => Devices.CreateLogDevice(testDir + "y", deleteOnClose: true));
+            _ = Assert.Throws<TsavoriteException>(() => Devices.CreateLogDevice(testDir + "y", deleteOnClose: true));
         }
 
         [Test]

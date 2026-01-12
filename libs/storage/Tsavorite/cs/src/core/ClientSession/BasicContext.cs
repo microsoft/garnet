@@ -481,7 +481,7 @@ namespace Tsavorite.core
             try
             {
                 return store.hlogBase.ConditionalScanPush<TInput, TOutput, TContext, SessionFunctionsWrapper<TInput, TOutput, TContext, TFunctions, BasicSessionLocker<TStoreFunctions, TAllocator>, TStoreFunctions, TAllocator>, TSourceLogRecord>(
-                        sessionFunctions, scanCursorState, in srcLogRecord, currentAddress, untilAddress, maxAddress);
+                        sessionFunctions, scanCursorState, in srcLogRecord, currentAddress, currentAddress, untilAddress, maxAddress);
             }
             finally
             {

@@ -363,7 +363,7 @@ namespace Tsavorite.test
         }
 
         /// <summary>For use with stack-based single T variable.</summary>
-        public static unsafe ref T AsRef<T>(this Span<byte> spanByte) where T : unmanaged
+        public static ref T AsRef<T>(this Span<byte> spanByte) where T : unmanaged
         {
             Debug.Assert(spanByte.Length >= Unsafe.SizeOf<T>(), $"Span<byte> length expected to be >= {Unsafe.SizeOf<T>()} but was {spanByte.Length}");
             return ref Unsafe.As<byte, T>(ref spanByte[0]);
@@ -377,7 +377,7 @@ namespace Tsavorite.test
         }
 
         /// <summary>For use with stack-based single T variable.</summary>
-        public static unsafe ref T AsSliceRef<T>(this Span<byte> spanByte, int sliceIndex = 0) where T : unmanaged
+        public static ref T AsSliceRef<T>(this Span<byte> spanByte, int sliceIndex = 0) where T : unmanaged
             => ref Unsafe.As<byte, T>(ref spanByte[sliceIndex]);
 
         /// <summary>For use with stack-based byte vector indexed as a vector of T; usually just the 0th item</summary>
@@ -385,14 +385,14 @@ namespace Tsavorite.test
             => ref MemoryMarshal.Cast<byte, T>(spanByte)[sliceIndex];
 
         /// <summary>For use with stack-based single T variable.</summary>
-        internal static unsafe Span<byte> Set<T>(this Span<byte> spanByte, T value) where T : unmanaged
+        internal static Span<byte> Set<T>(this Span<byte> spanByte, T value) where T : unmanaged
         {
             spanByte.AsRef<T>() = value;
             return spanByte;
         }
 
         /// <summary>For use with stack-based byte vector indexed as a vector of T; usually just the 0th item</summary>
-        internal static unsafe Span<byte> SetSlice<T>(this Span<byte> spanByte, T value, int sliceIndex = 0) where T : unmanaged
+        internal static Span<byte> SetSlice<T>(this Span<byte> spanByte, T value, int sliceIndex = 0) where T : unmanaged
         {
             spanByte.AsSliceRef<T>(sliceIndex) = value;
             return spanByte;

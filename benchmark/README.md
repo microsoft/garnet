@@ -20,7 +20,7 @@ You can list all available benchmarks using `--list flat` or `--list tree`, e.g.
 dotnet run -c Release -f net8.0 --list flat
 ```
 
-To run specific benchmarks, you can use `--filter`. For example, to run all RESP-protocol write benchmarks using the default configuration, which will run the benchmarks using both .NET 6 and .NET 8 runtimes (with the dynamic PGO disabled):
+To run specific benchmarks, you can use `--filter`. For example, to run all RESP-protocol write benchmarks using the default configuration, which will run the benchmarks using all .NET target runtimes (with the dynamic PGO disabled):
 
 ```
 dotnet run -c Release -f net8.0 --filter *RespIntegerWriteBenchmarks*

@@ -41,7 +41,7 @@ const sidebars = {
 		{type: 'category', label: 'Diagnostics', items: ["logger", "metrics"]},
 		"research",
 			*/
-		{type: 'category', label: 'Azure', items: ["azure/overview", "azure/quickstart", "azure/api-compatibility", "azure/cluster-configuration", "azure/resiliency", "azure/security", "azure/monitoring", "azure/faq"]},
+		{type: 'category', label: 'Managed Offering (Azure)', items: ["azure/overview", "azure/quickstart", "azure/api-compatibility", "azure/cluster-configuration", "azure/resiliency", "azure/security", "azure/monitoring", "azure/faq"]},
 		{type: 'category', label: 'Research', items: ["research/papers"]},
 		{type: 'category', label: 'Other Links', items: [
 			{type: 'link', label: 'Releases', href: 'https://github.com/microsoft/garnet/releases'},

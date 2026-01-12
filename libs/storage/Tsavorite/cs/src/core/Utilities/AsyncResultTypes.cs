@@ -10,13 +10,13 @@ namespace Tsavorite.core
         public TContext context;
     }
 
-    internal unsafe struct HashIndexPageAsyncFlushResult
+    internal struct HashIndexPageAsyncFlushResult
     {
         public int chunkIndex;
         public SectorAlignedMemory mem;
     }
 
-    internal unsafe struct HashIndexPageAsyncReadResult
+    internal struct HashIndexPageAsyncReadResult
     {
         public int chunkIndex;
     }

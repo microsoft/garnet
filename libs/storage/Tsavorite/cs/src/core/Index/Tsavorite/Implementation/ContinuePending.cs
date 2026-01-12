@@ -94,9 +94,6 @@ namespace Tsavorite.core
                         }
                     }
 
-                    if (!memoryRecord.IsSet && pendingContext.diskLogRecord.Info.Tombstone)
-                        goto NotFound;
-
                     ReadInfo readInfo = new()
                     {
                         Version = sessionFunctions.Ctx.version,
@@ -104,6 +101,16 @@ namespace Tsavorite.core
                         IsFromPending = pendingContext.type != OperationType.NONE,
                     };
                     pendingContext.logicalAddress = request.logicalAddress;
+
+                    if (!memoryRecord.IsSet && pendingContext.diskLogRecord.Info.Tombstone)
+                    {
+                        if (pendingContext.IsReadAtAddress)
+                        {
+                            // Be consistent with InternalReadAtAddress and return the tombstoned record we retrieved from disk.
+                            _ = sessionFunctions.Reader(in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
+                        }
+                        goto NotFound;
+                    }
 
                     var success = false;
                     if (stackCtx.recSrc.HasMainLogSrc && stackCtx.recSrc.LogicalAddress >= hlogBase.ReadOnlyAddress)
@@ -120,7 +127,7 @@ namespace Tsavorite.core
                         // This may be in the immutable region, which means it may be an updated version of the record.
                         success = sessionFunctions.Reader(in memoryRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
                     }
-                    else
+                    else // Not found in memory so return the disk copy.
                         success = sessionFunctions.Reader(in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output, ref readInfo);
 
                     if (!success)
@@ -336,8 +343,9 @@ namespace Tsavorite.core
             // Prepare to push to caller's iterator functions. Use data from pendingContext, not request; we're only made it to this line if the key was not found,
             // and thus the request was not populated. The new minAddress should be the highest logicalAddress we previously saw, because we need to make sure the
             // record was not added to the log after we initialized the pending IO.
-            _ = hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(sessionFunctions,
-                pendingContext.scanCursorState, in pendingContext.diskLogRecord, currentAddress: request.logicalAddress, minAddress: pendingContext.initialLatestLogicalAddress + 1, maxAddress: pendingContext.maxAddress);
+            _ = hlogBase.ConditionalScanPush<TInput, TOutput, TContext, TSessionFunctionsWrapper, DiskLogRecord>(sessionFunctions, pendingContext.scanCursorState,
+                in pendingContext.diskLogRecord, originalAddress: pendingContext.originalAddress, currentAddress: request.logicalAddress,
+                minAddress: pendingContext.initialLatestLogicalAddress + 1, maxAddress: pendingContext.maxAddress);
 
             // ConditionalScanPush has already called HandleOperationStatus, so return SUCCESS here.
             return OperationStatus.SUCCESS;

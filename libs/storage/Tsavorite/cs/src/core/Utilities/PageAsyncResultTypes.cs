@@ -63,6 +63,9 @@ namespace Tsavorite.core
         public void DisposeHandle()
         {
             handle?.Dispose();
+            handle = null;
+            readBuffers?.Dispose();
+            readBuffers = null;
         }
     }
 
@@ -111,9 +114,9 @@ namespace Tsavorite.core
         /// </summary>
         public void CompleteFlush()
         {
-            flushSemaphore?.Release();
+            _ = (flushSemaphore?.Release());
             if (Interlocked.Decrement(ref count) == 0)
-                completedSemaphore.Release();
+                _ = completedSemaphore.Release();
         }
 
         public void WaitOneFlush() => flushSemaphore?.Wait();
@@ -158,6 +161,7 @@ namespace Tsavorite.core
         /// <summary>If this is set then we are using a different objectLog device from that in the allocator, and do not use the allocator's <see cref="ObjectLogFilePositionInfo"/>.</summary>
         internal ObjectLogFilePositionInfo objectLogFilePositionInfo;
 
+        /// <inheritdoc/>
         public override string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
@@ -166,17 +170,21 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Free
+        /// Release our <see cref="count"/> and if it is zero, clear buffers.
         /// </summary>
-        public void Free()
+        /// <returns>The decremented count</returns>
+        /// <remarks>There is currently no AddRef(); count is assigned 1 at creation</remarks>
+        internal int Release()
         {
-            if (freeBuffer1 != null)
+            var result = Interlocked.Decrement(ref count);
+            if (result == 0)
             {
-                freeBuffer1.Return();
+                freeBuffer1?.Return();
                 freeBuffer1 = null;
+                flushCompletionTracker?.CompleteFlush();
+                flushCompletionTracker = null;
             }
-
-            flushCompletionTracker?.CompleteFlush();
+            return result;
         }
     }
 
@@ -274,7 +282,7 @@ namespace Tsavorite.core
         {
             var callbackString = callback is null ? "null" : callback.ToString();
             var contextString = callback is null ? "null" : context.ToString();
-            return $"numBytes {numBytes}, count {count}, callback {callbackString}, context {context}";
+            return $"numBytes {numBytes}, count {count}, callback {callbackString}, context {contextString}";
         }
 
         public void Set(DeviceIOCompletionCallback callback, object context, uint numBytes)

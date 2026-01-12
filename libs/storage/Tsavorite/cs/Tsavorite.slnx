@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/benchmark/">
+    <Project Path="benchmark/BDN-Tsavorite.Benchmark/BDN-Tsavorite.benchmark.csproj" />
+    <Project Path="benchmark/YCSB.benchmark/YCSB.benchmark.csproj" />
+  </Folder>
+  <Folder Name="/src/core/">
+    <Project Path="src/core/Tsavorite.core.csproj" />
+  </Folder>
+  <Folder Name="/src/devices/">
+    <Project Path="src/devices/AzureStorageDevice/Tsavorite.devices.AzureStorageDevice.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/Tsavorite.test.csproj" />
+  </Folder>
+</Solution>
