@@ -15,7 +15,7 @@ public enum ClusterPreferredEndpointType
     /// </summary>
     [Description("ip")]
     Ip,
-    
+
     /// <summary>
     /// ex -MOVED 12182 localhost:7000
     /// if hostname is not exist
@@ -23,11 +23,10 @@ public enum ClusterPreferredEndpointType
     /// </summary>
     [Description("hostname")]
     Hostname,
-    
+
     /// <summary>
     /// ex -MOVED 12182 ?:7000
     /// </summary>
     [Description("unknown-endpoint")]
     UnknownEndpoint
 }
-

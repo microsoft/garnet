@@ -460,7 +460,7 @@ namespace Garnet.cluster
         public (string endpoint, int port) GetEndpointFromSlot(ushort slot, ClusterPreferredEndpointType type)
         {
             var workerId = GetWorkerIdFromSlot(slot);
-            
+
             return (GetEndpointByPreferredType(workerId, type), workers[workerId].Port);
         }
 
@@ -473,10 +473,10 @@ namespace Garnet.cluster
         public (string endpoint, int port) AskEndpointFromSlot(ushort slot, ClusterPreferredEndpointType type)
         {
             var workerId = slotMap[slot]._workerId;
-         
+
             return (GetEndpointByPreferredType(workerId, type), workers[workerId].Port);
         }
-        
+
         private string GetEndpointByPreferredType(int workerId, ClusterPreferredEndpointType type)
         {
             return type switch
@@ -749,7 +749,7 @@ namespace Garnet.cluster
 
             return rangeInfo;
         }
-        
+
         private string CreateNodeNetworkingInfo(
             string ipAddress,
             int port,
@@ -766,11 +766,11 @@ namespace Garnet.cluster
                 ClusterPreferredEndpointType.UnknownEndpoint => null,
                 _ => null
             };
-            
+
             nodeInfo += FormatValueOrNull(preferredEndpoint);
             nodeInfo += $":{port}\r\n";
             nodeInfo += $"${nodeid.Length}\r\n{nodeid}\r\n";
-            
+
             var metaPairs = new List<(string, string)>();
             if (preferredEndpointType != ClusterPreferredEndpointType.Ip)
             {
@@ -796,7 +796,7 @@ namespace Garnet.cluster
             if (string.IsNullOrEmpty(value)) return "$-1\r\n";
             return $"${value.Length}\r\n{value}\r\n";
         }
-        
+
         /// <summary>
         /// Get formatted (using CLUSTER SLOTS format) cluster config info.
         /// Ip, endpoint is ip address

@@ -64,7 +64,7 @@ namespace Garnet.test.cluster
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(customSlotRanges: slotRanges, logger: context.logger);
             var targetEndpoint = GetTargetEndpoint(preferredType, useClusterAnnounceHostname);
-                
+
             var slotsResult = context.clusterTestUtils.ClusterSlots(0, context.logger);
             ClassicAssert.IsTrue(slotsResult.Count == 1);
             ClassicAssert.AreEqual(startSlot, slotsResult[0].startSlot);
@@ -78,8 +78,8 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(2)]
-        [TestCase(ClusterPreferredEndpointType.Ip,true)]
-        [TestCase(ClusterPreferredEndpointType.Ip,false)]
+        [TestCase(ClusterPreferredEndpointType.Ip, true)]
+        [TestCase(ClusterPreferredEndpointType.Ip, false)]
         [TestCase(ClusterPreferredEndpointType.Hostname, true)]
         [TestCase(ClusterPreferredEndpointType.Hostname, false)]
         [TestCase(ClusterPreferredEndpointType.UnknownEndpoint, true)]
@@ -114,7 +114,7 @@ namespace Garnet.test.cluster
             for (var i = 0; i < slotsResult.Count; i++)
             {
                 var targetEndpoint = GetTargetEndpoint(preferredType, useClusterAnnounceHostname);
-                
+
                 var origRange = ranges[i];
                 var retRange = slotsResult[i];
                 ClassicAssert.AreEqual(origRange.Item2.Item1, retRange.startSlot);
@@ -128,7 +128,7 @@ namespace Garnet.test.cluster
                 CheckMetadata(preferredType, useClusterAnnounceHostname, retRange.nnInfo[0]);
             }
         }
-        
+
         private string GetTargetEndpoint(ClusterPreferredEndpointType preferredType, bool useClusterAnnounceHostname)
         {
             if (preferredType == ClusterPreferredEndpointType.Ip)
@@ -148,7 +148,7 @@ namespace Garnet.test.cluster
 
             return null;
         }
-        
+
         private void CheckMetadata(ClusterPreferredEndpointType preferredType, bool useClusterAnnounceHostname, NodeNetInfo nodeNetInfo)
         {
             if (preferredType == ClusterPreferredEndpointType.Ip)
@@ -161,7 +161,7 @@ namespace Garnet.test.cluster
                 {
                     ClassicAssert.AreEqual(null, nodeNetInfo.hostname);
                 }
-                
+
                 ClassicAssert.Null(nodeNetInfo.ip);
             }
 
@@ -169,7 +169,7 @@ namespace Garnet.test.cluster
             {
                 ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(0).Address.ToString(), nodeNetInfo.ip);
             }
-                
+
             if (preferredType == ClusterPreferredEndpointType.UnknownEndpoint)
             {
                 var hostname = useClusterAnnounceHostname ? context.nodeOptions[0].ClusterAnnounceHostname : null;
@@ -177,7 +177,7 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(0).Address.ToString(), nodeNetInfo.ip);
             }
         }
-        
+
         [Test, Order(3)]
         public void ClusterForgetTest()
         {

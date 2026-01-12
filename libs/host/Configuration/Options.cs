@@ -55,10 +55,10 @@ namespace Garnet
 
         [Option("cluster-announce-hostname", Required = false, HelpText = "Hostname that this node advertises to other nodes to connect to for gossiping.")]
         public string ClusterAnnounceHostname { get; set; }
-        
+
         [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown-endpoint)")]
         public string ClusterPreferredEndpointType { get; set; }
-        
+
         [MemorySizeValidation]
         [Option('m', "memory", Required = false, HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
         public string MemorySize { get; set; }
@@ -835,7 +835,7 @@ namespace Garnet
             {
                 throw new Exception("Invalid ClusterPreferredEndpointType. Valid values: ip, hostname, unknown-endpoint.");
             }
-            
+
             return new GarnetServerOptions(logger)
             {
                 EndPoints = endpoints,

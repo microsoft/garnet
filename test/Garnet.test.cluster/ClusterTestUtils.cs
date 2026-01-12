@@ -1649,7 +1649,7 @@ namespace Garnet.test.cluster
             slot = int.Parse(data[1]);
 
             var endpointSplit = data[2].Split(':');
-            
+
             IPAddress ip;
             try
             {
@@ -1664,7 +1664,7 @@ namespace Garnet.test.cluster
             {
                 ip = IPAddress.Parse(endpointSplit[0]);
             }
-            
+
             endpoint = new IPEndPoint(ip, int.Parse(endpointSplit[1].Split('\r')[0]));
         }
 
@@ -1942,12 +1942,12 @@ namespace Garnet.test.cluster
                         var endpoint = (string)nodeInfo[0];
                         var port = (int)nodeInfo[1];
                         var nodeid = (string)nodeInfo[2];
-                        
+
                         var metadataInfo = ((RedisResult[])nodeInfo[3]);
                         string hostname = null;
                         string ip = null;
 
-                        for(var j = 0; j < metadataInfo.Length; j +=2)
+                        for (var j = 0; j < metadataInfo.Length; j += 2)
                         {
                             var key = (string)metadataInfo[j];
                             var value = (string)metadataInfo[j + 1];
@@ -1960,7 +1960,7 @@ namespace Garnet.test.cluster
                                 ip = value;
                             }
                         }
-                        
+
                         slotItem.nnInfo[i - 2].endpoint = endpoint;
                         slotItem.nnInfo[i - 2].port = port;
                         slotItem.nnInfo[i - 2].nodeid = nodeid;

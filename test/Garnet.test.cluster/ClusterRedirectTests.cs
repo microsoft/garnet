@@ -513,7 +513,7 @@ ClusterRedirectTests.TestFlags testFlags)
 
             return (status, _value, _values);
         }
-        
+
         private void SendToImportingNode(
             ref LightClientRequest[] connections,
             int sourceNodeIndex,
@@ -780,7 +780,7 @@ ClusterRedirectTests.TestFlags testFlags)
             connections.ToList().ForEach(x => x.Dispose());
             context.logger.LogDebug("1. ClusterMultiKeyRedirectionTests done");
         }
-        
+
         [Test, Order(3)]
         [Category("CLUSTER")]
         public void ClusterHostnamePreferredRedirectionTests()
@@ -789,7 +789,7 @@ ClusterRedirectTests.TestFlags testFlags)
             var Port = ClusterTestContext.Port;
             var Shards = context.defaultShards;
 
-            context.CreateInstances(Shards, cleanClusterConfig: true, clusterPreferredEndpointType:ClusterPreferredEndpointType.Hostname, useClusterAnnounceHostname: true);
+            context.CreateInstances(Shards, cleanClusterConfig: true, clusterPreferredEndpointType: ClusterPreferredEndpointType.Hostname, useClusterAnnounceHostname: true);
             context.CreateConnection();
 
             var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(Port, Shards)]);
@@ -845,7 +845,7 @@ ClusterRedirectTests.TestFlags testFlags)
             connections.ToList().ForEach(x => x.Dispose());
             context.logger.LogDebug("1. ClusterHostnamePreferredRedirectionTests done");
         }
-        
+
         [Test, Order(4)]
         [Category("CLUSTER")]
         public void ClusterHostnamePreferredAndNonHostnameRedirectionTests()
@@ -854,7 +854,7 @@ ClusterRedirectTests.TestFlags testFlags)
             var Port = ClusterTestContext.Port;
             var Shards = context.defaultShards;
 
-            context.CreateInstances(Shards, cleanClusterConfig: true, clusterPreferredEndpointType:ClusterPreferredEndpointType.Hostname);
+            context.CreateInstances(Shards, cleanClusterConfig: true, clusterPreferredEndpointType: ClusterPreferredEndpointType.Hostname);
             context.CreateConnection();
 
             var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(Port, Shards)]);
@@ -875,11 +875,11 @@ ClusterRedirectTests.TestFlags testFlags)
 
                     var result = connections[otherNodeIndex].SendCommand(testCmd);
                     ClassicAssert.True(result.AsSpan().StartsWith(ClusterTestUtils.MOVED));
-                    
+
                     var strResp = Encoding.ASCII.GetString(result);
                     var data = strResp.Split(' ');
                     var endpointSplit = data[2].Split(':');
-                    
+
                     ClassicAssert.AreEqual("?", endpointSplit[0]);
                 }
             }
@@ -887,7 +887,7 @@ ClusterRedirectTests.TestFlags testFlags)
             connections.ToList().ForEach(x => x.Dispose());
             context.logger.LogDebug("1. ClusterHostnamePreferredAndNonHostnameRedirectionTests done");
         }
-        
+
         [Test, Order(5)]
         [Category("CLUSTER")]
         public void ClusterUnknownEndpointPreferredTests()
@@ -896,7 +896,7 @@ ClusterRedirectTests.TestFlags testFlags)
             var Port = ClusterTestContext.Port;
             var Shards = context.defaultShards;
 
-            context.CreateInstances(Shards, cleanClusterConfig: true, clusterPreferredEndpointType:ClusterPreferredEndpointType.UnknownEndpoint, useClusterAnnounceHostname: false);
+            context.CreateInstances(Shards, cleanClusterConfig: true, clusterPreferredEndpointType: ClusterPreferredEndpointType.UnknownEndpoint, useClusterAnnounceHostname: false);
             context.CreateConnection();
 
             var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(Port, Shards)]);
@@ -917,11 +917,11 @@ ClusterRedirectTests.TestFlags testFlags)
 
                     var result = connections[otherNodeIndex].SendCommand(testCmd);
                     ClassicAssert.True(result.AsSpan().StartsWith(ClusterTestUtils.MOVED));
-                    
+
                     var strResp = Encoding.ASCII.GetString(result);
                     var data = strResp.Split(' ');
                     var endpointSplit = data[2].Split(':');
-                    
+
                     ClassicAssert.AreEqual("?", endpointSplit[0]);
                 }
             }

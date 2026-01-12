@@ -1094,21 +1094,21 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual("ip", options.ClusterPreferredEndpointType);
             }
-            
+
             {
                 var args = new[] { "--cluster-preferred-endpoint-type", "ip" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual("ip", options.ClusterPreferredEndpointType);
             }
-            
+
             {
                 var args = new[] { "--cluster-preferred-endpoint-type", "hostname" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual("hostname", options.ClusterPreferredEndpointType);
             }
-            
+
             {
                 var args = new[] { "--cluster-preferred-endpoint-type", "unknown-endpoint" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
@@ -1116,7 +1116,7 @@ namespace Garnet.test
                 ClassicAssert.AreEqual("unknown-endpoint", options.ClusterPreferredEndpointType);
             }
         }
-        
+
         [Test]
         public void ClusterAnnounceHostnameTest()
         {
@@ -1126,7 +1126,7 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(parseSuccessful);
                 ClassicAssert.AreEqual(null, options.ClusterAnnounceHostname);
             }
-            
+
             {
                 var args = new[] { "--cluster-announce-hostname", "test" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
