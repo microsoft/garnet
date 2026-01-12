@@ -39,6 +39,7 @@ The most important options are shown below:
 - ReplicaDisklessSync: Enable diskless sync to avoid disk write amplification when performing full synchronization when a new replica attaches. This options uses the streaming checkpoint feature to ship the store keys to the replica when full synchronization is required.
 - ReplicaDisklessSyncDelay: How long to wait between sync requests to allow for other replicas to attach in parallel hence amortize the cost of the streaming checkpoint.
 - OnDemandCheckpoint: This options enables taking an on demand checkpoint when a replica attaches. It used to improve the sychronization performance in the event the AOF log has grown too large or when the AOF has been truncated and synchronization requires a fresh checkpoint to correctly synchronize with the replica. If this option is disabled and the AOF log gets truncated, not having enabled this option could break the attach process unless UseAofNullDevice or FastAofTruncate is enabled since in that case we expect data loss.
+- AllowDataLoss (UseAofNullDevice || (FastAofTruncate && !OnDemandCheckpoint): This is an internal flag computed by base flags as indicated. It is used to skip AOF integrity check when an AOF sync task is started. Using this combination of options should be used with caution
 
 ## Diskbased Attach/Sync Details
 
@@ -56,16 +57,76 @@ When using diskbased replication, every replica attaching to a given primary tra
 A checkpoint is identified by its version number, a replication-id and the minimum AOF address it covers.
 The primary uses that information to decide if the replica requires partial or full synchronization by comparing it to the latest available valid checkpoint.
 From the primary's perspective a valid checkpoint is one for which the current begin AOF address is less or equal to the checkpoint covered AOF address.
+In addition to that, the checkpoint must be of the same version and history for the nodes involved.
 When the OnDemandCheckpoint flag is used the primary might initiate the process of taking a new checkpoint.
-Any checkpoint can be shared across attaching replicas if it is still valid at the moment those replicas attach.
-However, because when a new checkpoint is taken we make a best effort to delete older checkpoint files, at replica synchronization we implement a mechanism to lock checkpoints that are actively being used for synchronization
+Any on-demand checkpoint can be shared across attaching replicas if it is still valid at the moment those replicas attach.
+When a new checkpoint is created, we make a best effort approach to delete older checkpoints at the primary.
+This approach requires a locking mechanism to esnure that actively read checkpoints (those part of the full sychronization) will not be deleted
 The locking logic is for checkponts is implemented in ```CheckpointStore.cs```.
+The attaching replica communicates to the corresponding primary which creates a ```ReplicaSyncSession.cs``` for every attaching replica.
+By examining the metadata of the replica the primary decides if a full or partial synchronization is needed
 If full synchronization is necessary the primary will send the latest checkpoint files to the replica in chunks.
 It will then signal the replica to recover its latest checkpoint and replay the AOF log if necessary.
-When this process is complete, the primary will initiate a permanent background AofSyncTask by establishing an iterator over its own AOF, starting from the checkpoint covered AOF address.
+For partial synchronization, the primary signals the replica to recover from its local checkpoint skipping the step for sending the latest checkpoint
+When the recovery is complete, the primary will initiate a permanent background AofSyncTask by establishing an iterator over its own AOF, starting from the checkpoint covered AOF address.
+At startup of the AOF sync task, we validate the AOF integrity unless the nodes are configured in such a way where data loss is inevitable (see AllowDataLoss).
+Integrity validation is required to ensure that the start address requested by the replica has not been truncated and the AOF sync task can start streaming the AOF records to the replica from.
+
+## Diskless Attach/Sync Details
+Diskless synchronization works similar to the diskbased approach.
+Its major difference is that it does not require a disk checkpoint.
+It leverages the Streaming Checkpoint primitive to scan and transmit the kv pairs from the underlying Tsavorite store.
+The diskless attach/sync workflow is implemented at the primary within ```ReplicaSyncManager.cs```.
+The replica side implementation is implemented within ```ReplicaDisklessSync.cs```
+The attaching replica transmit their persistence information (i.e. AOF start and tail address and store version).
+As opposed to the disk-based approach, the attaching replicas are grouped and synced together.
+There is no limit on the number of replicas that can be synced in parallel.
+The only parameter that controls how many replicas are synced in parallel is ```ReplicaDisklessSyncDelay``` which delays replication sync to allow more replicas to sync together (i.e. at startup where a primary migth need to be configured with few replicas).
+Once the specified delay period passes the primary will examine all the metadata trasmitted by the associated replicas and decide which ones require full vs partial synchronization.
+Those requiring partial synchronization will be released immediately and a new AOF sync task will be created for them to start receiving the associated AOF records
+The rest will be fully synchronized using the StreamingCheckpoint primitive.
+Before starting the full sychronization, the primary broadcasts FLUSHDB command to cleanup the replica store so there is no conflicts with the primary store.
+This streaming checkpoint primitive utilizes and iterator over the TsavoriteStore and it broadcasts batches of kv pairs to the replica.
+The replica will receive those pairs and insert them into its store.
+At completion the replica sets its version number to be equal the the version number of primary.
+Finally, the primary executes the partial synchronization workflow which includes steps to validate the integrity of the AOF and the creation of the AOF sync tasks to start streaming the corresponding AOF records to each replica.
+
+# Sharded Log Feature
+Garnet replication leverages the AppendOnlyFile (AOF) implementation to stream update operations to the corresponding replica.
+The Garnet's AOF implementation uses a single instance of TsavoriteLog to record update operations as they occur at the primary.
+Writing, streaming and replaying the AOF in order to support replication is single threaded operation
+This is in contrast to Garnet's native multi-threaded architecture and does not scale well.
+
+This motivated the development of a sharded AOF implementation that leverages multiple physical sublogs (i.e. separate TsavoriteLog instances) to scale writes at the primary and parallel replay at the replica.
+This implementation works alongside a read consistency protocol running at the replica, which is required to guarantees prefix consistent reads because sublog replay happen asynchronously potentially exposing non-prefix consistent content.
+The read consistency protocol relies on virtual timestamps (i.e. sequence numbers) to order
 
 
+## Sharded AOF architecture
+NOTES:
+- Varying number of tsavoritelog instances
+- Writes are recorded to the log based on hashing the key associated to that write
+- Records keep track of a sequence number
+- There exist a class of coordinated operations that require writing to a subset of all physical logs
+- Transactions write to logs associated with the keys involve in the corresponding transaction
+- 
 
 
-## Diskless Full Synchronization Details
+## Read Consistency Protocol
+
+MaxSessionSequenceNumber (MSSN)
+var sublogIdx = HASH(k1)
+var k1sn = GetKeySequenceNumber(k1)
+
+do
+{
+    var k1sn = GetKeySequenceNumber(k1)
+}while(k1sn < mssn)
+
+v1 = Read k1
+
+k1sn = GetFrontierSequenceNumber(k1, sublogIdx)
+    => Max(GetKeySequenceNumber(k1), GetMaxSublogSequenceNumber(sublogIdx))
+
+mssn = MAX(k1sn, v1)
 
