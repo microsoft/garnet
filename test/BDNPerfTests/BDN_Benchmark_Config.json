@@ -1,7 +1,7 @@
 {
   "_comment": "NOTE: If adding a new BDN perf test to this file, you will need to add the name to the test: line in ci-bdnbenchmark.yml (~line 45). This ensures all the tests are not ran sequentially when ran as github action.",
   "_comment2": "NOTE: The BDN Perf name in the ci-bdnbenchmark.yml file test: line should NOT have the BDN.benchmark prefix and the .* ending. It needs to be this way for the reporting part of the BDN Charts.",
-  "_comment3": "NOTE: The expected values are the Allocated results from BDN tests. The values listed here are used for Windows / Linux and Net 8.0 and Net 9.0. In the case where one configuration is higher, set that higher value here.",
+  "_comment3": "NOTE: The expected values are the Allocated results from BDN tests. The values listed here are used for Windows / Linux and .NET 8 and 9. In the case where one configuration is higher, set that higher value here.",
   "_comment4": "NOTE: If the expected values are not highly deterministic, it is advisable to avoid failing the test when these values are out of compliance. To prevent false failures, prepend WARN-ON-FAIL_ instead of expected_ to each expected value. This ensures the values are checked and will only generate warnings without causing a pipeline failure. The values will still be included in the charts, even if they are marked as warnings.",
 
   "BDN.benchmark.Operations.BasicOperations.*": {

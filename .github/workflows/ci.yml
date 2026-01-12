@@ -54,9 +54,9 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
       - name: Install dependencies
-        run: dotnet restore Garnet.sln
+        run: dotnet restore Garnet.slnx
       - name: Check style format
-        run: dotnet format Garnet.sln --no-restore --verify-no-changes --verbosity diagnostic
+        run: dotnet format Garnet.slnx --no-restore --verify-no-changes --verbosity diagnostic
 
   format-tsavorite:
     name: Format Tsavorite
@@ -69,10 +69,10 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
       - name: Install dependencies
-        run: dotnet restore libs/storage/Tsavorite/cs/Tsavorite.sln
+        run: dotnet restore libs/storage/Tsavorite/cs/Tsavorite.slnx
       - name: Check style format
-        run: dotnet format libs/storage/Tsavorite/cs/Tsavorite.sln --no-restore --verify-no-changes --verbosity diagnostic
-
+        run: dotnet format libs/storage/Tsavorite/cs/Tsavorite.slnx --no-restore --verify-no-changes --verbosity diagnostic
+  
   # Job to build and test Garnet code
   build-test-garnet:
     name: Garnet
