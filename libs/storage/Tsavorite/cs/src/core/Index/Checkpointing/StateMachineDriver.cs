@@ -21,6 +21,7 @@ namespace Tsavorite.core
         TaskCompletionSource<bool> stateMachineCompleted;
         // All threads have entered the given state
         SemaphoreSlim waitForTransitionIn;
+        Exception waitForTransitionInException;
         // All threads have exited the given state
         SemaphoreSlim waitForTransitionOut;
         // Transactions drained in last version
@@ -55,9 +56,10 @@ namespace Tsavorite.core
         {
             if (Interlocked.Decrement(ref NumActiveTransactions[txnVersion & 0x1]) == 0)
             {
-                if (lastVersionTransactionsDone != null && txnVersion == lastVersion)
+                var _lastVersionTransactionsDone = lastVersionTransactionsDone;
+                if (_lastVersionTransactionsDone != null && txnVersion == lastVersion)
                 {
-                    lastVersionTransactionsDone.Release();
+                    _lastVersionTransactionsDone.Release();
                 }
             }
         }
@@ -211,7 +213,7 @@ namespace Tsavorite.core
             // Release waiters for new phase
             _ = waitForTransitionOut?.Release(int.MaxValue);
 
-            // Write new semaphore
+            // Write new semaphores
             waitForTransitionOut = new SemaphoreSlim(0);
             waitForTransitionIn = new SemaphoreSlim(0);
 
@@ -261,13 +263,31 @@ namespace Tsavorite.core
 
         void MakeTransitionWorker(SystemState nextState)
         {
-            stateMachine.GlobalAfterEnteringState(nextState, this);
-            waitForTransitionIn.Release(int.MaxValue);
+            try
+            {
+                stateMachine.GlobalAfterEnteringState(nextState, this);
+            }
+            catch (Exception e)
+            {
+                // Store the exception to be thrown by state machine driver
+                // We do not throw here as this epoch action may be executed in a different thread context
+                waitForTransitionInException = e;
+
+                logger?.LogError(e, "Exception in state machine transition worker");
+            }
+            finally
+            {
+                waitForTransitionIn.Release(int.MaxValue);
+            }
         }
 
         async Task ProcessWaitingListAsync(CancellationToken token = default)
         {
             await waitForTransitionIn.WaitAsync(token);
+            if (waitForTransitionInException != null)
+            {
+                throw waitForTransitionInException;
+            }
             foreach (var waiter in waitingList)
             {
                 await waiter.WaitAsync(token);
@@ -288,6 +308,7 @@ namespace Tsavorite.core
             }
             catch (Exception e)
             {
+                FastForwardStateMachineToRest();
                 logger?.LogError(e, "Exception in state machine");
                 ex = e;
                 throw;
@@ -310,6 +331,29 @@ namespace Tsavorite.core
                     _ = _stateMachineCompleted.TrySetResult(true);
                 }
             }
+        }
+
+        void FastForwardStateMachineToRest()
+        {
+            // Move system state to the next REST phase
+            while (systemState.Phase != Phase.REST)
+            {
+                systemState.Word = stateMachine.NextState(systemState).Word;
+            }
+
+            // Release any waiters on existing transition-out semaphore
+            if (waitForTransitionOut?.CurrentCount == 0)
+                _ = waitForTransitionOut?.Release(int.MaxValue);
+
+            // Clear semaphores
+            waitForTransitionOut = null;
+            waitForTransitionIn = null;
+
+            // Clear exception if any
+            waitForTransitionInException = null;
+
+            // Clear waiting list
+            waitingList.Clear();
         }
     }
 }
