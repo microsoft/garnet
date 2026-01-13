@@ -948,7 +948,7 @@ namespace Garnet.server
 
             if (serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
             {
-                taskManager.Register(TaskType.ExpiredKeyDeletionTask, TaskCategory.PrimaryOnly, (token) => ExpiredKeyDeletionScanTask(serverOptions.ExpiredObjectCollectionFrequencySecs, token));
+                taskManager.Register(TaskType.ExpiredKeyDeletionTask, TaskCategory.PrimaryOnly, (token) => ExpiredKeyDeletionScanTask(serverOptions.ExpiredKeyDeletionScanFrequencySecs, token));
             }
         }
 

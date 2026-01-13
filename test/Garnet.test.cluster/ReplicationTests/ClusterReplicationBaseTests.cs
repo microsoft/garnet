@@ -2062,7 +2062,7 @@ namespace Garnet.test.cluster
         [CancelAfter(30_000)]
         [TestCase(false)]
         [TestCase(true)]
-        public async Task ClusterReplicationObjectCollectTest(bool UseManualCollect, CancellationToken cancellationToken)
+        public async Task ClusterReplicationObjectCollectTest(bool useManualCollect, CancellationToken cancellationToken)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -2070,7 +2070,7 @@ namespace Garnet.test.cluster
             var primaryNodeIndex = 0;
             var replicaNodeIndex = 1;
 
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, expiredObjectCollectionFrequencySecs: !UseManualCollect ? 100 : 0);
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, expiredObjectCollectionFrequencySecs: !useManualCollect ? 100 : 0);
             context.CreateConnection(useTLS: useTLS);
 
             var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
@@ -2085,8 +2085,7 @@ namespace Garnet.test.cluster
             context.clusterTestUtils.WaitUntilNodeIsKnown(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
 
             var db = context.clusterTestUtils.GetDatabase();
-            HashEntry[] elements = [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")];            
-            
+            HashEntry[] elements = [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")];
             // Attach replica
             var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
             ClassicAssert.AreEqual("OK", resp);
@@ -2143,9 +2142,9 @@ namespace Garnet.test.cluster
 
             void ManualCollect()
             {
-                if (UseManualCollect)
+                if (useManualCollect)
                 {
-                    var ex = Assert.Throws<RedisServerException>(() => replicaServer.Execute("HCOLLECT", ["*"], CommandFlags.NoRedirect),
+                    Assert.Throws<RedisServerException>(() => replicaServer.Execute("HCOLLECT", ["*"], CommandFlags.NoRedirect),
                         $"Expected exception was not thrown");
 
                     resp = (string)primaryServer.Execute("HCOLLECT", ["*"]);

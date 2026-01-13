@@ -51,7 +51,7 @@ namespace Garnet.server
         public void Dispose()
         {
             // Finalize lock to avoid double dispose
-            if (dispose.TryWriteLock())
+            if (!dispose.TryWriteLock())
                 return;
 
             // Cancel global cts
@@ -89,15 +89,17 @@ namespace Garnet.server
                 {
                     linkedCts.Cancel();
                     linkedCts.Dispose();
-                    throw new Exception("Failed to register task!");
+                    throw new Exception("Failed to add task to registry!");
                 }
 
                 // Finally run the task and update the registry
                 var task = Task.Run(async () => await taskFactory(linkedCts.Token), linkedCts.Token);
                 if (!tasks.TryUpdate(taskType, new TaskInfo() { cts = linkedCts, taskCategory = taskCategory, task = task }, new TaskInfo() { cts = linkedCts, taskCategory = taskCategory, task = null }))
                 {
+                    linkedCts.Cancel();
                     task.Wait();
-                    throw new Exception("Failed to register task!");
+                    linkedCts.Dispose();
+                    throw new Exception("Failed to update registry with running task!");
                 }
             }
             finally
@@ -114,13 +116,13 @@ namespace Garnet.server
         /// <returns></returns>
         public async Task TryCancelTask(TaskType taskType, TaskCategory taskCategory)
         {
-            // TryRemove task from registry and cancel it
-            if (tasks.TryRemove(taskType, out var taskInfo))
+            // TryGetValue task from registry
+            if (tasks.TryGetValue(taskType, out var taskInfo) && (taskInfo.taskCategory == taskCategory || taskCategory == TaskCategory.All) && tasks.TryRemove(taskType, out taskInfo))
             {
                 taskInfo.cts.Cancel();
                 try
                 {
-                    if (taskInfo.taskCategory == taskCategory || taskCategory == TaskCategory.All)
+                    if (taskInfo.task != null)
                         await taskInfo.task;
                 }
                 catch (OperationCanceledException)
