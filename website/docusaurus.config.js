@@ -42,19 +42,26 @@ const config = {
   presets: [
     [
       'classic',
-      {
+      /** @type {import('@docusaurus/preset-classic').Options} */
+      ({
         docs: {
           sidebarPath: './sidebars.js',
-          editUrl: 'https://github.com/microsoft/garnet/tree/main/website/',
+          // Please change this to your repo.
+          // Remove this to remove the "edit this page" links.
+          editUrl:
+            'https://github.com/microsoft/garnet/tree/main/website/',
         },
         blog: {
           showReadingTime: true,
-          editUrl: 'https://github.com/microsoft/garnet/tree/main/website/',
+          // Please change this to your repo.
+          // Remove this to remove the "edit this page" links.
+          editUrl:
+            'https://github.com/microsoft/garnet/tree/main/website/',
         },
         theme: {
           customCss: require.resolve('./src/css/custom.css'),
         },
-      },
+      }),
     ],
   ],
 

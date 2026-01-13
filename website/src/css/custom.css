@@ -57,11 +57,13 @@ html[data-theme="dark"] {
 
 /* Strongest possible overrides for Prism inline colors */
 html[data-theme='light'] .theme-code-block pre code .token.function,
+html[data-theme='light'] .theme-code-block pre code .token.string,
 html[data-theme='light'] .theme-code-block pre code .token.generic-method {
   color: #cc3745 !important;
 }
 
 html[data-theme='light'] .theme-code-block pre code .token.keyword,
+html[data-theme='light'] .theme-code-block pre code .token.boolean,
 html[data-theme='light'] .theme-code-block pre code .token.number {
   color: #257c7a !important;
 }
