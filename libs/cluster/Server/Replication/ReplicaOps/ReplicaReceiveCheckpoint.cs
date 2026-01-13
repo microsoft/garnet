@@ -123,7 +123,7 @@ namespace Garnet.cluster
                     storeWrapper.Reset();
 
                     // Suspend background tasks that may interfere with AOF
-                    await storeWrapper.SuspendBackgroundTaskAsReplica();
+                    await storeWrapper.SuspendPrimaryOnlyTasks();
 
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data

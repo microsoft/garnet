@@ -20,6 +20,20 @@ namespace Garnet.server
         IndexAutoGrowTask,
     }
 
+    public enum TaskCategory
+    {
+        All,
+        Generic,
+        PrimaryOnly,
+    }
+
+    public struct TaskInfo
+    {
+        public TaskCategory taskCategory;
+        public CancellationTokenSource cts;
+        public Task task;
+    }
+
     /// <summary>
     /// Create a new TaskManager instance
     /// </summary>
@@ -27,7 +41,7 @@ namespace Garnet.server
     public sealed class TaskManager(ILogger logger = null) : IDisposable
     {
         readonly CancellationTokenSource cts = new();
-        readonly ConcurrentDictionary<TaskType, (CancellationTokenSource, Task)> tasks = new ();
+        readonly ConcurrentDictionary<TaskType, TaskInfo> tasks = new();
         readonly ILogger logger = logger;
         SingleWriterMultiReaderLock dispose = new();
 
@@ -42,7 +56,7 @@ namespace Garnet.server
 
             // Cancel global cts
             cts.Cancel();
-            TryCancelAllTasks();
+            TryCancelAllTasks().Wait();
             cts.Dispose();
         }
 
@@ -51,9 +65,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="taskType"></param>
         /// <param name="taskFactory"></param>
+        /// <param name="taskCategory"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public void Register(TaskType taskType, Func<CancellationToken, Task> taskFactory)
+        public void Register(TaskType taskType, TaskCategory taskCategory, Func<CancellationToken, Task> taskFactory)
         {
             if (!dispose.TryReadLock())
                 return;
@@ -68,9 +83,9 @@ namespace Garnet.server
 
                 // Create a linked cts
                 var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
-                
+
                 // Try to add task to registry
-                if (!tasks.TryAdd(taskType, (linkedCts, null)))
+                if (!tasks.TryAdd(taskType, new TaskInfo() { cts = linkedCts, taskCategory = taskCategory, task = null }))
                 {
                     linkedCts.Cancel();
                     linkedCts.Dispose();
@@ -79,7 +94,7 @@ namespace Garnet.server
 
                 // Finally run the task and update the registry
                 var task = Task.Run(async () => await taskFactory(linkedCts.Token), linkedCts.Token);
-                if(!tasks.TryUpdate(taskType, (linkedCts, task), (linkedCts, null)))
+                if (!tasks.TryUpdate(taskType, new TaskInfo() { cts = linkedCts, taskCategory = taskCategory, task = task }, new TaskInfo() { cts = linkedCts, taskCategory = taskCategory, task = null }))
                 {
                     task.Wait();
                     throw new Exception("Failed to register task!");
@@ -95,22 +110,24 @@ namespace Garnet.server
         /// Cancel task
         /// </summary>
         /// <param name="taskType"></param>
+        /// <param name="taskCategory"></param>
         /// <returns></returns>
-        public async Task TryCancelTask(TaskType taskType)
+        public async Task TryCancelTask(TaskType taskType, TaskCategory taskCategory)
         {
             // TryRemove task from registry and cancel it
             if (tasks.TryRemove(taskType, out var taskInfo))
             {
-                taskInfo.Item1.Cancel();
+                taskInfo.cts.Cancel();
                 try
                 {
-                    await taskInfo.Item2;
+                    if (taskInfo.taskCategory == taskCategory || taskCategory == TaskCategory.All)
+                        await taskInfo.task;
                 }
                 catch (OperationCanceledException)
                 {
                     // Expected when cancelling the task
                 }
-                taskInfo.Item1.Dispose();
+                taskInfo.cts.Dispose();
             }
         }
 
@@ -118,10 +135,11 @@ namespace Garnet.server
         /// Try cancel all background tasks
         /// </summary>
         /// <returns></returns>
-        public async Task TryCancelAllTasks()
+        /// <param name="taskCategory"></param>
+        public async Task TryCancelAllTasks(TaskCategory taskCategory = TaskCategory.All)
         {
             foreach (var taskType in tasks.Keys)
-                TryCancelTask(taskType).Wait();
+                await TryCancelTask(taskType, taskCategory);
         }
     }
 }

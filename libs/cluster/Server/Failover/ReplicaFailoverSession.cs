@@ -147,7 +147,7 @@ namespace Garnet.cluster
                 _ = clusterProvider.BumpAndWaitForEpochTransition();
 
                 // Resume all background maintenance that were possibly shutdown when this node became a replica
-                clusterProvider.storeWrapper.StartBackgroundMaintenanceTasksAsPrimary().Wait();
+                clusterProvider.storeWrapper.StartPrimaryOnlyTasks();
             }
             finally
             {
