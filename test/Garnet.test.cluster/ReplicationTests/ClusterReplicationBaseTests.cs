@@ -2057,7 +2057,7 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(primaryPInfo.TailAddress, replicaPInfo.TailAddress);
         }
 
-        [Test,Order(29)]
+        [Test, Order(29)]
         [Category("REPLICATION")]
         [CancelAfter(30_000)]
         [TestCase(false)]
