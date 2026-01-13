@@ -3,7 +3,6 @@
 
 using System;
 using System.Linq;
-using Microsoft.Extensions.Logging;
 
 namespace Garnet.server
 {
@@ -21,12 +20,10 @@ namespace Garnet.server
     /// <param name="currentVersion"></param>
     /// <param name="appendOnlyFile"></param>
     /// <param name="serverOptions"></param>
-    /// <param name="logger"></param>
-    public class ReplicaReadConsistencyStateManager(long currentVersion, GarnetAppendOnlyFile appendOnlyFile, GarnetServerOptions serverOptions, ILogger logger = null)
+    public class ReadConsistencyManager(long currentVersion, GarnetAppendOnlyFile appendOnlyFile, GarnetServerOptions serverOptions)
     {
         public long CurrentVersion { get; private set; } = currentVersion;
         readonly GarnetServerOptions serverOptions = serverOptions;
-        readonly ILogger logger = logger;
 
         readonly VirtualSublogReplayState[] vsrs = [.. Enumerable.Range(0, serverOptions.AofVirtualSublogCount).Select(_ => new VirtualSublogReplayState())];
 
@@ -165,21 +162,9 @@ namespace Garnet.server
                     maximumSessionSequenceNumber = replicaReadSessionContext.maximumSessionSequenceNumber
                 };
 
-                //logger?.LogError("Paused [{last}] {msn} > [{current}] {fsn}",
-                //    replicaReadSessionContext.lastSublogIdx,
-                //    replicaReadSessionContext.maximumSessionSequenceNumber,
-                //    sublogIdx,
-                //    GetSublogFrontierSequenceNumber(hash));
-
                 // Enqueue waiter and wait
                 vsrs[virtualSublogIdx].AddWaiter(readSessionWaiter);
                 readSessionWaiter.Wait(TimeSpan.FromSeconds(1000));
-
-                //logger?.LogError("Resumed [{last}] {msn} > [{current}] {fsn}",
-                //    replicaReadSessionContext.lastSublogIdx,
-                //    replicaReadSessionContext.maximumSessionSequenceNumber,
-                //    sublogIdx,
-                //    GetSublogFrontierSequenceNumber(hash));
 
                 // Reset waiter for next iteration
                 readSessionWaiter.Reset();

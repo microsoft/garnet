@@ -10,13 +10,23 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    public class ShardedLog(int sublogCount, TsavoriteLogSettings[] logSettings, ILogger logger = null)
+    public class ShardedLog(int physicalSublogCount, TsavoriteLogSettings[] logSettings, ILogger logger = null)
     {
-        public int Length { get; private set; } = sublogCount;
+        /// <summary>
+        /// Number of physical sublogs
+        /// </summary>
+        public int Length { get; private set; } = physicalSublogCount;
         readonly TsavoriteLogSettings[] logSettings = logSettings;
+        
+        /// <summary>
+        /// Physical sublog instances
+        /// </summary>
         public readonly TsavoriteLog[] sublog = [.. logSettings.Select(settings => new TsavoriteLog(settings, logger))];
 
-        public readonly SingleWriterMultiReaderLock[] logLocks = [.. Enumerable.Range(0, sublogCount).Select(_ => new SingleWriterMultiReaderLock())];
+        /// <summary>
+        /// Distinct locks per sublog instance
+        /// </summary>
+        public readonly SingleWriterMultiReaderLock[] logLocks = [.. Enumerable.Range(0, physicalSublogCount).Select(_ => new SingleWriterMultiReaderLock())];
 
         ulong lockMap = 0;
 

@@ -91,26 +91,53 @@ The replica will receive those pairs and insert them into its store.
 At completion the replica sets its version number to be equal the the version number of primary.
 Finally, the primary executes the partial synchronization workflow which includes steps to validate the integrity of the AOF and the creation of the AOF sync tasks to start streaming the corresponding AOF records to each replica.
 
-# Sharded Log Feature
-Garnet replication leverages the AppendOnlyFile (AOF) implementation to stream update operations to the corresponding replica.
+# Sharded Append-Only-File Feature
+Garnet replication leverages the Append-Only-File (AOF) implementation to stream update operations to the corresponding replica.
 The Garnet's AOF implementation uses a single instance of TsavoriteLog to record update operations as they occur at the primary.
 Writing, streaming and replaying the AOF in order to support replication is single threaded operation
 This is in contrast to Garnet's native multi-threaded architecture and does not scale well.
 
 This motivated the development of a sharded AOF implementation that leverages multiple physical sublogs (i.e. separate TsavoriteLog instances) to scale writes at the primary and parallel replay at the replica.
 This implementation works alongside a read consistency protocol running at the replica, which is required to guarantees prefix consistent reads because sublog replay happen asynchronously potentially exposing non-prefix consistent content.
-The read consistency protocol relies on virtual timestamps (i.e. sequence numbers) to order
-
+The read consistency protocol relies on virtual timestamps (i.e. sequence numbers) to indicate write order across sublogs.
+These timestamps are used to ensure prefix consistency per Garnet session.
 
 ## Sharded AOF architecture
+Garnet can be configured to use the sharded AOF implementation by adjusting the following configuration parameters;
+1. AofPhysicalSublogCount:
+    This parameter controls the number of TsavoriteLog instances used by the GarnetAppendOnlyFile implementation.
+    Its value ranges between 1 and 64, with 1 being the default value which maps to the legacy single log implementation    
+2. AofRefreshPhysicalSublogTailFrequencyMs:
+    This parameter control the background refresh tail task that spawns only when the Garnet instance is configured to use more than physical sublogs.
+    This task is required to keep moving time forward for sublogs that are not being actively written, in order to ensure the consistency protocol works correctly.
+3. AofReplayTaskCount:
+    This parameter controls the number of replay tasks that can used per physical sublog.
+    Its value ranges between 1 and 256, with the default value being 1. The combination of this default value and the AofPhysicalSublogCount default maps to the legacy single log implementation.
+
+
+### GarnetAppendOnlyFile
+
+This class implements Garnet's AOF offering an API to interact with the physical
+sublog instances and ensure read prefix consistency.
+Its most important members are
+1. ReadConsistencyManager
+2. SequenceNumberGenerator
+3. GarnetLog
+
+
+### GarnetLog
+This class is a wrapper which provides consolidated information about the AOF
+state (inluding information about the address space), as well as an API to allow
+enqueueing records, hashing based on keys when multiple physical sublogs are configured.
+It also provides lock functionality which is used with coordinated operations (i.e. transactions, checkpointing, flushdb etc.) to ensure that the associated AOF markers are inserted atomically across all associated logs
+    
+
 NOTES:
 - Varying number of tsavoritelog instances
 - Writes are recorded to the log based on hashing the key associated to that write
 - Records keep track of a sequence number
-- There exist a class of coordinated operations that require writing to a subset of all physical logs
-- Transactions write to logs associated with the keys involve in the corresponding transaction
-- 
-
+- There exists a class of coordinated operations that require writing to a subset of all physical logs
+- Transactions write to logs associated with the keys involved in the corresponding transaction
 
 ## Read Consistency Protocol
 

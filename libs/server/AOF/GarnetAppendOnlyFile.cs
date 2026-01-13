@@ -15,10 +15,21 @@ namespace Garnet.server
 
         public long TotalSize() => Log.TailAddress.AggregateDiff(Log.BeginAddress);
 
-        public ReplicaReadConsistencyStateManager replicaReadConsistencyStateManager = null;
+        /// <summary>
+        /// Ensures prefix-consistent reads when the Garnet instance
+        /// operates with multiple physical sublogs.
+        /// </summary>
+        public ReadConsistencyManager readConsistencyManager = null;
 
+        /// <summary>
+        /// Used to generate monotonically increasing sequence numbers for each enqueue operation
+        /// when the Garnet instance operates with multiple physical sublogs.
+        /// </summary>
         public SequenceNumberGenerator seqNumGen = null;
 
+        /// <summary>
+        /// Provides an interface for managing and interacting with physical sublog instances.
+        /// </summary>
         public GarnetLog Log { get; private set; }
 
         public readonly GarnetServerOptions serverOptions;
@@ -39,7 +50,6 @@ namespace Garnet.server
         /// <returns></returns>
         public int GetVirtualSublogIdx(int sublogIdx, int replayIdx)
             => (sublogIdx * serverOptions.AofReplayTaskCount) + replayIdx;
-
 
         /// <summary>
         /// Garnet append only file constructor
@@ -72,9 +82,9 @@ namespace Garnet.server
         {
             // Create manager only if sharded log is enabled
             if (!serverOptions.MultiLogEnabled) return;
-            var currentVersion = replicaReadConsistencyStateManager?.CurrentVersion ?? 0L;
-            var _replayTimestampManager = new ReplicaReadConsistencyStateManager(currentVersion + 1, this, serverOptions, logger);
-            _ = Interlocked.CompareExchange(ref replicaReadConsistencyStateManager, _replayTimestampManager, replicaReadConsistencyStateManager);
+            var currentVersion = readConsistencyManager?.CurrentVersion ?? 0L;
+            var _replayTimestampManager = new ReadConsistencyManager(currentVersion + 1, this, serverOptions);
+            _ = Interlocked.CompareExchange(ref readConsistencyManager, _replayTimestampManager, readConsistencyManager);
         }
 
         /// <summary>
@@ -82,7 +92,7 @@ namespace Garnet.server
         /// </summary>
         public void ResetSequenceNumberGenerator()
         {
-            var start = replicaReadConsistencyStateManager.MaxSequenceNumber;
+            var start = readConsistencyManager.MaxSequenceNumber;
             var newSeqNumGen = new SequenceNumberGenerator(start);
             _ = Interlocked.CompareExchange(ref seqNumGen, newSeqNumGen, seqNumGen);
         }
@@ -94,14 +104,14 @@ namespace Garnet.server
         /// <param name="replicaReadSessionContext"></param>
         /// <param name="readSessionWaiter"></param>
         public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
-            => replicaReadConsistencyStateManager.ConsistentReadKeyPrepare(key, ref replicaReadSessionContext, readSessionWaiter);
+            => readConsistencyManager.ConsistentReadKeyPrepare(key, ref replicaReadSessionContext, readSessionWaiter);
 
         /// <summary>
         /// Invoke the update phase of the consistent read protocol
         /// </summary>
         /// <param name="replicaReadSessionContext"></param>
         public void ConsistentReadSequenceNumberUpdate(ref ReplicaReadSessionContext replicaReadSessionContext)
-            => replicaReadConsistencyStateManager.ConsistentReadSequenceNumberUpdate(ref replicaReadSessionContext);
+            => readConsistencyManager.ConsistentReadSequenceNumberUpdate(ref replicaReadSessionContext);
 
         /// <summary>
         /// Set log shift tail callbacks

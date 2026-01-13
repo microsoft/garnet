@@ -148,7 +148,7 @@ namespace Garnet.server
                         case AofEntryType.TxnAbort:
                             ClearSessionTxn();
                             shardedHeader = *(AofShardedHeader*)ptr;
-                            aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
+                            aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
                             break;
                         case AofEntryType.TxnCommit:
                             if (replayContext.inFuzzyRegion)
@@ -196,7 +196,7 @@ namespace Garnet.server
                         // after a checkpoint, and the transaction belonged to the previous version. It can safely
                         // be ignored.
                         shardedHeader = *(AofShardedHeader*)ptr;
-                        aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
+                        aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
                         break;
                     default:
                         // Continue processing
@@ -430,7 +430,7 @@ namespace Garnet.server
                     throw removeBarrierException;
 
                 // Update timestamp
-                aofProcessor.storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, txnHeader.shardedHeader.sequenceNumber);
+                aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, txnHeader.shardedHeader.sequenceNumber);
             }
         }
     }

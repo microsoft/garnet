@@ -202,7 +202,7 @@ namespace Garnet
         [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs used (=1 default single physical log, >1: many physical sublogs.")]
         public int AofPhysicalSublogCount { get; set; }
 
-        [IntRangeValidation(1, 64)]
+        [IntRangeValidation(1, 256)]
         [Option("aof-replay-subtask-count", Required = false, HelpText = "Number of logical replay tasks per sublog at replica.")]
         public int AofReplayTaskCount { get; set; }
 
