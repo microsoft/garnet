@@ -642,8 +642,7 @@ namespace Garnet.server
 
                         if (isSuccessful && listObj.LnkList.Count == 0)
                         {
-                            _ = storageSession.EXPIRE(asKey, TimeSpan.Zero, out _, ExpireOption.None,
-                                ref unifiedTransactionalContext);
+                            _ = storageSession.DELETE_ObjectStore(asKey, ref objectTransactionalContext);
                         }
 
                         return isSuccessful;
@@ -656,8 +655,7 @@ namespace Garnet.server
 
                         if (isSuccessful && sortedSetObj.Count() == 0)
                         {
-                            _ = storageSession.EXPIRE(asKey, TimeSpan.Zero, out _, ExpireOption.None,
-                                ref unifiedTransactionalContext);
+                            _ = storageSession.DELETE_ObjectStore(asKey, ref objectTransactionalContext);
                         }
 
                         return isSuccessful;
