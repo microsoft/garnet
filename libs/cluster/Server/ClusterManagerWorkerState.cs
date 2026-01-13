@@ -131,7 +131,7 @@ namespace Garnet.cluster
                         configEpoch: configEpoch,
                         role: NodeRole.PRIMARY,
                         replicaOfNodeId: null,
-                        hostname: string.IsNullOrEmpty(hostname) ? Format.GetHostName() : hostname);
+                        hostname: string.IsNullOrEmpty(hostname) ? "" : hostname);
                     if (Interlocked.CompareExchange(ref currentConfig, newConfig, current) == current)
                         break;
                 }
