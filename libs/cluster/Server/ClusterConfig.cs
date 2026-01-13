@@ -791,7 +791,7 @@ namespace Garnet.cluster
             return nodeInfo;
         }
 
-        private static string FormatValueOrNull(string value)
+        private string FormatValueOrNull(string value)
         {
             if (string.IsNullOrEmpty(value)) return "$-1\r\n";
             return $"${value.Length}\r\n{value}\r\n";
