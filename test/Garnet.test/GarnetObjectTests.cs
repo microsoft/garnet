@@ -10,9 +10,6 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     [TestFixture]
     public class GarnetObjectTests
     {
