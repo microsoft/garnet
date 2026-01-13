@@ -793,7 +793,7 @@ namespace Garnet.cluster
 
         private string FormatValueOrNull(string value)
         {
-            if (string.IsNullOrEmpty(value)) return "$-1\r\n";
+            if (string.IsNullOrEmpty(value)) return CmdStrings.GenericNullValue;
             return $"${value.Length}\r\n{value}\r\n";
         }
 
