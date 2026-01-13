@@ -23,10 +23,8 @@ namespace Garnet.server
     /// </summary>
     public partial class HashObject : IGarnetObject
     {
-        private void HashGet(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void HashGet(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             var key = GetByteSpanFromInput(ref input, 0);
             if (TryGetValue(key, out var hashValue))
                 writer.WriteBulkString(hashValue);
@@ -36,10 +34,8 @@ namespace Garnet.server
             output.Header.result1++;
         }
 
-        private void HashMultipleGet(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void HashMultipleGet(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             writer.WriteArrayLength(input.parseState.Count);
 
             for (var i = 0; i < input.parseState.Count; i++)
@@ -58,10 +54,8 @@ namespace Garnet.server
             }
         }
 
-        private void HashGetAll(ref ObjectOutput output, byte respProtocolVersion)
+        private void HashGetAll(ref RespMemoryWriter writer)
         {
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             writer.WriteMapLength(Count());
 
             var isExpirable = HasExpirableItems;
@@ -78,34 +72,58 @@ namespace Garnet.server
             }
         }
 
-        private void HashDelete(ref ObjectInput input, ref ObjectOutput output)
+        private void HashDelete(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
+            var removed = 0;
+
             for (var i = 0; i < input.parseState.Count; i++)
             {
                 var key = GetByteSpanFromInput(ref input, i);
                 if (Remove(key, out _))
-                    output.Header.result1++;
+                    removed++;
             }
+
+            if (removed == 0)
+                output.OutputFlags |= OutputFlags.ValueUnchanged;
+
+            if (!input.header.CheckSkipRespOutputFlag())
+                writer.WriteInt32(removed);
+
+            output.Header.result1 = removed;
         }
 
-        private void HashLength(ref ObjectOutput output)
+        private void HashLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
-            output.Header.result1 = Count();
+            var length = Count();
+
+            if (!input.header.CheckSkipRespOutputFlag())
+                writer.WriteInt32(length);
+
+            output.Header.result1 = length;
         }
 
-        private void HashStrLength(ref ObjectInput input, ref ObjectOutput output)
+        private void HashStrLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             var key = GetByteSpanFromInput(ref input, 0);
-            output.Header.result1 = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
+            var length = TryGetValue(key, out var hashValue) ? hashValue.Length : 0;
+
+            writer.WriteInt32(length);
+
+            output.Header.result1 = length;
         }
 
-        private void HashExists(ref ObjectInput input, ref ObjectOutput output)
+        private void HashExists(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             var field = GetByteSpanFromInput(ref input, 0);
-            output.Header.result1 = ContainsKey(field) ? 1 : 0;
+            var exists = ContainsKey(field) ? 1 : 0;
+
+            if (!input.header.CheckSkipRespOutputFlag())
+                writer.WriteInt32(exists);
+
+            output.Header.result1 = exists;
         }
 
-        private void HashRandomField(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void HashRandomField(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             // HRANDFIELD key [count [WITHVALUES]]
             var countParameter = input.arg1 >> 2;
@@ -114,8 +132,6 @@ namespace Garnet.server
             var seed = input.arg2;
 
             var countDone = 0;
-
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (includedCount)
             {
@@ -139,13 +155,13 @@ namespace Garnet.server
                 RandomUtils.PickKRandomIndexes(count, indexes, seed, countParameter > 0);
 
                 // Write the size of the array reply
-                writer.WriteArrayLength(withValues && (respProtocolVersion == 2) ? indexCount * 2 : indexCount);
+                writer.WriteArrayLength(withValues && (!writer.resp3) ? indexCount * 2 : indexCount);
 
                 foreach (var index in indexes)
                 {
                     var pair = ElementAt(index);
 
-                    if ((respProtocolVersion >= 3) && withValues)
+                    if (writer.resp3 && withValues)
                         writer.WriteArrayLength(2);
 
                     writer.WriteBulkString(pair.Key);
@@ -178,11 +194,13 @@ namespace Garnet.server
             output.Header.result1 = countDone;
         }
 
-        private void HashSet(ref ObjectInput input, ref ObjectOutput output)
+        private void HashSet(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
 
             var hashOp = input.header.HashOp;
+            var added = 0;
+
             for (var i = 0; i < input.parseState.Count; i += 2)
             {
                 var key = GetByteSpanFromInput(ref input, i);
@@ -202,7 +220,7 @@ namespace Garnet.server
                     hashValueRef = value.ToArray();
                     UpdateSize(key, value, add: true);
 
-                    output.Header.result1++;
+                    added++;
                 }
                 else if (exists && (hashOp is HashOperation.HSET or HashOperation.HMSET))
                 {
@@ -230,6 +248,11 @@ namespace Garnet.server
                     }
                 }
             }
+
+            if (!input.header.CheckSkipRespOutputFlag())
+                writer.WriteInt32(added);
+
+            output.Header.result1 = added;
         }
 
         private void HashCollect(ref ObjectInput input, ref ObjectOutput output)
@@ -238,12 +261,10 @@ namespace Garnet.server
             output.Header.result1 = 1;
         }
 
-        private void HashGetKeysOrValues(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void HashGetKeysOrValues(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             var count = Count();
             var op = input.header.HashOp;
-
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             writer.WriteArrayLength(count);
 
@@ -270,23 +291,14 @@ namespace Garnet.server
         }
 
         [SkipLocalsInit] // avoid zeroing the stackalloc buffer
-        private void HashIncrement(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void HashIncrement(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
-            var op = input.header.HashOp;
-
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             // This value is used to indicate partial command execution
             output.Header.result1 = int.MinValue;
 
             var key = GetByteSpanFromInput(ref input, 0);
             var incrSlice = input.parseState.GetArgSliceByRef(1);
-
-            if (!NumUtils.TryParse(incrSlice.ReadOnlySpan, out long incr))
-            {
-                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                return;
-            }
+            var incr = input.parseState.GetLong(1);
 
             DeleteExpiredItems();
 
@@ -309,6 +321,7 @@ namespace Garnet.server
                 if (!NumUtils.TryParse(hashValueRef, out long result))
                 {
                     writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_INTEGER);
+                    output.OutputFlags |= OutputFlags.ValueUnchanged;
                     return;
                 }
 
@@ -339,27 +352,21 @@ namespace Garnet.server
         }
 
         [SkipLocalsInit] // avoid zeroing the stackalloc buffer
-        private void HashIncrementFloat(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void HashIncrementFloat(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             var op = input.header.HashOp;
-
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             // This value is used to indicate partial command execution
             output.Header.result1 = int.MinValue;
 
             var key = GetByteSpanFromInput(ref input, 0);
             var incrSlice = input.parseState.GetArgSliceByRef(1);
-
-            if (!input.parseState.TryGetDouble(1, out var incr))
-            {
-                writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
-                return;
-            }
+            var incr = input.parseState.GetDouble(1);
 
             if (double.IsInfinity(incr))
             {
                 writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY);
+                output.OutputFlags |= OutputFlags.ValueUnchanged;
                 return;
             }
 
@@ -384,12 +391,14 @@ namespace Garnet.server
                 if (!NumUtils.TryParseWithInfinity(hashValueRef, out var result))
                 {
                     writer.WriteError(CmdStrings.RESP_ERR_HASH_VALUE_IS_NOT_FLOAT);
+                    output.OutputFlags |= OutputFlags.ValueUnchanged;
                     return;
                 }
 
                 if (double.IsInfinity(result))
                 {
                     writer.WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
+                    output.OutputFlags |= OutputFlags.ValueUnchanged;
                     return;
                 }
 
@@ -419,16 +428,15 @@ namespace Garnet.server
             output.Header.result1 = 1;
         }
 
-        private void HashExpire(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void HashExpire(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             DeleteExpiredItems();
 
             var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
 
             writer.WriteArrayLength(input.parseState.Count);
 
+            var expired = 0;
             foreach (var item in input.parseState.Parameters)
             {
 #if NET9_0_OR_GREATER
@@ -437,19 +445,24 @@ namespace Garnet.server
                 var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
 #endif
                 writer.WriteInt32((int)result);
+
                 output.Header.result1++;
+
+                if (result == ExpireResult.ExpireUpdated)
+                    expired++;
             }
+
+            if (expired == 0)
+                output.OutputFlags |= OutputFlags.ValueUnchanged;
         }
 
-        private void HashTimeToLive(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void HashTimeToLive(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
 
             var isMilliseconds = input.arg1 == 1;
             var isTimestamp = input.arg2 == 1;
             var numFields = input.parseState.Count;
-
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             writer.WriteArrayLength(numFields);
 
@@ -486,16 +499,15 @@ namespace Garnet.server
             }
         }
 
-        private void HashPersist(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void HashPersist(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
 
             var numFields = input.parseState.Count;
 
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             writer.WriteArrayLength(numFields);
 
+            var persisted = 0;
             foreach (var item in input.parseState.Parameters)
             {
 #if NET9_0_OR_GREATER
@@ -503,9 +515,15 @@ namespace Garnet.server
 #else
                 var result = Persist(item.ToArray());
 #endif
-                writer.WriteInt32(result);
+                writer.WriteInt32((int)result);
                 output.Header.result1++;
+
+                if (result == ExpireResult.ExpireUpdated)
+                    persisted++;
             }
+
+            if (persisted == 0)
+                output.OutputFlags |= OutputFlags.ValueUnchanged;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -650,7 +650,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetAdd(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus SetAdd(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Removes the specified member from the set.
@@ -683,7 +683,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetRemove(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus SetRemove(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Removes and returns one random member from the set at key.
@@ -788,7 +788,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListLeftPush(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus ListLeftPush(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// ListLeftPush ArgSlice version, one element
@@ -817,7 +817,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        public GarnetStatus ListRightPush(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        public GarnetStatus ListRightPush(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// ListRightPush ArgSlice version, one element
@@ -944,8 +944,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListTrim(PinnedSpanByte key, ref ObjectInput input);
+        GarnetStatus ListTrim(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Inserts a new element in the list stored at key either before or after a value pivot
@@ -954,7 +955,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListInsert(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus ListInsert(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Removes the first count occurrences of elements equal to element from the list.
@@ -963,7 +964,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListRemove(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus ListRemove(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Sets the list element at index to element.
@@ -1047,7 +1048,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashDelete(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus HashDelete(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Increments the number stored at field in the hash key by increment parameter.
@@ -1525,7 +1526,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Gets the specified elements of the list stored at key.
@@ -1564,7 +1565,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// SMEMBERS key
@@ -1720,7 +1721,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Returns the number of fields contained in the hash Key.
@@ -1729,7 +1730,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Returns if field is an existing field in the hash stored at key.

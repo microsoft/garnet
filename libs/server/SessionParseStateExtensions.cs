@@ -253,6 +253,86 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Parse LPOS commands options from parse state based on command
+        /// </summary>
+        /// <param name="parseState">The parse state</param>
+        /// <param name="startIdx">The index from which to start reading</param>
+        /// <param name="rank">RANK option value (if specified)</param>
+        /// <param name="count">COUNT option value (if specified)</param>
+        /// <param name="isDefaultCount">True if COUNT option not present</param>
+        /// <param name="maxLen">MAXLEN option value (if specified)</param>
+        /// <param name="error">Error</param>
+        /// <returns>True if successful</returns>
+        public static bool TryGetListPositionOptions(this SessionParseState parseState, int startIdx, out int rank, out int count, out bool isDefaultCount, out int maxLen, out ReadOnlySpan<byte> error)
+        {
+            rank = 1; // By default, LPOS takes first match element
+            count = 1; // By default, LPOS return 1 element
+            isDefaultCount = true;
+            maxLen = 0; // By default, iterate to all the item
+
+            error = default;
+
+            var currTokenIdx = startIdx;
+
+            while (currTokenIdx < parseState.Count)
+            {
+                var sbParam = parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+
+                if (sbParam.SequenceEqual(CmdStrings.RANK) || sbParam.SequenceEqual(CmdStrings.rank))
+                {
+                    if (!parseState.TryGetInt(currTokenIdx++, out rank))
+                    {
+                        error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        return false;
+                    }
+
+                    if (rank == 0)
+                    {
+                        error = CmdStrings.RESP_ERR_RANK_CANT_BE_ZERO;
+                        return false;
+                    }
+                }
+                else if (sbParam.SequenceEqual(CmdStrings.COUNT) || sbParam.SequenceEqual(CmdStrings.count))
+                {
+                    if (!parseState.TryGetInt(currTokenIdx++, out count))
+                    {
+                        error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        return false;
+                    }
+
+                    if (count < 0)
+                    {
+                        error = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrCantBeNegative, nameof(CmdStrings.COUNT)));
+                        return false;
+                    }
+
+                    isDefaultCount = false;
+                }
+                else if (sbParam.SequenceEqual(CmdStrings.MAXLEN) || sbParam.SequenceEqual(CmdStrings.maxlen))
+                {
+                    if (!parseState.TryGetInt(currTokenIdx++, out maxLen))
+                    {
+                        error = CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER;
+                        return false;
+                    }
+
+                    if (maxLen < 0)
+                    {
+                        error = Encoding.ASCII.GetBytes(string.Format(CmdStrings.GenericErrCantBeNegative, nameof(CmdStrings.MAXLEN)));
+                        return false;
+                    }
+                }
+                else
+                {
+                    error = CmdStrings.RESP_SYNTAX_ERROR;
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Parse GEOSEARCH commands options from parse state based on command
         /// </summary>
         /// <param name="parseState"></param>

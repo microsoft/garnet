@@ -37,7 +37,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(elements);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.List, RespMetaCommand.None, ref parseState) { ListOp = lop };
+            var input = new ObjectInput(GarnetObjectType.List, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { ListOp = lop };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -68,7 +68,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(element);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.List, RespMetaCommand.None, ref parseState) { ListOp = lop };
+            var input = new ObjectInput(GarnetObjectType.List, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { ListOp = lop };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;
@@ -180,7 +180,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.List) { ListOp = ListOperation.LLEN };
+            var input = new ObjectInput(GarnetObjectType.List, flags: RespInputFlags.SkipRespOutput) { ListOp = ListOperation.LLEN };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -351,10 +351,10 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListPush<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus ListPush<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
+            var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
             itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
         }
@@ -381,11 +381,12 @@ namespace Garnet.server
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key"></param>
         /// <param name="input"></param>
+        /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListTrim<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref TObjectContext objectContext)
+        public GarnetStatus ListTrim<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out _, ref objectContext);
+            => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Gets the specified elements of the list stored at key.
@@ -409,10 +410,10 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListInsert<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus ListInsert<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
+            var status = RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
             itemBroker?.HandleCollectionUpdate(key.ToArray());
             return status;
         }
@@ -440,9 +441,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus ListRemove<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus ListRemove<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
+            => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Removes the count elements from the head(left) or tail(right) of the list stored at key.
@@ -468,9 +469,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public unsafe GarnetStatus ListLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+        public unsafe GarnetStatus ListLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
              where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-             => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
+             => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Sets the list element at index to element.

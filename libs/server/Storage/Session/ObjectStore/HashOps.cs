@@ -44,7 +44,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(field, value);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HSET };
+            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HSET };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;
@@ -80,7 +80,7 @@ namespace Garnet.server
             }
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HSET };
+            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HSET };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;
@@ -123,7 +123,7 @@ namespace Garnet.server
             parseState.InitializeWithArguments(fields);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HDEL };
+            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HDEL };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;
@@ -247,7 +247,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash) { HashOp = HashOperation.HLEN };
+            var input = new ObjectInput(GarnetObjectType.Hash, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HLEN };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -276,7 +276,7 @@ namespace Garnet.server
             parseState.InitializeWithArgument(field);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HEXISTS };
+            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HEXISTS };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -434,9 +434,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus HashLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
+            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns the string length of the value associated with field in the hash stored at key. If the key or the field do not exist, 0 is returned.
@@ -447,9 +447,9 @@ namespace Garnet.server
         /// <param name="objectContext"></param>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <returns></returns>
-        public GarnetStatus HashStrLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus HashStrLength<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
+            => ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Removes the specified fields from the hash key.
@@ -460,9 +460,9 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="objectContext"></param>
         /// <returns></returns>
-        public GarnetStatus HashDelete<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output, ref TObjectContext objectContext)
+        public GarnetStatus HashDelete<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output, ref TObjectContext objectContext)
           where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out output, ref objectContext);
+            => RMWObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);
 
         /// <summary>
         /// Returns if field exists in the hash stored at key.

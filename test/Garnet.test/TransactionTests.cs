@@ -490,13 +490,13 @@ namespace Garnet.test
 
             response = lightClientRequest.SendCommand("EXEC");
 
-            expectedResponse = "*7\r\n$14\r\nvalue1_updated\r\n+OK\r\n:1\r\n*2\r\n:1\r\n$6\r\nvalue2\r\n*2\r\n:1\r\n$-1\r\n*2\r\n:2\r\n$-1\r\n:3\r\n";
+            expectedResponse = "*7\r\n$14\r\nvalue1_updated\r\n+OK\r\n:1\r\n*2\r\n$6\r\nvalue2\r\n:1\r\n*2\r\n$-1\r\n:1\r\n*2\r\n$-1\r\n:2\r\n:3\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // check if we still have the appropriate etag on the key we had set
             var otherLighClientRequest = TestUtils.CreateRequest();
             response = otherLighClientRequest.SendCommand("EXECWITHETAG GET key1");
-            expectedResponse = "*2\r\n:2\r\n$14\r\nvalue1_updated\r\n";
+            expectedResponse = "*2\r\n$14\r\nvalue1_updated\r\n:2\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 

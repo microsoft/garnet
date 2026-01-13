@@ -897,8 +897,8 @@ namespace Garnet.test
             }
 
             RedisResult[] etagAndVal = (RedisResult[])res;
-            RedisResult etag = etagAndVal[0];
-            RedisResult val = etagAndVal[1];
+            RedisResult val = etagAndVal[0];
+            RedisResult etag = etagAndVal[1];
 
             if (expected == -1)
             {

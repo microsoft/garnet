@@ -188,13 +188,16 @@ namespace Garnet.server
             output.Header.result1 = removedItems;
         }
 
-        private void SortedSetLength(ref ObjectOutput output, ref RespMemoryWriter writer)
+        private void SortedSetLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             // Check both objects
             Debug.Assert(sortedSetDict.Count == sortedSet.Count, "SortedSet object is not in sync.");
 
             var length = Count();
-            writer.WriteInt64(length);
+
+            if (!input.header.CheckSkipRespOutputFlag())
+                writer.WriteInt64(length);
+
             output.Header.result1 = length;
         }
 
@@ -537,7 +540,8 @@ namespace Garnet.server
 
             var rem = GetElementsInRangeByLex(ref input.parseState, false, false, isRemove);
 
-            writer.WriteInt32(rem.Count);
+            if (!input.header.CheckSkipRespOutputFlag())
+                writer.WriteInt32(rem.Count);
 
             if (isRemove && rem.Count == 0)
                 output.OutputFlags |= OutputFlags.ValueUnchanged;

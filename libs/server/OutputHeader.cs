@@ -42,12 +42,18 @@ namespace Garnet.server
         /// <summary>
         /// Expected size of this struct
         /// </summary>
-        public const int Size = 4;
+        public const int Size = 12; // sizeof(int) + sizeof(long)
 
         /// <summary>
         /// Some result of operation (e.g., number of items added successfully)
         /// </summary>
         [FieldOffset(0)]
         public int result1;
+
+        /// <summary>
+        /// The eTag of the object after operation (if requested)
+        /// </summary>
+        [FieldOffset(4)]
+        public long etag;
     }
 }

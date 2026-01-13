@@ -134,33 +134,32 @@ namespace Garnet.server
                 return true;
             }
 
-            var respProtocolVersion = (byte)2;
             var prevMemorySize = HeapMemorySize;
             switch (input.header.SetOp)
             {
                 case SetOperation.SADD:
-                    SetAdd(ref input, ref output);
+                    SetAdd(ref input, ref output, ref writer);
                     break;
                 case SetOperation.SMEMBERS:
-                    SetMembers(ref input, ref output, respProtocolVersion);
+                    SetMembers(ref output, ref writer);
                     break;
                 case SetOperation.SISMEMBER:
-                    SetIsMember(ref input, ref output, respProtocolVersion);
+                    SetIsMember(ref input, ref output, ref writer);
                     break;
                 case SetOperation.SMISMEMBER:
-                    SetMultiIsMember(ref input, ref output, respProtocolVersion);
+                    SetMultiIsMember(ref input, ref output, ref writer);
                     break;
                 case SetOperation.SREM:
-                    SetRemove(ref input, ref output);
+                    SetRemove(ref input, ref output, ref writer);
                     break;
                 case SetOperation.SCARD:
-                    SetLength(ref output);
+                    SetLength(ref input, ref output, ref writer);
                     break;
                 case SetOperation.SPOP:
-                    SetPop(ref input, ref output, respProtocolVersion);
+                    SetPop(ref input, ref output, ref writer);
                     break;
                 case SetOperation.SRANDMEMBER:
-                    SetRandomMember(ref input, ref output, respProtocolVersion);
+                    SetRandomMember(ref input, ref output, ref writer);
                     break;
                 case SetOperation.SSCAN:
                     Scan(ref input, ref output, ref writer);

@@ -345,7 +345,7 @@ namespace Garnet.server
                     SortedSetRemove(ref input, ref output, ref writer);
                     break;
                 case SortedSetOperation.ZCARD:
-                    SortedSetLength(ref output, ref writer);
+                    SortedSetLength(ref input, ref output, ref writer);
                     break;
                 case SortedSetOperation.ZPOPMIN:
                 case SortedSetOperation.ZPOPMAX:

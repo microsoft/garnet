@@ -2305,8 +2305,8 @@ namespace Garnet.test
 
             // Since the original key was set with etag, the new key should have an etag attached to it
             var etagRes = (RedisResult[])db.Execute("EXECWITHETAG", "GET", newKey);
-            ClassicAssert.AreEqual(0, (long)etagRes[0]);
-            ClassicAssert.AreEqual(origValue, etagRes[1].ToString());
+            ClassicAssert.AreEqual(origValue, etagRes[0].ToString());
+            ClassicAssert.AreEqual(0, (long)etagRes[1]);
         }
 
         #endregion

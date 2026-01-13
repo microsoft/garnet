@@ -305,14 +305,15 @@ namespace Garnet.server
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState) { HashOp = HashOperation.HLEN };
 
-            var status = storageApi.HashLength(key, ref input, out var output);
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.HashLength(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    // Process output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -346,14 +347,15 @@ namespace Garnet.server
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: 1) { HashOp = HashOperation.HSTRLEN };
 
-            var status = storageApi.HashStrLength(key, ref input, out var output);
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.HashStrLength(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    // Process output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -387,13 +389,15 @@ namespace Garnet.server
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: 1) { HashOp = HashOperation.HDEL };
 
-            var status = storageApi.HashDelete(key, ref input, out var output);
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.HashDelete(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -521,13 +525,25 @@ namespace Garnet.server
             // Get the key for Hash
             var key = parseState.GetArgSliceByRef(0);
 
-            var op =
-                command switch
-                {
-                    RespCommand.HINCRBY => HashOperation.HINCRBY,
-                    RespCommand.HINCRBYFLOAT => HashOperation.HINCRBYFLOAT,
-                    _ => throw new Exception($"Unexpected {nameof(HashOperation)}: {command}")
-                };
+            // Verify input
+            HashOperation op;
+            switch (command)
+            {
+                case RespCommand.HINCRBY:
+                    if (!parseState.TryGetLong(2, out _))
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
+                    op = HashOperation.HINCRBY;
+                    break;
+                case RespCommand.HINCRBYFLOAT:
+                    if (!parseState.TryGetDouble(2, out var incr))
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                    if (double.IsInfinity(incr))
+                        return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY);
+                    op = HashOperation.HINCRBYFLOAT;
+                    break;
+                default:
+                    throw new Exception($"Unexpected {nameof(HashOperation)}: {command}");
+            }
 
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, metaCommand, ref parseState, startIdx: 1) { HashOp = op };

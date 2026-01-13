@@ -36,7 +36,10 @@ namespace Garnet.server
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Set, metaCommand, ref parseState, startIdx: 1) { SetOp = SetOperation.SADD };
 
-            var status = storageApi.SetAdd(key, ref input, out var output);
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.SetAdd(key, ref input, ref output);
 
             switch (status)
             {
@@ -45,9 +48,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    // Write result to output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
 
@@ -321,14 +322,15 @@ namespace Garnet.server
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Set, metaCommand, ref parseState, startIdx: 1) { SetOp = SetOperation.SREM };
 
-            var status = storageApi.SetRemove(key, ref input, out var output);
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.SetRemove(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    // Write result to output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))
@@ -363,14 +365,15 @@ namespace Garnet.server
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Set, metaCommand, ref parseState) { SetOp = SetOperation.SCARD };
 
-            var status = storageApi.SetLength(key, ref input, out var output);
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.SetLength(key, ref input, ref output);
 
             switch (status)
             {
                 case GarnetStatus.OK:
-                    // Process output
-                    while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_RETURN_VAL_0, ref dcurr, dend))

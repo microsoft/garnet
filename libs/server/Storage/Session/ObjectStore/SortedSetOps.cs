@@ -117,7 +117,8 @@ namespace Garnet.server
             parseState.InitializeWithArgument(member);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZREM };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState,
+                flags: RespInputFlags.SkipRespOutput) { SortedSetOp = SortedSetOperation.ZREM };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -146,7 +147,8 @@ namespace Garnet.server
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZREM };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState,
+                flags: RespInputFlags.SkipRespOutput) { SortedSetOp = SortedSetOperation.ZREM };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -190,7 +192,8 @@ namespace Garnet.server
             parseState.InitializeWithArguments(minSlice, maxSlice);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState,
+                flags: RespInputFlags.SkipRespOutput) { SortedSetOp = SortedSetOperation.ZREMRANGEBYLEX };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             countRemoved = output.result1;
@@ -411,7 +414,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCARD };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, flags: RespInputFlags.SkipRespOutput) { SortedSetOp = SortedSetOperation.ZCARD };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 

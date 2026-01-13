@@ -239,8 +239,8 @@ namespace Garnet.server
             => storageSession.ListPush(key, elements, whenExists ? ListOperation.RPUSHX : ListOperation.RPUSH, out itemsCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListRightPush(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-             => storageSession.ListPush(key, ref input, out output, ref objectContext);
+        public GarnetStatus ListRightPush(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+             => storageSession.ListPush(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus ListLeftPush(PinnedSpanByte key, PinnedSpanByte[] elements, out int itemsCount, bool onlyWhenExists = false)
@@ -251,8 +251,8 @@ namespace Garnet.server
             => storageSession.ListPush(key, element, onlyWhenExists ? ListOperation.LPUSHX : ListOperation.LPUSH, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListLeftPush(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.ListPush(key, ref input, out output, ref objectContext);
+        public GarnetStatus ListLeftPush(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.ListPush(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus ListPosition(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
@@ -297,8 +297,8 @@ namespace Garnet.server
             => storageSession.ListLength(key, ref objectContext, out count);
 
         /// <inheritdoc />
-        public GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.ListLength(key, ref input, out output, ref objectContext);
+        public GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.ListLength(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus ListMove(PinnedSpanByte source, PinnedSpanByte destination, OperationDirection sourceDirection, OperationDirection destinationDirection, out byte[] element)
@@ -309,24 +309,24 @@ namespace Garnet.server
             => storageSession.ListTrim(key, start, stop, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListTrim(PinnedSpanByte key, ref ObjectInput input)
-            => storageSession.ListTrim(key, ref input, ref objectContext);
+        public GarnetStatus ListTrim(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.ListTrim(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus ListRange(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
             => storageSession.ListRange(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListInsert(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.ListInsert(key, ref input, out output, ref objectContext);
+        public GarnetStatus ListInsert(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.ListInsert(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus ListIndex(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
              => storageSession.ListIndex(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus ListRemove(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.ListRemove(key, ref input, out output, ref objectContext);
+        public GarnetStatus ListRemove(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.ListRemove(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus ListSet(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
@@ -345,8 +345,8 @@ namespace Garnet.server
             => storageSession.SetAdd(key, members, out saddCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetAdd(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.SetAdd(key, ref input, out output, ref objectContext);
+        public GarnetStatus SetAdd(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.SetAdd(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetRemove(PinnedSpanByte key, PinnedSpanByte member, out int sremCount)
@@ -357,16 +357,16 @@ namespace Garnet.server
             => storageSession.SetRemove(key, members, out sremCount, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetRemove(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.SetRemove(key, ref input, out output, ref objectContext);
+        public GarnetStatus SetRemove(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.SetRemove(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetLength(PinnedSpanByte key, out int count)
             => storageSession.SetLength(key, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.SetLength(key, ref input, out output, ref objectContext);
+        public GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.SetLength(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus SetMembers(PinnedSpanByte key, out PinnedSpanByte[] members)
@@ -492,12 +492,12 @@ namespace Garnet.server
         => storageSession.HashLength(key, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.HashLength(key, ref input, out output, ref objectContext);
+        public GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.HashLength(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.HashStrLength(key, ref input, out output, ref objectContext);
+        public GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.HashStrLength(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashExists(PinnedSpanByte key, PinnedSpanByte field, out bool exists)
@@ -520,8 +520,8 @@ namespace Garnet.server
             => storageSession.HashRandomField(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashDelete(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.HashDelete(key, ref input, out output, ref objectContext);
+        public GarnetStatus HashDelete(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.HashDelete(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashKeys(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)

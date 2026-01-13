@@ -37,6 +37,11 @@ namespace Garnet.server
         /// Expired
         /// </summary>
         Expired = 1 << 2,
+
+        /// <summary>
+        /// Flag indicating that the command does not require a RESP output
+        /// </summary>
+        SkipRespOutput = 1 << 3,
     }
 
     /// <summary>
@@ -203,6 +208,11 @@ namespace Garnet.server
         internal void SetSetGetFlag() => flags |= RespInputFlags.SetGet;
 
         /// <summary>
+        /// Set "SkipRespOutput" flag, used to indicate that no RESP output is required
+        /// </summary>
+        internal void SetSkipRespOutputFlag() => flags |= RespInputFlags.SkipRespOutput;
+
+        /// <summary>
         /// Check if meta command is ExecWithEtag
         /// </summary>
         /// <returns></returns>
@@ -224,6 +234,12 @@ namespace Garnet.server
         /// </summary>
         internal bool CheckSetGetFlag()
             => (flags & RespInputFlags.SetGet) != 0;
+
+        /// <summary>
+        /// Check the SkipRespOutput flag
+        /// </summary>
+        internal bool CheckSkipRespOutputFlag()
+            => (flags & RespInputFlags.SkipRespOutput) != 0;
 
         /// <summary>
         /// Gets a pointer to the top of the header

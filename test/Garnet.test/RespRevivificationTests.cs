@@ -101,8 +101,8 @@ namespace Garnet.test
 
                 // should be able to reuse the tombstoned record value is 1 byte and etag space is 8 bytes == 9 bytes
                 var res = (RedisResult[])await db.ExecuteAsync("EXECIFGREATER", 5, "SET", "foo", "c");
-                ClassicAssert.AreEqual(5, (long)res[0]);
-                ClassicAssert.IsTrue(res[1].IsNull);
+                ClassicAssert.IsTrue(res[0].IsNull);
+                ClassicAssert.AreEqual(5, (long)res[1]);
             };
 
             await TestRevivifyAsync(testRmwWorksViaSetIfGreater, defaultInitialArgs, redis);
@@ -203,8 +203,8 @@ namespace Garnet.test
 
             var res = (RedisResult[])await db.ExecuteAsync("EXECWITHETAG", "GET", "the");
 
-            ClassicAssert.AreEqual(23, (long)res[0], "Incorrect Etag.");
-            ClassicAssert.AreEqual("terminator", res[1].ToString(), "Expected the value to be updated via RMW operation, but it was not.");
+            ClassicAssert.AreEqual("terminator", res[0].ToString(), "Expected the value to be updated via RMW operation, but it was not.");
+            ClassicAssert.AreEqual(23, (long)res[1], "Incorrect Etag.");
         }
 
         [Test]

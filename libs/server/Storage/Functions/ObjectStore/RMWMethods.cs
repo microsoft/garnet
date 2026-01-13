@@ -320,12 +320,13 @@ namespace Garnet.server
             var updatedEtag = GetUpdatedEtag(currEtag, metaCmd, ref input.parseState, out var execCmd, init, readOnly);
 
             var isEtagCmd = metaCmd.IsEtagCommand();
+            var skipResp = !input.header.CheckSkipRespOutputFlag();
             var respProtocolVersion = GetRespProtocolVersion(ref input);
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             try
             {
-                if (isEtagCmd)
+                if (!skipResp && isEtagCmd)
                     writer.WriteArrayLength(2);
 
                 if (execCmd)
@@ -335,11 +336,16 @@ namespace Garnet.server
                     if (!readOnly && (currEtag != LogRecord.NoETag) && (output.OutputFlags & OutputFlags.ValueUnchanged) == OutputFlags.ValueUnchanged)
                         updatedEtag = currEtag;
                 }
-                else
+                else if (!skipResp)
                     writer.WriteNull();
 
                 if (isEtagCmd)
-                    writer.WriteInt64(updatedEtag);
+                {
+                    if (!skipResp)
+                        writer.WriteInt64(updatedEtag);
+
+                    output.Header.etag = updatedEtag;
+                }
             }
             finally
             {

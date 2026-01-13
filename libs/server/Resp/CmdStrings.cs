@@ -235,6 +235,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_ERR_DB_INDEX_OUT_OF_RANGE => "ERR DB index is out of range."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_FIRST_DB_INDEX => "ERR invalid first DB index."u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_SECOND_DB_INDEX => "ERR invalid second DB index."u8;
+        public static ReadOnlySpan<byte> RESP_ERR_RANK_CANT_BE_ZERO => "ERR RANK can't be zero: use 1 to start from the first match, 2 from the second ... or use negative to start from the end of the list."u8;
         public static ReadOnlySpan<byte> RESP_ERR_SELECT_IN_TXN_UNSUPPORTED => "ERR SELECT is currently unsupported inside a transaction."u8;
         public static ReadOnlySpan<byte> RESP_ERR_SWAPDB_IN_TXN_UNSUPPORTED => "ERR SWAPDB is currently unsupported inside a transaction."u8;
         public static ReadOnlySpan<byte> RESP_ERR_SWAPDB_UNSUPPORTED => "ERR SWAPDB is currently unsupported when multiple clients are connected."u8;

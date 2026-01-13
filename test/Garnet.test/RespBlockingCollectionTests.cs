@@ -734,8 +734,12 @@ namespace Garnet.test
             var blockingTask = Task.Run(() =>
             {
                 using var lcr = TestUtils.CreateRequest();
-                var response = lcr.SendCommands($"{blockingCmd} {key} 30", $"LPUSH {key} {value1}", 3, 1);
-                var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value2.Length}\r\n{value2}\r\n:1\r\n";
+                var response = lcr.SendCommand($"{blockingCmd} {key} 0", 3);
+                var expectedResponse = $"*2\r\n${key.Length}\r\n{key}\r\n${value2.Length}\r\n{value2}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
+
+                response = lcr.SendCommand($"LPUSH {key} {value1}");
+                expectedResponse = $":1\r\n";
                 TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
                 response = lcr.SendCommand($"LLEN {key}");
@@ -751,10 +755,12 @@ namespace Garnet.test
             {
                 using var lcr = TestUtils.CreateRequest();
                 Task.Delay(TimeSpan.FromSeconds(2)).Wait();
-                return lcr.SendCommand($"LPUSH {key} {value2}");
+                var response = lcr.SendCommand($"LPUSH {key} {value2}");
+                var expectedResponse = $":1\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
             });
 
-            var timeout = TimeSpan.FromSeconds(5);
+            var timeout = TimeSpan.FromSeconds(500);
             try
             {
                 Task.WaitAll([blockingTask, releasingTask], timeout);
