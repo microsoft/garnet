@@ -896,7 +896,7 @@ ClusterRedirectTests.TestFlags testFlags)
             var Port = ClusterTestContext.Port;
             var Shards = context.defaultShards;
 
-            context.CreateInstances(Shards, cleanClusterConfig: true, clusterPreferredEndpointType: ClusterPreferredEndpointType.UnknownEndpoint, useClusterAnnounceHostname: false);
+            context.CreateInstances(Shards, cleanClusterConfig: true, clusterPreferredEndpointType: ClusterPreferredEndpointType.Unknown, useClusterAnnounceHostname: false);
             context.CreateConnection();
 
             var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(Port, Shards)]);

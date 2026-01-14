@@ -27,6 +27,6 @@ public enum ClusterPreferredEndpointType
     /// <summary>
     /// ex -MOVED 12182 ?:7000
     /// </summary>
-    [Description("unknown-endpoint")]
-    UnknownEndpoint
+    [Description("unknown")]
+    Unknown
 }

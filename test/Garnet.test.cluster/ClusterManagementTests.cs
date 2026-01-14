@@ -52,10 +52,10 @@ namespace Garnet.test.cluster
         [TestCase(0, 16383, ClusterPreferredEndpointType.Hostname, false)]
         [TestCase(1234, 5678, ClusterPreferredEndpointType.Hostname, true)]
         [TestCase(1234, 5678, ClusterPreferredEndpointType.Hostname, false)]
-        [TestCase(0, 16383, ClusterPreferredEndpointType.UnknownEndpoint, true)]
-        [TestCase(0, 16383, ClusterPreferredEndpointType.UnknownEndpoint, false)]
-        [TestCase(1234, 5678, ClusterPreferredEndpointType.UnknownEndpoint, true)]
-        [TestCase(1234, 5678, ClusterPreferredEndpointType.UnknownEndpoint, false)]
+        [TestCase(0, 16383, ClusterPreferredEndpointType.Unknown, true)]
+        [TestCase(0, 16383, ClusterPreferredEndpointType.Unknown, false)]
+        [TestCase(1234, 5678, ClusterPreferredEndpointType.Unknown, true)]
+        [TestCase(1234, 5678, ClusterPreferredEndpointType.Unknown, false)]
         public void ClusterSlotsTest(int startSlot, int endSlot, ClusterPreferredEndpointType preferredType, bool useClusterAnnounceHostname)
         {
             var slotRanges = new List<(int, int)>[1];
@@ -82,8 +82,8 @@ namespace Garnet.test.cluster
         [TestCase(ClusterPreferredEndpointType.Ip, false)]
         [TestCase(ClusterPreferredEndpointType.Hostname, true)]
         [TestCase(ClusterPreferredEndpointType.Hostname, false)]
-        [TestCase(ClusterPreferredEndpointType.UnknownEndpoint, true)]
-        [TestCase(ClusterPreferredEndpointType.UnknownEndpoint, false)]
+        [TestCase(ClusterPreferredEndpointType.Unknown, true)]
+        [TestCase(ClusterPreferredEndpointType.Unknown, false)]
         public void ClusterSlotRangesTest(
             ClusterPreferredEndpointType preferredType,
             bool useClusterAnnounceHostname
@@ -170,7 +170,7 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(0).Address.ToString(), nodeNetInfo.ip);
             }
 
-            if (preferredType == ClusterPreferredEndpointType.UnknownEndpoint)
+            if (preferredType == ClusterPreferredEndpointType.Unknown)
             {
                 var hostname = useClusterAnnounceHostname ? context.nodeOptions[0].ClusterAnnounceHostname : null;
                 ClassicAssert.AreEqual(hostname, nodeNetInfo.hostname);

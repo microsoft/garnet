@@ -1092,28 +1092,28 @@ namespace Garnet.test
                 var args = Array.Empty<string>();
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
                 ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.AreEqual("ip", options.ClusterPreferredEndpointType);
+                ClassicAssert.AreEqual(ClusterPreferredEndpointType.Ip, options.ClusterPreferredEndpointType);
             }
 
             {
                 var args = new[] { "--cluster-preferred-endpoint-type", "ip" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
                 ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.AreEqual("ip", options.ClusterPreferredEndpointType);
+                ClassicAssert.AreEqual(ClusterPreferredEndpointType.Ip, options.ClusterPreferredEndpointType);
             }
 
             {
                 var args = new[] { "--cluster-preferred-endpoint-type", "hostname" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
                 ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.AreEqual("hostname", options.ClusterPreferredEndpointType);
+                ClassicAssert.AreEqual(ClusterPreferredEndpointType.Hostname, options.ClusterPreferredEndpointType);
             }
 
             {
-                var args = new[] { "--cluster-preferred-endpoint-type", "unknown-endpoint" };
+                var args = new[] { "--cluster-preferred-endpoint-type", "unknown" };
                 var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
                 ClassicAssert.IsTrue(parseSuccessful);
-                ClassicAssert.AreEqual("unknown-endpoint", options.ClusterPreferredEndpointType);
+                ClassicAssert.AreEqual(ClusterPreferredEndpointType.Unknown, options.ClusterPreferredEndpointType);
             }
         }
 

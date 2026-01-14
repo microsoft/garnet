@@ -56,8 +56,8 @@ namespace Garnet
         [Option("cluster-announce-hostname", Required = false, HelpText = "Hostname that this node advertises to other nodes to connect to for gossiping.")]
         public string ClusterAnnounceHostname { get; set; }
 
-        [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown-endpoint)")]
-        public string ClusterPreferredEndpointType { get; set; }
+        [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown)")]
+        public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
 
         [MemorySizeValidation]
         [Option('m', "memory", Required = false, HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
@@ -831,17 +831,12 @@ namespace Garnet
                 return new AzureStorageNamedDeviceFactoryCreator(AzureStorageServiceUri, credential, logger);
             };
 
-            if (!EnumUtils.TryParseEnumFromDescription<ClusterPreferredEndpointType>(ClusterPreferredEndpointType, out var clusterPreferredEndpointType))
-            {
-                throw new Exception("Invalid ClusterPreferredEndpointType. Valid values: ip, hostname, unknown-endpoint.");
-            }
-
             return new GarnetServerOptions(logger)
             {
                 EndPoints = endpoints,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint?[0],
                 ClusterAnnounceHostname = ClusterAnnounceHostname,
-                ClusterPreferredEndpointType = clusterPreferredEndpointType,
+                ClusterPreferredEndpointType = ClusterPreferredEndpointType,
                 MemorySize = MemorySize,
                 PageSize = PageSize,
                 SegmentSize = SegmentSize,
