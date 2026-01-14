@@ -43,10 +43,10 @@ namespace Garnet.server
         /// <param name="taskFactory"></param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public bool RegisterAndRun(TaskType taskType, Func<CancellationToken, Task> taskFactory)
+        public void RegisterAndRun(TaskType taskType, Func<CancellationToken, Task> taskFactory)
         {
             if (!dispose.TryReadLock())
-                return false;
+                return;
 
             var failed = false;
             TaskMetadata taskInfo = null;
@@ -59,7 +59,7 @@ namespace Garnet.server
                 if (!registry.TryAdd(taskType, taskInfo))
                 {
                     logger?.LogError("{taskType} already registered!", taskType);
-                    return false;
+                    return;
                 }
 
                 // Update entry with linked token and run task
@@ -87,7 +87,6 @@ namespace Garnet.server
                 }
                 dispose.ReadUnlock();
             }
-            return true;
         }
 
         /// <summary>
