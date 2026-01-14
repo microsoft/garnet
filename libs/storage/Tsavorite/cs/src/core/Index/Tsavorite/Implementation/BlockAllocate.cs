@@ -144,13 +144,13 @@ namespace Tsavorite.core
                         return true;
 
                     // This allocation is below the necessary address so abandon it and repeat the loop.
-                    ReadCacheAbandonRecord(newPhysicalAddress);
+                    TsavoriteKV<TStoreFunctions, TAllocator>.ReadCacheAbandonRecord(newPhysicalAddress);
                     _ = Thread.Yield();
                     continue;
                 }
 
                 // The in-memory source dropped below HeadAddress during BlockAllocate. Abandon the record (TODO: reuse readcache records) and return RETRY_LATER.
-                ReadCacheAbandonRecord(newPhysicalAddress);
+                TsavoriteKV<TStoreFunctions, TAllocator>.ReadCacheAbandonRecord(newPhysicalAddress);
                 status = OperationStatus.RETRY_LATER;
                 break;
             }

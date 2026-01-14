@@ -218,5 +218,8 @@ test/tmp/
 # BenchmarkDotNet Results
 BenchmarkDotNet.Artifacts/
 
+# PerfView Results
+*PerfView*.*
+
 # Helm chart artifacts
 .cr-release-packages/

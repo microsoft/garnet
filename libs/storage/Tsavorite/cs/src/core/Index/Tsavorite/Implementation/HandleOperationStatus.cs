@@ -90,15 +90,11 @@ namespace Tsavorite.core
         /// <param name="operationStatus">Internal status of the trial.</param>
         /// <returns>Operation status</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal Status HandleOperationStatus<TInput, TOutput, TContext>(
-            TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
-            ref PendingContext<TInput, TOutput, TContext> pendingContext,
-            OperationStatus operationStatus)
-        {
-            if (OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out Status status))
-                return status;
-            return HandleOperationStatus(sessionCtx, ref pendingContext, operationStatus, out _);
-        }
+        internal Status HandleOperationStatus<TInput, TOutput, TContext>(TsavoriteExecutionContext<TInput, TOutput, TContext> sessionCtx,
+            ref PendingContext<TInput, TOutput, TContext> pendingContext, OperationStatus operationStatus) 
+            => OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out var status)
+                ? status
+                : HandleOperationStatus(sessionCtx, ref pendingContext, operationStatus, out _);
 
         /// <summary>
         /// Performs appropriate handling based on the internal failure status of the trial.
@@ -121,7 +117,7 @@ namespace Tsavorite.core
 
             request = default;
 
-            if (OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out Status status))
+            if (OperationStatusUtils.TryConvertToCompletedStatusCode(operationStatus, out var status))
                 return status;
 
             if (operationStatus == OperationStatus.ALLOCATE_FAILED)

@@ -52,6 +52,7 @@ namespace Tsavorite.core
         ///     </item>
         /// </list>
         /// </returns>
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal OperationStatus InternalRead<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ReadOnlySpan<byte> key, long keyHash, ref TInput input, ref TOutput output,
                                     TContext userContext, ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
@@ -87,9 +88,9 @@ namespace Tsavorite.core
 
                         srcLogRecord = stackCtx.recSrc.CreateLogRecord();
                         pendingContext.eTag = srcLogRecord.ETag;
-                        if (sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo))
-                            return OperationStatus.SUCCESS;
-                        return CheckFalseActionStatus(ref readInfo);
+                        return sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo)
+                            ? OperationStatus.SUCCESS
+                            : CheckFalseActionStatus(ref readInfo);
                     }
 
                     // FindInReadCache updated recSrc so update the readInfo accordingly.

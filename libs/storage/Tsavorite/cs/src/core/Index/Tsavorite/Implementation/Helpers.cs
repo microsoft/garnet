@@ -4,12 +4,11 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using static Tsavorite.core.LogAddress;
 
 namespace Tsavorite.core
 {
-    using static LogAddress;
-
-    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -183,7 +182,7 @@ namespace Tsavorite.core
         {
             var result = stackCtx.recSrc.LowestReadCachePhysicalAddress == kInvalidAddress
                 ? stackCtx.hei.TryCAS(newLogicalAddress)
-                : SpliceIntoHashChainAtReadCacheBoundary(newLogRecord.Key, ref stackCtx, newLogicalAddress);
+                : SpliceIntoHashChainAtReadCacheBoundary(ref stackCtx, newLogicalAddress);
             if (result)
                 newLogRecord.InfoRef.UnsealAndValidate();
             return result;

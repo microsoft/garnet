@@ -92,9 +92,9 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         {
             Debug.Assert(epoch.ThisInstanceProtected(), "This is called only from Compaction so the epoch should be protected");
-            PendingContext<TInput, TOutput, TContext> pendingContext = new();
+            PendingContext<TInput, TOutput, TContext> pendingContext = new(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
 
-            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(storeFunctions.GetKeyHashCode64(srcLogRecord.Key));
+            OperationStackContext<TStoreFunctions, TAllocator> stackCtx = new(pendingContext.keyHash);
             OperationStatus status;
             bool needIO;
             do

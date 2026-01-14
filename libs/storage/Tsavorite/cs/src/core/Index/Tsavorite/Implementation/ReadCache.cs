@@ -15,7 +15,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal bool FindInReadCache(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long minAddress = kInvalidAddress, bool alwaysFindLatestLA = true)
         {
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");
@@ -50,7 +50,7 @@ namespace Tsavorite.core
                 // the operation to be retried, so we'd never get past them. Return true if we find a Valid read cache entry matching the key.
                 if (!recordInfo.Invalid && stackCtx.recSrc.LatestLogicalAddress >= minAddress && !stackCtx.recSrc.HasReadCacheSrc)
                 {
-                    ReadOnlySpan<byte> keySpan = recordInfo.KeyIsInline
+                    var keySpan = recordInfo.KeyIsInline
                         ? LogRecord.GetInlineKey(stackCtx.recSrc.LowestReadCachePhysicalAddress)    // Most keys are inline and this is faster
                         : readcache.CreateLogRecord(stackCtx.recSrc.LowestReadCacheLogicalAddress).Key;
                     if (storeFunctions.KeysEqual(key, keySpan))
@@ -111,7 +111,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool SpliceIntoHashChainAtReadCacheBoundary(ReadOnlySpan<byte> key, ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress)
+        private bool SpliceIntoHashChainAtReadCacheBoundary(ref OperationStackContext<TStoreFunctions, TAllocator> stackCtx, long newLogicalAddress)
         {
             // Splice into the gap of the last readcache/first main log entries.
             Debug.Assert(stackCtx.recSrc.LowestReadCacheLogicalAddress >= readcacheBase.ClosedUntilAddress,
@@ -249,7 +249,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        void ReadCacheAbandonRecord(long physicalAddress)
+        static void ReadCacheAbandonRecord(long physicalAddress)
         {
             // TODO: We currently don't save readcache allocations for retry, but we could
             ref var ri = ref LogRecord.GetInfoRef(physicalAddress);
