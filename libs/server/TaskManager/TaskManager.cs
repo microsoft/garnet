@@ -68,7 +68,7 @@ namespace Garnet.server
             }
             catch (Exception ex)
             {
-                logger?.LogError(ex, "Failed at {method}", nameof(RegisterAndRun));
+                logger?.LogError(ex, "Failed starting task {taskType} with {method}", taskType, nameof(RegisterAndRun));
                 failed = true;
             }
             finally
