@@ -813,11 +813,11 @@ namespace Garnet.server
             // Start background maintenance tasks that should run only on the primary
             if (clusterProvider == null || clusterProvider.IsPrimary())
             {
-                StartPrimaryOnlyTasks();
+                StartPrimaryTasks();
             }
 
             // Start generic node tasks
-            StartGenericTasks();
+            StartGenericNodeTasks();
 
             // Start object size trackers
             databaseManager.StartObjectSizeTrackers(ctsCommit.Token);
@@ -916,50 +916,50 @@ namespace Garnet.server
         /// <returns></returns>
         public async Task SuspendPrimaryOnlyTasks()
         {
-            await taskManager.TryCancelAllTasks(TaskCategory.PrimaryOnly);
+            await taskManager.CancelTask(TaskPlacementCategory.Primary);
         }
 
         /// <summary>
         /// Start background maintenance tasks that should only run when this node is a primary
         /// </summary>
         /// <returns></returns>
-        public void StartPrimaryOnlyTasks()
+        public void StartPrimaryTasks()
         {
             if (serverOptions.AofSizeLimit.Length > 0)
             {
                 var aofSizeLimitBytes = 1L << serverOptions.AofSizeLimitSizeBits();
-                taskManager.Register(TaskType.AofSizeLimitTask, TaskCategory.PrimaryOnly, (token) => AutoCheckpointBasedOnAofSizeLimit(aofSizeLimitBytes, token, logger));
+                taskManager.RegisterAndRun(TaskType.AofSizeLimitTask, (token) => AutoCheckpointBasedOnAofSizeLimit(aofSizeLimitBytes, token, logger));
             }
 
             if (serverOptions.CommitFrequencyMs > 0 && serverOptions.EnableAOF)
             {
-                taskManager.Register(TaskType.CommitTask, TaskCategory.PrimaryOnly, (token) => CommitTask(serverOptions.CommitFrequencyMs, token, logger));
+                taskManager.RegisterAndRun(TaskType.CommitTask, (token) => CommitTask(serverOptions.CommitFrequencyMs, token, logger));
             }
 
             if (serverOptions.CompactionFrequencySecs > 0 && serverOptions.CompactionType != LogCompactionType.None)
             {
-                taskManager.Register(TaskType.CompactionTask, TaskCategory.PrimaryOnly, (token) => CompactionTask(serverOptions.CompactionFrequencySecs, token));
+                taskManager.RegisterAndRun(TaskType.CompactionTask, (token) => CompactionTask(serverOptions.CompactionFrequencySecs, token));
             }
 
             if (serverOptions.ExpiredObjectCollectionFrequencySecs > 0)
             {
-                taskManager.Register(TaskType.ObjectCollectTask, TaskCategory.PrimaryOnly, (token) => ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, token));
+                taskManager.RegisterAndRun(TaskType.ObjectCollectTask, (token) => ObjectCollectTask(serverOptions.ExpiredObjectCollectionFrequencySecs, token));
             }
 
             if (serverOptions.ExpiredKeyDeletionScanFrequencySecs > 0)
             {
-                taskManager.Register(TaskType.ExpiredKeyDeletionTask, TaskCategory.PrimaryOnly, (token) => ExpiredKeyDeletionScanTask(serverOptions.ExpiredKeyDeletionScanFrequencySecs, token));
+                taskManager.RegisterAndRun(TaskType.ExpiredKeyDeletionTask, (token) => ExpiredKeyDeletionScanTask(serverOptions.ExpiredKeyDeletionScanFrequencySecs, token));
             }
         }
 
         /// <summary>
         /// Start background maintenance generic tasks
         /// </summary>
-        public void StartGenericTasks()
+        public void StartGenericNodeTasks()
         {
             if (serverOptions.AdjustedIndexMaxCacheLines > 0 || serverOptions.AdjustedObjectStoreIndexMaxCacheLines > 0)
             {
-                taskManager.Register(TaskType.IndexAutoGrowTask, TaskCategory.Generic, (token) => IndexAutoGrowTask(token));
+                taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, (token) => IndexAutoGrowTask(token));
             }
         }
     }
