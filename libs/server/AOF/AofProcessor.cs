@@ -12,9 +12,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     /// <summary>
     /// Wrapper for store and store-specific information
     /// </summary>
@@ -32,19 +29,19 @@ namespace Garnet.server
         public void SetReadWriteSession() => respServerSession.clusterSession.SetReadWriteSession();
 
         /// <summary>Basic (Ephemeral locking) Session Context for main store</summary>
-        BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringBasicContext;
+        StringBasicContext stringBasicContext;
         /// <summary>Transactional Session Context for main store</summary>
-        TransactionalContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringTransactionalContext;
+        StringTransactionalContext stringTransactionalContext;
 
         /// <summary>Basic (Ephemeral locking) Session Context for object store</summary>
-        BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectBasicContext;
+        ObjectBasicContext objectBasicContext;
         /// <summary>Transactional Session Context for object store</summary>
-        TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectTransactionalContext;
+        ObjectTransactionalContext objectTransactionalContext;
 
         /// <summary>Basic (Ephemeral locking) Session Context for unified store</summary>
-        BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedBasicContext;
+        UnifiedBasicContext unifiedBasicContext;
         /// <summary>Transactional Session Context for unified store</summary>
-        TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext;
+        UnifiedTransactionalContext unifiedTransactionalContext;
 
         readonly StoreWrapper replayAofStoreWrapper;
         readonly IClusterProvider clusterProvider;
