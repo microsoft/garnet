@@ -778,7 +778,7 @@ namespace Garnet.cluster
                         .Append(':').Append(port).Append("\r\n")
                         .Append('$').Append(nodeid.Length).Append("\r\n").Append(nodeid).Append("\r\n")
                         .Append('*').Append(isNullOrEmptyHostname ? 0 : 2).Append("\r\n");
-                        
+
                     if (!isNullOrEmptyHostname)
                     {
                         sb.Append("$8\r\nhostname\r\n")
