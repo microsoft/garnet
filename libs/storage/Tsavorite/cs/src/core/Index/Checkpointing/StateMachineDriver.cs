@@ -64,6 +64,20 @@ namespace Tsavorite.core
             }
         }
 
+        internal void SetLastVersion(long version)
+        {
+            // Set version number first, then create semaphore
+            lastVersion = version;
+            lastVersionTransactionsDone = new(0);
+        }
+
+        internal void ResetLastVersion()
+        {
+            // First null semaphore, then reset version number
+            lastVersionTransactionsDone = null;
+            lastVersion = 0;
+        }
+
         /// <summary>
         /// Acquire a transaction version - this should be called before
         /// BeginLockable is called for all sessions in the transaction.
@@ -340,6 +354,9 @@ namespace Tsavorite.core
             {
                 systemState.Word = stateMachine.NextState(systemState).Word;
             }
+
+            // Reset last version
+            ResetLastVersion();
 
             // Release any waiters on existing transition-out semaphore
             if (waitForTransitionOut?.CurrentCount == 0)

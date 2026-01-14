@@ -33,8 +33,7 @@ namespace Tsavorite.core
                     // Verify full transaction barrier
                     Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0);
                     Debug.Assert(stateMachineDriver.GetNumActiveTransactions(next.Version) == 0);
-                    stateMachineDriver.lastVersionTransactionsDone = null;
-                    stateMachineDriver.lastVersion = 0;
+                    stateMachineDriver.ResetLastVersion();
 
                     // Set up the transition to new version of HT
                     var numChunks = (int)(store.state[store.resizeInfo.version].size / Constants.kSizeofChunk);
@@ -72,8 +71,7 @@ namespace Tsavorite.core
                     // Note that we DO NOT allow new transactions to start in PREPARE_GROW (i.e., this is a full barrier)
                     if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
                     {
-                        stateMachineDriver.lastVersion = lastVersion;
-                        stateMachineDriver.lastVersionTransactionsDone = new(0);
+                        stateMachineDriver.SetLastVersion(lastVersion);
                     }
 
                     // We have to re-check the number of active transactions after assigning lastVersion and lastVersionTransactionsDone

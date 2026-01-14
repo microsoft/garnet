@@ -47,8 +47,7 @@ namespace Tsavorite.core
                     store.CheckpointVersionShiftEnd(lastVersion, next.Version, isStreaming);
 
                     Debug.Assert(stateMachineDriver.GetNumActiveTransactions(lastVersion) == 0, $"Active transactions in last version: {stateMachineDriver.GetNumActiveTransactions(lastVersion)}");
-                    stateMachineDriver.lastVersionTransactionsDone = null;
-                    stateMachineDriver.lastVersion = 0;
+                    stateMachineDriver.ResetLastVersion();
                     // Grab final logical address (end of fuzzy region)
                     store._hybridLogCheckpoint.info.finalLogicalAddress = store.hlogBase.GetTailAddress();
 
@@ -95,8 +94,7 @@ namespace Tsavorite.core
                     // Note that we allow new transactions to process in parallel.
                     if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
                     {
-                        stateMachineDriver.lastVersion = lastVersion;
-                        stateMachineDriver.lastVersionTransactionsDone = new(0);
+                        stateMachineDriver.SetLastVersion(lastVersion);
                     }
 
                     // We have to re-check the number of active transactions after assigning lastVersion and lastVersionTransactionsDone
