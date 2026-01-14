@@ -81,7 +81,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(NumRecords * MemorySizePerEntry, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
 
             // Wait for up to 3x resize task delay for the resizing to happen
-            if (!epcEvent.Wait(TimeSpan.FromSeconds(3 * LogSizeTracker<StoreFunctions, StoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds)))
+            if (!epcEvent.Wait(TimeSpan.FromSeconds(3 * LogSizeTracker<StoreFunctions, StoreAllocator>.ResizeTaskDelaySeconds)))
                 Assert.Fail("Timeout occurred. Resizing did not happen within the specified time.");
         }
 
@@ -139,7 +139,7 @@ namespace Garnet.test
             info = TestUtils.GetStoreAddressInfo(redis.GetServer(TestUtils.EndPoint), includeReadCache: true);
             ClassicAssert.AreEqual(PageHeader.Size * 2 + InlineRecordSize * NumReadCacheRecords + 8, info.ReadCacheTailAddress);
 
-            if (!readCacheEpcEvent.Wait(TimeSpan.FromSeconds(3 * 3 * LogSizeTracker<StoreFunctions, StoreAllocator, CacheSizeTracker.LogSizeCalculator>.ResizeTaskDelaySeconds)))
+            if (!readCacheEpcEvent.Wait(TimeSpan.FromSeconds(3 * 3 * LogSizeTracker<StoreFunctions, StoreAllocator>.ResizeTaskDelaySeconds)))
                 Assert.Fail("Timeout occurred. Resizing did not happen within the specified time.");
 
             ClassicAssert.AreEqual(1, readCacheEmptyPageCountIncrements);

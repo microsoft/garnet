@@ -384,6 +384,10 @@ namespace Tsavorite.core
 
         /// <inheritdoc/>
         public int ActualSize => diskLogRecord.ActualSize;
+
+        /// <inheritdoc/>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public long CalculateHeapMemorySize() => diskLogRecord.CalculateHeapMemorySize();
         #endregion // ISourceLogRecord
 
         /// <summary>

@@ -162,21 +162,25 @@ namespace Tsavorite.core
         {
             for (var i = 0; i < frameSize; i++)
             {
+                // Read the next page. If i == 0 this is the page we are about to iterate; if i > 0, then we are issuing read-ahead for efficiency.
                 var nextPage = currentPage + i;
 
-                // Cannot load page if it is entirely in memory or beyond the end address
+                // Cannot load nextPage if it is entirely in memory or beyond the end address
                 var pageStartAddress = GetLogicalAddressOfStartOfPage(nextPage, logPageSizeBits);
                 if (pageStartAddress >= headAddress || pageStartAddress >= endIterationAddress)
                     continue;
 
+                // Determine the endAddress on nextPage, which may be limited by endAddress or headAddress to be before end of page.
                 var pageEndAddress = GetLogicalAddressOfStartOfPage(nextPage + 1, logPageSizeBits);
                 if (endIterationAddress < pageEndAddress)
                     pageEndAddress = endIterationAddress;
                 if (headAddress < pageEndAddress)
                     pageEndAddress = headAddress;
 
+                // Calculate the nextFrame we will load nextPage into
                 var nextFrame = (currentFrame + i) % frameSize;
 
+                // Loop using CAS as a latch-free way to ensure only one thread issues the load for nextPage into nextFrame.
                 while (true)
                 {
                     // Get the endAddress of the next page being loaded for this frame. If it is already loaded, as indicated by being >= the required endAddress, we're done.
@@ -210,32 +214,41 @@ namespace Tsavorite.core
                     }
                 }
             }
+
+            // Wait only for currentFrame; nextFrame(s, if we ever have frameSize > 2) will process in the background until we actually need its data,
+            // in which case it will come in here as currentFrame, see that nextLoadedPage is already set, and then this line will wait for it.
+            // WaitForFrameLoad returns immediately if the wait has already been satisfied.
             return WaitForFrameLoad(currentIterationAddress, currentFrame);
         }
 
         /// <summary>
         /// Whether we need to buffer new page from disk
         /// </summary>
-        protected unsafe bool NeedBufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
+        protected bool NeedBufferAndLoad(long currentAddress, long currentPage, long currentFrame, long headAddress, long endAddress)
         {
             for (var i = 0; i < frameSize; i++)
             {
+                // Read the next page. If i == 0 this is the page we are about to iterate; if i > 0, then we are issuing read-ahead for efficiency.
                 var nextPage = currentPage + i;
 
                 var pageStartAddress = GetLogicalAddressOfStartOfPage(nextPage, logPageSizeBits);
 
-                // Cannot load page if it is entirely in memory or beyond the end address
+                // Cannot load nextPage if it is entirely in memory or beyond the end address
                 if (pageStartAddress >= headAddress || pageStartAddress >= endAddress)
                     continue;
 
+                // Determine the endAddress on nextPage, which may be limited by endAddress or headAddress to be before end of page.
                 var pageEndAddress = GetLogicalAddressOfStartOfPage(nextPage + 1, logPageSizeBits);
                 if (endAddress < pageEndAddress)
                     pageEndAddress = endAddress;
                 if (headAddress < pageEndAddress)
                     pageEndAddress = headAddress;
 
+                // Calculate the nextFrame we will load nextPage into
                 var nextFrame = (currentFrame + i) % frameSize;
 
+                // If the endAddress of the next page being loaded for this frame is already loaded, as indicated by being >= the required endAddress,
+                // we don't need to load.
                 if (nextLoadedPages[nextFrame] < pageEndAddress || loadedPages[nextFrame] < pageEndAddress)
                     return true;
             }

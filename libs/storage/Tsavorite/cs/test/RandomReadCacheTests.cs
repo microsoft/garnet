@@ -119,17 +119,20 @@ namespace Tsavorite.test.ReadCacheTests
 
             const int PendingMod = 16;
 
-            void LocalRead(BasicContext<PinnedSpanByte, SpanByteAndMemory, Empty, Functions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> sessionContext, int i, ref int numPending, bool isLast)
+            unsafe void LocalRead(BasicContext<PinnedSpanByte, SpanByteAndMemory, Empty, Functions, SpanByteStoreFunctions, SpanByteAllocator<SpanByteStoreFunctions>> sessionContext, int i, ref int numPending, bool isLast)
             {
                 // These are OK to be local to this LocalRead call; if it goes pending, they will be copied into IHeapContainers.
                 var keyString = $"{i}";
-                var inputString = $"{i * 2}";
                 var key = MemoryMarshal.Cast<char, byte>(keyString.AsSpan());
-                var input = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<char, byte>(inputString.AsSpan()));
 
                 SpanByteAndMemory output = default;
-
-                var status = sessionContext.Read(key, ref input, ref output);
+                Status status;
+                var inputString = $"{i * 2}";
+                fixed (char* _ = inputString)
+                {
+                    var input = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<char, byte>(inputString.AsSpan()));
+                    status = sessionContext.Read(key, ref input, ref output);
+                }
 
                 if (status.Found)
                 {

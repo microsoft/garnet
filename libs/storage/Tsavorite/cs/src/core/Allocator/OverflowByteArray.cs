@@ -27,7 +27,11 @@ namespace Tsavorite.core
 
         internal readonly int StartOffset => Unsafe.As<byte, OverflowHeader>(ref Array[0]).startOffset + OverflowHeader.Size;
 
+        /// <summary>The total size of the array allocated (includes space for offset values)</summary>
         public readonly int TotalSize => Array.Length;
+
+        /// <summary>The total heap size of the array (includes space for offset values and .net array overhead)</summary>
+        public readonly int HeapMemorySize => Array is null ? 0 : Array.Length + MemoryUtils.ByteArrayOverhead;
 
         readonly int EndOffset => Unsafe.As<byte, OverflowHeader>(ref Array[0]).endOffset;
 

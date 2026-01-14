@@ -1228,7 +1228,32 @@ namespace Tsavorite.core
             return recordSize + keyLength + (int)valueLength;
         }
 
-        public void Dispose(Action<IHeapObject> objectDisposer)
+        public readonly long CalculateHeapMemorySize()
+        {
+            long size = 0;
+            if (!Info.Tombstone)
+            {
+                if (Info.KeyIsOverflow)
+                    size += KeyOverflow.HeapMemorySize;
+
+                if (Info.ValueIsOverflow)
+                    size += ValueOverflow.HeapMemorySize;
+                else if (Info.ValueIsObject)
+                {
+                    var (_ /*valueLength*/, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
+                    var objectId = *(int*)valueAddress;
+                    if (objectId != ObjectIdMap.InvalidObjectId)
+                    {
+                        var valueObject = objectIdMap.GetHeapObject(objectId);
+                        if (valueObject is not null)    // ignore deleted values being evicted (they are accounted for by InPlaceDeleter)
+                            size += valueObject.HeapMemorySize;
+                    }
+                }
+            }
+            return size;
+        }
+
+        public readonly void Dispose(Action<IHeapObject> objectDisposer)
         {
             if (IsSet)
                 ClearHeapFields(clearKey: true, objectDisposer);

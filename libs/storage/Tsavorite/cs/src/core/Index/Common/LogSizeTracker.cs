@@ -9,29 +9,19 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    /// <summary>Interface for calculating the size of the log</summary>
-    public interface ILogSizeCalculator
-    {
-        /// <summary>Calculates the size of a log record</summary>
-        /// <param name="logRecord">The record being evaluated</param>
-        /// <returns>The size of the record</returns>
-        long CalculateRecordSize<TSourceLogRecord>(in TSourceLogRecord logRecord) where TSourceLogRecord : ISourceLogRecord;
-    }
-
     public enum LogOperationType
     {
         Deserialize
     }
 
-    public class LogOperationObserver<TStoreFunctions, TAllocator, TLogSizeCalculator> : ITsavoriteRecordObserver<ITsavoriteScanIterator>
+    public class LogOperationObserver<TStoreFunctions, TAllocator> : ITsavoriteRecordObserver<ITsavoriteScanIterator>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
-        where TLogSizeCalculator : ILogSizeCalculator
     {
-        private readonly LogSizeTracker<TStoreFunctions, TAllocator, TLogSizeCalculator> logSizeTracker;
+        private readonly LogSizeTracker<TStoreFunctions, TAllocator> logSizeTracker;
         private readonly LogOperationType logOperationType;
 
-        public LogOperationObserver(LogSizeTracker<TStoreFunctions, TAllocator, TLogSizeCalculator> logSizeTracker, LogOperationType logOperationType)
+        public LogOperationObserver(LogSizeTracker<TStoreFunctions, TAllocator> logSizeTracker, LogOperationType logOperationType)
         {
             this.logSizeTracker = logSizeTracker;
             this.logOperationType = logOperationType;
@@ -41,11 +31,11 @@ namespace Tsavorite.core
 
         public void OnError(Exception error) { }
 
-        public void OnNext(ITsavoriteScanIterator records)
+        public void OnNext(ITsavoriteScanIterator recordIter)
         {
             long size = 0;
-            while (records.GetNext())
-                size += logSizeTracker.LogSizeCalculator.CalculateRecordSize(in records);
+            while (recordIter.GetNext())
+                size += MemoryUtils.CalculateHeapMemorySize(in recordIter);
 
             if (size != 0 && logOperationType == LogOperationType.Deserialize)
                 logSizeTracker.IncrementSize(size);
@@ -54,7 +44,7 @@ namespace Tsavorite.core
         public void OnRecord<TSourceLogRecord>(in TSourceLogRecord logRecord)
             where TSourceLogRecord : ISourceLogRecord
         {
-            var size = logSizeTracker.LogSizeCalculator.CalculateRecordSize(in logRecord);
+            var size = MemoryUtils.CalculateHeapMemorySize(in logRecord);
 
             if (size != 0 && logOperationType == LogOperationType.Deserialize)
                 logSizeTracker.IncrementSize(size);
@@ -64,9 +54,7 @@ namespace Tsavorite.core
     /// <summary>Tracks and controls size of log</summary>
     /// <typeparam name="TStoreFunctions"></typeparam>
     /// <typeparam name="TAllocator"></typeparam>
-    /// <typeparam name="TLogSizeCalculator">Type of the log size calculator</typeparam>
-    public class LogSizeTracker<TStoreFunctions, TAllocator, TLogSizeCalculator> : ITsavoriteRecordObserver<ITsavoriteScanIterator>
-        where TLogSizeCalculator : ILogSizeCalculator
+    public class LogSizeTracker<TStoreFunctions, TAllocator> : ITsavoriteRecordObserver<ITsavoriteScanIterator>
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {
@@ -75,7 +63,6 @@ namespace Tsavorite.core
         private ConcurrentCounter logSize;
         private long lowTargetSize;
         private long highTargetSize;
-        public TLogSizeCalculator LogSizeCalculator;
         private readonly ILogger logger;
 
         internal LogAccessor<TStoreFunctions, TAllocator> logAccessor;
@@ -98,21 +85,18 @@ namespace Tsavorite.core
 
         /// <summary>Creates a new log size tracker</summary>
         /// <param name="logAccessor">Hybrid log accessor</param>
-        /// <param name="logSizeCalculator">Size calculator</param>
         /// <param name="targetSize">Target size for the hybrid log memory utilization</param>
         /// <param name="delta">Delta from target size to maintain memory utilization</param>
         /// <param name="logger"></param>
-        public LogSizeTracker(LogAccessor<TStoreFunctions, TAllocator> logAccessor, TLogSizeCalculator logSizeCalculator, long targetSize, long delta, ILogger logger)
+        public LogSizeTracker(LogAccessor<TStoreFunctions, TAllocator> logAccessor, long targetSize, long delta, ILogger logger)
         {
             Debug.Assert(logAccessor != null);
-            Debug.Assert(logSizeCalculator != null);
             Debug.Assert(delta >= 0);
             Debug.Assert(targetSize > delta);
 
             this.logAccessor = logAccessor;
             logSize = new ConcurrentCounter();
-            this.UpdateTargetSize(targetSize, delta);
-            this.LogSizeCalculator = logSizeCalculator;
+            UpdateTargetSize(targetSize, delta);
             this.logger = logger;
             Stopped = false;
         }
@@ -125,7 +109,7 @@ namespace Tsavorite.core
         public void Start(CancellationToken token)
         {
             Debug.Assert(Stopped == false);
-            Task.Run(() => ResizerTask(token));
+            _ = Task.Run(() => ResizerTask(token));
         }
 
         /// <summary>
@@ -151,11 +135,11 @@ namespace Tsavorite.core
         public void OnError(Exception error) { }
 
         /// <summary>Callback on allocator evicting a page to disk</summary>
-        public void OnNext(ITsavoriteScanIterator records)
+        public void OnNext(ITsavoriteScanIterator recordIter)
         {
             long size = 0;
-            while (records.GetNext())
-                size += LogSizeCalculator.CalculateRecordSize(in records);
+            while (recordIter.GetNext())
+                size += MemoryUtils.CalculateHeapMemorySize(in recordIter);
 
             if (size != 0)
                 IncrementSize(-size); // Reduce size as records are being evicted
@@ -164,8 +148,7 @@ namespace Tsavorite.core
         public void OnRecord<TSourceLogRecord>(in TSourceLogRecord logRecord)
             where TSourceLogRecord : ISourceLogRecord
         {
-            var size = LogSizeCalculator.CalculateRecordSize(in logRecord);
-
+            var size = MemoryUtils.CalculateHeapMemorySize(in logRecord);
             if (size != 0)
                 IncrementSize(-size); // Reduce size as records are being evicted
         }
