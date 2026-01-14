@@ -757,43 +757,60 @@ namespace Garnet.cluster
             string hostname,
             ClusterPreferredEndpointType preferredEndpointType)
         {
-            var nodeInfo = "*4\r\n";
+            // string: preferred endpoint
+            //  Ip: ip address
+            //  Hostname: hostname, or "?" if hostname is null or empty
+            //  UnknownEndpoint: null
+            // integer: port
+            // string: node id
+            // metadata: map-like key/value pairs
+            //  "ip" is included if preferred endpoint type != Ip
+            //  "hostname" is included if preferred endpoint type != Hostname AND hostname is not null or empty
 
-            var preferredEndpoint = preferredEndpointType switch
-            {
-                ClusterPreferredEndpointType.Ip => string.IsNullOrEmpty(ipAddress) ? null : ipAddress,
-                ClusterPreferredEndpointType.Hostname => string.IsNullOrEmpty(hostname) ? "?" : hostname,
-                ClusterPreferredEndpointType.UnknownEndpoint => null,
-                _ => null
-            };
+            var sb = new StringBuilder();
+            sb.Append("*4\r\n");
 
-            nodeInfo += FormatValueOrNull(preferredEndpoint);
-            nodeInfo += $":{port}\r\n";
-            nodeInfo += $"${nodeid.Length}\r\n{nodeid}\r\n";
-
-            var metaPairs = new List<(string, string)>();
-            if (preferredEndpointType != ClusterPreferredEndpointType.Ip)
+            switch (preferredEndpointType)
             {
-                metaPairs.Add(("ip", ipAddress));
-            }
-            if (preferredEndpointType != ClusterPreferredEndpointType.Hostname)
-            {
-                metaPairs.Add(("hostname", hostname));
-            }
-
-            nodeInfo += $"*{metaPairs.Count * 2}\r\n";
-            foreach (var (k, v) in metaPairs)
-            {
-                nodeInfo += $"${k.Length}\r\n{k}\r\n";
-                nodeInfo += FormatValueOrNull(v);
+                case ClusterPreferredEndpointType.Ip:
+                    sb.Append(FormatValueOrNull(ipAddress));
+                    break;
+                case ClusterPreferredEndpointType.Hostname:
+                    var hostnameForResp = string.IsNullOrEmpty(hostname) ? "?" : hostname;
+                    sb.Append(FormatValueOrNull(hostnameForResp));
+                    break;
+                default: // UnknownEndpoint
+                    sb.Append(FormatValueOrNull(null));
+                    break;
             }
 
-            return nodeInfo;
+            sb.Append(':').Append(port).Append("\r\n");
+            sb.Append('$').Append(nodeid.Length).Append("\r\n").Append(nodeid).Append("\r\n");
+
+            var includeIp = preferredEndpointType != ClusterPreferredEndpointType.Ip;
+            var includeHostname = preferredEndpointType != ClusterPreferredEndpointType.Hostname && !string.IsNullOrEmpty(hostname);
+
+            var metadataLength = (includeIp ? 1 : 0) + (includeHostname ? 1 : 0);
+            sb.Append('*').Append(metadataLength * 2).Append("\r\n");
+
+            if (includeIp)
+            {
+                sb.Append("$2\r\nip\r\n");
+                sb.Append(FormatValueOrNull(ipAddress));
+            }
+
+            if (includeHostname)
+            {
+                sb.Append("$8\r\nhostname\r\n");
+                sb.Append(FormatValueOrNull(hostname));
+            }
+
+            return sb.ToString();
         }
 
         private string FormatValueOrNull(string value)
         {
-            if (string.IsNullOrEmpty(value)) return CmdStrings.GenericNullValue;
+            if (string.IsNullOrEmpty(value)) return CmdStrings.GenericNullValue; // "$-1\r\n"
             return $"${value.Length}\r\n{value}\r\n";
         }
 
