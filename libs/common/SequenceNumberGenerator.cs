@@ -9,15 +9,15 @@ namespace Garnet.common
     /// <summary>
     /// Sequence number generator
     /// </summary>
-    /// <param name="start"></param>
-    public class SequenceNumberGenerator(long start)
+    /// <param name="startingOffset"></param>
+    public sealed class SequenceNumberGenerator(long startingOffset)
     {
         readonly long baseTimestamp = Stopwatch.GetTimestamp();
-        readonly long start = start;
+        readonly long startingOffset = startingOffset;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public long GetSequenceNumber() => Stopwatch.GetTimestamp() - baseTimestamp + start;
-
-        public override string ToString() => $"{start},{baseTimestamp}";
+        public long GetSequenceNumber() => Stopwatch.GetTimestamp() - baseTimestamp + startingOffset;
+        
+        public override string ToString() => $"{startingOffset},{baseTimestamp}";
     }
 }

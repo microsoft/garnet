@@ -123,7 +123,7 @@ namespace Garnet.cluster
                             // PhysicalSublog:
                             //      ReplayTask1 (Virtual sublog): [(A,1) ...  (A,2)]
                             //      ReplayTask2 (Virtual sublog): [ ... (B,3) (C,4)]
-                            appendOnlyFile.replicaReadConsistencyStateManager.UpdateSublogMaxSequenceNumber(physicalSublogIdx);
+                            appendOnlyFile.readConsistencyManager.UpdateSublogMaxSequenceNumber(physicalSublogIdx);
                             // Update replication offset
                             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, nextAddress);
                             eventBarrier.Release();

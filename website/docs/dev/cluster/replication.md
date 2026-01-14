@@ -120,10 +120,47 @@ Garnet can be configured to use the sharded AOF implementation by adjusting the 
 This class implements Garnet's AOF offering an API to interact with the physical
 sublog instances and ensure read prefix consistency.
 Its most important members are
-1. ReadConsistencyManager
-2. SequenceNumberGenerator
+1. SequenceNumberGenerator
+   This class implements the API used to generate sequencence numbers when the 
+2. ReadConsistencyManager: 
+   Responsible for tracking the replayed key sequence numbers per virtual sublog and coordinating read operation to ensure read prefix consistency
 3. GarnetLog
+   This class implements the API associated with operating and managing a TsavoriteLog instance but extends it to seamlessly use either a single or multiple TsavoriteLog instances depending on how the Garnet instance is configured.
 
+#### SequenceNumberGenerator
+
+The `SequenceNumberGenerator` class is implemented by using a `baseTimestamp` and a startingOffset.
+Sequence numbers are generated using the difference of the baseTimestamp from the current timestamp offseted by the `startingOffset`.
+The starting offset is used to eliminate clock divergence between nodes and on recovery it is initialized as the maximum sequence number calculated from the records of recovered AOF.
+Note recovery can happen on startup or when a failover occurs where a replica takes over as primary making it so it needs to generate consistent sequence numbers
+for writes that is going to serve in the future.
+
+#### ReadConsistencyManager
+This `ReadConsistencyManager` class is instatiated when a node becomes a replica.
+It is used to track the key sequence numbers of the replayed records.
+This happens because replicas needs to ensure read prefix-consistency through tracking the maximum session sequence number seen across reads
+and waiting for keys that are behind to become current through the progression of background replay functionality.
+This protocol is triggered only when the Garnet cluster node are configured to use the sharded AOF (i.e. AofPhysicalSublogCount > 1 || AofReplayTaskCount > 1).
+The `ReadConsistencyManager` uses the `VirtualSublogReplayState` struct to track the key sequence numbers seens for all replay records at a specific point in time.
+Since it not efficient to track all keys, it uses a sketch tracking a limited amount of slots to which keys being replayed are matched through hashing.
+This an approximation of the actual sequence number per key due to collisions.
+However, it does not affect correctness it only incurs additional read latency when key moves ahead in time as a side-effect of overlapping key mappings to the same slot.
+In addition, to tracking key sequence number per fixed number of slots, each `VirtualSublogReplayState` instance tracks the maximum sequence number across slots and contains a `ConcurrentQueue` used to inform subscribers when the sublog has replayed beyond a specific sequence number.
+
+When a `RespServerSession` processes a read command, it utilizes the `ConsistentReadGarnetApi` (through the `ConsistentReadContext` and `TransactionalConsistentReadContext` for the string and object data types respectively) to call into the `ReadConsistencyManager` and validate that it can serve the read
+under the prefix consistency constrains.
+This happens into phases per key
+
+1. ConsistentReadKeyPrepare Phase
+    This phase occurs before the actual processing of the corresponding read operation in Tsavorite.
+    Its goal is to validate the key's freshness compared to `maximumSessionSequenceNumber` as determined by any of the previous read operations.
+    Specifically, the frontier((max of(sequence number for key slot, max sublog sequence))) sequence number  of a key is established and compared against `maximumSessionSequenceNumber`.    
+    Otherwise, a waiter instance is established and added to the specific `VirtualSublogReplayState` instance.
+    The waiter is released by the associated background replay task when the sequence number progresses beyond the minimum threshold as established by the waiter instance
+2. ConsistentReadSequenceNumberUpdate step
+    This phase occurs after the read has been processed.
+    Its goal is to update the `maximumSessionSequenceNumber` by taking the maximum of the current `maximumSessionSequenceNumber` and the corresponding key's sequence number.
+    This update happens after read to ensure that we associate the read with a pessimistic replayed sequence number.
 
 ### GarnetLog
 This class is a wrapper which provides consolidated information about the AOF
@@ -131,7 +168,6 @@ state (inluding information about the address space), as well as an API to allow
 enqueueing records, hashing based on keys when multiple physical sublogs are configured.
 It also provides lock functionality which is used with coordinated operations (i.e. transactions, checkpointing, flushdb etc.) to ensure that the associated AOF markers are inserted atomically across all associated logs
     
-
 NOTES:
 - Varying number of tsavoritelog instances
 - Writes are recorded to the log based on hashing the key associated to that write

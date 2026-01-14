@@ -13,14 +13,13 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    public class GarnetLog(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
+    public sealed class GarnetLog(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
     {
         readonly int replayTaskCount = serverOptions.AofReplayTaskCount;
         readonly SingleLog singleLog = serverOptions.AofVirtualSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
         readonly ShardedLog shardedLog = serverOptions.AofVirtualSublogCount > 1 ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger) : null;
 
         public TsavoriteLog SigleLog => singleLog.log;
-        public readonly BitVector[] AllParticipatingTasks;
 
         public long HeaderSize => singleLog != null ? singleLog.HeaderSize : shardedLog.HeaderSize;
 

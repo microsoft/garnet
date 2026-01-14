@@ -30,7 +30,7 @@ namespace Garnet.server
         /// <summary>
         /// Get max sequence number across all sublogs
         /// </summary>
-        public long MaxSequenceNumber => vsrs.Select(sublog => sublog.Max).Max();
+        public long MaxSequenceNumber => vsrs.Max(sublog => sublog.Max);
 
         /// <summary>
         /// Get snapshot of maximum replayed timestamp for all sublogs

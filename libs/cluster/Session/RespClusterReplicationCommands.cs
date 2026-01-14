@@ -498,7 +498,7 @@ namespace Garnet.cluster
                 return true;
             }
 
-            var maxKeySeqNumVector = clusterProvider.storeWrapper.appendOnlyFile.replicaReadConsistencyStateManager.GetSublogMaxKeySequenceNumber();
+            var maxKeySeqNumVector = clusterProvider.storeWrapper.appendOnlyFile.readConsistencyManager.GetSublogMaxKeySequenceNumber();
             while (!RespWriteUtils.TryWriteAsciiBulkString(maxKeySeqNumVector.ToString(), ref dcurr, dend))
                 SendAndReset();
 
