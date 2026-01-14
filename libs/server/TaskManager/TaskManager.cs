@@ -101,7 +101,7 @@ namespace Garnet.server
             {
                 try
                 {
-                    taskInfo?.cts.Cancel();
+                    await taskInfo?.cts.CancelAsync();
                     await taskInfo?.task;
                 }
                 finally
