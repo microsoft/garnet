@@ -769,43 +769,51 @@ namespace Garnet.cluster
 
             var sb = new StringBuilder();
             sb.Append("*4\r\n");
+            var isNullOrEmptyHostname = string.IsNullOrEmpty(hostname);
 
             switch (preferredEndpointType)
             {
                 case ClusterPreferredEndpointType.Ip:
-                    sb.Append(FormatValueOrNull(ipAddress));
-                    break;
+                    sb.Append(FormatValueOrNull(ipAddress))
+                        .Append(':').Append(port).Append("\r\n")
+                        .Append('$').Append(nodeid.Length).Append("\r\n").Append(nodeid).Append("\r\n")
+                        .Append('*').Append(isNullOrEmptyHostname ? 0 : 2).Append("\r\n");
+                        
+                    if (!isNullOrEmptyHostname)
+                    {
+                        sb.Append("$8\r\nhostname\r\n")
+                            .Append(FormatValueOrNull(hostname));
+                    }
+
+                    return sb.ToString();
                 case ClusterPreferredEndpointType.Hostname:
-                    var hostnameForResp = string.IsNullOrEmpty(hostname) ? "?" : hostname;
-                    sb.Append(FormatValueOrNull(hostnameForResp));
-                    break;
-                default: // UnknownEndpoint
-                    sb.Append(FormatValueOrNull(null));
-                    break;
+                    var hostnameForResp = isNullOrEmptyHostname ? "?" : hostname;
+
+                    sb.Append(FormatValueOrNull(hostnameForResp))
+                        .Append(':').Append(port).Append("\r\n")
+                        .Append('$').Append(nodeid.Length).Append("\r\n").Append(nodeid).Append("\r\n")
+                        .Append('*').Append(2).Append("\r\n")
+                        .Append("$2\r\nip\r\n")
+                        .Append(FormatValueOrNull(ipAddress));
+
+                    return sb.ToString();
+                case ClusterPreferredEndpointType.Unknown:
+                default:
+                    sb.Append(FormatValueOrNull(null))
+                        .Append(':').Append(port).Append("\r\n")
+                        .Append('$').Append(nodeid.Length).Append("\r\n").Append(nodeid).Append("\r\n")
+                        .Append('*').Append(isNullOrEmptyHostname ? 2 : 4).Append("\r\n")
+                        .Append("$2\r\nip\r\n")
+                        .Append(FormatValueOrNull(ipAddress));
+
+                    if (!isNullOrEmptyHostname)
+                    {
+                        sb.Append("$8\r\nhostname\r\n");
+                        sb.Append(FormatValueOrNull(hostname));
+                    }
+
+                    return sb.ToString();
             }
-
-            sb.Append(':').Append(port).Append("\r\n");
-            sb.Append('$').Append(nodeid.Length).Append("\r\n").Append(nodeid).Append("\r\n");
-
-            var includeIp = preferredEndpointType != ClusterPreferredEndpointType.Ip;
-            var includeHostname = preferredEndpointType != ClusterPreferredEndpointType.Hostname && !string.IsNullOrEmpty(hostname);
-
-            var metadataLength = (includeIp ? 1 : 0) + (includeHostname ? 1 : 0);
-            sb.Append('*').Append(metadataLength * 2).Append("\r\n");
-
-            if (includeIp)
-            {
-                sb.Append("$2\r\nip\r\n");
-                sb.Append(FormatValueOrNull(ipAddress));
-            }
-
-            if (includeHostname)
-            {
-                sb.Append("$8\r\nhostname\r\n");
-                sb.Append(FormatValueOrNull(hostname));
-            }
-
-            return sb.ToString();
         }
 
         private string FormatValueOrNull(string value)
