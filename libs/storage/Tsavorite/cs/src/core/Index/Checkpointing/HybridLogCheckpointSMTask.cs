@@ -92,14 +92,7 @@ namespace Tsavorite.core
                 case Phase.IN_PROGRESS:
                     // State machine should wait for active transactions in the last version to complete (drain out).
                     // Note that we allow new transactions to process in parallel.
-                    if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
-                    {
-                        stateMachineDriver.SetLastVersion(lastVersion);
-                    }
-
-                    // We have to re-check the number of active transactions after assigning lastVersion and lastVersionTransactionsDone
-                    if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
-                        stateMachineDriver.AddToWaitingList(stateMachineDriver.GetLastVersionTransactionsDone());
+                    stateMachineDriver.TrackLastVersion(lastVersion);
                     break;
             }
         }

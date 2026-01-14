@@ -64,13 +64,18 @@ namespace Tsavorite.core
             }
         }
 
-        internal SemaphoreSlim GetLastVersionTransactionsDone() => lastVersionTransactionsDone;
-
-        internal void SetLastVersion(long version)
+        internal void TrackLastVersion(long version)
         {
-            // Set version number first, then create semaphore
-            lastVersion = version;
-            lastVersionTransactionsDone = new(0);
+            if (GetNumActiveTransactions(version) > 0)
+            {
+                // Set version number first, then create semaphore
+                lastVersion = version;
+                lastVersionTransactionsDone = new(0);
+            }
+
+            // We have to re-check the number of active transactions after assigning lastVersion and lastVersionTransactionsDone
+            if (GetNumActiveTransactions(version) > 0)
+                AddToWaitingList(lastVersionTransactionsDone);
         }
 
         internal void ResetLastVersion()
