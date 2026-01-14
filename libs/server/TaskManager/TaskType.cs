@@ -1,9 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System;
 using System.Collections.Generic;
-using Garnet.common;
 
 namespace Garnet.server
 {
@@ -57,52 +55,53 @@ namespace Garnet.server
     public static class TaskTypeExtensions
     {
         /// <summary>
-        /// Dictionary mapping placement categories to arrays of task types that belong to each category.
-        /// This provides efficient lookup of all tasks for a specific placement category.
+        /// Array mapping task types to their placement categories by enum index.
         /// </summary>
-        private static readonly Dictionary<TaskPlacementCategory, TaskType[]> CategoryToTasksMapping = new()
-        {
-            [TaskPlacementCategory.Primary] = [
-                TaskType.AofSizeLimitTask,
-                TaskType.CommitTask,
-                TaskType.CompactionTask,
-                TaskType.ObjectCollectTask,
-                TaskType.ExpiredKeyDeletionTask
-            ],
-            [TaskPlacementCategory.Replica] = []
-        };
+        private static readonly TaskPlacementCategory[] TaskPlacementMapping =
+        [
+            TaskPlacementCategory.Primary,  // AofSizeLimitTask
+            TaskPlacementCategory.Primary,  // CommitTask
+            TaskPlacementCategory.Primary,  // CompactionTask
+            TaskPlacementCategory.Primary,  // ObjectCollectTask
+            TaskPlacementCategory.Primary,  // ExpiredKeyDeletionTask
+            TaskPlacementCategory.All,      // IndexAutoGrowTask
+        ];
 
         /// <summary>
-        /// Contains all possible values of the TaskType enumeration.
+        /// Retrieves task types for a placement category.
         /// </summary>
-        private static readonly TaskType[] AllTaskTypes = [.. Enum.GetValues<TaskType>()];
-
-        /// <summary>
-        /// Retrieves the collection of TaskType values associated with the specified task placement category.
-        /// </summary>
-        /// <param name="taskPlacementCategory">The category of task placement to retrieve task types for.</param>
-        /// <returns>An enumerable collection of TaskType values for the given category.</returns>
-        /// <exception cref="GarnetException">Thrown when the specified task placement category is invalid.</exception>
-        public static IEnumerable<TaskType> GetTaskTypes(TaskPlacementCategory taskPlacementCategory)
+        /// <param name="lookupPlacementCategory">The placement category to filter by.</param>
+        /// <returns>An enumerable of task types that match the placement category.</returns>
+        public static IEnumerable<TaskType> GetTaskTypes(TaskPlacementCategory lookupPlacementCategory)
         {
-            if (taskPlacementCategory == TaskPlacementCategory.All)
+            // Iterate through all task types in order (no allocations)
+            for (var i = 0; i < TaskPlacementMapping.Length; i++)
             {
-                foreach (var taskType in AllTaskTypes)
+                var taskType = (TaskType)i;
+                var taskPlacement = TaskPlacementMapping[i];
+
+                // Check if this task matches the requested placement
+                if (MatchPlacementCategory(taskPlacement, lookupPlacementCategory))
+                {
                     yield return taskType;
+                }
             }
-            else
-            {
-                if (CategoryToTasksMapping.TryGetValue(taskPlacementCategory, out var taskTypes))
-                {
-                    foreach (var taskType in taskTypes)
-                        yield return taskType;
-                }
-                else
-                {
-                    throw new GarnetException($"Invalid TaskPlacementCategory {taskPlacementCategory}");
-                }
+        }
 
-            }
+        /// <summary>
+        /// Determines if a task placement matches the lookup placement category.
+        /// </summary>
+        /// <param name="taskPlacementCategory">The task's assigned placement.</param>
+        /// <param name="lookupPlacementCategory">The lookup placement category.</param>
+        /// <returns>True if the task can run on the lookup placement.</returns>
+        private static bool MatchPlacementCategory(TaskPlacementCategory taskPlacementCategory, TaskPlacementCategory lookupPlacementCategory)
+        {
+            // Tasks marked as "All" can run anywhere
+            if (taskPlacementCategory == TaskPlacementCategory.All || lookupPlacementCategory == TaskPlacementCategory.All)
+                return true;
+
+            // Check if the lookup placement includes this task's placement
+            return (lookupPlacementCategory & taskPlacementCategory) == taskPlacementCategory;
         }
     }
 }
