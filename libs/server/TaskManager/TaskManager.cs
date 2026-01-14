@@ -78,7 +78,7 @@ namespace Garnet.server
                     try
                     {
                         taskInfo?.cts.Cancel();
-                        taskInfo?.task.Wait();
+                        taskInfo?.task.Wait(cts.Token);
                     }
                     finally
                     {
@@ -101,7 +101,7 @@ namespace Garnet.server
                 try
                 {
                     await taskInfo?.cts.CancelAsync();
-                    await taskInfo?.task;
+                    await taskInfo?.task.WaitAsync(cts.Token);
                 }
                 finally
                 {
