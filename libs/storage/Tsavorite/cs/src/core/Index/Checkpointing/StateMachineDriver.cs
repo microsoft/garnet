@@ -25,8 +25,8 @@ namespace Tsavorite.core
         // All threads have exited the given state
         SemaphoreSlim waitForTransitionOut;
         // Transactions drained in last version
-        public long lastVersion;
-        public SemaphoreSlim lastVersionTransactionsDone;
+        long lastVersion;
+        SemaphoreSlim lastVersionTransactionsDone;
         List<IStateMachineCallback> callbacks;
         readonly LightEpoch epoch;
         readonly ILogger logger;
@@ -63,6 +63,8 @@ namespace Tsavorite.core
                 }
             }
         }
+
+        internal SemaphoreSlim GetLastVersionTransactionsDone() => lastVersionTransactionsDone;
 
         internal void SetLastVersion(long version)
         {

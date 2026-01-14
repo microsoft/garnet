@@ -76,7 +76,7 @@ namespace Tsavorite.core
 
                     // We have to re-check the number of active transactions after assigning lastVersion and lastVersionTransactionsDone
                     if (stateMachineDriver.GetNumActiveTransactions(lastVersion) > 0)
-                        stateMachineDriver.AddToWaitingList(stateMachineDriver.lastVersionTransactionsDone);
+                        stateMachineDriver.AddToWaitingList(stateMachineDriver.GetLastVersionTransactionsDone());
                     break;
 
                 case Phase.IN_PROGRESS_GROW:
