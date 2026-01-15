@@ -195,14 +195,12 @@ jobs:
               Write-Host "Unsupported OS: $env:RUNNER_OS"
               exit 1
             }
-        if: ${{ always() }}
 
       - name: Download allure test results that were staged in artifacts and merge into one folder
         uses: actions/download-artifact@v4
         with:
           path: test/Allure/AllResults
           pattern: AllureResults-*
-        if: ${{ always() }}
 
       - name: Copy all results into one folder (CombinedResults)
         shell: pwsh
@@ -213,7 +211,6 @@ jobs:
           Get-ChildItem -Path $source -Recurse -File | ForEach-Object {
             Copy-Item -Path $_.FullName -Destination $target -Force
           }          
-        if: ${{ always() }}
 
       - name: Final cleanup of stray allure-results folders
         shell: pwsh
@@ -232,7 +229,6 @@ jobs:
             Write-Host "Removing staging folder $staging"
             Remove-Item $staging -Recurse -Force
           }
-        if: ${{ always() }}
 
       - name: Copy history from allure_data_history branch into CombinedResults
         shell: pwsh
@@ -246,21 +242,18 @@ jobs:
           } else {
               Write-Host "No history found in allure_data_history, starting fresh"
           }        
-        if: ${{ always() }}
 
       - name: Run GenerateAllureReport.ps1
         shell: pwsh
         run: |
           Set-Location "${{ github.workspace }}/test/Allure"
           .\GenerateAllureReport.ps1
-        if: ${{ always() }}
 
       - name: Upload Allure history to artifacts so can use for debugging if needed
         uses: actions/upload-artifact@v4
         with:
           name: allure-history
           path: test/Allure/allure-report/history
-        if: ${{ always() }}
 
       - name: Commit updated history to allure_data_history
         shell: pwsh
@@ -276,14 +269,12 @@ jobs:
           git add test/Allure/history
           git commit -m "Update Allure history [CI]"
           git push origin allure_data_history
-        if: ${{ always() }}
 
       - name: Upload Allure HTML report
         uses: actions/upload-artifact@v4
         with:
           name: allure-report
           path: test/Allure/allure-report
-        if: ${{ always() }}
 
       - name: Publish Allure report to GH Web site
         shell: pwsh
