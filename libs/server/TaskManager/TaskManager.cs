@@ -20,20 +20,34 @@ namespace Garnet.server
         readonly ConcurrentDictionary<TaskType, TaskMetadata> registry = new();
         readonly ILogger logger = logger;
         SingleWriterMultiReaderLock dispose = new();
+        bool disposed = false;
 
         /// <summary>
         /// Dispose TaskManager instance
         /// </summary>
         public void Dispose()
         {
-            // Finalize lock to avoid double dispose
-            if (!dispose.TryWriteLock())
-                return;
+            try
+            {
+                dispose.WriteLock();
+                if (disposed)
+                    return;
+                disposed = true;
+            }
+            finally
+            {
+                dispose.WriteUnlock();
+            }
 
-            // Cancel global cts
             cts.Cancel();
-            CancelTask(TaskPlacementCategory.All).Wait();
-            cts.Dispose();
+            try
+            {
+                CancelTasks(TaskPlacementCategory.All).Wait();
+            }
+            finally
+            {
+                cts.Dispose();
+            }
         }
 
         /// <summary>
@@ -78,7 +92,11 @@ namespace Garnet.server
                     try
                     {
                         taskInfo?.cts.Cancel();
-                        taskInfo?.task.Wait(cts.Token);
+                        taskInfo?.task.Wait(disposed ? default : cts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogCritical(ex, "Unknown exception received for {RegisterAndRun} at finally.", nameof(RegisterAndRun));
                     }
                     finally
                     {
@@ -101,7 +119,11 @@ namespace Garnet.server
                 try
                 {
                     await taskInfo?.cts.CancelAsync();
-                    await taskInfo?.task.WaitAsync(cts.Token);
+                    await taskInfo?.task.WaitAsync(disposed ? default : cts.Token);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogCritical(ex, "Unknown exception received for {CancelTask}.", nameof(CancelTask));
                 }
                 finally
                 {
@@ -111,11 +133,11 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Cancel task
+        /// Cancel tasks associated with the provided TaskPlacementCategory
         /// </summary>
         /// <param name="taskPlacementCategory"></param>
         /// <returns></returns>
-        public async Task CancelTask(TaskPlacementCategory taskPlacementCategory)
+        public async Task CancelTasks(TaskPlacementCategory taskPlacementCategory)
         {
             foreach (var taskType in TaskTypeExtensions.GetTaskTypes(taskPlacementCategory))
                 await CancelTask(taskType);
