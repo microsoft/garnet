@@ -27,7 +27,7 @@ $allureResultsCombinedDir = "$basePath/test/Allure/CombinedResults"
 # Double check combined results dir exists
 if (-not (Test-Path -Path $allureResultsCombinedDir)) {
     Write-Error -Message "The Combined results directory $allureResultsCombinedDir does not exist. " -Category ObjectNotFound
-    exit
+    exit 1
 }
 
 # Copy categories.json to the CombinedResults directory
@@ -42,7 +42,7 @@ allure generate CombinedResults -o allure-report --clean
 $reportDir = "$basePath/test/Allure/allure-report"
 if (-not (Test-Path -Path $reportDir)) {
     Write-Error -Message "The Allure report directory $reportDir did not get created." -Category ObjectNotFound
-    exit
+    exit 1
 }
 else {
     Write-Host "Allure report generated successfully at $reportDir.  Use 'allure open allure-report' to view it locally."
