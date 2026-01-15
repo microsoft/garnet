@@ -363,12 +363,6 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
-            if (quantType == VectorQuantType.XPreQ8 && element.Length != sizeof(uint))
-            {
-                errorMsg = "ERR XPREQ8 requires 4-byte element ids"u8;
-                return VectorManagerResult.BadParams;
-            }
-
             var insert =
                 Service.Insert(
                     context,

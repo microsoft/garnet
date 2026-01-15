@@ -210,6 +210,36 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VADDVariableLengthElementIds()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var options = GetOpts(server);
+
+            var pageSize = GarnetServerOptions.ParseSize(options.PageSize, out _);
+
+            List<byte[]> ids = [[]];
+            for (var len = 1; len <= pageSize; len *= 2)
+            {
+                ids.Add(Enumerable.Range(0, len).Select(_ => (byte)len).ToArray());
+            }
+
+            foreach (var id in ids)
+            {
+                var addRes = (int)db.Execute("VADD", ["foo", "VALUES", ((float)id.Length).ToString(), id, "XPREQ8"]);
+                ClassicAssert.AreEqual(1, addRes);
+            }
+
+            foreach(var id in ids)
+            {
+                var embRes = (string[])db.Execute("VEMB", ["foo", id]);
+                ClassicAssert.AreEqual(1, embRes.Length);
+                ClassicAssert.AreEqual((float)id.Length, float.Parse(embRes[0]));
+            }
+        }
+
+        [Test]
         public void VADDXPREQB8()
         {
             // Extra validation is required for this extension quantifier
@@ -223,14 +253,6 @@ namespace Garnet.test
             // Create a vector set
             var res1 = db.Execute("VADD", ["fizz", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
             ClassicAssert.AreEqual(1, (int)res1);
-
-            // Element name too short
-            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0 }, "XPREQ8"]));
-            ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 4 but set has 75", exc2.Message);
-
-            // Element name too long
-            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 1, 2, 3, 4, }, "XPREQ8"]));
-            ClassicAssert.AreEqual("ERR XPREQ8 requires 4-byte element ids", exc3.Message);
         }
 
         [Test]
