@@ -173,7 +173,8 @@ namespace Garnet.server
                     void RecoverReplayTask(int sublogIdx, AofAddress untilAddress)
                     {
                         var count = 0;
-                        using var scan = appendOnlyFile.Scan(sublogIdx, appendOnlyFile.Log.GetBeginAddress(sublogIdx), untilAddress[sublogIdx]);
+                        var beginAddress = appendOnlyFile.Log.BeginAddress;
+                        using var scan = appendOnlyFile.Scan(sublogIdx, beginAddress[sublogIdx], untilAddress[sublogIdx]);
 
                         // Replay each AOF record in the current database context
                         while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out long nextAofAddress))

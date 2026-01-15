@@ -15,13 +15,13 @@ For this reason, the nodes excercising replication need to be setup with the AOF
 
 # Garnet Replication Attach/Sync Workflow
 Every node in the cluster starts as a primary node and it can be assigned to be a replica by using either CLUSTER REPLICATE or REPLICAOF commands.
-When this command is issued to a specific node, depending on how the node is configured (i.e. using diskless or diskbased replication), it will follow
+When this command is issued to a specific node, depending on how the node is configured (i.e. using diskless or disk-based replication), it will follow
 a synchronization workflow according to the following steps:
 
 1. Replica initiates attach and sends its local latest checkpoint and AOF information to the primary
-2. The primary will decide if the a checkpoint needs to be shipped to the replica. For diskless replication, the primary will execute a streaming checkpoint only if the replica does not have enough data to partially sychronize using its local AOF.
+2. The primary will decide if the a checkpoint needs to be shipped to the replica. For diskless replication, the primary will execute a streaming checkpoint only if the replica does not have enough data to partially synchronize using its local AOF.
 3. The primary signals to the replica to recover from its latest checkpoint and replay its local AOF.
-4. After recovery the replica, signals back to the primary to let it know that it is ready to start receiving the AOF pages not contained in the checkpoin that it recovered from.
+4. After recovery the replica, signals back to the primary to let it know that it is ready to start receiving the AOF pages not contained in the checkpoit that it recovered from.
 5. A background AofSyncTask is spawned to start iterating from the address beyond the one that is covered from the replicas recovered checkpoint.
 
 The primary maintains one distinct AofSyncTask per replica, keeping track the pages it has send.
@@ -32,13 +32,13 @@ The most important options are shown below:
 - EnableAOF: Enables AOF
 - AofMemorySize: Sets the total size of the AOF memory buffer after which any newly append records will spill to disk
 - AofPageSize: Determines the AOF page size
-- FastAofTruncate: This option is used to aggresively shift the AOF address begin address in order to prevent the AOF from spilling to disk which could result in performance degradation. This happens in safe manner and is a best effort approach, which means data will be not lost and may spill to disk if there is delay is shipping the log pages to the replica (which will prevent the begin address from shifting ahead of the sync iterator for that replica). U
+- FastAofTruncate: This option is used to aggressively shift the AOF address begin address in order to prevent the AOF from spilling to disk which could result in performance degradation. This happens in safe manner and is a best effort approach, which means data will be not lost and may spill to disk if there is delay is shipping the log pages to the replica (which will prevent the begin address from shifting ahead of the sync iterator for that replica). U
 - UseAofNullDevice: Treat the AOF memory buffer a circular buffer for writing AOF records, ensuring no disk IO. This can be used in combination with fast-aof-truncate but could lead to potential data loss. One should adjust the AofMemorySize to ensure there is enough space for incoming AOF records to be written and shipped towards the replica before truncating.
-- CommitFrequencyMs: Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command. To avoid performance degradatation when running with FastAofTruncate and/or UseAofNullDevice, one can set the CommitFrequencyMs to -1.
+- CommitFrequencyMs: Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command. To avoid performance degradation when running with FastAofTruncate and/or UseAofNullDevice, one can set the CommitFrequencyMs to -1.
 - AofReplicationRefreshFrequencyMs: "AOF replication (safe tail address) refresh frequency in milliseconds. 0 = auto refresh after every enqueue.
 - ReplicaDisklessSync: Enable diskless sync to avoid disk write amplification when performing full synchronization when a new replica attaches. This options uses the streaming checkpoint feature to ship the store keys to the replica when full synchronization is required.
 - ReplicaDisklessSyncDelay: How long to wait between sync requests to allow for other replicas to attach in parallel hence amortize the cost of the streaming checkpoint.
-- OnDemandCheckpoint: This options enables taking an on demand checkpoint when a replica attaches. It used to improve the sychronization performance in the event the AOF log has grown too large or when the AOF has been truncated and synchronization requires a fresh checkpoint to correctly synchronize with the replica. If this option is disabled and the AOF log gets truncated, not having enabled this option could break the attach process unless UseAofNullDevice or FastAofTruncate is enabled since in that case we expect data loss.
+- OnDemandCheckpoint: This options enables taking an on demand checkpoint when a replica attaches. It used to improve the synchronization performance in the event the AOF log has grown too large or when the AOF has been truncated and synchronization requires a fresh checkpoint to correctly synchronize with the replica. If this option is disabled and the AOF log gets truncated, not having enabled this option could break the attach process unless UseAofNullDevice or FastAofTruncate is enabled since in that case we expect data loss.
 - AllowDataLoss (UseAofNullDevice || (FastAofTruncate && !OnDemandCheckpoint): This is an internal flag computed by base flags as indicated. It is used to skip AOF integrity check when an AOF sync task is started. Using this combination of options should be used with caution
 
 ## Diskbased Attach/Sync Details
@@ -61,8 +61,8 @@ In addition to that, the checkpoint must be of the same version and history for 
 When the OnDemandCheckpoint flag is used the primary might initiate the process of taking a new checkpoint.
 Any on-demand checkpoint can be shared across attaching replicas if it is still valid at the moment those replicas attach.
 When a new checkpoint is created, we make a best effort approach to delete older checkpoints at the primary.
-This approach requires a locking mechanism to esnure that actively read checkpoints (those part of the full sychronization) will not be deleted
-The locking logic is for checkponts is implemented in ```CheckpointStore.cs```.
+This approach requires a locking mechanism to ensure that actively read checkpoints (those part of the full synchronization) will not be deleted
+The locking logic is for checkpoints is implemented in ```CheckpointStore.cs```.
 The attaching replica communicates to the corresponding primary which creates a ```ReplicaSyncSession.cs``` for every attaching replica.
 By examining the metadata of the replica the primary decides if a full or partial synchronization is needed
 If full synchronization is necessary the primary will send the latest checkpoint files to the replica in chunks.
@@ -81,11 +81,11 @@ The replica side implementation is implemented within ```ReplicaDisklessSync.cs`
 The attaching replica transmit their persistence information (i.e. AOF start and tail address and store version).
 As opposed to the disk-based approach, the attaching replicas are grouped and synced together.
 There is no limit on the number of replicas that can be synced in parallel.
-The only parameter that controls how many replicas are synced in parallel is ```ReplicaDisklessSyncDelay``` which delays replication sync to allow more replicas to sync together (i.e. at startup where a primary migth need to be configured with few replicas).
-Once the specified delay period passes the primary will examine all the metadata trasmitted by the associated replicas and decide which ones require full vs partial synchronization.
+The only parameter that controls how many replicas are synced in parallel is ```ReplicaDisklessSyncDelay``` which delays replication sync to allow more replicas to sync together (i.e. at startup where a primary might need to be configured with few replicas).
+Once the specified delay period passes the primary will examine all the metadata transmitted by the associated replicas and decide which ones require full vs partial synchronization.
 Those requiring partial synchronization will be released immediately and a new AOF sync task will be created for them to start receiving the associated AOF records
 The rest will be fully synchronized using the StreamingCheckpoint primitive.
-Before starting the full sychronization, the primary broadcasts FLUSHDB command to cleanup the replica store so there is no conflicts with the primary store.
+Before starting the full synchronization, the primary broadcasts FLUSHDB command to cleanup the replica store so there is no conflicts with the primary store.
 This streaming checkpoint primitive utilizes and iterator over the TsavoriteStore and it broadcasts batches of kv pairs to the replica.
 The replica will receive those pairs and insert them into its store.
 At completion the replica sets its version number to be equal the the version number of primary.
@@ -114,14 +114,13 @@ Garnet can be configured to use the sharded AOF implementation by adjusting the 
     This parameter controls the number of replay tasks that can used per physical sublog.
     Its value ranges between 1 and 256, with the default value being 1. The combination of this default value and the AofPhysicalSublogCount default maps to the legacy single log implementation.
 
-
 ### GarnetAppendOnlyFile
 
 This class implements Garnet's AOF offering an API to interact with the physical
 sublog instances and ensure read prefix consistency.
 Its most important members are
 1. SequenceNumberGenerator
-   This class implements the API used to generate sequencence numbers when the 
+   This class implements the API used to generate sequence numbers when the 
 2. ReadConsistencyManager: 
    Responsible for tracking the replayed key sequence numbers per virtual sublog and coordinating read operation to ensure read prefix consistency
 3. GarnetLog
@@ -132,24 +131,22 @@ Its most important members are
 The `SequenceNumberGenerator` class is implemented by using a `baseTimestamp` and a startingOffset.
 Sequence numbers are generated using the difference of the baseTimestamp from the current timestamp offseted by the `startingOffset`.
 The starting offset is used to eliminate clock divergence between nodes and on recovery it is initialized as the maximum sequence number calculated from the records of recovered AOF.
-Note recovery can happen on startup or when a failover occurs where a replica takes over as primary making it so it needs to generate consistent sequence numbers
-for writes that is going to serve in the future.
+Note recovery can happen on startup or when a failover occurs where a replica takes over as primary making it so it needs to generate consistent sequence numbers for writes that is going to serve in the future.
 
 #### ReadConsistencyManager
-This `ReadConsistencyManager` class is instatiated when a node becomes a replica.
+This `ReadConsistencyManager` class is instantiated when a node becomes a replica.
 It is used to track the key sequence numbers of the replayed records.
 This happens because replicas needs to ensure read prefix-consistency through tracking the maximum session sequence number seen across reads
 and waiting for keys that are behind to become current through the progression of background replay functionality.
 This protocol is triggered only when the Garnet cluster node are configured to use the sharded AOF (i.e. AofPhysicalSublogCount > 1 || AofReplayTaskCount > 1).
-The `ReadConsistencyManager` uses the `VirtualSublogReplayState` struct to track the key sequence numbers seens for all replay records at a specific point in time.
+The `ReadConsistencyManager` uses the `VirtualSublogReplayState` struct to track the key sequence numbers seen for all replay records at a specific point in time.
 Since it not efficient to track all keys, it uses a sketch tracking a limited amount of slots to which keys being replayed are matched through hashing.
 This an approximation of the actual sequence number per key due to collisions.
 However, it does not affect correctness it only incurs additional read latency when key moves ahead in time as a side-effect of overlapping key mappings to the same slot.
 In addition, to tracking key sequence number per fixed number of slots, each `VirtualSublogReplayState` instance tracks the maximum sequence number across slots and contains a `ConcurrentQueue` used to inform subscribers when the sublog has replayed beyond a specific sequence number.
 
-When a `RespServerSession` processes a read command, it utilizes the `ConsistentReadGarnetApi` (through the `ConsistentReadContext` and `TransactionalConsistentReadContext` for the string and object data types respectively) to call into the `ReadConsistencyManager` and validate that it can serve the read
-under the prefix consistency constrains.
-This happens into phases per key
+When a `RespServerSession` processes a read command, it utilizes the `ConsistentReadGarnetApi` (through the `ConsistentReadContext` and `TransactionalConsistentReadContext` for the string and object data types respectively) to call into the `ReadConsistencyManager` and validate that it can serve the read under the prefix consistency constrains.
+This happens into two phases per key
 
 1. ConsistentReadKeyPrepare Phase
     This phase occurs before the actual processing of the corresponding read operation in Tsavorite.
@@ -162,34 +159,47 @@ This happens into phases per key
     Its goal is to update the `maximumSessionSequenceNumber` by taking the maximum of the current `maximumSessionSequenceNumber` and the corresponding key's sequence number.
     This update happens after read to ensure that we associate the read with a pessimistic replayed sequence number.
 
+
+The `ReadConsistencyManager` maintains version number that gets incremented every time a new instance is created.
+Creation of a new instance happens at the startup of the attach/sync workflow to ensure that subsequent reads start
+with a clean slate.
+The read protocol checks maintains the current version number per session and performs the appropriate checks to ensure that every read is consistent in terms of the last seen version number of the `ReadConsistencyManager`.
+This happens at `ConsistentReadKeyPrepare` phase before validating the freshness of the key being read.
+Read prefix consistency is guaranteed for a given batch of reads because reading a batch happens under epoch protection.
+Across requests, the version of the `ReadConsistencyManager` may change with the database version change, so prefix read consistency follows the same rules as if a new database was recovered while a client was connected.
+
 ### GarnetLog
-This class is a wrapper which provides consolidated information about the AOF
-state (inluding information about the address space), as well as an API to allow
-enqueueing records, hashing based on keys when multiple physical sublogs are configured.
-It also provides lock functionality which is used with coordinated operations (i.e. transactions, checkpointing, flushdb etc.) to ensure that the associated AOF markers are inserted atomically across all associated logs
-    
-NOTES:
-- Varying number of tsavoritelog instances
-- Writes are recorded to the log based on hashing the key associated to that write
-- Records keep track of a sequence number
-- There exists a class of coordinated operations that require writing to a subset of all physical logs
-- Transactions write to logs associated with the keys involved in the corresponding transaction
+The `GarnetLog` instance implements an API that offers the same functionality as `TsavoriteLog` extended to support operations across multiple instances (`ShardedLog`).
+The functionality that had to be extended to support multiple `TsavoriteLog` instances is as follows:
+1. Metadata Operations
+    These include operations that retrieve `TsavoriteLog` metadata such as `BeginAddress`, `TailAddress` etc properties. For `ShardedLog`, these operations return a vector of address in a form of a struct defined as `AofAddress`.
+2. Initialize Operations
+    These operations require initializing the state of the log and often require an input int the form of an address. For `ShardedLog`, the parameter passed is a value of `AofAddress`.
+3. Commit Operations
+    These operations happens in unison across each sublog instance. For variants that require awaiting on a Task, the `ShardedLog` implementation uses the WheAll primitive for all tasks associated with each sublog.
+4. Truncate Operations
+    For `ShardedLog`, truncation happens by passing an `AofAddress` parameter and applying the truncation based on the index of the sublog being truncated.
+5. Enqueue Operations
+    Enqueue operations are performed either by providing the index of the log to enqueue to or through computation of the index by hashing the key associated with that record.
+    The first approach is used for coordinated operations that are applied and replayed across multiple physical logs such as transactions or checkpoint.
+    The second approach is used to record individual operations to the store's key value pair, specifically Upsert, RMW and Delete operations are recorded through this API for both string and object data.
 
-## Read Consistency Protocol
+The `GarnetLog` instance offers also a locking mechanism to atomically insert record headers for coordinated operations. This locking mechanism works by preventing enqueue for coordinated operations that run in parallel.
 
-MaxSessionSequenceNumber (MSSN)
-var sublogIdx = HASH(k1)
-var k1sn = GetKeySequenceNumber(k1)
 
-do
-{
-    var k1sn = GetKeySequenceNumber(k1)
-}while(k1sn < mssn)
+### AOFSyncDriver
 
-v1 = Read k1
+As mentioned previously, at completion of the attach workflow, the primary will spawn background tasks responsible for shipping the AOF pages to the replica.
+For every connected replica, the primary creates an instance of an `AofSyncDriver`, which manages the `AofSyncTasks` responsible for shipping each physical sublog's pages.
+The `ReplicationManager` manages the `AofSynDriverStore` containing all the `AofSyncDriver` instances.
+The number of `AofSyncTask` instance spawned is equal to the number of physical sublogs configured on the corresponding Garnet instance.
+When a Garnet instance is configured with more than one physical sublog, a refresh tail task is also created.
 
-k1sn = GetFrontierSequenceNumber(k1, sublogIdx)
-    => Max(GetKeySequenceNumber(k1), GetMaxSublogSequenceNumber(sublogIdx))
-
-mssn = MAX(k1sn, v1)
-
+#### Refresh Sublog Tail
+This task is used to refresh the sublog tail by enqueuing a record with most recent sequence number to ensure that time moves forward for sublogs that have not received
+any enqueues.
+In fact, this task is making an effort to converge the tail sequence number for its physical sublog to ensure that the read protocol does not get stuck waiting falsely for
+future updates.
+For example, given the key-sequence number pairs (A,t1), (B,t2) where each one is mapped to a different physical log, if t1 < t2 and we first read B, then trying to read A
+will result in the read session waiting for A to reach a sequence number t3 > t2
+This could happen due to updating key A or another key, or should be forced by the refresh task which will create a record to indicate that time has move forward.

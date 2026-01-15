@@ -46,8 +46,6 @@ namespace Garnet.server
             }
         }
 
-        public long GetBeginAddress(int sublogIdx) => singleLog != null ? singleLog.log.BeginAddress : shardedLog.sublog[sublogIdx].BeginAddress;
-
         public AofAddress TailAddress
         {
             get

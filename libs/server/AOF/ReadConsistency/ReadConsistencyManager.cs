@@ -138,7 +138,8 @@ namespace Garnet.server
             var virtualSublogIdx = (short)(hash % serverOptions.AofVirtualSublogCount);
 
             // If first time calling or version has been bumped reset read context
-            // NOTE: version changes every time replica is reset and a attached to a new primary
+            // NOTE: Version changes every time replica is reset and a attached to a new primary.
+            // When a batch of read commands executes, it all happens under epoch protection, hence version change will not affect read prefix consistency
             if (replicaReadSessionContext.sessionVersion == -1 || replicaReadSessionContext.sessionVersion != CurrentVersion)
             {
                 replicaReadSessionContext.sessionVersion = CurrentVersion;
