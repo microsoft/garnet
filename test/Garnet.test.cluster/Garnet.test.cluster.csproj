@@ -17,7 +17,7 @@
     <Compile Include="..\..\test\Garnet.test\Extensions\RateLimiterTxn.cs" Link="RateLimiterTxn.cs" />
 		<Compile Include="..\..\test\Garnet.test\Extensions\BulkIncrementBy.cs" Link="BulkIncrementBy.cs" />
 		<Compile Include="..\..\test\Garnet.test\Extensions\BulkRead.cs" Link="BulkRead.cs" />
-		<Compile Include="..\Garnet.test\AllureUtils.cs" Link="AllureUtils.cs" />
+		<Compile Include="..\Garnet.test\AllureTestBase.cs" Link="AllureTestBasee.cs" />
   </ItemGroup>
 
   <ItemGroup>

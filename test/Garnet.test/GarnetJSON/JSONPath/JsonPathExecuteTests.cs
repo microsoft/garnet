@@ -35,7 +35,6 @@ using GarnetJSON.JSONPath;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
-
 namespace Garnet.test.JSONPath
 {
     [AllureNUnit]

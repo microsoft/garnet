@@ -23,8 +23,6 @@ namespace Tsavorite.test.recovery
         Cloud
     }
 
-    [AllureNUnit]
-    [TestFixture]
     public class RecoveryCheckBase : AllureTestBase
     {
         protected IDevice log;

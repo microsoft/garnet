@@ -166,7 +166,6 @@ namespace Garnet.test
         }
 
 
-        // This is the Local test one
         [Test]
         [TestCase(100)]
         [TestCase(131042)]
@@ -175,7 +174,6 @@ namespace Garnet.test
         [TestCase(131061)]
         public async Task CanUseHKEYSWithLeftOverBuffer(int size)
         {
-
             using var c = TestUtils.GetGarnetClientSession();
             c.Connect();
 

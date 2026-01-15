@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -18,22 +19,15 @@ namespace Garnet.test
         [SetUp]
         public void LabelEnvironment()
         {
-            string os = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "Linux" :
-                        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" :
+            var os = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? nameof(OSPlatform.Linux) :
+                        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? nameof(OSPlatform.Windows) :
+                        RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? nameof(OSPlatform.OSX) :
                         "unknown";
-            var frameworkAttr = Assembly.GetExecutingAssembly()
-            .GetCustomAttribute<TargetFrameworkAttribute>();
 
-            var framework = "unknown";
-            if (frameworkAttr != null)
-            {
-                var parts = frameworkAttr.FrameworkName.Split(',');
-                if (parts.Length > 0)
-                {
-                    var lastPart = parts[parts.Length - 1];
-                    framework = lastPart.Replace("Version=v", "net");
-                }
-            }
+            var frameworkAttr = Assembly.GetExecutingAssembly()
+                .GetCustomAttribute<TargetFrameworkAttribute>();
+            var framework = frameworkAttr?.FrameworkName.Split(',').LastOrDefault()?.Replace("Version=v", "net") ?? "unknown";
+
             var config = Assembly.GetExecutingAssembly()
                 .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration ?? "unknown";
             var timestamp = DateTime.Now.ToString("M/d/yyyy");
