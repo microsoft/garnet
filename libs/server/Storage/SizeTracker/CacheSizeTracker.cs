@@ -9,9 +9,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     /// <summary>
     /// Tracks the size of the main log and read cache. 
     /// Based on the current size and the target size, it uses the corresponding LogSizeTracker objects to increase

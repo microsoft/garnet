@@ -117,41 +117,39 @@ namespace Tsavorite.core
             }
         }
 
-        internal override void AsyncReadPagesFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPageStart, int numPages, long untilAddress,
+        internal override void AsyncReadPageFromDeviceToFrame<TContext>(CircularDiskReadBuffer readBuffers, long readPage, long untilAddress,
             TContext context, out CountdownEvent completed, long devicePageOffset = 0, IDevice device = null, IDevice objectLogDevice = null, CancellationTokenSource cts = null)
         {
-            IDevice usedDevice = deltaLogDevice;
-            completed = new CountdownEvent(numPages);
-            for (long readPage = readPageStart; readPage < (readPageStart + numPages); readPage++)
+            var usedDevice = deltaLogDevice;
+            completed = new CountdownEvent(1);
+
+            int pageIndex = (int)(readPage % frame.frameSize);
+            if (frame.frame[pageIndex] == null)
+                frame.Allocate(pageIndex);
+            else
+                frame.Clear(pageIndex);
+
+            var asyncResult = new PageAsyncReadResult<TContext>()
             {
-                int pageIndex = (int)(readPage % frame.frameSize);
-                if (frame.frame[pageIndex] == null)
-                    frame.Allocate(pageIndex);
-                else
-                    frame.Clear(pageIndex);
+                page = readPage,
+                context = context,
+                handle = completed
+            };
 
-                var asyncResult = new PageAsyncReadResult<TContext>()
-                {
-                    page = readPage,
-                    context = context,
-                    handle = completed
-                };
+            ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
+            uint readLength = (uint)AlignedPageSizeBytes;
+            long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
 
-                ulong offsetInFile = (ulong)(AlignedPageSizeBytes * readPage);
-                uint readLength = (uint)AlignedPageSizeBytes;
-                long adjustedUntilAddress = (AlignedPageSizeBytes * (untilAddress >> LogPageSizeBits) + (untilAddress & PageSizeMask));
-
-                if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
-                {
-                    readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
-                    readLength = (uint)(Align(readLength));
-                }
-
-                if (device != null)
-                    offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
-
-                usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, AsyncReadPagesCallback, asyncResult);
+            if (adjustedUntilAddress > 0 && ((adjustedUntilAddress - (long)offsetInFile) < PageSize))
+            {
+                readLength = (uint)(adjustedUntilAddress - (long)offsetInFile);
+                readLength = (uint)(Align(readLength));
             }
+
+            if (device != null)
+                offsetInFile = (ulong)(AlignedPageSizeBytes * (readPage - devicePageOffset));
+
+            usedDevice.ReadAsync(offsetInFile, (IntPtr)frame.pointers[pageIndex], readLength, AsyncReadPagesCallback, asyncResult);
         }
 
         private static unsafe ref DeltalogHeader GetHeader(long physicalAddress) => ref Unsafe.AsRef<DeltalogHeader>((void*)physicalAddress);
@@ -394,17 +392,12 @@ namespace Tsavorite.core
             try
             {
                 if (errorCode != 0)
-                {
                     logger?.LogError($"{nameof(AsyncFlushPageToDeviceCallback)} error: {{errorCode}}", errorCode);
-                }
 
                 PageAsyncFlushResult<Empty> result = (PageAsyncFlushResult<Empty>)context;
-                if (Interlocked.Decrement(ref result.count) == 0)
-                {
-                    result.Free();
-                }
+                _ = result.Release();
                 if (Interlocked.Decrement(ref issuedFlush) == 0)
-                    completedSemaphore.Release();
+                    _ = completedSemaphore.Release();
             }
             catch when (disposed) { }
         }

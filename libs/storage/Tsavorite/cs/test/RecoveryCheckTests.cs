@@ -990,7 +990,7 @@ namespace Tsavorite.test.recovery
 
             for (long key = 0; key < (reInsert ? 800 : 1000); key++)
             {
-                // If reInsert, we insert the wrong key during the first pass for the first 500 keys
+                // If reInsert, we insert the wrong value during the first pass for the first 500 keys
                 long value = reInsert && key < 500 ? key + 1 : key;
                 _ = bc1.Upsert(SpanByte.FromPinnedVariable(ref key), SpanByte.FromPinnedVariable(ref value));
             }

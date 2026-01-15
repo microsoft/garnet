@@ -2581,7 +2581,8 @@ namespace Tsavorite.core
             long scanStart = 0;
             foreach (var metadataCommit in logCommitManager.ListCommits())
             {
-                if (metadataCommit > requestedCommitNum) continue;
+                if (metadataCommit > requestedCommitNum)
+                    continue;
                 try
                 {
                     if (LoadCommitMetadata(metadataCommit, out info))
@@ -2616,7 +2617,7 @@ namespace Tsavorite.core
             }
 
             // At this point, we should have found the exact commit num requested
-            Debug.Assert(info.CommitNum == requestedCommitNum);
+            Debug.Assert(info.CommitNum == requestedCommitNum, $"info.CommitNum {info.CommitNum} must equal requestedCommitNum {requestedCommitNum}");
             if (!readOnlyMode)
             {
                 var headAddress = info.UntilAddress - allocator.GetOffsetOnPage(info.UntilAddress);
@@ -2904,7 +2905,6 @@ namespace Tsavorite.core
             record.Return();
             return length;
         }
-
 
         private bool CommitInternal(out long commitTail, out long actualCommitNum, bool fastForwardAllowed, byte[] cookie, long proposedCommitNum, Action callback)
         {

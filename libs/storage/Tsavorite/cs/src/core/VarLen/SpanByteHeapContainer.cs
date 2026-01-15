@@ -20,12 +20,14 @@ namespace Tsavorite.core
                 pinnedSpanByte = default;
                 return;
             }
-            mem = pool.Get(item.TotalSize());
-            item.SerializeTo(mem.GetValidPointer());
+
+            var size = item.TotalSize();
+            mem = pool.Get(size);
+            item.SerializeTo(mem.GetValidPointer(), size);
             pinnedSpanByte = PinnedSpanByte.FromLengthPrefixedPinnedPointer(mem.GetValidPointer());
         }
 
-        public unsafe ref PinnedSpanByte Get() => ref pinnedSpanByte;
+        public ref PinnedSpanByte Get() => ref pinnedSpanByte;
 
         public void Dispose() => mem?.Return();
     }
