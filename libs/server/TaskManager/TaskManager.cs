@@ -23,6 +23,14 @@ namespace Garnet.server
         bool disposed = false;
 
         /// <summary>
+        /// Check if task associated with provided TaskType is running
+        /// </summary>
+        /// <param name="taskType"></param>
+        /// <returns></returns>
+        public bool IsRunning(TaskType taskType)
+            => registry.TryGetValue(taskType, out var taskInfo) && taskInfo.task != null && !taskInfo.task.IsCompleted;
+
+        /// <summary>
         /// Dispose TaskManager instance
         /// </summary>
         public void Dispose()
@@ -141,6 +149,38 @@ namespace Garnet.server
         {
             foreach (var taskType in TaskTypeExtensions.GetTaskTypes(taskPlacementCategory))
                 await CancelTask(taskType);
+        }
+
+        /// <summary>
+        /// Wait for task associated with the provided TaskType to complete.
+        /// </summary>
+        /// <param name="taskType"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public bool Wait(TaskType taskType, CancellationToken token = default)
+        {
+            if (registry.TryGetValue(taskType, out var taskInfo))
+            {
+                taskInfo.task.Wait(token);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// WaitAsync for task associated with the provided TaskType to complete.
+        /// </summary>
+        /// <param name="taskType"></param>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        public async Task<bool> WaitAsync(TaskType taskType, CancellationToken token = default)
+        {
+            if (registry.TryGetValue(taskType, out var taskInfo))
+            {
+                await taskInfo.task.WaitAsync(token);
+                return true;
+            }
+            return false;
         }
     }
 }

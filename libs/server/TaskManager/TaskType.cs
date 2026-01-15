@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 
 namespace Garnet.server
@@ -57,15 +58,20 @@ namespace Garnet.server
         /// <summary>
         /// Array mapping task types to their placement categories by enum index.
         /// </summary>
-        private static readonly TaskPlacementCategory[] TaskPlacementMapping =
-        [
-            TaskPlacementCategory.Primary,  // AofSizeLimitTask
-            TaskPlacementCategory.Primary,  // CommitTask
-            TaskPlacementCategory.Primary,  // CompactionTask
-            TaskPlacementCategory.Primary,  // ObjectCollectTask
-            TaskPlacementCategory.Primary,  // ExpiredKeyDeletionTask
-            TaskPlacementCategory.All,      // IndexAutoGrowTask
-        ];
+        private static readonly TaskPlacementCategory[] TaskPlacementMapping = new TaskPlacementCategory[Enum.GetValues<TaskType>().Length];
+
+        /// <summary>
+        /// Static constructor to initialize the TaskPlacementMapping array.
+        /// </summary>
+        static TaskTypeExtensions()
+        {
+            TaskPlacementMapping[(int)TaskType.AofSizeLimitTask] = TaskPlacementCategory.Primary;
+            TaskPlacementMapping[(int)TaskType.CommitTask] = TaskPlacementCategory.Primary;
+            TaskPlacementMapping[(int)TaskType.CompactionTask] = TaskPlacementCategory.Primary;
+            TaskPlacementMapping[(int)TaskType.ObjectCollectTask] = TaskPlacementCategory.Primary;
+            TaskPlacementMapping[(int)TaskType.ExpiredKeyDeletionTask] = TaskPlacementCategory.Primary;
+            TaskPlacementMapping[(int)TaskType.IndexAutoGrowTask] = TaskPlacementCategory.All;
+        }
 
         /// <summary>
         /// Retrieves task types for a placement category.

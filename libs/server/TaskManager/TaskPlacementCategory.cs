@@ -6,7 +6,7 @@ using System;
 namespace Garnet.server
 {
     /// <summary>
-    /// Specifies the placement constraints for background tasks (used with cluster mode).
+    /// Specifies the placement constraints for background tasks.
     /// </summary>
     [Flags]
     public enum TaskPlacementCategory
