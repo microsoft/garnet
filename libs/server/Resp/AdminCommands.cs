@@ -646,7 +646,7 @@ namespace Garnet.server
 
             var keys = parseState.Parameters;
 
-            var input = new ObjectInput(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo) { HashOp = HashOperation.HCOLLECT };
 
             var status = storageApi.HashCollect(keys, ref input);
 
@@ -675,7 +675,7 @@ namespace Garnet.server
 
             var keys = parseState.Parameters;
 
-            var input = new ObjectInput(GarnetObjectType.SortedSet) { SortedSetOp = SortedSetOperation.ZCOLLECT };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo) { SortedSetOp = SortedSetOperation.ZCOLLECT };
 
             var status = storageApi.SortedSetCollect(keys, ref input);
 

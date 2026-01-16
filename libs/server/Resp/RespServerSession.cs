@@ -54,9 +54,8 @@ namespace Garnet.server
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
 
         internal SessionParseState parseState;
-        internal SessionParseState metaParseState;
         internal SessionParseState customCommandParseState;
-        internal RespMetaCommand metaCommand;
+        internal MetaCommandInfo metaCommandInfo;
 
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
@@ -703,10 +702,31 @@ namespace Garnet.server
             return false;
         }
 
+        private bool IsMetaCommandInfoValid()
+        {
+            if (metaCommandInfo.MetaCommand.IsEtagCommand())
+            {
+                if (!metaCommandInfo.MetaCommandParseState.TryGetLong(0, out var etag))
+                {
+                    while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_ETAG, ref dcurr, dend))
+                        SendAndReset();
+                    return false;
+                }
+
+                metaCommandInfo.Arg1 = etag;
+                metaCommandInfo.MetaCommandParseState = metaCommandInfo.MetaCommandParseState.Slice(1);
+            }
+
+            return true;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None && !IsMetaCommandInfoValid())
+                return true;
+
             /*
              * WARNING: Do not add any command here classified as @slow!
              * Only @fast commands otherwise latency tracking will break for NET_RS (check how containsSlowCommand is used).

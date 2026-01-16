@@ -2742,7 +2742,7 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private RespCommand ParseCommand(bool writeErrorOnFailure, out bool success)
         {
-            metaCommand = RespMetaCommand.None;
+            metaCommandInfo.MetaCommand = RespMetaCommand.None;
 
             // Initialize count as -1 (i.e., read head has not been advanced)
             var count = -1;
@@ -2759,22 +2759,23 @@ namespace Garnet.server
                 if (!success) return cmd;
             }
 
-            var metaCmdArgCount = 0;
             if (cmd.IsMetaCommand())
             {
-                // Get the meta command argument count (including the command itself)
-                metaCmdArgCount = UpdateMetaCommandAndGetArgumentCount(cmd);
+                // Get the meta command and its argument count
+                var (metaCmd, metaCmdArgCount) = GetMetaCommandAndArgumentCount(cmd);
                 count -= metaCmdArgCount;
 
-                // Set up meta command parse state (to temporarily hold arguments until setting up the main parse state)
+                metaCommandInfo.MetaCommand = metaCmd;
+
+                // Set up meta command parse state
+                metaCommandInfo.MetaCommandParseState.Initialize(metaCmdArgCount);
+                var currPtr = recvBufferPtr + readHead;
+
                 if (metaCmdArgCount > 0)
                 {
-                    metaParseState.Initialize(metaCmdArgCount);
-                    var currPtr = recvBufferPtr + readHead;
-
                     for (var i = 0; i < metaCmdArgCount; i++)
                     {
-                        if (!metaParseState.Read(i, ref currPtr, recvBufferPtr + bytesRead))
+                        if (!metaCommandInfo.MetaCommandParseState.Read(i, ref currPtr, recvBufferPtr + bytesRead))
                             return RespCommand.INVALID;
                     }
 
@@ -2797,15 +2798,11 @@ namespace Garnet.server
             }
             else
             {
-                metaCommand = RespMetaCommand.None;
+                metaCommandInfo.MetaCommand = RespMetaCommand.None;
             }
 
             // Set up parse state
-            parseState.Initialize(count, metaCmdArgCount);
-
-            // Set meta command arguments if any
-            if (metaCmdArgCount > 0)
-                parseState.SetArguments(0, isMetaArg: true, metaParseState.Parameters);
+            parseState.Initialize(count);
 
             var ptr = recvBufferPtr + readHead;
 
@@ -2827,14 +2824,14 @@ namespace Garnet.server
             return cmd;
         }
 
-        private int UpdateMetaCommandAndGetArgumentCount(RespCommand cmd)
+        private (RespMetaCommand metaCommand, int argCount) GetMetaCommandAndArgumentCount(RespCommand cmd)
         {
             if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var info, logger: logger))
                 throw new GarnetException($"Unable to retrieve simple command info for command: {cmd}");
 
             var argCount = info.Arity - 1;
 
-            metaCommand = cmd switch
+            var metaCommand = cmd switch
             {
                 RespCommand.EXECWITHETAG => RespMetaCommand.ExecWithEtag,
                 RespCommand.EXECIFMATCH => RespMetaCommand.ExecIfMatch,
@@ -2843,7 +2840,7 @@ namespace Garnet.server
                 _ => throw new GarnetException($"Invalid meta command: {cmd}")
             };
 
-            return argCount;
+            return (metaCommand, argCount);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

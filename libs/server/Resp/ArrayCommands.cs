@@ -73,7 +73,7 @@ namespace Garnet.server
                 return AbortWithWrongNumberOfArguments(nameof(RespCommand.MSETNX));
             }
 
-            var input = new StringInput(RespCommand.MSETNX, metaCommand, ref parseState);
+            var input = new StringInput(RespCommand.MSETNX, ref metaCommandInfo, ref parseState);
             var status = storageApi.MSET_Conditional(ref input);
 
             // For a "set if not exists", NOTFOUND means that the operation succeeded
@@ -87,13 +87,13 @@ namespace Garnet.server
         {
             var keysDeleted = 0;
 
-            if (metaCommand.IsEtagCondExecCommand())
+            if (metaCommandInfo.MetaCommand.IsEtagCondExecCommand())
             {
                 // todo: support more than one key with etag conditional delete
                 if (parseState.Count != 1)
                     return AbortWithWrongNumberOfArguments(nameof(RespCommand.DEL));
 
-                var input = new UnifiedInput(RespCommand.DEL, metaCommand, ref parseState);
+                var input = new UnifiedInput(RespCommand.DEL, ref metaCommandInfo, ref parseState);
                 var key = parseState.GetArgSliceByRef(0);
                 var status = storageApi.DEL_Conditional(key, ref input);
 
@@ -348,7 +348,7 @@ namespace Garnet.server
             var keySlice = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.TYPE, metaCommand, ref parseState);
+            var input = new UnifiedInput(RespCommand.TYPE, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));

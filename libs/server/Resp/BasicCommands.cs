@@ -30,7 +30,7 @@ namespace Garnet.server
             if (useAsync)
                 return NetworkGETAsync(ref storageApi);
 
-            var input = new StringInput(RespCommand.NONE, metaCommand, ref parseState);
+            var input = new StringInput(RespCommand.NONE, ref metaCommandInfo, ref parseState);
 
             var key = parseState.GetArgSliceByRef(0);
             var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -102,7 +102,7 @@ namespace Garnet.server
             }
 
             var expiry = (tsExpiry.HasValue && tsExpiry.Value.Ticks > 0) ? DateTimeOffset.UtcNow.Ticks + tsExpiry.Value.Ticks : 0;
-            var input = new StringInput(RespCommand.GETEX, metaCommand, ref parseState, startIdx: 1, arg1: expiry);
+            var input = new StringInput(RespCommand.GETEX, ref metaCommandInfo, ref parseState, startIdx: 1, arg1: expiry);
 
             var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.GETEX(key, ref input, ref o);
@@ -315,7 +315,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_OFFSETOUTOFRANGE);
             }
 
-            var input = new StringInput(RespCommand.SETRANGE, metaCommand, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.SETRANGE, ref metaCommandInfo, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
@@ -339,7 +339,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
-            var input = new StringInput(RespCommand.GETRANGE, metaCommand, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.GETRANGE, ref metaCommandInfo, ref parseState, startIdx: 1);
 
             var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
@@ -390,7 +390,7 @@ namespace Garnet.server
 
             var value = parseState.GetArgSliceByRef(2);
 
-            var input = new StringInput(RespCommand.SETEX, metaCommand, ref parseState, arg1: valMetadata);
+            var input = new StringInput(RespCommand.SETEX, ref metaCommandInfo, ref parseState, arg1: valMetadata);
             _ = storageApi.SET(key, ref input, value);
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
@@ -412,7 +412,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            var input = new StringInput(RespCommand.SETEXNX, metaCommand, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState, startIdx: 1);
             var status = storageApi.SET_Conditional(key, ref input);
 
             // The status returned for SETNX as NOTFOUND is the expected status in the happy path
@@ -499,7 +499,7 @@ namespace Garnet.server
                 }
                 else if (nextOpt.SequenceEqual(CmdStrings.GET))
                 {
-                    if (metaCommand == RespMetaCommand.ExecWithEtag)
+                    if (metaCommandInfo.MetaCommand == RespMetaCommand.ExecWithEtag)
                     {
                         errorMessage = CmdStrings.RESP_ERR_WITHETAG_AND_GETVALUE;
                         break;
@@ -540,7 +540,7 @@ namespace Garnet.server
                     switch (existOptions)
                     {
                         case ExistOptions.None:
-                            return getValue || metaCommand.IsEtagCommand()
+                            return getValue || metaCommandInfo.MetaCommand.IsEtagCommand()
                                 ? NetworkSET_Conditional(RespCommand.SET, expiry, key, getValue, isHighPrecision, ref storageApi)
                                 : NetworkSET_EX(RespCommand.SET, expOption, expiry, key, val, ref storageApi); // Can perform a blind update
                         case ExistOptions.XX:
@@ -580,7 +580,7 @@ namespace Garnet.server
                                   ? TimeSpan.FromMilliseconds(expiry).Ticks
                                   : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var input = new StringInput(cmd, metaCommand, ref parseState, arg1: valMetadata);
+            var input = new StringInput(cmd, ref metaCommandInfo, ref parseState, arg1: valMetadata);
 
             storageApi.SET(key, ref input, val);
 
@@ -599,9 +599,9 @@ namespace Garnet.server
                       ? TimeSpan.FromMilliseconds(expiry).Ticks
                       : TimeSpan.FromSeconds(expiry).Ticks);
 
-            var input = new StringInput(cmd, metaCommand, ref parseState, startIdx: 1, arg1: inputArg);
+            var input = new StringInput(cmd, ref metaCommandInfo, ref parseState, startIdx: 1, arg1: inputArg);
 
-            if (!getValue && !metaCommand.IsEtagCommand())
+            if (!getValue && !metaCommandInfo.MetaCommand.IsEtagCommand())
             {
                 var status = storageApi.SET_Conditional(key, ref input);
 
@@ -642,7 +642,7 @@ namespace Garnet.server
                 GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref outputBuffer);
 
                 // The data will be on the buffer either when we know the response is ok o  r when the withEtag flag is set.
-                bool ok = status != GarnetStatus.NOTFOUND || metaCommand.IsEtagCommand();
+                bool ok = status != GarnetStatus.NOTFOUND || metaCommandInfo.MetaCommand.IsEtagCommand();
 
                 if (ok)
                 {
@@ -684,7 +684,7 @@ namespace Garnet.server
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
 
-            var input = new StringInput(cmd, metaCommand, ref parseState, arg1: incrByValue);
+            var input = new StringInput(cmd, ref metaCommandInfo, ref parseState, arg1: incrByValue);
             _ = storageApi.Increment(key, ref input, ref output);
 
             var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
@@ -756,7 +756,7 @@ namespace Garnet.server
         {
             var sbKey = parseState.GetArgSliceByRef(0);
 
-            var input = new StringInput(RespCommand.APPEND, metaCommand, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.APPEND, ref metaCommandInfo, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
             var output = SpanByteAndMemory.FromPinnedSpan(outputBuffer);

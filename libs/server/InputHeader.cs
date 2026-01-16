@@ -247,17 +247,91 @@ namespace Garnet.server
     /// <summary>
     /// Info related to the meta-command enveloping the RESP command (if exists)
     /// </summary>
-    public struct MetaCommandInfo(RespMetaCommand metaCommand, SessionParseState metaCommandParseState)
+    public struct MetaCommandInfo
     {
+        public MetaCommandInfo(RespMetaCommand metaCommand, SessionParseState metaCommandParseState)
+            : this(metaCommand, metaCommandParseState, -1)
+        {
+        }
+
+        public MetaCommandInfo(RespMetaCommand metaCommand, SessionParseState metaCommandParseState, long arg1)
+        {
+            MetaCommand = metaCommand;
+            Arg1 = arg1;
+            MetaCommandParseState = metaCommandParseState;
+        }
+
         /// <summary>
         /// Meta Command
         /// </summary>
-        public RespMetaCommand MetaCommand = metaCommand;
+        public RespMetaCommand MetaCommand;
+
+        /// <summary>
+        /// Argument for generic usage by command implementation
+        /// For etag-related meta-commands, this holds the etag comparand, if exists
+        /// </summary>
+        public long Arg1 = -1;
 
         /// <summary>
         /// Meta command parse state
         /// </summary>
-        public SessionParseState MetaCommandParseState = metaCommandParseState;
+        public SessionParseState MetaCommandParseState;
+
+        /// <summary>
+        /// Get serialized length of <see cref="MetaCommandInfo"/>
+        /// </summary>
+        /// <returns>The serialized length</returns>
+        public int GetSerializedLength() => sizeof(byte) + sizeof(long) + MetaCommandParseState.GetSerializedLength();
+
+        /// <summary>
+        /// Serialize <see cref="MetaCommandInfo"/> to memory buffer
+        /// </summary>
+        /// <param name="dest">The memory buffer to serialize into (of size at least SerializedLength(firstIdx) bytes)</param>
+        /// <param name="length">Length of buffer to serialize into.</param>
+        /// <returns>Total serialized bytes</returns>
+        public unsafe int SerializeTo(byte* dest, int length)
+        {
+            var curr = dest;
+
+            // Serialize meta command
+            *curr = (byte)MetaCommand;
+            curr += sizeof(byte);
+
+            // Serialize arg1
+            *(long*)curr = Arg1;
+            curr += sizeof(long);
+
+            // Serialize meta command parse state
+            var remainingLength = length - (int)(curr - dest);
+            var parseStateLength = MetaCommandParseState.SerializeTo(curr, remainingLength);
+            curr += parseStateLength;
+
+            return (int)(dest - curr);
+        }
+
+        /// <summary>
+        /// Deserialize <see cref="MetaCommandInfo"/> from memory buffer into current struct
+        /// </summary>
+        /// <param name="src">Memory buffer to deserialize from</param>
+        /// <returns>Number of deserialized bytes</returns>
+        public unsafe int DeserializeFrom(byte* src)
+        {
+            var curr = src;
+
+            // Deserialize meta command
+            MetaCommand = (RespMetaCommand)(*curr);
+            curr += sizeof(byte);
+
+            // Deserialize arg1
+            Arg1 = *(long*)curr;
+            curr += sizeof(long);
+
+            // Deserialize meta command parse state
+            var parseStateLength = MetaCommandParseState.DeserializeFrom(curr);
+            curr += parseStateLength;
+
+            return (int)(src - curr);
+        }
     }
 
     /// <summary>
@@ -406,9 +480,14 @@ namespace Garnet.server
             *(int*)curr = arg2;
             curr += sizeof(int);
 
-            // Serialize parse state
+            // Serialize meta command info
             var remainingLength = length - (int)(curr - dest);
-            var len = parseState.SerializeTo(curr, remainingLength);
+            var len = metaCommandInfo.SerializeTo(curr, remainingLength);
+            curr += len;
+
+            // Serialize parse state
+            remainingLength = length - (int)(curr - dest);
+            parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Number of serialized bytes
@@ -434,8 +513,12 @@ namespace Garnet.server
             arg2 = *(int*)curr;
             curr += sizeof(int);
 
+            // Deserialize meta command info
+            var len = metaCommandInfo.DeserializeFrom(curr);
+            curr += len;
+
             // Deserialize parse state
-            var len = parseState.DeserializeFrom(curr);
+            len = parseState.DeserializeFrom(curr);
             curr += len;
 
             return (int)(curr - src);
@@ -474,7 +557,7 @@ namespace Garnet.server
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
         public StringInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
-        : this(cmd, RespMetaCommand.None, arg1, flags)
+        : this(cmd, arg1, flags)
         {
         }
 
@@ -484,8 +567,8 @@ namespace Garnet.server
         /// <param name="cmd">Command</param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public StringInput(ushort cmd, byte flags = 0, long arg1 = 0) :
-            this((RespCommand)cmd, RespMetaCommand.None, arg1, (RespInputFlags)flags)
+        public StringInput(ushort cmd, long arg1 = 0, byte flags = 0) :
+            this((RespCommand)cmd, arg1, (RespInputFlags)flags)
         {
         }
 
@@ -496,8 +579,8 @@ namespace Garnet.server
         /// <param name="metaCommandInfo"></param>
         /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public StringInput(RespCommand cmd, ref MetaCommandInfo metaCommandInfo, RespInputFlags flags = 0, long arg1 = 0)
-            : this(cmd, RespMetaCommand.None, arg1, flags)
+        public StringInput(RespCommand cmd, ref MetaCommandInfo metaCommandInfo, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, arg1, flags)
         {
             this.metaCommandInfo = metaCommandInfo;
         }
@@ -520,18 +603,18 @@ namespace Garnet.server
         /// Create a new instance of StringInput
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="metaCmd">Meta command</param>
+        /// <param name="metaCommandInfo">Meta command info</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="startIdx">First command argument index in parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public StringInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0)
-            : this(cmd, metaCmd, arg1, flags)
+        public StringInput(RespCommand cmd, ref MetaCommandInfo metaCommandInfo, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, ref metaCommandInfo, arg1, flags)
         {
             this.parseState = parseState.Slice(startIdx);
         }
 
-        private StringInput(RespCommand cmd, RespMetaCommand metaCmd, long arg1 = 0, RespInputFlags flags = 0)
+        private StringInput(RespCommand cmd, long arg1 = 0, RespInputFlags flags = 0)
         {
             this.header = new RespInputHeader(cmd, flags);
             this.arg1 = arg1;
@@ -540,6 +623,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
+                                       + metaCommandInfo.GetSerializedLength()
                                        + parseState.GetSerializedLength();
 
         /// <inheritdoc />
@@ -557,9 +641,14 @@ namespace Garnet.server
             *(long*)curr = arg1;
             curr += sizeof(long);
 
-            // Serialize parse state
+            // Serialize meta command info
             var remainingLength = length - (int)(curr - dest);
-            var len = parseState.SerializeTo(curr, remainingLength);
+            var len = metaCommandInfo.SerializeTo(curr, remainingLength);
+            curr += len;
+
+            // Serialize parse state
+            remainingLength = length - (int)(curr - dest);
+            len = parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Serialize length
@@ -581,8 +670,12 @@ namespace Garnet.server
             arg1 = *(long*)curr;
             curr += sizeof(long);
 
+            // Deserialize meta command info
+            var len = metaCommandInfo.DeserializeFrom(curr);
+            curr += len;
+
             // Deserialize parse state
-            var len = parseState.DeserializeFrom(curr);
+            len = parseState.DeserializeFrom(curr);
             curr += len;
 
             return (int)(curr - src);
@@ -610,13 +703,30 @@ namespace Garnet.server
         public SessionParseState parseState;
 
         /// <summary>
+        /// Info related to the parsed meta-command (if exists)
+        /// </summary>
+        public MetaCommandInfo metaCommandInfo;
+
+        /// <summary>
         /// Create a new instance of UnifiedInput
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="flags">Flags</param>
         /// <param name="arg1">General-purpose argument</param>
-        public UnifiedInput(RespCommand cmd, RespInputFlags flags = 0, long arg1 = 0)
-            : this(cmd, RespMetaCommand.None, flags, arg1)
+        /// <param name="flags">Flags</param>
+        public UnifiedInput(RespCommand cmd, long arg1 = 0, RespInputFlags flags = 0)
+        {
+            this.header = new RespInputHeader(cmd, flags);
+            this.arg1 = arg1;
+        }
+
+        /// <summary>
+        /// Create a new instance of UnifiedInput
+        /// </summary>
+        /// <param name="cmd">Command</param>
+        /// <param name="arg1">General-purpose argument</param>
+        /// <param name="flags">Flags</param>
+        public UnifiedInput(ushort cmd, long arg1 = 0, byte flags = 0) :
+            this((RespCommand)cmd, arg1, (RespInputFlags)flags)
         {
         }
 
@@ -624,23 +734,25 @@ namespace Garnet.server
         /// Create a new instance of UnifiedInput
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="flags">Flags</param>
+        /// <param name="metaCommandInfo">Meta command info</param>
         /// <param name="arg1">General-purpose argument</param>
-        public UnifiedInput(ushort cmd, byte flags = 0, long arg1 = 0) :
-            this((RespCommand)cmd, RespMetaCommand.None, (RespInputFlags)flags, arg1)
+        /// <param name="flags">Flags</param>
+        public UnifiedInput(RespCommand cmd, ref MetaCommandInfo metaCommandInfo, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, arg1, flags)
         {
+            this.metaCommandInfo = metaCommandInfo;
         }
 
         /// <summary>
         /// Create a new instance of UnifiedInput
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="metaCmd">Meta command</param>
+        /// <param name="metaCommandInfo">Meta command info</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public UnifiedInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0)
-            : this(cmd, metaCmd, flags, arg1)
+        public UnifiedInput(RespCommand cmd, ref MetaCommandInfo metaCommandInfo, ref SessionParseState parseState, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, ref metaCommandInfo, arg1, flags)
         {
             this.parseState = parseState;
         }
@@ -649,21 +761,15 @@ namespace Garnet.server
         /// Create a new instance of UnifiedInput
         /// </summary>
         /// <param name="cmd">Command</param>
-        /// <param name="metaCmd">Meta command</param>
+        /// <param name="metaCommandInfo">Meta command info</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="startIdx">First command argument index in parse state</param>
         /// <param name="arg1">General-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public UnifiedInput(RespCommand cmd, RespMetaCommand metaCmd, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0)
-            : this(cmd, metaCmd, flags, arg1)
+        public UnifiedInput(RespCommand cmd, ref MetaCommandInfo metaCommandInfo, ref SessionParseState parseState, int startIdx, long arg1 = 0, RespInputFlags flags = 0)
+            : this(cmd, ref metaCommandInfo, arg1, flags)
         {
             this.parseState = parseState.Slice(startIdx);
-        }
-
-        private UnifiedInput(RespCommand cmd, RespMetaCommand metaCmd, RespInputFlags flags = 0, long arg1 = 0)
-        {
-            this.header = new RespInputHeader(cmd, flags);
-            this.arg1 = arg1;
         }
 
         /// <inheritdoc />
@@ -686,9 +792,14 @@ namespace Garnet.server
             *(long*)curr = arg1;
             curr += sizeof(long);
 
-            // Serialize parse state
+            // Serialize meta command info
             var remainingLength = length - (int)(curr - dest);
-            var len = parseState.SerializeTo(curr, remainingLength);
+            var len = metaCommandInfo.SerializeTo(curr, remainingLength);
+            curr += len;
+
+            // Serialize parse state
+            remainingLength = length - (int)(curr - dest);
+            len = parseState.SerializeTo(curr, remainingLength);
             curr += len;
 
             // Serialize length
@@ -710,8 +821,12 @@ namespace Garnet.server
             arg1 = *(long*)curr;
             curr += sizeof(long);
 
+            // Deserialize meta command info
+            var len = metaCommandInfo.DeserializeFrom(curr);
+            curr += len;
+
             // Deserialize parse state
-            var len = parseState.DeserializeFrom(curr);
+            len = parseState.DeserializeFrom(curr);
             curr += len;
 
             return (int)(curr - src);
