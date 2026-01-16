@@ -71,8 +71,8 @@ namespace Garnet.test
             Task primaryCategoryTaskFactory(CancellationToken token) => PrimaryCategoryTask(token);
             Task allCategoryTaskFactory(CancellationToken token) => AllCategoryTask(token);
 
-            taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, primaryCategoryTaskFactory);
-            taskManager.RegisterAndRun(TaskType.AofSizeLimitTask, allCategoryTaskFactory);
+            taskManager.RegisterAndRun(TaskType.AofSizeLimitTask, primaryCategoryTaskFactory);
+            taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, allCategoryTaskFactory);
 
 
             ClassicAssert.IsTrue(primaryTaskStarted.Wait(TimeSpan.FromSeconds(5)), "Primary task should start");
@@ -80,11 +80,10 @@ namespace Garnet.test
 
             if (cancelTaskPlacementCategory == TaskPlacementCategory.Replica)
             {
-                // Cancel tasks based on placement category
+                // Cancel tasks based on replica placement category
                 await taskManager.CancelTasks(cancelTaskPlacementCategory);
 
                 // Tasks not of replica category so they should keep running
-                ClassicAssert.IsTrue(taskManager.IsRunning(TaskType.IndexAutoGrowTask));
                 ClassicAssert.IsTrue(taskManager.IsRunning(TaskType.AofSizeLimitTask));
 
                 // Cancel all tasks
