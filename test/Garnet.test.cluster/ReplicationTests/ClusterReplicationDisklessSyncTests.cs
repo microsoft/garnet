@@ -420,7 +420,7 @@ namespace Garnet.test.cluster
             {
                 ExceptionInjectionHelper.EnableException(ExceptionInjectionType.Replication_Diskless_Sync_Reset_Cts);
                 var _resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex: replicaOneIndex, primaryNodeIndex: primaryIndex, failEx: false, logger: context.logger);
-                ClassicAssert.That(_resp, Is.EqualTo("Wait for sync task faulted").Or.EqualTo("Main store checkpoint stream failed!"));
+                ClassicAssert.AreEqual("Exception injection triggered Replication_Diskless_Sync_Reset_Cts", _resp);
             }
             finally
             {

@@ -14,9 +14,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     /// <summary>
     /// Wrapper for store and store-specific information
     /// </summary>
@@ -38,13 +35,13 @@ namespace Garnet.server
         }
 
         /// <summary>Basic (Ephemeral locking) Session Context for main store</summary>
-        BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringBasicContext;
+        StringBasicContext stringBasicContext;
 
         /// <summary>Basic (Ephemeral locking) Session Context for object store</summary>
-        BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectBasicContext;
+        ObjectBasicContext objectBasicContext;
 
         /// <summary>Basic (Ephemeral locking) Session Context for unified store</summary>
-        BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedBasicContext;
+        UnifiedBasicContext unifiedBasicContext;
 
         readonly StoreWrapper replayAofStoreWrapper;
         readonly IClusterProvider clusterProvider;

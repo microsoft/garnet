@@ -10,9 +10,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     /// <summary>
     /// Used to index barriers for coordinated replay operations in the AofReplayCoordinator
     /// NOTE: Use only negative numbers because sessionIDs will be positive values

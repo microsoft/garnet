@@ -8,9 +8,6 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    using StoreAllocator = ObjectAllocator<StoreFunctions<SpanByteComparer, DefaultRecordDisposer>>;
-    using StoreFunctions = StoreFunctions<SpanByteComparer, DefaultRecordDisposer>;
-
     /// <summary>
     /// Storage Session - the internal layer that Garnet uses to perform storage operations
     /// </summary>
@@ -23,8 +20,8 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for main store
         /// </summary>
-        public BasicContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringBasicContext;
-        public TransactionalContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> stringTransactionalContext;
+        public StringBasicContext stringBasicContext;
+        public StringTransactionalContext stringTransactionalContext;
         public ConsistentReadContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> consistentReadContext;
         public TransactionalConsistentReadContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator> transactionalConsistentReadContext;
 
@@ -38,16 +35,16 @@ namespace Garnet.server
         /// <summary>
         /// Session Contexts for object store
         /// </summary>
-        public BasicContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectBasicContext;
-        public TransactionalContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectTransactionalContext;
+        public ObjectBasicContext objectBasicContext;
+        public ObjectTransactionalContext objectTransactionalContext;
         public ConsistentReadContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreConsistentReadContext;
         public TransactionalConsistentReadContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator> objectStoreTransactionalConsistentReadContext;
 
         /// <summary>
         /// Session Contexts for unified store
         /// </summary>
-        public BasicContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedBasicContext;
-        public TransactionalContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedTransactionalContext;
+        public UnifiedBasicContext unifiedBasicContext;
+        public UnifiedTransactionalContext unifiedTransactionalContext;
         public ConsistentReadContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreConsistentReadContext;
         public TransactionalConsistentReadContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator> unifiedStoreTransactionalConsistentReadContext;
 
