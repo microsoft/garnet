@@ -212,30 +212,30 @@ namespace Garnet.test
         [Test]
         public void VADDVariableLengthElementIds()
         {
+            const int MinElementLength = 1;
+            const int MaxElementLength = 1024;
+
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var options = GetOpts(server);
-
-            var pageSize = GarnetServerOptions.ParseSize(options.PageSize, out _);
-
+            // Always put a 0 length in as a stress test
             List<byte[]> ids = [[]];
-            for (var len = 1; len <= pageSize; len *= 2)
+            for (var len = MinElementLength; len <= MaxElementLength; len *= 2)
             {
                 ids.Add(Enumerable.Range(0, len).Select(_ => (byte)len).ToArray());
             }
 
             foreach (var id in ids)
             {
-                var addRes = (int)db.Execute("VADD", ["foo", "VALUES", ((float)id.Length).ToString(), id, "XPREQ8"]);
+                var addRes = (int)db.Execute("VADD", ["foo", "VALUES", "1", ((float)(byte)id.Length).ToString(), id, "XPREQ8"]);
                 ClassicAssert.AreEqual(1, addRes);
             }
 
-            foreach(var id in ids)
+            foreach (var id in ids)
             {
                 var embRes = (string[])db.Execute("VEMB", ["foo", id]);
                 ClassicAssert.AreEqual(1, embRes.Length);
-                ClassicAssert.AreEqual((float)id.Length, float.Parse(embRes[0]));
+                ClassicAssert.AreEqual((float)(byte)id.Length, float.Parse(embRes[0]));
             }
         }
 

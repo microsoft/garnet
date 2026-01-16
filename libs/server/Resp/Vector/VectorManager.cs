@@ -806,11 +806,27 @@ namespace Garnet.server
                 outputDistances.Length = (int)dimensions * sizeof(float);
             }
 
+            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
+            try
+            {
+                if(!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
+                {
+                    return false;
+                }
+
+                Debug.Assert(internalIdBytes.IsSpanByte, "Internal Id should always be of known size");
+            }
+            finally
+            {
+                internalIdBytes.Memory?.Dispose();
+            }
+
             Span<byte> asBytesSpan = stackalloc byte[(int)dimensions];
             var asBytes = SpanByteAndMemory.FromPinnedSpan(asBytesSpan);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.FullVector, element, ref asBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, internalId, ref asBytes))
                 {
                     return false;
                 }
@@ -829,16 +845,6 @@ namespace Garnet.server
             {
                 asBytes.Memory?.Dispose();
             }
-
-            // TODO: DiskANN will need to do this long term, since different quantizers may behave differently
-
-            //return
-            //    Service.TryGetEmbedding(
-            //        context,
-            //        indexPtr,
-            //        element,
-            //        MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan())
-            //    );
         }
 
         /// <summary>

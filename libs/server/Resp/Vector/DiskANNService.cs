@@ -11,6 +11,9 @@ namespace Garnet.server
         private const byte NeighborList = 1;
         private const byte QuantizedVector = 2;
         internal const byte Attributes = 3;
+        private const byte Metadata = 4;
+        internal const byte InternalIdMap = 5;
+        private const byte ExternalIdMap = 6;
 
         public nint CreateIndex(
             ulong context,
@@ -196,11 +199,6 @@ namespace Garnet.server
         }
 
         public int ContinueSearch(ulong context, nint index, nint continuation, Span<byte> outputIds, Span<float> outputDistances, out nint newContinuation)
-        {
-            throw new NotImplementedException();
-        }
-
-        public bool TryGetEmbedding(ulong context, nint index, ReadOnlySpan<byte> id, Span<float> dimensions)
         {
             throw new NotImplementedException();
         }
