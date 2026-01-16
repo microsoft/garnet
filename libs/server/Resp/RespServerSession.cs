@@ -54,9 +54,9 @@ namespace Garnet.server
         internal readonly ScratchBufferAllocator scratchBufferAllocator;
 
         internal SessionParseState parseState;
+        internal SessionParseState metaParseState;
         internal SessionParseState customCommandParseState;
         internal RespMetaCommand metaCommand;
-        SessionParseState metaParseState;
 
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
