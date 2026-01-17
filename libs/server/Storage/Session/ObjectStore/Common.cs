@@ -181,11 +181,13 @@ namespace Garnet.server
             _ = NumUtils.WriteInt64(count, countValueSpan);
             var countValueSlice = PinnedSpanByte.FromPinnedSpan(countValueSpan);
 
+            metaCommandInfo.Initialize();
+
             parseState.InitializeWithArguments(cursorSlice, matchSlice, matchPatternSlice,
                 countSlice, countValueSlice);
 
             // Prepare the input
-            var input = new ObjectInput(objectType, RespMetaCommand.None, ref parseState, arg2: ObjectScanCountLimit);
+            var input = new ObjectInput(objectType, ref metaCommandInfo, ref parseState, arg2: ObjectScanCountLimit);
 
             switch (objectType)
             {

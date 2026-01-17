@@ -104,7 +104,7 @@ namespace Garnet.server
             {
                 KeySize = key.Length,
                 ValueSize = 0,
-                HasETag = input.header.MetaCmd.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
             };
 
             switch (cmd)
@@ -191,7 +191,7 @@ namespace Garnet.server
             {
                 KeySize = srcLogRecord.Key.Length,
                 ValueSize = 0,
-                HasETag = SessionFunctionsUtils.CheckModifiedRecordHasEtag(srcLogRecord.ETag, input.header.MetaCmd, ref input.parseState),
+                HasETag = SessionFunctionsUtils.CheckModifiedRecordHasEtag(srcLogRecord.ETag, ref input.metaCommandInfo),
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
 
@@ -285,7 +285,7 @@ namespace Garnet.server
                     case RespCommand.SETEXNX:
                         fieldInfo.ValueSize = input.parseState.GetArgSliceByRef(0).Length;
                         fieldInfo.HasExpiration = input.arg1 != 0 ||
-                                                  (input.header.MetaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater &&
+                                                  (input.metaCommandInfo.MetaCommand.IsEtagCondExecCommand() &&
                                                    srcLogRecord.Info.HasExpiration);
                         return fieldInfo;
 
@@ -344,7 +344,7 @@ namespace Garnet.server
             {
                 KeySize = key.Length,
                 ValueSize = value.Length,
-                HasETag = input.header.MetaCmd.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
             };
 
             switch (input.header.cmd)

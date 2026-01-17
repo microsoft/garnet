@@ -19,7 +19,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = input.header.MetaCmd.IsEtagCommand(),
+                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand(),
                 // No object commands take an Expiration for InitialUpdater.
             };
         }
@@ -33,7 +33,7 @@ namespace Garnet.server
                 KeySize = srcLogRecord.Key.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = SessionFunctionsUtils.CheckModifiedRecordHasEtag(srcLogRecord.ETag, input.header.MetaCmd, ref input.parseState),
+                HasETag = SessionFunctionsUtils.CheckModifiedRecordHasEtag(srcLogRecord.ETag, ref input.metaCommandInfo),
                 HasExpiration = srcLogRecord.Info.HasExpiration
             };
         }
@@ -45,7 +45,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = value.Length,
                 ValueIsObject = false,
-                HasETag = input.header.MetaCmd.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
                 // No object commands take an Expiration for Upsert.
             };
         }
@@ -57,7 +57,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = ObjectIdMap.ObjectIdSize,
                 ValueIsObject = true,
-                HasETag = input.header.MetaCmd.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
                 // No object commands take an Expiration for Upsert.
             };
         }
@@ -70,7 +70,7 @@ namespace Garnet.server
                 KeySize = key.Length,
                 ValueSize = inputLogRecord.Info.ValueIsObject ? ObjectIdMap.ObjectIdSize : inputLogRecord.ValueSpan.Length,
                 ValueIsObject = true,
-                HasETag = input.header.MetaCmd.IsEtagCommand()
+                HasETag = input.metaCommandInfo.MetaCommand.IsEtagCommand()
                 // No object commands take an Expiration for Upsert.
             };
         }

@@ -42,7 +42,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_INVALIDCURSOR);
             }
 
-            var input = new ObjectInput(objectType, metaCommand, ref parseState, startIdx: 1, arg2: storeWrapper.serverOptions.ObjectScanCountLimit);
+            var input = new ObjectInput(objectType, ref metaCommandInfo, ref parseState, startIdx: 1, arg2: storeWrapper.serverOptions.ObjectScanCountLimit);
 
             switch (objectType)
             {

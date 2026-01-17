@@ -150,7 +150,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BIT_IS_NOT_INTEGER);
             }
 
-            var input = new StringInput(RespCommand.SETBIT, metaCommand, ref parseState, startIdx: 1, arg1: offset);
+            var input = new StringInput(RespCommand.SETBIT, ref metaCommandInfo, ref parseState, startIdx: 1, arg1: offset);
 
             var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringSetBit(key, ref input, ref o);
@@ -180,7 +180,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_GENERIC_BITOFFSET_IS_NOT_INTEGER);
             }
 
-            var input = new StringInput(RespCommand.GETBIT, metaCommand, ref parseState, startIdx: 1, arg1: offset);
+            var input = new StringInput(RespCommand.GETBIT, ref metaCommandInfo, ref parseState, startIdx: 1, arg1: offset);
 
             var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.StringGetBit(key, ref input, ref o);
@@ -217,7 +217,7 @@ namespace Garnet.server
                 }
             }
 
-            var input = new StringInput(RespCommand.BITCOUNT, metaCommand, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.BITCOUNT, ref metaCommandInfo, ref parseState, startIdx: 1);
 
             var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
@@ -280,7 +280,7 @@ namespace Garnet.server
                 }
             }
 
-            var input = new StringInput(RespCommand.BITPOS, metaCommand, ref parseState, startIdx: 1);
+            var input = new StringInput(RespCommand.BITPOS, ref metaCommandInfo, ref parseState, startIdx: 1);
 
             var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
@@ -325,7 +325,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_BITOP_KEY_LIMIT);
             }
 
-            var input = new StringInput(RespCommand.BITOP, metaCommand, ref parseState);
+            var input = new StringInput(RespCommand.BITOP, ref metaCommandInfo, ref parseState);
 
             _ = storageApi.StringBitOperation(ref input, bitOp, out var result);
             while (!RespWriteUtils.TryWriteInt64(result, ref dcurr, dend))
@@ -490,7 +490,7 @@ namespace Garnet.server
             while (!RespWriteUtils.TryWriteArrayLength(secondaryCommandArgs.Count, ref dcurr, dend))
                 SendAndReset();
 
-            var input = new StringInput(cmd, metaCommand, ref parseState);
+            var input = new StringInput(cmd, ref metaCommandInfo, ref parseState);
 
             for (var i = 0; i < secondaryCommandArgs.Count; i++)
             {

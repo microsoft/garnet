@@ -105,11 +105,11 @@ namespace Garnet.server
             if (expiry > 0)
             {
                 var inputArg = DateTimeOffset.UtcNow.Ticks + TimeSpan.FromSeconds(expiry).Ticks;
-                input = new StringInput(RespCommand.SETEXNX, metaCommand, ref parseState, arg1: inputArg);
+                input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState, arg1: inputArg);
             }
             else
             {
-                input = new StringInput(RespCommand.SETEXNX, metaCommand, ref parseState);
+                input = new StringInput(RespCommand.SETEXNX, ref metaCommandInfo, ref parseState);
             }
 
             var status = storageApi.SET_Conditional(key, ref input);
@@ -234,7 +234,7 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
 
-            var input = new UnifiedInput(cmd, metaCommand, ref parseState, startIdx: 1);
+            var input = new UnifiedInput(cmd, ref metaCommandInfo, ref parseState, startIdx: 1);
 
             var isNx = cmd == RespCommand.RENAMENX;
             var output = isNx ? UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr)) : default;
@@ -312,7 +312,7 @@ namespace Garnet.server
             var exists = 0;
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.EXISTS, metaCommand, ref parseState);
+            var input = new UnifiedInput(RespCommand.EXISTS, ref metaCommandInfo, ref parseState);
 
             var output = new UnifiedOutput();
 
@@ -412,7 +412,7 @@ namespace Garnet.server
             // Encode expiration time and expiration option and pass them into the input object
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
-            var input = new UnifiedInput(RespCommand.EXPIRE, metaCommand, ref parseState, arg1: expirationWithOption.Word);
+            var input = new UnifiedInput(RespCommand.EXPIRE, ref metaCommandInfo, ref parseState, arg1: expirationWithOption.Word);
 
             // Prepare UnifiedOutput output
             var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -449,7 +449,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.PERSIST, metaCommand, ref parseState);
+            var input = new UnifiedInput(RespCommand.PERSIST, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -486,7 +486,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(command, metaCommand, ref parseState);
+            var input = new UnifiedInput(command, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -523,7 +523,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(command, metaCommand, ref parseState);
+            var input = new UnifiedInput(command, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));

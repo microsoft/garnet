@@ -97,7 +97,7 @@ namespace Garnet.server
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 
-            if ((input.header.IsWithEtag() || logRecord.Info.HasETag) &&
+            if ((input.metaCommandInfo.MetaCommand.IsEtagCommand() || logRecord.Info.HasETag) &&
                 !logRecord.TrySetETag(functionsState.etagState.ETag + 1))
                 return false;
 
@@ -127,7 +127,7 @@ namespace Garnet.server
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 
-            if ((input.header.IsWithEtag() || logRecord.Info.HasETag) &&
+            if ((input.metaCommandInfo.MetaCommand.IsEtagCommand() || logRecord.Info.HasETag) &&
                 !logRecord.TrySetETag(functionsState.etagState.ETag + 1))
                 return false;
 
@@ -154,7 +154,7 @@ namespace Garnet.server
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 
-            if ((input.header.IsWithEtag() || logRecord.Info.HasETag) &&
+            if ((input.metaCommandInfo.MetaCommand.IsEtagCommand() || logRecord.Info.HasETag) &&
                 !logRecord.TrySetETag(functionsState.etagState.ETag + 1))
                 return false;
 

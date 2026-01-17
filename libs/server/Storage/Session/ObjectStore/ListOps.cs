@@ -30,11 +30,13 @@ namespace Garnet.server
             if (key.Length == 0 || elements.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArguments(elements);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.List, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { ListOp = lop };
+            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { ListOp = lop };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -61,11 +63,13 @@ namespace Garnet.server
         {
             itemsDoneCount = 0;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArgument(element);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.List, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { ListOp = lop };
+            var input = new ObjectInput(GarnetObjectType.List, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { ListOp = lop };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;

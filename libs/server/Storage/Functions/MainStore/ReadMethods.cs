@@ -27,12 +27,12 @@ namespace Garnet.server
 
             var execCmd = true;
             var cmd = input.header.cmd;
-            var metaCmd = input.header.MetaCmd;
+            var metaCmd = input.metaCommandInfo.MetaCommand;
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
 
             if (metaCmd.IsEtagCondExecCommand())
             {
-                var inputEtag = input.parseState.GetLong(0, isMetaArg: true);
+                var inputEtag = input.metaCommandInfo.Arg1;
                 execCmd = metaCmd.CheckConditionalExecution(srcLogRecord.ETag, inputEtag);
             }
 
@@ -64,7 +64,7 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
-            if (input.header.MetaCmd.IsEtagCommand())
+            if (input.metaCommandInfo.MetaCommand.IsEtagCommand())
             {
                 if (execCmd)
                     CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);

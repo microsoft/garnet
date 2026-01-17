@@ -26,7 +26,7 @@ namespace Garnet.server
                     return false;
                 case RespCommand.SETEXXX:
                     // when called withetag all output needs to be placed on the buffer
-                    if (input.header.IsWithEtag())
+                    if (input.metaCommandInfo.MetaCommand.IsEtagCommand())
                     {
                         // XX when unsuccesful will write back NIL
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output);
@@ -61,8 +61,8 @@ namespace Garnet.server
         {
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
-            var metaCmd = input.header.MetaCmd;
-            var updatedEtag = GetUpdatedEtag(logRecord.ETag, metaCmd, ref input.parseState, out _, init: true);
+            var metaCmd = input.metaCommandInfo.MetaCommand;
+            var updatedEtag = GetUpdatedEtag(logRecord.ETag, ref input.metaCommandInfo, out _, init: true);
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
             var cmd = input.header.cmd;
@@ -386,8 +386,8 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
             bool shouldCheckExpiration = true;
 
-            var metaCmd = input.header.MetaCmd;
-            var updatedEtag = GetUpdatedEtag(logRecord.ETag, metaCmd, ref input.parseState, out var execCmd);
+            var metaCmd = input.metaCommandInfo.MetaCommand;
+            var updatedEtag = GetUpdatedEtag(logRecord.ETag, ref input.metaCommandInfo, out var execCmd);
 
             switch (cmd)
             {
@@ -397,7 +397,7 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(logRecord.ValueSpan, ref output);
                     }
-                    else if (input.header.IsWithEtag())
+                    else if (input.metaCommandInfo.MetaCommand.IsEtagCommand())
                     {
                         // when called withetag all output needs to be placed on the buffer
                         // EXX when unsuccesful will write back NIL
@@ -473,12 +473,12 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTL:
                     // If the user calls withetag then we need to either update an existing etag and set the value
                     // or set the value with an initial etag and increment it. If withEtag is called we return the etag back to the user
-                    var addEtag = input.header.IsWithEtag();
+                    var addEtag = input.metaCommandInfo.MetaCommand.IsEtagCommand();
 
                     // If the SetGet flag is set, copy the current value to output for the GET part of the command.
                     if (input.header.CheckSetGetFlag())
                     {
-                        Debug.Assert(!input.header.IsWithEtag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
+                        Debug.Assert(!input.metaCommandInfo.MetaCommand.IsEtagCommand(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
 
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(logRecord.ValueSpan, ref output);
@@ -796,8 +796,8 @@ namespace Garnet.server
             if (srcLogRecord.Info.HasETag)
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
-            var metaCmd = input.header.MetaCmd;
-            var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, metaCmd, ref input.parseState, out var execCmd);
+            var metaCmd = input.metaCommandInfo.MetaCommand;
+            var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd);
 
             switch (input.header.cmd)
             {
@@ -820,7 +820,7 @@ namespace Garnet.server
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);
                     }
-                    else if (input.header.IsWithEtag())
+                    else if (input.metaCommandInfo.MetaCommand.IsEtagCommand())
                     {
                         // EXX when unsuccesful will write back NIL
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output);
@@ -841,7 +841,7 @@ namespace Garnet.server
                     }
                     return true;
                 case RespCommand.SET:
-                    if (metaCmd is RespMetaCommand.ExecIfMatch or RespMetaCommand.ExecIfGreater)
+                    if (metaCmd.IsEtagCondExecCommand())
                     {
                         if (execCmd)
                             return true;
@@ -911,8 +911,8 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
             }
 
-            var metaCmd = input.header.MetaCmd;
-            var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, metaCmd, ref input.parseState, out _);
+            var metaCmd = input.metaCommandInfo.MetaCommand;
+            var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out _);
 
             switch (cmd)
             {
@@ -964,12 +964,12 @@ namespace Garnet.server
                 case RespCommand.SETKEEPTTL:
                     // If the user calls withetag then we need to either update an existing etag and set the value
                     // or set the value with an initial etag and increment it. If withEtag is called we return the etag back to the user
-                    var isAddEtag = input.header.IsWithEtag();
+                    var isAddEtag = input.metaCommandInfo.MetaCommand.IsEtagCommand();
 
                     // If the SetGet flag is set, copy the current value to output for the GET part of the command.
                     if (input.header.CheckSetGetFlag())
                     {
-                        Debug.Assert(!input.header.IsWithEtag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
+                        Debug.Assert(!input.metaCommandInfo.MetaCommand.IsEtagCommand(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
 
                         // Copy value to output for the GET part of the command.
                         CopyRespTo(srcLogRecord.ValueSpan, ref output);
@@ -1325,7 +1325,7 @@ namespace Garnet.server
 
             if (shouldUpdateEtag)
             {
-                if (!(cmd is RespCommand.SET && input.header.MetaCmd == RespMetaCommand.ExecIfGreater))
+                if (!(cmd is RespCommand.SET && input.metaCommandInfo.MetaCommand.IsEtagCondExecCommand()))
                     functionsState.etagState.ETag++;
                 dstLogRecord.TrySetETag(functionsState.etagState.ETag);
                 ETagState.ResetState(ref functionsState.etagState);

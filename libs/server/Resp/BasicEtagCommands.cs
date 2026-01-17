@@ -22,7 +22,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new UnifiedInput(RespCommand.GETETAG, metaCommand, ref parseState);
+            var input = new UnifiedInput(RespCommand.GETETAG, ref metaCommandInfo, ref parseState);
 
             // Prepare UnifiedOutput output
             var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));

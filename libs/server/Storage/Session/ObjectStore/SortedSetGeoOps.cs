@@ -193,8 +193,10 @@ namespace Garnet.server
                         _ = parseState.Read(2 * j, ref currOutPtr, endOutPtr);
                     }
 
+                    metaCommandInfo.Initialize();
+
                     // Prepare the input
-                    var zAddInput = new ObjectInput(GarnetObjectType.SortedSet, RespMetaCommand.None, ref parseState) { SortedSetOp = SortedSetOperation.ZADD };
+                    var zAddInput = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState) { SortedSetOp = SortedSetOperation.ZADD };
 
                     var zAddOutput = new ObjectOutput();
                     RMWObjectStoreOperationWithOutput(destination, ref zAddInput, ref geoObjectTransactionalContext, ref zAddOutput);

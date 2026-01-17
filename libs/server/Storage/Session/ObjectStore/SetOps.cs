@@ -29,11 +29,13 @@ namespace Garnet.server
         {
             saddCount = 0;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArgument(member);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SADD };
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SADD };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -60,11 +62,13 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SADD };
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SADD };
 
             // Iterate through all inputs and add them to the scratch buffer in RESP format
 
@@ -90,11 +94,13 @@ namespace Garnet.server
         {
             sremCount = 0;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArgument(member);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SREM };
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SREM };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             sremCount = output.result1;
@@ -122,11 +128,13 @@ namespace Garnet.server
             if (key.Length == 0 || members.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SREM };
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { SetOp = SetOperation.SREM };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 
@@ -720,10 +728,12 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             parseState.InitializeWithArguments(members);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Set, RespMetaCommand.None, ref parseState) { SetOp = members.Length == 1 ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
+            var input = new ObjectInput(GarnetObjectType.Set, ref metaCommandInfo, ref parseState) { SetOp = members.Length == 1 ? SetOperation.SISMEMBER : SetOperation.SMISMEMBER };
 
             var output = new ObjectOutput { SpanByteAndMemory = new SpanByteAndMemory(null) };
             var status = ReadObjectStoreOperationWithOutput(key.ReadOnlySpan, ref input, ref objectContext, ref output);

@@ -343,7 +343,8 @@ namespace Garnet.server
         public GarnetStatus SETEX<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var input = new StringInput(RespCommand.SETEX, RespMetaCommand.None, ref parseState, arg1: DateTimeOffset.UtcNow.Ticks + expiry.Ticks);
+            metaCommandInfo.Initialize();
+            var input = new StringInput(RespCommand.SETEX, ref metaCommandInfo, ref parseState, arg1: DateTimeOffset.UtcNow.Ticks + expiry.Ticks);
             return SET(key, ref input, value, ref context);
         }
 
@@ -361,8 +362,9 @@ namespace Garnet.server
         {
             var _output = new SpanByteAndMemory(output);
 
+            metaCommandInfo.Initialize();
             parseState.InitializeWithArgument(value);
-            var input = new StringInput(RespCommand.APPEND, RespMetaCommand.None, ref parseState);
+            var input = new StringInput(RespCommand.APPEND, ref metaCommandInfo, ref parseState);
 
             return APPEND(key, ref input, ref _output, ref context);
         }

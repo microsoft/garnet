@@ -45,7 +45,7 @@ namespace Garnet.server
             if (!dstLogRecord.TryCopyFrom(in inputLogRecord, in sizeInfo))
                 return false;
 
-            if (input.header.IsWithEtag())
+            if (input.metaCommandInfo.MetaCommand.IsEtagCommand())
             {
                 // If the old record had an ETag, we will replace it. Otherwise, we must have reserved space for it.
                 Debug.Assert(sizeInfo.FieldInfo.HasETag, "IsWithEtag specified but SizeInfo.HasETag is false");
@@ -149,7 +149,7 @@ namespace Garnet.server
             var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
             if (ok)
             {
-                if (input.header.IsWithEtag())
+                if (input.metaCommandInfo.MetaCommand.IsEtagCommand())
                 {
                     var newETag = functionsState.etagState.ETag + 1;
                     ok = logRecord.TrySetETag(newETag);
@@ -211,7 +211,7 @@ namespace Garnet.server
             var ok = input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1);
             if (ok)
             {
-                if (input.header.IsWithEtag())
+                if (input.metaCommandInfo.MetaCommand.IsEtagCommand())
                 {
                     var newETag = functionsState.etagState.ETag + 1;
                     ok = logRecord.TrySetETag(newETag);

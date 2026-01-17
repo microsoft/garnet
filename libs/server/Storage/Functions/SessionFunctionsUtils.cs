@@ -93,11 +93,12 @@ namespace Garnet.server
         /// Determine whether a modified log record should have an etag
         /// </summary>
         /// <param name="currEtag">Source record etag</param>
-        /// <param name="metaCmd">Input meta command</param>
-        /// <param name="parseState">Input parse state</param>
+        /// <param name="metaCommandInfo">Meta command info</param>
         /// <returns>True if destination record should have an etag</returns>
-        internal static bool CheckModifiedRecordHasEtag(long currEtag, RespMetaCommand metaCmd, ref SessionParseState parseState)
+        internal static bool CheckModifiedRecordHasEtag(long currEtag, ref MetaCommandInfo metaCommandInfo)
         {
+            var metaCmd = metaCommandInfo.MetaCommand;
+
             // Source record has an etag or meta command is not a conditional execution etag command - destination record will have an etag
             if (currEtag != LogRecord.NoETag || (metaCmd.IsEtagCommand() && !metaCmd.IsEtagCondExecCommand()))
                 return true;
@@ -108,7 +109,7 @@ namespace Garnet.server
 
             // Current meta command is a conditional execution etag command - check the condition to determine etag addition to the destination record
             Debug.Assert(metaCmd.IsEtagCondExecCommand());
-            var inputEtag = parseState.GetLong(0, isMetaArg: true);
+            var inputEtag = metaCommandInfo.Arg1;
 
             return metaCmd.CheckConditionalExecution(currEtag, inputEtag);
         }
@@ -117,24 +118,24 @@ namespace Garnet.server
         /// Get the updated etag value for a log record
         /// </summary>
         /// <param name="currEtag">Current etag</param>
-        /// <param name="metaCmd">Input meta command</param>
         /// <param name="init">True if method called from initial update context</param>
-        /// <param name="parseState">Input parse state</param>
+        /// <param name="metaCommandInfo">Meta command info</param>
         /// <param name="execCmd">Execute command</param>
         /// <param name="readOnly">True if method called from read-only context</param>
         /// <returns>Updated etag</returns>
-        public static long GetUpdatedEtag(long currEtag, RespMetaCommand metaCmd, ref SessionParseState parseState, out bool execCmd, bool init = false, bool readOnly = false)
+        public static long GetUpdatedEtag(long currEtag, ref MetaCommandInfo metaCommandInfo, out bool execCmd, bool init = false, bool readOnly = false)
         {
             execCmd = true;
             var updatedEtag = currEtag;
             long inputEtag = LogRecord.NoETag;
 
+            var metaCmd = metaCommandInfo.MetaCommand;
             if (metaCmd == RespMetaCommand.None && currEtag == LogRecord.NoETag)
                 return updatedEtag;
 
             if (metaCmd.IsEtagCondExecCommand())
             {
-                inputEtag = parseState.GetLong(0, isMetaArg: true);
+                inputEtag = metaCommandInfo.Arg1;
 
                 if (!init)
                     execCmd = metaCmd.CheckConditionalExecution(currEtag, inputEtag);

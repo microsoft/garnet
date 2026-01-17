@@ -261,6 +261,13 @@ namespace Garnet.server
             MetaCommandParseState = metaCommandParseState;
         }
 
+        public void Initialize(int argCount = 0)
+        {
+            MetaCommand = RespMetaCommand.None;
+            Arg1 = -1;
+            MetaCommandParseState.Initialize(argCount);
+        }
+
         /// <summary>
         /// Meta Command
         /// </summary>
@@ -408,6 +415,20 @@ namespace Garnet.server
         /// Create a new instance of ObjectInput
         /// </summary>
         /// <param name="type">Object type</param>
+        /// <param name="arg1">First general-purpose argument</param>
+        /// <param name="arg2">Second general-purpose argument</param>
+        /// <param name="flags">Flags</param>
+        public ObjectInput(GarnetObjectType type, int arg1 = 0, int arg2 = 0, RespInputFlags flags = RespInputFlags.None)
+        {
+            this.header = new RespInputHeader(type, flags);
+            this.arg1 = arg1;
+            this.arg2 = arg2;
+        }
+
+        /// <summary>
+        /// Create a new instance of ObjectInput
+        /// </summary>
+        /// <param name="type">Object type</param>
         /// <param name="metaCommandInfo">Meta command info</param>
         /// <param name="parseState">Parse state</param>
         /// <param name="arg1">First general-purpose argument</param>
@@ -429,7 +450,7 @@ namespace Garnet.server
         /// <param name="arg1">First general-purpose argument</param>
         /// <param name="arg2">Second general-purpose argument</param>
         /// <param name="flags">Flags</param>
-        public ObjectInput(GarnetObjectType type, ref SessionParseState parseState, int startIdx, ref MetaCommandInfo metaCommandInfo, int arg1 = 0, int arg2 = 0, RespInputFlags flags = RespInputFlags.None)
+        public ObjectInput(GarnetObjectType type, ref MetaCommandInfo metaCommandInfo, ref SessionParseState parseState, int startIdx, int arg1 = 0, int arg2 = 0, RespInputFlags flags = RespInputFlags.None)
             : this(type, ref metaCommandInfo, arg1, arg2, flags)
         {
             this.parseState = parseState.Slice(startIdx);
@@ -447,13 +468,6 @@ namespace Garnet.server
             : this(type, arg1, arg2, flags)
         {
             this.metaCommandInfo = metaCommandInfo;
-        }
-
-        private ObjectInput(GarnetObjectType type, int arg1 = 0, int arg2 = 0, RespInputFlags flags = RespInputFlags.None)
-        {
-            this.header = new RespInputHeader(type, flags);
-            this.arg1 = arg1;
-            this.arg2 = arg2;
         }
 
         /// <inheritdoc />

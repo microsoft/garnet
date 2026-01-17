@@ -139,7 +139,7 @@ namespace Garnet.server
             }
 
             // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
-            var metaCmd = input.header.MetaCmd;
+            var metaCmd = input.metaCommandInfo.MetaCommand;
             var inputHeaderHasEtag = metaCmd.IsEtagCommand();
             var hadETagPreMutation = logRecord.Info.HasETag;
             if (!hadETagPreMutation && inputHeaderHasEtag)
@@ -316,8 +316,8 @@ namespace Garnet.server
         {
             sizeChange = 0;
 
-            var metaCmd = input.header.MetaCmd;
-            var updatedEtag = GetUpdatedEtag(currEtag, metaCmd, ref input.parseState, out var execCmd, init, readOnly);
+            var metaCmd = input.metaCommandInfo.MetaCommand;
+            var updatedEtag = GetUpdatedEtag(currEtag, ref input.metaCommandInfo, out var execCmd, init, readOnly);
 
             var isEtagCmd = metaCmd.IsEtagCommand();
             var skipResp = !input.header.CheckSkipRespOutputFlag();

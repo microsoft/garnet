@@ -37,11 +37,13 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArguments(field, value);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HSET };
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HSET };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;
@@ -68,16 +70,18 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.Initialize(elements.Length * 2);
 
             for (var i = 0; i < elements.Length; i++)
             {
-                parseState.SetArguments(2 * i, isMetaArg: false, elements[i].field, elements[i].value);
+                parseState.SetArguments(2 * i, elements[i].field, elements[i].value);
             }
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HSET };
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HSET };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;
@@ -116,11 +120,13 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArguments(fields);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HDEL };
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HDEL };
 
             var status = RMWObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
             itemsDoneCount = output.result1;
@@ -145,11 +151,13 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArguments(field, value);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HGET };
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState) { HashOp = HashOperation.HGET };
 
             var output = new ObjectOutput();
 
@@ -179,11 +187,13 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArguments(fields);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState) { HashOp = HashOperation.HMGET };
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState) { HashOp = HashOperation.HMGET };
 
             var output = new ObjectOutput();
 
@@ -269,11 +279,13 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             // Prepare the parse state
             parseState.InitializeWithArgument(field);
 
             // Prepare the input
-            var input = new ObjectInput(GarnetObjectType.Hash, RespMetaCommand.None, ref parseState, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HEXISTS };
+            var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, flags: RespInputFlags.SkipRespOutput) { HashOp = HashOperation.HEXISTS };
 
             var status = ReadObjectStoreOperation(key.ReadOnlySpan, ref input, out var output, ref objectContext);
 

@@ -70,8 +70,8 @@ namespace Garnet.server
                 return false;
             }
 
-            var metaCmd = input.header.MetaCmd;
-            _ = GetUpdatedEtag(srcLogRecord.ETag, metaCmd, ref input.parseState, out var execCmd);
+            var metaCmd = input.metaCommandInfo.MetaCommand;
+            _ = GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd);
 
             switch (input.header.cmd)
             {
@@ -126,8 +126,7 @@ namespace Garnet.server
             }
 
             var cmd = input.header.cmd;
-            var metaCmd = input.header.MetaCmd;
-            var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, metaCmd, ref input.parseState, out var execCmd);
+            var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out _);
 
             var result = cmd switch
             {
@@ -254,8 +253,8 @@ namespace Garnet.server
 
             var hasExpiration = logRecord.Info.HasExpiration;
 
-            var metaCmd = input.header.MetaCmd;
-            var updatedEtag = GetUpdatedEtag(logRecord.ETag, metaCmd, ref input.parseState, out var execCmd);
+            var metaCmd = input.metaCommandInfo.MetaCommand;
+            var updatedEtag = GetUpdatedEtag(logRecord.ETag, ref input.metaCommandInfo, out var execCmd);
 
             var ipuResult = IPUResult.Succeeded;
             switch (cmd)

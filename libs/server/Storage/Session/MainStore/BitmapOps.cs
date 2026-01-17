@@ -24,9 +24,11 @@ namespace Garnet.server
             setValBytes[0] = (byte)(bit ? '1' : '0');
             var setValSlice = PinnedSpanByte.FromPinnedPointer(setValBytes, 1);
 
+            metaCommandInfo.Initialize();
+
             parseState.InitializeWithArguments(offset, setValSlice);
 
-            var input = new StringInput(RespCommand.SETBIT, RespMetaCommand.None, ref parseState, arg1: ParseUtils.ReadLong(offset));
+            var input = new StringInput(RespCommand.SETBIT, ref metaCommandInfo, ref parseState, arg1: ParseUtils.ReadLong(offset));
 
             SpanByteAndMemory output = new(null);
             RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
@@ -42,9 +44,11 @@ namespace Garnet.server
             if (key.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             parseState.InitializeWithArgument(offset);
 
-            var input = new StringInput(RespCommand.GETBIT, RespMetaCommand.None, ref parseState, arg1: ParseUtils.ReadLong(offset));
+            var input = new StringInput(RespCommand.GETBIT, ref metaCommandInfo, ref parseState, arg1: ParseUtils.ReadLong(offset));
 
             SpanByteAndMemory output = new(null);
             var status = Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
@@ -176,13 +180,15 @@ namespace Garnet.server
             if (destinationKey.Length == 0)
                 return GarnetStatus.OK;
 
+            metaCommandInfo.Initialize();
+
             var args = new PinnedSpanByte[keys.Length + 1];
             args[0] = destinationKey;
             keys.CopyTo(args, 1);
 
             parseState.InitializeWithArguments(args);
 
-            var input = new StringInput(RespCommand.BITOP, RespMetaCommand.None, ref parseState);
+            var input = new StringInput(RespCommand.BITOP, ref metaCommandInfo, ref parseState);
 
             return StringBitOperation(ref input, bitOp, out result);
         }
@@ -228,9 +234,11 @@ namespace Garnet.server
 
             SpanByteAndMemory output = new(null);
 
+            metaCommandInfo.Initialize();
+
             parseState.InitializeWithArguments(startSlice, endSlice, useBitIntervalSlice);
 
-            var input = new StringInput(RespCommand.BITCOUNT, RespMetaCommand.None, ref parseState);
+            var input = new StringInput(RespCommand.BITCOUNT, ref metaCommandInfo, ref parseState);
 
             scratchBufferBuilder.RewindScratchBuffer(paramsSlice);
 

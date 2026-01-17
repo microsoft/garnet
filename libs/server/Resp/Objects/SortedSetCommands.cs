@@ -80,7 +80,7 @@ namespace Garnet.server
                 return true;
             }
 
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZADD };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZADD };
 
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
@@ -118,7 +118,7 @@ namespace Garnet.server
             // Get the key for SortedSet
             var key = parseState.GetArgSliceByRef(0);
 
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZREM };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZREM };
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetRemove(key, ref input, ref output);
@@ -157,7 +157,7 @@ namespace Garnet.server
             // Get the key for SortedSet
             var key = parseState.GetArgSliceByRef(0);
 
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState) { SortedSetOp = SortedSetOperation.ZCARD };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState) { SortedSetOp = SortedSetOperation.ZCARD };
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetLength(key, ref input, ref output);
@@ -206,7 +206,7 @@ namespace Garnet.server
                 !ValidateSortedSetRangeInput(1, rangeOpts, out error))
                 return AbortWithErrorMessage(error);
 
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: 1, arg1: respProtocolVersion, arg2: (int)rangeOpts) { SortedSetOp = SortedSetOperation.ZRANGE };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1, arg1: respProtocolVersion, arg2: (int)rangeOpts) { SortedSetOp = SortedSetOperation.ZRANGE };
 
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
@@ -247,7 +247,7 @@ namespace Garnet.server
                 !ValidateSortedSetRangeInput(2, options, out error))
                 return AbortWithErrorMessage(error);
 
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: 2,
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 2,
                 arg1: respProtocolVersion, arg2: (int)options)
             { SortedSetOp = SortedSetOperation.ZRANGE };
 
@@ -288,7 +288,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: 1,
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1,
                 arg1: respProtocolVersion)
             { SortedSetOp = SortedSetOperation.ZSCORE };
 
@@ -334,7 +334,7 @@ namespace Garnet.server
             var key = parseState.GetArgSliceByRef(0);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZMSCORE };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZMSCORE };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -402,7 +402,7 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, arg1: popCount) { SortedSetOp = op };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, arg1: popCount) { SortedSetOp = op };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -573,7 +573,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZCOUNT };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZCOUNT };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -634,7 +634,7 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING);
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: 1) { SortedSetOp = op };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = op };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -688,7 +688,7 @@ namespace Garnet.server
             }
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZINCRBY };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = SortedSetOperation.ZINCRBY };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -752,7 +752,7 @@ namespace Garnet.server
                 };
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: 1, arg1: includeWithScore ? 1 : 0) { SortedSetOp = op };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1, arg1: includeWithScore ? 1 : 0) { SortedSetOp = op };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -820,7 +820,7 @@ namespace Garnet.server
 
 
             // Prepare input
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: 1) { SortedSetOp = op };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: 1) { SortedSetOp = op };
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
@@ -896,7 +896,7 @@ namespace Garnet.server
 
             // Prepare input
             var inputArg = (((paramCount << 1) | (includedCount ? 1 : 0)) << 1) | (includeWithScores ? 1 : 0);
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, arg1: inputArg, arg2: seed) { SortedSetOp = SortedSetOperation.ZRANDMEMBER };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, arg1: inputArg, arg2: seed) { SortedSetOp = SortedSetOperation.ZRANDMEMBER };
 
             var status = GarnetStatus.NOTFOUND;
             ObjectOutput output = default;
@@ -1820,7 +1820,7 @@ namespace Garnet.server
             // Encode expiration time and expiration option and pass them into the input object
             var expirationWithOption = new ExpirationWithOption(expirationTimeInTicks, expireOption);
 
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref parseState, startIdx: currIdx,
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState, startIdx: currIdx,
                     arg1: expirationWithOption.WordHead, arg2: expirationWithOption.WordTail)
             { SortedSetOp = SortedSetOperation.ZEXPIRE };
 
@@ -1911,7 +1911,7 @@ namespace Garnet.server
 
             var membersParseState = parseState.Slice(3, numMembers);
 
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref membersParseState,
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref membersParseState,
                 arg1: isMilliseconds ? 1 : 0, arg2: isTimestamp ? 1 : 0)
             { SortedSetOp = SortedSetOperation.ZTTL };
 
@@ -1978,7 +1978,7 @@ namespace Garnet.server
 
             var membersParseState = parseState.Slice(3, numMembers);
 
-            var input = new ObjectInput(GarnetObjectType.SortedSet, metaCommand, ref membersParseState) { SortedSetOp = SortedSetOperation.ZPERSIST };
+            var input = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref membersParseState) { SortedSetOp = SortedSetOperation.ZPERSIST };
 
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
