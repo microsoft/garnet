@@ -36,7 +36,7 @@ namespace Garnet.cluster
                     return false;
 
                 // Wait for threads to agree configuration change of this node
-                session.UnsafeBumpAndWaitForEpochTransition();
+                session?.UnsafeBumpAndWaitForEpochTransition();
                 if (options.Background)
                     _ = Task.Run(() => TryBeginReplicaSync(options.UpgradeLock));
                 else
@@ -52,7 +52,9 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, $"{nameof(TryReplicateDisklessSync)}");
+                return false;
             }
+
             return true;
 
             async Task<string> TryBeginReplicaSync(bool downgradeLock)
