@@ -404,6 +404,7 @@ Garnet calls into the following DiskANN functions:
  - [x] `int search_element(ulong context, nint index, nint id_data, nuint id_len, float delta, int search_exploration_factor, nint filter_data, nuint filter_len, nuint max_filtering_effort, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint continuation)`
  - [ ] `int continue_search(ulong context, nint index, nint continuation, nint output_ids, nuint output_ids_len, nint output_distances, nuint output_distances_len, nint new_continuation)`
  - [ ] `ulong card(ulong context, nint index)`
+ - [ ] `byte check_internal_id_valid(ulong context, nint index, nint internal_id, nuint internal_id_len)`
 
  Some non-obvious subtleties:
   - The number of results _requested_ from `search_vector` and `search_element` is indicated by `output_distances_len`

@@ -839,7 +839,8 @@ namespace Garnet.server
                     into[i] = from[i];
                 }
 
-                return true;
+                // Vector might have been deleted, so check that after getting data
+                return Service.CheckInternalIdValid(context, indexPtr, internalId);
             }
             finally
             {

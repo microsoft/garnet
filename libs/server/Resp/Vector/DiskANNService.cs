@@ -202,6 +202,14 @@ namespace Garnet.server
         {
             throw new NotImplementedException();
         }
+
+        public bool CheckInternalIdValid(ulong context, nint index, ReadOnlySpan<byte> internalId)
+        {
+            var internal_id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(internalId));
+            var internal_id_len = internalId.Length;
+
+            return NativeDiskANNMethods.check_internal_id_valid(context, index, (nint)internal_id_data, (nuint)internal_id_len) == 1;
+        }
     }
 
     public static partial class NativeDiskANNMethods
@@ -312,6 +320,14 @@ namespace Garnet.server
         public static partial ulong card(
             ulong context,
             nint index
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte check_internal_id_valid(
+            ulong context,
+            nint index,
+            nint internal_id,
+            nuint internal_id_len
         );
     }
 }
