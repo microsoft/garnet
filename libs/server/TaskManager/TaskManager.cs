@@ -28,7 +28,15 @@ namespace Garnet.server
         /// <param name="taskType"></param>
         /// <returns></returns>
         public bool IsRunning(TaskType taskType)
-            => registry.TryGetValue(taskType, out var taskInfo) && taskInfo.task != null && !taskInfo.task.IsCompleted;
+            => registry.TryGetValue(taskType, out var taskInfo) && taskInfo.Task != null && !taskInfo.Task.IsCompleted;
+
+        /// <summary>
+        /// Check if task is still registered
+        /// </summary>
+        /// <param name="taskType"></param>
+        /// <returns></returns>
+        public bool IsRegistered(TaskType taskType)
+            => registry.TryGetValue(taskType, out var taskInfo);
 
         /// <summary>
         /// Dispose TaskManager instance
@@ -50,7 +58,7 @@ namespace Garnet.server
             cts.Cancel();
             try
             {
-                CancelTasks(TaskPlacementCategory.All).Wait();
+                Cancel(TaskPlacementCategory.All).Wait();
             }
             finally
             {
@@ -61,58 +69,50 @@ namespace Garnet.server
         /// <summary>
         /// Register and start new task using the provider taskType and taskFactory
         /// </summary>
-        /// <param name="taskType"></param>
-        /// <param name="taskFactory"></param>
+        /// <param name="taskType">Task type</param>
+        /// <param name="taskFactory">Task factory</param>
+        /// <param name="cleanupOnCompletion">Whether to remove task from task manager registry on completion.</param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public void RegisterAndRun(TaskType taskType, Func<CancellationToken, Task> taskFactory)
+        public bool RegisterAndRun(TaskType taskType, Func<CancellationToken, Task> taskFactory, bool cleanupOnCompletion = false)
         {
-            if (!dispose.TryReadLock())
-                return;
-
-            var failed = false;
-            TaskMetadata taskInfo = null;
             try
             {
-                // Create registry entry
-                taskInfo = new TaskMetadata() { cts = null, task = null };
+                // Acquire lock
+                dispose.ReadLock();
+                // Return early if instance is disposed
+                if (disposed)
+                    return false;
 
                 // Try to add new task entry for provided taskType
-                if (!registry.TryAdd(taskType, taskInfo))
+                var taskMetadata = new TaskMetadata() { Cts = null, Task = null };
+                if (!registry.TryAdd(taskType, taskMetadata))
                 {
-                    logger?.LogError("{taskType} already registered!", taskType);
-                    return;
+                    logger?.LogWarning("{taskType} already registered!", taskType);
+                    return false;
                 }
 
-                // Update entry with linked token and run task
-                taskInfo.cts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
-                taskInfo.task = taskFactory(taskInfo.cts.Token);
+                // Create linked token
+                taskMetadata.Cts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+
+                // Execute task factory
+                if (cleanupOnCompletion)
+                    taskMetadata.Task = taskFactory(taskMetadata.Cts.Token).ContinueWith(async _ => await Cancel(taskType));
+                else
+                    taskMetadata.Task = taskFactory(taskMetadata.Cts.Token);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Failed starting task {taskType} with {method}", taskType, nameof(RegisterAndRun));
-                failed = true;
+                Cancel(taskType).Wait();
+                return false;
             }
             finally
             {
-                if (failed)
-                {
-                    try
-                    {
-                        taskInfo?.cts.Cancel();
-                        taskInfo?.task.Wait(disposed ? default : cts.Token);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.LogCritical(ex, "Unknown exception received for {RegisterAndRun} at finally.", nameof(RegisterAndRun));
-                    }
-                    finally
-                    {
-                        taskInfo?.cts.Dispose();
-                    }
-                }
                 dispose.ReadUnlock();
             }
+
+            return true;
         }
 
         /// <summary>
@@ -120,22 +120,22 @@ namespace Garnet.server
         /// </summary>
         /// <param name="taskType"></param>
         /// <returns></returns>
-        public async Task CancelTask(TaskType taskType)
+        public async Task Cancel(TaskType taskType)
         {
-            if (registry.TryRemove(taskType, out var taskInfo))
+            if (registry.TryRemove(taskType, out var taskMetadata))
             {
                 try
                 {
-                    await taskInfo?.cts.CancelAsync();
-                    await taskInfo?.task.WaitAsync(disposed ? default : cts.Token);
+                    using (taskMetadata.Cts)
+                    {
+                        taskMetadata.Cts.Cancel();
+                        if (taskMetadata.Task != null)
+                            await taskMetadata.Task.WaitAsync(disposed ? default : cts.Token);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogCritical(ex, "Unknown exception received for {CancelTask}.", nameof(CancelTask));
-                }
-                finally
-                {
-                    taskInfo?.cts.Dispose();
+                    logger?.LogCritical(ex, "Unknown exception received for {CancelTask} when awaiting for {taskType}.", nameof(Cancel), taskType);
                 }
             }
         }
@@ -145,10 +145,10 @@ namespace Garnet.server
         /// </summary>
         /// <param name="taskPlacementCategory"></param>
         /// <returns></returns>
-        public async Task CancelTasks(TaskPlacementCategory taskPlacementCategory)
+        public async Task Cancel(TaskPlacementCategory taskPlacementCategory)
         {
             foreach (var taskType in TaskTypeExtensions.GetTaskTypes(taskPlacementCategory))
-                await CancelTask(taskType);
+                await Cancel(taskType);
         }
 
         /// <summary>
@@ -158,14 +158,7 @@ namespace Garnet.server
         /// <param name="token"></param>
         /// <returns></returns>
         public bool Wait(TaskType taskType, CancellationToken token = default)
-        {
-            if (registry.TryGetValue(taskType, out var taskInfo))
-            {
-                taskInfo.task.Wait(token);
-                return true;
-            }
-            return false;
-        }
+            => WaitAsync(taskType, token).Result;
 
         /// <summary>
         /// WaitAsync for task associated with the provided TaskType to complete.
@@ -177,7 +170,7 @@ namespace Garnet.server
         {
             if (registry.TryGetValue(taskType, out var taskInfo))
             {
-                await taskInfo.task.WaitAsync(token);
+                await taskInfo.Task.WaitAsync(token);
                 return true;
             }
             return false;

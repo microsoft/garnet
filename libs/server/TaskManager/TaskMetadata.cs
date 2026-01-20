@@ -14,11 +14,11 @@ namespace Garnet.server
         /// <summary>
         /// Cancellation token source associated with this specific task
         /// </summary>
-        public CancellationTokenSource cts;
+        public CancellationTokenSource Cts;
 
         /// <summary>
         /// The running task instance
         /// </summary>
-        public Task task;
+        public Task Task;
     }
 }

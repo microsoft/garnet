@@ -916,7 +916,7 @@ namespace Garnet.server
         /// <returns></returns>
         public async Task SuspendPrimaryOnlyTasks()
         {
-            await taskManager.CancelTasks(TaskPlacementCategory.Primary);
+            await taskManager.Cancel(TaskPlacementCategory.Primary);
         }
 
         /// <summary>

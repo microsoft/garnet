@@ -11,7 +11,7 @@ namespace Garnet.server
     /// These tasks represent various server operations that run asynchronously to maintain
     /// system health, performance, and data integrity.
     /// </summary>
-    public enum TaskType
+    public enum TaskType : byte
     {
         /// <summary>
         /// Monitors AOF size and triggers checkpoints when size limit is exceeded.

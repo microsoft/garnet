@@ -81,18 +81,18 @@ namespace Garnet.test
             if (cancelTaskPlacementCategory == TaskPlacementCategory.Replica)
             {
                 // Cancel tasks based on replica placement category
-                await taskManager.CancelTasks(cancelTaskPlacementCategory);
+                await taskManager.Cancel(cancelTaskPlacementCategory);
 
                 // Tasks not of replica category so they should keep running
                 ClassicAssert.IsTrue(taskManager.IsRunning(TaskType.AofSizeLimitTask));
 
                 // Cancel all tasks
-                await taskManager.CancelTasks(TaskPlacementCategory.All);
+                await taskManager.Cancel(TaskPlacementCategory.All);
             }
             else
             {
                 // Cancel tasks based on placement category
-                await taskManager.CancelTasks(cancelTaskPlacementCategory);
+                await taskManager.Cancel(cancelTaskPlacementCategory);
             }
 
             // Both tasks should complete and be removed since they are in primary category
@@ -110,6 +110,47 @@ namespace Garnet.test
                 _ = allTaskStarted.Release();
                 await Task.Delay(Timeout.Infinite, token);
             }
+        }
+
+        [Test]
+        public void TestTaskRegisterAfterDispose()
+        {
+            var taskManager = new TaskManager();
+            taskManager.Dispose();
+
+            var registered = taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, (token) => Task.CompletedTask);
+            ClassicAssert.IsFalse(registered);
+        }
+
+        [Test]
+        public void TestTaskFactoryException([Values] bool cleanupOnCompletion)
+        {
+            using var taskManager = new TaskManager();
+
+            // Create a task factory that throws an exception
+            Task ThrowingTaskFactory(CancellationToken token)
+            {
+                throw new InvalidOperationException("Test exception from task factory");
+            }
+
+            // RegisterAndRun should return false when the task factory throws an exception
+            var registered = taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, ThrowingTaskFactory, cleanupOnCompletion);
+            ClassicAssert.IsFalse(registered, "RegisterAndRun should return false when task factory throws an exception");
+
+            // Verify that the task is not running after the exception
+            ClassicAssert.IsFalse(taskManager.IsRunning(TaskType.IndexAutoGrowTask), "Task should not be running after exception");
+        }
+
+        [Test]
+        public void TestCleanupOnCompletion()
+        {
+            using var taskManager = new TaskManager();
+
+            var registered = taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, (token) => Task.CompletedTask, cleanupOnCompletion: true);
+            ClassicAssert.IsTrue(registered);
+
+            while (taskManager.IsRegistered(TaskType.IndexAutoGrowTask)) { }
+            ClassicAssert.IsFalse(taskManager.IsRegistered(TaskType.IndexAutoGrowTask));
         }
     }
 }
