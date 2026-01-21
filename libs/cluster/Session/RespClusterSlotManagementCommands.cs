@@ -142,8 +142,7 @@ namespace Garnet.cluster
             }
 
             var current = clusterProvider.clusterManager.CurrentConfig;
-            var preferredType = clusterProvider.serverOptions.ClusterPreferredEndpointType;
-
+          
             if (!parseState.TryGetInt(0, out var slot))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
@@ -160,7 +159,7 @@ namespace Garnet.cluster
 
             if (!current.IsLocal((ushort)slot))
             {
-                Redirect((ushort)slot, current, preferredType);
+                Redirect((ushort)slot, current);
             }
             else
             {
@@ -377,7 +376,7 @@ namespace Garnet.cluster
 
             if (!current.IsLocal((ushort)slot))
             {
-                Redirect((ushort)slot, current, preferredType);
+                Redirect((ushort)slot, current);
             }
             else
             {

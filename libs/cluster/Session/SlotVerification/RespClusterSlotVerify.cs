@@ -18,8 +18,9 @@ namespace Garnet.cluster
         /// <param name="slot"></param>
         /// <param name="config"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void Redirect(ushort slot, ClusterConfig config, ClusterPreferredEndpointType type)
+        private void Redirect(ushort slot, ClusterConfig config)
         {
+            var type = clusterProvider.serverOptions.ClusterPreferredEndpointType;
             var (endpoint, port) = config.GetEndpointFromSlot(slot, type);
             ReadOnlySpan<byte> errorMessage;
             if (port != 0)
