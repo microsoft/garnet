@@ -81,6 +81,35 @@ namespace Garnet.server
     }
 
     /// <summary>
+    /// Supported distance metrics for vector similarity search.
+    /// Aligned with DiskANN's Metric type
+    /// </summary>
+    public enum VectorDistanceMetricType : int
+    {
+        Invalid = -1,
+
+        /// <summary>
+        /// Cosine similarity
+        /// </summary>
+        Cosine = 0,
+
+        /// <summary>
+        /// Inner product
+        /// </summary>
+        InnerProduct,
+
+        /// <summary>
+        /// Squared Euclidean (L2-Squared)
+        /// </summary>
+        L2,
+
+        /// <summary>
+        /// Normalized Cosine Similarity
+        /// </summary>
+        CosineNormalized,
+    }
+
+    /// <summary>
     /// Implementation of Vector Set operations.
     /// </summary>
     sealed partial class StorageSession : IDisposable
@@ -279,6 +308,7 @@ namespace Garnet.server
         [SkipLocalsInit]
         internal unsafe GarnetStatus VectorSetInfo(SpanByte key,
             out VectorQuantType quantType,
+            out VectorDistanceMetricType distanceMetricType,
             out uint vectorDimensions,
             out uint reducedDimensions,
             out uint buildExplorationFactor,
@@ -294,6 +324,7 @@ namespace Garnet.server
                 if (status != GarnetStatus.OK)
                 {
                     quantType = VectorQuantType.Invalid;
+                    distanceMetricType = VectorDistanceMetricType.Invalid;
                     vectorDimensions = 0;
                     reducedDimensions = 0;
                     buildExplorationFactor = 0;
@@ -303,10 +334,9 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out _, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out _, out _);
-
-                // TODO: fetch VectorSet size from DiskANN
-                size = 0;
+                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out var indexPtr, out _);
+                distanceMetricType = VectorDistanceMetricType.L2; // TODO: currently by default all indexes are L2 - change it once we have more metrics
+                size = (long)NativeDiskANNMethods.card(context, indexPtr);
 
                 return GarnetStatus.OK;
             }
