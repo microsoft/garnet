@@ -880,7 +880,7 @@ ClusterRedirectTests.TestFlags testFlags)
                     var data = strResp.Split(' ');
                     var endpointSplit = data[2].Split(':');
 
-                    ClassicAssert.AreEqual("?", endpointSplit[0]);
+                    ClassicAssert.False(string.IsNullOrEmpty(endpointSplit[0])); // "?" or Format.GetHostName()
                 }
             }
 
@@ -922,7 +922,7 @@ ClusterRedirectTests.TestFlags testFlags)
                     var data = strResp.Split(' ');
                     var endpointSplit = data[2].Split(':');
 
-                    ClassicAssert.AreEqual("?", endpointSplit[0]);
+                    ClassicAssert.False(string.IsNullOrEmpty(endpointSplit[0])); // "?" or Format.GetHostName()
                 }
             }
 

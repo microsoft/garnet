@@ -142,7 +142,7 @@ namespace Garnet.cluster
             }
 
             var current = clusterProvider.clusterManager.CurrentConfig;
-          
+
             if (!parseState.TryGetInt(0, out var slot))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))

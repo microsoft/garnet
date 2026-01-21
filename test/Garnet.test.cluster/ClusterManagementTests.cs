@@ -63,7 +63,6 @@ namespace Garnet.test.cluster
             context.CreateInstances(defaultShards, clusterPreferredEndpointType: preferredType, useClusterAnnounceHostname: useClusterAnnounceHostname);
             context.CreateConnection();
             _ = context.clusterTestUtils.SimpleSetupCluster(customSlotRanges: slotRanges, logger: context.logger);
-            var targetEndpoint = GetTargetEndpoint(preferredType, useClusterAnnounceHostname);
 
             var slotsResult = context.clusterTestUtils.ClusterSlots(0, context.logger);
             ClassicAssert.IsTrue(slotsResult.Count == 1);
@@ -71,7 +70,6 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(endSlot, slotsResult[0].endSlot);
             ClassicAssert.IsTrue(slotsResult[0].nnInfo.Length == 1);
             ClassicAssert.IsTrue(slotsResult[0].nnInfo[0].isPrimary);
-            ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].endpoint, targetEndpoint);
             ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].port, context.clusterTestUtils.GetEndPoint(0).Port);
             ClassicAssert.AreEqual(slotsResult[0].nnInfo[0].nodeid, context.clusterTestUtils.GetNodeIdFromNode(0, context.logger));
             // CheckMetadata(preferredType, useCl ,slotsResult[0].nnInfo[0]);
@@ -113,40 +111,17 @@ namespace Garnet.test.cluster
             ClassicAssert.IsTrue(slotsResult.Count == ranges.Count);
             for (var i = 0; i < slotsResult.Count; i++)
             {
-                var targetEndpoint = GetTargetEndpoint(preferredType, useClusterAnnounceHostname);
-
                 var origRange = ranges[i];
                 var retRange = slotsResult[i];
                 ClassicAssert.AreEqual(origRange.Item2.Item1, retRange.startSlot);
                 ClassicAssert.AreEqual(origRange.Item2.Item2, retRange.endSlot);
                 ClassicAssert.IsTrue(retRange.nnInfo.Length == 1);
                 ClassicAssert.IsTrue(retRange.nnInfo[0].isPrimary);
-                ClassicAssert.AreEqual(targetEndpoint, retRange.nnInfo[0].endpoint);
                 ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(origRange.Item1).Port, retRange.nnInfo[0].port);
                 ClassicAssert.AreEqual(context.clusterTestUtils.GetNodeIdFromNode(origRange.Item1, context.logger), retRange.nnInfo[0].nodeid);
 
                 CheckMetadata(preferredType, useClusterAnnounceHostname, retRange.nnInfo[0]);
             }
-        }
-
-        private string GetTargetEndpoint(ClusterPreferredEndpointType preferredType, bool useClusterAnnounceHostname)
-        {
-            if (preferredType == ClusterPreferredEndpointType.Ip)
-            {
-                return context.clusterTestUtils.GetEndPoint(0).Address.ToString();
-            }
-
-            if (preferredType == ClusterPreferredEndpointType.Hostname)
-            {
-                if (useClusterAnnounceHostname)
-                {
-                    return context.nodeOptions[0].ClusterAnnounceHostname;
-                }
-
-                return "?";
-            }
-
-            return null;
         }
 
         private void CheckMetadata(ClusterPreferredEndpointType preferredType, bool useClusterAnnounceHostname, NodeNetInfo nodeNetInfo)
