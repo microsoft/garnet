@@ -11,7 +11,7 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
-        ReplicaReplayDriverGroup replicaReplayTaskGroup = null;
+        ReplicaReplayDriverStore replicaReplayTaskGroup = null;
         TsavoriteLog replaySessionSublog = null;
 
         /// <summary>

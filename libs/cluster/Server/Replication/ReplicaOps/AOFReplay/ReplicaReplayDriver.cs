@@ -52,7 +52,7 @@ namespace Garnet.cluster
                 replayWorkItem = new ReplayWorkItem(replayTaskCount);
                 replayTasks = [.. Enumerable.Range(0, replayTaskCount).Select(i => new ReplicaReplayTask(i, this, clusterProvider, cts, logger))];
                 foreach (var replayTask in replayTasks)
-                    _ = Task.Run(() => replayTask.Replay());
+                    _ = Task.Run(async () => await replayTask.ContinuousBackgroundReplay());
             }
         }
 
@@ -68,6 +68,16 @@ namespace Garnet.cluster
         }
 
         #region IBulkLogEntryConsumer
+
+        /// <summary>
+        /// Main bulk consume implementation.
+        /// </summary>
+        /// <param name="record">Pointer to the log entry record to consume.</param>
+        /// <param name="recordLength">Length of the log entry record in bytes.</param>
+        /// <param name="currentAddress">Current address of the log entry in the log.</param>
+        /// <param name="nextAddress">Next address in the log after the current record.</param>
+        /// <param name="isProtected">Indicates whether the log entry is protected.</param>
+        /// <exception cref="GarnetException">Thrown if the background replay operation times out.</exception>
         public unsafe void Consume(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
         {
             if (serverOptions.AofReplayTaskCount == 1)
@@ -76,7 +86,7 @@ namespace Garnet.cluster
             }
             else
             {
-                // Wait for slot to become available
+                // Wait for previous replay batch to finish
                 if (!replayWorkItem.Completed.Wait(serverOptions.ReplicaSyncTimeout, cts.Token))
                     throw new GarnetException("Consume background replay timed-out!");
 
@@ -99,6 +109,16 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// Processes record on a single replay task directly.
+        /// </summary>
+        /// <param name="record">Pointer to the start of the log record to process.</param>
+        /// <param name="recordLength">Length in bytes of the log record.</param>
+        /// <param name="currentAddress">Current address in the log for replication.</param>
+        /// <param name="nextAddress">Expected next address in the log after processing.</param>
+        /// <param name="isProtected">Indicates whether the operation should be performed in protected mode.</param>
+        /// <exception cref="GarnetException">Thrown if fast commit is not enabled when a fast commit request is received, or if log integrity validation
+        /// fails.</exception>
         internal unsafe void ConsumeDirect(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
         {
             ValidateSublogIndex(sublogIdx);
@@ -115,10 +135,9 @@ namespace Garnet.cluster
                     replicationManager.AofProcessor.ProcessAofRecordInternal(sublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
                     // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                     // point when we take a checkpoint at the checkpoint end marker
-                    // FIXME: Do we need to coordinate between sublogs when updating this?
                     if (isCheckpointStart)
                     {
-                        // logger?.LogError("[{sublogIdx}] CheckpointStart {address}", sublogIdx, clusterProvider.replicationManager.GetSublogReplicationOffset(sublogIdx));
+                        // This is safe to be updated in parallel given that each sublog replay taks will update its own slot with corresponding address of the checkpoint marker
                         replicationManager.ReplicationCheckpointStartOffset[sublogIdx] = replicationManager.GetSublogReplicationOffset(sublogIdx);
                     }
                     entryLength += TsavoriteLog.UnsafeAlign(payloadLength);

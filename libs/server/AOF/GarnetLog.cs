@@ -18,13 +18,9 @@ namespace Garnet.server
         readonly int replayTaskCount = serverOptions.AofReplayTaskCount;
         readonly SingleLog singleLog = serverOptions.AofVirtualSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
         readonly ShardedLog shardedLog = serverOptions.AofVirtualSublogCount > 1 ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger) : null;
-
         public TsavoriteLog SigleLog => singleLog.log;
-
         public long HeaderSize => singleLog != null ? singleLog.HeaderSize : shardedLog.HeaderSize;
-
         public int Size => singleLog != null ? 1 : shardedLog.Length;
-
         public int ReplayTaskCount => replayTaskCount;
 
         /// <summary>

@@ -29,7 +29,12 @@ namespace Garnet.cluster
         }
     }
 
-    internal sealed class ReplicaReplayTask(int replayIdx, ReplicaReplayDriver replayDriver, ClusterProvider clusterProvider, CancellationTokenSource cts, ILogger logger = null)
+    internal sealed class ReplicaReplayTask(
+        int replayIdx,
+        ReplicaReplayDriver replayDriver,
+        ClusterProvider clusterProvider,
+        CancellationTokenSource cts,
+        ILogger logger = null)
     {
         readonly int replayTaskIdx = replayIdx;
         readonly GarnetServerOptions serverOptions = clusterProvider.serverOptions;
@@ -47,7 +52,12 @@ namespace Garnet.cluster
                 throw new GarnetException("Failed to append to channel");
         }
 
-        internal async Task Replay()
+        /// <summary>
+        /// Asynchronously replays log entries from a background channel, processing and applying them for replication
+        /// and consistency across sublogs.
+        /// </summary>
+        /// <returns>A task representing the asynchronous replay operation.</returns>
+        internal async Task ContinuousBackgroundReplay()
         {
             var physicalSublogIdx = replayDriver.sublogIdx;
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
@@ -94,6 +104,8 @@ namespace Garnet.cluster
                             {
                                 if (!clusterProvider.serverOptions.EnableFastCommit)
                                     throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
+
+                                // Only a single thread should commit metadata
                                 if (replayTaskIdx == 0)
                                 {
                                     TsavoriteLogRecoveryInfo info = new();
@@ -107,7 +119,7 @@ namespace Garnet.cluster
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "{method}", nameof(Replay));
+                        logger?.LogError(ex, "{method}", nameof(ContinuousBackgroundReplay));
                         cts.Cancel();
                     }
 
@@ -131,7 +143,7 @@ namespace Garnet.cluster
                     }
                     finally
                     {
-                        // Ensure main thread always gets notified and releated
+                        // Ensure main thread always gets notified and released
                         if (replayTaskIdx == 0)
                             entry.Completed.Set();
                     }

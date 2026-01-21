@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal class ReplicaReplayDriverGroup(ClusterProvider clusterProvider, ILogger logger)
+    internal class ReplicaReplayDriverStore(ClusterProvider clusterProvider, ILogger logger)
     {
         readonly ClusterProvider clusterProvider = clusterProvider;
         readonly ILogger logger = logger;
@@ -34,7 +34,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Disposed lock
         /// </summary>
-        public SingleWriterMultiReaderLock _disposed = new();
+        public SingleWriterMultiReaderLock _lock = new();
+
+        /// <summary>
+        /// Disposed flag
+        /// </summary>
+        public bool _disposed = false;
 
         /// <summary>
         /// Cancellation token source for replay task group
@@ -57,10 +62,19 @@ namespace Garnet.cluster
         /// </summary>
         public void Dispose()
         {
-            if (!_disposed.TryWriteLock())
-                return;
+            try
+            {
+                _lock.WriteLock();
+                if (_disposed) return;
+                _disposed = true;
+            }
+            finally
+            {
+                _lock.WriteUnlock();
+            }
+
             cts.Cancel();
-            var replicaReplayTasks = this.replicaReplayDrivers;
+            var replicaReplayTasks = replicaReplayDrivers;
             if (replicaReplayTasks != null)
             {
                 for (var i = 0; i < replicaReplayTasks.Length; i++)

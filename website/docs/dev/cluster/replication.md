@@ -190,7 +190,7 @@ The `GarnetLog` instance offers also a locking mechanism to atomically insert re
 ### AOFSyncDriver
 
 As mentioned previously, at completion of the attach workflow, the primary will spawn background tasks responsible for shipping the AOF pages to the replica.
-For every connected replica, the primary creates an instance of an `AofSyncDriver`, which manages the `AofSyncTasks` responsible for shipping each physical sublog's pages.
+For every connected replica, the primary creates an instance of an `AofSyncDriver`, which manages the `AofSyncTask` responsible for shipping each physical sublog's pages.
 The `ReplicationManager` manages the `AofSynDriverStore` containing all the `AofSyncDriver` instances.
 The number of `AofSyncTask` instance spawned is equal to the number of physical sublogs configured on the corresponding Garnet instance.
 When a Garnet instance is configured with more than one physical sublog, a refresh tail task is also created.
@@ -198,8 +198,8 @@ When a Garnet instance is configured with more than one physical sublog, a refre
 #### Refresh Sublog Tail
 This task is used to refresh the sublog tail by enqueuing a record with most recent sequence number to ensure that time moves forward for sublogs that have not received
 any enqueues.
-In fact, this task is making an effort to converge the tail sequence number for its physical sublog to ensure that the read protocol does not get stuck waiting falsely for
+In fact, this task is making an effort to converge the tail sequence number for each physical sublog to ensure that the read protocol does not get stuck waiting falsely for
 future updates.
 For example, given the key-sequence number pairs (A,t1), (B,t2) where each one is mapped to a different physical log, if t1 < t2 and we first read B, then trying to read A
 will result in the read session waiting for A to reach a sequence number t3 > t2
-This could happen due to updating key A or another key, or should be forced by the refresh task which will create a record to indicate that time has move forward.
+This could happen due to updating key A or another key, or should be forced by the refresh task which will create a record to indicate that time has moved forward.
