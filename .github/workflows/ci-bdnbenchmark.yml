@@ -101,3 +101,31 @@ jobs:
           alert-threshold: '110%'
           comment-always: true
           fail-on-alert: false
+
+  # Job to clean branch history after all benchmarks complete
+  clean-branch-history:
+    name: Clean Branch History
+    needs: [build-run-bdnbenchmark]
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Clean history for continuousbenchmark branch
+        run: ./.github/workflows/clean-branch-history.ps1 -BranchName "continuousbenchmark"
+        shell: pwsh
+
+      - name: Check out main again
+        run: git checkout main
+
+      - name: Clean history for continuousbenchmark_net80 branch
+        run: ./.github/workflows/clean-branch-history.ps1 -BranchName "continuousbenchmark_net80"
+        shell: pwsh
