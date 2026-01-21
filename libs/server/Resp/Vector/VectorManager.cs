@@ -390,12 +390,6 @@ namespace Garnet.server
 
             ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out var indexPtr, out _);
 
-            if (quantType == VectorQuantType.XPreQ8 && element.Length != sizeof(int))
-            {
-                // We know this element isn't present because of other validation constraints, bail
-                return VectorManagerResult.MissingElement;
-            }
-
             var del = Service.Remove(context, indexPtr, element);
 
             return del ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
@@ -810,7 +804,7 @@ namespace Garnet.server
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
             try
             {
-                if(!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
                 {
                     return false;
                 }
