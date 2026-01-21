@@ -335,7 +335,8 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out var indexPtr, out _);
+                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out var indexPtr, out _);
+                distanceMetricType = VectorDistanceMetricType.L2; // TODO: currently by default all indexes are L2 - change it once we have more metrics
                 size = (long)NativeDiskANNMethods.card(context, indexPtr);
 
                 return GarnetStatus.OK;
