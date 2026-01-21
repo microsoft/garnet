@@ -101,6 +101,15 @@ namespace Garnet.server
             => metaCmd is >= RespMetaCommand.ExecIfMatch and <= RespMetaCommand.ExecIfGreater;
 
         /// <summary>
+        /// Check if meta command does not require serialization of meta-command parse state
+        /// (This is true for commands that only utilize the <see cref="MetaCommandInfo.Arg1"/>) field in <see cref="MetaCommandInfo"/>)
+        /// </summary>
+        /// <param name="metaCmd">Meta command</param>
+        /// <returns>True if meta command does not require serialization of meta-command parse state</returns>
+        public static bool SkipMetaParseStateSerialization(this RespMetaCommand metaCmd)
+            => metaCmd.IsEtagCommand();
+        
+        /// <summary>
         /// Check conditional execution of command based on meta-command
         /// </summary>
         /// <param name="metaCmd">Meta command</param>
@@ -288,7 +297,21 @@ namespace Garnet.server
         /// Get serialized length of <see cref="MetaCommandInfo"/>
         /// </summary>
         /// <returns>The serialized length</returns>
-        public int GetSerializedLength() => sizeof(byte) + sizeof(long) + MetaCommandParseState.GetSerializedLength();
+        public int GetSerializedLength()
+        {
+            var serializedLength = sizeof(byte); // Meta command
+            if (MetaCommand != RespMetaCommand.None)
+            {
+                serializedLength += sizeof(long); // Arg1
+
+                if (!MetaCommand.SkipMetaParseStateSerialization())
+                {
+                    serializedLength += MetaCommandParseState.GetSerializedLength(); // Meta parse state
+                }
+            }
+
+            return serializedLength;
+        }
 
         /// <summary>
         /// Serialize <see cref="MetaCommandInfo"/> to memory buffer
@@ -304,16 +327,22 @@ namespace Garnet.server
             *curr = (byte)MetaCommand;
             curr += sizeof(byte);
 
-            // Serialize arg1
-            *(long*)curr = Arg1;
-            curr += sizeof(long);
+            if (MetaCommand != RespMetaCommand.None)
+            {
+                // Serialize arg1
+                *(long*)curr = Arg1;
+                curr += sizeof(long);
 
-            // Serialize meta command parse state
-            var remainingLength = length - (int)(curr - dest);
-            var parseStateLength = MetaCommandParseState.SerializeTo(curr, remainingLength);
-            curr += parseStateLength;
+                if (!MetaCommand.SkipMetaParseStateSerialization())
+                {
+                    // Serialize meta command parse state
+                    var remainingLength = length - (int)(curr - dest);
+                    var parseStateLength = MetaCommandParseState.SerializeTo(curr, remainingLength);
+                    curr += parseStateLength;
+                }
+            }
 
-            return (int)(dest - curr);
+            return (int)(curr - dest);
         }
 
         /// <summary>
@@ -329,15 +358,21 @@ namespace Garnet.server
             MetaCommand = (RespMetaCommand)(*curr);
             curr += sizeof(byte);
 
-            // Deserialize arg1
-            Arg1 = *(long*)curr;
-            curr += sizeof(long);
+            if (MetaCommand != RespMetaCommand.None)
+            {
+                // Deserialize arg1
+                Arg1 = *(long*)curr;
+                curr += sizeof(long);
 
-            // Deserialize meta command parse state
-            var parseStateLength = MetaCommandParseState.DeserializeFrom(curr);
-            curr += parseStateLength;
+                if (!MetaCommand.SkipMetaParseStateSerialization())
+                {
+                    // Deserialize meta command parse state
+                    var parseStateLength = MetaCommandParseState.DeserializeFrom(curr);
+                    curr += parseStateLength;
+                }
+            }
 
-            return (int)(src - curr);
+            return (int)(curr - src);
         }
     }
 
@@ -473,6 +508,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + (2 * sizeof(int)) // arg1 + arg2
+                                       + metaCommandInfo.GetSerializedLength()
                                        + parseState.GetSerializedLength();
 
         /// <inheritdoc />
@@ -789,6 +825,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public int SerializedLength => header.SpanByte.TotalSize
                                        + sizeof(long) // arg1
+                                       + metaCommandInfo.GetSerializedLength()
                                        + parseState.GetSerializedLength();
 
         /// <inheritdoc />

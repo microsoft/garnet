@@ -704,7 +704,7 @@ namespace Garnet.server
 
         private bool IsMetaCommandInfoValid()
         {
-            if (metaCommandInfo.MetaCommand.IsEtagCommand())
+            if (metaCommandInfo.MetaCommand.IsEtagCommand() && metaCommandInfo.MetaCommandParseState.Count > 0)
             {
                 if (!metaCommandInfo.MetaCommandParseState.TryGetLong(0, out var etag))
                 {
