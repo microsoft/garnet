@@ -817,7 +817,7 @@ namespace Garnet.cluster
             }
         }
 
-        private string FormatValueOrNull(string value)
+        static string FormatValueOrNull(string value)
         {
             if (string.IsNullOrEmpty(value)) return CmdStrings.GenericNullValue; // "$-1\r\n"
             return $"${value.Length}\r\n{value}\r\n";
