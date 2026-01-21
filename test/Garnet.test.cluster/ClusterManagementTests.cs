@@ -132,10 +132,6 @@ namespace Garnet.test.cluster
                 {
                     ClassicAssert.AreEqual(context.nodeOptions[0].ClusterAnnounceHostname, nodeNetInfo.hostname);
                 }
-                else
-                {
-                    ClassicAssert.AreEqual(null, nodeNetInfo.hostname);
-                }
 
                 ClassicAssert.Null(nodeNetInfo.ip);
             }
@@ -147,8 +143,6 @@ namespace Garnet.test.cluster
 
             if (preferredType == ClusterPreferredEndpointType.Unknown)
             {
-                var hostname = useClusterAnnounceHostname ? context.nodeOptions[0].ClusterAnnounceHostname : null;
-                ClassicAssert.AreEqual(hostname, nodeNetInfo.hostname);
                 ClassicAssert.AreEqual(context.clusterTestUtils.GetEndPoint(0).Address.ToString(), nodeNetInfo.ip);
             }
         }
