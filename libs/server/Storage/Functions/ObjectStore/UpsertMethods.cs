@@ -3,6 +3,7 @@
 
 using System;
 using Tsavorite.core;
+using static Garnet.server.SessionFunctionsUtils;
 
 namespace Garnet.server
 {
@@ -97,8 +98,9 @@ namespace Garnet.server
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 
-            if ((input.metaCommandInfo.MetaCommand.IsEtagCommand() || logRecord.Info.HasETag) &&
-                !logRecord.TrySetETag(functionsState.etagState.ETag + 1))
+            var updatedEtag = GetUpdatedEtag(functionsState.etagState.ETag, ref input.metaCommandInfo, out _, init: true);
+
+            if (logRecord.Info.HasETag && !logRecord.TrySetETag(updatedEtag))
                 return false;
 
             sizeInfo.AssertOptionals(logRecord.Info);
@@ -127,8 +129,9 @@ namespace Garnet.server
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 
-            if ((input.metaCommandInfo.MetaCommand.IsEtagCommand() || logRecord.Info.HasETag) &&
-                !logRecord.TrySetETag(functionsState.etagState.ETag + 1))
+            var updatedEtag = GetUpdatedEtag(functionsState.etagState.ETag, ref input.metaCommandInfo, out _, init: true);
+
+            if (logRecord.Info.HasETag && !logRecord.TrySetETag(updatedEtag))
                 return false;
 
             sizeInfo.AssertOptionals(logRecord.Info);
@@ -154,8 +157,9 @@ namespace Garnet.server
             if (!(input.arg1 == 0 ? logRecord.RemoveExpiration() : logRecord.TrySetExpiration(input.arg1)))
                 return false;
 
-            if ((input.metaCommandInfo.MetaCommand.IsEtagCommand() || logRecord.Info.HasETag) &&
-                !logRecord.TrySetETag(functionsState.etagState.ETag + 1))
+            var updatedEtag = GetUpdatedEtag(functionsState.etagState.ETag, ref input.metaCommandInfo, out _, init: true);
+
+            if (logRecord.Info.HasETag && !logRecord.TrySetETag(updatedEtag))
                 return false;
 
             sizeInfo.AssertOptionals(logRecord.Info);

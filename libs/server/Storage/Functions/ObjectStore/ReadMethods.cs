@@ -70,6 +70,7 @@ namespace Garnet.server
                 }
             }
 
+            output.Header.etag = srcLogRecord.ETag;
             output.GarnetObject = (IGarnetObject)srcLogRecord.ValueObject;
             return true;
         }

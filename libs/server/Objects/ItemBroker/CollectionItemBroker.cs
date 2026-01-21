@@ -522,7 +522,7 @@ namespace Garnet.server
             if (command == RespCommand.BLMOVE)
                 dstKey = cmdArgs[0];
 
-            var asKey = storageSession.scratchBufferBuilder.CreateArgSlice(key);
+            var srcKey = storageSession.scratchBufferBuilder.CreateArgSlice(key);
 
             // Create a transaction if not currently in a running transaction
             if (storageSession.txnManager.state != TxnState.Running)
@@ -530,7 +530,7 @@ namespace Garnet.server
                 Debug.Assert(storageSession.txnManager.state == TxnState.None);
                 createTransaction = true;
                 storageSession.txnManager.AddTransactionStoreTypes(TransactionStoreTypes.Object | TransactionStoreTypes.Unified);
-                storageSession.txnManager.SaveKeyEntryToLock(asKey, LockType.Exclusive);
+                storageSession.txnManager.SaveKeyEntryToLock(srcKey, LockType.Exclusive);
 
                 if (command == RespCommand.BLMOVE)
                     storageSession.txnManager.SaveKeyEntryToLock(dstKey, LockType.Exclusive);
@@ -539,17 +539,17 @@ namespace Garnet.server
             }
 
             var objectTransactionalContext = storageSession.txnManager.ObjectTransactionalContext;
-            var unifiedTransactionalContext = storageSession.txnManager.UnifiedTransactionalContext;
 
             try
             {
                 // Get the object stored at key
-                var statusOp = storageSession.GET(asKey, out var osObject, ref objectTransactionalContext);
+                var statusOp = storageSession.GET(srcKey, out var srcObjOutput, ref objectTransactionalContext);
                 if (statusOp == GarnetStatus.NOTFOUND)
                     return false;
 
+                var srcObj = srcObjOutput.GarnetObject;
                 // Check for type match between the observer and the source object type
-                if ((GarnetObjectType)osObject.GarnetObject.Type != objectType)
+                if ((GarnetObjectType)srcObj.Type != objectType)
                 {
                     // Return a type mismatch result if we should fail on source object type mismatch
                     if (failOnSrcTypeMismatch)
@@ -561,13 +561,14 @@ namespace Garnet.server
                     return false;
                 }
 
+                ObjectOutput dstObjOutput = default;
                 IGarnetObject dstObj = null;
                 if (command == RespCommand.BLMOVE)
                 {
-                    var dstStatusOp = storageSession.GET(dstKey, out var osDstObject, ref objectTransactionalContext);
+                    var dstStatusOp = storageSession.GET(dstKey, out dstObjOutput, ref objectTransactionalContext);
                     if (dstStatusOp != GarnetStatus.NOTFOUND)
                     {
-                        dstObj = osDstObject.GarnetObject;
+                        dstObj = dstObjOutput.GarnetObject;
 
                         // If there is a destination object type mismatch, we should always return a type mismatch result
                         if ((GarnetObjectType)dstObj.Type != objectType)
@@ -579,8 +580,10 @@ namespace Garnet.server
                 }
 
                 bool isSuccessful;
+                var srcObjDeleted = false;
+                var dstObjAdded = false;
                 // Get next item based on item type
-                switch (osObject.GarnetObject)
+                switch (srcObjOutput.GarnetObject)
                 {
                     case ListObject listObj:
                         currCount = listObj.LnkList.Count;
@@ -617,6 +620,7 @@ namespace Garnet.server
                                 if (isSuccessful && newObj)
                                 {
                                     isSuccessful = storageSession.SET(dstKey, dstList, ref objectTransactionalContext) == GarnetStatus.OK;
+                                    dstObjAdded = true;
                                 }
 
                                 break;
@@ -642,10 +646,11 @@ namespace Garnet.server
 
                         if (isSuccessful && listObj.LnkList.Count == 0)
                         {
-                            _ = storageSession.DELETE_ObjectStore(asKey, ref objectTransactionalContext);
+                            _ = storageSession.DELETE_ObjectStore(srcKey, ref objectTransactionalContext);
+                            srcObjDeleted = true;
                         }
 
-                        return isSuccessful;
+                        break;
                     case SortedSetObject sortedSetObj:
                         currCount = sortedSetObj.Count();
                         if (currCount == 0)
@@ -655,14 +660,38 @@ namespace Garnet.server
 
                         if (isSuccessful && sortedSetObj.Count() == 0)
                         {
-                            _ = storageSession.DELETE_ObjectStore(asKey, ref objectTransactionalContext);
+                            _ = storageSession.DELETE_ObjectStore(srcKey, ref objectTransactionalContext);
+                            srcObjDeleted = true;
                         }
 
-                        return isSuccessful;
-
+                        break;
                     default:
                         return false;
                 }
+
+                // Upsert to ensure record eTags are updated
+                if (isSuccessful && (!srcObjDeleted || !dstObjAdded))
+                {
+                    storageSession.metaCommandInfo.Initialize();
+                    storageSession.metaCommandInfo.MetaCommand = RespMetaCommand.ExecIfMatch;
+                    var upsertOutput = new ObjectOutput();
+
+                    if (!srcObjDeleted)
+                    {
+                        storageSession.metaCommandInfo.Arg1 = srcObjOutput.Header.etag;
+                        var upsertInput = new ObjectInput((GarnetObjectType)srcObj.Type, ref storageSession.metaCommandInfo);
+                        storageSession.SET(srcKey, ref upsertInput, srcObj, ref upsertOutput, ref objectTransactionalContext);
+                    }
+
+                    if (!dstObjAdded && dstObj != null)
+                    {
+                        storageSession.metaCommandInfo.Arg1 = dstObjOutput.Header.etag;
+                        var upsertInput = new ObjectInput((GarnetObjectType)dstObj.Type, ref storageSession.metaCommandInfo);
+                        storageSession.SET(dstKey, ref upsertInput, dstObj, ref upsertOutput, ref objectTransactionalContext);
+                    }
+                }
+
+                return isSuccessful;
             }
             finally
             {

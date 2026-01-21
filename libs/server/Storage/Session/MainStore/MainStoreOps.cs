@@ -325,6 +325,13 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
+        public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, IGarnetObject value, ref ObjectOutput output, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            objectContext.Upsert(key.ReadOnlySpan, ref input, value, ref output);
+            return GarnetStatus.OK;
+        }
+
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, Memory<byte> value, ref TStringContext context)   // TODO are memory<byte> overloads needed?
             where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
