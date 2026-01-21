@@ -3,6 +3,7 @@
 
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -18,7 +19,7 @@ namespace Garnet.server
     /// </summary>
     public sealed partial class VectorManager
     {
-        public unsafe struct VectorReadBatch : IReadArgBatch<SpanByte, VectorInput, SpanByte>
+        public unsafe struct VectorReadBatch : IReadArgBatch<SpanByte, VectorInput, SpanByte>, IDisposable
         {
             public int Count { get; }
 
@@ -159,6 +160,19 @@ namespace Garnet.server
                     _ = objectContext.CompletePending(wait: true);
                 }
             }
+
+            /// <inheritdoc/>
+            public void Dispose()
+            {
+                if (currentPtr == null)
+                {
+                    return;
+                }
+
+                // Undo mangling of prefix, if any
+                *(int*)currentPtr = currentLen;
+                currentPtr = null;
+            }
         }
 
         private unsafe delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> ReadCallbackPtr { get; } = &ReadCallbackUnmanaged;
@@ -187,31 +201,44 @@ namespace Garnet.server
             // dataCallback takes: index, dataCallbackContext, data pointer, data length, and returns nothing
 
             var enumerable = new VectorReadBatch(dataCallback, dataCallbackContext, context, numKeys, SpanByte.FromPinnedPointer((byte*)keysData, (int)keysLength));
+            try
+            {
+                ref var ctx = ref ActiveThreadSession.vectorContext;
 
-            ref var ctx = ref ActiveThreadSession.vectorContext;
+                ctx.ReadWithPrefetch(ref enumerable);
 
-            ctx.ReadWithPrefetch(ref enumerable);
-
-            enumerable.CompletePending(ref ctx);
+                enumerable.CompletePending(ref ctx);
+            }
+            finally
+            {
+                enumerable.Dispose();
+            }
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
         private static unsafe byte WriteCallbackUnmanaged(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength)
         {
             var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength);
-
-            ref var ctx = ref ActiveThreadSession.vectorContext;
-            VectorInput input = default;
-            var valueSpan = SpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
-            SpanByte outputSpan = default;
-
-            var status = ctx.Upsert(ref keyWithNamespace, ref input, ref valueSpan, ref outputSpan);
-            if (status.IsPending)
+            try
             {
-                CompletePending(ref status, ref outputSpan, ref ctx);
-            }
 
-            return status.IsCompletedSuccessfully ? (byte)1 : default;
+                ref var ctx = ref ActiveThreadSession.vectorContext;
+                VectorInput input = default;
+                var valueSpan = SpanByte.FromPinnedPointer((byte*)writeData, (int)writeLength);
+                SpanByte outputSpan = default;
+
+                var status = ctx.Upsert(ref keyWithNamespace, ref input, ref valueSpan, ref outputSpan);
+                if (status.IsPending)
+                {
+                    CompletePending(ref status, ref outputSpan, ref ctx);
+                }
+
+                return status.IsCompletedSuccessfully ? (byte)1 : default;
+            }
+            finally
+            {
+                UnmarkDiskANNKey(keyWithNamespace);
+            }
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -219,12 +246,19 @@ namespace Garnet.server
         {
             var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength);
 
-            ref var ctx = ref ActiveThreadSession.vectorContext;
+            try
+            {
+                ref var ctx = ref ActiveThreadSession.vectorContext;
 
-            var status = ctx.Delete(ref keyWithNamespace);
-            Debug.Assert(!status.IsPending, "Deletes should never go async");
+                var status = ctx.Delete(ref keyWithNamespace);
+                Debug.Assert(!status.IsPending, "Deletes should never go async");
 
-            return status.IsCompletedSuccessfully && status.Found ? (byte)1 : default;
+                return status.IsCompletedSuccessfully && status.Found ? (byte)1 : default;
+            }
+            finally
+            {
+                UnmarkDiskANNKey(keyWithNamespace);
+            }
         }
 
         [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
@@ -232,22 +266,29 @@ namespace Garnet.server
         {
             var keyWithNamespace = MarkDiskANNKeyWithNamespace(context, keyData, keyLength);
 
-            ref var ctx = ref ActiveThreadSession.vectorContext;
-
-            VectorInput input = default;
-            input.Callback = dataCallback;
-            input.CallbackContext = dataCallbackContext;
-            input.WriteDesiredSize = (int)writeLength;
-
-            var status = ctx.RMW(ref keyWithNamespace, ref input);
-            if (status.IsPending)
+            try
             {
-                SpanByte ignored = default;
+                ref var ctx = ref ActiveThreadSession.vectorContext;
 
-                CompletePending(ref status, ref ignored, ref ctx);
+                VectorInput input = default;
+                input.Callback = dataCallback;
+                input.CallbackContext = dataCallbackContext;
+                input.WriteDesiredSize = (int)writeLength;
+
+                var status = ctx.RMW(ref keyWithNamespace, ref input);
+                if (status.IsPending)
+                {
+                    SpanByte ignored = default;
+
+                    CompletePending(ref status, ref ignored, ref ctx);
+                }
+
+                return status.IsCompletedSuccessfully ? (byte)1 : default;
             }
-
-            return status.IsCompletedSuccessfully ? (byte)1 : default;
+            finally
+            {
+                UnmarkDiskANNKey(keyWithNamespace);
+            }
         }
 
         private static unsafe bool ReadSizeUnknown(ulong context, ReadOnlySpan<byte> key, ref SpanByteAndMemory value)
@@ -300,7 +341,7 @@ namespace Garnet.server
         /// Attempts to do this in place.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static unsafe SpanByte MarkDiskANNKeyWithNamespace(ulong context, nint keyData, nuint keyLength)
+        internal static unsafe SpanByte MarkDiskANNKeyWithNamespace(ulong context, nint keyData, nuint keyLength)
         {
             // DiskANN guarantees we have 4-bytes worth of unused data right before the key
             var keyPtr = (byte*)keyData;
@@ -313,6 +354,19 @@ namespace Garnet.server
             keyWithNamespace.SetNamespaceInPayload((byte)context);
 
             return keyWithNamespace;
+        }
+
+        /// <summary>
+        /// Inverse of <see cref="MarkDiskANNKeyWithNamespace(ulong, nint, nuint)"/>.
+        /// 
+        /// Used so DiskANN can keep using the same buffer for multiple calls with the same keys.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal static unsafe void UnmarkDiskANNKey(SpanByte keyWithNamespace)
+        {
+            var expectedLen = keyWithNamespace.Length - 1;
+            var start = keyWithNamespace.ToPointerWithMetadata() - 3;
+            BinaryPrimitives.WriteInt32LittleEndian(new Span<byte>(start, 4), expectedLen);
         }
     }
 }

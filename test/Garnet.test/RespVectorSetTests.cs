@@ -975,10 +975,11 @@ namespace Garnet.test
                 input.CallbackContext = 9012;
 
                 var data = new int[] { 4, 1234 };
+                var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
                     var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 64, 1, keyData);
+                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 64, 1, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1002,6 +1003,7 @@ namespace Garnet.test
 
                     ClassicAssert.AreEqual(1, iters);
                 }
+                ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
 
             // Multiple keys, 4 byte keys
@@ -1011,10 +1013,11 @@ namespace Garnet.test
                 input.CallbackContext = 9012;
 
                 var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
+                var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
                     var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 32, 7, keyData);
+                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 32, 7, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1042,6 +1045,7 @@ namespace Garnet.test
 
                     ClassicAssert.AreEqual(7, iters);
                 }
+                ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
 
             // Multiple keys, 4 byte keys, random order
@@ -1051,10 +1055,11 @@ namespace Garnet.test
                 input.CallbackContext = 9012;
 
                 var data = new int[] { 4, 1234, 4, 5678, 4, 0123, 4, 9999, 4, 0000, 4, int.MaxValue, 4, int.MinValue };
+                var dataCopy = data.ToArray();
                 fixed (int* dataPtr = data)
                 {
                     var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length * sizeof(int));
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 16, 7, keyData);
+                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 16, 7, keyData);
 
                     var rand = new Random(2025_10_06_00);
 
@@ -1081,6 +1086,7 @@ namespace Garnet.test
                         batch.GetOutput(i, out _);
                     }
                 }
+                ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
 
             // Single key, variable length
@@ -1095,10 +1101,11 @@ namespace Garnet.test
                         .ToArray()
                         .Concat(key0)
                         .ToArray();
+                var dataCopy = data.ToArray();
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, 1, keyData);
+                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 8, 1, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1137,6 +1144,7 @@ namespace Garnet.test
 
                     ClassicAssert.AreEqual(1, iters);
                 }
+                ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
 
             // Multiple keys, variable length
@@ -1200,10 +1208,11 @@ namespace Garnet.test
                             key7
                         )
                         .ToArray();
+                var dataCopy = data.ToArray();
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
 
                     var iters = 0;
                     for (var i = 0; i < batch.Count; i++)
@@ -1256,6 +1265,7 @@ namespace Garnet.test
 
                     ClassicAssert.AreEqual(8, iters);
                 }
+                ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
 
             // Multiple keys, variable length, random access
@@ -1319,10 +1329,11 @@ namespace Garnet.test
                             key7
                         )
                         .ToArray();
+                var dataCopy = data.ToArray();
                 fixed (byte* dataPtr = data)
                 {
                     var keyData = SpanByte.FromPinnedPointer((byte*)dataPtr, data.Length);
-                    var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
+                    using var batch = new VectorManager.VectorReadBatch(input.Callback, input.CallbackContext, 4, 8, keyData);
 
                     var rand = new Random(2025_10_06_01);
 
@@ -1374,7 +1385,25 @@ namespace Garnet.test
                         batch.GetOutput(i, out _);
                     }
                 }
+                ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
             }
+        }
+
+        [Test]
+        public unsafe void MarkWithNamespace()
+        {
+            var data = new int[] { 4, 1234 };
+            var dataCopy = data.ToArray();
+            fixed (int* intPtr = data)
+            {
+                var bytePtr = (byte*)intPtr;
+                var span = VectorManager.MarkDiskANNKeyWithNamespace(8, (nint)(bytePtr + 4), 4);
+                ClassicAssert.AreEqual(8, span.GetNamespaceInPayload());
+                ClassicAssert.AreEqual(1234, *(int*)span.ToPointer());
+
+                VectorManager.UnmarkDiskANNKey(span);
+            }
+            ClassicAssert.IsTrue(dataCopy.SequenceEqual(data));
         }
 
         [Test]
