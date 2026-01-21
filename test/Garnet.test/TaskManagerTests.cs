@@ -152,5 +152,29 @@ namespace Garnet.test
             while (taskManager.IsRegistered(TaskType.IndexAutoGrowTask)) { }
             ClassicAssert.IsFalse(taskManager.IsRegistered(TaskType.IndexAutoGrowTask));
         }
+
+        [Test]
+        public void TestCleanupWithException()
+        {
+            using var taskManager = new TaskManager();
+            var taskCanRun = new SemaphoreSlim(0);
+
+            Task taskFactory(CancellationToken token) => ThrowingTaskFactory(token);
+
+            // Create a task factory that throws an exception
+            async Task ThrowingTaskFactory(CancellationToken token)
+            {
+                await taskCanRun.WaitAsync(token);
+                throw new InvalidOperationException("Test exception from task factory");
+            }
+
+            var registered = taskManager.RegisterAndRun(TaskType.IndexAutoGrowTask, taskFactory, cleanupOnCompletion: true);
+            ClassicAssert.IsTrue(registered, "RegisterAndRun should return true");
+
+            taskCanRun.Release();
+
+            while (taskManager.IsRegistered(TaskType.IndexAutoGrowTask)) { }
+            ClassicAssert.IsFalse(taskManager.IsRegistered(TaskType.IndexAutoGrowTask));
+        }
     }
 }

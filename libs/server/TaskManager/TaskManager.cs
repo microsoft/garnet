@@ -36,7 +36,7 @@ namespace Garnet.server
         /// <param name="taskType"></param>
         /// <returns></returns>
         public bool IsRegistered(TaskType taskType)
-            => registry.TryGetValue(taskType, out var taskInfo);
+            => registry.ContainsKey(taskType);
 
         /// <summary>
         /// Dispose TaskManager instance
@@ -97,13 +97,14 @@ namespace Garnet.server
 
                 // Execute task factory
                 if (cleanupOnCompletion)
-                    taskMetadata.Task = taskFactory(taskMetadata.Cts.Token).ContinueWith(async _ => await Cancel(taskType));
+                    taskMetadata.Task = taskFactory(taskMetadata.Cts.Token).ContinueWith(async _ => await Cancel(taskType)).Unwrap();
                 else
                     taskMetadata.Task = taskFactory(taskMetadata.Cts.Token);
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Failed starting task {taskType} with {method}", taskType, nameof(RegisterAndRun));
+                // Remove and cleanup registered entry when exception gets triggered
                 Cancel(taskType).Wait();
                 return false;
             }
@@ -135,7 +136,7 @@ namespace Garnet.server
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogCritical(ex, "Unknown exception received for {CancelTask} when awaiting for {taskType}.", nameof(Cancel), taskType);
+                    logger?.LogCritical(ex, "Unknown exception received for {Cancel} when awaiting for {taskType}.", nameof(Cancel), taskType);
                 }
             }
         }
