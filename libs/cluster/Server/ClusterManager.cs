@@ -195,7 +195,7 @@ namespace Garnet.cluster
                     configEpoch: conf.LocalNodeConfigEpoch,
                     role: conf.LocalNodeRole,
                     replicaOfNodeId: conf.LocalNodePrimaryId,
-                    hostname: string.IsNullOrEmpty(hostname) ? "" : hostname);
+                    hostname: string.IsNullOrEmpty(hostname) ? Format.GetHostName() : hostname);
             }
             else
             {
@@ -206,7 +206,7 @@ namespace Garnet.cluster
                     configEpoch: 0,
                     NodeRole.PRIMARY,
                     null,
-                    hostname: string.IsNullOrEmpty(hostname) ? "" : hostname);
+                    hostname: string.IsNullOrEmpty(hostname) ? Format.GetHostName() : hostname);
             }
         }
 
