@@ -320,7 +320,7 @@ namespace Garnet.server
             var updatedEtag = GetUpdatedEtag(currEtag, ref input.metaCommandInfo, out var execCmd, init, readOnly);
 
             var isEtagCmd = metaCmd.IsEtagCommand();
-            var skipResp = !input.header.CheckSkipRespOutputFlag();
+            var skipResp = input.header.CheckSkipRespOutputFlag();
             var respProtocolVersion = GetRespProtocolVersion(ref input);
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
