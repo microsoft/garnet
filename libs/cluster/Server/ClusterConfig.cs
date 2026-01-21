@@ -483,6 +483,7 @@ namespace Garnet.cluster
             {
                 ClusterPreferredEndpointType.Ip => workers[workerId].Address,
                 ClusterPreferredEndpointType.Hostname => string.IsNullOrEmpty(workers[workerId].hostname) ? "?" : workers[workerId].hostname,
+                ClusterPreferredEndpointType.Unknown => "?",
                 _ => "?"
             };
         }
