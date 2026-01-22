@@ -22,12 +22,15 @@ namespace Garnet.server
             VectorQuantType quantType,
             uint buildExplorationFactor,
             uint numLinks,
+            VectorDistanceMetricType distanceMetric,
             delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
         )
         {
+            // TODO: actually pass distance metric
+
             unsafe
             {
                 return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
@@ -41,12 +44,13 @@ namespace Garnet.server
             VectorQuantType quantType,
             uint buildExplorationFactor,
             uint numLinks,
+            VectorDistanceMetricType distanceMetricType,
             delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
         )
-        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, readCallback, writeCallback, deleteCallback, readModifyWriteCallback);
+        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback);
 
         public void DropIndex(ulong context, nint index)
         {

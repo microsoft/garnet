@@ -748,7 +748,7 @@ namespace Garnet.test
                                 try
                                 {
                                     var res = (RedisValue[])db.Execute("VINFO", [key]);
-                                    ClassicAssert.AreEqual(12, res.Length);
+                                    ClassicAssert.AreEqual(14, res.Length);
                                 }
                                 catch (RedisServerException e)
                                 {

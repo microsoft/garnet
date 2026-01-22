@@ -322,6 +322,7 @@ namespace Garnet.server
             VectorQuantType providedQuantType,
             uint providedBuildExplorationFactor,
             uint providedNumLinks,
+            VectorDistanceMetricType providendDistanceMetric,
             out ReadOnlySpan<byte> errorMsg
         )
         {
@@ -329,7 +330,7 @@ namespace Garnet.server
 
             errorMsg = default;
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var indexPtr, out _);
 
             var valueDims = CalculateValueDimensions(valueType, values);
 
@@ -353,6 +354,12 @@ namespace Garnet.server
 
             if (providedQuantType != VectorQuantType.Invalid && providedQuantType != quantType)
             {
+                return VectorManagerResult.BadParams;
+            }
+
+            if (providendDistanceMetric != VectorDistanceMetricType.Invalid && providendDistanceMetric != distanceMetric)
+            {
+                errorMsg = Encoding.ASCII.GetBytes($"ERR Distance metric mismatch - got {providendDistanceMetric} but set has {distanceMetric}");
                 return VectorManagerResult.BadParams;
             }
 
@@ -388,7 +395,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
 
             var del = Service.Remove(context, indexPtr, element);
 
@@ -406,7 +413,7 @@ namespace Garnet.server
 
             var input = new RawStringInput(RespCommand.VADD, ref storageSession.parseState);
 
-            Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
+            Span<byte> indexSpan = stackalloc byte[Index.Size];
 
             using (ReadForDeleteVectorIndex(storageSession, ref key, ref input, indexSpan, out status))
             {
@@ -416,7 +423,7 @@ namespace Garnet.server
                     return Status.CreateNotFound();
                 }
 
-                ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
+                ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
 
                 if (!TryMarkDeleteInProgress(ref storageSession.vectorContext, ref key, context))
                 {
@@ -488,7 +495,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
 
             var valueDims = CalculateValueDimensions(valueType, values);
             if (dimensions != valueDims)
@@ -598,7 +605,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
 
             // No point in asking for more data than the effort we'll put in
             if (count > searchExplorationFactor)
@@ -783,7 +790,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out _, out _, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out _, out _, out _, out _, out var indexPtr, out _);
 
             // Make sure enough space in distances for requested count
             if (dimensions * sizeof(float) > outputDistances.Length)

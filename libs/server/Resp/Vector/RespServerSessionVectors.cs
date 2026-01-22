@@ -141,6 +141,7 @@ namespace Garnet.server
                 int? buildExplorationFactor = null;
                 ArgSlice? attributes = null;
                 int? numLinks = null;
+                VectorDistanceMetricType? distanceMetric = null;
 
                 while (curIx < parseState.Count)
                 {
@@ -303,6 +304,9 @@ namespace Garnet.server
                 attributes ??= default;
                 numLinks ??= 16;
 
+                // TODO: Distance metric specification is an extension - still needs to be implemented
+                distanceMetric ??= VectorDistanceMetricType.L2;
+
                 // Validate that DiskANN is expected to succeed given data sizes
                 //
                 // Note that this goes away in store v2
@@ -330,7 +334,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    res = storageApi.VectorSetAdd(key, reduceDim, valueType, ArgSlice.FromPinnedSpan(values), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, out result, out customErrMsg);
+                    res = storageApi.VectorSetAdd(key, reduceDim, valueType, ArgSlice.FromPinnedSpan(values), element, quantType.Value, buildExplorationFactor.Value, attributes.Value, numLinks.Value, distanceMetric.Value, out result, out customErrMsg);
                 }
 
                 if (res == GarnetStatus.OK)

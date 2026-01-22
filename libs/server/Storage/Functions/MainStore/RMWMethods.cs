@@ -261,15 +261,16 @@ namespace Garnet.server
                         var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
                         // Attributes is here, skipping during index creation
                         var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
+                        var distanceMetric = MemoryMarshal.Read<VectorDistanceMetricType>(input.parseState.GetArgSliceByRef(9).Span);
 
                         // Pre-allocated by caller because DiskANN needs to be able to call into Garnet as part of create_index
                         // and thus we can't call into it from session functions
-                        var context = MemoryMarshal.Read<ulong>(input.parseState.GetArgSliceByRef(9).Span);
-                        var index = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(10).Span);
+                        var context = MemoryMarshal.Read<ulong>(input.parseState.GetArgSliceByRef(10).Span);
+                        var index = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
 
                         recordInfo.VectorSet = true;
 
-                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, context, index, ref value);
+                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, index, ref value);
                     }
                     break;
                 case RespCommand.VREM:

@@ -70,7 +70,7 @@ namespace Garnet.cluster
                     {
                         // Update the index context as we move it, so it arrives on the destination node pointed at the appropriate
                         // namespaces for element data
-                        VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _);
+                        VectorManager.ReadIndex(value, out var oldContext, out _, out _, out _, out _, out _, out _, out _, out _);
 
                         var newContext = _namespaceMap[oldContext];
                         VectorManager.SetContextForMigration(value, newContext);

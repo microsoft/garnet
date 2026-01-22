@@ -512,8 +512,8 @@ namespace Garnet.server
         #region VectorSet commands
 
         /// <inheritdoc />
-        public unsafe GarnetStatus VectorSetAdd(ArgSlice key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
-        => storageSession.VectorSetAdd(SpanByte.FromPinnedPointer(key.ptr, key.length), reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks, out result, out errorMsg);
+        public unsafe GarnetStatus VectorSetAdd(ArgSlice key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        => storageSession.VectorSetAdd(SpanByte.FromPinnedPointer(key.ptr, key.length), reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks, distanceMetric, out result, out errorMsg);
 
         /// <inheritdoc />
         public unsafe GarnetStatus VectorSetRemove(ArgSlice key, ArgSlice element)

@@ -402,7 +402,7 @@ namespace Garnet.server
         /// </summary>
         private static bool PartiallyDeleted(ReadOnlySpan<byte> indexConfig)
         {
-            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _);
+            ReadIndex(indexConfig, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
             return context == 0;
         }
     }

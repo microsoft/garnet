@@ -30,7 +30,7 @@ namespace Garnet.server
         /// <summary>
         /// Represents a copy of a VADD being replayed during replication.
         /// </summary>
-        private readonly record struct VADDReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks)
+        private readonly record struct VADDReplicationState(Memory<byte> Key, uint Dims, uint ReduceDims, VectorValueType ValueType, Memory<byte> Values, Memory<byte> Element, VectorQuantType Quantizer, uint BuildExplorationFactor, Memory<byte> Attributes, uint NumLinks, VectorDistanceMetricType DistanceMetric)
         {
         }
 
@@ -261,6 +261,7 @@ namespace Garnet.server
             var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
             var attributes = input.parseState.GetArgSliceByRef(7).Span;
             var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
+            var distanceMetric = MemoryMarshal.Read<VectorDistanceMetricType>(input.parseState.GetArgSliceByRef(9).Span);
 
             // We have to make copies (and they need to be on the heap) to pass to background tasks
             var valuesBytes = ArrayPool<byte>.Shared.Rent(values.Length).AsMemory()[..values.Length];
@@ -284,7 +285,7 @@ namespace Garnet.server
             // We need a running count of pending VADDs so WaitForVectorOperationsToComplete can work
 
             replicationBlockEvent.Increment();
-            var queued = replicationReplayChannel.Writer.TryWrite(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks));
+            var queued = replicationReplayChannel.Writer.TryWrite(new(keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric));
             if (!queued)
             {
                 replicationBlockEvent.Decrement();
@@ -378,7 +379,7 @@ namespace Garnet.server
             {
                 ref var context = ref storageSession.basicContext;
 
-                var (keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks) = state;
+                var (keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric) = state;
                 try
                 {
                     Span<byte> indexSpan = stackalloc byte[IndexSizeBytes];
@@ -405,8 +406,9 @@ namespace Garnet.server
                         var buildExplorationFactorArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
                         var attributesArg = ArgSlice.FromPinnedSpan(attributes.AsReadOnlySpan());
                         var numLinksArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
+                        var distanceMetricArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
 
-                        reusableParseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg]);
+                        reusableParseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg]);
 
                         var input = new RawStringInput(RespCommand.VADD, ref reusableParseState);
 
@@ -418,7 +420,7 @@ namespace Garnet.server
                         {
                             Debug.Assert(status == GarnetStatus.OK, "Replication should only occur when an add is successful, so index must exist");
 
-                            var addRes = self.TryAdd(indexSpan, element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, out _);
+                            var addRes = self.TryAdd(indexSpan, element.AsReadOnlySpan(), valueType, values.AsReadOnlySpan(), attributes.AsReadOnlySpan(), reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, out _);
 
                             if (addRes != VectorManagerResult.OK)
                             {

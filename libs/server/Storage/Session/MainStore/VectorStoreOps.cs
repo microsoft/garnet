@@ -118,7 +118,7 @@ namespace Garnet.server
         /// Implement Vector Set Add - this may also create a Vector Set if one does not already exist.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        public unsafe GarnetStatus VectorSetAdd(SpanByte key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             var dims = VectorManager.CalculateValueDimensions(valueType, values.ReadOnlySpan);
 
@@ -131,8 +131,9 @@ namespace Garnet.server
             var buildExplorationFactorArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
             var attributesArg = attributes;
             var numLinksArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
+            var distanceMetricArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
 
-            parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg]);
+            parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg]);
 
             var input = new RawStringInput(RespCommand.VADD, ref parseState);
 
@@ -149,7 +150,7 @@ namespace Garnet.server
 
                 // After a successful read we add the vector while holding a shared lock
                 // That lock prevents deletion, but everything else can proceed in parallel
-                result = vectorManager.TryAdd(indexSpan, element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, out errorMsg);
+                result = vectorManager.TryAdd(indexSpan, element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, out errorMsg);
 
                 if (result == VectorManagerResult.OK)
                 {
@@ -294,7 +295,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _);
+                VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _, out _);
 
                 dimensions = (int)(reducedDimensionsUS == 0 ? dimensionsUS : reducedDimensionsUS);
 
@@ -334,8 +335,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out var indexPtr, out _);
-                distanceMetricType = VectorDistanceMetricType.L2; // TODO: currently by default all indexes are L2 - change it once we have more metrics
+                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out var indexPtr, out _);
                 size = (long)NativeDiskANNMethods.card(context, indexPtr);
 
                 return GarnetStatus.OK;

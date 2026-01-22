@@ -131,7 +131,7 @@ namespace Garnet.server
             input.header.cmd = RespCommand.VADD;
             input.arg1 = RecreateIndexArg;
 
-            ReadIndex(value.AsReadOnlySpan(), out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out _, out var processInstanceId);
+            ReadIndex(value.AsReadOnlySpan(), out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out _, out var processInstanceId);
 
             Debug.Assert(processInstanceId == MigratedInstanceId, "Shouldn't receive a real process instance id during a migration");
 
@@ -170,17 +170,18 @@ namespace Garnet.server
                 var buildExplorationFactorArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
                 ArgSlice attributesArg = default;
                 var numLinksArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
+                var distanceMetricArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
 
                 nint newlyAllocatedIndex;
                 unsafe
                 {
-                    newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
+                    newlyAllocatedIndex = Service.RecreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetric, ReadCallbackPtr, WriteCallbackPtr, DeleteCallbackPtr, ReadModifyWriteCallbackPtr);
                 }
 
                 var ctxArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<ulong, byte>(MemoryMarshal.CreateSpan(ref context, 1)));
                 var indexArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<nint, byte>(MemoryMarshal.CreateSpan(ref newlyAllocatedIndex, 1)));
 
-                input.parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, ctxArg, indexArg]);
+                input.parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg, ctxArg, indexArg]);
 
                 Span<byte> indexSpan = stackalloc byte[Index.Size];
                 var indexConfig = SpanByteAndMemory.FromPinnedSpan(indexSpan);
@@ -299,7 +300,7 @@ namespace Garnet.server
 
                         namespaces ??= [];
 
-                        ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
+                        ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
                         for (var i = 0UL; i < ContextStep; i++)
                         {
                             _ = namespaces.Add(context + i);
