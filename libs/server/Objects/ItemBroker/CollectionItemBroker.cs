@@ -670,25 +670,13 @@ namespace Garnet.server
                 }
 
                 // Upsert to ensure record eTags are updated
-                if (isSuccessful && (!srcObjDeleted || !dstObjAdded))
+                if (isSuccessful)
                 {
-                    storageSession.metaCommandInfo.Initialize();
-                    storageSession.metaCommandInfo.MetaCommand = RespMetaCommand.ExecIfMatch;
-                    var upsertOutput = new ObjectOutput();
-
                     if (!srcObjDeleted)
-                    {
-                        storageSession.metaCommandInfo.Arg1 = srcObjOutput.Header.etag;
-                        var upsertInput = new ObjectInput((GarnetObjectType)srcObj.Type, ref storageSession.metaCommandInfo);
-                        storageSession.SET(srcKey, ref upsertInput, srcObj, ref upsertOutput, ref objectTransactionalContext);
-                    }
+                        storageSession.SET(srcKey, in srcObjOutput, ref objectTransactionalContext);
 
                     if (!dstObjAdded && dstObj != null)
-                    {
-                        storageSession.metaCommandInfo.Arg1 = dstObjOutput.Header.etag;
-                        var upsertInput = new ObjectInput((GarnetObjectType)dstObj.Type, ref storageSession.metaCommandInfo);
-                        storageSession.SET(dstKey, ref upsertInput, dstObj, ref upsertOutput, ref objectTransactionalContext);
-                    }
+                        storageSession.SET(dstKey, in dstObjOutput, ref objectTransactionalContext);
                 }
 
                 return isSuccessful;
