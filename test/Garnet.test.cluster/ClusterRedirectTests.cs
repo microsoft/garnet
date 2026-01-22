@@ -1,10 +1,12 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Garnet.common;
+using Garnet.server;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -777,6 +779,155 @@ ClusterRedirectTests.TestFlags testFlags)
 
             connections.ToList().ForEach(x => x.Dispose());
             context.logger.LogDebug("1. ClusterMultiKeyRedirectionTests done");
+        }
+
+        [Test, Order(3)]
+        [Category("CLUSTER")]
+        public void ClusterHostnamePreferredRedirectionTests()
+        {
+            context.logger.LogDebug("0. ClusterHostnamePreferredRedirectionTests started");
+            var Port = ClusterTestContext.Port;
+            var Shards = context.defaultShards;
+
+            context.CreateInstances(Shards, cleanClusterConfig: true, clusterPreferredEndpointType: ClusterPreferredEndpointType.Hostname, useClusterAnnounceHostname: true);
+            context.CreateConnection();
+
+            var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(Port, Shards)]);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            //1. Regular operation redirect responses
+            foreach (var command in singleKeyCommands)
+            {
+                var (setupCmd, testCmd, cleanCmd, response) = command.GenerateSingleKeyCmdInstance(ref context.clusterTestUtils, 4, 4, out var slots);
+                if (setupCmd != null)
+                    for (var j = 0; j < setupCmd.Length; j++)
+                        _ = SendToNodeFromSlot(ref connections, setupCmd[j], slots[0], command.cmdTag);
+
+                if (testCmd != null)
+                {
+                    var (status, value, values) = SendAndRedirectToNode(ref connections, testCmd, slots[0], command.cmdTag);
+                    ClassicAssert.AreEqual(status, ResponseState.OK, command.cmdTag);
+                    if (command.response != null)
+                    {
+                        ClassicAssert.AreEqual(value, response, command.testCmd);
+                    }
+                    else if (command.arrayResponse != null)
+                    {
+                        ClassicAssert.AreEqual(values.Length, command.arrayResponse.Length);
+                        for (var i = 0; i < values.Length; i++)
+                            ClassicAssert.AreEqual(values[i], command.arrayResponse[i], command.cmdTag);
+                    }
+                }
+
+                if (cleanCmd != null)
+                    for (var j = 0; j < cleanCmd.Length; j++)
+                        _ = SendToNodeFromSlot(ref connections, cleanCmd[j], slots[0], command.cmdTag);
+            }
+
+            //2. Check response during migration
+            foreach (var command in singleKeyCommands)
+            {
+                var migrateSlot = context.r.Next(0, 16384);
+                var sourceNodeIndex = ClusterTestUtils.GetSourceNodeIndexFromSlot(ref connections, (ushort)migrateSlot);
+                var targetNodeIndex = context.clusterTestUtils.GetRandomTargetNodeIndex(ref connections, sourceNodeIndex);
+                var sourceNodeId = ClusterTestUtils.GetNodeIdFromNode(ref connections[sourceNodeIndex]);
+                var targetNodeId = ClusterTestUtils.GetNodeIdFromNode(ref connections[targetNodeIndex]);
+
+                var respImporting = ClusterTestUtils.SetSlot(ref connections[targetNodeIndex], migrateSlot, "IMPORTING", sourceNodeId);
+                ClassicAssert.AreEqual(respImporting, "OK");
+                SendToImportingNode(ref connections, sourceNodeIndex, targetNodeIndex, command, migrateSlot);
+
+                var respImportingStable = ClusterTestUtils.SetSlot(ref connections[targetNodeIndex], migrateSlot, "STABLE", "");
+                ClassicAssert.AreEqual(respImportingStable, "OK");
+                SendToMigratingNode(ref connections, sourceNodeIndex, sourceNodeId, targetNodeIndex, targetNodeId, command, migrateSlot);
+            }
+
+            connections.ToList().ForEach(x => x.Dispose());
+            context.logger.LogDebug("1. ClusterHostnamePreferredRedirectionTests done");
+        }
+
+        [Test, Order(4)]
+        [Category("CLUSTER")]
+        public void ClusterHostnamePreferredAndNonHostnameRedirectionTests()
+        {
+            context.logger.LogDebug("0. ClusterHostnamePreferredAndNonHostnameRedirectionTests started");
+            var Port = ClusterTestContext.Port;
+            var Shards = context.defaultShards;
+
+            context.CreateInstances(Shards, cleanClusterConfig: true, clusterPreferredEndpointType: ClusterPreferredEndpointType.Hostname);
+            context.CreateConnection();
+
+            var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(Port, Shards)]);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            foreach (var command in singleKeyCommands)
+            {
+                var (setupCmd, testCmd, cleanCmd, response) = command.GenerateSingleKeyCmdInstance(ref context.clusterTestUtils, 4, 4, out var slots);
+                if (setupCmd != null)
+                    for (var j = 0; j < setupCmd.Length; j++)
+                        _ = SendToNodeFromSlot(ref connections, setupCmd[j], slots[0], command.cmdTag);
+
+                if (testCmd != null)
+                {
+                    var nodeIndex = ClusterTestUtils.GetSourceNodeIndexFromSlot(ref connections, (ushort)slots[0]);
+                    var otherNodeIndex = context.r.Next(0, connections.Length);
+                    while (otherNodeIndex == nodeIndex) otherNodeIndex = context.r.Next(0, connections.Length);
+
+                    var result = connections[otherNodeIndex].SendCommand(testCmd);
+                    ClassicAssert.True(result.AsSpan().StartsWith(ClusterTestUtils.MOVED));
+
+                    var strResp = Encoding.ASCII.GetString(result);
+                    var data = strResp.Split(' ');
+                    var endpointSplit = data[2].Split(':');
+
+                    ClassicAssert.False(string.IsNullOrEmpty(endpointSplit[0])); // "?" or Format.GetHostName()
+                }
+            }
+
+            connections.ToList().ForEach(x => x.Dispose());
+            context.logger.LogDebug("1. ClusterHostnamePreferredAndNonHostnameRedirectionTests done");
+        }
+
+        [Test, Order(5)]
+        [Category("CLUSTER")]
+        public void ClusterUnknownEndpointPreferredTests()
+        {
+            context.logger.LogDebug("0. ClusterUnknownEndpointPreferredTests started");
+            var Port = ClusterTestContext.Port;
+            var Shards = context.defaultShards;
+
+            context.CreateInstances(Shards, cleanClusterConfig: true, clusterPreferredEndpointType: ClusterPreferredEndpointType.Unknown, useClusterAnnounceHostname: false);
+            context.CreateConnection();
+
+            var connections = ClusterTestUtils.CreateLightRequestConnections([.. Enumerable.Range(Port, Shards)]);
+            _ = context.clusterTestUtils.SimpleSetupCluster(logger: context.logger);
+
+            foreach (var command in singleKeyCommands)
+            {
+                var (setupCmd, testCmd, cleanCmd, response) = command.GenerateSingleKeyCmdInstance(ref context.clusterTestUtils, 4, 4, out var slots);
+                if (setupCmd != null)
+                    for (var j = 0; j < setupCmd.Length; j++)
+                        _ = SendToNodeFromSlot(ref connections, setupCmd[j], slots[0], command.cmdTag);
+
+                if (testCmd != null)
+                {
+                    var nodeIndex = ClusterTestUtils.GetSourceNodeIndexFromSlot(ref connections, (ushort)slots[0]);
+                    var otherNodeIndex = context.r.Next(0, connections.Length);
+                    while (otherNodeIndex == nodeIndex) otherNodeIndex = context.r.Next(0, connections.Length);
+
+                    var result = connections[otherNodeIndex].SendCommand(testCmd);
+                    ClassicAssert.True(result.AsSpan().StartsWith(ClusterTestUtils.MOVED));
+
+                    var strResp = Encoding.ASCII.GetString(result);
+                    var data = strResp.Split(' ');
+                    var endpointSplit = data[2].Split(':');
+
+                    ClassicAssert.False(string.IsNullOrEmpty(endpointSplit[0])); // "?" or Format.GetHostName()
+                }
+            }
+
+            connections.ToList().ForEach(x => x.Dispose());
+            context.logger.LogDebug("1. ClusterUnknownEndpointPreferredTests done");
         }
     }
 }
