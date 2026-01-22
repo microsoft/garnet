@@ -63,9 +63,20 @@ namespace Tsavorite.core
         public IDevice ObjectLogDevice;
 
         /// <summary>
-        /// Size of a segment (group of pages), in bits
+        /// Total size of in-memory part of log, in bytes. Does not need to be a power of 2
+        /// </summary>
+        public long MemorySize = 1L << 34;
+
+        /// <summary>
+        /// Size of a page in bits
         /// </summary>
         public int PageSizeBits = 25;
+
+        /// <summary>
+        /// Number of pages in the circular buffer, rounded down to nearest power of 2.
+        /// </summary>
+        /// <remarks>If 0, it is calculated from <see cref="MemorySize"/> and <see cref="PageSizeBits"/>, which is also the max if both this and <see cref="MemorySize"/> are nonzero.</remarks>
+        public int PageCount = 0;
 
         /// <summary>
         /// Size of a segment (group of pages) in the main log, in bits
@@ -76,11 +87,6 @@ namespace Tsavorite.core
         /// Size of a segment (group of pages) in the object log, in bits
         /// </summary>
         public int ObjectLogSegmentSizeBits = 33;   // 8GB
-
-        /// <summary>
-        /// Total size of in-memory part of log, in bits
-        /// </summary>
-        public int MemorySizeBits = 34;
 
         /// <summary>
         /// Controls how many pages should be empty to account for non-power-of-two-sized log

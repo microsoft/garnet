@@ -173,7 +173,7 @@ namespace Tsavorite.test.TransactionalUnsafeContext
                 IndexSize = 1L << 26,
                 LogDevice = log,
                 PageSize = 1L << 12,
-                MemorySize = 1L << 22
+                LogMemorySize = 1L << 22
             };
 
             foreach (var arg in TestContext.CurrentContext.Test.Arguments)

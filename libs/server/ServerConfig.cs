@@ -234,7 +234,7 @@ namespace Garnet.server
             }
 
             // Parse the configured memory size
-            var confMemorySize = ServerOptions.ParseSize(storeWrapper.serverOptions.MemorySize, out _);
+            var confMemorySize = ServerOptions.ParseSize(storeWrapper.serverOptions.LogMemorySize, out _);
 
             // If the new memory size is the same as the configured memory size, nothing to do
             if (newMemorySize == confMemorySize)

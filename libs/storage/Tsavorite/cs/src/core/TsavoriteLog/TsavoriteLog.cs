@@ -104,7 +104,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Task notifying log flush completions
         /// </summary>
-        internal CompletionEvent FlushEvent => allocator.FlushEvent;
+        internal CompletionEvent FlushEvent => allocator.flushEvent;
 
         /// <summary>
         /// Committed view of commitMetadataVersion
@@ -1102,7 +1102,7 @@ namespace Tsavorite.core
         {
             while (true)
             {
-                var flushEvent = allocator.FlushEvent;
+                var flushEvent = allocator.flushEvent;
                 if (allocator.TryAllocateRetryNow(recordSize, out var logicalAddress))
                     return logicalAddress;
 

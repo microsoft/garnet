@@ -31,7 +31,7 @@ namespace Tsavorite.test.LowMemory
                 LogDevice = log,
                 MutableFraction = 1,
                 PageSize = 1L << 10,
-                MemorySize = 1L << 12,
+                LogMemorySize = 1L << 12,
                 SegmentSize = 1L << 26,
                 CheckpointDir = MethodTestDir
             }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)

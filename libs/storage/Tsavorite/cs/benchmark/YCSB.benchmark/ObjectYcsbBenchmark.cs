@@ -97,7 +97,7 @@ namespace Tsavorite.benchmark
                 IndexSize = testLoader.GetHashTableSize(),
                 LogDevice = device,
                 PreallocateLog = true,
-                MemorySize = 1L << 35,
+                LogMemorySize = 1L << 35,
                 RevivificationSettings = revivificationSettings,
                 CheckpointDir = testLoader.BackupPath,
                 MaxInlineValueSize = testLoader.Options.UseOverflowValues ? 64 : 128
@@ -107,7 +107,7 @@ namespace Tsavorite.benchmark
             {
                 kvSettings.PageSize = 1L << 22;
                 kvSettings.SegmentSize = 1L << 26;
-                kvSettings.MemorySize = 1L << 26;
+                kvSettings.LogMemorySize = 1L << 26;
             }
 
             store = new(kvSettings

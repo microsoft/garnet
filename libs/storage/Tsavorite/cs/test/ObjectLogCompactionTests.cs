@@ -30,7 +30,7 @@ namespace Tsavorite.test
             {
                 IndexSize = 1L << 13,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 14,
+                LogMemorySize = 1L << 14,
                 PageSize = 1L << 9
             };
 

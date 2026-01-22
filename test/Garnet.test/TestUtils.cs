@@ -227,6 +227,7 @@ namespace Garnet.test
             bool lowMemory = false,
             string memorySize = default,
             string pageSize = default,
+            string pageCount = default,
             bool enableAOF = false,
             bool enableTLS = false,
             bool disableObjects = false,
@@ -238,8 +239,6 @@ namespace Garnet.test
             string defaultPassword = null,
             bool useAcl = false, // NOTE: Temporary until ACL is enforced as default
             string aclFile = null,
-            string heapMemorySize = default,
-            string readCacheHeapMemorySize = default,
             string indexSize = "1m",
             string indexMaxSize = default,
             string[] extensionBinPaths = null,
@@ -251,6 +250,9 @@ namespace Garnet.test
             ConnectionProtectionOption enableModuleCommand = ConnectionProtectionOption.No,
             bool enableLua = false,
             bool enableReadCache = false,
+            string readCacheMemorySize = default,
+            string readCachePageSize = default,
+            string readCachePageCount = default,
             ILogger logger = null,
             IEnumerable<string> loadModulePaths = null,
             string pubSubPageSize = null,
@@ -317,7 +319,7 @@ namespace Garnet.test
                 EndPoints = endpoints ?? ([EndPoint]),
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
-                IndexSize = indexSize,
+                IndexMemorySize = indexSize,
                 EnableAOF = enableAOF,
                 EnableLua = enableLua,
                 CommitFrequencyMs = commitFrequencyMs,
@@ -357,31 +359,31 @@ namespace Garnet.test
             };
 
             if (!string.IsNullOrEmpty(memorySize))
-                opts.MemorySize = memorySize;
+                opts.LogMemorySize = memorySize;
 
             if (!string.IsNullOrEmpty(pageSize))
                 opts.PageSize = pageSize;
 
+            if (!string.IsNullOrEmpty(pageCount))
+                opts.PageCount = pageCount;
+
             if (!string.IsNullOrEmpty(pubSubPageSize))
                 opts.PubSubPageSize = pubSubPageSize;
 
-            if (!string.IsNullOrEmpty(heapMemorySize))
-                opts.HeapMemorySize = heapMemorySize;
-
-            if (!string.IsNullOrEmpty(readCacheHeapMemorySize))
-                opts.ReadCacheHeapMemorySize = readCacheHeapMemorySize;
-
-            if (indexMaxSize != default) opts.IndexMaxSize = indexMaxSize;
+            if (indexMaxSize != default)
+                opts.IndexMaxMemorySize = indexMaxSize;
 
             if (lowMemory)
             {
-                opts.MemorySize = memorySize == default ? "1024" : memorySize;
+                opts.LogMemorySize = memorySize == default ? "1024" : memorySize;
                 opts.PageSize = pageSize == default ? "512" : pageSize;
-                if (enableReadCache)
-                {
-                    opts.ReadCacheMemorySize = opts.MemorySize;
-                    opts.ReadCachePageSize = opts.PageSize;
-                }
+            }
+
+            if (enableReadCache)
+            {
+                opts.ReadCacheMemorySize = readCacheMemorySize ?? opts.LogMemorySize;
+                opts.ReadCachePageSize = readCachePageSize ?? opts.PageSize;
+                opts.ReadCachePageCount = readCachePageCount ?? opts.PageCount;
             }
 
             ILoggerFactory loggerFactory = null;
@@ -690,13 +692,13 @@ namespace Garnet.test
                 EnableDebugCommand = ConnectionProtectionOption.Yes,
                 EnableModuleCommand = ConnectionProtectionOption.Yes,
                 Recover = tryRecover,
-                IndexSize = "1m",
+                IndexMemorySize = "1m",
                 EnableCluster = enableCluster,
                 CleanClusterConfig = cleanClusterConfig,
                 ClusterTimeout = timeout,
                 QuietMode = true,
                 EnableAOF = enableAOF,
-                MemorySize = "1g",
+                LogMemorySize = "1g",
                 GossipDelay = gossipDelay,
                 EnableFastCommit = fastCommit,
                 MetricsSamplingFrequency = metricsSamplingFrequency,
@@ -756,7 +758,7 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.MemorySize = memorySize == default ? "1024" : memorySize;
+                opts.LogMemorySize = memorySize == default ? "1024" : memorySize;
                 opts.PageSize = pageSize == default ? "512" : pageSize;
             }
 
@@ -1120,9 +1122,8 @@ using System.Threading.Tasks;
         /// <returns>Effective memory size</returns>
         public static long GetEffectiveMemorySize(string memorySize, string pageSize, out long parsedPageSize)
         {
-            parsedPageSize = ServerOptions.ParseSize(pageSize, out _);
-            var parsedMemorySize = 1L << GarnetServerOptions.MemorySizeBits(memorySize, pageSize, out var epc);
-            return parsedMemorySize - (epc * parsedPageSize);
+            parsedPageSize = ServerOptions.PreviousPowerOf2(ServerOptions.ParseSize(pageSize, out _));
+            return ServerOptions.ParseSize(memorySize, out _);
         }
 
         /// <summary>

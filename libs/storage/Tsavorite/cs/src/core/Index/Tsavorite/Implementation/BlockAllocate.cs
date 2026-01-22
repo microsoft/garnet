@@ -20,7 +20,7 @@ namespace Tsavorite.core
                 ref PendingContext<TInput, TOutput, TContext> pendingContext,
                 out OperationStatus internalStatus)
         {
-            pendingContext.flushEvent = allocator.FlushEvent;
+            pendingContext.flushEvent = allocator.flushEvent;
             if (allocator.TryAllocateRetryNow(recordSize, out logicalAddress))
             {
                 pendingContext.flushEvent = default;

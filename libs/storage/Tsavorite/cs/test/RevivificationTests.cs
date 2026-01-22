@@ -292,7 +292,7 @@ namespace Tsavorite.test.Revivification
                 IndexSize = 1L << 24,
                 LogDevice = log,
                 PageSize = 1L << 12,
-                MemorySize = 1L << 20,
+                LogMemorySize = 1L << 20,
                 RevivificationSettings = revivificationSettings
             }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
@@ -699,7 +699,7 @@ namespace Tsavorite.test.Revivification
                 IndexSize = 1L << 24,
                 LogDevice = log,
                 PageSize = 1L << 17,
-                MemorySize = 1L << 20,
+                LogMemorySize = 1L << 20,
                 MaxInlineValueSize = 1024,
                 RevivificationSettings = RevivificationSettings.PowerOf2Bins
             };
@@ -1668,7 +1668,7 @@ namespace Tsavorite.test.Revivification
                 LogDevice = log,
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
-                MemorySize = 1L << 22,
+                LogMemorySize = 1L << 22,
                 PageSize = 1L << 12,
                 RevivificationSettings = RevivificationSettings.PowerOf2Bins
             }, StoreFunctions.Create(new TestObjectKey.Comparer(), () => new TestObjectValue.Serializer())
@@ -1849,7 +1849,7 @@ namespace Tsavorite.test.Revivification
                 IndexSize = 1L << 24,
                 LogDevice = log,
                 PageSize = 1L << 17,
-                MemorySize = 1L << 20,
+                LogMemorySize = 1L << 20,
                 RevivificationSettings = RevivificationSettings.PowerOf2Bins
             }, StoreFunctions.Create(comparer, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

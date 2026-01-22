@@ -57,7 +57,7 @@ namespace Tsavorite.test.LockTable
                 IndexSize = 1L << 26,
                 LogDevice = log,
                 PageSize = 1L << 12,
-                MemorySize = 1L << 22
+                LogMemorySize = 1L << 22
             }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)
             );

@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
+
 namespace Tsavorite.core
 {
     /// <summary>
@@ -40,6 +42,9 @@ namespace Tsavorite.core
 
         /// <summary>.Net object avg. overhead for holding a priority queue entry</summary>
         public const int PriorityQueueEntryOverhead = 48;
+
+        /// <summary>This is <see cref="Array.MaxLength"/> but that is a static expression, not a constant</summary>
+        public const int ArrayMaxLength = 0x7FFFFFC7;
 
         /// <summary>Calculate the heap memory size of this <see cref="LogRecord"/></summary>
         public static long CalculateHeapMemorySize<TSourceLogRecord>(in TSourceLogRecord logRecord)

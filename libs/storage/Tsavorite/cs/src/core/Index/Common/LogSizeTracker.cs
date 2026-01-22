@@ -9,48 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tsavorite.core
 {
-    public enum LogOperationType
-    {
-        Deserialize
-    }
-
-    public class LogOperationObserver<TStoreFunctions, TAllocator> : ITsavoriteRecordObserver<ITsavoriteScanIterator>
-        where TStoreFunctions : IStoreFunctions
-        where TAllocator : IAllocator<TStoreFunctions>
-    {
-        private readonly LogSizeTracker<TStoreFunctions, TAllocator> logSizeTracker;
-        private readonly LogOperationType logOperationType;
-
-        public LogOperationObserver(LogSizeTracker<TStoreFunctions, TAllocator> logSizeTracker, LogOperationType logOperationType)
-        {
-            this.logSizeTracker = logSizeTracker;
-            this.logOperationType = logOperationType;
-        }
-
-        public void OnCompleted() { }
-
-        public void OnError(Exception error) { }
-
-        public void OnNext(ITsavoriteScanIterator recordIter)
-        {
-            long size = 0;
-            while (recordIter.GetNext())
-                size += MemoryUtils.CalculateHeapMemorySize(in recordIter);
-
-            if (size != 0 && logOperationType == LogOperationType.Deserialize)
-                logSizeTracker.IncrementSize(size);
-        }
-
-        public void OnRecord<TSourceLogRecord>(in TSourceLogRecord logRecord)
-            where TSourceLogRecord : ISourceLogRecord
-        {
-            var size = MemoryUtils.CalculateHeapMemorySize(in logRecord);
-
-            if (size != 0 && logOperationType == LogOperationType.Deserialize)
-                logSizeTracker.IncrementSize(size);
-        }
-    }
-
     /// <summary>Tracks and controls size of log</summary>
     /// <typeparam name="TStoreFunctions"></typeparam>
     /// <typeparam name="TAllocator"></typeparam>
@@ -126,6 +84,7 @@ namespace Tsavorite.core
             logger?.LogInformation("Target size updated to {targetSize} with delta {delta}", targetSize, delta);
         }
 
+        /// <summary>Return true if the total size is outside the target plus delta</summary>
         public bool IsSizeBeyondLimit => TotalSizeBytes > highTargetSize;
 
         /// <summary>Callback on allocator completion</summary>
@@ -142,22 +101,28 @@ namespace Tsavorite.core
                 size += MemoryUtils.CalculateHeapMemorySize(in recordIter);
 
             if (size != 0)
-                IncrementSize(-size); // Reduce size as records are being evicted
+                logSize.Increment(-size); // Reduce size as records are being evicted
         }
 
         public void OnRecord<TSourceLogRecord>(in TSourceLogRecord logRecord)
             where TSourceLogRecord : ISourceLogRecord
+            => UpdateSize(in logRecord, add: false);   // Reduce size as records are being evicted
+
+        /// <summary>Adds size to the tracked total count</summary>
+        public void IncrementSize(long size) => logSize.Increment(size);
+
+        /// <summary>Adds the <see cref="LogRecord"/> size to the tracked total count.</summary>
+        public void UpdateSize<TSourceLogRecord>(in TSourceLogRecord logRecord, bool add)
+            where TSourceLogRecord : ISourceLogRecord
         {
             var size = MemoryUtils.CalculateHeapMemorySize(in logRecord);
             if (size != 0)
-                IncrementSize(-size); // Reduce size as records are being evicted
-        }
-
-        /// <summary>Adds size to the tracked total count</summary>
-        /// <param name="size">Size to add</param>
-        public void IncrementSize(long size)
-        {
-            logSize.Increment(size);
+            {
+                if (add)
+                    logSize.Increment(size);
+                else
+                    logSize.Increment(-size);
+            }
         }
 
         /// <summary>

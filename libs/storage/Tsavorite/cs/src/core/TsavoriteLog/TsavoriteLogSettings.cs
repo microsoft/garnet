@@ -60,7 +60,7 @@ namespace Tsavorite.core
         public long MemorySize = 1L << 23;
 
         /// <summary>
-        /// Support bit-based setting of memory size for backward compatibility, use MemorySize directly for simplicity.
+        /// Support bit-based setting of memory size for backward compatibility, use LogMemorySize directly for simplicity.
         /// </summary>
         public int MemorySizeBits { set { MemorySize = 1L << value; } }
 
@@ -204,7 +204,7 @@ namespace Tsavorite.core
                 LogDevice = LogDevice,
                 PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
-                MemorySizeBits = ReadOnlyMode ? 0 : Utility.NumBitsPreviousPowerOf2(MemorySize),
+                MemorySize = ReadOnlyMode ? 0 : MemorySize,
                 ReadCopyOptions = ReadCopyOptions.None,
                 MutableFraction = MutableFraction,
                 ObjectLogDevice = null,

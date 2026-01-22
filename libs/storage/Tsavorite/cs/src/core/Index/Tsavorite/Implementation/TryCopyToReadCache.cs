@@ -72,7 +72,7 @@ namespace Tsavorite.core
             if (success)
             {
                 // We don't call PostInitialWriter here so we must do the size tracking separately.
-                readcacheBase.OnDeserializationObserver?.OnRecord(in newLogRecord);
+                readcacheBase.logSizeTracker?.UpdateSize(in newLogRecord, add: true);
 
                 newLogRecord.InfoRef.UnsealAndValidate();
                 // Do not clear pendingContext.logicalAddress; we've already set it to the requested address, which is valid. We don't expose readcache

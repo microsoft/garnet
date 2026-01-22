@@ -18,16 +18,14 @@ namespace Garnet.server
         internal readonly LogSizeTracker<StoreFunctions, StoreAllocator> mainLogTracker;
         internal readonly LogSizeTracker<StoreFunctions, StoreAllocator> readCacheTracker;
         private long targetSize;
-        public long ReadCacheTargetSize;
+        public long readCacheTargetSize;
 
         int isStarted = 0;
-        private const int deltaFraction = 10; // 10% of target size
+        private const int TargetSizeDeltaFraction = 10; // 10% of target size (for both main log and readcache)
 
         internal bool Stopped => (mainLogTracker == null || mainLogTracker.Stopped) && (readCacheTracker == null || readCacheTracker.Stopped);
 
-        /// <summary>
-        /// Total memory size target
-        /// </summary>
+        /// <summary>Total memory size target for main log</summary>
         public long TargetSize
         {
             get => targetSize;
@@ -35,7 +33,19 @@ namespace Garnet.server
             {
                 Debug.Assert(value >= 0);
                 targetSize = value;
-                mainLogTracker?.UpdateTargetSize(targetSize, targetSize / deltaFraction);
+                mainLogTracker?.UpdateTargetSize(targetSize, targetSize / TargetSizeDeltaFraction);
+            }
+        }
+
+        /// <summary>Total memory size target for readcache</summary>
+        public long ReadCacheTargetSize
+        {
+            get => readCacheTargetSize;
+            set
+            {
+                Debug.Assert(value >= 0);
+                readCacheTargetSize = value;
+                readCacheTracker?.UpdateTargetSize(readCacheTargetSize, readCacheTargetSize / TargetSizeDeltaFraction);
             }
         }
 
@@ -49,23 +59,20 @@ namespace Garnet.server
             Debug.Assert(store != null);
             Debug.Assert(targetSize > 0 || readCacheTargetSize > 0);
 
-            this.TargetSize = targetSize;
-            this.ReadCacheTargetSize = readCacheTargetSize;
+            TargetSize = targetSize;
+            ReadCacheTargetSize = readCacheTargetSize;
 
+            // Subscribe to the eviction notifications. We don't hang onto the LogSubscribeDisposable because the CacheSizeTracker is never disposed once created.
             if (targetSize > 0)
             {
-                mainLogTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.Log, targetSize, targetSize / deltaFraction, loggerFactory?.CreateLogger("ObjSizeTracker"));
-                store.Log.SubscribeEvictions(mainLogTracker);
-                store.Log.SubscribeDeserializations(new LogOperationObserver<StoreFunctions, StoreAllocator>(mainLogTracker, LogOperationType.Deserialize));
-                store.Log.IsSizeBeyondLimit = () => mainLogTracker.IsSizeBeyondLimit;
+                mainLogTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.Log, targetSize, targetSize / TargetSizeDeltaFraction, loggerFactory?.CreateLogger("ObjSizeTracker"));
+                _ = store.Log.SubscribeEvictions(mainLogTracker);
             }
 
             if (store.ReadCache != null && readCacheTargetSize > 0)
             {
-                this.readCacheTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.ReadCache, readCacheTargetSize, readCacheTargetSize / deltaFraction, loggerFactory?.CreateLogger("ObjReadCacheSizeTracker"));
-                store.ReadCache.SubscribeEvictions(readCacheTracker);
-                store.ReadCache.SubscribeDeserializations(new LogOperationObserver<StoreFunctions, StoreAllocator>(readCacheTracker, LogOperationType.Deserialize));
-                store.ReadCache.IsSizeBeyondLimit = () => readCacheTracker.IsSizeBeyondLimit;
+                readCacheTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.ReadCache, readCacheTargetSize, readCacheTargetSize / TargetSizeDeltaFraction, loggerFactory?.CreateLogger("ObjReadCacheSizeTracker"));
+                _ = store.ReadCache.SubscribeEvictions(readCacheTracker);
             }
         }
 
@@ -73,8 +80,8 @@ namespace Garnet.server
         {
             // Prevent multiple calls to Start
             var prevIsStarted = Interlocked.CompareExchange(ref isStarted, 1, 0);
-            if (prevIsStarted == 1) return;
-
+            if (prevIsStarted == 1)
+                return;
             mainLogTracker?.Start(token);
             readCacheTracker?.Start(token);
         }
@@ -83,21 +90,18 @@ namespace Garnet.server
         /// <param name="size">Size to be added</param>
         public void AddTrackedSize(long size)
         {
-            if (size == 0) return;
-
             // mainLogTracker could be null if heap size limit is set just for the read cache
-            this.mainLogTracker?.IncrementSize(size);
+            if (size != 0)
+                mainLogTracker?.IncrementSize(size);
         }
 
         /// <summary>Add to the tracked size of read cache.</summary>
         /// <param name="size">Size to be added</param>
         public void AddReadCacheTrackedSize(long size)
         {
-            if (size == 0) return;
-
-            // readCacheTracker could be null if read cache is not enabled or heap size limit is set
-            // just for the main log
-            this.readCacheTracker?.IncrementSize(size);
+            // readCacheTracker could be null if read cache is not enabled or heap size limit is set only for the main log
+            if (size != 0)
+                readCacheTracker?.IncrementSize(size);
         }
 
         /// <summary>

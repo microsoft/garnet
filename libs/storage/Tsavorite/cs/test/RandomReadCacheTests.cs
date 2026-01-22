@@ -61,7 +61,7 @@ namespace Tsavorite.test.ReadCacheTests
             var kvSettings = new KVSettings()
             {
                 IndexSize = 1L << 26,
-                MemorySize = 1L << 15,
+                LogMemorySize = 1L << 15,
                 PageSize = 1L << 12,
             };
 

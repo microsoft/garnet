@@ -739,6 +739,8 @@ namespace Tsavorite.core
                         // We don't need the DiskLogRecord here; we're either iterating (and will create it in GetNext()) or recovering
                         // (and do not need one; we're just populating the record ObjectIds and ObjectIdMap). objectLogDevice is in readBuffers.
                         _ = logReader.ReadRecordObjects(ref logRecord, noKey, startPosition.SegmentSizeBits);
+
+                        logSizeTracker?.UpdateSize(in logRecord, add: true);
                     }
                 }
 

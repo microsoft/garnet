@@ -72,7 +72,7 @@ namespace Tsavorite.test.InsertAtTailStressTests
             {
                 LogDevice = log,
                 PageSize = 1L << pageBits,
-                MemorySize = 1L << memoryBits,
+                LogMemorySize = 1L << memoryBits,
                 MutableFraction = 8.0 / (1 << (memoryBits - pageBits)),
             };
             store = new(kvSettings

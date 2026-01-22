@@ -170,7 +170,7 @@ namespace Tsavorite.test.readaddress
                     ReadCopyOptions = readCopyOptions,
                     // Use small-footprint values
                     PageSize = 1L << 12, // (4K pages)
-                    MemorySize = 1L << 20, // (1M memory for main log)
+                    LogMemorySize = 1L << 20, // (1M memory for main log)
 
                     CheckpointDir = Path.Join(MethodTestDir, "chkpt")
                 }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)

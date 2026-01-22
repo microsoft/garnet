@@ -115,7 +115,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("32m", options.PageSize);
-            ClassicAssert.AreEqual("16g", options.MemorySize);
+            ClassicAssert.AreEqual("16g", options.LogMemorySize);
             var nonDefaultOptions = JsonSerializer.Deserialize<Dictionary<string, object>>(optionsJson);
             ClassicAssert.IsEmpty(nonDefaultOptions);
 
@@ -130,7 +130,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("4m", options.PageSize);
-            ClassicAssert.AreEqual("128m", options.MemorySize);
+            ClassicAssert.AreEqual("128m", options.LogMemorySize);
             ClassicAssert.AreEqual("2g", options.SegmentSize);
             ClassicAssert.AreEqual(53, options.Port);
             ClassicAssert.AreEqual(0.5, options.RevivifiableFraction);
@@ -167,7 +167,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.IsTrue(options.PageSize == "4m");
-            ClassicAssert.IsTrue(options.MemorySize == "128m");
+            ClassicAssert.IsTrue(options.LogMemorySize == "128m");
             CollectionAssert.AreEqual(new[] { 1, 2, 3 }, options.RevivBinRecordCounts);
             CollectionAssert.AreEqual(binPaths, options.ExtensionBinPaths);
             CollectionAssert.AreEqual(modules, options.LoadModuleCS);
@@ -186,7 +186,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("12m", options.PageSize);
-            ClassicAssert.AreEqual("128m", options.MemorySize);
+            ClassicAssert.AreEqual("128m", options.LogMemorySize);
             ClassicAssert.AreEqual("1g", options.SegmentSize);
             ClassicAssert.AreEqual(0, options.Port);
             ClassicAssert.IsFalse(options.Recover);
@@ -202,8 +202,8 @@ namespace Garnet.test
             ClassicAssert.AreEqual("12m", ((JsonElement)nonDefaultOptions[nameof(Options.PageSize)]).GetString());
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.Port)));
             ClassicAssert.AreEqual(0, ((JsonElement)nonDefaultOptions[nameof(Options.Port)]).GetInt32());
-            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.IndexSize)));
-            ClassicAssert.AreEqual("256m", ((JsonElement)nonDefaultOptions[nameof(Options.IndexSize)]).GetString());
+            ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.IndexMemorySize)));
+            ClassicAssert.AreEqual("256m", ((JsonElement)nonDefaultOptions[nameof(Options.IndexMemorySize)]).GetString());
             ClassicAssert.IsTrue(nonDefaultOptions.ContainsKey(nameof(Options.RevivBinRecordCounts)));
             ClassicAssert.AreEqual(new[] { 4, 5 },
                 ((JsonElement)nonDefaultOptions[nameof(Options.RevivBinRecordCounts)]).EnumerateArray()
@@ -221,7 +221,7 @@ namespace Garnet.test
             ClassicAssert.IsNull(options);
             ClassicAssert.AreEqual(7, invalidOptions.Count);
             ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.Address)));
-            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.MemorySize)));
+            ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.LogMemorySize)));
             ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.Port)));
             ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.MutablePercent)));
             ClassicAssert.IsTrue(invalidOptions.Contains(nameof(Options.AclFile)));
@@ -251,7 +251,7 @@ namespace Garnet.test
             ClassicAssert.AreEqual(ConnectionProtectionOption.Local, options.EnableDebugCommand);
             ClassicAssert.AreEqual(ConnectionProtectionOption.Yes, options.EnableModuleCommand);
             ClassicAssert.AreEqual(6379, options.Port);
-            ClassicAssert.AreEqual("20gb", options.MemorySize);
+            ClassicAssert.AreEqual("20gb", options.LogMemorySize);
             ClassicAssert.AreEqual("./garnet-log", options.FileLogger);
             ClassicAssert.AreEqual("./", options.CheckpointDir);
             ClassicAssert.IsTrue(options.EnableCluster);
@@ -275,7 +275,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.AreEqual("12m", options.PageSize);
-            ClassicAssert.AreEqual("20gb", options.MemorySize);
+            ClassicAssert.AreEqual("20gb", options.LogMemorySize);
             ClassicAssert.AreEqual("1g", options.SegmentSize);
             ClassicAssert.AreEqual(6, options.ThreadPoolMinThreads);
             ClassicAssert.AreEqual(10, options.ReplicaSyncDelayMs);
@@ -311,7 +311,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.IsTrue(options.PageSize == "32m");
-            ClassicAssert.IsTrue(options.MemorySize == "16g");
+            ClassicAssert.IsTrue(options.LogMemorySize == "16g");
             ClassicAssert.IsNull(options.AzureStorageServiceUri);
             ClassicAssert.IsNull(options.AzureStorageManagedIdentity);
             ClassicAssert.AreNotEqual(DeviceType.AzureStorage, options.GetDeviceType());
@@ -321,7 +321,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.IsTrue(options.PageSize == "4m");
-            ClassicAssert.IsTrue(options.MemorySize == "128m");
+            ClassicAssert.IsTrue(options.LogMemorySize == "128m");
             ClassicAssert.IsTrue(options.AzureStorageServiceUri == "https://demo.blob.core.windows.net");
             ClassicAssert.IsTrue(options.AzureStorageManagedIdentity == "demo");
 
@@ -330,7 +330,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(parseSuccessful);
             ClassicAssert.AreEqual(invalidOptions.Count, 0);
             ClassicAssert.IsTrue(options.PageSize == "4m");
-            ClassicAssert.IsTrue(options.MemorySize == "128m");
+            ClassicAssert.IsTrue(options.LogMemorySize == "128m");
             ClassicAssert.IsTrue(options.AzureStorageServiceUri == "https://demo.blob.core.windows.net");
             ClassicAssert.IsTrue(options.AzureStorageManagedIdentity == "demo");
 

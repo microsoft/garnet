@@ -514,7 +514,7 @@ namespace Tsavorite.test.Expiration
             {
                 IndexSize = 1L << 13,
                 LogDevice = log,
-                MemorySize = 1L << 19,
+                LogMemorySize = 1L << 19,
                 PageSize = 1L << 14
             }, StoreFunctions.Create(SpanByteComparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

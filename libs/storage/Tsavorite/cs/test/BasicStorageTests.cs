@@ -102,7 +102,7 @@ namespace Tsavorite.test
                 {
                     IndexSize = 1L << 26,
                     LogDevice = log,
-                    MemorySize = 1L << 15,
+                    LogMemorySize = 1L << 15,
                     PageSize = 1L << 10,
                 }, StoreFunctions.Create(KeyStruct.Comparer.Instance, SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

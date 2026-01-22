@@ -106,7 +106,7 @@ namespace Tsavorite.test.LargeObjects
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 PageSize = 1L << 13,                // 8 KB
-                MemorySize = 1L << 16,              // 64 KB
+                LogMemorySize = 1L << 16,              // 64 KB
                 SegmentSize = 1L << 17,             // 128 KB
                 ObjectLogSegmentSize = 1L << 22,    // 4 MB
                 CheckpointDir = MethodTestDir
@@ -205,7 +205,7 @@ namespace Tsavorite.test.LargeObjects
                 ObjectLogDevice = objlog,
                 MutableFraction = 0.1,
                 PageSize = 1L << 13,                // 8 KB
-                MemorySize = 1L << 16,              // 64 KB
+                LogMemorySize = 1L << 16,              // 64 KB
                 SegmentSize = 1L << 17,             // 128 KB
                 ObjectLogSegmentSize = 1L << 30,    // 1 GB
                 CheckpointDir = MethodTestDir

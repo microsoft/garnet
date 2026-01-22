@@ -22,7 +22,9 @@ namespace Garnet.test
         public void Setup()
         {
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir, wait: true);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "2k", pageSize: "512", lowMemory: true, indexSize: "1k", heapMemorySize: "3k");
+
+            // memorySizeStr is 2k for inline pages (hence pageCount: 4) plus 3k for heap allocations
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "5k", pageSize: "512", pageCount: "4", lowMemory: true, indexSize: "1k");
             server.Start();
             store = server.Provider.StoreWrapper.store;
             cacheSizeTracker = server.Provider.StoreWrapper.sizeTracker;
@@ -89,9 +91,12 @@ namespace Garnet.test
         public void ReadCacheIncreaseEmptyPageCountTest()
         {
             server?.Dispose();
-            // Create with a heapMemorySize we won't hit, just to instantiate the tracker to ensure record heapMemory size.
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "1k", pageSize: "512", lowMemory: true, indexSize: "1k",
-                    heapMemorySize: "1G", readCacheHeapMemorySize: "1k", enableReadCache: true);
+
+            // Create with a main-log heapMemorySize we won't hit, just to instantiate the tracker to ensure record heapMemory size.
+            // memorySizeStr is 1GB for that, while readCache has only 1k for its limit; both have 1k for inline pages (hence pageCounts are 2)
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, memorySize: "1GB", pageSize: "512", pageCount: "2", lowMemory: true, indexSize: "1k",
+                    readCacheMemorySize: "2k", readCachePageSize: "1k", readCachePageCount: "2", enableReadCache: true);
+
             server.Start();
             store = server.Provider.StoreWrapper.store;
             cacheSizeTracker = server.Provider.StoreWrapper.sizeTracker;

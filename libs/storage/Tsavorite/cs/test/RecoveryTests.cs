@@ -50,7 +50,7 @@ namespace Tsavorite.test.recovery.sumstore
             {
                 IndexSize = KeySpace,
                 LogDevice = log,
-                SegmentSize = 1L << 25, //MemorySize = 1L << 14, PageSize = 1L << 9,  // locks ups at session.RMW line in Populate() for Local Memory
+                SegmentSize = 1L << 25, //LogMemorySize = 1L << 14, PageSize = 1L << 9,  // locks ups at session.RMW line in Populate() for Local Memory
                 CheckpointDir = MethodTestDir
             }, StoreFunctions.Create(new AdId.Comparer(), SpanByteRecordDisposer.Instance)
                 , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

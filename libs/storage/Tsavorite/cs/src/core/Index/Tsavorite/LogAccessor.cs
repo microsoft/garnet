@@ -84,21 +84,6 @@ namespace Tsavorite.core
         public ObjectIdMap TransientObjectIdMap => allocatorBase.transientObjectIdMap;
 
         /// <summary>
-        /// Set empty page count in allocator
-        /// </summary>
-        /// <param name="pageCount">New empty page count</param>
-        /// <param name="wait">Whether to wait for shift addresses to complete</param>
-        public void SetEmptyPageCount(int pageCount, bool wait = false)
-        {
-            allocatorBase.EmptyPageCount = pageCount;
-            if (wait)
-            {
-                long newHeadAddress = allocatorBase.GetAddressOfStartOfPageOfAddress(allocatorBase.GetTailAddress()) - allocatorBase.HeadAddressLagOffset;
-                ShiftHeadAddress(newHeadAddress, wait);
-            }
-        }
-
-        /// <summary>
         /// Total in-memory circular buffer capacity (in number of pages)
         /// </summary>
         public int BufferSize => allocatorBase.BufferSize;
@@ -106,7 +91,12 @@ namespace Tsavorite.core
         /// <summary>
         /// Actual memory used by log (not including heap objects) and overflow pages
         /// </summary>
-        public long MemorySizeBytes => allocatorBase.GetLogicalAddressOfStartOfPage((long)(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount));
+        public long MemorySizeBytes => allocatorBase.GetLogicalAddressOfStartOfPage(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount);
+
+        /// <summary>
+        /// Heap memory used
+        /// </summary>
+        public long HeapSizeBytes => allocatorBase.logSizeTracker is null ? 0 : allocatorBase.logSizeTracker.LogHeapSizeBytes;
 
         /// <summary>
         /// Maximum memory size in bytes
@@ -131,16 +121,14 @@ namespace Tsavorite.core
             if (snapToPageStart)
                 untilAddress = allocatorBase.GetAddressOfStartOfPageOfAddress(untilAddress);
 
-            var epochProtected = store.epoch.ThisInstanceProtected();
+            var epochAcquired = store.epoch.ResumeIfNotProtected();
             try
             {
-                if (!epochProtected)
-                    store.epoch.Resume();
                 allocatorBase.ShiftBeginAddress(untilAddress, truncateLog);
             }
             finally
             {
-                if (!epochProtected)
+                if (epochAcquired)
                     store.epoch.Suspend();
             }
         }
@@ -163,13 +151,12 @@ namespace Tsavorite.core
             // Force wait so that we do not close unflushed page
             ShiftReadOnlyAddress(newHeadAddress, true);
 
-            // Then shift head address
-            if (!store.epoch.ThisInstanceProtected())
+            // Then shift head address. If we don't have the epoch, acquire it only long enough to launch the shift.
+            if (store.epoch.ResumeIfNotProtected())
             {
                 try
                 {
-                    store.epoch.Resume();
-                    allocatorBase.ShiftHeadAddress(newHeadAddress);
+                    _ = allocatorBase.ShiftHeadAddress(newHeadAddress);
                 }
                 finally
                 {
@@ -181,16 +168,10 @@ namespace Tsavorite.core
             }
             else
             {
-                allocatorBase.ShiftHeadAddress(newHeadAddress);
+                _ = allocatorBase.ShiftHeadAddress(newHeadAddress);
                 while (wait && allocatorBase.SafeHeadAddress < newHeadAddress)
                     store.epoch.ProtectAndDrain();
             }
-        }
-
-        public Func<bool> IsSizeBeyondLimit
-        {
-            get => allocatorBase.IsSizeBeyondLimit;
-            set => allocatorBase.IsSizeBeyondLimit = value;
         }
 
         /// <summary>
@@ -202,7 +183,7 @@ namespace Tsavorite.core
         /// <param name="readOnlyObserver">Observer to which scan iterator is pushed</param>
         public IDisposable Subscribe(IObserver<ITsavoriteScanIterator> readOnlyObserver)
         {
-            allocatorBase.OnReadOnlyObserver = readOnlyObserver;
+            allocatorBase.onReadOnlyObserver = readOnlyObserver;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: true);
         }
 
@@ -215,13 +196,9 @@ namespace Tsavorite.core
         /// <param name="evictionObserver">Observer to which scan iterator is pushed</param>
         public IDisposable SubscribeEvictions(ITsavoriteRecordObserver<ITsavoriteScanIterator> evictionObserver)
         {
-            allocatorBase.OnEvictionObserver = evictionObserver;
-            return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
-        }
-
-        public IDisposable SubscribeDeserializations(ITsavoriteRecordObserver<ITsavoriteScanIterator> deserializationObserver)
-        {
-            allocatorBase.OnDeserializationObserver = deserializationObserver;
+            allocatorBase.onEvictionObserver = evictionObserver;
+            if (evictionObserver is LogSizeTracker<TStoreFunctions, TAllocator> tracker)
+                allocatorBase.logSizeTracker = tracker;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
         }
 
@@ -242,9 +219,9 @@ namespace Tsavorite.core
             public void Dispose()
             {
                 if (readOnly)
-                    allocator.OnReadOnlyObserver = null;
+                    allocator.onReadOnlyObserver = null;
                 else
-                    allocator.OnEvictionObserver = null;
+                    allocator.onEvictionObserver = null;
             }
         }
 

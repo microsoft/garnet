@@ -25,14 +25,20 @@ namespace Garnet.server
         public EndPoint ClusterAnnounceEndpoint { get; set; }
 
         /// <summary>
-        /// Total log memory used in bytes (rounds down to power of 2).
+        /// Total main-log memory (inline and heap) to use, in bytes. Does not need to be a power of 2
         /// </summary>
-        public string MemorySize = "16g";
+        public string LogMemorySize = "16g";
 
         /// <summary>
-        /// Size of each page in bytes (rounds down to power of 2).
+        /// Size of each main-log page in bytes (rounds down to power of 2).
         /// </summary>
         public string PageSize = "32m";
+
+        /// <summary>
+        /// Number of main-log pages (rounds down to power of 2). This allows specifying less pages initially than <see cref="LogMemorySize"/> divided by <see cref="PageSize"/>
+        /// </summary>
+        /// <remarks>The default empty value means to calculate <see cref="PageCount"/> based on <see cref="LogMemorySize"/> divided by <see cref="PageSize"/></remarks>
+        public string PageCount = "";
 
         /// <summary>
         /// Size of each main-log segment in bytes on disk (rounds down to power of 2).
@@ -47,12 +53,12 @@ namespace Garnet.server
         /// <summary>
         /// Size of hash index in bytes (rounds down to power of 2).
         /// </summary>
-        public string IndexSize = "128m";
+        public string IndexMemorySize = "128m";
 
         /// <summary>
         /// Max size of hash index in bytes (rounds down to power of 2). If unspecified, index size doesn't grow (default behavior).
         /// </summary>
-        public string IndexMaxSize = string.Empty;
+        public string IndexMaxMemorySize = string.Empty;
 
         /// <summary>
         /// Percentage of log memory that is kept mutable.
@@ -123,7 +129,7 @@ namespace Garnet.server
         /// <returns></returns>
         public int MemorySizeBits()
         {
-            long size = ParseSize(MemorySize, out _);
+            long size = ParseSize(LogMemorySize, out _);
             long adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower log memory size than specified (power of 2)");
@@ -136,8 +142,8 @@ namespace Garnet.server
         /// <returns></returns>
         public int PageSizeBits()
         {
-            long size = ParseSize(PageSize, out _);
-            long adjustedSize = PreviousPowerOf2(size);
+            var size = ParseSize(PageSize, out _);
+            var adjustedSize = PreviousPowerOf2(size);
             if (size != adjustedSize)
                 logger?.LogInformation("Warning: using lower page size than specified (power of 2)");
             return (int)Math.Log(adjustedSize, 2);
@@ -273,7 +279,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="v"></param>
         /// <returns></returns>
-        internal static long PreviousPowerOf2(long v)
+        public static long PreviousPowerOf2(long v)
         {
             v |= v >> 1;
             v |= v >> 2;

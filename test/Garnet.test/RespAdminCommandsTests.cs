@@ -363,7 +363,8 @@ namespace Garnet.test
             }
 
             server.Dispose(false);
-            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, memorySize: sizeToString(recoveryMemorySize), pageSize: sizeToString(pageSize), heapMemorySize: "64k");
+            var pageCount = recoveryMemorySize / pageSize;
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true, lowMemory: true, memorySize: sizeToString(recoveryMemorySize + 64 /* will add 'k' */), pageSize: sizeToString(pageSize));
             server.Start();
 
             ClassicAssert.LessOrEqual(server.Provider.StoreWrapper.store.MaxAllocatedPageCount, (recoveryMemorySize / pageSize) + 1);

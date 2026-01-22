@@ -52,7 +52,7 @@ namespace Tsavorite.test
                         LogDevice = log,
                         MutableFraction = 1,
                         PageSize = 1L << 10,
-                        MemorySize = 1L << 20,
+                        LogMemorySize = 1L << 20,
                         CheckpointManager = checkpointManager
                     }, StoreFunctions.Create(LongKeyComparer.Instance, SpanByteRecordDisposer.Instance)
                     , (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions)

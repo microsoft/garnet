@@ -1137,7 +1137,7 @@ namespace Garnet.test
                 lowMemory: true,
                 memorySize: (bitmapBytes << 2).ToString(),
                 pageSize: (bitmapBytes << 1).ToString());
-            //MemorySize: "16g",
+            //LogMemorySize: "16g",
             //PageSize: "32m");
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1338,7 +1338,7 @@ namespace Garnet.test
                 lowMemory: true,
                 memorySize: (bitmapBytes << 2).ToString(),
                 pageSize: (bitmapBytes << 1).ToString());
-            //MemorySize: "16g",
+            //LogMemorySize: "16g",
             //PageSize: "32m");
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -1804,7 +1804,7 @@ namespace Garnet.test
                 lowMemory: true,
                 memorySize: (bitmapBytes << 2).ToString(),
                 pageSize: (bitmapBytes << 1).ToString());
-            //MemorySize: "16g",
+            //LogMemorySize: "16g",
             //PageSize: "32m");
             server.Start();
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());

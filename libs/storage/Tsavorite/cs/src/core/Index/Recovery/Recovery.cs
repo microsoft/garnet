@@ -723,11 +723,11 @@ namespace Tsavorite.core
         private long FreePagesToLimitHeapMemory(RecoveryStatus recoveryStatus, long page)
         {
             long lastFreedPage = NoPageFreed;
-            if (hlogBase.IsSizeBeyondLimit == null)
+            if (hlogBase.logSizeTracker is null)
                 return lastFreedPage;
 
             // free up additional pages, one at a time, to bring memory usage under control starting with the earliest possible page
-            for (var p = Math.Max(0, page - recoveryStatus.usableCapacity + 1); p < page && hlogBase.IsSizeBeyondLimit(); p++)
+            for (var p = Math.Max(0, page - recoveryStatus.usableCapacity + 1); p < page && hlogBase.logSizeTracker.IsSizeBeyondLimit; p++)
             {
                 var pageIndex = hlogBase.GetPageIndexForPage(p);
                 if (hlogBase.IsAllocated(pageIndex))
@@ -778,11 +778,11 @@ namespace Tsavorite.core
         private async Task<long> FreePagesToLimitHeapMemoryAsync(RecoveryStatus recoveryStatus, long page, CancellationToken cancellationToken)
         {
             long lastFreedPage = NoPageFreed;
-            if (hlogBase.IsSizeBeyondLimit == null)
+            if (hlogBase.logSizeTracker == null)
                 return lastFreedPage;
 
             // free up additional pages, one at a time, to bring memory usage under control starting with the earliest possible page
-            for (var p = Math.Max(0, page - recoveryStatus.usableCapacity + 1); p < page && hlogBase.IsSizeBeyondLimit(); p++)
+            for (var p = Math.Max(0, page - recoveryStatus.usableCapacity + 1); p < page && hlogBase.logSizeTracker.IsSizeBeyondLimit; p++)
             {
                 var pageIndex = hlogBase.GetPageIndexForPage(p);
                 if (hlogBase.IsAllocated(pageIndex))
@@ -912,7 +912,7 @@ namespace Tsavorite.core
 
             // Leave out at least MinEmptyPageCount pages to maintain memory size during recovery
             // If heap memory is to be tracked, then read one page at a time to control memory usage
-            numPagesToReadPerIteration = hlogBase.IsSizeBeyondLimit == null ? Math.Min(capacity - hlogBase.MinEmptyPageCount, totalPagesToRead) : 1;
+            numPagesToReadPerIteration = hlogBase.logSizeTracker is null ? Math.Min(capacity - hlogBase.MinEmptyPageCount, totalPagesToRead) : 1;
             return new RecoveryStatus(capacity, hlogBase.MinEmptyPageCount);
         }
 
@@ -1197,7 +1197,7 @@ namespace Tsavorite.core
             // Initially issue read request for all pages that can be held in memory
             // If heap memory is to be tracked, then read one page at a time to control memory usage
             var totalPagesToRead = (int)(snapshotEndPage - startPage);
-            numPagesToReadPerIteration = hlogBase.IsSizeBeyondLimit == null ? Math.Min(capacity - hlogBase.MinEmptyPageCount, totalPagesToRead) : 1;
+            numPagesToReadPerIteration = hlogBase.logSizeTracker is null ? Math.Min(capacity - hlogBase.MinEmptyPageCount, totalPagesToRead) : 1;
         }
 
         private void ProcessReadSnapshotPage(long recoverFromAddress, long untilAddress, long nextVersion, RecoveryOptions options, RecoveryStatus recoveryStatus, long page, int pageIndex)
