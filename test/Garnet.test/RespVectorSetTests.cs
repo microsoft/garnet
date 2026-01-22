@@ -1709,17 +1709,17 @@ namespace Garnet.test
                                 string expectedEf = ef == 0 ? "200" : ef.ToString();
                                 string expectedNumLinks = numLinks == 0 ? "16" : numLinks.ToString();
 
-                                // Get VINFO - should return an array of 12 elements (6 key-value pairs)
+                                // Get VINFO - should return an array of 14 elements (6 key-value pairs)
                                 var vinfoRes = (RedisValue[])db.Execute("VINFO", [fooKey]);
-                                ClassicAssert.AreEqual(12, vinfoRes.Length);
+                                ClassicAssert.AreEqual(14, vinfoRes.Length);
                                 var values = BuildDictionaryFromResponse(vinfoRes);
                                 ClassicAssert.AreEqual(values["quant-type"], expectedQuantType);
+                                ClassicAssert.AreEqual(values["distance-metric"], "l2");
                                 ClassicAssert.AreEqual(values["input-vector-dimensions"], vectorDim.ToString());
                                 ClassicAssert.AreEqual(values["reduced-dimensions"], reduceValueToUse.ToString());
                                 ClassicAssert.AreEqual(values["build-exploration-factor"], expectedEf);
                                 ClassicAssert.AreEqual(values["num-links"], expectedNumLinks);
-                                // TODO: Update once DiskANN exposes card()
-                                ClassicAssert.AreEqual(values["size"], "0");
+                                ClassicAssert.AreEqual(values["size"],"1");
 
                                 // Modify first value for second add (change from "1.0" to "2.0")
                                 vectorValues[2] = "2.0";
@@ -1729,15 +1729,15 @@ namespace Garnet.test
                                 ClassicAssert.AreEqual(1, (int)res);
 
                                 vinfoRes = (RedisValue[])db.Execute(command: "VINFO", [fooKey]);
-                                ClassicAssert.AreEqual(12, vinfoRes.Length);
+                                ClassicAssert.AreEqual(14, vinfoRes.Length);
                                 values = BuildDictionaryFromResponse(vinfoRes);
                                 ClassicAssert.AreEqual(values["quant-type"], expectedQuantType);
+                                ClassicAssert.AreEqual(values["distance-metric"], "l2");
                                 ClassicAssert.AreEqual(values["input-vector-dimensions"], vectorDim.ToString());
                                 ClassicAssert.AreEqual(values["reduced-dimensions"], reduceValueToUse.ToString());
                                 ClassicAssert.AreEqual(values["build-exploration-factor"], expectedEf);
                                 ClassicAssert.AreEqual(values["num-links"], expectedNumLinks);
-                                // TODO: Update once DiskANN exposes card()
-                                ClassicAssert.AreEqual(values["size"], "0");
+                                ClassicAssert.AreEqual(values["size"], "2");
 
                                 // Delete vector set
                                 db.KeyDelete(fooKey);

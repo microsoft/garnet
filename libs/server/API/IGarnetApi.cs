@@ -2066,8 +2066,8 @@ namespace Garnet.server
         /// <summary>
         /// Fetch debugging information about the Vector Set.
         /// </summary>
-        GarnetStatus VectorSetInfo(ArgSlice key, out VectorQuantType quantType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size);
-
+        GarnetStatus VectorSetInfo(ArgSlice key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size);
+        
         #endregion 
     }
 

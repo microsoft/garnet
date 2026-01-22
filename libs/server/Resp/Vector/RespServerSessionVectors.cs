@@ -1036,7 +1036,7 @@ namespace Garnet.server
             }
 
             var key = parseState.GetArgSliceByRef(0);
-            var res = storageApi.VectorSetInfo(key, out VectorQuantType quantType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size);
+            var res = storageApi.VectorSetInfo(key, out VectorQuantType quantType, out var distanceMetricType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size);
             if (res == GarnetStatus.NOTFOUND)
             {
                 WriteNullArray();
@@ -1060,9 +1060,20 @@ namespace Garnet.server
                 _ => throw new GarnetException($"Invalid VectorQuantType: {quantType}"),
             };
 
-            WriteArrayLength(12);
+            var distanceMetricTypeSpan = distanceMetricType switch
+            {
+                VectorDistanceMetricType.Cosine => "cosine"u8,
+                VectorDistanceMetricType.InnerProduct => "inner-product"u8,
+                VectorDistanceMetricType.L2 => "l2"u8,
+                VectorDistanceMetricType.CosineNormalized => "cosine-normalized"u8,
+                _ => throw new GarnetException($"Invalid VectorDistanceMetricType: {distanceMetricType}"),
+            };
+
+            WriteArrayLength(14);
             WriteSimpleString("quant-type"u8);
             WriteSimpleString(quantTypeSpan);
+            WriteSimpleString("distance-metric"u8);
+            WriteSimpleString(distanceMetricTypeSpan);
             WriteSimpleString("input-vector-dimensions"u8);
             WriteInt32AsBulkString((int)vectorDimensions);
             WriteSimpleString("reduced-dimensions"u8);
