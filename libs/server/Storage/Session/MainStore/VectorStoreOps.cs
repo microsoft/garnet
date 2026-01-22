@@ -81,6 +81,35 @@ namespace Garnet.server
     }
 
     /// <summary>
+    /// Supported distance metrics for vector similarity search.
+    /// Aligned with DiskANN's Metric type
+    /// </summary>
+    public enum VectorDistanceMetricType : int
+    {
+        Invalid = -1,
+
+        /// <summary>
+        /// Cosine similarity
+        /// </summary>
+        Cosine = 0,
+
+        /// <summary>
+        /// Inner product
+        /// </summary>
+        InnerProduct,
+
+        /// <summary>
+        /// Squared Euclidean (L2-Squared)
+        /// </summary>
+        L2,
+
+        /// <summary>
+        /// Normalized Cosine Similarity
+        /// </summary>
+        CosineNormalized,
+    }
+
+    /// <summary>
     /// Implementation of Vector Set operations.
     /// </summary>
     sealed partial class StorageSession : IDisposable
@@ -89,7 +118,7 @@ namespace Garnet.server
         /// Implement Vector Set Add - this may also create a Vector Set if one does not already exist.
         /// </summary>
         [SkipLocalsInit]
-        public unsafe GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        public unsafe GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte values, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
         {
             var dims = VectorManager.CalculateValueDimensions(valueType, values.ReadOnlySpan);
 
@@ -102,8 +131,9 @@ namespace Garnet.server
             var buildExplorationFactorArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref buildExplorationFactor, 1)));
             var attributesArg = attributes;
             var numLinksArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<int, byte>(MemoryMarshal.CreateSpan(ref numLinks, 1)));
+            var distanceMetricArg = PinnedSpanByte.FromPinnedSpan(MemoryMarshal.Cast<VectorDistanceMetricType, byte>(MemoryMarshal.CreateSpan(ref distanceMetric, 1)));
 
-            parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg]);
+            parseState.InitializeWithArguments([dimsArg, reduceDimsArg, valueTypeArg, valuesArg, elementArg, quantizerArg, buildExplorationFactorArg, attributesArg, numLinksArg, distanceMetricArg]);
 
             var input = new StringInput(RespCommand.VADD, ref parseState);
 
@@ -120,7 +150,7 @@ namespace Garnet.server
 
                 // After a successful read we add the vector while holding a shared lock
                 // That lock prevents deletion, but everything else can proceed in parallel
-                result = vectorManager.TryAdd(indexSpan, element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, out errorMsg);
+                result = vectorManager.TryAdd(indexSpan, element.ReadOnlySpan, valueType, values.ReadOnlySpan, attributes.ReadOnlySpan, (uint)reduceDims, quantizer, (uint)buildExplorationFactor, (uint)numLinks, distanceMetric, out errorMsg);
 
                 if (result == VectorManagerResult.OK)
                 {
@@ -265,7 +295,7 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _);
+                VectorManager.ReadIndex(indexSpan, out _, out var dimensionsUS, out var reducedDimensionsUS, out _, out _, out _, out _, out _, out _);
 
                 dimensions = (int)(reducedDimensionsUS == 0 ? dimensionsUS : reducedDimensionsUS);
 
@@ -279,6 +309,7 @@ namespace Garnet.server
         internal unsafe GarnetStatus VectorSetInfo(
             PinnedSpanByte key,
             out VectorQuantType quantType,
+            out VectorDistanceMetricType distanceMetricType,
             out uint vectorDimensions,
             out uint reducedDimensions,
             out uint buildExplorationFactor,
@@ -294,6 +325,7 @@ namespace Garnet.server
                 if (status != GarnetStatus.OK)
                 {
                     quantType = VectorQuantType.Invalid;
+                    distanceMetricType = VectorDistanceMetricType.Invalid;
                     vectorDimensions = 0;
                     reducedDimensions = 0;
                     buildExplorationFactor = 0;
@@ -303,10 +335,8 @@ namespace Garnet.server
                 }
 
                 // After a successful read we extract metadata
-                VectorManager.ReadIndex(indexSpan, out _, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out _, out _);
-
-                // TODO: fetch VectorSet size from DiskANN
-                size = 0;
+                VectorManager.ReadIndex(indexSpan, out var context, out vectorDimensions, out reducedDimensions, out quantType, out buildExplorationFactor, out numberOfLinks, out distanceMetricType, out var indexPtr, out _);
+                size = (long)NativeDiskANNMethods.card(context, indexPtr);
 
                 return GarnetStatus.OK;
             }

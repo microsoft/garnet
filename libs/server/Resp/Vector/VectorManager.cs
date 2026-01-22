@@ -185,6 +185,7 @@ namespace Garnet.server
             VectorQuantType providedQuantType,
             uint providedBuildExplorationFactor,
             uint providedNumLinks,
+            VectorDistanceMetricType providedDistanceMetric,
             out ReadOnlySpan<byte> errorMsg
         )
         {
@@ -192,7 +193,7 @@ namespace Garnet.server
 
             errorMsg = default;
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var indexPtr, out _);
 
             var valueDims = CalculateValueDimensions(valueType, values);
 
@@ -219,16 +220,16 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
+            if (providedDistanceMetric != VectorDistanceMetricType.Invalid && providedDistanceMetric != distanceMetric)
+            {
+                errorMsg = Encoding.ASCII.GetBytes($"ERR Distance metric mismatch - got {providedDistanceMetric} but set has {distanceMetric}");
+                return VectorManagerResult.BadParams;
+            }
+
             if (providedNumLinks != numLinks)
             {
                 // Matching Redis behavior
                 errorMsg = "ERR asked M value mismatch with existing vector set"u8;
-                return VectorManagerResult.BadParams;
-            }
-
-            if (quantType == VectorQuantType.XPreQ8 && element.Length != sizeof(uint))
-            {
-                errorMsg = "ERR XPREQ8 requires 4-byte element ids"u8;
                 return VectorManagerResult.BadParams;
             }
 
@@ -257,7 +258,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
 
             if (quantType == VectorQuantType.XPreQ8 && element.Length != sizeof(int))
             {
@@ -291,7 +292,7 @@ namespace Garnet.server
                     return Status.CreateNotFound();
                 }
 
-                ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _);
+                ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
 
                 if (!TryMarkDeleteInProgress(ref storageSession.vectorContext, key, context))
                 {
@@ -363,7 +364,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
 
             var valueDims = CalculateValueDimensions(valueType, values);
             if (dimensions != valueDims)
@@ -473,7 +474,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out var quantType, out _, out _, out _, out var indexPtr, out _);
 
             // No point in asking for more data than the effort we'll put in
             if (count > searchExplorationFactor)
@@ -657,7 +658,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out _, out _, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out _, out _, out _, out _, out var indexPtr, out _);
 
             // Make sure enough space in distances for requested count
             if (dimensions * sizeof(float) > outputDistances.Length)
@@ -674,11 +675,27 @@ namespace Garnet.server
                 outputDistances.Length = (int)dimensions * sizeof(float);
             }
 
+            Span<byte> internalId = stackalloc byte[sizeof(int)];
+            var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
+            try
+            {
+                if (!ReadSizeUnknown(context | DiskANNService.InternalIdMap, element, ref internalIdBytes))
+                {
+                    return false;
+                }
+
+                Debug.Assert(internalIdBytes.IsSpanByte, "Internal Id should always be of known size");
+            }
+            finally
+            {
+                internalIdBytes.Memory?.Dispose();
+            }
+
             Span<byte> asBytesSpan = stackalloc byte[(int)dimensions];
             var asBytes = SpanByteAndMemory.FromPinnedSpan(asBytesSpan);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.FullVector, element, ref asBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, internalId, ref asBytes))
                 {
                     return false;
                 }
@@ -691,22 +708,13 @@ namespace Garnet.server
                     into[i] = from[i];
                 }
 
-                return true;
+                // Vector might have been deleted, so check that after getting data
+                return Service.CheckInternalIdValid(context, indexPtr, internalId);
             }
             finally
             {
                 asBytes.Memory?.Dispose();
             }
-
-            // TODO: DiskANN will need to do this long term, since different quantizers may behave differently
-
-            //return
-            //    Service.TryGetEmbedding(
-            //        context,
-            //        indexPtr,
-            //        element,
-            //        MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan())
-            //    );
         }
 
         /// <summary>

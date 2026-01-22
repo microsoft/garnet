@@ -322,16 +322,17 @@ namespace Garnet.server
                         var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
                         // Attributes is here, skipping during index creation
                         var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
+                        var distanceMetric = MemoryMarshal.Read<VectorDistanceMetricType>(input.parseState.GetArgSliceByRef(9).Span);
 
                         // Pre-allocated by caller because DiskANN needs to be able to call into Garnet as part of create_index
                         // and thus we can't call into it from session functions
-                        var context = MemoryMarshal.Read<ulong>(input.parseState.GetArgSliceByRef(9).Span);
-                        var index = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(10).Span);
+                        var context = MemoryMarshal.Read<ulong>(input.parseState.GetArgSliceByRef(10).Span);
+                        var index = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
 
                         // TODO: How do we set RecordType?
                         //recordInfo.VectorSet = true;
 
-                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, context, index, logRecord.ValueSpan);
+                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, index, logRecord.ValueSpan);
                     }
                     break;
                 case RespCommand.VREM:
@@ -838,7 +839,7 @@ namespace Garnet.server
                     }
                     else if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
-                        var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(10).Span);
+                        var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
 
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, logRecord.ValueSpan);
                     }

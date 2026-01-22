@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Garnet.common;
@@ -58,7 +59,12 @@ namespace Garnet.test
                 var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute(cmd.ToString()));
                 ClassicAssert.AreEqual("ERR Vector Set (preview) commands are not enabled", exc.Message, $"For {cmd}");
             }
+        }
 
+        [Test]
+        public void OversizedRejected()
+        {
+            ClassicAssert.Ignore("Store v2 does not have a limit for data sizes; remove test once we're not trailing main");
         }
 
         [Test]
@@ -188,6 +194,36 @@ namespace Garnet.test
         }
 
         [Test]
+        public void VADDVariableLengthElementIds()
+        {
+            const int MinElementLength = 1;
+            const int MaxElementLength = 1024;
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Always put a 0 length in as a stress test
+            List<byte[]> ids = [[]];
+            for (var len = MinElementLength; len <= MaxElementLength; len *= 2)
+            {
+                ids.Add(Enumerable.Range(0, len).Select(_ => (byte)len).ToArray());
+            }
+
+            foreach (var id in ids)
+            {
+                var addRes = (int)db.Execute("VADD", ["foo", "VALUES", "1", ((float)(byte)id.Length).ToString(), id, "XPREQ8"]);
+                ClassicAssert.AreEqual(1, addRes);
+            }
+
+            foreach (var id in ids)
+            {
+                var embRes = (string[])db.Execute("VEMB", ["foo", id]);
+                ClassicAssert.AreEqual(1, embRes.Length);
+                ClassicAssert.AreEqual((float)(byte)id.Length, float.Parse(embRes[0]));
+            }
+        }
+
+        [Test]
         public void VADDXPREQB8()
         {
             // Extra validation is required for this extension quantifier
@@ -201,14 +237,6 @@ namespace Garnet.test
             // Create a vector set
             var res1 = db.Execute("VADD", ["fizz", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
             ClassicAssert.AreEqual(1, (int)res1);
-
-            // Element name too short
-            var exc2 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "4", "1.0", "2.0", "3.0", "4.0", new byte[] { 0 }, "XPREQ8"]));
-            ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 4 but set has 75", exc2.Message);
-
-            // Element name too long
-            var exc3 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["fizz", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 1, 2, 3, 4, }, "XPREQ8"]));
-            ClassicAssert.AreEqual("ERR XPREQ8 requires 4-byte element ids", exc3.Message);
         }
 
         [Test]
@@ -1344,6 +1372,12 @@ namespace Garnet.test
         }
 
         [Test]
+        public unsafe void MarkWithNamespace()
+        {
+            ClassicAssert.Ignore("Namespace marking is not a Vector Set thing, it's a store v2 thing; remove test once we're not trailing main");
+        }
+
+        [Test]
         public void RecreateIndexesOnRestore()
         {
             var addData1 = Enumerable.Range(0, 75).Select(static x => (byte)x).ToArray();
@@ -1650,15 +1684,15 @@ namespace Garnet.test
 
                                 // Get VINFO - should return an array of 12 elements (6 key-value pairs)
                                 var vinfoRes = (RedisValue[])db.Execute("VINFO", [fooKey]);
-                                ClassicAssert.AreEqual(12, vinfoRes.Length);
+                                ClassicAssert.AreEqual(14, vinfoRes.Length);
                                 var values = BuildDictionaryFromResponse(vinfoRes);
                                 ClassicAssert.AreEqual(values["quant-type"], expectedQuantType);
+                                ClassicAssert.AreEqual(values["distance-metric"], "l2");
                                 ClassicAssert.AreEqual(values["input-vector-dimensions"], vectorDim.ToString());
                                 ClassicAssert.AreEqual(values["reduced-dimensions"], reduceValueToUse.ToString());
                                 ClassicAssert.AreEqual(values["build-exploration-factor"], expectedEf);
                                 ClassicAssert.AreEqual(values["num-links"], expectedNumLinks);
-                                // TODO: Update once DiskANN exposes card()
-                                ClassicAssert.AreEqual(values["size"], "0");
+                                ClassicAssert.AreEqual(values["size"], "1");
 
                                 // Modify first value for second add (change from "1.0" to "2.0")
                                 vectorValues[2] = "2.0";
@@ -1668,15 +1702,15 @@ namespace Garnet.test
                                 ClassicAssert.AreEqual(1, (int)res);
 
                                 vinfoRes = (RedisValue[])db.Execute(command: "VINFO", [fooKey]);
-                                ClassicAssert.AreEqual(12, vinfoRes.Length);
+                                ClassicAssert.AreEqual(14, vinfoRes.Length);
                                 values = BuildDictionaryFromResponse(vinfoRes);
                                 ClassicAssert.AreEqual(values["quant-type"], expectedQuantType);
+                                ClassicAssert.AreEqual(values["distance-metric"], "l2");
                                 ClassicAssert.AreEqual(values["input-vector-dimensions"], vectorDim.ToString());
                                 ClassicAssert.AreEqual(values["reduced-dimensions"], reduceValueToUse.ToString());
                                 ClassicAssert.AreEqual(values["build-exploration-factor"], expectedEf);
                                 ClassicAssert.AreEqual(values["num-links"], expectedNumLinks);
-                                // TODO: Update once DiskANN exposes card()
-                                ClassicAssert.AreEqual(values["size"], "0");
+                                ClassicAssert.AreEqual(values["size"], "2");
 
                                 // Delete vector set
                                 var delRes = db.KeyDelete(fooKey);
@@ -1767,5 +1801,140 @@ namespace Garnet.test
             ClassicAssert.AreEqual(1, res6.Length);
             ClassicAssert.IsTrue(res6.Any(static x => x.SequenceEqual(new byte[] { 1, 0, 0, 0 })));
         }
+
+        [Test]
+        public void SimpleInternalIdReuse()
+        {
+            const string Key = "SimpleInternalIdReuse";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Both these adds get internal id 1 due the interleaves remove
+            ExpectSuccess(db.Execute("VADD", [Key, "XB8", new byte[] { 36, 127, 75, 189, 65, 104, 32, 98, 182, 97, 52, 85, 16, 176, 0, 233, 236, 90, 153, 239, 88, 107, 60, 191, 208, 50, 60, 241, 27, 21, 30, 233, 23, 9, 23, 6, 152, 179, 206, 168, 117, 201, 179, 226, 72, 114, 149, 45, 95, 5, 57, 230, 72, 50, 83, 184, 67, 140, 236, 15, 43, 46, 71, 161, 67, 75, 62, 7, 152, 249, 80, 57, 139, 241, 121 }, new byte[] { 143 }, "XPREQ8"]));
+            ExpectSuccess(db.Execute("VREM", [Key, new byte[] { 143 }]));
+            ExpectSuccess(db.Execute("VADD", [Key, "XB8", new byte[] { 176, 79, 173, 190, 74, 104, 121, 238, 209, 182, 91, 37, 70, 231, 58, 20, 151, 19, 62, 38, 143, 52, 79, 148, 24, 98, 242, 192, 96, 39, 76, 254, 82, 13, 217, 35, 79, 91, 9, 141, 41, 169, 86, 220, 64, 191, 98, 105, 38, 131, 145, 14, 198, 28, 190, 124, 0, 24, 165, 231, 117, 184, 142, 170, 106, 93, 210, 56, 14, 22, 197, 60, 10, 177, 253 }, new byte[] { 230, 221, 114, 84, 89, 0, 137, 154, 220, 149, 61 }, "XPREQ8"]));
+            var shouldBeEmpty = (string[])db.Execute("VEMB", [Key, new byte[] { 143 }]);
+            ClassicAssert.IsEmpty(shouldBeEmpty);
+
+            static void ExpectSuccess(dynamic res)
+            {
+                ClassicAssert.AreEqual(1, (int)res);
+            }
+        }
+
+        [Test]
+        public void StressInternalIdReuse()
+        {
+            const int Vectors = 1_000;
+            const int Deletes = 200;
+            const string Key = "StressInternalIdReuse";
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Build some repeatably random data for inserts
+            var vectors = new List<(byte[] Id, byte[] Data)>();
+            var toDeleteVectors = new HashSet<byte[]>(ByteArrayComparer.Instance);
+            var pendingAdd = new List<(byte[] Id, byte[] Data)>();
+            var pendingRemove = new List<byte[]>();
+            var alreadyRemoved = new List<byte[]>();
+            var r = new Random(2026_01_21);
+            {
+                for (var i = 0; i < Vectors; i++)
+                {
+                    var id = new byte[r.Next(16) + 1];
+                    var data = new byte[75];
+                    r.NextBytes(data);
+                    r.NextBytes(id);
+
+                    if (vectors.Any(t => t.Id.SequenceEqual(id)))
+                    {
+                        i--;
+                        continue;
+                    }
+
+                    vectors.Add((id, data));
+                }
+
+                while (toDeleteVectors.Count < Deletes)
+                {
+                    _ = toDeleteVectors.Add(vectors[r.Next(vectors.Count)].Id);
+                }
+
+                pendingAdd.AddRange(vectors);
+                pendingRemove.AddRange(toDeleteVectors);
+            }
+
+            // Randomly interleave adds and removes
+            while (pendingAdd.Count > 0 || pendingRemove.Count > 0)
+            {
+                if (r.Next(2) == 0 && pendingAdd.Count > 0)
+                {
+                    var addIx = r.Next(pendingAdd.Count);
+                    var (id, data) = pendingAdd[addIx];
+
+                    var addRes = (int)db.Execute("VADD", [Key, "XB8", data, id, "XPREQ8"]);
+                    ClassicAssert.AreEqual(1, addRes);
+
+                    pendingAdd.RemoveAt(addIx);
+                }
+                else if (pendingRemove.Count > 0)
+                {
+                    var removeIx = r.Next(pendingRemove.Count);
+                    var id = pendingRemove[removeIx];
+
+                    var shouldSucceed = !pendingAdd.Any(t => t.Id.SequenceEqual(id));
+
+                    var remRes = (int)db.Execute("VREM", [Key, id]);
+
+                    if (shouldSucceed)
+                    {
+                        ClassicAssert.AreEqual(1, remRes);
+
+                        var embRes = (string[])db.Execute("VEMB", [Key, id]);
+                        ClassicAssert.IsEmpty(embRes);
+
+                        pendingRemove.RemoveAt(removeIx);
+                        alreadyRemoved.Add(id);
+                    }
+                    else
+                    {
+                        ClassicAssert.AreEqual(0, remRes);
+                    }
+                }
+
+                // Check that prior deletes remain deleted
+                foreach (var id in alreadyRemoved)
+                {
+                    var embRes = (string[])db.Execute("VEMB", [Key, id]);
+                    ClassicAssert.IsEmpty(embRes);
+                }
+            }
+
+            // Validate final state
+            foreach (var (id, data) in vectors)
+            {
+                var shouldExists = !toDeleteVectors.Contains(id);
+
+                var embRes = (string[])db.Execute("VEMB", [Key, id]);
+
+                if (shouldExists)
+                {
+                    ClassicAssert.AreEqual(data.Length, embRes.Length);
+                    for (var i = 0; i < data.Length; i++)
+                    {
+                        ClassicAssert.AreEqual(data[i], byte.Parse(embRes[i]));
+                    }
+                }
+                else
+                {
+                    ClassicAssert.IsEmpty(embRes);
+                }
+            }
+        }
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "opts")]
+        private static extern ref GarnetServerOptions GetOpts(GarnetServer server);
     }
 }
