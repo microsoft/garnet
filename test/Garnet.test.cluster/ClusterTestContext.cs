@@ -227,7 +227,9 @@ namespace Garnet.test.cluster
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
-            int expiredObjectCollectionFrequencySecs = 0)
+            int expiredObjectCollectionFrequencySecs = 0,
+            ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
+            bool useClusterAnnounceHostname = false)
         {
             var ipAddress = IPAddress.Loopback;
             TestUtils.EndPoint = new IPEndPoint(ipAddress, 7000);
@@ -282,7 +284,9 @@ namespace Garnet.test.cluster
                 checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                 clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                 replicaSyncTimeout: replicaSyncTimeout,
-                expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs);
+                expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
+                clusterPreferredEndpointType: clusterPreferredEndpointType,
+                clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null);
 
             foreach (var node in nodes)
                 node.Start();

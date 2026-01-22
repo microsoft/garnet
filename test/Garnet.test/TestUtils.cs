@@ -516,7 +516,9 @@ namespace Garnet.test
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
-            int expiredObjectCollectionFrequencySecs = 0)
+            int expiredObjectCollectionFrequencySecs = 0,
+            ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
+            string clusterAnnounceHostname = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -579,7 +581,9 @@ namespace Garnet.test
                     checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                     clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                     replicaSyncTimeout: replicaSyncTimeout,
-                    expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs);
+                    expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
+                    clusterPreferredEndpointType: clusterPreferredEndpointType,
+                    clusterAnnounceHostname: clusterAnnounceHostname);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -656,7 +660,9 @@ namespace Garnet.test
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
-            int expiredObjectCollectionFrequencySecs = 0)
+            int expiredObjectCollectionFrequencySecs = 0,
+            ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
+            string clusterAnnounceHostname = null)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -769,6 +775,8 @@ namespace Garnet.test
                 ReplicaDisklessSyncDelay = replicaDisklessSyncDelay,
                 ReplicaDisklessSyncFullSyncAofThreshold = replicaDisklessSyncFullSyncAofThreshold,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
+                ClusterAnnounceHostname = clusterAnnounceHostname,
+                ClusterPreferredEndpointType = clusterPreferredEndpointType,
                 DeviceType = deviceType,
                 ClusterReplicationReestablishmentTimeout = clusterReplicationReestablishmentTimeout,
                 CompactionFrequencySecs = compactionFrequencySecs,
