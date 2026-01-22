@@ -322,7 +322,7 @@ namespace Garnet.server
             VectorQuantType providedQuantType,
             uint providedBuildExplorationFactor,
             uint providedNumLinks,
-            VectorDistanceMetricType providendDistanceMetric,
+            VectorDistanceMetricType providedDistanceMetric,
             out ReadOnlySpan<byte> errorMsg
         )
         {
@@ -330,7 +330,7 @@ namespace Garnet.server
 
             errorMsg = default;
 
-            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out var buildExplorationFactor, out var numLinks, out var distanceMetric, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out var dimensions, out var reduceDims, out var quantType, out _, out var numLinks, out var distanceMetric, out var indexPtr, out _);
 
             var valueDims = CalculateValueDimensions(valueType, values);
 
@@ -357,9 +357,9 @@ namespace Garnet.server
                 return VectorManagerResult.BadParams;
             }
 
-            if (providendDistanceMetric != VectorDistanceMetricType.Invalid && providendDistanceMetric != distanceMetric)
+            if (providedDistanceMetric != VectorDistanceMetricType.Invalid && providedDistanceMetric != distanceMetric)
             {
-                errorMsg = Encoding.ASCII.GetBytes($"ERR Distance metric mismatch - got {providendDistanceMetric} but set has {distanceMetric}");
+                errorMsg = Encoding.ASCII.GetBytes($"ERR Distance metric mismatch - got {providedDistanceMetric} but set has {distanceMetric}");
                 return VectorManagerResult.BadParams;
             }
 

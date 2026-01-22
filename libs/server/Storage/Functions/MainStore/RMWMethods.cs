@@ -845,7 +845,7 @@ namespace Garnet.server
                     }
                     else if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
-                        var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(10).Span);
+                        var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
 
                         functionsState.vectorManager.RecreateIndex(newIndexPtr, ref value);
                     }
@@ -1411,7 +1411,7 @@ namespace Garnet.server
                     }
                     else if (input.arg1 == VectorManager.RecreateIndexArg)
                     {
-                        var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(10).Span);
+                        var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
 
                         oldValue.CopyTo(ref newValue);
 
