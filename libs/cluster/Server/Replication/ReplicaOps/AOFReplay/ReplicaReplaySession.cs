@@ -12,7 +12,7 @@ namespace Garnet.cluster
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
         ReplicaReplayDriverStore replicaReplayDriverStore = null;
-        TsavoriteLog replaySessionSublog = null;
+        TsavoriteLog physicalSublog = null;
 
         /// <summary>
         /// Apply primary AOF records.
@@ -93,10 +93,10 @@ namespace Garnet.cluster
                 }
 
                 // Initialize sublog ref if first time
-                replaySessionSublog ??= clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
+                physicalSublog ??= clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
 
                 // Enqueue to AOF
-                _ = replaySessionSublog.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: clusterProvider.serverOptions.EnableFastCommit);
+                _ = physicalSublog.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: clusterProvider.serverOptions.EnableFastCommit);
 
                 if (clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0)
                 {

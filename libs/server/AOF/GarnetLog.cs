@@ -354,8 +354,12 @@ namespace Garnet.server
         internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
-            var hash = HASH(key);
-            var physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+            var physicalSublogIdx = 0L;
+            if (serverOptions.AofPhysicalSublogCount == 1)
+            {
+                var hash = HASH(key);
+                physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+            }
             shardedLog.sublog[physicalSublogIdx].Enqueue(
                 shardedHeader,
                 key,
@@ -367,8 +371,12 @@ namespace Garnet.server
         internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
-            var hash = HASH(key);
-            var physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+            var physicalSublogIdx = 0L;
+            if (serverOptions.AofPhysicalSublogCount == 1)
+            {
+                var hash = HASH(key);
+                physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+            }
             shardedLog.sublog[physicalSublogIdx].Enqueue(
                 shardedHeader,
                 key,
@@ -378,8 +386,12 @@ namespace Garnet.server
 
         internal void Enqueue(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out long logicalAddress)
         {
-            var hash = HASH(key);
-            var physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+            var physicalSublogIdx = 0L;
+            if (serverOptions.AofPhysicalSublogCount == 1)
+            {
+                var hash = HASH(key);
+                physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+            }
             shardedLog.sublog[physicalSublogIdx].Enqueue(
                 shardedHeader,
                 key,
