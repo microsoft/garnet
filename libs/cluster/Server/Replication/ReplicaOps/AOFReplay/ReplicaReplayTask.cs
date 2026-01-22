@@ -12,23 +12,6 @@ using Tsavorite.core;
 
 namespace Garnet.cluster
 {
-    internal unsafe class ReplayWorkItem(int replayTasks)
-    {
-        public byte* record;
-        public int recordLength;
-        public long currentAddress;
-        public long nextAddress;
-        public bool isProtected;
-        public ManualResetEventSlim Completed = new(true);
-        public EventBarrier eventBarrier = new(replayTasks);
-
-        public void Reset()
-        {
-            Completed.Reset();
-            eventBarrier.Reset();
-        }
-    }
-
     internal sealed class ReplicaReplayTask(
         int replayIdx,
         ReplicaReplayDriver replayDriver,
@@ -66,11 +49,11 @@ namespace Garnet.cluster
             {
                 unsafe
                 {
-                    var record = entry.record;
-                    var recordLength = entry.recordLength;
-                    var currentAddress = entry.currentAddress;
-                    var nextAddress = entry.nextAddress;
-                    var isProtected = entry.isProtected;
+                    var record = entry.Record;
+                    var recordLength = entry.RecordLength;
+                    var currentAddress = entry.CurrentAddress;
+                    var nextAddress = entry.NextAddress;
+                    var isProtected = entry.IsProtected;
                     var ptr = record;
 
                     if (replayTaskIdx == 0)
@@ -123,7 +106,7 @@ namespace Garnet.cluster
                         cts.Cancel();
                     }
 
-                    var eventBarrier = entry.eventBarrier;
+                    var eventBarrier = entry.LeaderBarrier;
                     try
                     {
                         var isLeader = eventBarrier.TrySignalAndWait(out var signalException, serverOptions.ReplicaSyncTimeout, cts.Token);

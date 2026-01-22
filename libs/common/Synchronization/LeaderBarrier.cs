@@ -11,7 +11,7 @@ namespace Garnet.common
     /// and wait for a signal from the N-th participant (i.e. leader)
     /// </summary>
     /// <param name="participantCount"></param>
-    public class EventBarrier(int participantCount)
+    public class LeaderBarier(int participantCount)
     {
         readonly int participantCount = participantCount;
         int arrivedCount = participantCount;

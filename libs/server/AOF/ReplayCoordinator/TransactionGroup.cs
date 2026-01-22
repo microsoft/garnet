@@ -12,14 +12,24 @@ namespace Garnet.server
     /// <param name="logAccessMap"></param>
     public class TransactionGroup(int sublogIdx, byte logAccessMap)
     {
-        public readonly int sublogIdx = sublogIdx;
-        public readonly byte logAccessCount = logAccessMap;
-
-        public List<byte[]> operations = [];
+        /// <summary>
+        /// Virtual sublog index associated with this transaction group.
+        /// </summary>
+        public readonly int VirtualSublogIdx = sublogIdx;
 
         /// <summary>
-        /// Clear the underlying buffer that holds the individual transaction operations
+        /// Virtual sublog access count associated with this transaction group.
         /// </summary>
-        public void Clear() => operations.Clear();
+        public readonly byte LogAccessCount = logAccessMap;
+
+        /// <summary>
+        /// Operations associated with this transaction group.
+        /// </summary>
+        public List<byte[]> Operations = [];
+
+        /// <summary>
+        /// Clear the underlying buffer that holds the individual transaction operations.
+        /// </summary>
+        public void Clear() => Operations.Clear();
     }
 }

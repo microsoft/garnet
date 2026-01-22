@@ -92,11 +92,11 @@ namespace Garnet.cluster
 
                 replayWorkItem.Completed.Reset();
                 var replayBufferSlot = replayWorkItem;
-                replayBufferSlot.record = record;
-                replayBufferSlot.recordLength = recordLength;
-                replayBufferSlot.currentAddress = currentAddress;
-                replayBufferSlot.nextAddress = nextAddress;
-                replayBufferSlot.isProtected = isProtected;
+                replayBufferSlot.Record = record;
+                replayBufferSlot.RecordLength = recordLength;
+                replayBufferSlot.CurrentAddress = currentAddress;
+                replayBufferSlot.NextAddress = nextAddress;
+                replayBufferSlot.IsProtected = isProtected;
                 replayBufferSlot.Completed.Reset();
                 replayBufferSlot.Reset();
 

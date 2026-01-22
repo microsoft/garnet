@@ -23,19 +23,26 @@ namespace Garnet.server
         CUSTOM_STORED_PROC = -5,
     }
 
-    struct BarrierId : IEquatable<BarrierId>
+    struct BarrierKey : IEquatable<BarrierKey>
     {
-        public int sessionId;
-        public long sequenceNumber;
+        /// <summary>
+        /// Id
+        /// </summary>
+        public int Id;
 
-        public bool Equals(BarrierId other)
-            => sessionId == other.sessionId && sequenceNumber == other.sequenceNumber;
+        /// <summary>
+        /// Sequence number
+        /// </summary>
+        public long SequenceNumber;
+
+        public bool Equals(BarrierKey other)
+            => Id == other.Id && SequenceNumber == other.SequenceNumber;
 
         public override bool Equals(object obj)
-            => obj is BarrierId other && Equals(other);
+            => obj is BarrierKey other && Equals(other);
 
         public override int GetHashCode()
-            => HashCode.Combine(sessionId, sequenceNumber);
+            => HashCode.Combine(Id, SequenceNumber);
     }
 
     public sealed unsafe partial class AofProcessor
@@ -55,7 +62,7 @@ namespace Garnet.server
         public class AofReplayCoordinator(GarnetServerOptions serverOptions, AofProcessor aofProcessor, ILogger logger = null) : IDisposable
         {
             readonly GarnetServerOptions serverOptions = serverOptions;
-            readonly ConcurrentDictionary<BarrierId, EventBarrier> eventBarriers = [];
+            readonly ConcurrentDictionary<BarrierKey, LeaderBarier> eventBarriers = [];
             readonly AofProcessor aofProcessor = aofProcessor;
             readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(serverOptions.AofVirtualSublogCount);
 
@@ -84,16 +91,10 @@ namespace Garnet.server
                     replayContext.output.MemoryOwner?.Dispose();
             }
 
-            EventBarrier GetBarrier(int sessionId, long sequenceNumber, int participantCount)
+            LeaderBarier GetBarrier(int sessionId, long sequenceNumber, int participantCount)
             {
-                var barrierID = new BarrierId() { sessionId = sessionId, sequenceNumber = sequenceNumber };
-                return eventBarriers.GetOrAdd(barrierID, _ => new EventBarrier(participantCount));
-            }
-
-            bool TryRemoveBarrier(int sessionId, long sequenceNumber, out EventBarrier eventBarrier)
-            {
-                var barrierID = new BarrierId() { sessionId = sessionId, sequenceNumber = sequenceNumber };
-                return eventBarriers.TryRemove(barrierID, out eventBarrier);
+                var barrierID = new BarrierKey() { Id = sessionId, SequenceNumber = sequenceNumber };
+                return eventBarriers.GetOrAdd(barrierID, _ => new LeaderBarier(participantCount));
             }
 
             /// <summary>
@@ -166,7 +167,7 @@ namespace Garnet.server
                         case AofEntryType.StoredProcedure:
                             throw new GarnetException($"Unexpected AOF header operation type {header.opType} within transaction");
                         default:
-                            group.operations.Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
+                            group.Operations.Add(new ReadOnlySpan<byte>(ptr, length).ToArray());
                             break;
                     }
 
@@ -287,7 +288,7 @@ namespace Garnet.server
                 // Helper to iterate of transaction keys and add them to lockset
                 static unsafe void SaveTransactionGroupKeysToLock(TransactionManager txnManager, TransactionGroup txnGroup)
                 {
-                    foreach (var entry in txnGroup.operations)
+                    foreach (var entry in txnGroup.Operations)
                     {
                         fixed (byte* entryPtr = entry)
                         {
@@ -306,10 +307,10 @@ namespace Garnet.server
                     where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
                     where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
                 {
-                    foreach (var entry in txnGroup.operations)
+                    foreach (var entry in txnGroup.Operations)
                     {
                         fixed (byte* entryPtr = entry)
-                            _ = aofProcessor.ReplayOp(txnGroup.sublogIdx, stringContext, objectContext, unifiedContext, entryPtr, entry.Length, asReplica: asReplica);
+                            _ = aofProcessor.ReplayOp(txnGroup.VirtualSublogIdx, stringContext, objectContext, unifiedContext, entryPtr, entry.Length, asReplica: asReplica);
                     }
                 }
             }
@@ -427,6 +428,13 @@ namespace Garnet.server
 
                 // Update timestamp
                 aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, txnHeader.shardedHeader.sequenceNumber);
+
+                // Remove barrier helper
+                bool TryRemoveBarrier(int sessionId, long sequenceNumber, out LeaderBarier eventBarrier)
+                {
+                    var barrierID = new BarrierKey() { Id = sessionId, SequenceNumber = sequenceNumber };
+                    return eventBarriers.TryRemove(barrierID, out eventBarrier);
+                }
             }
         }
     }
