@@ -1198,7 +1198,7 @@ namespace Garnet.server
         /// <summary>
         /// Adds to (and may create) a vector set with the given parameters.
         /// </summary>
-        GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte value, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
+        GarnetStatus VectorSetAdd(PinnedSpanByte key, int reduceDims, VectorValueType valueType, PinnedSpanByte value, PinnedSpanByte element, VectorQuantType quantizer, int buildExplorationFactor, PinnedSpanByte attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg);
 
         /// <summary>
         /// Remove a member from a vector set, if it is present and the key exists.
@@ -2020,7 +2020,7 @@ namespace Garnet.server
         /// <summary>
         /// Fetch debugging information about the Vector Set.
         /// </summary>
-        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size);
+        GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size);
 
         #endregion 
     }

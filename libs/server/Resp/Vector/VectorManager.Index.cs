@@ -21,7 +21,7 @@ namespace Garnet.server
         [StructLayout(LayoutKind.Explicit, Size = Size)]
         private struct Index
         {
-            internal const int Size = 52;
+            internal const int Size = 56;
 
             [FieldOffset(0)]
             public ulong Context;
@@ -38,6 +38,8 @@ namespace Garnet.server
             [FieldOffset(32)]
             public VectorQuantType QuantType;
             [FieldOffset(36)]
+            public VectorDistanceMetricType DistanceMetric;
+            [FieldOffset(40)]
             public Guid ProcessInstanceId;
         }
 
@@ -50,6 +52,7 @@ namespace Garnet.server
             VectorQuantType quantType,
             uint buildExplorationFactor,
             uint numLinks,
+            VectorDistanceMetricType distanceMetric,
             ulong newContext,
             nint newIndexPtr,
             Span<byte> indexSpan)
@@ -72,6 +75,7 @@ namespace Garnet.server
             asIndex.QuantType = quantType;
             asIndex.BuildExplorationFactor = buildExplorationFactor;
             asIndex.NumLinks = numLinks;
+            asIndex.DistanceMetric = distanceMetric;
             asIndex.IndexPtr = (ulong)newIndexPtr;
             asIndex.ProcessInstanceId = processInstanceId;
         }
@@ -91,7 +95,7 @@ namespace Garnet.server
                 throw new GarnetException($"Acquired space for vector set index does not match expectations, {indexSpan.Length} != {Index.Size}");
             }
 
-            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out var indexProcessInstanceId);
+            ReadIndex(indexSpan, out var context, out _, out _, out _, out _, out _, out _, out _, out var indexProcessInstanceId);
             Debug.Assert(processInstanceId != indexProcessInstanceId, "Shouldn't be recreating an index that matched our instance id");
 
             ref var asIndex = ref Unsafe.As<byte, Index>(ref MemoryMarshal.GetReference(indexSpan));
@@ -106,7 +110,7 @@ namespace Garnet.server
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out var indexPtr, out var indexProcessInstanceId);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr, out var indexProcessInstanceId);
 
             if (indexProcessInstanceId != processInstanceId)
             {
@@ -128,6 +132,7 @@ namespace Garnet.server
             out VectorQuantType quantType,
             out uint buildExplorationFactor,
             out uint numLinks,
+            out VectorDistanceMetricType distanceMetric,
             out nint indexPtr,
             out Guid processInstanceId
         )
@@ -142,6 +147,7 @@ namespace Garnet.server
             quantType = asIndex.QuantType;
             buildExplorationFactor = asIndex.BuildExplorationFactor;
             numLinks = asIndex.NumLinks;
+            distanceMetric = asIndex.DistanceMetric;
             indexPtr = (nint)asIndex.IndexPtr;
             processInstanceId = asIndex.ProcessInstanceId;
 

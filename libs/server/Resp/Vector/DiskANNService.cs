@@ -11,6 +11,9 @@ namespace Garnet.server
         private const byte NeighborList = 1;
         private const byte QuantizedVector = 2;
         internal const byte Attributes = 3;
+        private const byte Metadata = 4;
+        internal const byte InternalIdMap = 5;
+        private const byte ExternalIdMap = 6;
 
         public nint CreateIndex(
             ulong context,
@@ -19,12 +22,15 @@ namespace Garnet.server
             VectorQuantType quantType,
             uint buildExplorationFactor,
             uint numLinks,
+            VectorDistanceMetricType distanceMetric,
             delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
         )
         {
+            // TODO: actually pass distance metric
+
             unsafe
             {
                 return NativeDiskANNMethods.create_index(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, (nint)readCallback, (nint)writeCallback, (nint)deleteCallback, (nint)readModifyWriteCallback);
@@ -38,12 +44,13 @@ namespace Garnet.server
             VectorQuantType quantType,
             uint buildExplorationFactor,
             uint numLinks,
+            VectorDistanceMetricType distanceMetricType,
             delegate* unmanaged[Cdecl]<ulong, uint, nint, nuint, nint, nint, void> readCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nint, nuint, byte> writeCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, byte> deleteCallback,
             delegate* unmanaged[Cdecl]<ulong, nint, nuint, nuint, nint, nint, byte> readModifyWriteCallback
         )
-        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, readCallback, writeCallback, deleteCallback, readModifyWriteCallback);
+        => CreateIndex(context, dimensions, reduceDims, quantType, buildExplorationFactor, numLinks, distanceMetricType, readCallback, writeCallback, deleteCallback, readModifyWriteCallback);
 
         public void DropIndex(ulong context, nint index)
         {
@@ -200,9 +207,12 @@ namespace Garnet.server
             throw new NotImplementedException();
         }
 
-        public bool TryGetEmbedding(ulong context, nint index, ReadOnlySpan<byte> id, Span<float> dimensions)
+        public bool CheckInternalIdValid(ulong context, nint index, ReadOnlySpan<byte> internalId)
         {
-            throw new NotImplementedException();
+            var internal_id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(internalId));
+            var internal_id_len = internalId.Length;
+
+            return NativeDiskANNMethods.check_internal_id_valid(context, index, (nint)internal_id_data, (nuint)internal_id_len) == 1;
         }
     }
 
@@ -314,6 +324,14 @@ namespace Garnet.server
         public static partial ulong card(
             ulong context,
             nint index
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte check_internal_id_valid(
+            ulong context,
+            nint index,
+            nint internal_id,
+            nuint internal_id_len
         );
     }
 }
