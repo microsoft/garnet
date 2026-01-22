@@ -219,21 +219,21 @@ namespace Garnet.server
         /// Process AOF record internal
         /// NOTE: This method is shared between recover replay and replication replay
         /// </summary>
-        /// <param name="sublogIdx"></param>
+        /// <param name="virtualSublogIdx"></param>
         /// <param name="ptr"></param>
         /// <param name="length"></param>
         /// <param name="asReplica"></param>
         /// <param name="isCheckpointStart"></param>
-        public void ProcessAofRecordInternal(int sublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
+        public void ProcessAofRecordInternal(int virtualSublogIdx, byte* ptr, int length, bool asReplica, out bool isCheckpointStart)
         {
             var header = *(AofHeader*)ptr;
             var shardedHeader = default(AofShardedHeader);
-            var replayContext = aofReplayCoordinator.GetReplayContext(sublogIdx);
+            var replayContext = aofReplayCoordinator.GetReplayContext(virtualSublogIdx);
             isCheckpointStart = false;
             var shardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1;
 
             // Handle transactions
-            if (aofReplayCoordinator.AddOrReplayTransactionOperation(sublogIdx, ptr, length, asReplica))
+            if (aofReplayCoordinator.AddOrReplayTransactionOperation(virtualSublogIdx, ptr, length, asReplica))
                 return;
 
             switch (header.opType)
@@ -245,8 +245,8 @@ namespace Garnet.server
                     {
                         if (replayContext.inFuzzyRegion)
                         {
-                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", aofReplayCoordinator.FuzzyRegionBufferCount(sublogIdx));
-                            aofReplayCoordinator.ClearFuzzyRegionBuffer(sublogIdx);
+                            logger?.LogInformation("Encountered new CheckpointStartCommit before prior CheckpointEndCommit. Clearing {fuzzyRegionBufferCount} records from previous fuzzy region", aofReplayCoordinator.FuzzyRegionBufferCount(virtualSublogIdx));
+                            aofReplayCoordinator.ClearFuzzyRegionBuffer(virtualSublogIdx);
                         }
                         Debug.Assert(!replayContext.inFuzzyRegion);
                         replayContext.inFuzzyRegion = true;
@@ -255,7 +255,7 @@ namespace Garnet.server
                     if (shardedLog)
                     {
                         shardedHeader = *(AofShardedHeader*)ptr;
-                        storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
+                        storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, shardedHeader.sequenceNumber);
                     }
                     break;
                 case AofEntryType.CheckpointEndCommit:
@@ -279,7 +279,7 @@ namespace Garnet.server
                                 else
                                 {
                                     aofReplayCoordinator.ProcessSynchronizedOperation(
-                                        sublogIdx,
+                                        virtualSublogIdx,
                                         ptr,
                                         (int)EventBarrierType.CHECKPOINT,
                                         () => storeWrapper.TakeCheckpoint(background: false, logger));
@@ -287,8 +287,8 @@ namespace Garnet.server
                             }
 
                             // Process buffered records
-                            aofReplayCoordinator.ProcessFuzzyRegionOperations(sublogIdx, storeWrapper.store.CurrentVersion, asReplica);
-                            aofReplayCoordinator.ClearFuzzyRegionBuffer(sublogIdx);
+                            aofReplayCoordinator.ProcessFuzzyRegionOperations(virtualSublogIdx, storeWrapper.store.CurrentVersion, asReplica);
+                            aofReplayCoordinator.ClearFuzzyRegionBuffer(virtualSublogIdx);
                         }
                     }
                     break;
@@ -304,7 +304,7 @@ namespace Garnet.server
                         else
                         {
                             aofReplayCoordinator.ProcessSynchronizedOperation(
-                                sublogIdx,
+                                virtualSublogIdx,
                                 ptr,
                                 (int)EventBarrierType.STREAMING_CHECKPOINT,
                                 () => storeWrapper.store.SetVersion(header.storeVersion));
@@ -317,7 +317,7 @@ namespace Garnet.server
                     if (shardedLog)
                     {
                         shardedHeader = *(AofShardedHeader*)ptr;
-                        storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
+                        storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, shardedHeader.sequenceNumber);
                     }
                     break;
                 case AofEntryType.FlushAll:
@@ -328,7 +328,7 @@ namespace Garnet.server
                     else
                     {
                         aofReplayCoordinator.ProcessSynchronizedOperation(
-                            sublogIdx,
+                            virtualSublogIdx,
                             ptr,
                             (int)EventBarrierType.FLUSH_DB_ALL,
                             () => storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1));
@@ -342,7 +342,7 @@ namespace Garnet.server
                     else
                     {
                         aofReplayCoordinator.ProcessSynchronizedOperation(
-                            sublogIdx,
+                            virtualSublogIdx,
                             ptr,
                             (int)EventBarrierType.FLUSH_DB,
                             () => storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId));
@@ -351,10 +351,10 @@ namespace Garnet.server
                 case AofEntryType.RefreshSublogTail:
                     shardedHeader = *(AofShardedHeader*)ptr;
                     //logger?.LogDebug("RefreshSublogTail {sublogIdx} {idx}", sublogIdx, extendedHeader.sequenceNumber);
-                    storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, shardedHeader.sequenceNumber);
+                    storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, shardedHeader.sequenceNumber);
                     break;
                 default:
-                    _ = ReplayOp(sublogIdx, stringBasicContext, objectBasicContext, unifiedBasicContext, ptr, length, asReplica);
+                    _ = ReplayOp(virtualSublogIdx, stringBasicContext, objectBasicContext, unifiedBasicContext, ptr, length, asReplica);
                     break;
             }
         }
@@ -622,11 +622,19 @@ namespace Garnet.server
             {
                 // Check if should replay entry by inspecting key
                 case AofHeaderType.ShardedHeader:
-                    var curr = AofHeader.SkipHeader(ptr);
-                    var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
-                    var hash = GarnetLog.HASH(key);
-                    var _replayTaskIdx = hash % storeWrapper.serverOptions.AofReplayTaskCount;
-                    return replayTaskIdx == _replayTaskIdx;
+                    if (header.opType == AofEntryType.RefreshSublogTail)
+                    {
+                        // refresh sublog tail watermark can be replayed by all tasks
+                        return true;
+                    }
+                    else
+                    {
+                        var curr = AofHeader.SkipHeader(ptr);
+                        var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
+                        var hash = GarnetLog.HASH(key);
+                        var _replayTaskIdx = hash % storeWrapper.serverOptions.AofReplayTaskCount;
+                        return replayTaskIdx == _replayTaskIdx;
+                    }
                 // If no key to inspect, check bit vector for participating replay tasks in the transaction
                 // NOTE: HeaderType transactions include MULTI-EXEC transactions, custom txn procedures, and any operation that executes across physical and virtual sublogs (e.g. checkpoint, flushdb)
                 case AofHeaderType.TransactionHeader:

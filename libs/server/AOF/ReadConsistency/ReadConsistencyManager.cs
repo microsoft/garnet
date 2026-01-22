@@ -22,6 +22,9 @@ namespace Garnet.server
     /// <param name="serverOptions"></param>
     public class ReadConsistencyManager(long currentVersion, GarnetAppendOnlyFile appendOnlyFile, GarnetServerOptions serverOptions)
     {
+        /// <summary>
+        /// Read consistency manager version.
+        /// </summary>
         public long CurrentVersion { get; private set; } = currentVersion;
         readonly GarnetServerOptions serverOptions = serverOptions;
 

@@ -103,7 +103,7 @@ namespace Resp.benchmark
             byte* bufferPtr,
             int bufferLength,
             string nodeId,
-            int sublogIdx,
+            int physicalSublogIdx,
             long previousAddress,
             long currentAddress,
             long nextAddress,
@@ -131,7 +131,7 @@ namespace Resp.benchmark
             if (!RespWriteUtils.TryWriteAsciiBulkString(nodeId, ref curr, end))
                 throw new GarnetException("Not enough space in buffer");
             // 4
-            if (!RespWriteUtils.TryWriteArrayItem(sublogIdx, ref curr, end))
+            if (!RespWriteUtils.TryWriteArrayItem(physicalSublogIdx, ref curr, end))
                 throw new GarnetException("Not enough space in buffer");
             // 5
             if (!RespWriteUtils.TryWriteArrayItem(previousAddress, ref curr, end))
@@ -161,7 +161,7 @@ namespace Resp.benchmark
                             ptr,
                             buffer.Length,
                             nodeId: primaryId,
-                            sublogIdx: threadId,
+                            physicalSublogIdx: threadId,
                             previousAddress,
                             currentAddress,
                             nextAddress,
@@ -174,7 +174,7 @@ namespace Resp.benchmark
                 {
                     garnetClient.ExecuteClusterAppendLog(
                         primaryId,
-                        sublogIdx: threadId,
+                        physicalSublogIdx: threadId,
                         previousAddress,
                         currentAddress,
                         nextAddress,

@@ -332,7 +332,15 @@ namespace Garnet.client
         /// ClusterAppendLog
         /// </summary>
         /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterAppendLog"/>
-        public unsafe void ExecuteClusterAppendLog(string nodeId, int sublogIdx, long previousAddress, long currentAddress, long nextAddress, long payloadPtr, int payloadLength)
+        /// <param name="nodeId"></param>
+        /// <param name="physicalSublogIdx"></param>
+        /// <param name="previousAddress"></param>
+        /// <param name="currentAddress"></param>
+        /// <param name="nextAddress"></param>
+        /// <param name="payloadPtr"></param>
+        /// <param name="payloadLength"></param>
+        /// <exception cref="Exception"></exception>
+        public unsafe void ExecuteClusterAppendLog(string nodeId, int physicalSublogIdx, long previousAddress, long currentAddress, long nextAddress, long payloadPtr, int payloadLength)
         {
             Debug.Assert(nodeId != null);
 
@@ -371,7 +379,7 @@ namespace Garnet.client
             offset = curr;
 
             // 4
-            while (!RespWriteUtils.TryWriteArrayItem(sublogIdx, ref curr, end))
+            while (!RespWriteUtils.TryWriteArrayItem(physicalSublogIdx, ref curr, end))
             {
                 Flush();
                 curr = offset;

@@ -11,19 +11,19 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
-        ReplicaReplayDriverStore replicaReplayTaskGroup = null;
+        ReplicaReplayDriverStore replicaReplayDriverStore = null;
         TsavoriteLog replaySessionSublog = null;
 
         /// <summary>
         /// Apply primary AOF records.
         /// </summary>
-        /// <param name="sublogIdx"></param>
+        /// <param name="physicalSublogIdx"></param>
         /// <param name="record"></param>
         /// <param name="recordLength"></param>
         /// <param name="previousAddress"></param>
         /// <param name="currentAddress"></param>
         /// <param name="nextAddress"></param>
-        public unsafe void ProcessPrimaryStream(int sublogIdx, byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress)
+        public unsafe void ProcessPrimaryStream(int physicalSublogIdx, byte* record, int recordLength, long previousAddress, long currentAddress, long nextAddress)
         {
             // logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, storeWrapper.appendOnlyFile.TailAddress);
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
@@ -32,11 +32,11 @@ namespace Garnet.cluster
             // Need to ensure that this replay task is allowed to complete before the replicaReplayGroup is disposed
             // NOTE: this should not be expensive because every replay task has its own lock copy
             // Cache invalidation happens only on dispose which is rare operation
-            var failReplay = syncReplay && !replicaReplayTaskGroup.GetReplayDriver(sublogIdx).ResumeReplay();
+            var failReplay = syncReplay && !replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).ResumeReplay();
             try
             {
                 if (failReplay)
-                    throw new GarnetException($"[{sublogIdx}] Failed to acquire activeReplay lock!", LogLevel.Warning, clientResponse: false);
+                    throw new GarnetException($"[{physicalSublogIdx}] Failed to acquire activeReplay lock!", LogLevel.Warning, clientResponse: false);
 
                 if (clusterProvider.replicationManager.CannotStreamAOF)
                 {
@@ -61,9 +61,9 @@ namespace Garnet.cluster
                             (currentAddress >= previousAddress + recordLength) // the skip will not be auto-handled by the AOF enqueue
                             )
                         {
-                            logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", clusterProvider.replicationManager.GetSublogReplicationOffset(sublogIdx), currentAddress);
-                            clusterProvider.storeWrapper.appendOnlyFile.SafeInitialize(sublogIdx, currentAddress, currentAddress);
-                            clusterProvider.replicationManager.SetSublogReplicationOffset(sublogIdx, currentAddress);
+                            logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx), currentAddress);
+                            clusterProvider.storeWrapper.appendOnlyFile.SafeInitialize(physicalSublogIdx, currentAddress, currentAddress);
+                            clusterProvider.replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
                         }
                     }
                 }
@@ -72,20 +72,20 @@ namespace Garnet.cluster
                 ExceptionInjectionHelper.TriggerException(ExceptionInjectionType.Divergent_AOF_Stream);
 
                 var tail = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
-                var nextPageBeginAddress = ((tail[sublogIdx] >> clusterProvider.replicationManager.PageSizeBits) + 1) << clusterProvider.replicationManager.PageSizeBits;
+                var nextPageBeginAddress = ((tail[physicalSublogIdx] >> clusterProvider.replicationManager.PageSizeBits) + 1) << clusterProvider.replicationManager.PageSizeBits;
                 // Check to ensure:
                 // 1. if record fits in current page tailAddress of this local node (replica) should be equal to the incoming currentAddress (address of chunk send from primary node)
                 // 2. if record does not fit in current page start address of the next page matches incoming currentAddress (address of chunk send from primary node)
                 // otherwise fail and break the connection
-                if ((tail[sublogIdx] + recordLength <= nextPageBeginAddress && tail[sublogIdx] != currentAddress) ||
-                    (tail[sublogIdx] + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress))
+                if ((tail[physicalSublogIdx] + recordLength <= nextPageBeginAddress && tail[physicalSublogIdx] != currentAddress) ||
+                    (tail[physicalSublogIdx] + recordLength > nextPageBeginAddress && nextPageBeginAddress != currentAddress))
                 {
                     logger?.LogError("Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress:{tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
                     throw new GarnetException($"Divergent AOF Stream recordLength:{recordLength}; previousAddress:{previousAddress}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; tailAddress:{tail}", LogLevel.Warning, clientResponse: false);
                 }
 
                 // Address check only if synchronous replication is enabled
-                if (clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0 && clusterProvider.replicationManager.GetSublogReplicationOffset(sublogIdx) != tail[sublogIdx])
+                if (clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0 && clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != tail[physicalSublogIdx])
                 {
                     logger?.LogInformation("Processing {recordLength} bytes; previousAddress {previousAddress}, currentAddress {currentAddress}, nextAddress {nextAddress}, current AOF tail {tail}", recordLength, previousAddress, currentAddress, nextAddress, tail);
                     logger?.LogError("Before ProcessPrimaryStream: Replication offset mismatch: ReplicaReplicationOffset {ReplicaReplicationOffset}, aof.TailAddress {tailAddress}", clusterProvider.replicationManager.ReplicationOffset, tail);
@@ -93,7 +93,7 @@ namespace Garnet.cluster
                 }
 
                 // Initialize sublog ref if first time
-                replaySessionSublog ??= clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(sublogIdx);
+                replaySessionSublog ??= clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
 
                 // Enqueue to AOF
                 _ = replaySessionSublog.UnsafeEnqueueRaw(new Span<byte>(record, recordLength), noCommit: clusterProvider.serverOptions.EnableFastCommit);
@@ -101,15 +101,15 @@ namespace Garnet.cluster
                 if (clusterProvider.storeWrapper.serverOptions.ReplicationOffsetMaxLag == 0)
                 {
                     // Synchronous replay
-                    replicaReplayTaskGroup.GetReplayDriver(sublogIdx).Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
+                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).Consume(record, recordLength, currentAddress, nextAddress, isProtected: false);
                 }
                 else
                 {
                     // Initialize iterator and run background task once
-                    replicaReplayTaskGroup.GetReplayDriver(sublogIdx).InitialiazeBackgroundReplayTask(previousAddress);
+                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).InitialiazeBackgroundReplayTask(previousAddress);
 
                     // Throttle to give the opportunity to the background replay task to catch up
-                    replicaReplayTaskGroup.GetReplayDriver(sublogIdx).ThrottlePrimary();
+                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).ThrottlePrimary();
                 }
             }
             catch (Exception ex)
@@ -120,7 +120,7 @@ namespace Garnet.cluster
             finally
             {
                 if (syncReplay && !failReplay)
-                    replicaReplayTaskGroup.GetReplayDriver(sublogIdx).SuspendReplay();
+                    replicaReplayDriverStore.GetReplayDriver(physicalSublogIdx).SuspendReplay();
             }
         }
     }

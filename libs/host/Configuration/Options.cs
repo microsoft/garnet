@@ -199,16 +199,16 @@ namespace Garnet
         public string AofPageSize { get; set; }
 
         [IntRangeValidation(1, 64)]
-        [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs used (=1 default single physical log, >1: many physical sublogs.")]
+        [Option("aof-physical-sublog-count", Required = false, HelpText = "Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.")]
         public int AofPhysicalSublogCount { get; set; }
 
         [IntRangeValidation(1, 256)]
-        [Option("aof-replay-subtask-count", Required = false, HelpText = "Number of logical replay tasks per sublog at replica.")]
+        [Option("aof-replay-task-count", Required = false, HelpText = "Number of replay tasks per physical sublog at the replica.")]
         public int AofReplayTaskCount { get; set; }
 
         [IntRangeValidation(0, int.MaxValue)]
-        [Option("aof-physical-sublog-refresh-tail-freq", Required = false, HelpText = "Refresh physical sublog tail background task execution frequency.")]
-        public int AofRefreshPhysicalSublogTailFrequencyMs { get; set; }
+        [Option("aof-tail-witness-freq", Required = false, HelpText = "Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).")]
+        public int AofTailWitnessFreq { get; set; }
 
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("aof-commit-freq", Required = false, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
@@ -827,7 +827,7 @@ namespace Garnet
                 AofPageSize = AofPageSize,
                 AofPhysicalSublogCount = AofPhysicalSublogCount,
                 AofReplayTaskCount = AofReplayTaskCount,
-                AofRefreshPhysicalSublogTailFrequencyMs = AofRefreshPhysicalSublogTailFrequencyMs,
+                AofTailWitnessFreq = AofTailWitnessFreq,
                 AofReplicationRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),

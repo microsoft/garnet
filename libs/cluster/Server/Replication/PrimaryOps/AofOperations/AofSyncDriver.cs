@@ -96,8 +96,8 @@ namespace Garnet.cluster
             this.logger = logger;
 
             aofSyncTasks = new AofSyncTask[clusterProvider.serverOptions.AofPhysicalSublogCount];
-            for (var sublogIdx = 0; sublogIdx < aofSyncTasks.Length; sublogIdx++)
-                aofSyncTasks[sublogIdx] = new AofSyncTask(clusterProvider, sublogIdx, endPoint, startAddress[sublogIdx], localNodeId, remoteNodeId, cts, logger);
+            for (var physicalSublogIdx = 0; physicalSublogIdx < aofSyncTasks.Length; physicalSublogIdx++)
+                aofSyncTasks[physicalSublogIdx] = new AofSyncTask(clusterProvider, physicalSublogIdx, endPoint, startAddress[physicalSublogIdx], localNodeId, remoteNodeId, cts, logger);
         }
 
         /// <summary>
@@ -185,7 +185,7 @@ namespace Garnet.cluster
 
                 while (true)
                 {
-                    await Task.Delay(clusterProvider.serverOptions.AofRefreshPhysicalSublogTailFrequencyMs, cts.Token);
+                    await Task.Delay(clusterProvider.serverOptions.AofTailWitnessFreq, cts.Token);
 
                     var tailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
                     var previousAddress = PreviousAddress;

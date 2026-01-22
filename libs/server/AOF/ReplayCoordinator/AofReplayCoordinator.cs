@@ -57,8 +57,7 @@ namespace Garnet.server
             readonly GarnetServerOptions serverOptions = serverOptions;
             readonly ConcurrentDictionary<BarrierId, EventBarrier> eventBarriers = [];
             readonly AofProcessor aofProcessor = aofProcessor;
-            readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(
-                serverOptions.AofVirtualSublogCount, serverOptions.AofReplayTaskCount);
+            readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(serverOptions.AofVirtualSublogCount);
 
             /// <summary>
             /// Replay context for replay subtask
@@ -68,12 +67,12 @@ namespace Garnet.server
             public AofReplayContext GetReplayContext(int sublogIdx) => aofReplayContext[sublogIdx];
             readonly ILogger logger = logger;
 
-            internal static AofReplayContext[] InitializeReplayContext(int AofSublogCount, int AofReplaySubtaskCount)
+            internal static AofReplayContext[] InitializeReplayContext(int AofVirtualSublogCount)
             {
-                var sublogReplayBuffers = new AofReplayContext[AofSublogCount * AofReplaySubtaskCount];
-                for (var i = 0; i < sublogReplayBuffers.Length; i++)
-                    sublogReplayBuffers[i] = new();
-                return sublogReplayBuffers;
+                var virtualSublogReplayContext = new AofReplayContext[AofVirtualSublogCount];
+                for (var i = 0; i < virtualSublogReplayContext.Length; i++)
+                    virtualSublogReplayContext[i] = new();
+                return virtualSublogReplayContext;
             }
 
             /// <summary>
@@ -333,12 +332,14 @@ namespace Garnet.server
                     // Initialize custom proc collection to keep track of hashes for keys for which their timestamp needs to be updated
                     CustomProcedureKeyHashCollection customProcKeyHashTracker = new(aofProcessor.storeWrapper.appendOnlyFile);
 
+                    logger?.LogError("> sublogIdx: {sublogIdx}", sublogIdx);
                     // Synchronized processing of stored proc operation
                     ProcessSynchronizedOperation(
                         sublogIdx,
                         ptr,
                         shardedHeader.basicHeader.sessionID,
                         () => StoredProcRunnerWrapper(sublogIdx, id, ptr));
+                    logger?.LogError("< sublogIdx: {sublogIdx}", sublogIdx);
 
                     // Wrapper for store proc runner used for multi-log synchronization
                     void StoredProcRunnerWrapper(int sublogIdx, byte id, byte* ptr)

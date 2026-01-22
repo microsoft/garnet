@@ -134,7 +134,7 @@ namespace Garnet.cluster
 
             var nodeId = parseState.GetString(0);
 
-            if (!parseState.TryGetInt(1, out var sublogIdx) ||
+            if (!parseState.TryGetInt(1, out var physicalSublogIdx) ||
                 !parseState.TryGetLong(2, out var previousAddress) ||
                 !parseState.TryGetLong(3, out var currentAddress) ||
                 !parseState.TryGetLong(4, out var nextAddress))
@@ -146,17 +146,14 @@ namespace Garnet.cluster
             // This is an initialization message
             if (previousAddress == -1 && currentAddress == -1 && nextAddress == -1)
             {
-                if (clusterProvider.replicationManager.InitializeReplicaReplayGroup(sublogIdx, networkSender, out var replicaReplayTaskGroup))
-                    this.replicaReplayTaskGroup = replicaReplayTaskGroup;
+                if (clusterProvider.replicationManager.InitializeReplicaReplayGroup(physicalSublogIdx, networkSender))
+                    replicaReplayDriverStore = clusterProvider.replicationManager.ReplicaReplayDriverStore;
                 else
-                {
-                    throw new GarnetException($"[{sublogIdx}] Received all negative addresses with initialized ReplayTaskGroup", LogLevel.Warning, clientResponse: false);
-                }
+                    throw new GarnetException($"[physicalSublogIdx: {physicalSublogIdx}] Received initialization message but ReplicaReplayDriver is already initialized!", LogLevel.Warning, clientResponse: false);
                 return true;
             }
 
             var sbRecord = parseState.GetArgSliceByRef(5);
-
             var currentConfig = clusterProvider.clusterManager.CurrentConfig;
             var localRole = currentConfig.LocalNodeRole;
             var primaryId = currentConfig.LocalNodePrimaryId;
@@ -172,7 +169,7 @@ namespace Garnet.cluster
             {
                 IsReplicating = true;
 
-                ProcessPrimaryStream(sublogIdx, sbRecord.ToPointer(), sbRecord.Length,
+                ProcessPrimaryStream(physicalSublogIdx, sbRecord.ToPointer(), sbRecord.Length,
                     previousAddress, currentAddress, nextAddress);
             }
 

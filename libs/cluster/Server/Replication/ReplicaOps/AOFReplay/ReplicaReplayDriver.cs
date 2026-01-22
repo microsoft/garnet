@@ -19,7 +19,7 @@ namespace Garnet.cluster
     /// </summary>
     internal sealed class ReplicaReplayDriver : IBulkLogEntryConsumer, IDisposable
     {
-        internal readonly int sublogIdx;
+        internal readonly int physicalSublogIdx;
         readonly GarnetServerOptions serverOptions;
         readonly GarnetAppendOnlyFile appendOnlyFile;
         readonly ReplicationManager replicationManager;
@@ -30,17 +30,17 @@ namespace Garnet.cluster
         SingleWriterMultiReaderLock activeReplay;
         internal readonly ReplayWorkItem replayWorkItem;
         readonly ReplicaReplayTask[] replayTasks;
-        readonly TsavoriteLog sublog;
+        readonly TsavoriteLog physicalSublog;
 
-        public ReplicaReplayDriver(int sublogIdx, ClusterProvider clusterProvider, INetworkSender respSessionNetworkSender, CancellationTokenSource cts, ILogger logger = null)
+        public ReplicaReplayDriver(int physicalSublogIdx, ClusterProvider clusterProvider, INetworkSender respSessionNetworkSender, CancellationTokenSource cts, ILogger logger = null)
         {
-            this.sublogIdx = sublogIdx;
+            this.physicalSublogIdx = physicalSublogIdx;
             this.respSessionNetworkSender = respSessionNetworkSender;
             serverOptions = clusterProvider.serverOptions;
             appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
             replicationManager = clusterProvider.replicationManager;
             replayIterator = null;
-            sublog = appendOnlyFile.Log.GetSubLog(sublogIdx);
+            physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
             activeReplay = new SingleWriterMultiReaderLock();
             this.cts = cts;
             this.logger = logger;
@@ -121,24 +121,24 @@ namespace Garnet.cluster
         /// fails.</exception>
         internal unsafe void ConsumeDirect(byte* record, int recordLength, long currentAddress, long nextAddress, bool isProtected)
         {
-            ValidateSublogIndex(sublogIdx);
-            replicationManager.SetSublogReplicationOffset(sublogIdx, currentAddress);
+            ValidateSublogIndex(physicalSublogIdx);
+            replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
             var ptr = record;
-            // logger?.LogError("[{sublogIdx}] = {currentAddress} -> {nextAddress}", sublogIdx, currentAddress, nextAddress);
+            // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
             while (ptr < record + recordLength)
             {
                 cts.Token.ThrowIfCancellationRequested();
                 var entryLength = appendOnlyFile.HeaderSize;
-                var payloadLength = sublog.UnsafeGetLength(ptr);
+                var payloadLength = physicalSublog.UnsafeGetLength(ptr);
                 if (payloadLength > 0)
                 {
-                    replicationManager.AofProcessor.ProcessAofRecordInternal(sublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
+                    replicationManager.AofProcessor.ProcessAofRecordInternal(physicalSublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
                     // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
                     // point when we take a checkpoint at the checkpoint end marker
                     if (isCheckpointStart)
                     {
                         // This is safe to be updated in parallel given that each sublog replay taks will update its own slot with corresponding address of the checkpoint marker
-                        replicationManager.ReplicationCheckpointStartOffset[sublogIdx] = replicationManager.GetSublogReplicationOffset(sublogIdx);
+                        replicationManager.ReplicationCheckpointStartOffset[physicalSublogIdx] = replicationManager.GetSublogReplicationOffset(physicalSublogIdx);
                     }
                     entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                 }
@@ -150,17 +150,17 @@ namespace Garnet.cluster
                     }
                     TsavoriteLogRecoveryInfo info = new();
                     info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
-                    sublog.UnsafeCommitMetadataOnly(info, isProtected);
+                    physicalSublog.UnsafeCommitMetadataOnly(info, isProtected);
                     entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
                 }
                 ptr += entryLength;
-                replicationManager.IncrementSublogReplicationOffset(sublogIdx, entryLength);
+                replicationManager.IncrementSublogReplicationOffset(physicalSublogIdx, entryLength);
             }
-            // logger?.LogError("[{sublogIdx}] = {currentAddress} -> {nextAddress}", sublogIdx, currentAddress, nextAddress);
+            // logger?.LogError("[{physicalSublogIdx}] = {currentAddress} -> {nextAddress}", physicalSublogIdx, currentAddress, nextAddress);
 
-            if (replicationManager.GetSublogReplicationOffset(sublogIdx) != nextAddress)
+            if (replicationManager.GetSublogReplicationOffset(physicalSublogIdx) != nextAddress)
             {
-                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", sublogIdx, recordLength, currentAddress, nextAddress, replicationManager.ReplicationOffset[sublogIdx]);
+                logger?.LogError("ReplicaReplayTask.Consume NextAddress Mismatch sublogIdx: {sublogIdx}; recordLength:{recordLength}; currentAddress:{currentAddress}; nextAddress:{nextAddress}; replicationOffset:{ReplicationOffset}", physicalSublogIdx, recordLength, currentAddress, nextAddress, replicationManager.ReplicationOffset[physicalSublogIdx]);
                 throw new GarnetException("Failed validating integrity of replay", LogLevel.Warning, clientResponse: false);
             }
         }
@@ -169,17 +169,21 @@ namespace Garnet.cluster
         #endregion
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ValidateSublogIndex(int sublogIdx)
+        public void ValidateSublogIndex(int physicalSublogIdx)
         {
-            if (sublogIdx != this.sublogIdx)
-                throw new GarnetException($"SublogIdx mismatch; expected:{this.sublogIdx} - received:{sublogIdx}");
+            if (physicalSublogIdx != this.physicalSublogIdx)
+                throw new GarnetException($"PhysicalSublogIdx mismatch; expected:{this.physicalSublogIdx} - received:{physicalSublogIdx}");
         }
 
+        /// <summary>
+        /// Method to create a background replay task that iterates and consume this replicas physical log
+        /// </summary>
+        /// <param name="startAddress"></param>
         public void InitialiazeBackgroundReplayTask(long startAddress)
         {
             if (replayIterator == null)
             {
-                replayIterator = appendOnlyFile.ScanSingle(sublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
+                replayIterator = appendOnlyFile.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
                 _ = Task.Run(BackgroundReplayTask);
             }
 

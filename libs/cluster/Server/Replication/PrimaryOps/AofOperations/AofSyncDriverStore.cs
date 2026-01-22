@@ -79,9 +79,9 @@ namespace Garnet.cluster
         /// Safely truncate AOF sublog
         /// </summary>
         /// <param name="truncateUntil"></param>
-        /// <param name="sublogIdx"></param>
+        /// <param name="physicalSublogIdx"></param>
         /// <returns></returns>
-        long SafeTruncateAof(long truncateUntil, int sublogIdx)
+        long SafeTruncateAof(long truncateUntil, int physicalSublogIdx)
         {
             _lock.WriteLock();
 
@@ -98,12 +98,12 @@ namespace Garnet.cluster
                 for (var i = 0; i < numDrivers; i++)
                 {
                     Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null at {nameof(SafeTruncateAof)}");
-                    if (syncDrivers[i].PreviousAddress[sublogIdx] < TruncatedUntil)
-                        TruncatedUntil = syncDrivers[i].PreviousAddress[sublogIdx];
+                    if (syncDrivers[i].PreviousAddress[physicalSublogIdx] < TruncatedUntil)
+                        TruncatedUntil = syncDrivers[i].PreviousAddress[physicalSublogIdx];
                 }
 
                 // Inform that we have logically truncatedUntil
-                this.TruncatedUntil.MonotonicUpdate(TruncatedUntil, sublogIdx);
+                this.TruncatedUntil.MonotonicUpdate(TruncatedUntil, physicalSublogIdx);
             }
             finally
             {
@@ -113,11 +113,11 @@ namespace Garnet.cluster
 
             if (clusterProvider.serverOptions.FastAofTruncate)
             {
-                clusterProvider.storeWrapper.appendOnlyFile?.Log.GetSubLog(sublogIdx).UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.GetSubLog(physicalSublogIdx).UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
             }
             else
             {
-                clusterProvider.storeWrapper.appendOnlyFile?.Log.GetSubLog(sublogIdx).TruncateUntil(TruncatedUntil);
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.GetSubLog(physicalSublogIdx).TruncateUntil(TruncatedUntil);
                 clusterProvider.storeWrapper.appendOnlyFile?.Log.Commit();
             }
 
@@ -146,10 +146,10 @@ namespace Garnet.cluster
                 {
                     Debug.Assert(syncDrivers[i] != null, $"syncDriver cannot be null {nameof(SafeTruncateAof)}");
                     var previousAddress = syncDrivers[i].PreviousAddress;
-                    for (var sublogIdx = 0; sublogIdx < previousAddress.Length; sublogIdx++)
+                    for (var physicalSublogIdx = 0; physicalSublogIdx < previousAddress.Length; physicalSublogIdx++)
                     {
-                        if (previousAddress[sublogIdx] < TruncatedUntil[sublogIdx])
-                            TruncatedUntil[sublogIdx] = previousAddress[sublogIdx];
+                        if (previousAddress[physicalSublogIdx] < TruncatedUntil[physicalSublogIdx])
+                            TruncatedUntil[physicalSublogIdx] = previousAddress[physicalSublogIdx];
                     }
                 }
                 // Inform that we have logically truncatedUntil

@@ -2057,11 +2057,11 @@ namespace Garnet.test.cluster
             // Register custom procedure
             if (storedProcedure)
             {
-                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
-                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc(BulkIncrementBy.Name, () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc(BulkIncrementBy.Name, () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
 
-                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKREAD", () => new BulkRead(), BulkRead.CommandInfo);
-                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKREAD", () => new BulkRead(), BulkRead.CommandInfo);
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc(BulkRead.Name, () => new BulkRead(), BulkRead.CommandInfo);
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc(BulkRead.Name, () => new BulkRead(), BulkRead.CommandInfo);
             }
 
             // Setup cluster

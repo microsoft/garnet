@@ -82,19 +82,19 @@ namespace Garnet.server
         public int AofReplicationRefreshFrequencyMs = 10;
 
         /// <summary>
-        /// Number of AOF sublogs (=1 default single log, >1: multi-log)
+        /// Number of AOF physical sublogs (i.e. TsavoriteLog instances) used (=1 equivalent to the legacy single log implementation >1: sharded log implementation.
         /// </summary>
         public int AofPhysicalSublogCount = 1;
 
         /// <summary>
-        /// Number of replica replay tasks
+        /// Number of replay tasks per physical sublog at the replica.
         /// </summary>
         public int AofReplayTaskCount = 1;
 
         /// <summary>
-        /// Delay for background task used to refresh tail timestamp for stalled sublogs when SharedLog is used.
+        /// Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).
         /// </summary>
-        public int AofRefreshPhysicalSublogTailFrequencyMs = 100;
+        public int AofTailWitnessFreq = 100;
 
         /// <summary>
         /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.

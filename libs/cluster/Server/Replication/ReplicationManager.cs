@@ -470,7 +470,7 @@ namespace Garnet.cluster
 
             checkpointStore.WaitForReplicas();
             replicaSyncSessionTaskStore.Dispose();
-            replicaReplayTaskGroup?.Dispose();
+            ReplicaReplayDriverStore?.Dispose();
             ctsRepManager.Dispose();
             aofSyncDriverStore.Dispose();
             aofProcessor?.Dispose();

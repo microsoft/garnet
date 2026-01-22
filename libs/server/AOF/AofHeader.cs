@@ -20,6 +20,7 @@ namespace Garnet.server
     unsafe struct AofTransactionHeader
     {
         public const int TotalSize = AofShardedHeader.TotalSize + 2 + 32;
+        // maximum 256 replay tasks per physical sublog, hence 32 bytes bitmap
         public const int ReplayTaskAccessVectorSize = 32;
 
         /// <summary>
@@ -29,7 +30,8 @@ namespace Garnet.server
         public AofShardedHeader shardedHeader;
 
         /// <summary>
-        /// Used for synchronizing sublog replay
+        /// Used for synchronizing virtual sublog replay
+        /// NOTE: This stores the total number of replay tasks that participate in a given transaction.
         /// </summary>
         [FieldOffset(AofShardedHeader.TotalSize)]
         public short participantCount;
@@ -38,7 +40,7 @@ namespace Garnet.server
         /// Used to track replay task participating in the txn
         /// </summary>
         [FieldOffset(AofShardedHeader.TotalSize + 2)]
-        public fixed byte virtualSublogAccessVector[ReplayTaskAccessVectorSize];
+        public fixed byte replayTaskAccessVector[ReplayTaskAccessVectorSize];
     }
 
     /// <summary>

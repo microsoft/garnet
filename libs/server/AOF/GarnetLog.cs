@@ -17,7 +17,7 @@ namespace Garnet.server
     {
         readonly int replayTaskCount = serverOptions.AofReplayTaskCount;
         readonly SingleLog singleLog = serverOptions.AofVirtualSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
-        readonly ShardedLog shardedLog = serverOptions.AofVirtualSublogCount > 1 ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger) : null;
+        readonly ShardedLog shardedLog = serverOptions.MultiLogEnabled ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger) : null;
         public TsavoriteLog SigleLog => singleLog.log;
         public long HeaderSize => singleLog != null ? singleLog.HeaderSize : shardedLog.HeaderSize;
         public int Size => singleLog != null ? 1 : shardedLog.Length;
@@ -355,8 +355,8 @@ namespace Garnet.server
             where TInput : IStoreInput
         {
             var hash = HASH(key);
-            var sublogIdx = hash % serverOptions.AofPhysicalSublogCount;
-            shardedLog.sublog[sublogIdx].Enqueue(
+            var physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+            shardedLog.sublog[physicalSublogIdx].Enqueue(
                 shardedHeader,
                 key,
                 value,
@@ -368,8 +368,8 @@ namespace Garnet.server
             where TInput : IStoreInput
         {
             var hash = HASH(key);
-            var sublogIdx = hash % serverOptions.AofPhysicalSublogCount;
-            shardedLog.sublog[sublogIdx].Enqueue(
+            var physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+            shardedLog.sublog[physicalSublogIdx].Enqueue(
                 shardedHeader,
                 key,
                 ref input,
@@ -379,8 +379,8 @@ namespace Garnet.server
         internal void Enqueue(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out long logicalAddress)
         {
             var hash = HASH(key);
-            var sublogIdx = hash % serverOptions.AofPhysicalSublogCount;
-            shardedLog.sublog[sublogIdx].Enqueue(
+            var physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+            shardedLog.sublog[physicalSublogIdx].Enqueue(
                 shardedHeader,
                 key,
                 value,

@@ -43,7 +43,7 @@ namespace Garnet.cluster
         readonly GarnetAppendOnlyFile appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
         readonly Channel<ReplayWorkItem> channel = Channel.CreateUnbounded<ReplayWorkItem>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
         readonly CancellationTokenSource cts = cts;
-        readonly TsavoriteLog replaySublog = clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(replayDriver.sublogIdx);
+        readonly TsavoriteLog replaySublog = clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(replayDriver.physicalSublogIdx);
         readonly ILogger logger = logger;
 
         internal void Append(ReplayWorkItem item)
@@ -59,7 +59,7 @@ namespace Garnet.cluster
         /// <returns>A task representing the asynchronous replay operation.</returns>
         internal async Task ContinuousBackgroundReplay()
         {
-            var physicalSublogIdx = replayDriver.sublogIdx;
+            var physicalSublogIdx = replayDriver.physicalSublogIdx;
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
             var reader = channel.Reader;
             await foreach (var entry in reader.ReadAllAsync(cts.Token))
@@ -133,7 +133,7 @@ namespace Garnet.cluster
                             // NOTE:
                             //      We need to force an update here to ensure prefix consistency across virtual sublogs                            
                             // PhysicalSublog:
-                            //      ReplayTask1 (Virtual sublog): [(A,1) ...  (A,2)]
+                            //      ReplayTask1 (Virtual sublog): [(A,1) ...  (A,2)] A,1 A,2 B,3 
                             //      ReplayTask2 (Virtual sublog): [ ... (B,3) (C,4)]
                             appendOnlyFile.readConsistencyManager.UpdateSublogMaxSequenceNumber(physicalSublogIdx);
                             // Update replication offset

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -15,7 +16,7 @@ namespace Garnet.test.cluster
     public class ClusterReplicationShardedLog : ClusterReplicationBaseTests
     {
         const int TestSublogCount = 2;
-        const int TestReplayTaskCount = 2;
+        const int TestReplayTaskCount = 3;
 
         public Dictionary<string, bool> enabledTests = new()
         {
@@ -84,7 +85,7 @@ namespace Garnet.test.cluster
 
         [Test, Order(1)]
         [Category("REPLICATION")]
-        public void ClusterReplicationShardedLogTxnTest([Values] bool storedProcedure)
+        public void ClusterReplicationShardedLogTxnTest([Values] bool storedProcedure, [Values] bool testParallelReplay)
         {
             var replica_count = 1;// Per primary
             var primary_count = 1;
@@ -92,7 +93,13 @@ namespace Garnet.test.cluster
             var primaryNodeIndex = 0;
             var replicaNodeIndex = 1;
 
-            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, sublogCount: sublogCount);
+            context.CreateInstances(nodes_count,
+                disableObjects: false,
+                enableAOF: true,
+                useTLS: useTLS,
+                asyncReplay: asyncReplay,
+                sublogCount: testParallelReplay ? 1 : TestSublogCount,
+                replayTaskCount: testParallelReplay ? TestReplayTaskCount : 1);
             context.CreateConnection(useTLS: useTLS);
 
             var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
@@ -101,11 +108,11 @@ namespace Garnet.test.cluster
             // Register custom procedure
             if (storedProcedure)
             {
-                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
-                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKINCRBY", () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc(BulkIncrementBy.Name, () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc(BulkIncrementBy.Name, () => new BulkIncrementBy(), BulkIncrementBy.CommandInfo);
 
-                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc("BULKREAD", () => new BulkRead(), BulkRead.CommandInfo);
-                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc("BULKREAD", () => new BulkRead(), BulkRead.CommandInfo);
+                _ = context.nodes[primaryNodeIndex].Register.NewTransactionProc(BulkRead.Name, () => new BulkRead(), BulkRead.CommandInfo);
+                _ = context.nodes[replicaNodeIndex].Register.NewTransactionProc(BulkRead.Name, () => new BulkRead(), BulkRead.CommandInfo);
             }
 
             // Setup cluster
@@ -124,6 +131,7 @@ namespace Garnet.test.cluster
 
             string[] keys = ["{_}a", "{_}b", "{_}c", "{_}x", "{_}y", "{_}z"];
             string[] values = ["10", "15", "20", "25", "30", "35"];
+
             if (storedProcedure)
                 ClusterTestContext.ExecuteStoredProcBulkIncrement(primaryServer, keys, values);
             else
@@ -133,6 +141,7 @@ namespace Garnet.test.cluster
             for (var i = 0; i < keys.Length; i++)
             {
                 resp = context.clusterTestUtils.GetKey(primaryNodeIndex, Encoding.ASCII.GetBytes(keys[i]), out _, out _, out _);
+                context.logger.LogError("primary: {keys} {value}", keys[i], values[i]);
                 ClassicAssert.AreEqual(values[i], resp);
             }
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
@@ -141,6 +150,7 @@ namespace Garnet.test.cluster
             for (var i = 0; i < keys.Length; i++)
             {
                 resp = context.clusterTestUtils.GetKey(replicaNodeIndex, Encoding.ASCII.GetBytes(keys[i]), out _, out _, out _);
+                context.logger.LogError("replica: {keys} {value}", keys[i], values[i]);
                 ClassicAssert.AreEqual(values[i], resp);
             }
 
@@ -151,12 +161,16 @@ namespace Garnet.test.cluster
             }
             else
             {
-                context.ExecuteTxnBulkRead(replicaServer, keys);
+                var result = context.ExecuteTxnBulkRead(replicaServer, keys);
+                ClassicAssert.AreEqual(values, result);
             }
 
             var primaryPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
             var replicaPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
             ClassicAssert.AreEqual(primaryPInfo.TailAddress, replicaPInfo.TailAddress);
+            var primaryReplOffset = context.clusterTestUtils.GetReplicationOffset(0);
+            var replicaReplOffset = context.clusterTestUtils.GetReplicationOffset(1);
+            context.logger.LogError("primaryReplOffset: {primaryReplOffset}, replicaReplOffset:{replicaReplOffset}", primaryReplOffset, replicaReplOffset);
         }
 
         [Test, Order(2)]

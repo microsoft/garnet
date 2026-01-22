@@ -266,9 +266,9 @@ namespace Garnet.server
                 {
                     proc.physicalSublogAccessVector = 0UL;
                     proc.virtualSublogParticipantCount = 0;
-                    if (proc.virtualSublogAccessVector != null)
+                    if (proc.replayTaskAccessVector != null)
                     {
-                        foreach (var vector in proc.virtualSublogAccessVector)
+                        foreach (var vector in proc.replayTaskAccessVector)
                             vector.Clear();
                     }
                 }
@@ -379,7 +379,8 @@ namespace Garnet.server
                         {
                             var sublogIdx = _physicalSublogAccessVector.GetNextOffset();
                             // Update corresponding sublog participating vector before enqueue to related physical sublog
-                            proc.virtualSublogAccessVector[sublogIdx].CopyTo(new Span<byte>(header.virtualSublogAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize));
+                            proc.replayTaskAccessVector[sublogIdx].CopyTo(
+                                new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize));
                             appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, ref procInput, out _);
                         }
                     }
@@ -444,7 +445,7 @@ namespace Garnet.server
                         {
                             var sublogIdx = _physicalSublogAccessVector.GetNextOffset();
                             // Update corresponding sublog participating vector before enqueue to related physical sublog
-                            virtualSublogAccessVector[sublogIdx].CopyTo(new Span<byte>(header.virtualSublogAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize));
+                            virtualSublogAccessVector[sublogIdx].CopyTo(new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize));
                             appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, out _);
                         }
                     }
@@ -600,7 +601,7 @@ namespace Garnet.server
                         while (_physicalSublogAccessVector > 0)
                         {
                             var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
-                            virtualSublogAccessVector[physicalSublogIdx].CopyTo(new Span<byte>(header.virtualSublogAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize));
+                            virtualSublogAccessVector[physicalSublogIdx].CopyTo(new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize));
                             appendOnlyFile.Log.GetSubLog(physicalSublogIdx).Enqueue(header, out _);
                         }
                     }
@@ -620,7 +621,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="proc"></param>
-        public void IterativeShardedLogAccess(PinnedSpanByte key, CustomTransactionProcedure proc)
+        public void ComputeCustomProcShardedLogAccess(PinnedSpanByte key, CustomTransactionProcedure proc)
         {
             // Skip if AOF is disabled
             if (appendOnlyFile == null)
@@ -633,12 +634,16 @@ namespace Garnet.server
             var hash = GarnetLog.HASH(key);
             if (proc.customProcKeyHashCollection == null)
             {
-                proc.virtualSublogAccessVector ??= [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorSize))];
+                // Used with parallel replay, this BitVector will track which replay tasks should participate in the parallel replay of this custom proc.
+                proc.replayTaskAccessVector ??= [.. Enumerable.Range(0, appendOnlyFile.Log.Size).Select(_ => new BitVector(AofTransactionHeader.ReplayTaskAccessVectorSize))];
                 var physicalSublogIdx = (int)(hash % appendOnlyFile.Log.Size);
                 var replayIdx = (int)(hash % appendOnlyFile.Log.ReplayTaskCount);
-                // Mark sublog participating in custom txn proc to help with replay coordination
+
+                // Mark physical sublog participating in custom txn proc to help with replay coordination.
                 proc.physicalSublogAccessVector |= 1UL << physicalSublogIdx;
-                proc.virtualSublogParticipantCount += proc.virtualSublogAccessVector[physicalSublogIdx].SetBit(replayIdx) ? 1 : 0;
+                // Mark replay task participation and update count replay tasks participating in replay.
+                proc.virtualSublogParticipantCount += proc.replayTaskAccessVector[physicalSublogIdx].SetBit(replayIdx) ? 1 : 0;
+                logger?.LogError("Range: ({PhysicalSublogCount},{ReplayTaskCount}) => Computed: ({physicalSublogIdx},{replayIdx}) => Count: {virtualSublogCount}", appendOnlyFile.Log.Size, appendOnlyFile.Log.ReplayTaskCount, physicalSublogIdx, replayIdx, proc.virtualSublogParticipantCount);
             }
             else
                 // Keep track of key hashes to update sequence numbers of keys at end of replay

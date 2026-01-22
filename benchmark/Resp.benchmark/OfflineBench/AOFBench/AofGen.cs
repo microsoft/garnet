@@ -93,8 +93,8 @@ namespace Resp.benchmark
             {
                 var keyData = Encoding.ASCII.GetBytes(Generator.CreateHexId(size: Math.Max(options.KeyLength, 8)));
                 var hash = GarnetLog.HASH(keyData.AsSpan());
-                var sublogIdx = (int)(hash % garnetLog.Size);
-                if (sublogIdx == threadId) return keyData;
+                var physicalSublogIdx = (int)(hash % garnetLog.Size);
+                if (physicalSublogIdx == threadId) return keyData;
             }
         }
 

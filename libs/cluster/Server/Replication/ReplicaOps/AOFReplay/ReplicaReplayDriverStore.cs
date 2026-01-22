@@ -16,10 +16,10 @@ namespace Garnet.cluster
         /// <summary>
         /// Get replay driver for given sublogIdx
         /// </summary>
-        /// <param name="sublogIdx"></param>
+        /// <param name="physicalSublogIdx"></param>
         /// <returns></returns>
-        public ReplicaReplayDriver GetReplayDriver(int sublogIdx)
-            => replicaReplayDrivers[sublogIdx];
+        public ReplicaReplayDriver GetReplayDriver(int physicalSublogIdx)
+            => replicaReplayDrivers[physicalSublogIdx];
 
         /// <summary>
         /// Replay task instances per sublog (used with ShardedLog)
@@ -34,12 +34,12 @@ namespace Garnet.cluster
         /// <summary>
         /// Disposed lock
         /// </summary>
-        public SingleWriterMultiReaderLock _lock = new();
+        private SingleWriterMultiReaderLock _lock = new();
 
         /// <summary>
         /// Disposed flag
         /// </summary>
-        public bool _disposed = false;
+        private bool disposed = false;
 
         /// <summary>
         /// Cancellation token source for replay task group
@@ -47,14 +47,24 @@ namespace Garnet.cluster
         readonly CancellationTokenSource cts = new();
 
         /// <summary>
-        /// Add replica replay task to this group
+        /// Add replica replay driver to this store
         /// </summary>
-        /// <param name="sublogIdx"></param>
+        /// <param name="physicalSublogIdx"></param>
         /// <param name="networkSender"></param>
-        public void AddReplicaReplayDriver(int sublogIdx, INetworkSender networkSender)
+        public void AddReplicaReplayDriver(int physicalSublogIdx, INetworkSender networkSender)
         {
-            replicaReplayDrivers[sublogIdx] = new ReplicaReplayDriver(sublogIdx, clusterProvider, networkSender, cts, logger);
-            _ = barrier.SignalAndWait(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token);
+            try
+            {
+                _lock.ReadLock();
+                if (disposed)
+                    return;
+                replicaReplayDrivers[physicalSublogIdx] = new ReplicaReplayDriver(physicalSublogIdx, clusterProvider, networkSender, cts, logger);
+                _ = barrier.SignalAndWait(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token);
+            }
+            finally
+            {
+                _lock.ReadUnlock();
+            }
         }
 
         /// <summary>
@@ -65,8 +75,9 @@ namespace Garnet.cluster
             try
             {
                 _lock.WriteLock();
-                if (_disposed) return;
-                _disposed = true;
+                if (disposed)
+                    return;
+                disposed = true;
             }
             finally
             {

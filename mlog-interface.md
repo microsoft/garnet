@@ -196,3 +196,8 @@ In that situation, possible solutions include
 2. Include sessionId and dedicated counter per session to resolve ordering at the replica (i.e. consistent read) (ts, sid, ctr)
 3. Use the concept of closing down timestamp. We only read at t-1 and read at t only when all sublogs have replayed t. Is that correct what are th caveats
 </ul></ul>
+- Do we have to change AofHeader version since we use padding bits?
+- Do we need to wait for unsafe commit to complete when parallel replay within a sublog is enabled?
+- Move enqueue operation within GarnetAppendOnlyFile if possible to simplify changes
+- Use SingleLog when 1 physical sublog and multiple replay tasks are used
+- 

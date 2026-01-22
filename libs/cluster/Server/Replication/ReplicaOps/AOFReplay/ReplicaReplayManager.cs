@@ -9,26 +9,22 @@ namespace Garnet.cluster
     internal sealed partial class ReplicationManager : IDisposable
     {
         /// <summary>
-        /// Replica replay task group
+        /// Replica replay driver store instance
         /// </summary>
-        public ReplicaReplayDriverStore replicaReplayTaskGroup;
+        public ReplicaReplayDriverStore ReplicaReplayDriverStore;
 
         /// <summary>
         /// Initialize replica replay group
         /// </summary>
-        /// <param name="sublogIdx"></param>
+        /// <param name="physicalSublogIdx"></param>
         /// <param name="networkSender"></param>
-        /// <param name="replicaReplayTaskGroup"></param>
-        /// <returns></returns>
-        public bool InitializeReplicaReplayGroup(int sublogIdx, INetworkSender networkSender, out ReplicaReplayDriverStore replicaReplayTaskGroup)
+        /// <returns>True if re</returns>
+        public bool InitializeReplicaReplayGroup(int physicalSublogIdx, INetworkSender networkSender)
         {
-            replicaReplayTaskGroup = null;
-            if (this.replicaReplayTaskGroup.GetReplayDriver(sublogIdx) != null)
+            if (ReplicaReplayDriverStore.GetReplayDriver(physicalSublogIdx) != null)
                 return false;
 
-            this.replicaReplayTaskGroup.AddReplicaReplayDriver(sublogIdx, networkSender);
-            replicaReplayTaskGroup = this.replicaReplayTaskGroup;
-
+            ReplicaReplayDriverStore.AddReplicaReplayDriver(physicalSublogIdx, networkSender);
             return true;
         }
 
@@ -37,8 +33,8 @@ namespace Garnet.cluster
         /// </summary>
         public void ResetReplicaReplayGroup()
         {
-            replicaReplayTaskGroup?.Dispose();
-            replicaReplayTaskGroup = new ReplicaReplayDriverStore(clusterProvider, logger);
+            ReplicaReplayDriverStore?.Dispose();
+            ReplicaReplayDriverStore = new ReplicaReplayDriverStore(clusterProvider, logger);
         }
     }
 }

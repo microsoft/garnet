@@ -190,7 +190,7 @@ namespace Garnet.cluster
         {
             // Call dispose on ref of this session if this session is a replication task
             if (IsReplicating)
-                replicaReplayTaskGroup?.Dispose();
+                replicaReplayDriverStore?.Dispose();
         }
     }
 }

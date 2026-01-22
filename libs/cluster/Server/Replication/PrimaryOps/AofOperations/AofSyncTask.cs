@@ -17,7 +17,7 @@ namespace Garnet.cluster
         public class AofSyncTask : IBulkLogEntryConsumer, IDisposable
         {
             readonly ClusterProvider clusterProvider;
-            readonly int sublogIdx;
+            readonly int physicalSublogIdx;
             public readonly GarnetClientSession garnetClient;
             readonly string localNodeId;
             readonly string remoteNodeId;
@@ -50,7 +50,7 @@ namespace Garnet.cluster
             /// AofSyncTask constructor
             /// </summary>
             /// <param name="clusterProvider"></param>
-            /// <param name="sublogIdx"></param>
+            /// <param name="physicalSublogIdx"></param>
             /// <param name="endPoint"></param>
             /// <param name="startAddress"></param>
             /// <param name="localNodeId"></param>
@@ -59,7 +59,7 @@ namespace Garnet.cluster
             /// <param name="logger"></param>
             public AofSyncTask(
                 ClusterProvider clusterProvider,
-                int sublogIdx,
+                int physicalSublogIdx,
                 IPEndPoint endPoint,
                 long startAddress,
                 string localNodeId,
@@ -68,7 +68,7 @@ namespace Garnet.cluster
                 ILogger logger)
             {
                 this.clusterProvider = clusterProvider;
-                this.sublogIdx = sublogIdx;
+                this.physicalSublogIdx = physicalSublogIdx;
                 this.startAddress = startAddress;
                 previousAddress = startAddress;
                 this.localNodeId = localNodeId;
@@ -123,7 +123,7 @@ namespace Garnet.cluster
                     // This is called under epoch protection, so we have to wait for appending to complete
                     garnetClient.ExecuteClusterAppendLog(
                         localNodeId,
-                        sublogIdx,
+                        physicalSublogIdx,
                         previousAddress,
                         currentAddress,
                         nextAddress,
@@ -140,7 +140,7 @@ namespace Garnet.cluster
                         ex,
                         "{Consume}[{taskId}]: exception consuming AOF payload to sync {remoteNodeId} ({currenAddress}, {nextAddress})",
                         nameof(AofSyncTask.Consume),
-                        sublogIdx,
+                        physicalSublogIdx,
                         remoteNodeId,
                         currentAddress,
                         nextAddress);
@@ -162,21 +162,21 @@ namespace Garnet.cluster
                 {
                     acquireReadLock = aofSyncDriver.ResumeAofStreaming();
                     if (!acquireReadLock)
-                        throw new GarnetException($"[{sublogIdx}] Failed to acquire lock at {nameof(RunAofSyncTask)}");
+                        throw new GarnetException($"[{physicalSublogIdx}] Failed to acquire lock at {nameof(RunAofSyncTask)}");
 
                     logger?.LogInformation(
                         "{RunAofSyncTask}[{taskId}]: syncing {remoteNodeId} starting from address {address}",
                         nameof(AofSyncTask.RunAofSyncTask),
-                        sublogIdx,
+                        physicalSublogIdx,
                         aofSyncDriver.remoteNodeId,
                         startAddress);
 
                     if (!IsConnected)
                         garnetClient.Connect();
 
-                    iter = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(sublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
+                    iter = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
                     // Send ping to initialize replication stream
-                    garnetClient.ExecuteClusterAppendLog(aofSyncDriver.localNodeId, sublogIdx, -1, -1, -1, -1, 0);
+                    garnetClient.ExecuteClusterAppendLog(aofSyncDriver.localNodeId, physicalSublogIdx, -1, -1, -1, -1, 0);
                     garnetClient.CompletePending(false);
 
                     while (true)
@@ -187,7 +187,7 @@ namespace Garnet.cluster
                 }
                 catch (Exception ex)
                 {
-                    logger?.LogError(ex, "[{sublogIdx}]({method})", sublogIdx, nameof(RunAofSyncTask));
+                    logger?.LogError(ex, "[{sublogIdx}]({method})", physicalSublogIdx, nameof(RunAofSyncTask));
                 }
                 finally
                 {

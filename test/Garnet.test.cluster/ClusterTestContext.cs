@@ -48,7 +48,7 @@ namespace Garnet.test.cluster
             cts = new CancellationTokenSource(TimeSpan.FromSeconds(testTimeoutSeconds));
 
             TestFolder = TestUtils.UnitTestWorkingDir() + "\\";
-            var logLevel = LogLevel.Error;
+            var logLevel = LogLevel.Warning;
             if (!string.IsNullOrEmpty(TestContext.CurrentContext.Test.MethodName) && monitorTests.TryGetValue(TestContext.CurrentContext.Test.MethodName, out var value))
                 logLevel = value;
             loggerFactory = TestUtils.CreateLoggerFactoryInstance(logTextWriter, logLevel, scope: TestContext.CurrentContext.Test.FullName);
@@ -116,7 +116,6 @@ namespace Garnet.test.cluster
             nodes[nodeIndex] = new GarnetServer(nodeOptions[nodeIndex], loggerFactory);
             nodes[nodeIndex].Start();
         }
-
 
         public void TearDown()
         {

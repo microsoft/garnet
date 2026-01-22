@@ -231,9 +231,9 @@ namespace Garnet.server
                 _ = Tsavorite.core.Utility.MonotonicUpdate(ref addresses[i], update[i], out _);
         }
 
-        public void MonotonicUpdate(long update, int subLogIdx)
+        public void MonotonicUpdate(long update, int physicalSublogIdx)
         {
-            _ = Tsavorite.core.Utility.MonotonicUpdate(ref addresses[subLogIdx], update, out _);
+            _ = Tsavorite.core.Utility.MonotonicUpdate(ref addresses[physicalSublogIdx], update, out _);
         }
 
         public void MinExchange(AofAddress address)
