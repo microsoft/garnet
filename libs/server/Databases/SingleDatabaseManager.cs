@@ -424,7 +424,7 @@ namespace Garnet.server
                             },
                             participantCount = (short)AppendOnlyFile.serverOptions.AofVirtualSublogCount
                         };
-                        new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize).Fill(0xFF);
+                        new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
 
                         while (_logAccessVector > 0)
                         {

@@ -7,9 +7,9 @@ using System.Runtime.InteropServices;
 
 namespace Garnet.common
 {
-    public struct BitVector(int bitCount)
+    public struct BitVector(int bytes)
     {
-        readonly byte[] vector = new byte[((bitCount - 1) / 8) + 1];
+        readonly byte[] vector = new byte[bytes];
 
         void GetOffsets(int index, out int byteIndex, out int bitIndex)
         {
@@ -61,7 +61,7 @@ namespace Garnet.common
         /// <returns></returns>
         public static BitVector CopyFrom(Span<byte> span)
         {
-            var bitVector = new BitVector(span.Length * 8);
+            var bitVector = new BitVector(span.Length);
             span.CopyTo(bitVector.vector);
             return bitVector;
         }

@@ -21,7 +21,7 @@ namespace Garnet.server
     {
         public const int TotalSize = AofShardedHeader.TotalSize + 2 + 32;
         // maximum 256 replay tasks per physical sublog, hence 32 bytes bitmap
-        public const int ReplayTaskAccessVectorSize = 32;
+        public const int ReplayTaskAccessVectorBytes = 32;
 
         /// <summary>
         /// AofShardedHeader used with multi-log

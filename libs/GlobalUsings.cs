@@ -57,14 +57,24 @@ global using TransactionalGarnetApi = Garnet.server.GarnetApi<
 global using StringBasicContext = Tsavorite.core.BasicContext<
     Garnet.server.StringInput,
     Tsavorite.core.SpanByteAndMemory,
-    long, Garnet.server.MainSessionFunctions,
+    long,
+    Garnet.server.MainSessionFunctions,
     Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
     Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
 
 global using StringTransactionalContext = Tsavorite.core.TransactionalContext<
     Garnet.server.StringInput,
     Tsavorite.core.SpanByteAndMemory,
-    long, Garnet.server.MainSessionFunctions,
+    long,
+    Garnet.server.MainSessionFunctions,
+    Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
+    Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
+
+global using StringTransactionalUnsafeContext = Tsavorite.core.TransactionalUnsafeContext<
+    Garnet.server.StringInput,
+    Tsavorite.core.SpanByteAndMemory,
+    long,
+    Garnet.server.MainSessionFunctions,
     Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>,
     Tsavorite.core.ObjectAllocator<Tsavorite.core.StoreFunctions<Tsavorite.core.SpanByteComparer, Tsavorite.core.DefaultRecordDisposer>>>;
 

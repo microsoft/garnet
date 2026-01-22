@@ -330,7 +330,7 @@ namespace Garnet.server
                     };
                     unsafe
                     {
-                        new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorSize).Fill(0xFF);
+                        new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
                     }
 
                     while (_logAccessBitmap > 0)

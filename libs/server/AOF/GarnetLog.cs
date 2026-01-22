@@ -139,7 +139,7 @@ namespace Garnet.server
         /// <param name="logAccessBitmap"></param>
         public void LockSublogs(ulong logAccessBitmap)
         {
-            Debug.Assert(shardedLog != null);
+            Debug.Assert(serverOptions != null);
             Debug.Assert(BitOperations.PopCount(logAccessBitmap) <= shardedLog.Length);
             shardedLog.LockSublogs(logAccessBitmap);
         }

@@ -639,7 +639,7 @@ namespace Garnet.server
                 // NOTE: HeaderType transactions include MULTI-EXEC transactions, custom txn procedures, and any operation that executes across physical and virtual sublogs (e.g. checkpoint, flushdb)
                 case AofHeaderType.TransactionHeader:
                     var txnHeader = *(AofTransactionHeader*)ptr;
-                    var bitVector = BitVector.CopyFrom(new Span<byte>(ptr, AofTransactionHeader.ReplayTaskAccessVectorSize));
+                    var bitVector = BitVector.CopyFrom(new Span<byte>(txnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
                     return bitVector.IsSet(replayTaskIdx);
                 default:
                     throw new GarnetException($"Replay header type {replayHeaderType} not supported!");

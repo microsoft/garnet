@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text;
-using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -141,8 +140,7 @@ namespace Garnet.test.cluster
             for (var i = 0; i < keys.Length; i++)
             {
                 resp = context.clusterTestUtils.GetKey(primaryNodeIndex, Encoding.ASCII.GetBytes(keys[i]), out _, out _, out _);
-                context.logger.LogError("primary: {keys} {value}", keys[i], values[i]);
-                ClassicAssert.AreEqual(values[i], resp);
+                ClassicAssert.AreEqual(values[i], resp, "At primary");
             }
             context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger);
 
@@ -150,8 +148,7 @@ namespace Garnet.test.cluster
             for (var i = 0; i < keys.Length; i++)
             {
                 resp = context.clusterTestUtils.GetKey(replicaNodeIndex, Encoding.ASCII.GetBytes(keys[i]), out _, out _, out _);
-                context.logger.LogError("replica: {keys} {value}", keys[i], values[i]);
-                ClassicAssert.AreEqual(values[i], resp);
+                ClassicAssert.AreEqual(values[i], resp, "At replica");
             }
 
             if (storedProcedure)
@@ -170,7 +167,6 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual(primaryPInfo.TailAddress, replicaPInfo.TailAddress);
             var primaryReplOffset = context.clusterTestUtils.GetReplicationOffset(0);
             var replicaReplOffset = context.clusterTestUtils.GetReplicationOffset(1);
-            context.logger.LogError("primaryReplOffset: {primaryReplOffset}, replicaReplOffset:{replicaReplOffset}", primaryReplOffset, replicaReplOffset);
         }
 
         [Test, Order(2)]

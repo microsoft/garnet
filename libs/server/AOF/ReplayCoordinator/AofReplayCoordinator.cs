@@ -332,14 +332,12 @@ namespace Garnet.server
                     // Initialize custom proc collection to keep track of hashes for keys for which their timestamp needs to be updated
                     CustomProcedureKeyHashCollection customProcKeyHashTracker = new(aofProcessor.storeWrapper.appendOnlyFile);
 
-                    logger?.LogError("> sublogIdx: {sublogIdx}", sublogIdx);
                     // Synchronized processing of stored proc operation
                     ProcessSynchronizedOperation(
                         sublogIdx,
                         ptr,
                         shardedHeader.basicHeader.sessionID,
                         () => StoredProcRunnerWrapper(sublogIdx, id, ptr));
-                    logger?.LogError("< sublogIdx: {sublogIdx}", sublogIdx);
 
                     // Wrapper for store proc runner used for multi-log synchronization
                     void StoredProcRunnerWrapper(int sublogIdx, byte id, byte* ptr)
