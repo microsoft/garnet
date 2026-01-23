@@ -1567,7 +1567,8 @@ namespace Garnet.server
             var destination = parseState.GetArgSliceByRef(0);
             var keys = parseState.Parameters.Slice(2, nKeys);
 
-            var status = storageApi.SortedSetUnionStore(destination, keys, weights, aggregateType, out var count);
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var status = storageApi.SortedSetUnionStore(destination, keys, weights, aggregateType, ref metaCommandInfo, ref output);
 
             switch (status)
             {
@@ -1576,8 +1577,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    while (!RespWriteUtils.TryWriteInt32(count, ref dcurr, dend))
-                        SendAndReset();
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
 

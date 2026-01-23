@@ -7,7 +7,6 @@ using System.Runtime.CompilerServices;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
-using static Garnet.server.SessionFunctionsUtils;
 
 namespace Garnet.server
 {
@@ -317,11 +316,11 @@ namespace Garnet.server
             sizeChange = 0;
 
             var metaCmd = input.metaCommandInfo.MetaCommand;
-            var updatedEtag = GetUpdatedEtag(currEtag, ref input.metaCommandInfo, out var execCmd, init, readOnly);
+            var updatedEtag = EtagUtils.GetUpdatedEtag(currEtag, ref input.metaCommandInfo, out var execCmd, init, readOnly);
 
             var isEtagCmd = metaCmd.IsEtagCommand();
             var skipResp = input.header.CheckSkipRespOutputFlag();
-            var respProtocolVersion = GetRespProtocolVersion(ref input);
+            var respProtocolVersion = functionsState.GetRespProtocolVersion(ref input);
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             try
@@ -353,18 +352,6 @@ namespace Garnet.server
             }
 
             return updatedEtag;
-        }
-
-        private byte GetRespProtocolVersion(ref ObjectInput input)
-        {
-            return input.header.SortedSetOp switch
-            {
-                SortedSetOperation.ZINCRBY or
-                SortedSetOperation.ZPOPMIN or
-                SortedSetOperation.ZPOPMAX => input.arg2 > 0 ? (byte)input.arg2 : functionsState.respProtocolVersion,
-                SortedSetOperation.ZRANGE => ((SortedSetRangeOptions)input.arg2 & SortedSetRangeOptions.Store) != 0 ? (byte)2 : functionsState.respProtocolVersion,
-                _ => functionsState.respProtocolVersion
-            };
         }
     }
 }

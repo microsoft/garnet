@@ -387,7 +387,7 @@ namespace Garnet.server
             bool shouldCheckExpiration = true;
 
             var metaCmd = input.metaCommandInfo.MetaCommand;
-            var updatedEtag = GetUpdatedEtag(logRecord.ETag, ref input.metaCommandInfo, out var execCmd);
+            var updatedEtag = EtagUtils.GetUpdatedEtag(logRecord.ETag, ref input.metaCommandInfo, out var execCmd);
 
             switch (cmd)
             {
@@ -797,7 +797,7 @@ namespace Garnet.server
                 ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
             var metaCmd = input.metaCommandInfo.MetaCommand;
-            var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd);
+            var updatedEtag = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd);
 
             switch (input.header.cmd)
             {
@@ -912,7 +912,7 @@ namespace Garnet.server
             }
 
             var metaCmd = input.metaCommandInfo.MetaCommand;
-            var updatedEtag = GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out _);
+            var updatedEtag = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out _);
 
             switch (cmd)
             {

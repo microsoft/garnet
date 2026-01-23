@@ -145,8 +145,9 @@ namespace Garnet.server
         public GarnetStatus SortedSetDifferenceStore(PinnedSpanByte destinationKey, ReadOnlySpan<PinnedSpanByte> keys, out int count)
             => storageSession.SortedSetDifferenceStore(destinationKey, keys, out count);
 
-        public GarnetStatus SortedSetUnionStore(PinnedSpanByte destinationKey, ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
-            => storageSession.SortedSetUnionStore(destinationKey, keys, weights, aggregateType, out count);
+        /// <inheritdoc />
+        public GarnetStatus SortedSetUnionStore(PinnedSpanByte destinationKey, ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, ref MetaCommandInfo metaCommandInfo, out int count)
+            => storageSession.SortedSetUnionStore(destinationKey, keys, weights, aggregateType, ref metaCommandInfo, out count);
 
         /// <inheritdoc />
         public GarnetStatus SortedSetScan(PinnedSpanByte key, long cursor, string match, int count, out PinnedSpanByte[] items)

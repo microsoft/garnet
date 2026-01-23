@@ -661,10 +661,9 @@ namespace Garnet.server
         /// <param name="count">Outputs the number of arguments stored with the command.</param>
         /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand FastParseInlineCommand(out int count)
+        private RespCommand FastParseInlineCommand(ref int count)
         {
             byte* ptr = recvBufferPtr + readHead;
-            count = 0;
 
             if (bytesRead - readHead >= 6)
             {
@@ -675,11 +674,13 @@ namespace Garnet.server
 
                     if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("PING"u8))
                     {
+                        count = 0;
                         return RespCommand.PING;
                     }
 
                     if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("QUIT"u8))
                     {
+                        count = 0;
                         return RespCommand.QUIT;
                     }
 
@@ -810,7 +811,8 @@ namespace Garnet.server
             }
             else
             {
-                return FastParseInlineCommand(out count);
+                count = !skipCountParse ? 0 : count - 1;
+                return FastParseInlineCommand(ref count);
             }
 
             // Couldn't find a matching command in this pass

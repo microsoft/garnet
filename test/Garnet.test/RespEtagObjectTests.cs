@@ -266,5 +266,21 @@ namespace Garnet.test
             ClassicAssert.IsNull(results[0]); // Command not executed
             ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
         }
+
+        [Test]
+        public void Test()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var key1 = "key1";
+            var key2 = "key2";
+            var key3 = "key3";
+
+            db.SortedSetAdd(key1, [new SortedSetEntry("a", 1)]);
+            db.SortedSetAdd(key2, [new SortedSetEntry("b", 2)]);
+
+            var result = db.Execute("EXECWITHETAG", "ZUNIONSTORE", key3, 2, key1, key2);
+        }
     }
 }

@@ -6,6 +6,7 @@ using System.Buffers;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using static Garnet.server.LuaRunner;
 
 namespace Garnet.server
 {
@@ -106,6 +107,23 @@ namespace Garnet.server
                 *cc++ = (byte)'\r';
                 *cc = (byte)'\n';
             }
+        }
+
+        internal byte GetRespProtocolVersion(ref ObjectInput input)
+        {
+            return input.header.type switch
+            {
+                GarnetObjectType.SortedSet =>
+                    input.header.SortedSetOp switch
+                    {
+                        SortedSetOperation.ZINCRBY or
+                            SortedSetOperation.ZPOPMIN or
+                            SortedSetOperation.ZPOPMAX => input.arg2 > 0 ? (byte)input.arg2 : respProtocolVersion,
+                        SortedSetOperation.ZRANGE => ((SortedSetRangeOptions)input.arg2 & SortedSetRangeOptions.Store) != 0 ? (byte)2 : respProtocolVersion,
+                        _ => respProtocolVersion
+                    },
+                _ => respProtocolVersion
+            };
         }
     }
 }
