@@ -1727,7 +1727,7 @@ namespace Garnet.test
                                 ClassicAssert.AreEqual(values["reduced-dimensions"], reduceValueToUse.ToString());
                                 ClassicAssert.AreEqual(values["build-exploration-factor"], expectedEf);
                                 ClassicAssert.AreEqual(values["num-links"], expectedNumLinks);
-                                ClassicAssert.AreEqual(values["size"],"1");
+                                ClassicAssert.AreEqual(values["size"], "1");
 
                                 // Modify first value for second add (change from "1.0" to "2.0")
                                 vectorValues[2] = "2.0";
