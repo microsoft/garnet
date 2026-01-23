@@ -9,95 +9,282 @@ env:
   DOTNET_NOLOGO: true
 
 permissions:
-  contents: read
+  contents: write  
   
 jobs:
-  build-test-garnet:
-    name: Garnet
+  build-test-all:
+    name: Test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
+        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
+        os: [ ubuntu-latest, windows-latest ]
         framework: [ 'net8.0', 'net9.0' ]
         configuration: [ 'Debug', 'Release' ]
-        test: [ 'Garnet.test', 'Garnet.test.cluster' ]
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-      - name: Install dependencies
-        run: dotnet restore
-      - name: Check style format
-        run: dotnet format --verify-no-changes --verbosity diagnostic
-      - name: Build Garnet
-        run: dotnet build --configuration ${{ matrix.configuration }}
-      - name: Run tests ${{ matrix.test }}
-        run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}"
-        timeout-minutes: 45 
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        with:
-          name: dotnet-garnet-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
-          path: GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
-        if: ${{ always() }}
 
-  # Job to build and test Tsavorite code
-  build-test-tsavorite:        
-    name: Tsavorite
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-22.04, ubuntu-24.04, windows-2022, windows-2025 ]
-        framework: [ 'net8.0', 'net9.0' ]
-        configuration: [ 'Debug', 'Release' ]
     steps:
+      - name: Install Allure CLI
+        shell: pwsh
+        run: |
+            if ($env:RUNNER_OS -eq "Windows") {
+              Set-ExecutionPolicy RemoteSigned -Scope Process -Force
+              iwr -useb get.scoop.sh | iex
+              scoop install allure
+              $shimPath = "$env:USERPROFILE\scoop\shims"
+              echo "Adding Scoop shims to PATH: $shimPath"
+              echo "$shimPath" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+            } elseif ($env:RUNNER_OS -eq "Linux") {
+              npm install -g allure-commandline --save-dev
+            } else {
+              Write-Host "Unsupported OS: $env:RUNNER_OS"
+              exit 1
+            }
       - name: Check out code
         uses: actions/checkout@v4
+
       - name: Set workaround for libaio on Ubuntu 24.04 (see https://askubuntu.com/questions/1512196/libaio1-on-noble/1512197#1512197)
         run: |
-          sudo ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
-        if: ${{ matrix.os == 'ubuntu-24.04' }}        
+           sudo ln -s /usr/lib/x86_64-linux-gnu/libaio.so.1t64 /usr/lib/x86_64-linux-gnu/libaio.so.1
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+
       - name: Set environment variable for Linux
         run: echo "RunAzureTests=yes" >> $GITHUB_ENV
-        if: ${{ matrix.os == 'ubuntu-24.04' }}
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+
       - name: Set environment variable for Windows
         run: echo ("RunAzureTests=yes") >> $env:GITHUB_ENV
         if: ${{ matrix.os == 'windows-latest' }}
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
+
       - name: Setup Node.js for Azurite
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
       - name: Install and Run Azurite
         shell: bash
         run: |
           npm install -g azurite
           azurite &
+          
       - name: Install dependencies
         run: dotnet restore
-      - name: Format
+
+      - name: Check style format
         run: dotnet format --verify-no-changes --verbosity diagnostic
-      - name: Build Tsavorite
+
+      - name: Build Tsavorite.test
+        if: ${{ matrix.test == 'Tsavorite.test' }}
         run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
-      - name: Run Tsavorite tests
-        run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
-        timeout-minutes: 45 
+
+      - name: Build Garnet
+        if: ${{ matrix.test != 'Tsavorite.test' }}
+        run: dotnet build --configuration ${{ matrix.configuration }}
+
+      - name: Run tests ${{ matrix.test }}
+        shell: pwsh
+        run: |
+          $resultsDir = "${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
+          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
+            dotnet test "libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj" `
+              -f "${{ matrix.framework }}" `
+              --configuration "${{ matrix.configuration }}" `
+              --logger "console;verbosity=detailed" `
+              --logger "trx" `
+              --results-directory "$resultsDir"
+          } else {
+            dotnet test "test/${{ matrix.test }}" `
+              -f "${{ matrix.framework }}" `
+              --configuration "${{ matrix.configuration }}" `
+              --logger "console;verbosity=detailed" `
+              --logger "trx" `
+              --results-directory "$resultsDir"
+          }
+        timeout-minutes: 55        
+
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
-          name: dotnet-tsavorite-results-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
-          path: TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+          name: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
+          path: ${{ matrix.test }}-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}
         if: ${{ always() }}
 
-  pipeline-success:
-    name: Garnet Nightly (Complete)
-    runs-on: ubuntu-latest
-    needs: [ build-test-garnet,  build-test-tsavorite ]
+      - name: Stage allure-results into test/Allure/AllResults
+        shell: pwsh
+        run: |
+          $base = $env:GITHUB_WORKSPACE
+
+          if ("${{ matrix.test }}" -eq "Tsavorite.test") {
+            $source = Join-Path $base "libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          } else {
+            $source = Join-Path $base "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          }
+
+          $target = Join-Path $base "test/Allure/AllResults"
+          Write-Host "Staging allure-results from $source into $target"
+
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+
+          if (Test-Path $source) {
+            Get-ChildItem -Path $source -Recurse | Copy-Item -Destination $target -Force
+            Write-Host "Copied allure-results into $target"
+          } else {
+            Write-Host "Source path $source not found, skipping copy"
+          }
+        if: ${{ always() }}
+     
+      # NOTE - need this to get the results names properly categorized in Allure report at Suite level - problem is that it can hit a max limit in the system if do a bug test matrix
+      - name: Upload Allure Results to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: AllureResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}
+          path: test/Allure/AllResults
+        if: ${{ always() }}
+
+      - name: Clean up raw allure-results folders after copying to Allure staging area
+        shell: pwsh
+        run: |
+          $base = $env:GITHUB_WORKSPACE
+          $paths = @(
+            "libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results",
+            "test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/allure-results"
+          )
+          foreach ($p in $paths) {
+            $full = Join-Path $base $p
+            if (Test-Path $full) {
+              Write-Host "Removing $full"
+              Remove-Item $full -Recurse -Force
+            }
+          }
+        if: ${{ always() }}
+
+  generate-allure-report:
+    name: Generate Allure Report
+    runs-on: windows-latest  # only used to generate report - makes it easy on how calls made so don't have to worry about windows and linux 
+    needs: [ build-test-all ]
+    if: ${{ always() }}
     steps:
-    - run: echo Done!
-    if: ${{ !(failure() || cancelled()) }}
-    
+      # First checkout the main repo into the default workspace root
+      - name: Checkout main repository
+        uses: actions/checkout@v4
+
+      # Then checkout the allure_data_history branch into a subfolder
+      - name: Checkout allure_data_history branch
+        uses: actions/checkout@v4
+        with:
+          ref: allure_data_history
+          path: history-branch
+          persist-credentials: true
+
+      - name: Install Allure CLI
+        shell: pwsh
+        run: |
+            if ($env:RUNNER_OS -eq "Windows") {
+              Set-ExecutionPolicy RemoteSigned -Scope Process -Force
+              iwr -useb get.scoop.sh | iex
+              scoop install allure
+              $shimPath = "$env:USERPROFILE\scoop\shims"
+              echo "Adding Scoop shims to PATH: $shimPath"
+              echo "$shimPath" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+            } elseif ($env:RUNNER_OS -eq "Linux") {
+              npm install -g allure-commandline --save-dev
+            } else {
+              Write-Host "Unsupported OS: $env:RUNNER_OS"
+              exit 1
+            }
+
+      - name: Download allure test results that were staged in artifacts and merge into one folder
+        uses: actions/download-artifact@v4
+        with:
+          path: test/Allure/AllResults
+          pattern: AllureResults-*
+
+      - name: Copy all results into one folder (CombinedResults)
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "test/Allure/AllResults"
+          $target = Join-Path $env:GITHUB_WORKSPACE "test/Allure/CombinedResults"
+          New-Item -ItemType Directory -Path $target -Force
+          Get-ChildItem -Path $source -Recurse -File | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination $target -Force
+          }          
+
+      - name: Final cleanup of stray allure-results folders
+        shell: pwsh
+        run: |
+          $base = $env:GITHUB_WORKSPACE
+          # Remove any allure-results directories anywhere under workspace
+          Get-ChildItem -Path $base -Recurse -Directory -Filter "allure-results" |
+            ForEach-Object {
+              Write-Host "Removing $($_.FullName)"
+              Remove-Item $_.FullName -Recurse -Force
+            }
+
+          # Remove the staging folder once CombinedResults is ready
+          $staging = Join-Path $base "test/Allure/AllResults"
+          if (Test-Path $staging) {
+            Write-Host "Removing staging folder $staging"
+            Remove-Item $staging -Recurse -Force
+          }
+
+      - name: Copy history from allure_data_history branch into CombinedResults
+        shell: pwsh
+        run: |
+          $source = "${{ github.workspace }}/history-branch/test/Allure/history"
+          $target = "${{ github.workspace }}/test/Allure/CombinedResults/history"
+          if (Test-Path $source) {
+          New-Item -ItemType Directory -Path $target -Force
+          Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
+          Write-Host "History copied from allure_data_history into CombinedResults"
+          } else {
+              Write-Host "No history found in allure_data_history, starting fresh"
+          }        
+
+      - name: Run GenerateAllureReport.ps1
+        shell: pwsh
+        run: |
+          Set-Location "${{ github.workspace }}/test/Allure"
+          .\GenerateAllureReport.ps1
+
+      - name: Upload Allure history to artifacts so can use for debugging if needed
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-history
+          path: test/Allure/allure-report/history
+
+      - name: Commit updated history to allure_data_history
+        shell: pwsh
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin allure_data_history
+          git checkout allure_data_history
+          $source = "${{ github.workspace }}/test/Allure/allure-report/history"
+          $target = "${{ github.workspace }}/test/Allure/history"
+          Remove-Item -Recurse -Force $target -ErrorAction SilentlyContinue
+          Copy-Item -Path $source -Destination $target -Recurse -Force
+          git add test/Allure/history
+          git commit -m "Update Allure history [CI]"
+          git push origin allure_data_history
+
+      - name: Upload Allure HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: test/Allure/allure-report
+
+      - name: Publish Allure report to GH Web site
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:GITHUB_WORKSPACE "test/Allure/allure-report"
+          $target = Join-Path $env:GITHUB_WORKSPACE "website/static/allure"
+          Write-Host "Copying Allure report from $source to $target"
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          Copy-Item -Path (Join-Path $source '*') -Destination $target -Recurse -Force
+          Write-Host "Allure report staged in website/static/allure"
+
+      - name: Echo completion
+        run: echo Done!

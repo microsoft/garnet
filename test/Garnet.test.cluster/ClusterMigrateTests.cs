@@ -9,6 +9,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.common;
 #if DEBUG
 using Garnet.server;
@@ -20,8 +21,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
+    [AllureNUnit]
     [TestFixture(false), NonParallelizable]
-    public class ClusterMigrateTests(bool UseTLS)
+    public class ClusterMigrateTests(bool UseTLS) : AllureTestBase
     {
         const int testTimeout = 100000;
 

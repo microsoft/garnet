@@ -10,6 +10,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using CommandLine;
 using Garnet.common;
 using Garnet.server;
@@ -21,8 +22,9 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture, NonParallelizable]
-    public class GarnetServerConfigTests
+    public class GarnetServerConfigTests : AllureTestBase
     {
         [Test]
         public void DefaultConfigurationOptionsCoverage()
