@@ -2022,6 +2022,11 @@ namespace Garnet.server
         /// </summary>
         GarnetStatus VectorSetInfo(PinnedSpanByte key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size);
 
+        /// <summary>
+        /// Get the attributes associated with an element in the Vector Set.
+        /// </summary>
+        GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes);
+
         #endregion 
     }
 
