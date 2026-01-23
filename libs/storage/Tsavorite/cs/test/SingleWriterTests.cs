@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -30,7 +32,9 @@ namespace Tsavorite.test.SingleWriter
         }
     }
 
-    class SingleWriterTests
+    [AllureNUnit]
+    [TestFixture]
+    class SingleWriterTests : AllureTestBase
     {
         const int NumRecords = 1000;
         const int ValueMult = 1_000_000;
