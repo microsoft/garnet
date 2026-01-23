@@ -22,7 +22,7 @@ namespace Garnet.server
         public void PostSingleDeleter(ref SpanByte key, ref DeleteInfo deleteInfo)
         {
             if (functionsState.appendOnlyFile != null)
-                deleteInfo.UserData |= 0x1; // Mark that we need to write to AOF
+                deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
         }
 
         /// <inheritdoc />
@@ -32,7 +32,7 @@ namespace Garnet.server
             if (!deleteInfo.RecordInfo.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                deleteInfo.UserData |= 0x1; // Mark that we need to write to AOF
+                deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             return true;
         }
 
@@ -40,7 +40,7 @@ namespace Garnet.server
         public void PostDeleteOperation<TEpochAccessor>(ref SpanByte key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
             where TEpochAccessor : IEpochAccessor
         {
-            if ((deleteInfo.UserData & 0x1) == 0x1) // Check if we need to write to AOF
+            if ((deleteInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
             {
                 WriteLogDelete(ref key, deleteInfo.Version, deleteInfo.SessionID, epochAccessor);
             }
