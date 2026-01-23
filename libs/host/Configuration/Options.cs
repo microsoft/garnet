@@ -210,6 +210,10 @@ namespace Garnet
         [Option("aof-tail-witness-freq", Required = false, HelpText = "Polling frequency of the background task responsible for moving time ahead for all physical sublogs (Used only with physical sublog value >1).")]
         public int AofTailWitnessFreq { get; set; }
 
+        [OptionValidation]
+        [Option("disable-legancy-aof-recover", Required = false, HelpText = "Disables legacy AOF recover implementation where one record at a time is replayed.")]
+        public bool? DisableLegacyAOFRecover { get; set; }
+
         [IntRangeValidation(-1, int.MaxValue)]
         [Option("aof-commit-freq", Required = false, HelpText = "Write ahead logging (append-only file) commit issue frequency in milliseconds. 0 = issue an immediate commit per operation, -1 = manually issue commits using COMMITAOF command")]
         public int CommitFrequencyMs { get; set; }
@@ -828,6 +832,7 @@ namespace Garnet
                 AofPhysicalSublogCount = AofPhysicalSublogCount,
                 AofReplayTaskCount = AofReplayTaskCount,
                 AofTailWitnessFreq = AofTailWitnessFreq,
+                DisableLegacyAOFRecover = DisableLegacyAOFRecover.GetValueOrDefault(),
                 AofReplicationRefreshFrequencyMs = AofReplicationRefreshFrequencyMs,
                 CommitFrequencyMs = CommitFrequencyMs,
                 WaitForCommit = WaitForCommit.GetValueOrDefault(),

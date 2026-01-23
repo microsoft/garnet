@@ -205,3 +205,4 @@ TODO:
 - Optimistically update timestamp at the end of a full page parallel replay.
 - Revisit counting barrier.
 - Refactor recover piece in AofProcessor to be separate from rest AofProcessor functionality.
+- Use commit cookie to indicate a commit id and recover AOF until the point where all commit ids are consistent across all sublogs.

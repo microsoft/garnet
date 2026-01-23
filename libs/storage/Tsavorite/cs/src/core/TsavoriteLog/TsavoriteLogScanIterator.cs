@@ -372,7 +372,6 @@ namespace Tsavorite.core
             }
         }
 
-
         /// <summary>
         /// Consume the next entry in the log with the given consumer
         /// </summary>

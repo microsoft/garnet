@@ -97,6 +97,11 @@ namespace Garnet.server
         public int AofTailWitnessFreq = 100;
 
         /// <summary>
+        /// Disables legacy AOF recover implementation where one record at a time is replayed.
+        /// </summary>
+        public bool DisableLegacyAOFRecover = false;
+
+        /// <summary>
         /// Subscriber (safe tail address) refresh frequency in milliseconds (for pub-sub). 0 = auto refresh after every enqueue.
         /// </summary>
         public int SubscriberRefreshFrequencyMs = 0;

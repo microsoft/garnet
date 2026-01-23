@@ -355,7 +355,7 @@ namespace Garnet.server
             where TInput : IStoreInput
         {
             var physicalSublogIdx = 0L;
-            if (serverOptions.AofPhysicalSublogCount == 1)
+            if (serverOptions.AofPhysicalSublogCount > 1)
             {
                 var hash = HASH(key);
                 physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
@@ -372,7 +372,7 @@ namespace Garnet.server
             where TInput : IStoreInput
         {
             var physicalSublogIdx = 0L;
-            if (serverOptions.AofPhysicalSublogCount == 1)
+            if (serverOptions.AofPhysicalSublogCount > 1)
             {
                 var hash = HASH(key);
                 physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
@@ -387,7 +387,7 @@ namespace Garnet.server
         internal void Enqueue(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out long logicalAddress)
         {
             var physicalSublogIdx = 0L;
-            if (serverOptions.AofPhysicalSublogCount == 1)
+            if (serverOptions.AofPhysicalSublogCount > 1)
             {
                 var hash = HASH(key);
                 physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;

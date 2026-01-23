@@ -128,7 +128,7 @@ namespace Garnet.cluster
                     {
                         // Ensure main thread always gets notified and released
                         if (replayTaskIdx == 0)
-                            entry.Completed.Set();
+                            entry.WorkCompleted.Set();
                     }
                 }
             }

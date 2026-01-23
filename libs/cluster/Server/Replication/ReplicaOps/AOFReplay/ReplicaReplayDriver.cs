@@ -87,24 +87,24 @@ namespace Garnet.cluster
             else
             {
                 // Wait for previous replay batch to finish
-                if (!replayWorkItem.Completed.Wait(serverOptions.ReplicaSyncTimeout, cts.Token))
+                if (!replayWorkItem.WorkCompleted.Wait(serverOptions.ReplicaSyncTimeout, cts.Token))
                     throw new GarnetException("Consume background replay timed-out!");
 
-                replayWorkItem.Completed.Reset();
+                replayWorkItem.WorkCompleted.Reset();
                 var replayBufferSlot = replayWorkItem;
                 replayBufferSlot.Record = record;
                 replayBufferSlot.RecordLength = recordLength;
                 replayBufferSlot.CurrentAddress = currentAddress;
                 replayBufferSlot.NextAddress = nextAddress;
                 replayBufferSlot.IsProtected = isProtected;
-                replayBufferSlot.Completed.Reset();
+                replayBufferSlot.WorkCompleted.Reset();
                 replayBufferSlot.Reset();
 
                 foreach (var replayTask in replayTasks)
                     replayTask.Append(replayWorkItem);
 
                 // Wait for replay to complete
-                if (!replayWorkItem.Completed.Wait(serverOptions.ReplicaSyncTimeout, cts.Token))
+                if (!replayWorkItem.WorkCompleted.Wait(serverOptions.ReplicaSyncTimeout, cts.Token))
                     throw new GarnetException("Consume background replay timed-out!");
             }
         }

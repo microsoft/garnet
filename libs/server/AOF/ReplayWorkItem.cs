@@ -33,11 +33,15 @@ namespace Garnet.server
         /// </summary>
         public bool IsProtected;
         /// <summary>
+        /// Signals when work is ready to be processed.
+        /// </summary>
+        public SemaphoreSlim WorkReady = new(0);
+        /// <summary>
         /// Signal processing completion.
         /// </summary>
-        public ManualResetEventSlim Completed = new(true);
+        public ManualResetEventSlim WorkCompleted = new(true);
         /// <summary>
-        /// 
+        /// Leader barrier to coordinate replication offset update.
         /// </summary>
         public LeaderBarier LeaderBarrier = new(replayTasks);
 
@@ -46,7 +50,7 @@ namespace Garnet.server
         /// </summary>
         public void Reset()
         {
-            Completed.Reset();
+            WorkCompleted.Reset();
             LeaderBarrier.Reset();
         }
     }

@@ -92,6 +92,8 @@ namespace Garnet.server
         /// </summary>
         public void ResetSequenceNumberGenerator()
         {
+            if (!serverOptions.MultiLogEnabled)
+                return;
             var start = readConsistencyManager.MaxSequenceNumber;
             var newSeqNumGen = new SequenceNumberGenerator(start);
             _ = Interlocked.CompareExchange(ref seqNumGen, newSeqNumGen, seqNumGen);
