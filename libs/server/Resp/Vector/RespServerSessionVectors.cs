@@ -1035,19 +1035,23 @@ namespace Garnet.server
             try
             {
                 var res = storageApi.VectorSetGetAttribute(key, element, ref attributesOutput);
+                if (res != GarnetStatus.OK)
+                {
+                    if (res == GarnetStatus.NOTFOUND)
+                    {
+                        WriteNull();
+                        return true;
+                    }
+                    else if (res == GarnetStatus.WRONGTYPE)
+                    {
+                        return AbortVectorSetWrongType();
+                    }
+                    else if (res == GarnetStatus.BADSTATE)
+                    {
+                        return AbortVectorSetPartiallyDeleted(ref key);
+                    }
 
-                if (res == GarnetStatus.NOTFOUND)
-                {
-                    WriteNull();
-                    return true;
-                }
-                else if (res == GarnetStatus.WRONGTYPE)
-                {
-                    return AbortVectorSetWrongType();
-                }
-                else if (res == GarnetStatus.BADSTATE)
-                {
-                    return AbortVectorSetPartiallyDeleted(ref key);
+                    return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
                 }
 
                 WriteSimpleString(attributesOutput.AsReadOnlySpan());
@@ -1074,18 +1078,23 @@ namespace Garnet.server
 
             var key = parseState.GetArgSliceByRef(0);
             var res = storageApi.VectorSetInfo(key, out VectorQuantType quantType, out var distanceMetricType, out var vectorDimensions, out var reducedDimensions, out var buildExplorationFactor, out var numLinks, out var size);
-            if (res == GarnetStatus.NOTFOUND)
+            if (res != GarnetStatus.OK)
             {
-                WriteNullArray();
-                return true;
-            }
-            else if (res == GarnetStatus.WRONGTYPE)
-            {
-                return AbortVectorSetWrongType();
-            }
-            else if (res == GarnetStatus.BADSTATE)
-            {
-                return AbortVectorSetPartiallyDeleted(ref key);
+                if (res == GarnetStatus.NOTFOUND)
+                {
+                    WriteNullArray();
+                    return true;
+                }
+                else if (res == GarnetStatus.WRONGTYPE)
+                {
+                    return AbortVectorSetWrongType();
+                }
+                else if (res == GarnetStatus.BADSTATE)
+                {
+                    return AbortVectorSetPartiallyDeleted(ref key);
+                }
+
+                return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
             }
 
             var quantTypeSpan = quantType switch
