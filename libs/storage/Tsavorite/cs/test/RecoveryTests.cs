@@ -5,6 +5,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -22,8 +24,9 @@ namespace Tsavorite.test.recovery.sumstore
     using StructAllocator = BlittableAllocator<AdId, NumClicks, StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>>;
     using StructStoreFunctions = StoreFunctions<AdId, NumClicks, AdId.Comparer, DefaultRecordDisposer<AdId, NumClicks>>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class DeviceTypeRecoveryTests
+    internal class DeviceTypeRecoveryTests : AllureTestBase
     {
         internal const long NumUniqueKeys = 1L << 12;
         internal const long KeySpace = 1L << 20;
@@ -212,8 +215,9 @@ namespace Tsavorite.test.recovery.sumstore
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
-    public class AllocatorTypeRecoveryTests
+    public class AllocatorTypeRecoveryTests : AllureTestBase
     {
         const int StackAllocMax = 12;
         const int RandSeed = 101;

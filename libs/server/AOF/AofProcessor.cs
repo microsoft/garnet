@@ -141,8 +141,6 @@ namespace Garnet.server
                     // Run recover replay task
                     RecoverReplayTask(untilAddress);
 
-                    ResetVectorSetReplication(wait: true);
-
                     void RecoverReplayTask(long untilAddress)
                     {
                         var count = 0;
@@ -186,26 +184,6 @@ namespace Garnet.server
                 }
 
                 return -1;
-            }
-        }
-
-        /// <summary>
-        /// Reset state for Vector Set replication, primarily spinning down any Tasks and sessions spun up as part of replication.
-        /// 
-        /// If <paramref name="wait"/> is true, waits for all pending events to complete - if false shuts down and abandons any pending commands.
-        /// </summary>
-        public void ResetVectorSetReplication(bool wait)
-        {
-            if (wait)
-            {
-                activeVectorManager.WaitForVectorOperationsToComplete();
-            }
-
-            var abandoned = activeVectorManager.ResetReplayTasks();
-
-            if (wait && abandoned > 0)
-            {
-                throw new GarnetException("Despite waiting, VADDs were still abandoned - this implies data loss");
             }
         }
 

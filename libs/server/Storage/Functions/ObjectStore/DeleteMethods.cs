@@ -20,7 +20,7 @@ namespace Garnet.server
             if (!deleteInfo.RecordInfo.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogDelete(ref key, deleteInfo.Version, deleteInfo.SessionID);
+                deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
         }
 
         /// <inheritdoc />
@@ -29,10 +29,20 @@ namespace Garnet.server
             if (!deleteInfo.RecordInfo.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogDelete(ref key, deleteInfo.Version, deleteInfo.SessionID);
+                deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             functionsState.objectStoreSizeTracker?.AddTrackedSize(-value.Size);
             value = null;
             return true;
+        }
+
+        /// <inheritdoc />
+        public void PostDeleteOperation<TEpochAccessor>(ref byte[] key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        {
+            if ((deleteInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
+            {
+                WriteLogDelete(ref key, deleteInfo.Version, deleteInfo.SessionID, epochAccessor);
+            }
         }
     }
 }

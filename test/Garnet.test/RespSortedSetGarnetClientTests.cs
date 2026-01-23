@@ -9,6 +9,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.client;
 using Garnet.client.GarnetClientAPI;
 using Garnet.common;
@@ -18,8 +19,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespSortedSetGarnetClientTests
+    public class RespSortedSetGarnetClientTests : AllureTestBase
     {
         protected GarnetServer server;
         ManualResetEventSlim waiter;

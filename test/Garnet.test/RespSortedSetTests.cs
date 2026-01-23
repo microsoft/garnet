@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Embedded.server;
 using Garnet.common;
 using Garnet.server;
@@ -29,8 +30,9 @@ namespace Garnet.test
     /* VectorStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
     SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>>;
 
+    [AllureNUnit]
     [TestFixture]
-    public class RespSortedSetTests
+    public class RespSortedSetTests : AllureTestBase
     {
         protected GarnetServer server;
 

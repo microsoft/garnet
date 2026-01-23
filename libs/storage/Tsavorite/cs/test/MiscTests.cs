@@ -3,6 +3,8 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -15,8 +17,9 @@ namespace Tsavorite.test
     using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
     using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class MiscTests
+    internal class MiscTests : AllureTestBase
     {
         private TsavoriteKV<int, MyValue, ClassStoreFunctions, ClassAllocator> store;
         private IDevice log, objlog;

@@ -2041,6 +2041,7 @@ namespace Garnet.test.cluster
             context.ClusterFailoverSpinWait(ReplicaIndex, NullLogger.Instance);
 
             context.clusterTestUtils.WaitForReplicaAofSync(ReplicaIndex, PrimaryIndex);
+            await Task.Delay(10);
 
             var vectorData1 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
 

@@ -46,6 +46,8 @@ namespace Garnet.server
         }
         /// <inheritdoc />
         public void PostSingleDeleter(ref SpanByte key, ref DeleteInfo deleteInfo) { }
+
+        public void PostDeleteOperation<TEpochAccessor>(ref SpanByte key, ref DeleteInfo deleteInfo, TEpochAccessor epoch) where TEpochAccessor : IEpochAccessor { }
         #endregion
 
         #region Reads
@@ -198,6 +200,8 @@ namespace Garnet.server
 
             return SpanByteFunctions<VectorInput, SpanByte, long>.DoSafeCopy(ref src, ref dst, ref upsertInfo, ref recordInfo, 0);
         }
+
+        public void PostUpsertOperation<TEpochAccessor>(ref SpanByte key, ref VectorInput input, ref SpanByte src, ref UpsertInfo upsertInfo, TEpochAccessor epoch) where TEpochAccessor : IEpochAccessor { }
 
         #endregion
 
@@ -397,6 +401,8 @@ namespace Garnet.server
         => true;
         /// <inheritdoc />
         public void RMWCompletionCallback(ref SpanByte key, ref VectorInput input, ref SpanByte output, long ctx, Status status, RecordMetadata recordMetadata) { }
+
+        public void PostRMWOperation<TEpochAccessor>(ref SpanByte key, ref VectorInput input, ref RMWInfo rmwInfo, TEpochAccessor epoch) where TEpochAccessor : IEpochAccessor { }
         #endregion
 
         #region Utilities

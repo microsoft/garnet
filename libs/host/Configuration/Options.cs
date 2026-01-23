@@ -53,6 +53,12 @@ namespace Garnet
         [Option("cluster-announce-ip", Required = false, HelpText = "IP address that this node advertises to other nodes to connect to for gossiping.")]
         public string ClusterAnnounceIp { get; set; }
 
+        [Option("cluster-announce-hostname", Required = false, HelpText = "Hostname that this node advertises to other nodes to connect to for gossiping.")]
+        public string ClusterAnnounceHostname { get; set; }
+
+        [Option("cluster-preferred-endpoint-type", Required = false, HelpText = "Determines the endpoint type to be advertised to other nodes. (value options: ip, hostname, unknown)")]
+        public ClusterPreferredEndpointType ClusterPreferredEndpointType { get; set; }
+
         [MemorySizeValidation]
         [Option('m', "memory", Required = false, HelpText = "Total log memory used in bytes (rounds down to power of 2)")]
         public string MemorySize { get; set; }
@@ -833,6 +839,8 @@ namespace Garnet
             {
                 EndPoints = endpoints,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint?[0],
+                ClusterAnnounceHostname = ClusterAnnounceHostname,
+                ClusterPreferredEndpointType = ClusterPreferredEndpointType,
                 MemorySize = MemorySize,
                 PageSize = PageSize,
                 SegmentSize = SegmentSize,

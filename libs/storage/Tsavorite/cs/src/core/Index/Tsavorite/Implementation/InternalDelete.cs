@@ -58,6 +58,12 @@ namespace Tsavorite.core
             RecordInfo dummyRecordInfo = RecordInfo.InitialValid;
             ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
 
+            DeleteInfo deleteInfo = new()
+            {
+                Version = sessionFunctions.Ctx.version,
+                SessionID = sessionFunctions.Ctx.sessionID
+            };
+
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
@@ -67,13 +73,8 @@ namespace Tsavorite.core
 
                 // Note: Delete does not track pendingContext.InitialAddress because we don't have an InternalContinuePendingDelete
 
-                DeleteInfo deleteInfo = new()
-                {
-                    Version = sessionFunctions.Ctx.version,
-                    SessionID = sessionFunctions.Ctx.sessionID,
-                    Address = stackCtx.recSrc.LogicalAddress,
-                    KeyHash = stackCtx.hei.hash
-                };
+                deleteInfo.Address = stackCtx.recSrc.LogicalAddress;
+                deleteInfo.KeyHash = stackCtx.hei.hash;
 
                 if (stackCtx.recSrc.HasReadCacheSrc)
                 {
@@ -151,7 +152,7 @@ namespace Tsavorite.core
 
             CreateNewRecord:
                 // Immutable region or new record
-                status = CreateNewRecordDelete(ref key, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo);
+                status = CreateNewRecordDelete(ref key, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo, ref deleteInfo);
                 if (!OperationStatusUtils.IsAppend(status))
                 {
                     // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
@@ -163,6 +164,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
+                sessionFunctions.PostDeleteOperation(ref key, ref deleteInfo, epoch);
                 TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
             }
 
@@ -211,8 +213,9 @@ namespace Tsavorite.core
         ///     and allows passing back the newLogicalAddress for invalidation in the case of exceptions.</param>
         /// <param name="srcRecordInfo">If <paramref name="stackCtx"/>.<see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}.HasInMemorySrc"/>,
         ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}.LogicalAddress"/></param>
+        /// <param name="deleteInfo">DeleteInfo</param>
         private OperationStatus CreateNewRecordDelete<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref PendingContext<TInput, TOutput, TContext> pendingContext,
-                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
+                TSessionFunctionsWrapper sessionFunctions, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, ref DeleteInfo deleteInfo)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var value = default(TValue);
@@ -228,13 +231,8 @@ namespace Tsavorite.core
             newRecordInfo.VectorSet = srcRecordInfo.VectorSet;
             stackCtx.SetNewRecord(newLogicalAddress);
 
-            DeleteInfo deleteInfo = new()
-            {
-                Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID,
-                Address = newLogicalAddress,
-                KeyHash = stackCtx.hei.hash,
-            };
+            deleteInfo.Address = newLogicalAddress;
+            deleteInfo.KeyHash = stackCtx.hei.hash;
             deleteInfo.SetRecordInfo(ref newRecordInfo);
 
             ref TValue newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);

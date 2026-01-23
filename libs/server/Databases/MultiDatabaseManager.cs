@@ -527,7 +527,6 @@ namespace Garnet.server
             {
                 var activeDbIdsMapSize = activeDbIds.ActualSize;
                 var activeDbIdsMapSnapshot = activeDbIds.Map;
-
                 var databasesMapSnapshot = databases.Map;
 
                 for (var i = 0; i < activeDbIdsMapSize; i++)

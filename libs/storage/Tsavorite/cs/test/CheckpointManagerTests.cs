@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -17,7 +19,9 @@ namespace Tsavorite.test
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
     using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
 
-    public class CheckpointManagerTests
+    [AllureNUnit]
+    [TestFixture]
+    public class CheckpointManagerTests : AllureTestBase
     {
         private readonly Random random = new(0);
 

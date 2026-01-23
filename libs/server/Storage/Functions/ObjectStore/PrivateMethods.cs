@@ -20,7 +20,8 @@ namespace Garnet.server
         /// a. ConcurrentWriter
         /// b. PostSingleWriter
         /// </summary>
-        void WriteLogUpsert(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, long version, int sessionID)
+        void WriteLogUpsert<TEpochAccessor>(ref byte[] key, ref ObjectInput input, ref IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
@@ -35,7 +36,7 @@ namespace Garnet.server
 
                     functionsState.appendOnlyFile.Enqueue(
                         new AofHeader { opType = AofEntryType.ObjectStoreUpsert, storeVersion = version, sessionID = sessionID },
-                        ref keySB, ref valSB, out _);
+                        ref keySB, ref valSB, epochAccessor, out _);
                 }
             }
         }
@@ -46,7 +47,8 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(ref byte[] key, ref ObjectInput input, long version, int sessionID)
+        void WriteLogRMW<TEpochAccessor>(ref byte[] key, ref ObjectInput input, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
@@ -58,7 +60,7 @@ namespace Garnet.server
 
                 functionsState.appendOnlyFile.Enqueue(
                     new AofHeader { opType = AofEntryType.ObjectStoreRMW, storeVersion = version, sessionID = sessionID },
-                    ref sbKey, ref input, out _);
+                    ref sbKey, ref input, epochAccessor, out _);
             }
         }
 
@@ -67,7 +69,8 @@ namespace Garnet.server
         ///  a. ConcurrentDeleter
         ///  b. PostSingleDeleter
         /// </summary>
-        void WriteLogDelete(ref byte[] key, long version, int sessionID)
+        void WriteLogDelete<TEpochAccessor>(ref byte[] key, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
             fixed (byte* ptr = key)
@@ -75,7 +78,9 @@ namespace Garnet.server
                 var keySB = SpanByte.FromPinnedPointer(ptr, key.Length);
                 SpanByte valSB = default;
 
-                functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID }, ref keySB, ref valSB, out _);
+                functionsState.appendOnlyFile.Enqueue(
+                    new AofHeader { opType = AofEntryType.ObjectStoreDelete, storeVersion = version, sessionID = sessionID },
+                    ref keySB, ref valSB, epochAccessor, out _);
             }
         }
 

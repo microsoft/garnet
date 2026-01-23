@@ -337,10 +337,16 @@ namespace Tsavorite.core
             public bool SingleDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
             public void PostSingleDeleter(ref TKey key, ref DeleteInfo deleteInfo) { }
             public bool ConcurrentDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
+            public void PostDeleteOperation<TEpochAccessor>(ref TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+                where TEpochAccessor : IEpochAccessor
+            { }
 
             public bool SingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo) => true;
             public void PostSingleWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, WriteReason reason) { }
             public bool ConcurrentWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo) => true;
+            public void PostUpsertOperation<TEpochAccessor>(ref TKey key, ref TInput input, ref TValue src, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+                where TEpochAccessor : IEpochAccessor
+            { }
 
             public bool InPlaceUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
 
@@ -352,6 +358,9 @@ namespace Tsavorite.core
             public bool InitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo) => true;
             public void PostInitialUpdater(ref TKey key, ref TInput input, ref TValue value, ref TOutput output, ref RMWInfo rmwInfo) { }
 
+            public void PostRMWOperation<TEpochAccessor>(ref TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+                where TEpochAccessor : IEpochAccessor
+            { }
             public void RMWCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, Empty ctx, Status status, RecordMetadata recordMetadata) { }
 
             public int GetRMWModifiedValueLength(ref TValue value, ref TInput input) => 0;

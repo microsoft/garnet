@@ -11,6 +11,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using GarnetJSON;
@@ -221,8 +222,9 @@ namespace Garnet.test
         }
     }
 
+    [AllureNUnit]
     [TestFixture]
-    public class RespCustomCommandTests
+    public class RespCustomCommandTests : AllureTestBase
     {
         GarnetServer server;
         private string _extTestDir1;

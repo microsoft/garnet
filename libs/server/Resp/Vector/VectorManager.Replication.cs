@@ -39,13 +39,46 @@ namespace Garnet.server
         private readonly Channel<VADDReplicationState> replicationReplayChannel;
         private readonly Task[] replicationReplayTasks;
 
-        private CancellationTokenSource replicationReplayTasksCts;
+        private CancellationToken replicationReplayCancellation;
 
         /// <summary>
         /// For testing purposes, are the replication replay tasks active.
         /// </summary>
         public bool AreReplicationTasksActive
-        => replicationReplayTasksCts != null && replicationReplayTasks.Any(static r => !r.IsCompleted);
+        => replicationReplayCancellation.CanBeCanceled && replicationReplayTasks.Any(static r => !r.IsCompleted);
+
+        /// <summary>
+        /// Hook for <see cref="TaskManager"/> to request replication tasks start.
+        /// 
+        /// The underlying tasks may not be spun up until later, but the provided <see cref="CancellationToken"/> will be used
+        /// if the yare.
+        /// </summary>
+        public async Task StartReplicationTasksAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                await Task.Yield();
+
+                replicationReplayCancellation = cancellationToken;
+
+                using var cts = new CancellationTokenSource();
+
+                _ = cancellationToken.Register(() => cts.Cancel());
+
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cts.Token);
+                }
+                catch { }
+
+                var abandoned = ResetReplayTasks();
+                logger?.LogInformation("VectorManager replication cancellation abandoned {abandoned} VADDs", abandoned);
+            }
+            finally
+            {
+                replicationReplayCancellation = default;
+            }
+        }
 
         /// <summary>
         /// For replication purposes, we need a write against the main log.
@@ -298,9 +331,6 @@ namespace Garnet.server
                     throw new GarnetException($"Unexpected DB ({self.dbId}) in cluster mode, expected 0");
                 }
 
-                self.replicationReplayTasksCts = new();
-                var cancellationToken = self.replicationReplayTasksCts.Token;
-
                 self.logger?.LogInformation("Starting {numTasks} replication tasks for VADDs", self.replicationReplayTasks.Length);
 
                 for (var i = 0; i < self.replicationReplayTasks.Length; i++)
@@ -325,7 +355,7 @@ namespace Garnet.server
                                     SessionParseState reusableParseState = default;
                                     reusableParseState.Initialize(11);
 
-                                    await foreach (var entry in reader.ReadAllAsync(cancellationToken))
+                                    await foreach (var entry in reader.ReadAllAsync(self.replicationReplayCancellation))
                                     {
                                         try
                                         {
@@ -459,11 +489,8 @@ namespace Garnet.server
         /// 
         /// Returns the number of abanded VADDs.
         /// </summary>
-        internal int ResetReplayTasks()
+        private int ResetReplayTasks()
         {
-            replicationReplayTasksCts?.Cancel();
-            replicationReplayTasksCts = null;
-
             Task.WaitAll(replicationReplayTasks);
             Array.Fill(replicationReplayTasks, Task.CompletedTask);
 

@@ -25,7 +25,7 @@ namespace Garnet.cluster
             var addressSpan = parseState.GetArgSliceByRef(0).ReadOnlySpan;
             var portSpan = parseState.GetArgSliceByRef(1).ReadOnlySpan;
 
-            // Turn of replication and make replica into a primary but do not delete data
+            // Turn off replication and make replica into a primary but do not delete data
             if (addressSpan.EqualsUpperCaseSpanIgnoringCase("NO"u8) &&
                 portSpan.EqualsUpperCaseSpanIgnoringCase("ONE"u8))
             {
@@ -45,6 +45,8 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.TryUpdateForFailover();
                     clusterProvider.replicationManager.ResetReplayIterator();
                     UnsafeBumpAndWaitForEpochTransition();
+                    clusterProvider.storeWrapper.SuspendReplicaOnlyTasks().Wait();
+                    clusterProvider.storeWrapper.StartPrimaryTasks();
                 }
                 finally
                 {
@@ -82,6 +84,8 @@ namespace Garnet.cluster
                 var success = clusterProvider.serverOptions.ReplicaDisklessSync ?
                     clusterProvider.replicationManager.TryReplicateDisklessSync(this, syncOpts, out var errorMessage) :
                     clusterProvider.replicationManager.TryReplicateDiskbasedSync(this, syncOpts, out errorMessage);
+
+                clusterProvider.storeWrapper.StartReplicaTasks();
 
                 if (!success)
                 {

@@ -10,6 +10,7 @@ namespace Garnet.server
     /// </summary>
     public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long>
     {
+        const byte NeedAofLog = 0x1;
         readonly FunctionsState functionsState;
 
         /// <summary>

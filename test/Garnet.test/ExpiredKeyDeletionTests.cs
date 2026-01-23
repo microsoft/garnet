@@ -1,17 +1,18 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    class ExpiredKeyDeletionTests
+    class ExpiredKeyDeletionTests : AllureTestBase
     {
         private const int ExpiredKeyDeletionScanFrequencySecs = 10;
 

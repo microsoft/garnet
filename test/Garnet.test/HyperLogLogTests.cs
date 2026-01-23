@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -11,7 +12,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    public unsafe class HyperLogLogTests
+    [AllureNUnit]
+    [TestFixture]
+    public unsafe class HyperLogLogTests : AllureTestBase
     {
         GarnetServer server;
         Random r;
