@@ -242,6 +242,7 @@ namespace Tsavorite.core
                 finally
                 {
                     stackCtx.HandleNewRecordOnException(this);
+                    sessionFunctions.PostRMWOperation(ref key, ref pendingContext.input.Get(), ref rmwInfo, epoch);
                     TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
                 }
 
