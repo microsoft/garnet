@@ -2071,7 +2071,7 @@ namespace Garnet.server
         /// <summary>
         /// Get the attributes associated with an element in the Vector Set.
         /// </summary>
-        GarnetStatus VectorSetGetAttribute(ArgSlice key, ArgSlice elementId, ref SpanByteAndMemory outputAttributes);
+        GarnetStatus VectorSetGetAttribute(ArgSlice key, ArgSlice element, ref SpanByteAndMemory outputAttributes);
 
         #endregion 
     }

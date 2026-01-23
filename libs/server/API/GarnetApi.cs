@@ -540,8 +540,8 @@ namespace Garnet.server
         => storageSession.VectorSetInfo(SpanByte.FromPinnedPointer(key.ptr, key.length), out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
 
         /// <inheritdoc/>
-        public unsafe GarnetStatus VectorSetGetAttribute(ArgSlice key, ArgSlice elementId, ref SpanByteAndMemory outputAttributes)
-        => storageSession.VectorSetGetAttribute(SpanByte.FromPinnedPointer(key.ptr, key.length), elementId, ref outputAttributes);
+        public unsafe GarnetStatus VectorSetGetAttribute(ArgSlice key, ArgSlice element, ref SpanByteAndMemory outputAttributes)
+        => storageSession.VectorSetGetAttribute(SpanByte.FromPinnedPointer(key.ptr, key.length), element, ref outputAttributes);
 
         #endregion
     }

@@ -121,11 +121,11 @@ namespace Garnet.server
                 case RespCommand.VADD:
                 case RespCommand.VSIM:
                 case RespCommand.VEMB:
+                case RespCommand.VGETATTR:
+                case RespCommand.VINFO:
                 case RespCommand.VREM:
                 case RespCommand.VDIM:
                 case RespCommand.GET:
-                case RespCommand.VGETATTR:
-                case RespCommand.VINFO:
                     // Get value without RESP header; exclude expiration
                     if (value.LengthWithoutMetadata <= dst.Length)
                     {

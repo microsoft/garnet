@@ -695,14 +695,13 @@ namespace Garnet.server
         /// IMPORTANT: outputAttributes may be replaced with an allocated memory, so the caller needs to check
         /// if the buffer is stack-based or heap-based, and dispose if it's the latter.
         /// </summary>
-        internal VectorManagerResult FetchSingleVectorElementAttributes(ReadOnlySpan<byte> indexValue, SpanByte elementId, ref SpanByteAndMemory outputAttributes)
+        internal VectorManagerResult FetchSingleVectorElementAttributes(ReadOnlySpan<byte> indexValue, SpanByte element, ref SpanByteAndMemory outputAttributes)
         {
             AssertHaveStorageSession();
             ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out _, out _);
-            var found = ReadSizeUnknown(context | DiskANNService.Attributes, elementId.AsReadOnlySpan(), ref outputAttributes);
+            var found = ReadSizeUnknown(context | DiskANNService.Attributes, element.AsReadOnlySpan(), ref outputAttributes);
             return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }
-
 
         /// <summary>
         /// Fetch attributes for a given set of element ids.

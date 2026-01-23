@@ -678,14 +678,14 @@ namespace Garnet.server
         }
 
         /// <inheritdoc/>
-        GarnetStatus IGarnetReadApi.VectorSetInfo(ArgSlice key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size)
+        public GarnetStatus VectorSetInfo(ArgSlice key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size)
         {
             garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
         }
 
         /// <inheritdoc/>
-        GarnetStatus IGarnetReadApi.VectorSetGetAttribute(ArgSlice key, ArgSlice element, ref SpanByteAndMemory outputAttributes)
+        public GarnetStatus VectorSetGetAttribute(ArgSlice key, ArgSlice element, ref SpanByteAndMemory outputAttributes)
         {
             garnetApi.WATCH(key, StoreType.Main);
             return garnetApi.VectorSetGetAttribute(key, element, ref outputAttributes);
