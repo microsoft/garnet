@@ -81,7 +81,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
             {
                 input.header.SetExpiredFlag();
-                WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                rmwInfo.UserData |= 0x1; // Mark that we need to write to AOF
             }
 
             functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateKeyValueSize(key, value));
@@ -94,7 +94,8 @@ namespace Garnet.server
             {
                 if (!rmwInfo.RecordInfo.Modified)
                     functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
-                if (functionsState.appendOnlyFile != null) WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                if (functionsState.appendOnlyFile != null)
+                    rmwInfo.UserData |= 0x1; // Mark that we need to write to AOF
                 functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeChange);
                 return true;
             }
@@ -271,8 +272,18 @@ namespace Garnet.server
             functionsState.objectStoreSizeTracker?.AddTrackedSize(sizeAdjustment);
 
             if (functionsState.appendOnlyFile != null)
-                WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                rmwInfo.UserData |= 0x1; // Mark that we need to write to AOF
             return true;
+        }
+
+        /// <inheritdoc />
+        public void PostRMWOperation<TEpochAccessor>(ref byte[] key, ref ObjectInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        {
+            if ((rmwInfo.UserData & 0x1) == 0x1) // Check if we need to write to AOF
+            {
+                WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
+            }
         }
     }
 }

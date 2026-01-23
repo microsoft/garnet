@@ -35,6 +35,11 @@ namespace Tsavorite.benchmark
 
         public bool ConcurrentDeleter(ref Key key, ref Value value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo) => true;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostDeleteOperation<TEpochAccessor>(ref Key key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        { }
+
         // Upsert functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool SingleWriter(ref Key key, ref Input input, ref Value src, ref Value dst, ref Output output, ref UpsertInfo upsertInfo, WriteReason reason, ref RecordInfo recordInfo)
@@ -49,6 +54,11 @@ namespace Tsavorite.benchmark
             dst = src;
             return true;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostUpsertOperation<TEpochAccessor>(ref Key key, ref Input input, ref Value src, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        { }
 
         // RMW functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -79,6 +89,11 @@ namespace Tsavorite.benchmark
         public void PostInitialUpdater(ref Key key, ref Input input, ref Value value, ref Output output, ref RMWInfo rmwInfo) { }
 
         public bool NeedCopyUpdate(ref Key key, ref Input input, ref Value oldValue, ref Output output, ref RMWInfo rmwInfo) => true;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostRMWOperation<TEpochAccessor>(ref Key key, ref Input input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        { }
 
         public int GetRMWModifiedValueLength(ref Value value, ref Input input) => 0;
         public int GetRMWInitialValueLength(ref Input input) => 0;

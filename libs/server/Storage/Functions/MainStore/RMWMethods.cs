@@ -297,7 +297,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
             {
                 input.header.SetExpiredFlag();
-                WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                rmwInfo.UserData |= 0x1; // Mark that we need to write to AOF
             }
         }
 
@@ -314,7 +314,7 @@ namespace Garnet.server
                     if (!rmwInfo.RecordInfo.Modified)
                         functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
                     if (functionsState.appendOnlyFile != null)
-                        WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                        rmwInfo.UserData |= 0x1; // Mark that we need to write to AOF
                     return true;
                 case IPUResult.NotUpdated:
                 default:
@@ -1397,8 +1397,18 @@ namespace Garnet.server
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID);
+                rmwInfo.UserData |= 0x1; // Mark that we need to write to AOF
             return true;
+        }
+
+        /// <inheritdoc />
+        public void PostRMWOperation<TEpochAccessor>(ref SpanByte key, ref RawStringInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        {
+            if ((rmwInfo.UserData & 0x1) == 0x1) // Check if we need to write to AOF
+            {
+                WriteLogRMW(ref key, ref input, rmwInfo.Version, rmwInfo.SessionID, epochAccessor);
+            }
         }
     }
 }

@@ -61,6 +61,12 @@ namespace Tsavorite.core
             RecordInfo dummyRecordInfo = RecordInfo.InitialValid;
             ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
 
+            UpsertInfo upsertInfo = new()
+            {
+                Version = sessionFunctions.Ctx.version,
+                SessionID = sessionFunctions.Ctx.sessionID
+            };
+
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
@@ -101,14 +107,8 @@ namespace Tsavorite.core
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
 
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
-                    UpsertInfo upsertInfo = new()
-                    {
-                        Version = sessionFunctions.Ctx.version,
-                        SessionID = sessionFunctions.Ctx.sessionID,
-                        Address = stackCtx.recSrc.LogicalAddress,
-                        KeyHash = stackCtx.hei.hash
-                    };
-
+                    upsertInfo.Address = stackCtx.recSrc.LogicalAddress;
+                    upsertInfo.KeyHash = stackCtx.hei.hash;
                     upsertInfo.SetRecordInfo(ref srcRecordInfo);
                     ref TValue recordValue = ref stackCtx.recSrc.GetValue();
 
@@ -153,7 +153,7 @@ namespace Tsavorite.core
                 Debug.Assert(!sessionFunctions.IsManualLocking || LockTable.IsLockedExclusive(ref stackCtx.hei), "A Lockable-session Upsert() of an on-disk or non-existent key requires a LockTable lock");
 
             CreateNewRecord:
-                status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo);
+                status = CreateNewRecordUpsert(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo, ref upsertInfo);
                 if (!OperationStatusUtils.IsAppend(status))
                 {
                     // We should never return "SUCCESS" for a new record operation: it returns NOTFOUND on success.
@@ -166,6 +166,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
+                sessionFunctions.PostUpsertOperation(ref key, ref input, ref value, ref upsertInfo, epoch);
                 TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
             }
 
@@ -311,7 +312,7 @@ namespace Tsavorite.core
         ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}.LogicalAddress"/></param>
         private OperationStatus CreateNewRecordUpsert<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, ref TValue value, ref TOutput output,
                                                                                              ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
-                                                                                             ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo)
+                                                                                             ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, ref UpsertInfo upsertInfo)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             var (actualSize, allocatedSize, keySize) = hlog.GetUpsertRecordSize(ref key, ref value, ref input, sessionFunctions);
@@ -330,13 +331,8 @@ namespace Tsavorite.core
                 newRecordInfo.PreviousAddress = srcRecordInfo.PreviousAddress;
             stackCtx.SetNewRecord(newLogicalAddress);
 
-            UpsertInfo upsertInfo = new()
-            {
-                Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID,
-                Address = newLogicalAddress,
-                KeyHash = stackCtx.hei.hash,
-            };
+            upsertInfo.Address = newLogicalAddress;
+            upsertInfo.KeyHash = stackCtx.hei.hash;
             upsertInfo.SetRecordInfo(ref newRecordInfo);
 
             ref TValue newRecordValue = ref hlog.GetAndInitializeValue(newPhysicalAddress, newPhysicalAddress + actualSize);

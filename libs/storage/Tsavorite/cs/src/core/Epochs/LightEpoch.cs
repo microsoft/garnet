@@ -9,10 +9,16 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
+    public interface IEpochAccessor
+    {
+        bool ReleaseIfHeld();
+        void Resume();
+    }
+
     /// <summary>
     /// Epoch protection
     /// </summary>
-    public sealed unsafe class LightEpoch
+    public sealed unsafe class LightEpoch : IEpochAccessor
     {
         /// <summary>
         /// Store thread-static metadata separately from the LightEpoch class because LightEpoch has a static ctor,
@@ -159,6 +165,21 @@ namespace Tsavorite.core
             {
                 if ((*(tableAligned + entry)).threadId == entry)
                     return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Release epoch if held
+        /// </summary>
+        /// <returns></returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ReleaseIfHeld()
+        {
+            if (ThisInstanceProtected())
+            {
+                Release();
+                return true;
             }
             return false;
         }
