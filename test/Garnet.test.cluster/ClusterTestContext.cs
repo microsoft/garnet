@@ -180,6 +180,7 @@ namespace Garnet.test.cluster
         /// <param name="luaMemoryLimit"></param>
         /// <param name="useHostname"></param>
         /// <param name="luaTransactionMode"></param>
+        /// <param name="expiredObjectCollectionFrequencySecs"></param>
         public void CreateInstances(
             int shards,
             bool enableCluster = true,
@@ -226,6 +227,7 @@ namespace Garnet.test.cluster
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
             int replicaSyncTimeout = 60,
+            int expiredObjectCollectionFrequencySecs = 0,
             ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
             bool useClusterAnnounceHostname = false)
         {
@@ -282,6 +284,7 @@ namespace Garnet.test.cluster
                 checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                 clusterReplicaResumeWithData: clusterReplicaResumeWithData,
                 replicaSyncTimeout: replicaSyncTimeout,
+                expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
                 clusterPreferredEndpointType: clusterPreferredEndpointType,
                 clusterAnnounceHostname: useClusterAnnounceHostname ? "localhost" : null);
 
