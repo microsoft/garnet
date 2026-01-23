@@ -850,6 +850,21 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Checks whether a specified element exists in a Vector Set.
+        /// </summary>
+        /// <param name="indexValue">The raw index value containing Vector Set metadata.</param>
+        /// <param name="element">The element identifier to check for existence.</param>
+        /// <returns>
+        /// <see langword="true"/> if the element exists in the Vector Set; otherwise, <see langword="false"/>.
+        /// </returns>
+        internal bool CheckElementExists(ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element)
+        {
+            AssertHaveStorageSession();
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out _, out _, out _, out _, out var indexPtr, out _);
+            return Service.CheckExternalIdValid(context, indexPtr, element);
+        }
+
+        /// <summary>
         /// Determine the dimensions of a vector given its <see cref="VectorValueType"/> and its raw data.
         /// </summary>
         internal static uint CalculateValueDimensions(VectorValueType valueType, ReadOnlySpan<byte> values)

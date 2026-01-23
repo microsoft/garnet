@@ -341,5 +341,28 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
         }
+
+        /// <summary>
+        /// Check if vector exists in vector set
+        /// </summary>
+        [SkipLocalsInit]
+        internal unsafe GarnetStatus VectorSetCheckIsMember(SpanByte key, ReadOnlySpan<byte> element)
+        {
+            parseState.InitializeWithArgument(new(ref key));
+
+            var input = new RawStringInput(RespCommand.VISMEMBER, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                return vectorManager.CheckElementExists(indexSpan, element) ?
+                    GarnetStatus.OK :
+                    GarnetStatus.NOTFOUND;
+            }
+        }
     }
 }

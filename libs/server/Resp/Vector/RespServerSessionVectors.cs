@@ -1018,7 +1018,10 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments("VGETATTR");
+            }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
@@ -1099,7 +1102,32 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count != 2)
+            {
+                return AbortWithWrongNumberOfArguments("VISMEMBER");
+            }
+
+            var key = parseState.GetArgSliceByRef(0);
+            var elementId = parseState.GetArgSliceByRef(1);
+            var res = storageApi.VectorSetCheckIsMember(key, elementId);
+            if (res == GarnetStatus.OK)
+            {
+                WriteBooleanTrue();
+                return true;
+            }
+            else if (res == GarnetStatus.NOTFOUND)
+            {
+                WriteBooleanFalse();
+                return true;
+            }
+            else if (res == GarnetStatus.WRONGTYPE)
+            {
+                return AbortVectorSetWrongType();
+            }
+            else if (res == GarnetStatus.BADSTATE)
+            {
+                return AbortVectorSetPartiallyDeleted(ref key);
+            }
 
             while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
