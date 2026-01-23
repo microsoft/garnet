@@ -21,6 +21,11 @@ namespace Garnet.server
         bool NetworkKeyArraySlotVerify(Span<ArgSlice> keys, bool readOnly, int count = -1)
             => clusterSession != null && clusterSession.NetworkKeyArraySlotVerify(keys, readOnly, SessionAsking, ref dcurr, ref dend, count);
 
+        /// <summary>
+        /// Validate if this command can be served based on the current slot assignment
+        /// </summary>
+        /// <param name="cmd"></param>
+        /// <returns></returns>
         bool CanServeSlot(RespCommand cmd)
         {
             Debug.Assert(clusterSession != null);
