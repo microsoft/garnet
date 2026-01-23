@@ -1055,10 +1055,7 @@ namespace Garnet.server
             }
             finally
             {
-                if (!attributesOutput.IsSpanByte)
-                {
-                    attributesOutput.Memory.Dispose();
-                }
+                attributesOutput.Memory?.Dispose();
             }
         }
 
