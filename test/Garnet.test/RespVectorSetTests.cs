@@ -120,8 +120,8 @@ namespace Garnet.test
                             exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VINFO", ["foo"]));
                             break;
                         case RespCommand.VISMEMBER:
-                            // TODO: Implement when VISMEMBER works
-                            continue;
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VISMEMBER", ["foo", "bar"]));
+                            break;
                         case RespCommand.VLINKS:
                             // TODO: Implement when VLINKS works
                             continue;
@@ -1746,6 +1746,7 @@ namespace Garnet.test
                     }
                 }
             }
+            
 
             static object[] GenerateVADDOptions(string key, string quantizer, int reduce, int buildExplorationFactor, int numLinks, object[] values, byte[] elementId)
             {
@@ -1789,6 +1790,63 @@ namespace Garnet.test
 
                 return values;
             }
+        }
+
+        [Test]
+        public void VISMEMBER()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // VISMEMBER on non-existent vector set returns 0
+            var res = db.Execute("VISMEMBER", ["nonexistent", new byte[] { 1, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(0, (int)res);
+
+            // Create a vector set with one element
+            res = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 1, 0, 0, 0 }, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res);
+
+            // VISMEMBER on element that exists returns 1
+            res = db.Execute("VISMEMBER", ["foo", new byte[] { 1, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(1, (int)res);
+
+            // VISMEMBER on element that doesn't exist in the set returns 0
+            res = db.Execute("VISMEMBER", ["foo", new byte[] { 2, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(0, (int)res);
+            res = db.Execute("VISMEMBER", ["foo", new byte[] { 0, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(0, (int)res);
+
+            // Remove the element
+            res = db.Execute("VREM", ["foo", new byte[] { 1, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(1, (int)res);
+
+            // VISMEMBER on deleted element returns 0
+            res = db.Execute("VISMEMBER", ["foo", new byte[] { 1, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(0, (int)res);
+
+            // Add another member with different ID
+            res = db.Execute("VADD", ["foo", "VALUES", "3", "4.0", "5.0", "6.0", new byte[] { 2, 0, 0, 0 }, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res);
+
+            // VISMEMBER on new element returns 1
+            res = db.Execute("VISMEMBER", ["foo", new byte[] { 2, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(1, (int)res);
+
+            // VISMEMBER on old element still returns 0
+            res = db.Execute("VISMEMBER", ["foo", new byte[] { 1, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(0, (int)res);
+
+            // Add first element back
+            res = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", new byte[] { 1, 0, 0, 0 }, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res);
+
+            // VISMEMBER on first element returns 1
+            res = db.Execute("VISMEMBER", ["foo", new byte[] { 1, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(1, (int)res);
+
+            // VISMEMBER on second element still returns 1
+            res = db.Execute("VISMEMBER", ["foo", new byte[] { 2, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(1, (int)res);
         }
 
         [Test]

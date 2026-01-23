@@ -214,6 +214,14 @@ namespace Garnet.server
 
             return NativeDiskANNMethods.check_internal_id_valid(context, index, (nint)internal_id_data, (nuint)internal_id_len) == 1;
         }
+
+        public bool CheckExternalIdValid(ulong context, nint index, ReadOnlySpan<byte> externalId)
+        {
+            var external_id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(externalId));
+            var externa_id_len = externalId.Length;
+
+            return NativeDiskANNMethods.check_external_id_valid(context, index, (nint)external_id_data, (nuint)externa_id_len) == 1;
+        }
     }
 
     public static partial class NativeDiskANNMethods
@@ -332,6 +340,14 @@ namespace Garnet.server
             nint index,
             nint internal_id,
             nuint internal_id_len
+        );
+
+        [LibraryImport(DISKANN_GARNET)]
+        public static partial byte check_external_id_valid(
+            ulong context,
+            nint index,
+            nint external_id,
+            nuint external_id_len
         );
     }
 }
