@@ -10,7 +10,7 @@
 
 
 <script>!function(t,e,n,c,a,r,s){t[n]=t[n]||function(){(t[n].q=t[n].q||[]).push(arguments)},(r=e.createElement(c)).async=1,r.src="https://www.clarity.ms/tag/loh6v65ww5",(s=e.getElementsByTagName(c)[0]).parentNode.insertBefore(r,s)}(window,document,"clarity","script")</script><link rel="stylesheet" href="/garnet/assets/css/styles.a0a59612.css">
-<script src="/garnet/assets/js/runtime~main.c65125da.js" defer="defer"></script>
+<script src="/garnet/assets/js/runtime~main.a7649538.js" defer="defer"></script>
 <script src="/garnet/assets/js/main.017dcb4f.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -126,7 +126,14 @@ RESP representation:</p>
 <p><code>&lt;username&gt;</code>/branch-name</p>
 </li>
 <li class="">
-<p>Include Unit Tests to test the new commands or feature.</p>
+<p>Include Unit Tests for any new commands or feature. Allure enabled tests are required.</p>
+<p>Full documentation about Allure can be found <a href="https://allurereport.org/docs/" target="_blank" rel="noopener noreferrer" class="">here</a>.</p>
+<p>Each test class must:</p>
+<ul>
+<li class="">Apply [AllureNUnit] custom attribute</li>
+<li class="">Apply [TestFixture] attribute</li>
+<li class="">Inherit from the AllureTestBase base class</li>
+</ul>
 </li>
 <li class="">
 <p>Once it is ready for review, create a <a href="https://github.com/microsoft/Garnet/pulls" target="_blank" rel="noopener noreferrer" class="">Pull Request</a>. Make sure to link it to your issue item in the development section.</p>
