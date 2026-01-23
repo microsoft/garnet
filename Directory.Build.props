@@ -1,7 +1,7 @@
 <Project>
 
 	<PropertyGroup Label="Targets">
-    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <TargetFrameworks>net10.0</TargetFrameworks>
   </PropertyGroup>
 
 	<!-- Versioning property for builds and packages -->
