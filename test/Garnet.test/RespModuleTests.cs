@@ -4,14 +4,16 @@
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespModuleTests
+    public class RespModuleTests : AllureTestBase
     {
         GarnetServer server;
         private string testModuleDir;
@@ -347,8 +349,9 @@ namespace Garnet.test
     }
 
     [NonParallelizable]
+    [AllureNUnit]
     [TestFixture]
-    public class RespModuleAdditionalTests
+    public class RespModuleAdditionalTests : AllureTestBase
     {
         private string testModuleDir;
         string binPath;

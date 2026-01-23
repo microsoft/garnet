@@ -3,14 +3,17 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class EnqWaitCommitTest
+    internal class EnqWaitCommitTest : AllureTestBase
     {
         const int entryLength = 500;
         const int numEntries = 100;

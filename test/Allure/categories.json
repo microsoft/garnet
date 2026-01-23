@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Assertion Failures",
+    "matchedStatuses": ["assert"],
+    "messageRegex": ".*expected.*but found.*"
+  },
+  {
+    "name": "Connection Failures",
+    "matchedStatuses": ["failed"],
+    "messageRegex": ".*Failed to connect within.*"
+  },
+  {
+    "name": "All Other Failures",
+    "matchedStatuses": ["failed"],
+    "messageRegex": ".*"
+  },
+  {
+    "name": "All Broken",
+    "matchedStatuses": ["broken"],
+    "messageRegex": ".*"
+  },
+  {
+    "name": "All Skipped",
+    "matchedStatuses": ["skipped"],
+    "messageRegex": ".*"
+  },
+  {
+    "name": "All Unknown",
+    "matchedStatuses": ["unknown"],
+    "messageRegex": ".*"
+  }
+]
