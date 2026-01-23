@@ -302,6 +302,7 @@ namespace Garnet.server
                 return GarnetStatus.OK;
             }
         }
+
         /// <summary>
         /// Get debugging information about the VectorSet
         /// </summary>
@@ -339,6 +340,29 @@ namespace Garnet.server
                 size = (long)NativeDiskANNMethods.card(context, indexPtr);
 
                 return GarnetStatus.OK;
+            }
+        }
+
+        /// <summary>
+        /// Get the attributes associated with an element in the VectorSet
+        /// </summary>
+        [SkipLocalsInit]
+        internal unsafe GarnetStatus VectorSetGetAttribute(PinnedSpanByte key, PinnedSpanByte element, ref SpanByteAndMemory outputAttributes)
+        {
+            parseState.InitializeWithArgument(key);
+
+            // Get the index
+            var input = new StringInput(RespCommand.VGETATTR, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                var result = vectorManager.FetchSingleVectorElementAttributes(indexSpan, element, ref outputAttributes);
+                return result == VectorManagerResult.OK ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
             }
         }
     }
