@@ -684,6 +684,13 @@ namespace Garnet.server
             return garnetApi.VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
         }
 
+        /// <inheritdoc/>
+        GarnetStatus IGarnetReadApi.VectorSetGetAttribute(ArgSlice key, ArgSlice element, ref SpanByteAndMemory outputAttributes)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetGetAttribute(key, element, ref outputAttributes);
+        }
+
         #endregion
     }
 }
