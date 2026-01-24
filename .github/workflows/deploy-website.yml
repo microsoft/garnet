@@ -9,7 +9,9 @@ on:
       - '.github/workflows/deploy-website.yml'
       - 'website/**'
   workflow_run:
-    workflows: [Garnet CI BDN.benchmark]
+    workflows:
+      - Garnet CI BDN.benchmark
+      - Garnet Nightly Tests
     types:
       - completed
 permissions:
