@@ -7,8 +7,7 @@ using System.Threading;
 namespace Garnet.common
 {
     /// <summary>
-    /// Implementation of a barrier like primitive involving N participants for which N-1 will enter
-    /// and wait for a signal from the N-th participant (i.e. leader)
+    /// Synchronizes a group of participants, allowing one to act as the leader while others wait until released.
     /// </summary>
     /// <param name="participantCount"></param>
     public class LeaderBarier(int participantCount)
@@ -20,12 +19,14 @@ namespace Garnet.common
         ManualResetEventSlim releaseAll = new(false);
 
         /// <summary>
-        /// Try wait for all participants to join
+        /// Attempts to signal arrival and wait for other participants within the specified timeout and cancellation
+        /// token.
         /// </summary>
-        /// <param name="exception"></param>
-        /// <param name="timeout"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns>True if it is the first participant that joined the group otherwise false</returns>
+        /// <param name="exception">When this method returns, contains the exception that occurred during the operation, or null if no exception
+        /// was thrown.</param>
+        /// <param name="timeout">The maximum time to wait for other participants. The default value is infinite.</param>
+        /// <param name="cancellationToken">A cancellation token to observe while waiting.</param>
+        /// <returns>true if the caller is the first participant to arrive; otherwise, false.</returns>
         public bool TrySignalAndWait(out Exception exception, TimeSpan timeout = default, CancellationToken cancellationToken = default)
         {
             exception = null;
@@ -72,6 +73,9 @@ namespace Garnet.common
         /// </summary>
         public void Release() => releaseAll.Set();
 
+        /// <summary>
+        /// Resets the internal state, reinitializing release flags and participant count.
+        /// </summary>
         public void Reset()
         {
             releaseFirst = new(false);

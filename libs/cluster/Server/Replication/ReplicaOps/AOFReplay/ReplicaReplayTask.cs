@@ -106,10 +106,10 @@ namespace Garnet.cluster
                         cts.Cancel();
                     }
 
-                    var eventBarrier = entry.LeaderBarrier;
+                    var leaderBarrier = entry.LeaderBarrier;
                     try
                     {
-                        var isLeader = eventBarrier.TrySignalAndWait(out var signalException, serverOptions.ReplicaSyncTimeout, cts.Token);
+                        var isLeader = leaderBarrier.TrySignalAndWait(out var signalException, serverOptions.ReplicaSyncTimeout, cts.Token);
                         if (isLeader)
                         {
                             // Update key sequence tracker after everyone replayed their portion
@@ -121,7 +121,7 @@ namespace Garnet.cluster
                             appendOnlyFile.readConsistencyManager.UpdateSublogMaxSequenceNumber(physicalSublogIdx);
                             // Update replication offset
                             replicationManager.SetSublogReplicationOffset(physicalSublogIdx, nextAddress);
-                            eventBarrier.Release();
+                            leaderBarrier.Release();
                         }
                     }
                     finally

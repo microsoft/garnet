@@ -14,7 +14,7 @@ namespace Garnet.server
     /// Used to index barriers for coordinated replay operations in the AofReplayCoordinator
     /// NOTE: Use only negative numbers because sessionIDs will be positive values
     /// </summary>
-    internal enum EventBarrierType : int
+    internal enum LeaderBarrierType : int
     {
         CHECKPOINT = -1,
         STREAMING_CHECKPOINT = -2,
@@ -62,7 +62,7 @@ namespace Garnet.server
         public class AofReplayCoordinator(GarnetServerOptions serverOptions, AofProcessor aofProcessor, ILogger logger = null) : IDisposable
         {
             readonly GarnetServerOptions serverOptions = serverOptions;
-            readonly ConcurrentDictionary<BarrierKey, LeaderBarier> eventBarriers = [];
+            readonly ConcurrentDictionary<BarrierKey, LeaderBarier> leaderBarriers = [];
             readonly AofProcessor aofProcessor = aofProcessor;
             readonly AofReplayContext[] aofReplayContext = InitializeReplayContext(serverOptions.AofVirtualSublogCount);
 
@@ -94,7 +94,7 @@ namespace Garnet.server
             LeaderBarier GetBarrier(int sessionId, long sequenceNumber, int participantCount)
             {
                 var barrierID = new BarrierKey() { Id = sessionId, SequenceNumber = sequenceNumber };
-                return eventBarriers.GetOrAdd(barrierID, _ => new LeaderBarier(participantCount));
+                return leaderBarriers.GetOrAdd(barrierID, _ => new LeaderBarier(participantCount));
             }
 
             /// <summary>
@@ -383,8 +383,8 @@ namespace Garnet.server
                 var txnHeader = *(AofTransactionHeader*)ptr;
 
                 // Synchronize execution across sublogs
-                var eventBarrier = GetBarrier(barrierId, txnHeader.shardedHeader.sequenceNumber, txnHeader.participantCount);
-                var isLeader = eventBarrier.TrySignalAndWait(out var signalException, serverOptions.ReplicaSyncTimeout);
+                var leaderBarrier = GetBarrier(barrierId, txnHeader.shardedHeader.sequenceNumber, txnHeader.participantCount);
+                var isLeader = leaderBarrier.TrySignalAndWait(out var signalException, serverOptions.ReplicaSyncTimeout);
                 Exception removeBarrierException = null;
 
                 // We execute the synchronized operation iff
@@ -413,7 +413,7 @@ namespace Garnet.server
                             removeBarrierException = new GarnetException($"RemoveBarrier failed when processing {barrierId}");
 
                         // Release participants if any
-                        eventBarrier.Release();
+                        leaderBarrier.Release();
                     }
                 }
 
@@ -433,7 +433,7 @@ namespace Garnet.server
                 bool TryRemoveBarrier(int sessionId, long sequenceNumber, out LeaderBarier eventBarrier)
                 {
                     var barrierID = new BarrierKey() { Id = sessionId, SequenceNumber = sequenceNumber };
-                    return eventBarriers.TryRemove(barrierID, out eventBarrier);
+                    return leaderBarriers.TryRemove(barrierID, out eventBarrier);
                 }
             }
         }

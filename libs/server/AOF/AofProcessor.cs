@@ -176,7 +176,7 @@ namespace Garnet.server
                                     aofReplayCoordinator.ProcessSynchronizedOperation(
                                         virtualSublogIdx,
                                         ptr,
-                                        (int)EventBarrierType.CHECKPOINT,
+                                        (int)LeaderBarrierType.CHECKPOINT,
                                         () => storeWrapper.TakeCheckpoint(background: false, logger));
                                 }
                             }
@@ -201,7 +201,7 @@ namespace Garnet.server
                             aofReplayCoordinator.ProcessSynchronizedOperation(
                                 virtualSublogIdx,
                                 ptr,
-                                (int)EventBarrierType.STREAMING_CHECKPOINT,
+                                (int)LeaderBarrierType.STREAMING_CHECKPOINT,
                                 () => storeWrapper.store.SetVersion(header.storeVersion));
                         }
                     }
@@ -225,7 +225,7 @@ namespace Garnet.server
                         aofReplayCoordinator.ProcessSynchronizedOperation(
                             virtualSublogIdx,
                             ptr,
-                            (int)EventBarrierType.FLUSH_DB_ALL,
+                            (int)LeaderBarrierType.FLUSH_DB_ALL,
                             () => storeWrapper.FlushAllDatabases(unsafeTruncateLog: header.unsafeTruncateLog == 1));
                     }
                     break;
@@ -239,7 +239,7 @@ namespace Garnet.server
                         aofReplayCoordinator.ProcessSynchronizedOperation(
                             virtualSublogIdx,
                             ptr,
-                            (int)EventBarrierType.FLUSH_DB,
+                            (int)LeaderBarrierType.FLUSH_DB,
                             () => storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId));
                     }
                     break;

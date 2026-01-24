@@ -131,6 +131,7 @@ namespace Garnet.server
             {
                 try
                 {
+                    logger?.LogInformation("Recover sublog [{physicalSublogIdx}] for addres range ({startAddress},{untilAddress})", physicalSublogIdx, startAddress, untilAddress);
                     while (!cts.IsCancellationRequested)
                     {
                         await replayIterator.BulkConsumeAllAsync(
