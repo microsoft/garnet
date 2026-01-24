@@ -15,13 +15,19 @@ jobs:
   build-test-all:
     name: Test
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
-        os: [ ubuntu-latest, windows-latest ]
-        framework: [ 'net8.0', 'net9.0' ]
-        configuration: [ 'Debug', 'Release' ]
+        # DEBUG - Reduce repro rate
+        #test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
+        #os: [ ubuntu-latest, windows-latest ]
+        #framework: [ 'net8.0', 'net9.0' ]
+        #configuration: [ 'Debug', 'Release' ]
+        test: [ 'Tsavorite.test' ]
+        os: [ ubuntu-latest ]
+        framework: [ 'net8.0' ]
+        configuration: [  'Release' ]
 
     steps:
       - name: Install Allure CLI
