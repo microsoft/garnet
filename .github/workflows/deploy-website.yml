@@ -44,8 +44,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: allure_data_history
-          sparse-checkout: |
-            test/Allure/allure-report
           path: allure_data_history
       - name: Copy charts
         run: |
@@ -79,7 +77,7 @@ jobs:
           else
             echo "Allure history not present (likely triggered by BDN run, which does not produce Allure history); skipping history overlay."
           fi
-          
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
