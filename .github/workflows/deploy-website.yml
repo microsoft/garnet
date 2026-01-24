@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   deploy:
+    if: always()
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
     defaults:
