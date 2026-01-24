@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # DEBUG - Reduce repro rate
+        # DEBUG - Reduce repro rate!
         #test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
         #os: [ ubuntu-latest, windows-latest ]
         #framework: [ 'net8.0', 'net9.0' ]
