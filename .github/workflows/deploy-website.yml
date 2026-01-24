@@ -52,15 +52,24 @@ jobs:
           mkdir -p static/charts
           cp ../continuousbenchmark/website/static/charts/* static/charts
           cp ../continuousbenchmark_net80/website/static/charts/data.js static/charts/data_net80.js
+
+      # Download the current allure_report artifact which is big with A LOT of test result files
+      # Nightly run does not put full allure_report up in the allure_data_history branch to keep that branch small
       - name: Download Allure artifact
         uses: actions/download-artifact@v4
         with:
           name: allure-report
           path: allure_artifact
+      # The one thing that is pulled from allure_data_history branch is the historical test result data
+      # This data is then copied into the downloaded allure_report to create a full report with history
       - name: Copy Allure report
         run: |
           mkdir -p static/allure
-          cp -R ../allure_data_history/test/Allure/allure-report/* static/allure
+          # Base: full report from artifact
+          cp -R allure_artifact/allure-report/* static/allure
+          # Overlay: history from branch
+          cp -R ../allure_data_history/test/Allure/allure-report/history static/allure/history
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
