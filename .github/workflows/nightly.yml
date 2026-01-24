@@ -19,15 +19,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # DEBUG - Reduce repro rate!
-        #test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
-        #os: [ ubuntu-latest, windows-latest ]
-        #framework: [ 'net8.0', 'net9.0' ]
-        #configuration: [ 'Debug', 'Release' ]
-        test: [ 'Tsavorite.test' ]
-        os: [ ubuntu-latest ]
-        framework: [ 'net8.0' ]
-        configuration: [  'Release' ]
+        test: [ 'Garnet.test', 'Garnet.test.cluster', 'Tsavorite.test' ]
+        os: [ ubuntu-latest, windows-latest ]
+        framework: [ 'net8.0', 'net9.0' ]
+        configuration: [ 'Debug', 'Release' ]
 
     steps:
       - name: Install Allure CLI
