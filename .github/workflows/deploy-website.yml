@@ -46,7 +46,7 @@ jobs:
           ref: allure_data_history
           sparse-checkout: |
             test/Allure/allure-report
-          path: allure_data_history          
+          path: allure_data_history
       - name: Copy charts
         run: |
           mkdir -p static/charts
@@ -66,18 +66,18 @@ jobs:
         run: |
           mkdir -p static/allure
 
-          # Base: full report from artifact (Nightly only)
+          # Base: Allure full report from Nightly Run artifact
           if [ -d "allure_artifact/allure-report" ]; then
             cp -R allure_artifact/allure-report/* static/allure
           else
-            echo "Allure artifact not found; skipping base report copy."
+            echo "Allure artifact not present (likely triggered by BDN run, which does not produce an Allure report); skipping base report copy."
           fi
 
           # Overlay: history from branch (always available)
           if [ -d "../allure_data_history/test/Allure/history" ]; then
             cp -R ../allure_data_history/test/Allure/history static/allure/history
           else
-            echo "Allure history not found; skipping history overlay."
+            echo "Allure history not present (likely triggered by BDN run, which does not produce Allure history); skipping history overlay."
           fi
           
       - uses: actions/setup-node@v4
