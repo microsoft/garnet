@@ -3,7 +3,6 @@ on:
   schedule:
     - cron:  '0 9 * * *' # Runs at 09:00 UTC, which is 1:00 AM PST
   workflow_dispatch:
-
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_NOLOGO: true
