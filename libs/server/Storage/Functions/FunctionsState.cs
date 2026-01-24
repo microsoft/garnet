@@ -6,7 +6,6 @@ using System.Buffers;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
-using static Garnet.server.LuaRunner;
 
 namespace Garnet.server
 {

@@ -277,10 +277,20 @@ namespace Garnet.test
             var key2 = "key2";
             var key3 = "key3";
 
-            db.SortedSetAdd(key1, [new SortedSetEntry("a", 1)]);
-            db.SortedSetAdd(key2, [new SortedSetEntry("b", 2)]);
+            var results = (string[])db.Execute("EXECWITHETAG", "ZADD", key3, 1, "a");
+            ClassicAssert.AreEqual(2, results!.Length);
+            ClassicAssert.AreEqual(1, long.Parse(results[0]!)); // 1 element added
+            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
-            var result = db.Execute("EXECWITHETAG", "ZUNIONSTORE", key3, 2, key1, key2);
+            db.SortedSetAdd(key1, [new SortedSetEntry("b", 2)]);
+            db.SortedSetAdd(key2, [new SortedSetEntry("c", 3)]);
+
+            var result = db.SortedSetCombineAndStore(SetOperation.Union, key3, key1, key2);
+            ClassicAssert.AreEqual(2, result);
+
+            // Verify Etag advanced
+            var etag = (long)db.Execute("GETETAG", key3);
+            ClassicAssert.AreEqual(2, etag); // Etag 2
         }
     }
 }

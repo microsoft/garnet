@@ -6,10 +6,8 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using Garnet.common;
-using Microsoft.IdentityModel.Tokens;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -1081,82 +1079,10 @@ namespace Garnet.server
             }
         }
 
-        private long HandleMetaCommandPreOp(PinnedSpanByte destKey, ref ObjectInput input, ref ObjectOutput output, out IGarnetObject obj, out RespMemoryWriter writer,
-            bool readOnly = false)
+        public GarnetStatus SortedSetUnionStore(PinnedSpanByte destinationKey, ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out int count)
         {
-            var objectContext = txnManager.ObjectTransactionalContext;
+            count = 0;
 
-            var status = GET(destKey, out var dstObjectOutput, ref objectContext);
-            var init = status != GarnetStatus.NOTFOUND;
-            obj = dstObjectOutput.GarnetObject;
-
-            var metaCmd = input.metaCommandInfo.MetaCommand;
-            var currEtag = init ? LogRecord.NoETag : dstObjectOutput.Header.etag;
-            var updatedEtag = EtagUtils.GetUpdatedEtag(currEtag, ref input.metaCommandInfo, out var execCmd, init, readOnly);
-
-            var isEtagCmd = metaCmd.IsEtagCommand();
-            var skipResp = input.header.CheckSkipRespOutputFlag();
-            var respProtocolVersion = functionsState.GetRespProtocolVersion(ref input);
-            writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
-            if (!skipResp && isEtagCmd)
-                writer.WriteArrayLength(2);
-
-            if (!execCmd && !skipResp)
-                writer.WriteNull();
-
-            return updatedEtag;
-        }
-
-        private long HandleMetaCommandAndOperate(ref ObjectInput input, in ObjectOutput dstObjectOutput, ref ObjectOutput output,
-            bool init = false, bool readOnly = false)
-        {
-            var metaCmd = input.metaCommandInfo.MetaCommand;
-            var currEtag = init ? LogRecord.NoETag : dstObjectOutput.Header.etag;
-            var updatedEtag = EtagUtils.GetUpdatedEtag(currEtag, ref input.metaCommandInfo, out var execCmd, init, readOnly);
-
-            var isEtagCmd = metaCmd.IsEtagCommand();
-            var skipResp = input.header.CheckSkipRespOutputFlag();
-            var respProtocolVersion = functionsState.GetRespProtocolVersion(ref input);
-            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
-            try
-            {
-                if (!skipResp && isEtagCmd)
-                    writer.WriteArrayLength(2);
-
-                if (execCmd)
-                {
-                    value.Operate(ref input, ref output, ref writer, out sizeChange);
-
-                    if (!readOnly && (currEtag != LogRecord.NoETag) && (output.OutputFlags & OutputFlags.ValueUnchanged) == OutputFlags.ValueUnchanged)
-                        updatedEtag = currEtag;
-                }
-                else if (!skipResp)
-                    writer.WriteNull();
-
-                if (isEtagCmd)
-                {
-                    if (!skipResp)
-                        writer.WriteInt64(updatedEtag);
-
-                    output.Header.etag = updatedEtag;
-                }
-
-                if (updatedEtag != currEtag)
-                    _ = SET(dst)
-            }
-            finally
-            {
-                writer.Dispose();
-            }
-            
-
-            return updatedEtag;
-        }
-
-        public GarnetStatus SortedSetUnionStore(PinnedSpanByte destinationKey, ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, ref ObjectInput input, ref ObjectOutput output)
-        {
             if (keys.Length == 0)
                 return GarnetStatus.OK;
 
@@ -1177,15 +1103,16 @@ namespace Garnet.server
 
             try
             {
-                var status = GET(destinationKey, out var dstObjectOutput, ref objectContext);
-                var init = status != GarnetStatus.NOTFOUND;
+                _ = GET(destinationKey, out var destObjectOutput, ref objectContext);
 
-                status = SortedSetUnion(keys, ref objectContext, out var pairs, weights, aggregateType);
+                var status = SortedSetUnion(keys, ref objectContext, out var pairs, weights, aggregateType);
 
                 if (status == GarnetStatus.WRONGTYPE)
+                {
                     return GarnetStatus.WRONGTYPE;
+                }
 
-                var count = pairs?.Count ?? 0;
+                count = pairs?.Count ?? 0;
 
                 if (count > 0)
                 {
@@ -1195,7 +1122,7 @@ namespace Garnet.server
                         newSortedSetObject.Add(element, score);
                     }
 
-                    _ = SET(destinationKey, newSortedSetObject, ref objectContext);
+                    _ = SET(destinationKey, newSortedSetObject, in destObjectOutput, ref objectContext);
                     itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                 }
                 else
@@ -1203,7 +1130,6 @@ namespace Garnet.server
                     _ = DELETE_ObjectStore(destinationKey, ref objectContext);
                 }
 
-                output.Header.result1 = count;
                 return status;
             }
             finally

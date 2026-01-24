@@ -62,7 +62,7 @@ namespace Garnet.server
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
             var metaCmd = input.metaCommandInfo.MetaCommand;
-            var updatedEtag = GetUpdatedEtag(logRecord.ETag, ref input.metaCommandInfo, out _, init: true);
+            var updatedEtag = EtagUtils.GetUpdatedEtag(logRecord.ETag, ref input.metaCommandInfo, out _, init: true);
 
             // Because this is InitialUpdater, the destination length should be set correctly, but test and log failures to be safe.
             var cmd = input.header.cmd;

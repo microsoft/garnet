@@ -551,12 +551,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="destinationKey">The key where the result will be stored.</param>
         /// <param name="keys">The keys of the sorted sets to union.</param>
-        /// <param name="metaCommandInfo">Meta-command info</param>
+        /// <param name="count">The number of elements in the resulting sorted set.</param>
         /// <param name="weights">Optional weights to apply to each sorted set.</param>
         /// <param name="aggregateType">The type of aggregation to perform (e.g., Sum, Min, Max).</param>
-        /// <param name="output">The output object to store the result.</param>
         /// <returns>A <see cref="GarnetStatus"/> indicating the status of the operation.</returns>
-        GarnetStatus SortedSetUnionStore(PinnedSpanByte destinationKey, ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, ref MetaCommandInfo metaCommandInfo, ref ObjectOutput output);
+        GarnetStatus SortedSetUnionStore(PinnedSpanByte destinationKey, ReadOnlySpan<PinnedSpanByte> keys, double[] weights, SortedSetAggregateType aggregateType, out int count);
 
         /// <summary>
         /// Sets an expiration time on a sorted set member.
