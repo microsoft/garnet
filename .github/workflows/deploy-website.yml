@@ -49,6 +49,11 @@ jobs:
           mkdir -p static/charts
           cp ../continuousbenchmark/website/static/charts/* static/charts
           cp ../continuousbenchmark_net80/website/static/charts/data.js static/charts/data_net80.js
+      - name: Download Allure artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-report
+          path: allure_artifact
       - name: Copy Allure report
         run: |
           mkdir -p static/allure
