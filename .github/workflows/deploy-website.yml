@@ -65,11 +65,21 @@ jobs:
       - name: Copy Allure report
         run: |
           mkdir -p static/allure
-          # Base: full report from artifact
-          cp -R allure_artifact/allure-report/* static/allure
-          # Overlay: history from branch
-          cp -R ../allure_data_history/test/Allure/allure-report/history static/allure/history
 
+          # Base: full report from artifact (Nightly only)
+          if [ -d "allure_artifact/allure-report" ]; then
+            cp -R allure_artifact/allure-report/* static/allure
+          else
+            echo "Allure artifact not found; skipping base report copy."
+          fi
+
+          # Overlay: history from branch (always available)
+          if [ -d "../allure_data_history/test/Allure/history" ]; then
+            cp -R ../allure_data_history/test/Allure/history static/allure/history
+          else
+            echo "Allure history not found; skipping history overlay."
+          fi
+          
       - uses: actions/setup-node@v4
         with:
           node-version: 20
