@@ -4,6 +4,8 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -39,8 +41,9 @@ namespace Tsavorite.test.readaddress
     using StructAllocator = BlittableAllocator<KeyStruct, ValueStruct, StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>>;
     using StructStoreFunctions = StoreFunctions<KeyStruct, ValueStruct, KeyStruct.Comparer, DefaultRecordDisposer<KeyStruct, ValueStruct>>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class ReadAddressTests
+    internal class ReadAddressTests : AllureTestBase
     {
         const int NumKeys = 1000;
         const int KeyMod = 100;

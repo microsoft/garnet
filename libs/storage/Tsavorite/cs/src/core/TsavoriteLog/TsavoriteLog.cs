@@ -903,8 +903,9 @@ namespace Tsavorite.core
         /// <param name="item1"></param>
         /// <param name="item2"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, out long logicalAddress)
+        public unsafe void Enqueue<THeader, TEpochAccessor>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, TEpochAccessor epochAccessor, out long logicalAddress)
             where THeader : unmanaged
+            where TEpochAccessor : IEpochAccessor
         {
             logicalAddress = 0;
             var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize;
@@ -912,16 +913,21 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
+            try
+            {
+                logicalAddress = AllocateBlock(allocatedLength, epochAccessor);
 
-            logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+                item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+                SetHeader(length, physicalAddress);
+                safeTailRefreshEntryEnqueued?.Signal();
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
             if (AutoCommit) Commit();
         }
 
@@ -1015,8 +1021,9 @@ namespace Tsavorite.core
         /// <param name="item1"></param>
         /// <param name="input"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref SpanByte item1, ref TInput input, out long logicalAddress)
+        public unsafe void Enqueue<THeader, TInput, TEpochAccessor>(THeader userHeader, ref SpanByte item1, ref TInput input, TEpochAccessor epochAccessor, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
+            where TEpochAccessor : IEpochAccessor
         {
             logicalAddress = 0;
             var length = sizeof(THeader) + item1.TotalSize + input.SerializedLength;
@@ -1024,15 +1031,20 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize, input.SerializedLength);
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
+            try
+            {
+                logicalAddress = AllocateBlock(allocatedLength, epochAccessor);
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+                input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize, input.SerializedLength);
+                SetHeader(length, physicalAddress);
+                safeTailRefreshEntryEnqueued?.Signal();
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
             if (AutoCommit) Commit();
         }
 
@@ -1044,8 +1056,9 @@ namespace Tsavorite.core
         /// <param name="item2"></param>
         /// <param name="input"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref TInput input, out long logicalAddress)
+        public unsafe void Enqueue<THeader, TInput, TEpochAccessor>(THeader userHeader, ref SpanByte item1, ref SpanByte item2, ref TInput input, TEpochAccessor epochAccessor, out long logicalAddress)
             where THeader : unmanaged where TInput : IStoreInput
+            where TEpochAccessor : IEpochAccessor
         {
             logicalAddress = 0;
             var length = sizeof(THeader) + item1.TotalSize + item2.TotalSize + input.SerializedLength;
@@ -1053,17 +1066,22 @@ namespace Tsavorite.core
             ValidateAllocatedLength(allocatedLength);
 
             epoch.Resume();
-
-            logicalAddress = AllocateBlock(allocatedLength);
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
-            item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
-            input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize,
-                input.SerializedLength);
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
+            try
+            {
+                logicalAddress = AllocateBlock(allocatedLength, epochAccessor);
+                var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
+                *(THeader*)(physicalAddress + headerSize) = userHeader;
+                item1.CopyTo(physicalAddress + headerSize + sizeof(THeader));
+                item2.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize);
+                input.CopyTo(physicalAddress + headerSize + sizeof(THeader) + item1.TotalSize + item2.TotalSize,
+                    input.SerializedLength);
+                SetHeader(length, physicalAddress);
+                safeTailRefreshEntryEnqueued?.Signal();
+            }
+            finally
+            {
+                epoch.Suspend();
+            }
             if (AutoCommit) Commit();
         }
 
@@ -1118,6 +1136,38 @@ namespace Tsavorite.core
                 }
             }
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private long AllocateBlock<TEpochAccessor>(int recordSize, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        {
+            while (true)
+            {
+                var flushEvent = allocator.FlushEvent;
+                var logicalAddress = allocator.TryAllocateRetryNow(recordSize);
+                if (logicalAddress > 0)
+                    return logicalAddress;
+
+                // logicalAddress less than 0 (RETRY_NOW) should already have been handled
+                Debug.Assert(logicalAddress == 0);
+
+                epoch.Suspend();
+                var released = epochAccessor.ReleaseIfHeld();
+                try
+                {
+                    if (cannedException != null) ThrowException(cannedException);
+                    flushEvent.Wait();
+                }
+                finally
+                {
+                    if (released) epochAccessor.Resume();
+                    epoch.Resume();
+                }
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void ThrowException(Exception e) => throw e;
 
         /// <summary>
         /// Try to append a user-defined blittable struct header and two <see cref="SpanByte"/> entries entries atomically to the log.

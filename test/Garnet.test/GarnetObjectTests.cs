@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -12,8 +13,9 @@ namespace Garnet.test
     using ObjectStoreAllocator = GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>;
     using ObjectStoreFunctions = StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>;
 
+    [AllureNUnit]
     [TestFixture]
-    public class GarnetObjectTests
+    public class GarnetObjectTests : AllureTestBase
     {
         TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> store;
         IDevice logDevice, objectLogDevice;

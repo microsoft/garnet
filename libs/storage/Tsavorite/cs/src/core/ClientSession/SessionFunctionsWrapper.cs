@@ -60,6 +60,11 @@ namespace Tsavorite.core
             recordInfo.SetDirtyAndModified();
             return true;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostUpsertOperation<TEpochAccessor>(ref TKey key, ref TInput input, ref TValue src, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+            => _clientSession.functions.PostUpsertOperation(ref key, ref input, ref src, ref upsertInfo, epochAccessor);
         #endregion Upserts
 
         #region RMWs
@@ -136,6 +141,11 @@ namespace Tsavorite.core
         }
         #endregion InPlaceUpdater
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostRMWOperation<TEpochAccessor>(ref TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+            => _clientSession.functions.PostRMWOperation(ref key, ref input, ref rmwInfo, epochAccessor);
+
         public void RMWCompletionCallback(ref TKey key, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
             => _clientSession.functions.RMWCompletionCallback(ref key, ref input, ref output, ctx, status, recordMetadata);
 
@@ -163,6 +173,11 @@ namespace Tsavorite.core
             recordInfo.SetDirtyAndModified();
             return true;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostDeleteOperation<TEpochAccessor>(ref TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+            => _clientSession.functions.PostDeleteOperation(ref key, ref deleteInfo, epochAccessor);
         #endregion Deletes
 
         #region Utilities

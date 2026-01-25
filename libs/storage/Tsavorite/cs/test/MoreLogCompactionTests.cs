@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -11,8 +13,9 @@ namespace Tsavorite.test
     using LongAllocator = BlittableAllocator<long, long, StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>>;
     using LongStoreFunctions = StoreFunctions<long, long, LongKeyComparer, DefaultRecordDisposer<long, long>>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class MoreLogCompactionTests
+    internal class MoreLogCompactionTests : AllureTestBase
     {
         private TsavoriteKV<long, long, LongStoreFunctions, LongAllocator> store;
         private IDevice log;

@@ -725,7 +725,8 @@ namespace Garnet.server
         /// a. ConcurrentWriter
         /// b. PostSingleWriter
         /// </summary>
-        void WriteLogUpsert(ref SpanByte key, ref RawStringInput input, ref SpanByte value, long version, int sessionId)
+        void WriteLogUpsert<TEpochAccessor>(ref SpanByte key, ref RawStringInput input, ref SpanByte value, long version, int sessionId, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
 
@@ -737,7 +738,7 @@ namespace Garnet.server
 
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.StoreUpsert, storeVersion = version, sessionID = sessionId },
-                ref key, ref value, ref input, out _);
+                ref key, ref value, ref input, epochAccessor, out _);
         }
 
         /// <summary>
@@ -746,14 +747,15 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(ref SpanByte key, ref RawStringInput input, long version, int sessionId)
+        void WriteLogRMW<TEpochAccessor>(ref SpanByte key, ref RawStringInput input, long version, int sessionId, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.StoreRMW, storeVersion = version, sessionID = sessionId },
-                ref key, ref input, out _);
+                ref key, ref input, epochAccessor, out _);
         }
 
         /// <summary>
@@ -761,11 +763,12 @@ namespace Garnet.server
         ///  a. ConcurrentDeleter
         ///  b. PostSingleDeleter
         /// </summary>
-        void WriteLogDelete(ref SpanByte key, long version, int sessionID)
+        void WriteLogDelete<TEpochAccessor>(ref SpanByte key, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
             SpanByte def = default;
-            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID }, ref key, ref def, out _);
+            functionsState.appendOnlyFile.Enqueue(new AofHeader { opType = AofEntryType.StoreDelete, storeVersion = version, sessionID = sessionID }, ref key, ref def, epochAccessor, out _);
         }
 
         BitFieldCmdArgs GetBitFieldArguments(ref RawStringInput input)

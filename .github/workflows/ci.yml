@@ -95,6 +95,56 @@ jobs:
         run: dotnet restore
       - name: Build Garnet
         run: dotnet build --configuration ${{ matrix.configuration }}
+  
+      - name: Verify Allure wiring (${{ matrix.test }})
+        shell: pwsh
+        run: |
+          $asmPath = "${{ github.workspace }}/test/${{ matrix.test }}/bin/${{ matrix.configuration }}/${{ matrix.framework }}/${{ matrix.test }}.dll"
+          $asm = [System.Reflection.Assembly]::LoadFrom($asmPath)
+
+          # When using .Net 9.0 it tries to resolve every referenced type in that assembly and some dependencies are missing by design so pops exception.
+          # Since we don't want to fail on every 9.0 run (even when has Allure inheritance), we catch it here.  
+          try {
+              $types = $asm.GetTypes()
+          } catch [System.Reflection.ReflectionTypeLoadException] {
+              # Keep only successfully loaded types, skip nulls
+              $types = $_.Exception.Types | Where-Object { $_ -ne $null }
+          }
+          $allureBase = $types | Where-Object { $_.Name -eq "AllureTestBase" }
+
+          $bad = @()
+          foreach ($t in $types) {
+              # Detect NUnit test fixtures by attribute names
+              $isFixture = $t.GetCustomAttributes($true) |
+                          Where-Object { $_.GetType().FullName -eq "NUnit.Framework.TestFixtureAttribute" } |
+                          Measure-Object | Select-Object -ExpandProperty Count
+              if ($isFixture -eq 0) {
+                  $isFixture = $t.GetMethods() |
+                              ForEach-Object { $_.GetCustomAttributes($true) } |
+                              Where-Object { $_.GetType().FullName -eq "NUnit.Framework.TestAttribute" } |
+                              Measure-Object | Select-Object -ExpandProperty Count
+              }
+
+              if ($isFixture -gt 0) {
+                  $inheritsAllure = $allureBase -and $allureBase.IsAssignableFrom($t)
+                  $hasAttr = $t.GetCustomAttributes($true) |
+                            Where-Object { $_.GetType().FullName -eq "Allure.NUnit.AllureNUnitAttribute" } |
+                            Measure-Object | Select-Object -ExpandProperty Count
+
+                  if (-not $inheritsAllure -or $hasAttr -eq 0) {
+                      $bad += $t.FullName
+                  }
+              }
+          }
+
+          if ($bad.Count -gt 0) {
+            Write-Host "These test fixtures are missing Allure setup from $asmPath. See Pull Request Protocol for details on how to set up Allure for new tests. https://microsoft.github.io/garnet/docs/dev/onboarding"
+            $bad | ForEach-Object { Write-Host $_ }
+            exit 1
+          } else {
+            Write-Host "All test fixtures wired to Allure in $asmPath"
+          }
+            
       - name: Run tests ${{ matrix.test }}
         run: dotnet test test/${{ matrix.test }} -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "GarnetTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}-${{ matrix.test }}" -- NUnit.DisplayName=FullName
         timeout-minutes: 45 
@@ -145,6 +195,54 @@ jobs:
         run: dotnet restore
       - name: Build Tsavorite
         run: dotnet build libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj --configuration ${{ matrix.configuration }}
+
+      - name: Verify Allure wiring (Tsavorite)
+        shell: pwsh
+        run: |
+          $asmPath = "${{ github.workspace }}/libs/storage/Tsavorite/cs/test/bin/${{ matrix.configuration }}/${{ matrix.framework }}/Tsavorite.test.dll"
+          $asm = [System.Reflection.Assembly]::LoadFrom($asmPath)
+
+          # when using .Net 9.0 it tries to resolve every referenced type in that assembly and some dependencies are missing by design so pops exception (we don't need those anyways)
+          try {
+            $types = $asm.GetTypes()
+          } catch [System.Reflection.ReflectionTypeLoadException] {
+            $types = $_.Exception.Types | Where-Object { $_ -ne $null }
+          }
+          $allureBase = $types | Where-Object { $_.Name -eq "AllureTestBase" }
+
+          $bad = @()
+          foreach ($t in $types) {
+              # Detect NUnit test fixtures by attribute names
+              $isFixture = $t.GetCustomAttributes($true) |
+                          Where-Object { $_.GetType().FullName -eq "NUnit.Framework.TestFixtureAttribute" } |
+                          Measure-Object | Select-Object -ExpandProperty Count
+              if ($isFixture -eq 0) {
+                  $isFixture = $t.GetMethods() |
+                              ForEach-Object { $_.GetCustomAttributes($true) } |
+                              Where-Object { $_.GetType().FullName -eq "NUnit.Framework.TestAttribute" } |
+                              Measure-Object | Select-Object -ExpandProperty Count
+              }
+
+              if ($isFixture -gt 0) {
+                  $inheritsAllure = $allureBase -and $allureBase.IsAssignableFrom($t)
+                  $hasAttr = $t.GetCustomAttributes($true) |
+                            Where-Object { $_.GetType().FullName -eq "Allure.NUnit.AllureNUnitAttribute" } |
+                            Measure-Object | Select-Object -ExpandProperty Count
+
+                  if (-not $inheritsAllure -or $hasAttr -eq 0) {
+                      $bad += $t.FullName
+                  }
+              }
+          }
+
+          if ($bad.Count -gt 0) {
+            Write-Host "These test fixtures are missing Allure setup from $asmPath"
+            $bad | ForEach-Object { Write-Host $_ }
+            exit 1
+          } else {
+            Write-Host "All test fixtures wired to Allure in $asmPath"
+          }
+
       - name: Run Tsavorite tests
         run: dotnet test libs/storage/Tsavorite/cs/test/Tsavorite.test.csproj -f ${{ matrix.framework }} --configuration ${{ matrix.configuration }} --logger "console;verbosity=detailed" --logger trx --results-directory "TsavoriteTestResults-${{ matrix.os }}-${{ matrix.framework }}-${{ matrix.configuration }}"
         timeout-minutes: 45 

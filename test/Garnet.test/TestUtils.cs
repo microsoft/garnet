@@ -515,7 +515,10 @@ namespace Garnet.test
             int loggingFrequencySecs = 5,
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
-            int replicaSyncTimeout = 60)
+            int replicaSyncTimeout = 60,
+            int expiredObjectCollectionFrequencySecs = 0,
+            ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
+            string clusterAnnounceHostname = null)
         {
             if (UseAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -577,7 +580,10 @@ namespace Garnet.test
                     loggingFrequencySecs: loggingFrequencySecs,
                     checkpointThrottleFlushDelayMs: checkpointThrottleFlushDelayMs,
                     clusterReplicaResumeWithData: clusterReplicaResumeWithData,
-                    replicaSyncTimeout: replicaSyncTimeout);
+                    replicaSyncTimeout: replicaSyncTimeout,
+                    expiredObjectCollectionFrequencySecs: expiredObjectCollectionFrequencySecs,
+                    clusterPreferredEndpointType: clusterPreferredEndpointType,
+                    clusterAnnounceHostname: clusterAnnounceHostname);
 
                 ClassicAssert.IsNotNull(opts);
 
@@ -653,7 +659,10 @@ namespace Garnet.test
             int loggingFrequencySecs = 5,
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
-            int replicaSyncTimeout = 60)
+            int replicaSyncTimeout = 60,
+            int expiredObjectCollectionFrequencySecs = 0,
+            ClusterPreferredEndpointType clusterPreferredEndpointType = ClusterPreferredEndpointType.Ip,
+            string clusterAnnounceHostname = null)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -766,6 +775,8 @@ namespace Garnet.test
                 ReplicaDisklessSyncDelay = replicaDisklessSyncDelay,
                 ReplicaDisklessSyncFullSyncAofThreshold = replicaDisklessSyncFullSyncAofThreshold,
                 ClusterAnnounceEndpoint = clusterAnnounceEndpoint,
+                ClusterAnnounceHostname = clusterAnnounceHostname,
+                ClusterPreferredEndpointType = clusterPreferredEndpointType,
                 DeviceType = deviceType,
                 ClusterReplicationReestablishmentTimeout = clusterReplicationReestablishmentTimeout,
                 CompactionFrequencySecs = compactionFrequencySecs,
@@ -775,6 +786,7 @@ namespace Garnet.test
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
+                ExpiredObjectCollectionFrequencySecs = expiredObjectCollectionFrequencySecs,
             };
 
             if (lowMemory)

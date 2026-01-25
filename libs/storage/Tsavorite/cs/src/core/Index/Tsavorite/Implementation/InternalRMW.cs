@@ -65,6 +65,12 @@ namespace Tsavorite.core
             RecordInfo dummyRecordInfo = RecordInfo.InitialValid;
             ref RecordInfo srcRecordInfo = ref dummyRecordInfo;
 
+            RMWInfo rmwInfo = new()
+            {
+                Version = sessionFunctions.Ctx.version,
+                SessionID = sessionFunctions.Ctx.sessionID
+            };
+
             // We must use try/finally to ensure unlocking even in the presence of exceptions.
             try
             {
@@ -107,15 +113,9 @@ namespace Tsavorite.core
                     srcRecordInfo = ref stackCtx.recSrc.GetInfo();
 
                     // Mutable Region: Update the record in-place. We perform mutable updates only if we are in normal processing phase of checkpointing
-                    RMWInfo rmwInfo = new()
-                    {
-                        Version = sessionFunctions.Ctx.version,
-                        SessionID = sessionFunctions.Ctx.sessionID,
-                        Address = stackCtx.recSrc.LogicalAddress,
-                        KeyHash = stackCtx.hei.hash,
-                        IsFromPending = pendingContext.type != OperationType.NONE,
-                    };
-
+                    rmwInfo.Address = stackCtx.recSrc.LogicalAddress;
+                    rmwInfo.KeyHash = stackCtx.hei.hash;
+                    rmwInfo.IsFromPending = pendingContext.type != OperationType.NONE;
                     rmwInfo.SetRecordInfo(ref srcRecordInfo);
                     ref TValue recordValue = ref stackCtx.recSrc.GetValue();
 
@@ -207,7 +207,7 @@ namespace Tsavorite.core
 
                     // Here, the input* data for 'doingCU' is the same as recSrc.
                     status = CreateNewRecordRMW(ref key, ref input, ref value, ref output, ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo,
-                                                doingCU: stackCtx.recSrc.HasInMemorySrc && !srcRecordInfo.Tombstone);
+                                                doingCU: stackCtx.recSrc.HasInMemorySrc && !srcRecordInfo.Tombstone, ref rmwInfo);
                     if (!OperationStatusUtils.IsAppend(status))
                     {
                         // OperationStatus.SUCCESS is OK here; it means NeedCopyUpdate or NeedInitialUpdate returned false
@@ -220,6 +220,7 @@ namespace Tsavorite.core
             finally
             {
                 stackCtx.HandleNewRecordOnException(this);
+                sessionFunctions.PostRMWOperation(ref key, ref input, ref rmwInfo, epoch);
                 TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
             }
 
@@ -377,10 +378,11 @@ namespace Tsavorite.core
         ///     this is the <see cref="RecordInfo"/> for <see cref="RecordSource{Key, Value, TStoreFunctions, TAllocator}.LogicalAddress"/>. Otherwise, if called from pending IO,
         ///     this is the <see cref="RecordInfo"/> read from disk. If neither of these, it is a default <see cref="RecordInfo"/>.</param>
         /// <param name="doingCU">Whether we are doing a CopyUpdate, either from in-memory or pending IO</param>
+        /// <param name="rmwInfo">RMWInfo</param>
         /// <returns></returns>
         private OperationStatus CreateNewRecordRMW<TInput, TOutput, TContext, TSessionFunctionsWrapper>(ref TKey key, ref TInput input, ref TValue value, ref TOutput output,
                                                                                           ref PendingContext<TInput, TOutput, TContext> pendingContext, TSessionFunctionsWrapper sessionFunctions,
-                                                                                          ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, bool doingCU)
+                                                                                          ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, ref RecordInfo srcRecordInfo, bool doingCU, ref RMWInfo rmwInfo)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
         {
             bool forExpiration = false;
@@ -388,14 +390,9 @@ namespace Tsavorite.core
 
         RetryNow:
 
-            RMWInfo rmwInfo = new()
-            {
-                Version = sessionFunctions.Ctx.version,
-                SessionID = sessionFunctions.Ctx.sessionID,
-                Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress,
-                KeyHash = stackCtx.hei.hash,
-                IsFromPending = pendingContext.type != OperationType.NONE,
-            };
+            rmwInfo.Address = doingCU && !stackCtx.recSrc.HasReadCacheSrc ? stackCtx.recSrc.LogicalAddress : Constants.kInvalidAddress;
+            rmwInfo.KeyHash = stackCtx.hei.hash;
+            rmwInfo.IsFromPending = pendingContext.type != OperationType.NONE;
 
             AllocateOptions allocOptions = new()
             {

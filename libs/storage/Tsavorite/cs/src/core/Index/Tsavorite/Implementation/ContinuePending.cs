@@ -197,6 +197,12 @@ namespace Tsavorite.core
             ref var srcRecordInfo = ref requestRecordInfo;
             srcRecordInfo.ClearBitsForDiskImages();
 
+            RMWInfo rmwInfo = new()
+            {
+                Version = sessionFunctions.Ctx.version,
+                SessionID = sessionFunctions.Ctx.sessionID
+            };
+
             OperationStatus status;
 
             while (true)
@@ -231,11 +237,12 @@ namespace Tsavorite.core
 
                     status = CreateNewRecordRMW(ref key, ref pendingContext.input.Get(), ref hlog.GetContextRecordValue(ref request), ref pendingContext.output,
                                                 ref pendingContext, sessionFunctions, ref stackCtx, ref srcRecordInfo,
-                                                doingCU: request.logicalAddress >= hlogBase.BeginAddress && !srcRecordInfo.Tombstone);
+                                                doingCU: request.logicalAddress >= hlogBase.BeginAddress && !srcRecordInfo.Tombstone, ref rmwInfo);
                 }
                 finally
                 {
                     stackCtx.HandleNewRecordOnException(this);
+                    sessionFunctions.PostRMWOperation(ref key, ref pendingContext.input.Get(), ref rmwInfo, epoch);
                     TransientXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref key, ref stackCtx);
                 }
 

@@ -89,6 +89,19 @@ namespace Tsavorite.core
         /// <returns>True if the value was written, else false</returns>
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
         bool ConcurrentWriter(ref TKey key, ref TInput input, ref TValue src, ref TValue dst, ref TOutput output, ref UpsertInfo upsertInfo, ref RecordInfo recordInfo);
+
+        /// <summary>
+        /// Called after the Upsert operation, but before we unlock the record (if it was ephemerally locked).
+        /// </summary>
+        /// <typeparam name="TEpochAccessor"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="src"></param>
+        /// <param name="upsertInfo"></param>
+        /// <param name="epoch"></param>
+        void PostUpsertOperation<TEpochAccessor>(ref TKey key, ref TInput input, ref TValue src, ref UpsertInfo upsertInfo, TEpochAccessor epoch)
+            where TEpochAccessor : IEpochAccessor;
+
         #endregion Upserts
 
         #region RMWs
@@ -197,6 +210,17 @@ namespace Tsavorite.core
         #endregion Variable-length value size
 
         /// <summary>
+        /// Called after the RMW operation, but before we unlock the record (if it was ephemerally locked).
+        /// </summary>
+        /// <typeparam name="TEpochAccessor"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="input"></param>
+        /// <param name="rmwInfo"></param>
+        /// <param name="epoch"></param>
+        void PostRMWOperation<TEpochAccessor>(ref TKey key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epoch)
+            where TEpochAccessor : IEpochAccessor;
+
+        /// <summary>
         /// RMW completion
         /// </summary>
         /// <param name="key">The key for this record</param>
@@ -239,6 +263,16 @@ namespace Tsavorite.core
         /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
         /// <returns>True if the value was successfully deleted, else false (e.g. the record was sealed)</returns>
         bool ConcurrentDeleter(ref TKey key, ref TValue value, ref DeleteInfo deleteInfo, ref RecordInfo recordInfo);
+
+        /// <summary>
+        /// Called after the Delete operation, but before we unlock the record (if it was ephemerally locked).
+        /// </summary>
+        /// <typeparam name="TEpochAccessor"></typeparam>
+        /// <param name="key"></param>
+        /// <param name="deleteInfo"></param>
+        /// <param name="epoch"></param>
+        void PostDeleteOperation<TEpochAccessor>(ref TKey key, ref DeleteInfo deleteInfo, TEpochAccessor epoch)
+            where TEpochAccessor : IEpochAccessor;
         #endregion Deletes
 
         #region Utilities

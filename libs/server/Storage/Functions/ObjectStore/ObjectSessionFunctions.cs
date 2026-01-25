@@ -10,6 +10,7 @@ namespace Garnet.server
     /// </summary>
     public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long>
     {
+        const byte NeedAofLog = 0x1;
         readonly FunctionsState functionsState;
 
         /// <summary>

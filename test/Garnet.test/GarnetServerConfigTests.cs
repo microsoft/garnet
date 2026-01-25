@@ -10,6 +10,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using CommandLine;
 using Garnet.common;
 using Garnet.server;
@@ -21,8 +22,9 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture, NonParallelizable]
-    public class GarnetServerConfigTests
+    public class GarnetServerConfigTests : AllureTestBase
     {
         [Test]
         public void DefaultConfigurationOptionsCoverage()
@@ -1083,6 +1085,56 @@ namespace Garnet.test
 
             server.Dispose();
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+        }
+
+        [Test]
+        public void ClusterPreferredEndpointTypeTest()
+        {
+            {
+                var args = Array.Empty<string>();
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(ClusterPreferredEndpointType.Ip, options.ClusterPreferredEndpointType);
+            }
+
+            {
+                var args = new[] { "--cluster-preferred-endpoint-type", "ip" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(ClusterPreferredEndpointType.Ip, options.ClusterPreferredEndpointType);
+            }
+
+            {
+                var args = new[] { "--cluster-preferred-endpoint-type", "hostname" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(ClusterPreferredEndpointType.Hostname, options.ClusterPreferredEndpointType);
+            }
+
+            {
+                var args = new[] { "--cluster-preferred-endpoint-type", "unknown" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(ClusterPreferredEndpointType.Unknown, options.ClusterPreferredEndpointType);
+            }
+        }
+
+        [Test]
+        public void ClusterAnnounceHostnameTest()
+        {
+            {
+                var args = Array.Empty<string>();
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual(null, options.ClusterAnnounceHostname);
+            }
+
+            {
+                var args = new[] { "--cluster-announce-hostname", "test" };
+                var parseSuccessful = ServerSettingsManager.TryParseCommandLineArguments(args, out var options, out _, out _, out _);
+                ClassicAssert.IsTrue(parseSuccessful);
+                ClassicAssert.AreEqual("test", options.ClusterAnnounceHostname);
+            }
         }
     }
 }
