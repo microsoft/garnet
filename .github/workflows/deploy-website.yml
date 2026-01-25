@@ -9,7 +9,9 @@ on:
       - '.github/workflows/deploy-website.yml'
       - 'website/**'
   workflow_run:
-    workflows: [Garnet CI BDN.benchmark]
+    workflows:
+      - Garnet CI BDN.benchmark
+      - Garnet Nightly Tests
     types:
       - completed
 permissions:
@@ -17,6 +19,7 @@ permissions:
 
 jobs:
   deploy:
+    if: always()
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
     defaults:
@@ -38,11 +41,43 @@ jobs:
           sparse-checkout: |
             website/static/charts
           path: continuousbenchmark_net80
+      - uses: actions/checkout@v4
+        with:
+          ref: allure_data_history
+          path: allure_data_history
       - name: Copy charts
         run: |
           mkdir -p static/charts
           cp ../continuousbenchmark/website/static/charts/* static/charts
           cp ../continuousbenchmark_net80/website/static/charts/data.js static/charts/data_net80.js
+
+      # Download the current allure_report artifact which is big with A LOT of test result files
+      # Nightly run does not put full allure_report up in the allure_data_history branch to keep that branch small
+      - name: Download Allure artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-report
+          path: allure_artifact
+      # The one thing that is pulled from allure_data_history branch is the historical test result data
+      # This data is then copied into the downloaded allure_report to create a full report with history
+      - name: Copy Allure report
+        run: |
+          mkdir -p static/allure
+
+          # Base: Allure full report from Nightly Run artifact
+          if [ -d "allure_artifact/allure-report" ]; then
+            cp -R allure_artifact/allure-report/* static/allure
+          else
+            echo "Allure artifact not present (likely triggered by BDN run, which does not produce an Allure report); skipping base report copy."
+          fi
+
+          # Overlay: history from branch (always available)
+          if [ -d "../allure_data_history/test/Allure/history" ]; then
+            cp -R ../allure_data_history/test/Allure/history static/allure/history
+          else
+            echo "Allure history not present (likely triggered by BDN run, which does not produce Allure history); skipping history overlay."
+          fi
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
