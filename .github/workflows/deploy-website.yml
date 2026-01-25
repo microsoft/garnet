@@ -51,9 +51,13 @@ jobs:
           cp ../continuousbenchmark/website/static/charts/* static/charts
           cp ../continuousbenchmark_net80/website/static/charts/data.js static/charts/data_net80.js
 
+      - name: DEBUG Show triggering workflow name
+        run: echo ${{ github.event.workflow_run.name }}
+
       # Download the current allure_report artifact which is big with A LOT of test result files
       # Nightly run does not put full allure_report up in the allure_data_history branch to keep that branch small
       - name: Download Allure artifact
+        if: ${{ github.event.workflow_run.name == 'Garnet Nightly Tests' }}
         uses: actions/download-artifact@v4
         with:
           name: allure-report
@@ -61,6 +65,7 @@ jobs:
       # The one thing that is pulled from allure_data_history branch is the historical test result data
       # This data is then copied into the downloaded allure_report to create a full report with history
       - name: Copy Allure report
+        if: ${{ github.event.workflow_run.name == 'Garnet Nightly Tests' }}
         run: |
           mkdir -p static/allure
 
@@ -68,14 +73,14 @@ jobs:
           if [ -d "allure_artifact/allure-report" ]; then
             cp -R allure_artifact/allure-report/* static/allure
           else
-            echo "Allure artifact not present (likely triggered by BDN run, which does not produce an Allure report); skipping base report copy."
+            echo "Allure artifact missing; skipping base report copy."
           fi
 
-          # Overlay: history from branch (always available)
+          # Overlay: history from branch
           if [ -d "../allure_data_history/test/Allure/history" ]; then
             cp -R ../allure_data_history/test/Allure/history static/allure/history
           else
-            echo "Allure history not present (likely triggered by BDN run, which does not produce Allure history); skipping history overlay."
+            echo "Allure history missing; skipping history overlay."
           fi
 
       - uses: actions/setup-node@v4
