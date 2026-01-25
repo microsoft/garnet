@@ -4,6 +4,7 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -11,8 +12,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
-    [TestFixture]
-    public class GarnetServerTcpTests
+    [AllureNUnit]
+    [TestFixture, NonParallelizable]
+    public class GarnetServerTcpTests : AllureTestBase
     {
         private GarnetServer server;
 
