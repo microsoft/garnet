@@ -16,7 +16,7 @@ namespace Tsavorite.core
     {
         private readonly TsavoriteKV<TStoreFunctions, TAllocator> store;
         private readonly TAllocator allocator;
-        private readonly AllocatorBase<TStoreFunctions, TAllocator> allocatorBase;
+        internal readonly AllocatorBase<TStoreFunctions, TAllocator> allocatorBase;
 
         /// <summary>
         /// Constructor
@@ -54,29 +54,6 @@ namespace Tsavorite.core
         /// Beginning address of log
         /// </summary>
         public long BeginAddress => allocatorBase.BeginAddress;
-
-        /// <summary>
-        /// Number of pages left empty or unallocated in the in-memory buffer (between 0 and BufferSize-1)
-        /// </summary>
-        public int EmptyPageCount
-        {
-            get => allocatorBase.EmptyPageCount;
-            set { allocatorBase.EmptyPageCount = value; }
-        }
-
-        /// <summary>
-        /// Maximum possible number of empty pages in Allocator
-        /// </summary>
-        public int MaxEmptyPageCount => allocatorBase.MaxEmptyPageCount;
-
-        /// <summary>
-        /// Minimum possible number of empty pages in Allocator
-        /// </summary>
-        public int MinEmptyPageCount
-        {
-            get => allocatorBase.MinEmptyPageCount;
-            set { allocatorBase.MinEmptyPageCount = value; }
-        }
 
         /// <summary>
         /// <see cref="ObjectIdMap"/> for serializing/deserializing <see cref="DiskLogRecord"/>.
@@ -141,15 +118,22 @@ namespace Tsavorite.core
         public void Truncate() => ShiftBeginAddress(BeginAddress, truncateLog: true);
 
         /// <summary>
-        /// Shift log head address to prune memory foorprint of hybrid log
+        /// Shift log head address to prune memory footprint of hybrid log
         /// </summary>
         /// <param name="newHeadAddress">Address to shift head until</param>
         /// <param name="wait">Wait for operation to complete (may involve page flushing and closing)</param>
-        public void ShiftHeadAddress(long newHeadAddress, bool wait)
+        public void ShiftHeadAddress(long newHeadAddress, bool wait) => ShiftAddresses(newHeadAddress, newHeadAddress, wait);
+
+        /// <summary>
+        /// Shift log readonly and head addresses
+        /// </summary>
+        /// <param name="newReadOnlyAddress">New ReadOnlyAddress</param>
+        /// <param name="newHeadAddress">New HeadAddress</param>
+        /// <param name="wait">Wait for operation to complete (may involve page flushing and closing)</param>
+        public void ShiftAddresses(long newReadOnlyAddress, long newHeadAddress, bool wait)
         {
-            // First shift read-only
-            // Force wait so that we do not close unflushed page
-            ShiftReadOnlyAddress(newHeadAddress, true);
+            // First shift read-only; force wait so that we do not close unflushed page
+            ShiftReadOnlyAddress(newReadOnlyAddress, true);
 
             // Then shift head address. If we don't have the epoch, acquire it only long enough to launch the shift.
             if (store.epoch.ResumeIfNotProtected())
@@ -194,7 +178,7 @@ namespace Tsavorite.core
         /// To scan the historical part of the log, use the Scan(...) method
         /// </summary>
         /// <param name="evictionObserver">Observer to which scan iterator is pushed</param>
-        public IDisposable SubscribeEvictions(ITsavoriteRecordObserver<ITsavoriteScanIterator> evictionObserver)
+        public IDisposable SubscribeEvictions(IObserver<ITsavoriteScanIterator> evictionObserver)
         {
             allocatorBase.onEvictionObserver = evictionObserver;
             if (evictionObserver is LogSizeTracker<TStoreFunctions, TAllocator> tracker)
@@ -205,16 +189,10 @@ namespace Tsavorite.core
         /// <summary>
         /// Wrapper to help dispose the subscription
         /// </summary>
-        class LogSubscribeDisposable : IDisposable
+        class LogSubscribeDisposable(AllocatorBase<TStoreFunctions, TAllocator> allocator, bool isReadOnly) : IDisposable
         {
-            private readonly AllocatorBase<TStoreFunctions, TAllocator> allocator;
-            private readonly bool readOnly;
-
-            public LogSubscribeDisposable(AllocatorBase<TStoreFunctions, TAllocator> allocator, bool isReadOnly)
-            {
-                this.allocator = allocator;
-                readOnly = isReadOnly;
-            }
+            private readonly AllocatorBase<TStoreFunctions, TAllocator> allocator = allocator;
+            private readonly bool readOnly = isReadOnly;
 
             public void Dispose()
             {
@@ -232,11 +210,11 @@ namespace Tsavorite.core
         /// <param name="wait">Wait to ensure shift is complete (may involve page flushing)</param>
         public void ShiftReadOnlyAddress(long newReadOnlyAddress, bool wait)
         {
-            if (!store.epoch.ThisInstanceProtected())
+            // If we don't have the epoch, acquire it only long enough to launch the shift.
+            if (store.epoch.ResumeIfNotProtected())
             {
                 try
                 {
-                    store.epoch.Resume();
                     _ = allocatorBase.ShiftReadOnlyAddress(newReadOnlyAddress);
                 }
                 finally

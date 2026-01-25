@@ -250,13 +250,15 @@ namespace Garnet.server
                 return;
             }
 
-            // Parse & adjust the configured page size
-            var pageSize = ServerOptions.ParseSize(storeWrapper.serverOptions.PageSize, out _);
-            pageSize = ServerOptions.PreviousPowerOf2(pageSize);
+            // If the object store size tracker is not running, return an error
+            if (storeWrapper.sizeTracker == null)
+            {
+                AppendErrorWithTemplate(sbErrorMsg, CmdStrings.GenericErrHeapMemorySizeTrackerNotRunning, CmdStrings.HeapMemory);
+                return;
+            }
 
-            // Compute the new minimum empty page count and update the store's log accessor
-            var newMinEmptyPageCount = (int)((confMemorySize - newMemorySize) / pageSize);
-            storeWrapper.store.Log.MinEmptyPageCount = newMinEmptyPageCount;
+            // Set the new target size for the object store size tracker
+            storeWrapper.sizeTracker.TargetSize = newMemorySize;
         }
 
         private void HandleIndexSizeChange(string indexSize, StringBuilder sbErrorMsg)

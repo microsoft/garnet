@@ -89,11 +89,6 @@ namespace Tsavorite.core
         public int ObjectLogSegmentSizeBits = 33;   // 8GB
 
         /// <summary>
-        /// Controls how many pages should be empty to account for non-power-of-two-sized log
-        /// </summary>
-        public int MinEmptyPageCount = 0;
-
-        /// <summary>
         /// Fraction of log marked as mutable (in-place updates)
         /// </summary>
         public double MutableFraction = 0.9;

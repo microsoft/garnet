@@ -42,6 +42,8 @@ namespace Tsavorite.core
             var success = CASRecordIntoChain(newLogicalAddress, ref newLogRecord, ref stackCtx);
             if (success)
             {
+                // We don't call PostInitialWriter here so we must do the size tracking separately.
+                hlogBase.logSizeTracker?.UpdateSize(in newLogRecord, add: true);
                 newLogRecord.InfoRef.UnsealAndValidate();
 
                 pendingContext.logicalAddress = newLogicalAddress;

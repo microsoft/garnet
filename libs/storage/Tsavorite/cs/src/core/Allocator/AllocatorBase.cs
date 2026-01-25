@@ -90,17 +90,11 @@ namespace Tsavorite.core
         /// <summary>Segment size</summary>
         protected readonly long SegmentSize;
 
-        /// <summary>How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)</summary>
-        private int emptyPageCount;
-
-        /// <summary>Minimum number of empty pages in circular buffer to be maintained to account for non-power-of-two size</summary>
-        private int minEmptyPageCount;
-
         /// <summary>HeadAddress offset from tail (currently page-aligned)</summary>
         internal long HeadAddressLagOffset;
 
         /// <summary>Log mutable fraction</summary>
-        protected readonly double LogMutableFraction;
+        internal readonly double logMutableFraction;
 
         /// <summary>ReadOnlyAddress offset from tail (currently page-aligned)</summary>
         protected long ReadOnlyAddressLagOffset;
@@ -646,16 +640,13 @@ namespace Tsavorite.core
 
             BufferSizeMask = BufferSize - 1;
 
-            LogMutableFraction = logSettings.MutableFraction;
+            logMutableFraction = logSettings.MutableFraction;
 
             // Segment size
             LogSegmentSizeBits = logSettings.SegmentSizeBits;
             SegmentSize = 1L << LogSegmentSizeBits;
             if (SegmentSize < PageSize)
                 throw new TsavoriteException($"Segment ({SegmentSize}) must be at least of page size ({PageSize})");
-
-            MinEmptyPageCount = logSettings.MinEmptyPageCount;
-            EmptyPageCount = logSettings.MinEmptyPageCount;
 
             PageStatusIndicator = new FullPageStatus[BufferSize];
 
@@ -804,67 +795,8 @@ namespace Tsavorite.core
         /// <summary>High-water mark of the number of memory pages that were allocated in the circular buffer</summary>
         public int MaxAllocatedPageCount;
 
-        /// <summary>Maximum possible number of empty pages in circular buffer</summary>
-        public int MaxEmptyPageCount => BufferSize - 1;
-
-        /// <summary>Minimum number of empty pages in circular buffer to be maintained to account for non-power-of-two size</summary>
-        public int MinEmptyPageCount
-        {
-            get => minEmptyPageCount;
-            set
-            {
-                minEmptyPageCount = value;
-                if (emptyPageCount != minEmptyPageCount)
-                    EmptyPageCount = minEmptyPageCount;
-            }
-        }
-
         /// <summary>Maximum memory size in bytes</summary>
-        public long MaxMemorySizeBytes => (BufferSize - MinEmptyPageCount) * (long)PageSize;
-
-        /// <summary>How many pages do we leave empty in the in-memory buffer (between 0 and BufferSize-1)</summary>
-        public int EmptyPageCount
-        {
-            get => emptyPageCount;
-
-            set
-            {
-                // HeadOffset lag (from tail).
-                var headOffsetLagSize = MaxEmptyPageCount;
-                if (value > headOffsetLagSize) return;
-                if (value < MinEmptyPageCount) return;
-
-                int oldEPC;
-                lock (this) // linearize all setters of EmptyPageCount
-                {
-                    oldEPC = emptyPageCount;
-                    emptyPageCount = value;
-                    headOffsetLagSize -= emptyPageCount;
-
-                    // Address lag offsets correspond to the number of pages "behind" TailPageOffset (the tail in the circular buffer).
-                    ReadOnlyAddressLagOffset = GetLogicalAddressOfStartOfPage((long)(LogMutableFraction * headOffsetLagSize));
-                    HeadAddressLagOffset = GetLogicalAddressOfStartOfPage(headOffsetLagSize);
-                }
-
-                // Force eviction now if empty page count has increased
-                if (value >= oldEPC)
-                {
-                    var epochTaken = epoch.ResumeIfNotProtected();
-                    try
-                    {
-                        // These shifts adjust via application of the lag addresses.
-                        var _tailAddress = GetTailAddress();
-                        PageAlignedShiftReadOnlyAddress(_tailAddress);
-                        PageAlignedShiftHeadAddress(_tailAddress);
-                    }
-                    finally
-                    {
-                        if (epochTaken)
-                            epoch.Suspend();
-                    }
-                }
-            }
-        }
+        public long MaxMemorySizeBytes => BufferSize * PageSize;
 
         /// <summary>Increments AllocatedPageCount. Updates MaxAllocatedPageCount if a higher number of pages have been allocated.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -920,10 +852,6 @@ namespace Tsavorite.core
         /// <summary>Get page index for address</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int GetPageIndexForAddress(long logicalAddress) => GetPageIndexForPage(GetPageOfAddress(logicalAddress, LogPageSizeBits));
-
-        /// <summary>Get capacity (number of pages)</summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int GetCapacityNumPages() => BufferSize;
 
         /// <summary>Get page size</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -999,9 +927,9 @@ namespace Tsavorite.core
             => throw new TsavoriteException(message);
 
         /// <summary>
-        /// Whether we need to shift addresses when turning the page.
+        /// Whether we need to shift HeadAddress and ReadOnlyAddress to higher addresses when turning the page.
         /// </summary>
-        /// <param name="pageIndex">The page we are turning to</param>
+        /// <param name="pageIndex">The page we are turning to; it has just been allocated and TailAddress will be moving to this page</param>
         /// <param name="localTailPageOffset">Local copy of PageOffset (includes the addition of numSlots)</param>
         /// <param name="numSlots">Size of new allocation</param>
         /// <returns></returns>
@@ -1056,9 +984,9 @@ namespace Tsavorite.core
         {
             var pageIndex = localTailPageOffset.Page + 1;
 
-            // This thread is trying to allocate at an offset past where one or more previous threads
-            // already overflowed; exit and allow the first overflow thread to proceed. Do not try to remove
-            // the update to TailPageOffset that was done by this thread; that will be overwritten when
+            // See if this thread is trying to allocate at an offset past where one or more previous threads
+            // already overflowed; if so, exit and allow the first overflow thread to proceed. Do not try to
+            // remove the update to TailPageOffset that was done by this thread; that will be overwritten when
             // the first overflow thread finally completes and updates TailPageOffset.
             if (localTailPageOffset.Offset - numSlots > PageSize)
             {
@@ -1108,6 +1036,18 @@ namespace Tsavorite.core
             localTailPageOffset.Offset = numSlots + pageHeaderSize;
             TailPageOffset = localTailPageOffset;
 
+            // If the logSizeTracker is active then we may have expanded the AllocatedPageCount, and thus may be able to increase ReadOnlyAddress
+            // and flush, which will allow the logSizeTracker to evict more records when needed, such as when we add the page's size to the tracker.
+            if (logSizeTracker is not null)
+            {
+                var newReadOnlyAddress = CalculateReadOnlyAddress(GetTailAddress(), HeadAddress);
+                if (newReadOnlyAddress > ReadOnlyAddress)
+                    _ = ShiftReadOnlyAddress(newReadOnlyAddress);
+
+                // Now let the tracker know we've added a page's worth of memory.
+                logSizeTracker.IncrementSize(PageSize);
+            }
+
             // At this point the slot is allocated and we are not allowed to refresh epochs any longer.
             // Return the first logical address after the page header.
             return GetLogicalAddressOfStartOfPage(localTailPageOffset.Page) + pageHeaderSize;   // Same as GetFirstValidLogicalAddressOnPage(localTailPageOffset.Page) but faster
@@ -1126,8 +1066,8 @@ namespace Tsavorite.core
             localTailPageOffset.PageAndOffset = TailPageOffset.PageAndOffset;
             Debug.Assert(localTailPageOffset.Offset >= pageHeaderSize, $"TailPageOffset consistency error: Offset {localTailPageOffset.Offset} should equal be >= pageHeaderSize {pageHeaderSize}");
 
-            // Necessary to check because threads keep retrying and we do not
-            // want to overflow the offset more than once per thread
+            // If the TailAddress.Offset is already past PageSize, another thread has incremented it and is working in HandlePageOverflow.
+            // Necessary to check because threads keep retrying and we do not want to overflow the offset more than once per thread.
             if (localTailPageOffset.Offset > PageSize)
             {
                 if (NeedToWait(localTailPageOffset.Page + 1))
@@ -1169,6 +1109,19 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Calculate the new ReadOnlyAddress from the inputs.
+        /// </summary>
+        /// <param name="tailAddress">Either the next TailAddress if doing an allocation, or the current TailAddress if trimming memory size.</param>
+        /// <param name="headAddress">Either the current HeadAddress if doing an allocation, or the calculated HeadAddress if trimming memory size.</param>
+        /// <returns></returns>
+        internal long CalculateReadOnlyAddress(long tailAddress, long headAddress)
+        {
+            // Snap ReadOnlyAddress to the next highest page.
+            var readOnlyAddress = headAddress + (long)(logMutableFraction * (tailAddress - headAddress));
+            return RoundUp(readOnlyAddress, PageSize);
+        }
+
+        /// <summary>
         /// If the page we are trying to allocate is past the last page with an unclosed address region, 
         /// then we can retry immediately because this is called after NeedToWait, so we know we've 
         /// completed the wait on localFlushEvent for the necessary pages to be flushed, and are waiting for
@@ -1182,7 +1135,9 @@ namespace Tsavorite.core
         /// we have to wait for the localFlushEvent.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool NeedToWait(int page) => page >= BufferSize + GetPage(FlushedUntilAddress);
+        private bool NeedToWait(int page)
+            => page >= BufferSize + GetPage(FlushedUntilAddress)
+                || (logSizeTracker is not null && logSizeTracker.IsSizeBeyondLimit);
 
         /// <summary>Used by applications to make the current state of the database immutable quickly</summary>
         public bool ShiftReadOnlyToTail(out long tailAddress, out SemaphoreSlim notifyDone)
@@ -1452,7 +1407,7 @@ namespace Tsavorite.core
 
             if (GetOffsetOnPage(newHeadAddress) != 0)
             {
-                // TODO: HeadAddress advancement at a finer grain than page-level
+                ; // TODO: HeadAddress advancement at a finer grain than page-level; currently nothing needs to be done
             }
             if (MonotonicUpdate(ref HeadAddress, newHeadAddress, out _))
             {

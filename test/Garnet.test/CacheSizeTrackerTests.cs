@@ -56,11 +56,11 @@ namespace Garnet.test
         public void IncreaseEmptyPageCountTest()
         {
             var epcEvent = new ManualResetEventSlim(false);
-            int emptyPageCountIncrements = 0;
-            cacheSizeTracker.mainLogTracker.PostEmptyPageCountIncrease = (int count) => { emptyPageCountIncrements++; if (emptyPageCountIncrements == 3) epcEvent.Set(); };
+            var emptyPageCountIncrements = 0;
+            cacheSizeTracker.mainLogTracker.PostMemoryTrim = (allocatedPageCount, headAddress) => { emptyPageCountIncrements++; if (emptyPageCountIncrements == 3) epcEvent.Set(); };
 
             ClassicAssert.AreEqual(0, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
-            ClassicAssert.AreEqual(0, cacheSizeTracker.mainLogTracker.logAccessor.EmptyPageCount);
+            ClassicAssert.AreEqual(cacheSizeTracker.mainLogTracker.logAccessor.BufferSize, cacheSizeTracker.mainLogTracker.logAccessor.AllocatedPageCount);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -72,13 +72,13 @@ namespace Garnet.test
             const int MemorySizePerEntry = 208;
 
             ClassicAssert.AreEqual(MemorySizePerEntry, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
-            ClassicAssert.AreEqual(0, cacheSizeTracker.mainLogTracker.logAccessor.EmptyPageCount); // Ensure empty page count hasn't changed as EPC is still within the min & max limits
+            ClassicAssert.AreEqual(cacheSizeTracker.mainLogTracker.logAccessor.BufferSize, cacheSizeTracker.mainLogTracker.logAccessor.AllocatedPageCount); // Ensure APC hasn't changed as memory is still within the min & max limits
 
             // K/V lengths fit into a single byte each, so the record size is: RecordInfo, MinLengthMetadataBytes, keyLength, valueLength; the total rounded up to record alignment.
             // ValueLength is 4 for the ObjectId, so this becomes 8 + 3 + (11) + 4 totalling 26, rounding up to 32 which is a even divisor for the page size.
             // First valid address is 64, so a memory size of 1k and page size of 512b allow 28 total records. Create enough records to cross a page boundary.
             const int NumRecords = 20;
-            for (int i = 2; i <= NumRecords; i++)
+            for (var i = 2; i <= NumRecords; i++)
                 db.HashSet($"user:user{i:00}", [new HashEntry("Title", "Faster")]);
             ClassicAssert.AreEqual(NumRecords * MemorySizePerEntry, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
 
@@ -104,10 +104,10 @@ namespace Garnet.test
             var readCacheEmptyPageCountIncrements = 0;
             var readCacheEpcEvent = new ManualResetEventSlim(false);
 
-            cacheSizeTracker.readCacheTracker.PostEmptyPageCountIncrease = (int count) => { readCacheEmptyPageCountIncrements++; readCacheEpcEvent.Set(); };
+            cacheSizeTracker.readCacheTracker.PostMemoryTrim = (allocatedPageDCount, headAddress) => { readCacheEmptyPageCountIncrements++; readCacheEpcEvent.Set(); };
 
             ClassicAssert.AreEqual(0, cacheSizeTracker.readCacheTracker.LogHeapSizeBytes);
-            ClassicAssert.AreEqual(0, cacheSizeTracker.readCacheTracker.logAccessor.EmptyPageCount);
+            ClassicAssert.AreEqual(cacheSizeTracker.mainLogTracker.logAccessor.BufferSize, cacheSizeTracker.readCacheTracker.logAccessor.AllocatedPageCount);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);

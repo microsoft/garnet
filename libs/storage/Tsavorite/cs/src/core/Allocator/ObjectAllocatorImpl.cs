@@ -390,9 +390,8 @@ namespace Tsavorite.core
 
             ClearPage(page, 0);
 
-            // If all pages are being used (i.e. EmptyPageCount == 0), nothing to re-utilize by adding
-            // to overflow pool.
-            if (EmptyPageCount > 0)
+            // If the logSizeTracker is not active, then all pages are used once allocated so there's nothing to add to the overflow pool.
+            if (logSizeTracker is not null)
                 ReturnPage((int)(page % BufferSize));
         }
 
