@@ -28,7 +28,7 @@ namespace Garnet.cluster
         readonly ILogger logger;
         TsavoriteLogScanSingleIterator replayIterator;
         SingleWriterMultiReaderLock activeReplay;
-        internal readonly ReplayWorkItem replayWorkItem;
+        internal readonly ReplayBatchContext replayBatchContext;
         readonly ReplicaReplayTask[] replayTasks;
         readonly TsavoriteLog physicalSublog;
 
@@ -49,7 +49,7 @@ namespace Garnet.cluster
             var replayTaskCount = serverOptions.AofReplayTaskCount;
             if (replayTaskCount > 1)
             {
-                replayWorkItem = new ReplayWorkItem(replayTaskCount);
+                replayBatchContext = new ReplayBatchContext(replayTaskCount);
                 replayTasks = [.. Enumerable.Range(0, replayTaskCount).Select(i => new ReplicaReplayTask(i, this, clusterProvider, cts, logger))];
                 foreach (var replayTask in replayTasks)
                     _ = Task.Run(async () => await replayTask.ContinuousBackgroundReplay());
@@ -86,26 +86,21 @@ namespace Garnet.cluster
             }
             else
             {
-                // Wait for previous replay batch to finish
-                if (!replayWorkItem.WorkCompleted.Wait(serverOptions.ReplicaSyncTimeout, cts.Token))
-                    throw new GarnetException("Consume background replay timed-out!");
+                replayBatchContext.Record = record;
+                replayBatchContext.RecordLength = recordLength;
+                replayBatchContext.CurrentAddress = currentAddress;
+                replayBatchContext.NextAddress = nextAddress;
+                replayBatchContext.IsProtected = isProtected;
+                replayBatchContext.LeaderFollowerBarrier.SignalWorkReady();
 
-                replayWorkItem.WorkCompleted.Reset();
-                var replayBufferSlot = replayWorkItem;
-                replayBufferSlot.Record = record;
-                replayBufferSlot.RecordLength = recordLength;
-                replayBufferSlot.CurrentAddress = currentAddress;
-                replayBufferSlot.NextAddress = nextAddress;
-                replayBufferSlot.IsProtected = isProtected;
-                replayBufferSlot.WorkCompleted.Reset();
-                replayBufferSlot.Reset();
+                // Set replication offset currentAddress
+                replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
 
-                foreach (var replayTask in replayTasks)
-                    replayTask.Append(replayWorkItem);
+                // Wait for replay to complete.
+                replayBatchContext.LeaderFollowerBarrier.WaitCompleted(serverOptions.ReplicaSyncTimeout, cts.Token);
 
-                // Wait for replay to complete
-                if (!replayWorkItem.WorkCompleted.Wait(serverOptions.ReplicaSyncTimeout, cts.Token))
-                    throw new GarnetException("Consume background replay timed-out!");
+                // Advertise new replicaton offset after replay completes
+                replicationManager.SetSublogReplicationOffset(physicalSublogIdx, nextAddress);
             }
         }
 

@@ -509,14 +509,17 @@ namespace Garnet.server
         /// <param name="replayTaskIdx"></param>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
-        public bool ShouldReplay(byte* ptr, int replayTaskIdx)
+        public bool ShouldReplay(byte* ptr, int replayTaskIdx, out long sequenceNumber)
         {
             var header = *(AofHeader*)ptr;
             var replayHeaderType = (AofHeaderType)header.padding;
+            sequenceNumber = 0L;
             switch (replayHeaderType)
             {
                 // Check if should replay entry by inspecting key
                 case AofHeaderType.ShardedHeader:
+                    var shardedHeader = *(AofShardedHeader*)ptr;
+                    sequenceNumber = shardedHeader.sequenceNumber;
                     if (header.opType == AofEntryType.RefreshSublogTail)
                     {
                         // refresh sublog tail watermark can be replayed by all tasks
@@ -534,6 +537,7 @@ namespace Garnet.server
                 // NOTE: HeaderType transactions include MULTI-EXEC transactions, custom txn procedures, and any operation that executes across physical and virtual sublogs (e.g. checkpoint, flushdb)
                 case AofHeaderType.TransactionHeader:
                     var txnHeader = *(AofTransactionHeader*)ptr;
+                    sequenceNumber = txnHeader.shardedHeader.sequenceNumber;
                     var bitVector = BitVector.CopyFrom(new Span<byte>(txnHeader.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
                     return bitVector.IsSet(replayTaskIdx);
                 default:

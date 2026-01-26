@@ -3,7 +3,6 @@
 
 using System;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
 using Garnet.server;
@@ -20,23 +19,16 @@ namespace Garnet.cluster
         ILogger logger = null)
     {
         readonly int replayTaskIdx = replayIdx;
-        readonly GarnetServerOptions serverOptions = clusterProvider.serverOptions;
         readonly ReplicaReplayDriver replayDriver = replayDriver;
         readonly ReplicationManager replicationManager = clusterProvider.replicationManager;
         readonly GarnetAppendOnlyFile appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
-        readonly Channel<ReplayWorkItem> channel = Channel.CreateUnbounded<ReplayWorkItem>(new() { SingleWriter = true, SingleReader = false, AllowSynchronousContinuations = false });
+        readonly ReplayBatchContext replayBatchContext = replayDriver.replayBatchContext;
         readonly CancellationTokenSource cts = cts;
         readonly TsavoriteLog replaySublog = clusterProvider.storeWrapper.appendOnlyFile.Log.GetSubLog(replayDriver.physicalSublogIdx);
         readonly ILogger logger = logger;
 
-        internal void Append(ReplayWorkItem item)
-        {
-            if (!channel.Writer.TryWrite(item))
-                throw new GarnetException("Failed to append to channel");
-        }
-
         /// <summary>
-        /// Asynchronously replays log entries from a background channel, processing and applying them for replication
+        /// Asynchronously replays log entries using SemaphoreSlim coordination, processing and applying them for replication
         /// and consistency across sublogs.
         /// </summary>
         /// <returns>A task representing the asynchronous replay operation.</returns>
@@ -44,21 +36,30 @@ namespace Garnet.cluster
         {
             var physicalSublogIdx = replayDriver.physicalSublogIdx;
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
-            var reader = channel.Reader;
-            await foreach (var entry in reader.ReadAllAsync(cts.Token))
+            
+            while (!cts.Token.IsCancellationRequested)
             {
+                try
+                {
+                    await replayBatchContext.LeaderFollowerBarrier.WaitReadyWorkAsync(cancellationToken: cts.Token);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{method} failed at WaitAsync", nameof(ContinuousBackgroundReplay));
+                    cts.Cancel();
+                    break;
+                }
+
                 unsafe
                 {
-                    var record = entry.Record;
-                    var recordLength = entry.RecordLength;
-                    var currentAddress = entry.CurrentAddress;
-                    var nextAddress = entry.NextAddress;
-                    var isProtected = entry.IsProtected;
+                    var record = replayBatchContext.Record;
+                    var recordLength = replayBatchContext.RecordLength;
+                    var currentAddress = replayBatchContext.CurrentAddress;
+                    var nextAddress = replayBatchContext.NextAddress;
+                    var isProtected = replayBatchContext.IsProtected;
                     var ptr = record;
 
-                    if (replayTaskIdx == 0)
-                        replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
-
+                    var maxSequenceNumber = 0L;
                     try
                     {
                         // logger?.LogError("[{sublogIdx},{replayIdx}] = {currentAddress} -> {nextAddress}", sublogIdx, replayIdx, currentAddress, nextAddress);                        
@@ -70,7 +71,7 @@ namespace Garnet.cluster
                             if (payloadLength > 0)
                             {
                                 var entryPtr = ptr + entryLength;
-                                if (replicationManager.AofProcessor.ShouldReplay(entryPtr, replayTaskIdx))
+                                if (replicationManager.AofProcessor.ShouldReplay(entryPtr, replayTaskIdx, out var sequenceNumber))
                                 {
                                     replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart);
                                     // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation
@@ -81,6 +82,7 @@ namespace Garnet.cluster
                                         replicationManager.ReplicationCheckpointStartOffset[physicalSublogIdx] = replicationManager.GetSublogReplicationOffset(physicalSublogIdx);
                                     }
                                 }
+                                maxSequenceNumber = Math.Max(sequenceNumber, maxSequenceNumber);
                                 entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                             }
                             else if (payloadLength < 0)
@@ -99,36 +101,20 @@ namespace Garnet.cluster
                             }
                             ptr += entryLength;
                         }
+
+                        // Update max sequence number for this virtual sublog which is mapped
+                        appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, maxSequenceNumber);
                     }
                     catch (Exception ex)
                     {
-                        logger?.LogError(ex, "{method}", nameof(ContinuousBackgroundReplay));
+                        logger?.LogError(ex, "{method} failed at replaying", nameof(ContinuousBackgroundReplay));
                         cts.Cancel();
-                    }
-
-                    var leaderBarrier = entry.LeaderBarrier;
-                    try
-                    {
-                        var isLeader = leaderBarrier.TrySignalAndWait(out var signalException, serverOptions.ReplicaSyncTimeout, cts.Token);
-                        if (isLeader)
-                        {
-                            // Update key sequence tracker after everyone replayed their portion
-                            // NOTE:
-                            //      We need to force an update here to ensure prefix consistency across virtual sublogs                            
-                            // PhysicalSublog:
-                            //      ReplayTask1 (Virtual sublog): [(A,1) ...  (A,2)] A,1 A,2 B,3 
-                            //      ReplayTask2 (Virtual sublog): [ ... (B,3) (C,4)]
-                            appendOnlyFile.readConsistencyManager.UpdateSublogMaxSequenceNumber(physicalSublogIdx);
-                            // Update replication offset
-                            replicationManager.SetSublogReplicationOffset(physicalSublogIdx, nextAddress);
-                            leaderBarrier.Release();
-                        }
+                        break;
                     }
                     finally
                     {
-                        // Ensure main thread always gets notified and released
-                        if (replayTaskIdx == 0)
-                            entry.WorkCompleted.Set();
+                        // Signal work completion after processing
+                        replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
                     }
                 }
             }

@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-using System.Threading;
 using Garnet.common;
 
 namespace Garnet.server
@@ -10,7 +9,7 @@ namespace Garnet.server
     /// Replay work item used with recover/replication replay.
     /// </summary>
     /// <param name="replayTasks"></param>
-    public unsafe class ReplayWorkItem(int replayTasks)
+    public unsafe class ReplayBatchContext(int replayTasks)
     {
         /// <summary>
         /// Record pointer.
@@ -33,25 +32,8 @@ namespace Garnet.server
         /// </summary>
         public bool IsProtected;
         /// <summary>
-        /// Signals when work is ready to be processed.
-        /// </summary>
-        public SemaphoreSlim WorkReady = new(0);
-        /// <summary>
-        /// Signal processing completion.
-        /// </summary>
-        public ManualResetEventSlim WorkCompleted = new(true);
-        /// <summary>
         /// Leader barrier to coordinate replication offset update.
         /// </summary>
-        public LeaderBarier LeaderBarrier = new(replayTasks);
-
-        /// <summary>
-        /// Reset signals associated with this instance.
-        /// </summary>
-        public void Reset()
-        {
-            WorkCompleted.Reset();
-            LeaderBarrier.Reset();
-        }
+        public LeaderFollowerBarrier LeaderFollowerBarrier = new(replayTasks);
     }
 }
