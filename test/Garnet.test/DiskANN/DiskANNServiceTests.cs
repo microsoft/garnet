@@ -11,7 +11,7 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
-namespace Garnet.test
+namespace Garnet.test.DiskANN
 {
     [TestFixture]
     public class DiskANNServiceTests
