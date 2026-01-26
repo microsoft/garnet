@@ -16,6 +16,7 @@ on:
       - completed
 permissions:
   contents: write
+  actions: read  
 
 jobs:
   deploy:
@@ -62,6 +63,9 @@ jobs:
         with:
           name: allure-report
           path: allure_artifact
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
       # The one thing that is pulled from allure_data_history branch is the historical test result data
       # This data is then copied into the downloaded allure_report to create a full report with history
       - name: Copy Allure report
