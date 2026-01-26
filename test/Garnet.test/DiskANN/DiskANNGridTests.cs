@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
@@ -11,9 +12,9 @@ using StackExchange.Redis;
 namespace Garnet.test.DiskANN
 {
     [TestFixture]
-    class DiskANNGridTests
+    public class DiskANNGridTests
     {
-        GarnetServer server;
+        private GarnetServer server;
 
         [SetUp]
         public void Setup()
@@ -31,17 +32,26 @@ namespace Garnet.test.DiskANN
         }
 
         [Test]
-        [TestCase(100, 1, "NOQUANT")]
-        [TestCase(10, 2, "NOQUANT")]
-        [TestCase(3, 7, "NOQUANT")]
-        [TestCase(4, 5, "NOQUANT")]
-        public void SearchVectorsInGrid(int gridSize, int dimension, string quantType)
+        [TestCase(100, 1, VectorQuantType.XPreQ8)]
+        [TestCase(10, 2, VectorQuantType.XPreQ8)]
+        [TestCase(3, 7, VectorQuantType.XPreQ8)]
+        [TestCase(4, 5, VectorQuantType.XPreQ8)]
+        public void SearchVectorsInGrid(int gridSize, int dimension, VectorQuantType quantType)
         {
+            string quantTypeStr = quantType switch
+            {
+                VectorQuantType.NoQuant => "NOQUANT",
+                VectorQuantType.Bin => "BIN",
+                VectorQuantType.Q8 => "Q8",
+                VectorQuantType.XPreQ8 => "XPREQ8",
+                _ => throw new ArgumentException("Invalid quant type")
+            };
+
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            var key = $"gridset_{gridSize}_{dimension}_{quantType}";
-            var addedGridVectors = AddGridVectors(db, key, dimension, gridSize, quantType);
+            var key = $"gridset_{gridSize}_{dimension}_{quantTypeStr}";
+            var addedGridVectors = AddGridVectors(db, key, dimension, gridSize, quantTypeStr);
 
             // VSIM using existing elements
             var vsimArgs = new object[5];
@@ -86,7 +96,7 @@ namespace Garnet.test.DiskANN
             }
         }
 
-        List<GridVector> GenerateGridVectors(int dimensions, int gridSize)
+        private static List<GridVector> GenerateGridVectors(int dimensions, int gridSize)
         {
             List<GridVector> vectors = [];
             var totalVectors = (int)Math.Pow(gridSize, dimensions);
@@ -119,7 +129,7 @@ namespace Garnet.test.DiskANN
             return vectors;
         }
 
-        Dictionary<int, GridVector> AddGridVectors(IDatabase db, string key, int dimension, int gridSize, string quantType)
+        private static Dictionary<int, GridVector> AddGridVectors(IDatabase db, string key, int dimension, int gridSize, string quantType)
         {
             var gridVectors = GenerateGridVectors(dimension, gridSize);
             List<object> baseArgs = [];
@@ -157,7 +167,7 @@ namespace Garnet.test.DiskANN
             return gridVectors.ToDictionary(gv => gv.Id);
         }
 
-        HashSet<int> GetVectorIdsForVsimResults(RedisResult[] vsimResults)
+        private static HashSet<int> GetVectorIdsForVsimResults(RedisResult[] vsimResults)
         {
             HashSet<int> ids = [];
             foreach (var item in vsimResults)
@@ -170,7 +180,7 @@ namespace Garnet.test.DiskANN
             return ids;
         }
 
-        int CalculateDistanceCountsIntersection(Dictionary<int, GridVector> gridVectors, int[] queryVector, HashSet<int> bruteForceSearch, HashSet<int> vsimSearch)
+        private static int CalculateDistanceCountsIntersection(Dictionary<int, GridVector> gridVectors, int[] queryVector, HashSet<int> bruteForceSearch, HashSet<int> vsimSearch)
         {
             var expectedDistances = CalculateCountsPerDistance(gridVectors, queryVector, bruteForceSearch);
             var actualDistances = CalculateCountsPerDistance(gridVectors, queryVector, vsimSearch);
@@ -191,7 +201,7 @@ namespace Garnet.test.DiskANN
             return intersectionCount;
         }
 
-        Dictionary<long, int> CalculateCountsPerDistance(Dictionary<int, GridVector> gridVectors, int[] queryVector, HashSet<int> vsimIdResults)
+        private static Dictionary<long, int> CalculateCountsPerDistance(Dictionary<int, GridVector> gridVectors, int[] queryVector, HashSet<int> vsimIdResults)
         {
             Dictionary<long, int> countsPerDistance = [];
             foreach (var id in vsimIdResults)
@@ -209,7 +219,7 @@ namespace Garnet.test.DiskANN
             return countsPerDistance;
         }
 
-        HashSet<int> BruteForceNearestNeighbors(Dictionary<int, GridVector> gridVectors, int[] queryVector, int count)
+        private static HashSet<int> BruteForceNearestNeighbors(Dictionary<int, GridVector> gridVectors, int[] queryVector, int count)
         {
             PriorityQueue<int, double> pq = new();
             foreach (var gridVector in gridVectors.Values)
@@ -236,7 +246,7 @@ namespace Garnet.test.DiskANN
             return result;
         }
 
-        long CalculateSquaredL2Distance(int[] vec1, int[] vec2)
+        private static long CalculateSquaredL2Distance(int[] vec1, int[] vec2)
         {
             long dist = 0;
             for (var i = 0; i < vec1.Length; i++)
@@ -248,7 +258,7 @@ namespace Garnet.test.DiskANN
             return dist;
         }
 
-        class GridVector
+        private class GridVector
         {
             public int Id;
             public byte[] IdBytes;
