@@ -476,7 +476,7 @@ namespace Garnet.test.DiskANN
             {
                 Span<byte> id2 = [4, 5, 6, 7];
                 Span<byte> elem2 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
-                var attr2 = "{\"foo\": \"bar\"}"u8;
+                ReadOnlySpan<byte> attr2 = "{\"foo\": \"bar\"}"u8;
 
                 var insertRes = NativeDiskANNMethods.insert(
                     Context, rawIndex,
