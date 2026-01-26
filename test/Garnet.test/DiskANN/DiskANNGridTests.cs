@@ -187,7 +187,7 @@ namespace Garnet.test.DiskANN
 
             // Intersect distance counts
             var intersectionCount = 0;
-            foreach(var kvp in expectedDistances)
+            foreach (var kvp in expectedDistances)
             {
                 var dist = kvp.Key;
                 var expectedCount = kvp.Value;
@@ -242,7 +242,7 @@ namespace Garnet.test.DiskANN
             {
                 result.Add(pq.Dequeue());
             }
-            
+
             return result;
         }
 
