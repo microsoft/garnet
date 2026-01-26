@@ -7,57 +7,50 @@ using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
+using System.Linq;
 
 namespace Garnet.server
 {
-    internal sealed class RecoverLogDriver : IBulkLogEntryConsumer, IDisposable
+    /// <summary>
+    /// Initializes a new instance of the RecoverLogDriver class for replaying a segment of an append-only file
+    /// for recovery.
+    /// </summary>
+    /// <param name="aofProcessor">Processor responsible for handling append-only file operations.</param>
+    /// <param name="appendOnlyFile">The append-only file to be scanned for recovery.</param>
+    /// <param name="serverOptions">Configuration options for the server.</param>
+    /// <param name="dbId">Identifier of the database we are recovering.</param>
+    /// <param name="physicalSublogIdx">Index of the physical sublog to scan.</param>
+    /// <param name="startAddress">Start address in the append-only file for recovery.</param>
+    /// <param name="untilAddress">End address in the append-only file for recovery.</param>
+    /// <param name="logger">Optional logger for diagnostic output.</param>
+    internal sealed class RecoverLogDriver(
+        AofProcessor aofProcessor,
+        GarnetAppendOnlyFile appendOnlyFile,
+        GarnetServerOptions serverOptions,
+        int dbId,
+        int physicalSublogIdx,
+        long startAddress,
+        long untilAddress,
+        ILogger logger = null) : IBulkLogEntryConsumer, IDisposable
     {
-        readonly int physicalSublogIdx;
-        readonly AofProcessor aofProcessor;
-        readonly GarnetServerOptions serverOptions;
-        readonly GarnetAppendOnlyFile appendOnlyFile;
-        readonly TsavoriteLogScanSingleIterator replayIterator;
-        readonly TsavoriteLog physicalSublog;
+        readonly int physicalSublogIdx = physicalSublogIdx;
+        readonly AofProcessor aofProcessor = aofProcessor;
+        readonly GarnetServerOptions serverOptions = serverOptions;
+        readonly GarnetAppendOnlyFile appendOnlyFile = appendOnlyFile;
+        readonly TsavoriteLogScanSingleIterator replayIterator = appendOnlyFile.ScanSingle(physicalSublogIdx, startAddress, untilAddress, scanUncommitted: true, recover: false, logger: logger);
+        readonly TsavoriteLog physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
         readonly CancellationTokenSource cts = new();
-        readonly ILogger logger = null;
-        readonly long startAddress;
-        readonly long untilAddress;
-        readonly int dbId;
-        public long ReplayedRecordCount { get; private set; } = 0;
+        readonly ILogger logger = logger;
+        readonly long startAddress = startAddress;
+        readonly long untilAddress = untilAddress;
+        readonly int dbId = dbId;
+        readonly ReplayBatchContext replayBatchContext = new (serverOptions.AofReplayTaskCount);
+        Task[] replayTasks = null;
 
         /// <summary>
-        /// Initializes a new instance of the RecoverLogDriver class for replaying a segment of an append-only file
-        /// for recovery.
+        /// Gets the total number of records that have been replayed.
         /// </summary>
-        /// <param name="aofProcessor">Processor responsible for handling append-only file operations.</param>
-        /// <param name="appendOnlyFile">The append-only file to be scanned for recovery.</param>
-        /// <param name="serverOptions">Configuration options for the server.</param>
-        /// <param name="dbId">Identifier of the database we are recovering.</param>
-        /// <param name="physicalSublogIdx">Index of the physical sublog to scan.</param>
-        /// <param name="startAddress">Start address in the append-only file for recovery.</param>
-        /// <param name="untilAddress">End address in the append-only file for recovery.</param>
-        /// <param name="logger">Optional logger for diagnostic output.</param>
-        public RecoverLogDriver(
-            AofProcessor aofProcessor,
-            GarnetAppendOnlyFile appendOnlyFile,
-            GarnetServerOptions serverOptions,
-            int dbId,
-            int physicalSublogIdx,
-            long startAddress,
-            long untilAddress,
-            ILogger logger = null)
-        {
-            this.dbId = dbId;
-            this.physicalSublogIdx = physicalSublogIdx;
-            this.aofProcessor = aofProcessor;
-            this.appendOnlyFile = appendOnlyFile;
-            this.serverOptions = serverOptions;
-            this.startAddress = startAddress;
-            this.untilAddress = untilAddress;
-            replayIterator = appendOnlyFile.ScanSingle(physicalSublogIdx, startAddress, untilAddress, scanUncommitted: true, recover: false, logger: logger);
-            physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
-            this.logger = logger;
-        }
+        public long ReplayedRecordCount { get; private set; } = 0;
 
         public void Dispose()
         {
@@ -115,7 +108,98 @@ namespace Garnet.server
             }
             else
             {
-                // TODO: parallel replay page
+                CreateAndRunIntraPageParallelReplayTasks();
+
+                replayBatchContext.Record = record;
+                replayBatchContext.RecordLength = recordLength;
+                replayBatchContext.CurrentAddress = currentAddress;
+                replayBatchContext.NextAddress = nextAddress;
+                replayBatchContext.IsProtected = isProtected;
+                replayBatchContext.LeaderFollowerBarrier.SignalWorkReady();
+            }
+        }
+
+        private void CreateAndRunIntraPageParallelReplayTasks()
+            => replayTasks ??= [.. Enumerable.Range(0, serverOptions.AofReplayTaskCount).Select(i => Task.Run(async () => await ContinuousBackgroundReplay(i, physicalSublog)))];
+
+        internal async Task ContinuousBackgroundReplay(int replayTaskIdx, TsavoriteLog replaySublog)
+        {
+            var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
+            while (!cts.Token.IsCancellationRequested)
+            {
+                try
+                {
+                    await replayBatchContext.LeaderFollowerBarrier.WaitReadyWorkAsync(cancellationToken: cts.Token);
+                }
+                catch (TaskCanceledException) when (cts.IsCancellationRequested)
+                { }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "{method} failed at WaitAsync", nameof(ContinuousBackgroundReplay));
+                    cts.Cancel();
+                    break;
+                }
+
+                unsafe
+                {
+                    var record = replayBatchContext.Record;
+                    var recordLength = replayBatchContext.RecordLength;
+                    var currentAddress = replayBatchContext.CurrentAddress;
+                    var nextAddress = replayBatchContext.NextAddress;
+                    var isProtected = replayBatchContext.IsProtected;
+                    var ptr = record;
+
+                    var maxSequenceNumber = 0L;
+                    try
+                    {
+                        // logger?.LogError("[{sublogIdx},{replayIdx}] = {currentAddress} -> {nextAddress}", sublogIdx, replayIdx, currentAddress, nextAddress);                        
+                        while (ptr < record + recordLength)
+                        {
+                            cts.Token.ThrowIfCancellationRequested();
+                            var entryLength = appendOnlyFile.HeaderSize;
+                            var payloadLength = replaySublog.UnsafeGetLength(ptr);
+                            if (payloadLength > 0)
+                            {
+                                var entryPtr = ptr + entryLength;
+                                if (aofProcessor.ShouldReplay(entryPtr, replayTaskIdx, out var sequenceNumber))
+                                {
+                                    aofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart);
+                                }
+                                maxSequenceNumber = Math.Max(sequenceNumber, maxSequenceNumber);
+                                entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
+                            }
+                            else if (payloadLength < 0)
+                            {
+                                if (!serverOptions.EnableFastCommit)
+                                    throw new GarnetException("Received FastCommit request at replica AOF processor, but FastCommit is not enabled", clientResponse: false);
+
+                                // Only a single thread should commit metadata
+                                if (replayTaskIdx == 0)
+                                {
+                                    TsavoriteLogRecoveryInfo info = new();
+                                    info.Initialize(new ReadOnlySpan<byte>(ptr + entryLength, -payloadLength));
+                                    replaySublog.UnsafeCommitMetadataOnly(info, isProtected);
+                                }
+                                entryLength += TsavoriteLog.UnsafeAlign(-payloadLength);
+                            }
+                            ptr += entryLength;
+                        }
+
+                        // Update max sequence number for this virtual sublog which is mapped
+                        appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, maxSequenceNumber);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger?.LogError(ex, "{method} failed at replaying", nameof(ContinuousBackgroundReplay));
+                        cts.Cancel();
+                        break;
+                    }
+                    finally
+                    {
+                        // Signal work completion after processing
+                        replayBatchContext.LeaderFollowerBarrier.SignalCompleted();
+                    }
+                }
             }
         }
 
@@ -146,9 +230,7 @@ namespace Garnet.server
                     }
                 }
                 catch (TaskCanceledException) when (cts.IsCancellationRequested)
-                {
-
-                }
+                { }
             });
         }
     }
