@@ -11,7 +11,7 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 
-namespace Garnet.test
+namespace Garnet.test.DiskANN
 {
     [TestFixture]
     public class DiskANNServiceTests
@@ -476,7 +476,7 @@ namespace Garnet.test
             {
                 Span<byte> id2 = [4, 5, 6, 7];
                 Span<byte> elem2 = Enumerable.Range(0, 75).Select(static x => (byte)(x * 2)).ToArray();
-                ReadOnlySpan<byte> attr2 = "{\"foo\": \"bar\"}"u8;
+                var attr2 = "{\"foo\": \"bar\"}"u8;
 
                 var insertRes = NativeDiskANNMethods.insert(
                     Context, rawIndex,
