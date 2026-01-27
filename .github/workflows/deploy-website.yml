@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: darrenge/EnableAllure  # DEBUG DEUBG Temporary: testing Allure deployment, change back to main before merging
+          ref: main
       - uses: actions/checkout@v4
         with:
           ref: continuousbenchmark
@@ -73,11 +73,8 @@ jobs:
           mkdir -p static/allure
 
           # Base: Allure full report from Nightly Run artifact
-          # Note: artifact downloads to workspace root, not working-directory, so use ../
-          # The artifact contents are directly in allure_artifact/ (not in a nested allure-report folder)
-          if [ -d "../allure_artifact" ]; then
-            cp -R ../allure_artifact/* static/allure
-            echo "Copied Allure report from artifact"
+          if [ -d "allure_artifact/allure-report" ]; then
+            cp -R allure_artifact/allure-report/* static/allure
           else
             echo "Allure artifact missing; skipping base report copy."
           fi
