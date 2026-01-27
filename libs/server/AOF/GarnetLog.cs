@@ -13,11 +13,28 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
-    public sealed class GarnetLog(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
+    public sealed class GarnetLog
     {
-        readonly int replayTaskCount = serverOptions.AofReplayTaskCount;
-        readonly SingleLog singleLog = serverOptions.AofVirtualSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
-        readonly ShardedLog shardedLog = serverOptions.MultiLogEnabled ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger) : null;
+        readonly GarnetServerOptions serverOptions;
+        readonly int replayTaskCount;
+        readonly SingleLog singleLog;
+        readonly ShardedLog shardedLog;
+
+        /// <summary>
+        /// Initializes a new GarnetLog instance with the specified configuration.
+        /// </summary>
+        /// <param name="serverOptions">Server configuration determining log mode and sharding.</param>
+        /// <param name="logSettings">Settings for the underlying log(s).</param>
+        /// <param name="logger">Optional logger for recording events.</param>
+        public GarnetLog(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
+        {
+            Debug.Assert(serverOptions.EnableFastCommit || serverOptions.AofPhysicalSublogCount == 1, "Cannot use sharded-log without FastCommit!");
+            this.serverOptions = serverOptions;
+            this.replayTaskCount = serverOptions.AofReplayTaskCount;
+            this.singleLog = serverOptions.AofVirtualSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
+            this.shardedLog = serverOptions.MultiLogEnabled ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger) : null;
+        }
+
         public TsavoriteLog SigleLog => singleLog.log;
         public long HeaderSize => singleLog != null ? singleLog.HeaderSize : shardedLog.HeaderSize;
         public int Size => singleLog != null ? 1 : shardedLog.Length;

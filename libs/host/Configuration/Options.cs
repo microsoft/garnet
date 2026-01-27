@@ -781,6 +781,9 @@ namespace Garnet
                     throw new Exception("SlowLogThreshold must be at least 100 microseconds.");
             }
 
+            if (AofPhysicalSublogCount > 1 && !EnableFastCommit.GetValueOrDefault())
+                throw new Exception("Cannot use sharded-log without FastCommit!");
+
             Func<INamedDeviceFactoryCreator> azureFactoryCreator = () =>
             {
                 if (!string.IsNullOrEmpty(AzureStorageConnectionString))

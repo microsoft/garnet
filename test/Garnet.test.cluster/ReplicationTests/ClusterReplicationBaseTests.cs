@@ -889,6 +889,7 @@ namespace Garnet.test.cluster
             var primary_count = 1;
             var nodes_count = primary_count + (primary_count * replica_count);
             ClassicAssert.IsTrue(primary_count > 0);
+            fastCommit = sublogCount > 1;
             context.CreateInstances(
                 nodes_count,
                 disableObjects: disableObjects,

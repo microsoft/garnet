@@ -13,6 +13,9 @@ namespace Garnet.server
     {
         const long kFirstValidAofAddress = 64;
 
+        /// <summary>
+        /// Calculates the total size, in bytes, of the log between the beginning and tail addresses.
+        /// </summary>
         public long TotalSize() => Log.TailAddress.AggregateDiff(Log.BeginAddress);
 
         /// <summary>
