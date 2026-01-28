@@ -14,7 +14,7 @@ namespace Garnet.test
 {
     [AllureNUnit]
     [TestFixture]
-    public class CountingEventSlimTests
+    public class CountingEventSlimTests : AllureTestBase
     {
         [Test]
         public void Basic()

@@ -16,7 +16,7 @@ namespace Garnet.test.DiskANN
 {
     [AllureNUnit]
     [TestFixture]
-    public class DiskANNServiceTests
+    public class DiskANNServiceTests : AllureTestBase
     {
         private delegate void ReadCallbackDelegate(ulong context, uint numKeys, nint keysData, nuint keysLength, nint dataCallback, nint dataCallbackContext);
         private delegate byte WriteCallbackDelegate(ulong context, nint keyData, nuint keyLength, nint writeData, nuint writeLength);

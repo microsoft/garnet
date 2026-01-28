@@ -14,7 +14,7 @@ namespace Garnet.test.DiskANN
 {
     [AllureNUnit]
     [TestFixture]
-    public class DiskANNGridTests
+    public class DiskANNGridTests : AllureTestBase
     {
         private GarnetServer server;
 

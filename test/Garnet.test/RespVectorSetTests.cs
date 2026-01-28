@@ -20,7 +20,7 @@ namespace Garnet.test
 {
     [AllureNUnit]
     [TestFixture]
-    public class RespVectorSetTests
+    public class RespVectorSetTests : AllureTestBase
     {
         GarnetServer server;
 

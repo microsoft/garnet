@@ -14,7 +14,7 @@ namespace Garnet.test
 {
     [AllureNUnit]
     [TestFixture]
-    public class ReadOptimizedLockTests
+    public class ReadOptimizedLockTests : AllureTestBase
     {
         [TestCase(123)]
         [TestCase(0)]
