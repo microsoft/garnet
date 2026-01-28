@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
@@ -145,7 +146,8 @@ namespace Tsavorite.core
                     // Extended namespace
                     // var length = indicator & RecordDataHeader.NamespaceIndicatorMask;
                     // return new ReadOnlySpan<byte>((byte*)(ExtendedNamespaceAddress + 1), length);
-                    throw new TsavoriteException("Extended namespace not yet supported");
+                    ThrowTsavoriteException("Extended namespace not yet supported");
+                    return default;
                 }
             }
         }
@@ -183,7 +185,7 @@ namespace Tsavorite.core
             get
             {
                 if (!IsPinnedKey)
-                    throw new TsavoriteException("PinnedKeyPointer is unavailable when Key is not pinned; use IsPinnedKey");
+                    ThrowTsavoriteException("PinnedKeyPointer is unavailable when Key is not pinned; use IsPinnedKey");
                 (_ /*length*/, var dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetKeyFieldInfo();
                 return (byte*)dataAddress;
             }
@@ -195,7 +197,7 @@ namespace Tsavorite.core
             get
             {
                 if (Info.KeyIsInline)
-                    throw new TsavoriteException("get_Overflow is unavailable when Key is inline");
+                    ThrowTsavoriteException("get_Overflow is unavailable when Key is inline");
                 var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetKeyFieldInfo();
                 return objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
             }
@@ -203,7 +205,7 @@ namespace Tsavorite.core
             {
                 var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetKeyFieldInfo();
                 if (!Info.KeyIsOverflow || length != ObjectIdMap.ObjectIdSize)
-                    throw new TsavoriteException("set_KeyOverflow should only be called when transferring into a new record with KeyIsInline==false and key.Length==ObjectIdSize");
+                    ThrowTsavoriteException("set_KeyOverflow should only be called when transferring into a new record with KeyIsInline==false and key.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
             }
         }
@@ -215,7 +217,7 @@ namespace Tsavorite.core
             get
             {
                 if (Info.ValueIsObject)
-                    throw new TsavoriteException("ValueSpan is not valid for Object values");
+                    ThrowTsavoriteException("ValueSpan is not valid for Object values");
                 var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
                 return Info.ValueIsInline ? new((byte*)dataAddress, (int)length) : objectIdMap.GetOverflowByteArray(*(int*)dataAddress).Span;
             }
@@ -232,7 +234,8 @@ namespace Tsavorite.core
                     var (_ /*valueLength*/, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
                     return objectIdMap.GetHeapObject(*(int*)valueAddress);
                 }
-                throw new TsavoriteException("ValueObject is not valid for Span values");
+                ThrowTsavoriteException("ValueObject is not valid for Span values");
+                return default;
             }
             internal set
             {
@@ -246,14 +249,20 @@ namespace Tsavorite.core
                     *(ulong*)GetObjectLogPositionAddress(GetOptionalStartAddress()) = ObjectLogFilePositionInfo.NotSet;
                     return;
                 }
-                throw new TsavoriteException("SetValueObject should only be called by DiskLogRecord or Deserialization with ValueIsObject==true");
+                ThrowTsavoriteException("SetValueObject should only be called by DiskLogRecord or Deserialization with ValueIsObject==true");
             }
         }
 
         public readonly bool ValueObjectIsSet
-            => Info.ValueIsObject
-                  ? *(int*)new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info).valueAddress != ObjectIdMap.InvalidObjectId
-                  : throw new TsavoriteException("ValueObjectIsSet is not valid for Span values");
+        {
+            get
+            {
+                if (Info.ValueIsObject)
+                    return *(int*)new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info).valueAddress != ObjectIdMap.InvalidObjectId;
+                ThrowTsavoriteException("ValueObjectIsSet is not valid for Span values");
+                return default;
+            }
+        }
 
         /// <summary>
         /// We track the deserialized length of an object value in the ObjectLogPosition field after deserialization is complete. This allows
@@ -266,7 +275,7 @@ namespace Tsavorite.core
             var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
 
             if (!Info.ValueIsObject)
-                throw new TsavoriteException("SetDeserializedValueObject should only be called by Deserialization with ValueIsObject==true");
+                ThrowTsavoriteException("SetDeserializedValueObject should only be called by Deserialization with ValueIsObject==true");
             Debug.Assert(valueLength == ObjectIdMap.ObjectIdSize, $"valueLength {valueLength} should be ObjectIdSize {ObjectIdMap.ObjectIdSize}");
 
             *(int*)valueAddress = objectIdMap.AllocateAndSet(heapObject);
@@ -290,7 +299,7 @@ namespace Tsavorite.core
             get
             {
                 if (!IsPinnedValue)
-                    throw new TsavoriteException("PinnedValuePointer is unavailable when Key is not pinned; use IsPinnedKey");
+                    ThrowTsavoriteException("PinnedValuePointer is unavailable when Key is not pinned; use IsPinnedKey");
                 (_ /*length*/, var dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
                 return (byte*)dataAddress;
             }
@@ -302,7 +311,7 @@ namespace Tsavorite.core
             get
             {
                 if (!Info.ValueIsOverflow)
-                    throw new TsavoriteException("get_Overflow is unavailable when Value is not overflow");
+                    ThrowTsavoriteException("get_Overflow is unavailable when Value is not overflow");
                 var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
                 return objectIdMap.GetOverflowByteArray(*(int*)dataAddress);
             }
@@ -310,7 +319,7 @@ namespace Tsavorite.core
             {
                 var (length, dataAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info);
                 if (!Info.ValueIsOverflow || length != ObjectIdMap.ObjectIdSize)
-                    throw new TsavoriteException("set_ValueOverflow should only be called when trnasferring into a new record with ValueIsOverflow == true and value.Length==ObjectIdSize");
+                    ThrowTsavoriteException("set_ValueOverflow should only be called when trnasferring into a new record with ValueIsOverflow == true and value.Length==ObjectIdSize");
                 *(int*)dataAddress = objectIdMap.AllocateAndSet(value);
             }
         }
@@ -1252,6 +1261,13 @@ namespace Tsavorite.core
             var eTagStr = Info.HasETag ? ETag.ToString() : "na";
             var expirStr = Info.HasExpiration ? Expiration.ToString() : "na";
             return $"ri {Info} | hdr: {dataHeader.ToString(keyString, valueString)} | OIDs k:{keyOid} v:{valOid} | ETag {eTagStr} Expir {expirStr}";
+        }
+
+        [DoesNotReturn]
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void ThrowTsavoriteException(string str)
+        {
+            throw new TsavoriteException(str);
         }
     }
 }
