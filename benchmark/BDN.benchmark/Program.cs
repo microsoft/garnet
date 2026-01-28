@@ -36,7 +36,7 @@ public class BaseConfig : ManualConfig
             .WithRuntime(CoreRuntime.Core80)
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
         Net10BaseJob = baseJob
-            .WithRuntime(CoreRuntime.CreateForNewVersion("net10.0", ".NET 10.0"))
+            .WithRuntime(CoreRuntime.Core10_0)
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
 
         // Get value of environment variable BDNRUNPARAM - determines if running net8.0, net10.0 or both (if env var is not set or invalid)
