@@ -27,9 +27,9 @@ namespace Tsavorite.core
 
         #region Reads
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
+        public bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput dst, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
-            => _clientSession.functions.Reader(in srcLogRecord, ref input, ref dst, ref readInfo);
+            => _clientSession.functions.Reader(ref srcLogRecord, ref input, ref dst, ref readInfo);
 
         public void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
             => _clientSession.functions.ReadCompletionCallback(ref diskLogRecord, ref input, ref output, ctx, status, recordMetadata);

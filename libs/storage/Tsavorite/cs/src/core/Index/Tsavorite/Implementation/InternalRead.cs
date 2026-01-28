@@ -61,11 +61,17 @@ namespace Tsavorite.core
             pendingContext.logicalAddress = kInvalidAddress;
             pendingContext.eTag = LogRecord.NoETag;
 
+            LogRecord srcLogRecord;
+
             if (sessionFunctions.Ctx.phase == Phase.IN_PROGRESS_GROW)
                 SplitBuckets(stackCtx.hei.hash);
 
             if (!FindTagAndTryEphemeralSLock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx, out var status))
                 return status;
+            //srcLogRecord = stackCtx.recSrc.CreateLogRecord();
+            //EphemeralSUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
+            //return OperationStatus.SUCCESS;
+
             ReadInfo readInfo = new()
             {
                 Version = sessionFunctions.Ctx.version,
@@ -75,7 +81,6 @@ namespace Tsavorite.core
 
             try
             {
-                LogRecord srcLogRecord;
                 if (stackCtx.hei.IsReadCache)
                 {
                     if (FindInReadCache(key, ref stackCtx, minAddress: kInvalidAddress, alwaysFindLatestLA: false))
@@ -87,7 +92,7 @@ namespace Tsavorite.core
 
                         srcLogRecord = stackCtx.recSrc.CreateLogRecord();
                         pendingContext.eTag = srcLogRecord.ETag;
-                        if (sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo))
+                        if (sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo))
                             return OperationStatus.SUCCESS;
                         return CheckFalseActionStatus(ref readInfo);
                     }
@@ -96,10 +101,10 @@ namespace Tsavorite.core
                     readInfo.Address = stackCtx.recSrc.LogicalAddress;
                 }
 
+
                 // recSrc.LogicalAddress is set and is not in the readcache. Try to traceback in main log for key match.
                 if (TraceBackForKeyMatch(key, ref stackCtx.recSrc, hlogBase.HeadAddress) && stackCtx.recSrc.GetInfo().IsClosed)
                     return OperationStatus.RETRY_LATER;
-                status = OperationStatus.SUCCESS;
 
                 // V threads cannot access V+1 records. Use the latest logical address rather than the traced address (logicalAddress) per comments in AcquireCPRLatchRMW.
                 if (sessionFunctions.Ctx.phase == Phase.PREPARE && IsEntryVersionNew(ref stackCtx.hei.entry))
@@ -114,9 +119,11 @@ namespace Tsavorite.core
                     if (srcLogRecord.Info.IsClosedOrTombstoned(ref status))
                         return status;
 
-                    return sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo)
-                        ? OperationStatus.SUCCESS
-                        : CheckFalseActionStatus(ref readInfo);
+                    return //sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo)
+                        //?
+                        OperationStatus.SUCCESS
+                        //: CheckFalseActionStatus(ref readInfo)
+                        ;
                 }
 
                 // Pending (and CopyFromImmutable may go pending) must track the latest searched-below addresses. They are the same if there are no readcache records.
@@ -131,7 +138,7 @@ namespace Tsavorite.core
                     if (srcLogRecord.Info.IsClosedOrTombstoned(ref status))
                         return status;
 
-                    if (sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo))
+                    if (sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo))
                     {
                         return pendingContext.readCopyOptions.CopyFrom != ReadCopyFrom.AllImmutable
                             ? OperationStatus.SUCCESS
@@ -301,7 +308,7 @@ namespace Tsavorite.core
 
                 // Ignore the return value from the ISessionFunctions calls; we're doing nothing else based on it.
                 status = OperationStatus.SUCCESS;
-                _ = sessionFunctions.Reader(in srcLogRecord, ref input, ref output, ref readInfo);
+                _ = sessionFunctions.Reader(ref srcLogRecord, ref input, ref output, ref readInfo);
             }
             finally
             {

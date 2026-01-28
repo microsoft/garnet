@@ -19,7 +19,8 @@ namespace Tsavorite.core
             ref PendingContext<TInput, TOutput, TContext> pendingContext)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
-                && HandleRetryStatus(internalStatus, sessionFunctions, ref pendingContext);
+            && HandleRetryStatus(internalStatus, sessionFunctions, ref pendingContext)
+            ;
 
         /// <summary>
         /// Handle retry for operations that will not go pending (e.g., InternalLock)
@@ -43,6 +44,7 @@ namespace Tsavorite.core
             }
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)]
         private bool HandleRetryStatus<TInput, TOutput, TContext, TSessionFunctionsWrapper>(
             OperationStatus internalStatus,
             TSessionFunctionsWrapper sessionFunctions,
@@ -53,11 +55,11 @@ namespace Tsavorite.core
             switch (internalStatus)
             {
                 case OperationStatus.RETRY_NOW:
-                    _ = Thread.Yield();
+                    Thread.Yield();
                     return true;
                 case OperationStatus.RETRY_LATER:
                     InternalRefresh<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions);
-                    _ = Thread.Yield();
+                    Thread.Yield();
                     return true;
                 case OperationStatus.CPR_SHIFT_DETECTED:
                     // Retry as (v+1) Operation

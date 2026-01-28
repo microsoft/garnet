@@ -24,7 +24,7 @@ namespace Tsavorite.benchmark
 
         // Read functions
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public readonly bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref Input input, ref Output output, ref ReadInfo readInfo)
+        public readonly bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref Input input, ref Output output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             output.value = srcLogRecord.ValueSpan.AsRef<FixedLengthValue>();

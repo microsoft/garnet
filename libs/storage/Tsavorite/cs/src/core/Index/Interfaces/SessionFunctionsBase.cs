@@ -13,7 +13,7 @@ namespace Tsavorite.core
     public abstract class SessionFunctionsBase<TInput, TOutput, TContext> : ISessionFunctions<TInput, TOutput, TContext>
     {
         /// <inheritdoc/>
-        public virtual bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo)
+        public virtual bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref TInput input, ref TOutput output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
             => true;
 

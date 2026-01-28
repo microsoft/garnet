@@ -169,8 +169,8 @@ namespace Tsavorite.benchmark
                     {
                         if (idx % 512 == 0)
                         {
-                            uContext.Refresh();
-                            uContext.CompletePending(false);
+                            //uContext.Refresh();
+                            //uContext.CompletePending(false);
                         }
 
                         unsafe
@@ -205,7 +205,7 @@ namespace Tsavorite.benchmark
                     }
                 }
 
-                uContext.CompletePending(true);
+                //uContext.CompletePending(true);
             }
             finally
             {
