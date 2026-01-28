@@ -20,7 +20,7 @@ namespace Tsavorite.core
         /// and become overflow byte[], or are Object values; this is needed to root the objects for GC.</summary>
         internal struct ObjectPage
         {
-            internal ObjectIdMap objectIdMap; // { get; init; }
+            internal readonly ObjectIdMap objectIdMap { get; init; }
 
             public ObjectPage() => objectIdMap = new();
 
@@ -135,7 +135,7 @@ namespace Tsavorite.core
         internal LogRecord CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, null); // pages[GetPageIndexForAddress(logicalAddress)].objectIdMap);
+        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord CreateRemappedLogRecordOverPinnedTransientMemory(long logicalAddress, long physicalAddress)

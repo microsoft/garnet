@@ -113,7 +113,7 @@ namespace Tsavorite.core
         private static bool IsClosedWord(long word) => (word & (kValidBitMask | kSealedBitMask)) != kValidBitMask;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsClosedOrTombstoned(ref OperationStatus internalStatus)
+        internal readonly bool IsClosedOrTombstoned(ref OperationStatus internalStatus)
         {
             if ((word & (kValidBitMask | kSealedBitMask | kTombstoneBitMask)) != kValidBitMask)
             {
@@ -123,13 +123,13 @@ namespace Tsavorite.core
             return false;
         }
 
-        public bool IsClosed
+        public readonly bool IsClosed
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get { return IsClosedWord(word); }
         }
 
-        public bool IsSealed
+        public readonly bool IsSealed
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get { return (word & kSealedBitMask) != 0; }
@@ -187,9 +187,9 @@ namespace Tsavorite.core
             return expected_word == Interlocked.CompareExchange(ref word, newRI.word, expected_word);
         }
 
-        public bool IsNull => word == 0;
+        public readonly bool IsNull => word == 0;
 
-        public bool Tombstone
+        public readonly bool Tombstone
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => (word & kTombstoneBitMask) > 0;
@@ -224,7 +224,7 @@ namespace Tsavorite.core
             }
         }
 
-        public bool Dirty => (word & kDirtyBitMask) > 0;
+        public readonly bool Dirty => (word & kDirtyBitMask) > 0;
 
         public bool Modified
         {
@@ -236,7 +236,7 @@ namespace Tsavorite.core
             }
         }
 
-        public bool IsInNewVersion
+        public readonly bool IsInNewVersion
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get => (word & kInNewVersionBitMask) > 0;
@@ -276,13 +276,13 @@ namespace Tsavorite.core
             }
         }
 
-        public bool Invalid
+        public readonly bool Invalid
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get { return (word & kValidBitMask) == 0; }
         }
 
-        public bool SkipOnScan => IsClosedWord(word);
+        public readonly bool SkipOnScan => IsClosedWord(word);
 
         public long PreviousAddress
         {
@@ -293,44 +293,44 @@ namespace Tsavorite.core
             set { word = (word & ~kAddressBitMask) | (value & kAddressBitMask); }
         }
 
-        public bool HasETag => (word & kHasETagBitMask) != 0;
+        public readonly bool HasETag => (word & kHasETagBitMask) != 0;
         public void SetHasETag() => word |= kHasETagBitMask;
         public void ClearHasETag() => word &= ~kHasETagBitMask;
 
-        public bool HasExpiration => (word & kHasExpirationBitMask) != 0;
+        public readonly bool HasExpiration => (word & kHasExpirationBitMask) != 0;
         public void SetHasExpiration() => word |= kHasExpirationBitMask;
         public void ClearHasExpiration() => word &= ~kHasExpirationBitMask;
 
-        public bool HasOptionalFields => (word & (kHasETagBitMask | kHasExpirationBitMask)) != 0;
+        public readonly bool HasOptionalFields => (word & (kHasETagBitMask | kHasExpirationBitMask)) != 0;
 
         // Note: KeyIsOveflow bit is not needed as it is the negation of KeyIsInline
-        public bool KeyIsInline => (word & kKeyIsInlineBitMask) != 0;
+        public readonly bool KeyIsInline => (word & kKeyIsInlineBitMask) != 0;
         public void SetKeyIsInline() => word |= kKeyIsInlineBitMask;
         public void ClearKeyIsInline() => word &= ~kKeyIsInlineBitMask;
-        public bool KeyIsOverflow => !KeyIsInline;
+        public readonly bool KeyIsOverflow => !KeyIsInline;
         public void SetKeyIsOverflow() => word &= ~kKeyIsInlineBitMask;
 
         // Note: a ValueIsOverflow bit is not needed as it is the negation of (ValueIsInline | ValueIsObject)
-        public bool ValueIsInline => (word & kValueIsInlineBitMask) != 0;
+        public readonly bool ValueIsInline => (word & kValueIsInlineBitMask) != 0;
         public void SetValueIsInline() => word = (word & ~kValueIsObjectBitMask) | kValueIsInlineBitMask;
         public void ClearValueIsInline() => word &= ~kValueIsInlineBitMask;
 
-        public bool ValueIsObject => (word & kValueIsObjectBitMask) != 0;
+        public readonly bool ValueIsObject => (word & kValueIsObjectBitMask) != 0;
         public void SetValueIsObject() => word = (word & ~kValueIsInlineBitMask) | kValueIsObjectBitMask;
 
-        public bool HasFiller => (word & kHasFillerBitMask) != 0;
+        public readonly bool HasFiller => (word & kHasFillerBitMask) != 0;
         public void SetHasFiller() => word |= kHasFillerBitMask;
         public void ClearHasFiller() => word &= ~kHasFillerBitMask;
 
         // Value "Overflow" is determined by lack of Inline and lack of Object
-        public bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
+        public readonly bool ValueIsOverflow => !ValueIsInline && !ValueIsObject;
         public void SetValueIsOverflow() => word &= ~(kValueIsInlineBitMask | kValueIsObjectBitMask);
 
         public void SetKeyAndValueInline() => word = (word & ~kValueIsObjectBitMask) | kKeyIsInlineBitMask | kValueIsInlineBitMask;
 
-        public bool RecordIsInline => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask)) == (kKeyIsInlineBitMask | kValueIsInlineBitMask);
+        public readonly bool RecordIsInline => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask)) == (kKeyIsInlineBitMask | kValueIsInlineBitMask);
 
-        public bool RecordHasObjects => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask)) != (kKeyIsInlineBitMask | kValueIsInlineBitMask);
+        public readonly bool RecordHasObjects => (word & (kKeyIsInlineBitMask | kValueIsInlineBitMask)) != (kKeyIsInlineBitMask | kValueIsInlineBitMask);
 
         internal bool IsReadCache
         {
@@ -362,7 +362,7 @@ namespace Tsavorite.core
             set => word = value ? word | kUnused4BitMask : word & ~kUnused4BitMask;
         }
 
-        internal int GetOptionalSize()
+        internal readonly int GetOptionalSize()
         {
             var size = HasETag ? LogRecord.ETagSize : 0;
             if (HasExpiration)
@@ -372,7 +372,7 @@ namespace Tsavorite.core
             return size;
         }
 
-        public override string ToString()
+        public override readonly string ToString()
         {
             static string bstr(bool value) => value ? "T" : "F";
             var keyString = KeyIsInline ? "inl" : "ovf";

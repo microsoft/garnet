@@ -28,10 +28,10 @@ namespace Tsavorite.core
     public unsafe partial struct LogRecord : ISourceLogRecord
     {
         /// <summary>The physicalAddress in the log.</summary>
-        internal long physicalAddress;
+        internal readonly long physicalAddress;
 
         /// <summary>The ObjectIdMap if this is a record in the object log.</summary>
-        internal ObjectIdMap objectIdMap;
+        internal readonly ObjectIdMap objectIdMap;
 
         /// <summary>Number of bytes required to store an ETag</summary>
         public const int ETagSize = sizeof(long);
@@ -63,9 +63,9 @@ namespace Tsavorite.core
         /// <summary>Address of the Record type indicator byte</summary>
         private readonly long RecordTypeAddress => physicalAddress + RecordInfo.Size + RecordDataHeader.RecordTypeOffsetInHeader;
 
-        public byte IndicatorByte => *(byte*)DataHeaderAddress;
+        public readonly byte IndicatorByte => *(byte*)DataHeaderAddress;
 
-        public RecordDataHeader RecordDataHeader => new((byte*)DataHeaderAddress);
+        public readonly RecordDataHeader RecordDataHeader => new((byte*)DataHeaderAddress);
 
         /// <summary>This ctor is primarily used for internal record-creation operations for the ObjectAllocator, and is passed to IObjectSessionFunctions callbacks.</summary> 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -97,7 +97,7 @@ namespace Tsavorite.core
 
         /// <summary>Remaps the object Ids to the transient map.</summary>
         /// <remarks>This is ONLY to be done for transient log records, not records on the main log.</remarks>
-        public void RemapOverPinnedTransientMemory(ObjectIdMap allocatorMap, ObjectIdMap transientMap)
+        public readonly void RemapOverPinnedTransientMemory(ObjectIdMap allocatorMap, ObjectIdMap transientMap)
         {
             if (ReferenceEquals(allocatorMap, transientMap))
                 return;
@@ -127,10 +127,10 @@ namespace Tsavorite.core
 
         #region ISourceLogRecord
         /// <inheritdoc/>
-        public byte RecordType => *(byte*)RecordTypeAddress;
+        public readonly byte RecordType => *(byte*)RecordTypeAddress;
 
         /// <inheritdoc/>
-        public ReadOnlySpan<byte> Namespace
+        public readonly ReadOnlySpan<byte> Namespace
         {
             get
             {
@@ -151,19 +151,19 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public ObjectIdMap ObjectIdMap => objectIdMap;
+        public readonly ObjectIdMap ObjectIdMap => objectIdMap;
 
         /// <inheritdoc/>
-        public bool IsSet => physicalAddress != 0;
+        public readonly bool IsSet => physicalAddress != 0;
 
         /// <inheritdoc/>
-        public ref RecordInfo InfoRef => ref *(RecordInfo*)physicalAddress;
+        public readonly ref RecordInfo InfoRef => ref *(RecordInfo*)physicalAddress;
 
         /// <inheritdoc/>
-        public RecordInfo Info => *(RecordInfo*)physicalAddress;
+        public readonly RecordInfo Info => *(RecordInfo*)physicalAddress;
 
         /// <inheritdoc/>
-        public ReadOnlySpan<byte> Key
+        public readonly ReadOnlySpan<byte> Key
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
@@ -174,10 +174,10 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public bool IsPinnedKey => Info.KeyIsInline;
+        public readonly bool IsPinnedKey => Info.KeyIsInline;
 
         /// <inheritdoc/>
-        public byte* PinnedKeyPointer
+        public readonly byte* PinnedKeyPointer
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
@@ -190,7 +190,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Key is not pinned; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
-        public OverflowByteArray KeyOverflow
+        public readonly OverflowByteArray KeyOverflow
         {
             get
             {
@@ -209,7 +209,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public Span<byte> ValueSpan
+        public readonly Span<byte> ValueSpan
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
@@ -222,7 +222,7 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public IHeapObject ValueObject
+        public readonly IHeapObject ValueObject
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
@@ -250,7 +250,7 @@ namespace Tsavorite.core
             }
         }
 
-        public bool ValueObjectIsSet
+        public readonly bool ValueObjectIsSet
             => Info.ValueIsObject
                   ? *(int*)new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info).valueAddress != ObjectIdMap.InvalidObjectId
                   : throw new TsavoriteException("ValueObjectIsSet is not valid for Span values");
@@ -278,13 +278,13 @@ namespace Tsavorite.core
 
         /// <summary>The span of the entire record, including the ObjectId space if the record has objects.</summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ReadOnlySpan<byte> AsReadOnlySpan() => new((byte*)physicalAddress, ActualSize);
+        public readonly ReadOnlySpan<byte> AsReadOnlySpan() => new((byte*)physicalAddress, ActualSize);
 
         /// <inheritdoc/>
-        public bool IsPinnedValue => Info.ValueIsInline;
+        public readonly bool IsPinnedValue => Info.ValueIsInline;
 
         /// <inheritdoc/>
-        public byte* PinnedValuePointer
+        public readonly byte* PinnedValuePointer
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
@@ -297,7 +297,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>Get and set the <see cref="OverflowByteArray"/> if this Value is not pinned; an exception is thrown if it is a pinned pointer (e.g. to a <see cref="SectorAlignedMemory"/>.</summary>
-        public OverflowByteArray ValueOverflow
+        public readonly OverflowByteArray ValueOverflow
         {
             get
             {
@@ -318,25 +318,25 @@ namespace Tsavorite.core
         public static int GetOptionalLength(RecordInfo info) => (info.HasETag ? ETagSize : 0) + (info.HasExpiration ? ExpirationSize : 0) + (info.RecordHasObjects ? ObjectLogPositionSize : 0);
 
         /// <inheritdoc/>
-        public long ETag => Info.HasETag ? *(long*)GetETagAddress(GetOptionalStartAddress()) : NoETag;
+        public readonly long ETag => Info.HasETag ? *(long*)GetETagAddress(GetOptionalStartAddress()) : NoETag;
         /// <inheritdoc/>
-        public long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress(GetETagAddress(GetOptionalStartAddress())) : 0;
+        public readonly long Expiration => Info.HasExpiration ? *(long*)GetExpirationAddress(GetETagAddress(GetOptionalStartAddress())) : 0;
 
         /// <inheritdoc/>
-        public bool IsMemoryLogRecord => true;
+        public readonly bool IsMemoryLogRecord => true;
 
         /// <inheritdoc/>
-        public ref LogRecord AsMemoryLogRecordRef() => ref Unsafe.AsRef(in this);
+        public readonly ref LogRecord AsMemoryLogRecordRef() => ref Unsafe.AsRef(in this);
 
         /// <inheritdoc/>
-        public bool IsDiskLogRecord => false;
+        public readonly bool IsDiskLogRecord => false;
 
         /// <inheritdoc/>
-        public ref DiskLogRecord AsDiskLogRecordRef() => throw new InvalidOperationException("Cannot cast a memory LogRecord to a DiskLogRecord.");
+        public readonly ref DiskLogRecord AsDiskLogRecordRef() => throw new InvalidOperationException("Cannot cast a memory LogRecord to a DiskLogRecord.");
 
         /// <inheritdoc/>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public RecordFieldInfo GetRecordFieldInfo()
+        public readonly RecordFieldInfo GetRecordFieldInfo()
         {
             var (keyLength, valueLength) = new RecordDataHeader((byte*)DataHeaderAddress).GetKVLengths(Info);
             return new()
@@ -350,9 +350,9 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public int AllocatedSize => Info.IsNull ? RecordInfo.Size : new RecordDataHeader((byte*)DataHeaderAddress).GetAllocatedRecordSize();
+        public readonly int AllocatedSize => Info.IsNull ? RecordInfo.Size : new RecordDataHeader((byte*)DataHeaderAddress).GetAllocatedRecordSize();
 
-        public int ActualSize => Info.IsNull ? RecordInfo.Size : new RecordDataHeader((byte*)DataHeaderAddress).GetActualRecordSize(Info);
+        public readonly int ActualSize => Info.IsNull ? RecordInfo.Size : new RecordDataHeader((byte*)DataHeaderAddress).GetActualRecordSize(Info);
 
         public static int GetAllocatedSize(long physicalAddress)
         {
@@ -363,9 +363,9 @@ namespace Tsavorite.core
 
         #endregion // ISourceLogRecord
 
-        internal int GetFillerLength() => new RecordDataHeader((byte*)DataHeaderAddress).GetFillerLength(Info);
+        internal readonly int GetFillerLength() => new RecordDataHeader((byte*)DataHeaderAddress).GetFillerLength(Info);
 
-        internal void SetRecordAndFillerLength(int recordLength, int newFillerLen)
+        internal readonly void SetRecordAndFillerLength(int recordLength, int newFillerLen)
         {
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
             dataHeader.SetRecordLength(recordLength);
@@ -376,7 +376,7 @@ namespace Tsavorite.core
         /// Initialize record for <see cref="ObjectAllocator{TStoreFunctions}"/>--includes Overflow option for Key and Overflow and Object option for Value
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeRecord(ReadOnlySpan<byte> key, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
+        public readonly void InitializeRecord(ReadOnlySpan<byte> key, in RecordSizeInfo sizeInfo, ObjectIdMap objectIdMap)
         {
             var header = new RecordDataHeader((byte*)DataHeaderAddress);
             _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out var valueAddress);   // TODO: Pass in RecordType and possibly namespace span
@@ -434,7 +434,7 @@ namespace Tsavorite.core
         /// Initialize record for <see cref="SpanByteAllocator{TStoreFunctions}"/>--does not include Overflow/Object options so is streamlined
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeRecord(ReadOnlySpan<byte> key, in RecordSizeInfo sizeInfo)
+        public readonly void InitializeRecord(ReadOnlySpan<byte> key, in RecordSizeInfo sizeInfo)
         {
             var header = new RecordDataHeader((byte*)DataHeaderAddress);
             _ = header.Initialize(ref InfoRef, in sizeInfo, recordType: 0, out var keyAddress, out _ /*valueAddress*/);   // TODO: Pass in actual RecordType
@@ -462,7 +462,7 @@ namespace Tsavorite.core
 
         /// <summary>Get the span of the inline portion of the record. Following this, the caller should be sure the objectIds are remapped
         ///     to a transient ObjectIdMap if necessary.</summary>
-        public Span<byte> RecordSpan => new((byte*)physicalAddress, ActualSize);
+        public readonly Span<byte> RecordSpan => new((byte*)physicalAddress, ActualSize);
 
         /// <summary>
         /// Tries to set the length of the value field, as well as verifying there is also space for the optionals (ETag, Expiration, ObjectLogPosition) as 
@@ -472,7 +472,7 @@ namespace Tsavorite.core
         /// <returns>If successful, returns true and the caller can proceed to set the value data.</returns>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetContentLengths(int newValueSize, in RecordSizeInfo sizeInfo, bool zeroInit = false)
+        public readonly bool TrySetContentLengths(int newValueSize, in RecordSizeInfo sizeInfo, bool zeroInit = false)
         {
             Debug.Assert(newValueSize == sizeInfo.FieldInfo.ValueSize, $"Mismatched value size; expected {sizeInfo.FieldInfo.ValueSize}, actual {newValueSize}");
             return TrySetContentLengthsAndPrepareOptionals(in sizeInfo, zeroInit, out _ /*valueAddress*/);
@@ -485,7 +485,7 @@ namespace Tsavorite.core
         /// <returns>If successful, returns true and the caller can proceed to set the value data.</returns>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetContentLengths(in RecordSizeInfo sizeInfo, bool zeroInit = false) => TrySetContentLengthsAndPrepareOptionals(in sizeInfo, zeroInit, out _ /*valueAddress*/);
+        public readonly bool TrySetContentLengths(in RecordSizeInfo sizeInfo, bool zeroInit = false) => TrySetContentLengthsAndPrepareOptionals(in sizeInfo, zeroInit, out _ /*valueAddress*/);
 
         /// <summary>
         /// Tries to set the length of the value field, as well as verifying there is also space for the optionals (ETag, Expiration, ObjectLogPosition) as 
@@ -493,7 +493,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>If successful, returns true and the caller can proceed to set the value data.</returns>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
-        private bool TrySetContentLengthsAndPrepareOptionals(in RecordSizeInfo sizeInfo, bool zeroInit, out long valueAddress)
+        private readonly bool TrySetContentLengthsAndPrepareOptionals(in RecordSizeInfo sizeInfo, bool zeroInit, out long valueAddress)
         {
             // Get the number of bytes in existing key and value lengths.
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
@@ -621,7 +621,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueSpanAndPrepareOptionals(ReadOnlySpan<byte> value, in RecordSizeInfo sizeInfo, bool zeroInit = false)
+        public readonly bool TrySetValueSpanAndPrepareOptionals(ReadOnlySpan<byte> value, in RecordSizeInfo sizeInfo, bool zeroInit = false)
         {
             RecordSizeInfo.AssertValueDataLength(value.Length, in sizeInfo);
             if (!TrySetContentLengthsAndPrepareOptionals(in sizeInfo, zeroInit, out var valueAddress))
@@ -653,7 +653,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueObjectAndPrepareOptionals(IHeapObject value, in RecordSizeInfo sizeInfo) => TrySetContentLengths(in sizeInfo) && TrySetValueObject(value);
+        public readonly bool TrySetValueObjectAndPrepareOptionals(IHeapObject value, in RecordSizeInfo sizeInfo) => TrySetContentLengths(in sizeInfo) && TrySetValueObject(value);
 
         /// <summary>
         /// This overload must be called only when it is known the LogRecord's Value is not inline, and there is no need to check
@@ -661,7 +661,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetValueObject(IHeapObject value)
+        public readonly bool TrySetValueObject(IHeapObject value)
         {
             Debug.Assert(Info.ValueIsObject, $"Cannot call this overload of {GetCurrentMethodName()} for non-object Value");
 
@@ -683,35 +683,35 @@ namespace Tsavorite.core
             return true;
         }
 
-        private int ETagLen => Info.HasETag ? ETagSize : 0;
-        private int ExpirationLen => Info.HasExpiration ? ExpirationSize : 0;
-        private int ObjectLogPositionLen => Info.RecordHasObjects ? ObjectLogPositionSize : 0;
+        private readonly int ETagLen => Info.HasETag ? ETagSize : 0;
+        private readonly int ExpirationLen => Info.HasExpiration ? ExpirationSize : 0;
+        private readonly int ObjectLogPositionLen => Info.RecordHasObjects ? ObjectLogPositionSize : 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long GetOptionalStartAddress()
+        internal readonly long GetOptionalStartAddress()
         {
             var (valueLength, valueAddress) = new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
             return valueAddress + valueLength;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ReadOnlySpan<byte> GetOptionalFieldsSpan() => new((byte*)GetOptionalStartAddress(), OptionalLength);
+        internal readonly ReadOnlySpan<byte> GetOptionalFieldsSpan() => new((byte*)GetOptionalStartAddress(), OptionalLength);
 
-        public int OptionalLength => ETagLen + ExpirationLen + ObjectLogPositionLen;
+        public readonly int OptionalLength => ETagLen + ExpirationLen + ObjectLogPositionLen;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal static long GetETagAddress(long optionalStartAddress) => optionalStartAddress;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long GetExpirationAddress(long optionalStartAddress) => optionalStartAddress + ETagLen;
+        internal readonly long GetExpirationAddress(long optionalStartAddress) => optionalStartAddress + ETagLen;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal long GetObjectLogPositionAddress(long optionalStartAddress) => optionalStartAddress + ETagLen + ExpirationLen;
+        internal readonly long GetObjectLogPositionAddress(long optionalStartAddress) => optionalStartAddress + ETagLen + ExpirationLen;
 
         /// <summary>
         /// Called during cleanup of a record allocation, before the key was copied.
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void InitializeForReuse(in RecordSizeInfo sizeInfo)
+        internal readonly void InitializeForReuse(in RecordSizeInfo sizeInfo)
         {
             Debug.Assert(!Info.HasETag && !Info.HasExpiration, "Record should not have ETag or Expiration here");
 
@@ -727,7 +727,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetETag(long eTag)
+        public readonly bool TrySetETag(long eTag)
         {
             var optionalStartAddress = GetOptionalStartAddress();
             if (Info.HasETag)
@@ -784,7 +784,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool RemoveETag()
+        public readonly bool RemoveETag()
         {
             if (!Info.HasETag)
                 return true;
@@ -835,7 +835,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TrySetExpiration(long expiration)
+        public readonly bool TrySetExpiration(long expiration)
         {
             if (expiration == NoExpiration)
                 return RemoveExpiration();
@@ -880,7 +880,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool RemoveExpiration()
+        public readonly bool RemoveExpiration()
         {
             if (!Info.HasExpiration)
                 return true;
@@ -919,7 +919,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryCopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
+        public readonly bool TryCopyFrom<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (srcLogRecord.Info.ValueIsInline)
@@ -951,7 +951,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryCopyOptionals<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
+        public readonly bool TryCopyOptionals<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, in RecordSizeInfo sizeInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             var srcRecordInfo = srcLogRecord.Info;
@@ -970,7 +970,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ClearOptionals()
+        public readonly void ClearOptionals()
         {
             _ = RemoveExpiration();
             _ = RemoveETag();
@@ -980,7 +980,7 @@ namespace Tsavorite.core
         /// Clears any heap-allocated Value: Object or Overflow. Does not clear key (if it is Overflow).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void ClearValueIfHeap(Action<IHeapObject> objectDisposer)
+        public readonly void ClearValueIfHeap(Action<IHeapObject> objectDisposer)
         {
             if (Info.ValueIsInline)
                 return;
@@ -1002,7 +1002,7 @@ namespace Tsavorite.core
         /// Clears any heap-allocated field, Object or Overflow, in the Value and optionally the Key. If we go from 
         /// <see cref="RecordInfo.RecordIsInline"/> being false to true, then we need to adjust filler as well.
         /// </summary>
-        public void ClearHeapFields(bool clearKey, Action<IHeapObject> objectDisposer)
+        public readonly void ClearHeapFields(bool clearKey, Action<IHeapObject> objectDisposer)
         {
             if (Info.RecordIsInline)
                 return;
@@ -1040,7 +1040,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <remarks>This is 'readonly' because it does not alter the fields of this object, only what they point to.</remarks>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void PrepareForRevivification(ref RecordSizeInfo sizeInfo)
+        public readonly void PrepareForRevivification(ref RecordSizeInfo sizeInfo)
             => RecordDataHeader.InitializeForRevivification(ref InfoRef, ref sizeInfo);
 
         /// <summary>
@@ -1052,7 +1052,7 @@ namespace Tsavorite.core
         /// <remarks>
         /// IMPORTANT: This is only to be called in the disk image copy of the log record, not in the actual log record itself.
         /// </remarks>
-        internal void SetObjectLogRecordStartPositionAndLength(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength)
+        internal readonly void SetObjectLogRecordStartPositionAndLength(in ObjectLogFilePositionInfo objectLogFilePosition, ulong valueObjectLength)
         {
             if (Info.RecordIsInline)   // ValueIsInline is true; if the record is fully inline, we should not be called here
             {
@@ -1100,7 +1100,7 @@ namespace Tsavorite.core
         /// <param name="keyLength">Outputs key length; will always be for overflow</param>
         /// <param name="valueObjectLength">Outputs key length; will be for overflow or object</param>
         /// <returns>The object log position for this record</returns>
-        internal ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueObjectLength)
+        internal readonly ulong GetObjectLogRecordStartPositionAndLengths(out int keyLength, out ulong valueObjectLength)
         {
             var dataHeader = new RecordDataHeader((byte*)DataHeaderAddress);
             if (Info.KeyIsOverflow)
@@ -1145,7 +1145,7 @@ namespace Tsavorite.core
         /// </remarks>
         /// <returns>The total "serialized" lengths from this LogRecord; will be 0 for inline records. Caller will adjust for
         ///     segment boundaries.</returns>
-        internal ulong SetRecoveredObjectLogRecordStartPosition(ObjectLogFilePositionInfo pagePositionInfo)
+        internal readonly ulong SetRecoveredObjectLogRecordStartPosition(ObjectLogFilePositionInfo pagePositionInfo)
         {
             if (Info.RecordIsInline)
             {
@@ -1218,7 +1218,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Return the serialized size of the contained logRecord.
         /// </summary>
-        public int GetSerializedSize()
+        public readonly int GetSerializedSize()
         {
             var recordSize = AllocatedSize;
             if (Info.RecordIsInline)
@@ -1234,7 +1234,7 @@ namespace Tsavorite.core
                 ClearHeapFields(clearKey: true, objectDisposer);
         }
 
-        public override string ToString()
+        public override readonly string ToString()
         {
             if (physicalAddress == 0)
                 return "<empty>";

@@ -17,8 +17,6 @@ insert_final_newline = false
 
 #### .NET Coding Conventions ####
 
-dotnet_diagnostic.CS0162.severity = silent
-
 # Temporary code analysis supressions
 # IDE0004: Remove Unnecessary Cast
 dotnet_diagnostic.IDE0004.severity = suggestion

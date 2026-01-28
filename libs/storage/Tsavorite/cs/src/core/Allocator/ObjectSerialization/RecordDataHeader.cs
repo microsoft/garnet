@@ -119,9 +119,9 @@ namespace Tsavorite.core
         internal byte* HeaderPtr;
 
         /// <inheritdoc/>
-        public override string ToString() => ToString("na", "na");
+        public override readonly string ToString() => ToString("na", "na");
 
-        internal string ToString(string keyString, string valueString)
+        internal readonly string ToString(string keyString, string valueString)
         {
             if (HeaderPtr == null)
                 return "<empty>";
@@ -180,7 +180,7 @@ namespace Tsavorite.core
             set => *(HeaderPtr + RecordTypeOffsetInHeader) = value;
         }
 
-        internal int Initialize(ref RecordInfo recordInfo, in RecordSizeInfo sizeInfo, byte recordType, out long keyAddress, out long valueAddress)
+        internal readonly int Initialize(ref RecordInfo recordInfo, in RecordSizeInfo sizeInfo, byte recordType, out long keyAddress, out long valueAddress)
         {
             // Format of indicator byte is high->low: <2 bits reserved><2 bits encoded filler length><2 bits key length byte count - 1><2 bits record length byte count - 1>
             var keyLength = sizeInfo.InlineKeySize;
@@ -235,7 +235,7 @@ namespace Tsavorite.core
             return headerLength;
         }
 
-        internal void InitializeForRevivification(ref RecordInfo recordInfo, ref RecordSizeInfo sizeInfo)
+        internal readonly void InitializeForRevivification(ref RecordInfo recordInfo, ref RecordSizeInfo sizeInfo)
         {
             Debug.Assert(recordInfo.Invalid, "Expected record to be Invalid in InitializeForRevivification");
             Debug.Assert(recordInfo.KeyIsInline, "Expected Key to be inline in InitializeForRevivification");
@@ -267,7 +267,7 @@ namespace Tsavorite.core
         /// <summary>Set the record length; this is ONLY to be used for temporary copies (e.g. serialization for Migration and Replication).</summary>
         /// <param name="newRecordLength"></param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetRecordLength(int newRecordLength)
+        internal readonly void SetRecordLength(int newRecordLength)
         {
             // This might leave extra bytes in the record length field if the new length uses fewer bytes than the previous length but this is only
             // temporary so it is acceptable.
@@ -276,7 +276,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal (int numKeyLengthBytes, int numRecordLengthBytes) DeconstructKVByteLengths(out int headerLength)
+        internal readonly (int numKeyLengthBytes, int numRecordLengthBytes) DeconstructKVByteLengths(out int headerLength)
         {
             var indicator = *HeaderPtr;
             var numRecordLengthBytes = ((indicator >> kRecordLengthIndicatorShift) & kRecordLengthIndicatorBitMask) + 1;    // RecordLength does not allow zero, so add 1
@@ -294,7 +294,7 @@ namespace Tsavorite.core
             => recordInfo.HasFiller ? GetFillerLength(recordLength) : 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal int GetFillerLength(RecordInfo recordInfo)
+        internal readonly int GetFillerLength(RecordInfo recordInfo)
             => recordInfo.HasFiller ? GetFillerLength(GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes)) : 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -332,10 +332,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal int GetRecordLength() => GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
+        internal readonly int GetRecordLength() => GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal int GetRecordLength(int numRecordLengthBytes)
+        internal readonly int GetRecordLength(int numRecordLengthBytes)
         {
             // See notes in Initialize() about layout of RecordLength in header and for the "set" side of this--keep them in sync.
             var recordLengthMask = (1UL << (numRecordLengthBytes * 8)) - 1;
@@ -343,7 +343,7 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal int GetKeyLength(int numKeyLengthBytes, int numRecordLengthBytes)
+        internal readonly int GetKeyLength(int numKeyLengthBytes, int numRecordLengthBytes)
         {
             var keyLengthMask = (1UL << (numKeyLengthBytes * 8)) - 1;
             var ptrBackup = sizeof(ulong) - NumIndicatorBytes - numRecordLengthBytes - numKeyLengthBytes;   // If negative, the pointer advances
@@ -353,11 +353,11 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal (int keyLength, int valueLength) GetKVLengths(RecordInfo recordInfo)
+        internal readonly (int keyLength, int valueLength) GetKVLengths(RecordInfo recordInfo)
             => GetKVLengths(recordInfo, out _ /* recordLength */, out _ /* eTagLen */, out _ /* expirationLen */, out _ /* objectLogPositionLen */, out _ /* fillerLen */);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal (int keyLength, int valueLength) GetKVLengths(RecordInfo recordInfo, out int recordLength, out int eTagLen, out int expirationLen, out int objectLogPositionLen, out int fillerLen)
+        internal readonly (int keyLength, int valueLength) GetKVLengths(RecordInfo recordInfo, out int recordLength, out int eTagLen, out int expirationLen, out int objectLogPositionLen, out int fillerLen)
         {
             var (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
 
@@ -378,10 +378,10 @@ namespace Tsavorite.core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal (int keyLength, long keyAddress) GetKeyFieldInfo() => GetKeyFieldInfo(out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
+        internal readonly (int keyLength, long keyAddress) GetKeyFieldInfo() => GetKeyFieldInfo(out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal (int keyLength, long keyAddress) GetKeyFieldInfo(out int numKeyLengthBytes, out int numRecordLengthBytes)
+        internal readonly (int keyLength, long keyAddress) GetKeyFieldInfo(out int numKeyLengthBytes, out int numRecordLengthBytes)
         {
             (numKeyLengthBytes, numRecordLengthBytes) = DeconstructKVByteLengths(out var headerLength);
 
@@ -395,14 +395,14 @@ namespace Tsavorite.core
         /// Gets the value field information for an in-memory or on-disk with object size changes to value length restored (objects have been read).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal (long valueLength, long valueAddress) GetValueFieldInfo(RecordInfo recordInfo)
+        internal readonly (long valueLength, long valueAddress) GetValueFieldInfo(RecordInfo recordInfo)
             => GetValueFieldInfo(recordInfo, out _ /*keyLength*/, out _ /*numKeyLengthBytes*/, out _ /*numRecordLengthBytes*/);
 
         /// <summary>
         /// Gets the value field information for an in-memory or on-disk with object size changes to value length restored (objects have been read).
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal (long valueLength, long valueAddress) GetValueFieldInfo(RecordInfo recordInfo, out int keyLength, out int numKeyLengthBytes, out int numRecordLengthBytes)
+        internal readonly (long valueLength, long valueAddress) GetValueFieldInfo(RecordInfo recordInfo, out int keyLength, out int numKeyLengthBytes, out int numRecordLengthBytes)
         {
             (keyLength, var keyAddress) = GetKeyFieldInfo(out numKeyLengthBytes, out numRecordLengthBytes);
             var headerLength = NumIndicatorBytes + numKeyLengthBytes + numRecordLengthBytes;
@@ -417,9 +417,9 @@ namespace Tsavorite.core
             return (valueLength, keyAddress + keyLength);
         }
 
-        internal int GetAllocatedRecordSize() => GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
+        internal readonly int GetAllocatedRecordSize() => GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
 
-        internal int GetActualRecordSize(RecordInfo recordInfo)
+        internal readonly int GetActualRecordSize(RecordInfo recordInfo)
         {
             var recordLength = GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
             return recordLength - GetFillerLength(recordInfo, recordLength);

@@ -240,56 +240,23 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long HashBytes(ReadOnlySpan<byte> byteSpan)
         {
-            unsafe
-            {
-                fixed (byte* pbString = byteSpan)
-                {
-                    const long magicno = 40343;
-                    char* pwString = (char*)pbString;
-                    int len = byteSpan.Length;
-                    int cbBuf = len / 2;
-                    ulong hashState = (ulong)len;
+            const long magicno = 40343;
 
-                    for (int i = 0; i < cbBuf; i++, pwString++)
-                        hashState = magicno * hashState + *pwString;
+            // Convert to char for faster enumeration (two bytes per iteration)
+            var charSpan = byteSpan.UncheckedCast<char>();
+            var hashState = (ulong)byteSpan.Length;
 
-                    if ((len & 1) > 0)
-                    {
-                        byte* pC = (byte*)pwString;
-                        hashState = magicno * hashState + *pC;
-                    }
+            // Explicit enumerator calls are faster than foreach
+            var charEnumerator = charSpan.GetEnumerator();
+            while (charEnumerator.MoveNext())
+                hashState = (magicno * hashState) + charEnumerator.Current;
 
-                    return (long)Rotr64(magicno * hashState, 4);
-                }
-            }
+            // If we had an odd number of bytes, get the last byte
+            if ((byteSpan.Length & 1) > 0)
+                hashState = magicno * hashState + byteSpan[^1];
+
+            return (long)Rotr64(magicno * hashState, 4);
         }
-
-        //        const long magicno = 40343;
-
-        //        int len = byteSpan.Length;
-        //        int clen = len >> 1;
-
-        //        // Convert to char for faster enumeration (two bytes per iteration)
-        //        var charSpan = byteSpan.UncheckedCast<char>();
-        //        var hashState = (ulong)len;
-
-        //        unsafe
-        //            {
-        //                fixed (char* pStart = charSpan)
-        //                {
-        //                    char * pwString = pStart;
-        //                    for (int i = 0; i<clen; i++, pwString++)
-        //                        hashState = magicno* hashState +*pwString;
-
-        //                    if ((len & 1) > 0)
-        //                    {
-        //                        byte* pC = (byte*)pwString;
-        //        hashState = magicno* hashState +*pC;
-        //    }
-        //}
-        //            }
-
-        //            return (long)Rotr64(magicno * hashState, 4);
 
         /// <summary>
         /// Compute XOR of all provided bytes

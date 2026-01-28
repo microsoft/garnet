@@ -9,7 +9,7 @@ namespace Tsavorite.benchmark
     public sealed class SessionSpanByteFunctions : SpanByteFunctions<Empty>
     {
         /// <inheritdoc />
-        public override bool Reader<TSourceLogRecord>(ref TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+        public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
             srcLogRecord.ValueSpan.CopyTo(output.SpanByte.Span);
             return true;
