@@ -2,12 +2,12 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
-using System.Linq;
 
 namespace Garnet.server
 {
@@ -37,14 +37,14 @@ namespace Garnet.server
         readonly AofProcessor aofProcessor = aofProcessor;
         readonly GarnetServerOptions serverOptions = serverOptions;
         readonly GarnetAppendOnlyFile appendOnlyFile = appendOnlyFile;
-        readonly TsavoriteLogScanSingleIterator replayIterator = appendOnlyFile.ScanSingle(physicalSublogIdx, startAddress, untilAddress, scanUncommitted: true, recover: false, logger: logger);
+        readonly TsavoriteLogScanSingleIterator replayIterator = appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, untilAddress, scanUncommitted: true, recover: false, logger: logger);
         readonly TsavoriteLog physicalSublog = appendOnlyFile.Log.GetSubLog(physicalSublogIdx);
         readonly CancellationTokenSource cts = new();
         readonly ILogger logger = logger;
         readonly long startAddress = startAddress;
         readonly long untilAddress = untilAddress;
         readonly int dbId = dbId;
-        readonly ReplayBatchContext replayBatchContext = new (serverOptions.AofReplayTaskCount);
+        readonly ReplayBatchContext replayBatchContext = new(serverOptions.AofReplayTaskCount);
         Task[] replayTasks = null;
 
         /// <summary>

@@ -701,7 +701,7 @@ namespace Garnet.server
                     sessionID = sessionId,
                 };
 
-                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                functionsState.appendOnlyFile.Log.SingleLog.Enqueue(
                     header,
                     key,
                     value,
@@ -751,7 +751,7 @@ namespace Garnet.server
                     sessionID = sessionId
                 };
 
-                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                functionsState.appendOnlyFile.Log.SingleLog.Enqueue(
                     header,
                     key,
                     ref input,
@@ -797,7 +797,7 @@ namespace Garnet.server
                     sessionID = sessionID
                 };
 
-                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                functionsState.appendOnlyFile.Log.SingleLog.Enqueue(
                     header,
                     key,
                     item2: default,

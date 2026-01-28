@@ -112,7 +112,7 @@ namespace Garnet.server
         {
             var count = 0L;
             var beginAddress = appendOnlyFile.Log.BeginAddress;
-            using var scan = appendOnlyFile.Scan(physicalSublogIdx, beginAddress[physicalSublogIdx], untilAddress[physicalSublogIdx]);
+            using var scan = appendOnlyFile.Log.Scan(physicalSublogIdx, beginAddress[physicalSublogIdx], untilAddress[physicalSublogIdx]);
 
             // Replay each AOF record in the current database context
             while (scan.GetNext(MemoryPool<byte>.Shared, out var entry, out var length, out _, out var nextAofAddress))

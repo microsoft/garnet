@@ -4,7 +4,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.common;
 using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -398,44 +397,31 @@ namespace Garnet.server
                         unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
                         databaseId = (byte)defaultDatabase.Id
                     };
-                    AppendOnlyFile.Log.SigleLog.Enqueue(header, out _);
+                    AppendOnlyFile.Log.SingleLog.Enqueue(header, out _);
                 }
                 else
                 {
-                    var logAccessVector = AppendOnlyFile.Log.AllLogsBitmask();
-                    try
+                    var physicalSublogAccessVector = AppendOnlyFile.Log.AllLogsBitmask();
+                    var header = new AofTransactionHeader
                     {
-                        AppendOnlyFile.Log.LockSublogs(logAccessVector);
-                        var _logAccessVector = logAccessVector;
-                        var header = new AofTransactionHeader
+                        shardedHeader = new AofShardedHeader
                         {
-                            shardedHeader = new AofShardedHeader
+                            basicHeader = new AofHeader
                             {
-                                basicHeader = new AofHeader
-                                {
-                                    padding = (byte)AofHeaderType.TransactionHeader,
-                                    opType = entryType,
-                                    storeVersion = 0,
-                                    sessionID = -1,
-                                    unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
-                                    databaseId = (byte)defaultDatabase.Id
-                                },
-                                sequenceNumber = StoreWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                                padding = (byte)AofHeaderType.TransactionHeader,
+                                opType = entryType,
+                                storeVersion = 0,
+                                sessionID = -1,
+                                unsafeTruncateLog = unsafeTruncateLog ? (byte)0 : (byte)1,
+                                databaseId = (byte)defaultDatabase.Id
                             },
-                            participantCount = (short)AppendOnlyFile.serverOptions.AofVirtualSublogCount
-                        };
-                        new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
+                            sequenceNumber = StoreWrapper.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                        },
+                        participantCount = (short)AppendOnlyFile.serverOptions.AofVirtualSublogCount
+                    };
+                    new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
 
-                        while (_logAccessVector > 0)
-                        {
-                            var sublogIdx = _logAccessVector.GetNextOffset();
-                            AppendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, out _);
-                        }
-                    }
-                    finally
-                    {
-                        AppendOnlyFile.Log.UnlockSublogs(logAccessVector);
-                    }
+                    AppendOnlyFile.Log.Enqueue(header, physicalSublogAccessVector);
                 }
             }
         }

@@ -178,7 +178,7 @@ namespace Garnet.cluster
         {
             if (replayIterator == null)
             {
-                replayIterator = appendOnlyFile.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
+                replayIterator = appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
                 _ = Task.Run(BackgroundReplayTask);
             }
 

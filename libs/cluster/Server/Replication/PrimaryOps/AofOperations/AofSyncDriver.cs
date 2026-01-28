@@ -206,7 +206,7 @@ namespace Garnet.cluster
                         if (maxSublogSeqNumber[i] < mssn && previousAddress[i] == tailAddress[i])
                         {
                             // logger?.LogError("refresh> {i} {mssn}", i, mssn);
-                            clusterProvider.storeWrapper.appendOnlyFile.EnqueueRefreshSublogTail(i, mssn);
+                            clusterProvider.storeWrapper.appendOnlyFile.Log.EnqueueRefreshSublogTail(i, mssn);
                         }
                     }
                 }

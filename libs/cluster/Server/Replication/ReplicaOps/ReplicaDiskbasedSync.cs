@@ -305,7 +305,7 @@ namespace Garnet.cluster
                 }
 
                 logger?.LogInformation("Initializing AOF");
-                storeWrapper.appendOnlyFile.Initialize(beginAddress, recoveredReplicationOffset);
+                storeWrapper.appendOnlyFile.Log.Initialize(beginAddress, recoveredReplicationOffset);
 
                 // Finally, advertise that we are caught up to the replication offset
                 replicationOffset = recoveredReplicationOffset;

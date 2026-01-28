@@ -875,6 +875,12 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Indicates whether AOF auto-commit is enabled.
+        /// </summary>
+        public bool AofAutoCommit
+            => CommitFrequencyMs == 0;
+
+        /// <summary>
         /// Check if multi-log is enabled
         /// </summary>
         /// <returns></returns>

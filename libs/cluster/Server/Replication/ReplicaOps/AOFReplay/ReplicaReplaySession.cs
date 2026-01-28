@@ -62,7 +62,7 @@ namespace Garnet.cluster
                             )
                         {
                             logger?.LogWarning("MainMemoryReplication: Skipping from {ReplicaReplicationOffset} to {currentAddress}", clusterProvider.replicationManager.GetSublogReplicationOffset(physicalSublogIdx), currentAddress);
-                            clusterProvider.storeWrapper.appendOnlyFile.SafeInitialize(physicalSublogIdx, currentAddress, currentAddress);
+                            clusterProvider.storeWrapper.appendOnlyFile.Log.SafeInitialize(physicalSublogIdx, currentAddress, currentAddress);
                             clusterProvider.replicationManager.SetSublogReplicationOffset(physicalSublogIdx, currentAddress);
                         }
                     }

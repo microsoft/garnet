@@ -68,7 +68,7 @@ namespace Garnet.cluster
                     for (var i = 0; i < clusterProvider.serverOptions.AofPhysicalSublogCount; i++)
                     {
                         var logShiftTailCallback = new LogShiftTailCallback(i, this);
-                        clusterProvider.storeWrapper.appendOnlyFile.SetLogShiftTailCallback(i, logShiftTailCallback.SafeTailShiftCallback);
+                        clusterProvider.storeWrapper.appendOnlyFile.Log.SetLogShiftTailCallback(i, logShiftTailCallback.SafeTailShiftCallback);
                     }
                 }
             }
@@ -113,11 +113,11 @@ namespace Garnet.cluster
 
             if (clusterProvider.serverOptions.FastAofTruncate)
             {
-                clusterProvider.storeWrapper.appendOnlyFile?.Log.GetSubLog(physicalSublogIdx).UnsafeShiftBeginAddress(TruncatedUntil, snapToPageStart: true, truncateLog: true);
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.UnsafeShiftBeginAddress(physicalSublogIdx, TruncatedUntil, snapToPageStart: true, truncateLog: true);
             }
             else
             {
-                clusterProvider.storeWrapper.appendOnlyFile?.Log.GetSubLog(physicalSublogIdx).TruncateUntil(TruncatedUntil);
+                clusterProvider.storeWrapper.appendOnlyFile?.Log.TruncateUntil(physicalSublogIdx, TruncatedUntil);
                 clusterProvider.storeWrapper.appendOnlyFile?.Log.Commit();
             }
 

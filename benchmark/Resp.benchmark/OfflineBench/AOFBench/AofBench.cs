@@ -214,7 +214,7 @@ namespace Resp.benchmark
                                     sessionID = threadId,
                                 };
 
-                                aofGen.appendOnlyFile.Log.SigleLog.Enqueue(
+                                aofGen.appendOnlyFile.Log.SingleLog.Enqueue(
                                     aofHeader,
                                     key,
                                     value,

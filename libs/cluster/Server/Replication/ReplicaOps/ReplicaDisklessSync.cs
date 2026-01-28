@@ -180,7 +180,7 @@ namespace Garnet.cluster
                     aofTailAddress = _replicationOffset = this.replicationOffset;
                 }
 
-                storeWrapper.appendOnlyFile.Initialize(aofBeginAddress, aofTailAddress);
+                storeWrapper.appendOnlyFile.Log.Initialize(aofBeginAddress, aofTailAddress);
 
                 // Set DB version
                 storeWrapper.store.SetVersion(primarySyncMetadata.currentStoreVersion);

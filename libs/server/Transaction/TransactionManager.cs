@@ -350,44 +350,27 @@ namespace Garnet.server
                         storeVersion = txnVersion,
                         sessionID = stringBasicContext.Session.ID,
                     };
-                    appendOnlyFile.Log.GetSubLog(0).Enqueue(header, ref procInput, out _);
+                    appendOnlyFile.Log.SingleLog.Enqueue(header, ref procInput, out _);
                 }
                 else
                 {
-                    try
+                    var header = new AofTransactionHeader
                     {
-                        appendOnlyFile.Log.LockSublogs(proc.physicalSublogAccessVector);
-                        var _physicalSublogAccessVector = proc.physicalSublogAccessVector;
-                        var header = new AofTransactionHeader
+                        shardedHeader = new AofShardedHeader
                         {
-                            shardedHeader = new AofShardedHeader
+                            basicHeader = new AofHeader
                             {
-                                basicHeader = new AofHeader
-                                {
-                                    padding = (byte)AofHeaderType.TransactionHeader,
-                                    opType = AofEntryType.StoredProcedure,
-                                    procedureId = id,
-                                    storeVersion = txnVersion,
-                                    sessionID = stringBasicContext.Session.ID,
-                                },
-                                sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
+                                padding = (byte)AofHeaderType.TransactionHeader,
+                                opType = AofEntryType.StoredProcedure,
+                                procedureId = id,
+                                storeVersion = txnVersion,
+                                sessionID = stringBasicContext.Session.ID,
                             },
-                            participantCount = (short)proc.virtualSublogParticipantCount
-                        };
-
-                        while (_physicalSublogAccessVector > 0)
-                        {
-                            var sublogIdx = _physicalSublogAccessVector.GetNextOffset();
-                            // Update corresponding sublog participating vector before enqueue to related physical sublog
-                            proc.replayTaskAccessVector[sublogIdx].CopyTo(
-                                new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
-                            appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, ref procInput, out _);
-                        }
-                    }
-                    finally
-                    {
-                        appendOnlyFile.Log.UnlockSublogs(proc.physicalSublogAccessVector);
-                    }
+                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
+                        },
+                        participantCount = (short)proc.virtualSublogParticipantCount
+                    };
+                    appendOnlyFile.Log.Enqueue(header, ref procInput, proc);
                 }
             }
         }
@@ -415,46 +398,29 @@ namespace Garnet.server
                         storeVersion = txnVersion,
                         txnID = stringBasicContext.Session.ID,
                     };
-                    appendOnlyFile.Log.GetSubLog(0).Enqueue(header, out _);
+                    appendOnlyFile.Log.SingleLog.Enqueue(header, out _);
                 }
                 else
                 {
                     ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
 
-                    try
+                    var header = new AofTransactionHeader
                     {
-                        if (serverOptions.AofPhysicalSublogCount > 1)
-                            appendOnlyFile.Log.LockSublogs(physicalSublogAccessVector);
-                        var _physicalSublogAccessVector = physicalSublogAccessVector;
-                        var header = new AofTransactionHeader
+                        shardedHeader = new AofShardedHeader
                         {
-                            shardedHeader = new AofShardedHeader
+                            basicHeader = new AofHeader
                             {
-                                basicHeader = new AofHeader
-                                {
-                                    padding = (byte)AofHeaderType.TransactionHeader,
-                                    opType = AofEntryType.TxnCommit,
-                                    storeVersion = txnVersion,
-                                    txnID = stringBasicContext.Session.ID,
-                                },
-                                sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                                padding = (byte)AofHeaderType.TransactionHeader,
+                                opType = AofEntryType.TxnCommit,
+                                storeVersion = txnVersion,
+                                txnID = stringBasicContext.Session.ID,
                             },
-                            participantCount = (short)virtualSublogParticipantCount
-                        };
+                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                        },
+                        participantCount = (short)virtualSublogParticipantCount
+                    };
 
-                        while (_physicalSublogAccessVector > 0)
-                        {
-                            var sublogIdx = _physicalSublogAccessVector.GetNextOffset();
-                            // Update corresponding sublog participating vector before enqueue to related physical sublog
-                            virtualSublogAccessVector[sublogIdx].CopyTo(new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
-                            appendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, out _);
-                        }
-                    }
-                    finally
-                    {
-                        if (serverOptions.AofPhysicalSublogCount > 1)
-                            appendOnlyFile.Log.UnlockSublogs(physicalSublogAccessVector);
-                    }
+                    appendOnlyFile.Log.Enqueue(header, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
                 }
             }
             if (!internal_txn)
@@ -574,45 +540,29 @@ namespace Garnet.server
                         storeVersion = txnVersion,
                         txnID = stringBasicContext.Session.ID
                     };
-                    appendOnlyFile.Log.GetSubLog(0).Enqueue(header, out _);
+                    appendOnlyFile.Log.SingleLog.Enqueue(header, out _);
                 }
                 else
                 {
                     ComputeSublogAccessVector(out var physicalSublogAccessVector, out var virtualSublogAccessVector, out var virtualSublogParticipantCount);
 
-                    try
+                    var header = new AofTransactionHeader
                     {
-                        if (serverOptions.AofPhysicalSublogCount > 1)
-                            appendOnlyFile.Log.LockSublogs(physicalSublogAccessVector);
-                        var _physicalSublogAccessVector = physicalSublogAccessVector;
-                        var header = new AofTransactionHeader
+                        shardedHeader = new AofShardedHeader
                         {
-                            shardedHeader = new AofShardedHeader
+                            basicHeader = new AofHeader
                             {
-                                basicHeader = new AofHeader
-                                {
-                                    padding = (byte)AofHeaderType.TransactionHeader,
-                                    opType = AofEntryType.TxnStart,
-                                    storeVersion = txnVersion,
-                                    txnID = stringBasicContext.Session.ID
-                                },
-                                sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                                padding = (byte)AofHeaderType.TransactionHeader,
+                                opType = AofEntryType.TxnStart,
+                                storeVersion = txnVersion,
+                                txnID = stringBasicContext.Session.ID
                             },
-                            participantCount = (short)virtualSublogParticipantCount
-                        };
+                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
+                        },
+                        participantCount = (short)virtualSublogParticipantCount
+                    };
 
-                        while (_physicalSublogAccessVector > 0)
-                        {
-                            var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
-                            virtualSublogAccessVector[physicalSublogIdx].CopyTo(new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
-                            appendOnlyFile.Log.GetSubLog(physicalSublogIdx).Enqueue(header, out _);
-                        }
-                    }
-                    finally
-                    {
-                        if (serverOptions.AofPhysicalSublogCount > 1)
-                            appendOnlyFile.Log.UnlockSublogs(physicalSublogAccessVector);
-                    }
+                    appendOnlyFile.Log.Enqueue(header, physicalSublogAccessVector, virtualSublogAccessVector, virtualSublogParticipantCount);
                 }
             }
 

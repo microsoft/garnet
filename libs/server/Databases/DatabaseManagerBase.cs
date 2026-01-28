@@ -4,7 +4,6 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Garnet.common;
 using Garnet.server.Metrics;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
@@ -304,45 +303,32 @@ namespace Garnet.server
                     storeVersion = version,
                     sessionID = -1
                 };
-                db.AppendOnlyFile.Log.SigleLog.Enqueue(header, out _);
+                db.AppendOnlyFile.Log.SingleLog.Enqueue(header, out _);
             }
             else
             {
-                var bitmapLock = db.AppendOnlyFile.Log.AllLogsBitmask();
-                try
+                var physicalSublogAccessVector = db.AppendOnlyFile.Log.AllLogsBitmask();
+                var header = new AofTransactionHeader
                 {
-                    db.AppendOnlyFile.Log.LockSublogs(bitmapLock);
-                    var _logAccessBitmap = bitmapLock;
-                    var header = new AofTransactionHeader
+                    shardedHeader = new AofShardedHeader
                     {
-                        shardedHeader = new AofShardedHeader
+                        basicHeader = new AofHeader
                         {
-                            basicHeader = new AofHeader
-                            {
-                                padding = (byte)AofHeaderType.TransactionHeader,
-                                opType = entryType,
-                                storeVersion = version,
-                                sessionID = -1
-                            },
-                            sequenceNumber = db.AppendOnlyFile.seqNumGen.GetSequenceNumber()
+                            padding = (byte)AofHeaderType.TransactionHeader,
+                            opType = entryType,
+                            storeVersion = version,
+                            sessionID = -1
                         },
-                        participantCount = (short)db.AppendOnlyFile.serverOptions.AofVirtualSublogCount
-                    };
-                    unsafe
-                    {
-                        new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
-                    }
-
-                    while (_logAccessBitmap > 0)
-                    {
-                        var sublogIdx = _logAccessBitmap.GetNextOffset();
-                        db.AppendOnlyFile.Log.GetSubLog(sublogIdx).Enqueue(header, out _);
-                    }
-                }
-                finally
+                        sequenceNumber = db.AppendOnlyFile.seqNumGen.GetSequenceNumber()
+                    },
+                    participantCount = (short)db.AppendOnlyFile.serverOptions.AofVirtualSublogCount
+                };
+                unsafe
                 {
-                    db.AppendOnlyFile.Log.UnlockSublogs(bitmapLock);
+                    new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes).Fill(0xFF);
                 }
+
+                db.AppendOnlyFile.Log.Enqueue(header, physicalSublogAccessVector);
             }
         }
 

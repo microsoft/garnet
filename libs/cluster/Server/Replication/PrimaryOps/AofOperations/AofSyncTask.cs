@@ -174,7 +174,7 @@ namespace Garnet.cluster
                     if (!IsConnected)
                         garnetClient.Connect();
 
-                    iter = clusterProvider.storeWrapper.appendOnlyFile.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
+                    iter = clusterProvider.storeWrapper.appendOnlyFile.Log.ScanSingle(physicalSublogIdx, startAddress, long.MaxValue, scanUncommitted: true, recover: false, logger: logger);
                     // Send ping to initialize replication stream
                     garnetClient.ExecuteClusterAppendLog(aofSyncDriver.localNodeId, physicalSublogIdx, -1, -1, -1, -1, 0);
                     garnetClient.CompletePending(false);

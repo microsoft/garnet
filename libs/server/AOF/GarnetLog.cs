@@ -16,7 +16,6 @@ namespace Garnet.server
     public sealed class GarnetLog
     {
         readonly GarnetServerOptions serverOptions;
-        readonly int replayTaskCount;
         readonly SingleLog singleLog;
         readonly ShardedLog shardedLog;
 
@@ -30,15 +29,14 @@ namespace Garnet.server
         {
             Debug.Assert(serverOptions.EnableFastCommit || serverOptions.AofPhysicalSublogCount == 1, "Cannot use sharded-log without FastCommit!");
             this.serverOptions = serverOptions;
-            this.replayTaskCount = serverOptions.AofReplayTaskCount;
             this.singleLog = serverOptions.AofVirtualSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
-            this.shardedLog = serverOptions.MultiLogEnabled ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger) : null;
+            this.shardedLog = serverOptions.MultiLogEnabled ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger: logger) : null;
         }
 
-        public TsavoriteLog SigleLog => singleLog.log;
+        public TsavoriteLog SingleLog => singleLog.log;
         public long HeaderSize => singleLog != null ? singleLog.HeaderSize : shardedLog.HeaderSize;
         public int Size => singleLog != null ? 1 : shardedLog.Length;
-        public int ReplayTaskCount => replayTaskCount;
+        public int ReplayTaskCount => serverOptions.AofReplayTaskCount;
 
         /// <summary>
         /// Hash function used for sharded-log
@@ -192,6 +190,73 @@ namespace Garnet.server
         }
 
         /// <summary>
+        /// Set log shift tail callbacks
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="SafeTailShiftCallback"></param>
+        public void SetLogShiftTailCallback(int sublogIdx, Action<long, long> SafeTailShiftCallback)
+        {
+            if (singleLog != null)
+            {
+                singleLog.log.SafeTailShiftCallback = SafeTailShiftCallback;
+            }
+            else
+            {
+                shardedLog.sublog[sublogIdx].SafeTailShiftCallback = SafeTailShiftCallback;
+            }
+        }
+
+        /// <summary>
+        /// Scan sublog with the specified parameters
+        /// </summary>
+        /// <param name="sublogIdx">Sublog index</param>
+        /// <param name="beginAddress">Begin address for scan</param>
+        /// <param name="endAddress">End address for scan</param>
+        /// <param name="recover">Whether to recover named iterator from latest commit</param>
+        /// <param name="scanBufferingMode">Use single or double buffering</param>
+        /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
+        /// <param name="logger">Optional logger</param>
+        /// <returns>TsavoriteLogScanIterator instance</returns>
+        public TsavoriteLogScanIterator Scan(int sublogIdx, long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        {
+            if (singleLog != null)
+            {
+                Debug.Assert(sublogIdx == 0);
+                return singleLog.log.Scan(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
+            }
+            else
+            {
+                Debug.Assert(sublogIdx < shardedLog.Length);
+                return shardedLog.sublog[sublogIdx].Scan(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
+            }
+        }
+
+        /// <summary>
+        /// Scan single sublog with the specified parameters
+        /// </summary>
+        /// <param name="sublogIdx">Sublog index</param>
+        /// <param name="beginAddress">Begin address for scan</param>
+        /// <param name="endAddress">End address for scan</param>
+        /// <param name="recover">Whether to recover named iterator from latest commit</param>
+        /// <param name="scanBufferingMode">Use single or double buffering</param>
+        /// <param name="scanUncommitted">Whether we scan uncommitted data</param>
+        /// <param name="logger">Optional logger</param>
+        /// <returns>TsavoriteLogScanSingleIterator instance</returns>
+        public TsavoriteLogScanSingleIterator ScanSingle(int sublogIdx, long beginAddress, long endAddress, bool recover = true, DiskScanBufferingMode scanBufferingMode = DiskScanBufferingMode.DoublePageBuffering, bool scanUncommitted = false, ILogger logger = null)
+        {
+            if (singleLog != null)
+            {
+                Debug.Assert(sublogIdx == 0);
+                return singleLog.log.ScanSingle(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
+            }
+            else
+            {
+                Debug.Assert(sublogIdx < shardedLog.Length);
+                return shardedLog.sublog[sublogIdx].ScanSingle(beginAddress, endAddress, recover, scanBufferingMode, scanUncommitted, logger);
+            }
+        }
+
+        /// <summary>
         /// Get log page size bits
         /// TODO: Is this initialized only once? Is it same across sublogs?
         /// </summary>
@@ -206,6 +271,49 @@ namespace Garnet.server
         /// <returns></returns>
         public long UnsafeGetReadOnlyAddressLagOffset()
             => GetSubLog(0).UnsafeGetReadOnlyAddressLagOffset();
+
+        /// <summary>
+        /// Shifts the begin address of the specified sublog or single log to the given address.
+        /// </summary>
+        /// <param name="physicalSublogIdx">Index of the physical sublog to operate on when using a sharded log.</param>
+        /// <param name="untilAddress">The address to which the begin address should be shifted.</param>
+        /// <param name="snapToPageStart">If true, snaps the begin address to the start of the page containing the specified address.</param>
+        /// <param name="truncateLog">If true, truncates the log up to the new begin address.</param>
+        public void UnsafeShiftBeginAddress(int physicalSublogIdx, long untilAddress, bool snapToPageStart = false, bool truncateLog = false)
+        {
+            if (singleLog != null)
+                singleLog.log.UnsafeShiftBeginAddress(untilAddress, snapToPageStart: snapToPageStart, truncateLog: truncateLog);
+            else
+                shardedLog.sublog[physicalSublogIdx].UnsafeShiftBeginAddress(untilAddress, snapToPageStart: snapToPageStart, truncateLog: truncateLog);
+        }
+
+        /// <summary>
+        /// Truncates the log up to the specified address, either on a single log or a sharded sublog.
+        /// </summary>
+        /// <param name="physicalSublogIdx">The index of the physical sublog to truncate when using sharded logs.</param>
+        /// <param name="untilAddress">The address up to which the log should be truncated.</param>
+        public void TruncateUntil(int physicalSublogIdx, long untilAddress)
+        {
+            if (singleLog != null)
+                singleLog.log.TruncateUntil(untilAddress);
+            else
+                shardedLog.sublog[physicalSublogIdx].TruncateUntil(untilAddress);
+        }
+
+        /// <summary>
+        /// Safe initialize when FastAofTruncate is enabled
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="beginAddress"></param>
+        /// <param name="committedUntilAddress"></param>
+        /// <param name="lastCommitNum"></param>
+        public void SafeInitialize(int sublogIdx, long beginAddress, long committedUntilAddress, long lastCommitNum = 0)
+        {
+            if (singleLog != null)
+                singleLog.log.SafeInitialize(beginAddress, committedUntilAddress, lastCommitNum);
+            else
+                shardedLog.sublog[sublogIdx].SafeInitialize(beginAddress, committedUntilAddress, lastCommitNum);
+        }
 
         /// <summary>
         /// Conditional initialize
@@ -248,24 +356,6 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// TODO: should we pass an AofAddress vector?
-        /// </summary>
-        /// <param name="untilAddress"></param>
-        /// <param name="commitNum"></param>
-        public void WaitForCommit(long untilAddress = 0, long commitNum = -1)
-        {
-            if (singleLog != null)
-            {
-                singleLog.log.WaitForCommit(untilAddress, commitNum);
-            }
-            else
-            {
-                for (var i = 0; i < shardedLog.Length; i++)
-                    shardedLog.sublog[i].WaitForCommit(untilAddress, commitNum);
-            }
-        }
-
-        /// <summary>
         /// Commit all physical sublogs
         /// </summary>
         /// <param name="spinWait"></param>
@@ -280,6 +370,24 @@ namespace Garnet.server
             {
                 for (var i = 0; i < shardedLog.Length; i++)
                     shardedLog.sublog[i].Commit(spinWait, cookie);
+            }
+        }
+
+        /// <summary>
+        /// Blocks the calling thread until the log is committed up to the specified address or commit number.
+        /// </summary>
+        /// <param name="untilAddress">The address up to which to wait for the commit. Defaults to 0.</param>
+        /// <param name="commitNum">The commit number up to which to wait. Defaults to -1.</param>
+        public void WaitForCommit(long untilAddress = 0, long commitNum = -1)
+        {
+            if (singleLog != null)
+            {
+                singleLog.log.WaitForCommit(untilAddress, commitNum);
+            }
+            else
+            {
+                for (var i = 0; i < shardedLog.Length; i++)
+                    shardedLog.sublog[i].WaitForCommit(untilAddress, commitNum);
             }
         }
 
@@ -383,6 +491,9 @@ namespace Garnet.server
                 value,
                 ref input,
                 out logicalAddress);
+
+            if (serverOptions.AofAutoCommit)
+                Commit();
         }
 
         internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
@@ -399,6 +510,9 @@ namespace Garnet.server
                 key,
                 ref input,
                 out logicalAddress);
+
+            if (serverOptions.AofAutoCommit)
+                Commit();
         }
 
         internal void Enqueue(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out long logicalAddress)
@@ -414,6 +528,98 @@ namespace Garnet.server
                 key,
                 value,
                 out logicalAddress);
+
+            if (serverOptions.AofAutoCommit)
+                Commit();
+        }
+
+        internal unsafe void Enqueue(AofTransactionHeader header, ref CustomProcedureInput procInput, CustomTransactionProcedure proc)
+        {
+            try
+            {
+                if (serverOptions.AofPhysicalSublogCount > 1)
+                    LockSublogs(proc.physicalSublogAccessVector);
+                var _physicalSublogAccessVector = proc.physicalSublogAccessVector;
+                while (_physicalSublogAccessVector > 0)
+                {
+                    var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
+                    // Update corresponding sublog participating vector before enqueue to related physical sublog
+                    proc.replayTaskAccessVector[physicalSublogIdx].CopyTo(
+                        new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
+                    shardedLog.sublog[physicalSublogIdx].Enqueue(header, ref procInput, out _);
+                }
+            }
+            finally
+            {
+                if (serverOptions.AofPhysicalSublogCount > 1)
+                    UnlockSublogs(proc.physicalSublogAccessVector);
+            }
+
+            if (serverOptions.AofAutoCommit)
+                Commit();
+        }
+
+        internal unsafe void Enqueue(AofTransactionHeader header, ulong physicalSublogAccessVector, BitVector[] virtualSublogAccessVector, int participantCount)
+        {
+            try
+            {
+                if (serverOptions.AofPhysicalSublogCount > 1)
+                    LockSublogs(physicalSublogAccessVector);
+                var _physicalSublogAccessVector = physicalSublogAccessVector;
+                while (_physicalSublogAccessVector > 0)
+                {
+                    var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
+                    // Update corresponding sublog participating vector before enqueue to related physical sublog
+                    virtualSublogAccessVector[physicalSublogIdx].CopyTo(new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
+                    shardedLog.sublog[physicalSublogIdx].Enqueue(header, out _);
+                }
+            }
+            finally
+            {
+                if (serverOptions.AofPhysicalSublogCount > 1)
+                    UnlockSublogs(physicalSublogAccessVector);
+            }
+
+            if (serverOptions.AofAutoCommit)
+                Commit();
+        }
+
+        /// <summary>
+        /// Enqueue a signal to refresh sublog tail
+        /// </summary>
+        /// <param name="sublogIdx"></param>
+        /// <param name="sequenceNumber"></param>
+        public void EnqueueRefreshSublogTail(int sublogIdx, long sequenceNumber)
+        {
+            Debug.Assert(shardedLog != null && serverOptions.AofPhysicalSublogCount == shardedLog.sublog.Length);
+            var refreshSublogTailHeader = new AofShardedHeader
+            {
+                basicHeader = new AofHeader { opType = AofEntryType.RefreshSublogTail },
+                sequenceNumber = sequenceNumber
+            };
+            shardedLog.sublog[sublogIdx].Enqueue(refreshSublogTailHeader, out _);
+
+            if (serverOptions.AofAutoCommit)
+                Commit();
+        }
+
+        internal void Enqueue(AofTransactionHeader header, ulong physicalSublogAccessVector)
+        {
+            try
+            {
+                LockSublogs(physicalSublogAccessVector);
+                var _logAccessBitmap = physicalSublogAccessVector;
+
+                while (_logAccessBitmap > 0)
+                {
+                    var sublogIdx = _logAccessBitmap.GetNextOffset();
+                    shardedLog.sublog[sublogIdx].Enqueue(header, out _);
+                }
+            }
+            finally
+            {
+                UnlockSublogs(physicalSublogAccessVector);
+            }
         }
     }
 }

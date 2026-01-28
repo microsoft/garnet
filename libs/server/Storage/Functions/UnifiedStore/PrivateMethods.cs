@@ -38,7 +38,7 @@ namespace Garnet.server
                     storeVersion = version,
                     sessionID = sessionID
                 };
-                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                functionsState.appendOnlyFile.Log.SingleLog.Enqueue(
                     header,
                     key,
                     value,
@@ -89,7 +89,7 @@ namespace Garnet.server
                         storeVersion = version,
                         sessionID = sessionID
                     };
-                    functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                    functionsState.appendOnlyFile.Log.SingleLog.Enqueue(
                         header,
                         key,
                         new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
@@ -136,7 +136,7 @@ namespace Garnet.server
                     storeVersion = version,
                     sessionID = sessionID
                 };
-                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                functionsState.appendOnlyFile.Log.SingleLog.Enqueue(
                     header,
                     key,
                     item2: default,
@@ -184,7 +184,7 @@ namespace Garnet.server
                     sessionID = sessionId
                 };
 
-                functionsState.appendOnlyFile.Log.SigleLog.Enqueue(
+                functionsState.appendOnlyFile.Log.SingleLog.Enqueue(
                     header,
                     key,
                     ref input,
