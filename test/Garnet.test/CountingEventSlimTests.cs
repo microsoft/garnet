@@ -5,12 +5,15 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.common;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
+    [TestFixture]
     public class CountingEventSlimTests
     {
         [Test]

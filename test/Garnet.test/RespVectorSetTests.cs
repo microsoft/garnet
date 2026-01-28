@@ -8,6 +8,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using NUnit.Framework;
@@ -17,6 +18,7 @@ using Tsavorite.core;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
     public class RespVectorSetTests
     {

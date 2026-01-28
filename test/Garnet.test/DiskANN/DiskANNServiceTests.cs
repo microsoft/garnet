@@ -6,6 +6,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -13,6 +14,7 @@ using StackExchange.Redis;
 
 namespace Garnet.test.DiskANN
 {
+    [AllureNUnit]
     [TestFixture]
     public class DiskANNServiceTests
     {
