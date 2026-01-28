@@ -16,6 +16,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -26,6 +27,7 @@ using StackExchange.Redis;
 namespace Garnet.test.cluster
 {
     [TestFixture, NonParallelizable]
+    [AllureNUnit]
     public class ClusterVectorSetTests
     {
         private sealed class StringAndByteArrayComparer : IEqualityComparer<(string Key, byte[] Elem)>
