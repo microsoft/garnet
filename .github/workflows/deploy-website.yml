@@ -9,14 +9,18 @@ on:
       - '.github/workflows/deploy-website.yml'
       - 'website/**'
   workflow_run:
-    workflows: [Garnet CI BDN.benchmark]
+    workflows:
+      - Garnet CI BDN.benchmark
+      - Garnet Nightly Tests
     types:
       - completed
 permissions:
   contents: write
-
+  actions: read
+  
 jobs:
   deploy:
+    if: always()
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
     defaults:
@@ -38,11 +42,53 @@ jobs:
           sparse-checkout: |
             website/static/charts
           path: continuousbenchmark_net80
+      - uses: actions/checkout@v4
+        with:
+          ref: allure_data_history
+          path: allure_data_history
       - name: Copy charts
         run: |
           mkdir -p static/charts
           cp ../continuousbenchmark/website/static/charts/* static/charts
           cp ../continuousbenchmark_net80/website/static/charts/data.js static/charts/data_net80.js
+
+      - name: DEBUG Show triggering workflow name
+        run: echo ${{ github.event.workflow_run.name }}
+
+      # Download the current allure_report artifact which is big with A LOT of test result files
+      # Nightly run does not put full allure_report up in the allure_data_history branch to keep that branch small
+      - name: Download Allure artifact
+        if: ${{ github.event.workflow_run.name == 'Garnet Nightly Tests' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: allure-report
+          path: allure_artifact
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      # The one thing that is pulled from allure_data_history branch is the historical test result data
+      # This data is then copied into the downloaded allure_report to create a full report with history
+      - name: Copy Allure report
+        if: ${{ github.event.workflow_run.name == 'Garnet Nightly Tests' }}
+        run: |
+          mkdir -p static/allure
+
+          # Base: Allure full report from Nightly Run artifact
+          # Note: artifact downloads to workspace root, not working-directory, so use ../
+          # The artifact contents are directly in allure_artifact/ (not in a nested allure-report folder)
+          if [ -d "../allure_artifact" ]; then
+            cp -R ../allure_artifact/* static/allure
+            echo "Copied Allure report from artifact"
+          else
+            echo "Allure artifact missing; skipping base report copy."
+          fi
+
+          # Overlay: history from branch
+          if [ -d "../allure_data_history/test/Allure/history" ]; then
+            cp -R ../allure_data_history/test/Allure/history static/allure/history
+          else
+            echo "Allure history missing; skipping history overlay."
+          fi
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
