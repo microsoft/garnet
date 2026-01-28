@@ -1,9 +1,0 @@
-GarnetServer
-Copyright (c) Microsoft Corporation
-
-ERROR(S):
-  Option 'lua-allowed-functions' has no value.
-
-Encountered error(s) while parsing command line arguments.
-For detailed usage information run with --help.
-
