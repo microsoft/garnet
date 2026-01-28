@@ -40,9 +40,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, windows-latest ]
-        # NOTE: As of Jan 2026, we only run .net8.0 since BDNs do NOT support .net10.0 yet. When it does support .net10.0, we can add it back here.
-        #framework: [ 'net8.0', 'net10.0' ]
-        framework: [ 'net8.0' ]
+        framework: [ 'net8.0', 'net10.0' ]
         include:
           - framework: net10.0
             gh-pages-branch: continuousbenchmark
