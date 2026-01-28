@@ -31,6 +31,8 @@ dotnet_diagnostic.CS1573.severity = suggestion
 # CS1591: Missing XML comment for publicly visible type or member
 dotnet_diagnostic.CS1591.severity = suggestion
 
+dotnet_diagnostic.CS0162.severity = silent
+
 # Temporary security analysis supressions
 # CA5359: Do not disable certificate validation
 dotnet_diagnostic.CA5359.severity = suggestion

@@ -166,35 +166,36 @@ namespace Tsavorite.benchmark
                     {
                         if (idx % 512 == 0)
                         {
-                            uContext.Refresh();
-                            uContext.CompletePending(false);
+                            //uContext.Refresh();
+                            //uContext.CompletePending(false);
                         }
 
+                        ref var key = ref SpanByte.Reinterpret(ref txn_keys_[idx]);
                         int r = (int)rng.Generate(100);     // rng.Next() is not inclusive of the upper bound so this will be <= 99
                         if (r < readPercent)
                         {
-                            uContext.Read(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, ref _output, Empty.Default);
+                            uContext.Read(ref key, ref _input, ref _output, Empty.Default);
                             ++reads_done;
                             continue;
                         }
                         if (r < upsertPercent)
                         {
-                            uContext.Upsert(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _value, Empty.Default);
+                            uContext.Upsert(ref key, ref _value, Empty.Default);
                             ++writes_done;
                             continue;
                         }
                         if (r < rmwPercent)
                         {
-                            uContext.RMW(ref SpanByte.Reinterpret(ref txn_keys_[idx]), ref _input, Empty.Default);
+                            uContext.RMW(ref key, ref _input, Empty.Default);
                             ++writes_done;
                             continue;
                         }
-                        uContext.Delete(ref SpanByte.Reinterpret(ref txn_keys_[idx]), Empty.Default);
+                        uContext.Delete(ref key, Empty.Default);
                         ++deletes_done;
                     }
                 }
 
-                uContext.CompletePending(true);
+                //uContext.CompletePending(true);
             }
             finally
             {

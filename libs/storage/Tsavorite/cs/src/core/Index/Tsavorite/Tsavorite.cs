@@ -484,9 +484,7 @@ namespace Tsavorite.core
                 internalStatus = InternalRead(ref key, keyHash, ref input, ref output, context, ref pcontext, sessionFunctions);
             while (HandleImmediateRetryStatus(internalStatus, sessionFunctions, ref pcontext));
 
-            var status = HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
-
-            return status;
+            return HandleOperationStatus(sessionFunctions.Ctx, ref pcontext, internalStatus);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
