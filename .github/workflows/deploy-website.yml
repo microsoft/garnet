@@ -46,6 +46,13 @@ jobs:
         with:
           ref: allure_data_history
           path: allure_data_history
+
+      # Checkout gh-pages to preserve existing Allure content when not updating from Nightly
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-current
+
       - name: Copy charts
         run: |
           mkdir -p static/charts
@@ -54,6 +61,18 @@ jobs:
 
       - name: DEBUG Show triggering workflow name
         run: echo ${{ github.event.workflow_run.name }}
+
+      # When NOT triggered by Nightly, preserve existing Allure content from gh-pages
+      - name: Preserve existing Allure from gh-pages
+        if: ${{ github.event.workflow_run.name != 'Garnet Nightly Tests' }}
+        run: |
+          if [ -d "../gh-pages-current/allure" ]; then
+            mkdir -p static/allure
+            cp -R ../gh-pages-current/allure/* static/allure/
+            echo "Preserved existing Allure content from gh-pages"
+          else
+            echo "No existing Allure content found on gh-pages"
+          fi
 
       # Download the current allure_report artifact which is big with A LOT of test result files
       # Nightly run does not put full allure_report up in the allure_data_history branch to keep that branch small
