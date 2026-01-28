@@ -73,8 +73,11 @@ jobs:
           mkdir -p static/allure
 
           # Base: Allure full report from Nightly Run artifact
-          if [ -d "allure_artifact/allure-report" ]; then
-            cp -R allure_artifact/allure-report/* static/allure
+          # Note: artifact downloads to workspace root, not working-directory, so use ../
+          # The artifact contents are directly in allure_artifact/ (not in a nested allure-report folder)
+          if [ -d "../allure_artifact" ]; then
+            cp -R ../allure_artifact/* static/allure
+            echo "Copied Allure report from artifact"
           else
             echo "Allure artifact missing; skipping base report copy."
           fi
