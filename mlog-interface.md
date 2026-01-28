@@ -197,6 +197,53 @@ In that situation, possible solutions include
 3. Use the concept of closing down timestamp. We only read at t-1 and read at t only when all sublogs have replayed t. Is that correct what are th caveats
 </ul></ul>
 
+
+<ul><ul>
+
+### Prefix Consistent Recovery
+
+In the single log case, issuing a Commit operation (with FastCommit enable), will result in persisting the log data into the disk up to that point
+and including the Commit metadata.
+Currently on recovery of a single log, Garnet will scan and recover its AOF log until the latest (flushed to disk) Commit record.
+In the multi-log case, Commit operations happen in parallel for each individual sublog.
+There is no guarantee that an issued commit operation will succeed for all logs.
+In addition, even if the commit operation succeeds for all logs, we cannot replay all records blindly until the commit marker per sublog because that may result in a prefix inconsistent view of the database after recovery.
+
+Consider the below sequence of operations as they occur in the single log case with commit markers added indicating a flush operation
+On recovery, of that specific example, Garnet will replay all operations until c1 as they have been persisted on disk.
+single log snapshot
+<----------------------------->
+[A, B, C, c1], D, E, F
+
+When Garnet is configured with multi-log enabled, the corresponding operations may be recorded on any of the available sublogs
+based on the hash function that is being used.
+In the below example, the commit marker can be inserted in arbitrary position per log.
+Following the legacy single log recover protocol, we would have recovered a snapshot of the database until the c1 marker for each individual sublog.
+This will be an prefix inconsistent snapshot of the database, because operation E can be observed without D.
+
+s1: [A, C, E, c1], F
+s2: [B, c1], D
+
+In order to avoid this scenario, we need to include a timestamp within the commit metadata to be able to resolve this scenario
+by skipping on replay records with timestamps highers than the minimum timestamp established by the commit markers.
+
+Including timestamps to the commit metadata is done through the CommitCookie.
+The timestamp (Ts) needs to be calculated under epoch protection within each sublog to ensure that writers to log have had a chance to observe the Ts value, hence the associated flush operation would guarantee that all records generated with Ts' <= Ts would have been persisted into the disk.
+
+There are two ways to issue commit operations on a TsavoriteLog instance.
+1. Using an external API call using Commit/CommitAsync methods
+2. Using an internal call to Commit by enabling the AutoCommit flag
+
+In both cases, we need to ensure that Commit operations are issued in unison across all sublogs.
+This is necessary because the recover process requires having observed a minimum timestamp across all sublogs to ensure prefix consistency.
+More specifically on recovery, Garnet will acquire the latest commit metadata for every sublog and calculate the minimum timestamp across all.
+Then it will scan through the log and replay only those records with timestamp equal or less to the recovered minimum commit timestamp
+across all physical sublogs.
+If a sublog misses a commit record, we cannot establish the upper bound until which all records have been persisted for that sublog.
+There might be records created before the given timestamp that have not been flushed. Hence, not replaying them will recover the database into a prefix inconsistent state.
+
+</ul></ul>
+
 TODO:
 - Do we have to change AofHeader version since we use padding bits?
 - Do we need to wait for unsafe commit to complete when parallel replay within a sublog is enabled?
