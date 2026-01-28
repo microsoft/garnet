@@ -28,7 +28,7 @@ namespace Garnet.test.cluster
 {
     [TestFixture, NonParallelizable]
     [AllureNUnit]
-    public class ClusterVectorSetTests
+    public class ClusterVectorSetTests : AllureTestBase
     {
         private sealed class StringAndByteArrayComparer : IEqualityComparer<(string Key, byte[] Elem)>
         {
