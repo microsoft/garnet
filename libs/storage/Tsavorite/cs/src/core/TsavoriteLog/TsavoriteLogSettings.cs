@@ -199,12 +199,14 @@ namespace Tsavorite.core
 
         internal LogSettings GetLogSettings()
         {
+            var pageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize);
             return new LogSettings
             {
                 LogDevice = LogDevice,
-                PageSizeBits = Utility.NumBitsPreviousPowerOf2(PageSize),
+                PageSizeBits = pageSizeBits,
                 SegmentSizeBits = Utility.NumBitsPreviousPowerOf2(SegmentSize),
                 MemorySize = ReadOnlyMode ? 0 : MemorySize,
+                PageCount = (int)(MemorySize >> pageSizeBits),
                 ReadCopyOptions = ReadCopyOptions.None,
                 MutableFraction = MutableFraction,
                 ObjectLogDevice = null,

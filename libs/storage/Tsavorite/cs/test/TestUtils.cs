@@ -240,9 +240,15 @@ namespace Tsavorite.test
 
         public enum RandomMode { Rng, NoRng }
 
+        /// <summary>
+        /// Extract the status and output from the completed results, and Dispose() the completed results.
+        /// </summary>
         internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext>(CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs)
             => GetSinglePendingResult(completedOutputs, out _);
 
+        /// <summary>
+        /// Extract the status and output from the completed results, and Dispose() the completed results.
+        /// </summary>
         internal static (Status status, TOutput output) GetSinglePendingResult<TInput, TOutput, TContext>(CompletedOutputIterator<TInput, TOutput, TContext> completedOutputs, out RecordMetadata recordMetadata)
         {
             ClassicAssert.IsTrue(completedOutputs.Next());

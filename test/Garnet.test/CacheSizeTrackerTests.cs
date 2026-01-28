@@ -18,6 +18,9 @@ namespace Garnet.test
         TsavoriteKV<StoreFunctions, StoreAllocator> store;
         CacheSizeTracker cacheSizeTracker;
 
+        // The HLOG will always have at least two pages allocated.
+        const int MinLogAllocatedPageCount = 2;
+
         [SetUp]
         public void Setup()
         {
@@ -60,7 +63,7 @@ namespace Garnet.test
             cacheSizeTracker.mainLogTracker.PostMemoryTrim = (allocatedPageCount, headAddress) => { emptyPageCountIncrements++; if (emptyPageCountIncrements == 3) epcEvent.Set(); };
 
             ClassicAssert.AreEqual(0, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
-            ClassicAssert.AreEqual(cacheSizeTracker.mainLogTracker.logAccessor.BufferSize, cacheSizeTracker.mainLogTracker.logAccessor.AllocatedPageCount);
+            ClassicAssert.AreEqual(MinLogAllocatedPageCount, cacheSizeTracker.mainLogTracker.logAccessor.AllocatedPageCount);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -72,7 +75,7 @@ namespace Garnet.test
             const int MemorySizePerEntry = 208;
 
             ClassicAssert.AreEqual(MemorySizePerEntry, cacheSizeTracker.mainLogTracker.LogHeapSizeBytes);
-            ClassicAssert.AreEqual(cacheSizeTracker.mainLogTracker.logAccessor.BufferSize, cacheSizeTracker.mainLogTracker.logAccessor.AllocatedPageCount); // Ensure APC hasn't changed as memory is still within the min & max limits
+            ClassicAssert.AreEqual(MinLogAllocatedPageCount, cacheSizeTracker.mainLogTracker.logAccessor.AllocatedPageCount); // Ensure APC hasn't changed as memory is still within the min & max limits
 
             // K/V lengths fit into a single byte each, so the record size is: RecordInfo, MinLengthMetadataBytes, keyLength, valueLength; the total rounded up to record alignment.
             // ValueLength is 4 for the ObjectId, so this becomes 8 + 3 + (11) + 4 totalling 26, rounding up to 32 which is a even divisor for the page size.
@@ -107,7 +110,7 @@ namespace Garnet.test
             cacheSizeTracker.readCacheTracker.PostMemoryTrim = (allocatedPageDCount, headAddress) => { readCacheEmptyPageCountIncrements++; readCacheEpcEvent.Set(); };
 
             ClassicAssert.AreEqual(0, cacheSizeTracker.readCacheTracker.LogHeapSizeBytes);
-            ClassicAssert.AreEqual(cacheSizeTracker.mainLogTracker.logAccessor.BufferSize, cacheSizeTracker.readCacheTracker.logAccessor.AllocatedPageCount);
+            ClassicAssert.AreEqual(MinLogAllocatedPageCount, cacheSizeTracker.readCacheTracker.logAccessor.AllocatedPageCount);
 
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);

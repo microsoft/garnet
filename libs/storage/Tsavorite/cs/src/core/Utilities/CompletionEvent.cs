@@ -30,7 +30,7 @@ namespace Tsavorite.core
                 {
                     // Release all waiting threads
                     tempSemaphore.Release(int.MaxValue);
-                    tempSemaphore.Dispose();
+                    // tempSemaphore.Dispose();    TODO: We cannot Dispose() here because there may still be waiters that have not yet been released.
                     break;
                 }
             }

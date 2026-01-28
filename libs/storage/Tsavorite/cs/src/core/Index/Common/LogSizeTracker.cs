@@ -27,8 +27,8 @@ namespace Tsavorite.core
         /// </summary>
         private CompletionEvent resizeTaskEvent;
 
-        /// <summary>The current size of the log (inline + heap)</summary>
-        private ConcurrentCounter logSize;
+        /// <summary>The current heap size of the log</summary>
+        private ConcurrentCounter heapSize;
 
         private readonly ILogger logger;
 
@@ -50,13 +50,16 @@ namespace Tsavorite.core
         internal Action<int, long> PostMemoryTrim { get; set; } = (allocatedPageCount, headAddress) => { };
 
         /// <summary>Total size occupied by log, including heap</summary>
-        public long TotalSizeBytes => logAccessor.MemorySizeBytes + logSize.Total;
+        public long TotalSize => logAccessor.MemorySizeBytes + heapSize.Total;
 
-        /// <summary>Size of log heap memory</summary>
-        public long LogHeapSizeBytes => logSize.Total;
+        /// <summary>Size of log heap memory only</summary>
+        public long LogHeapSizeBytes => heapSize.Total;
 
         /// <summary>Target size for the hybrid log memory utilization</summary>
-        public long TargetSize { get; set; }
+        public long TargetSize { get; private set; }
+
+        /// <summary>High and low deltas for <see cref="TargetSize"/></summary>
+        public (long high, long low) TargetDeltaRange => (highTargetSize, lowTargetSize);
 
         /// <summary>Creates a new log size tracker</summary>
         /// <param name="logAccessor">Hybrid log accessor</param>
@@ -69,10 +72,11 @@ namespace Tsavorite.core
             Debug.Assert(logAccessor != null);
 
             this.logAccessor = logAccessor;
-            logSize = new ConcurrentCounter();
+            heapSize = new ConcurrentCounter();
             UpdateTargetSize(targetSize, highDelta, lowDelta);
             this.logger = logger;
             Stopped = false;
+            resizeTaskEvent = new();
         }
 
         /// <summary>
@@ -83,32 +87,36 @@ namespace Tsavorite.core
         public void Start(CancellationToken cancellationToken)
         {
             Debug.Assert(Stopped == false);
+            resizeTaskEvent.Initialize();
             _ = Task.Run(() => ResizerTask(cancellationToken), cancellationToken);
         }
 
         /// <summary>
         /// Update target size for the hybrid log memory utilization
         /// </summary>
-        /// <param name="targetSize">The target size</param>
+        /// <param name="newTargetSize">The target size</param>
         /// <param name="highDelta">Delta above the target size at which to trigger trimming</param>
         /// <param name="lowDelta">Delta below the target size at which to stop trimming once started</param>
-        public void UpdateTargetSize(long targetSize, long highDelta, long lowDelta)
+        public void UpdateTargetSize(long newTargetSize, long highDelta, long lowDelta)
         {
             Debug.Assert(highDelta >= 0);
             Debug.Assert(lowDelta >= 0);
-            Debug.Assert(targetSize > highDelta);
-            Debug.Assert(targetSize > lowDelta);
+            Debug.Assert(newTargetSize > highDelta);
+            Debug.Assert(newTargetSize > lowDelta);
 
-            TargetSize = targetSize;
-            highTargetSize = targetSize + highDelta;
-            lowTargetSize = targetSize - lowDelta;
-            logger?.LogInformation("Target size updated to {targetSize} with highDelta {highDelta}, lowDelta {lowDelta}", targetSize, highDelta, lowDelta);
-
-            resizeTaskEvent = new();
+            var shrink = newTargetSize < TargetSize;
+            TargetSize = newTargetSize;
+            highTargetSize = newTargetSize + highDelta;
+            lowTargetSize = newTargetSize - lowDelta;
+            logger?.LogInformation("Target size updated to {targetSize} with highDelta {highDelta}, lowDelta {lowDelta}", newTargetSize, highDelta, lowDelta);
+            
+            // Only signal if we are shrinking; growth is handled normally as we add pages and records.
+            if (shrink)
+                resizeTaskEvent.Set();
         }
 
         /// <summary>Return true if the total size is outside the target plus delta</summary>
-        public bool IsSizeBeyondLimit => TotalSizeBytes > highTargetSize;
+        public bool IsSizeBeyondLimit => TotalSize > highTargetSize;
 
         /// <summary>Callback on allocator completion</summary>
         public void OnCompleted() { }
@@ -124,11 +132,20 @@ namespace Tsavorite.core
                 size += MemoryUtils.CalculateHeapMemorySize(in recordIter);
 
             if (size != 0)
-                logSize.Increment(-size); // Reduce size as records are being evicted
+                heapSize.Increment(-size); // Reduce size as records are being evicted
         }
 
         /// <summary>Adds size to the tracked total count</summary>
-        public void IncrementSize(long size) => logSize.Increment(size);
+        public void IncrementSize(long size)
+        {
+            if (size != 0)
+            {
+                heapSize.Increment(size);
+                if (size > 0 && IsSizeBeyondLimit)
+                    resizeTaskEvent.Set();
+                Debug.Assert(size > 0 || heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
+            }
+        }
 
         /// <summary>Adds the <see cref="LogRecord"/> size to the tracked total count.</summary>
         public void UpdateSize<TSourceLogRecord>(in TSourceLogRecord logRecord, bool add)
@@ -139,14 +156,15 @@ namespace Tsavorite.core
             {
                 if (add)
                 {
-                    logSize.Increment(size);
+                    heapSize.Increment(size);
                     if (IsSizeBeyondLimit)
                         resizeTaskEvent.Set();
                 }
                 else
                 {
                     // Nothing needed if we are decreasing.
-                    logSize.Increment(-size);
+                    heapSize.Increment(-size);
+                    Debug.Assert(heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in UpdateSize");
                 }
             }
         }
@@ -177,9 +195,10 @@ namespace Tsavorite.core
             }
         }
 
-        private bool DetermineEvictionRange(long fromAddress, long untilAddress, long currentSize, long requiredSize, CancellationToken cancellationToken,
+        private bool DetermineEvictionRange(ref long fromAddress, long untilAddress, long currentSize, long requiredSize, CancellationToken cancellationToken,
             out int allocatedPageCount, out int evictPageCount, out long trimmedSize, out bool isPartialLastPage)
         {
+            // We know we are oversize so we calculate how much we need to trim to get to lowTargetSize.
             var overSize = currentSize - lowTargetSize + requiredSize;
             trimmedSize = 0L;
 
@@ -196,10 +215,10 @@ namespace Tsavorite.core
                 trimmedSize += iterator.CalculateHeapMemorySize();
 
                 // If we've crossed a page boundary, we can subtract the pagesize as well.
-                var currentPage = allocator.GetPage(iterator.CurrentAddress);
+                fromAddress = iterator.CurrentAddress;
+                var currentPage = allocator.GetPage(fromAddress);
                 if (currentPage > fromPage)
                 {
-                    trimmedSize += allocator.PageSize;
                     fromPage = currentPage;
                     ++evictPageCount;
                     lastPageTrimmedSize = trimmedSize;
@@ -219,30 +238,36 @@ namespace Tsavorite.core
         private bool ResizeIfNeeded(CancellationToken cancellationToken)
         {
             // Monitor the total size
-            var currentSize = logSize.Total;
+            var currentSize = TotalSize;
             if (currentSize <= highTargetSize)
-                return true;
+                 return true;
 
-            logger?.LogDebug("Heap size {totalLogSize} > target {highTargetSize}. Alloc: {AllocatedPageCount} EPC: {EmptyPageCount}", logSize.Total, highTargetSize, logAccessor.AllocatedPageCount, logAccessor.BufferSize - logAccessor.AllocatedPageCount);
+            logger?.LogDebug("Heap size {totalLogSize} > target {highTargetSize}. Alloc: {AllocatedPageCount} BufferSize: {BufferSize}", heapSize.Total, highTargetSize, logAccessor.AllocatedPageCount, logAccessor.BufferSize);
 
-            var fromAddress = logAccessor.HeadAddress;
-            var untilAddress = logAccessor.ReadOnlyAddress;
+            var headAddress = logAccessor.HeadAddress;
+            var untilAddress = logAccessor.ReadOnlyAddress + 1;     // Plus 1 to make it inclusive
 
-            var isComplete = DetermineEvictionRange(fromAddress, untilAddress, currentSize, requiredSize: 0, cancellationToken,
+            // For this call, fromAddress starts at HeadAddress and the updated fromAddress becomes the new HeadAddress.
+            var isComplete = DetermineEvictionRange(fromAddress: ref headAddress, untilAddress, currentSize, requiredSize: 0, cancellationToken,
                 out var allocatedPageCount, out var evictPageCount, out var trimmedSize, out _ /*isPartialLastPage*/);
 
             // We don't wait for the HeadAddress movement to finish closing; if we stopped while still overbudget due to hitting ReadOnlyAddress,
             // then TryAllocate's NeedToWait() check will force a retry while we wait for flushes and evictions to complete.
             // If readOnlyAddress hasn't changed, the ShiftReadOnlyAddress in logAccessor.ShiftHeadAddress will not do anything. 
-            var readOnlyAddress = logAccessor.allocatorBase.CalculateReadOnlyAddress(untilAddress, fromAddress);
-            logAccessor.ShiftAddresses(readOnlyAddress, fromAddress, wait: false);
+            var readOnlyAddress = logAccessor.allocatorBase.CalculateReadOnlyAddress(logAccessor.TailAddress, headAddress);
+            
+            logAccessor.ShiftAddresses(readOnlyAddress, headAddress, wait: false);
 
-            // Now subtract what we were able to trim from logSize.
-            logSize.Increment(-trimmedSize);
+            // Now subtract what we were able to trim from logSize. Note that trimmedSize does NOT include inline page size reductions.
+            heapSize.Increment(-trimmedSize);
+            Debug.Assert(heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
 
             // Calculate the number of trimmed pages and report the new expected AllocatedPageCount here, since we don't wait for the actual eviction.
-            PostMemoryTrim(allocatedPageCount - evictPageCount, fromAddress);
-            logger?.LogDebug("Decreased Allocated page count to {allocatedPageCount} and HeadAddress to {headAddress}", allocatedPageCount - evictPageCount, fromAddress);
+            PostMemoryTrim(allocatedPageCount - evictPageCount, headAddress);
+            logger?.LogDebug("Decreased Allocated page count to {allocatedPageCount} and HeadAddress to {headAddress}", allocatedPageCount - evictPageCount, headAddress);
+
+            if (!isComplete)
+                resizeTaskEvent.Set();
             return isComplete;
         }
 
@@ -252,14 +277,15 @@ namespace Tsavorite.core
         internal bool ResizeForRecoveryIfNeeded(long fromAddress, long untilAddress, long requiredSize, CancellationToken cancellationToken, out int evictPageCount)
         {
             // Monitor the total size. requiredSize indicates what we know we are about to use, such as loading pages.
-            var currentSize = logSize.Total;
+            var currentSize = TotalSize;
             if (currentSize + requiredSize <= highTargetSize)
             {
                 evictPageCount = 0;
                 return true;
             }
 
-            var isComplete = DetermineEvictionRange(fromAddress, untilAddress, currentSize, requiredSize, cancellationToken,
+            // For recovery we do not update HeadAddress
+            var isComplete = DetermineEvictionRange(ref fromAddress, untilAddress, currentSize, requiredSize, cancellationToken,
                 out _ /*allocatedPageCount*/, out evictPageCount, out var trimmedSize, out var isPartialLastPage);
 
             // For recovery we want to evict the page if any part of it went oversize.
@@ -267,7 +293,7 @@ namespace Tsavorite.core
                 evictPageCount++;
  
             // Now subtract what we were able to trim from logSize.
-            logSize.Increment(-trimmedSize);
+            heapSize.Increment(-trimmedSize);
             return isComplete;
         }
     }

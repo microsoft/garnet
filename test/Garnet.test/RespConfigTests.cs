@@ -26,6 +26,9 @@ namespace Garnet.test
         private readonly string pageSizeStr = "32m";
         private readonly bool useReviv;
 
+        // The HLOG will always have at least two pages allocated.
+        const int MinLogAllocatedPageCount = 2;
+
         public RespConfigTests(bool useReviv)
         {
             this.useReviv = useReviv;
@@ -77,15 +80,15 @@ namespace Garnet.test
             var currMemorySize = ServerOptions.ParseSize(initMemorySize, out _);
             var pageSize = ServerOptions.ParseSize(pageSizeStr, out _);
 
-            var bufferSize = ServerOptions.NextPowerOf2(currMemorySize);
-            Assert.That(bufferSize, Is.EqualTo(store.Log.BufferSize));
+            var bufferSizeInBytes = ServerOptions.NextPowerOf2(currMemorySize);
+            Assert.That(bufferSizeInBytes / pageSize, Is.EqualTo(store.Log.BufferSize));
 
             // Check initial AllocatedPageCount before any changes
             var metrics = server.Metrics.GetInfoMetrics(metricType);
             var miAPC = metrics.FirstOrDefault(mi => mi.Name == metricName);
             ClassicAssert.IsNotNull(miAPC);
             ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out var allocatedPageCount));
-            var expectedAPC = currMemorySize / pageSize;
+            long expectedAPC = MinLogAllocatedPageCount;
             ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
 
             // Try to set memory size to the same value as current
@@ -270,12 +273,16 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
             var db = redis.GetDatabase(0);
             var option = "memory";
-            var initMemorySize = memorySize;
-            var currMemorySize = TestUtils.GetEffectiveMemorySize(initMemorySize, pageSize, out var parsedPageSize);
+            var currMemorySize = TestUtils.GetEffectiveMemorySize(memorySize, pageSize, out var parsedPageSize);
+            var initialMemorySize = currMemorySize;
+
+            var store = server.Provider.StoreWrapper.store;
+            var tracker = store.Log.LogSizeTracker;
+            Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));
 
             var garnetServer = redis.GetServer(TestUtils.EndPoint);
             var info = TestUtils.GetStoreAddressInfo(garnetServer);
-            ClassicAssert.AreEqual(64, info.TailAddress);
+            ClassicAssert.AreEqual(PageHeader.Size, info.TailAddress);
 
             var i = 0;
             var val = new RedisValue(new string('x', 512 - 32));
@@ -293,23 +300,42 @@ namespace Garnet.test
                 info = TestUtils.GetStoreAddressInfo(garnetServer);
             }
 
-            // Verify that records were inserted up to the configured memory size limit
-            Assert.That(prevTail, Is.LessThanOrEqualTo(currMemorySize));
-            Assert.That(currMemorySize - prevTail, Is.LessThanOrEqualTo(parsedPageSize));
+            prevHead = info.HeadAddress;
+            prevTail = info.TailAddress;
 
+            // Verify that records were inserted up to the configured memory size limit.
+            // We may have overflowed by multiple pages.
+            Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(tracker.TargetDeltaRange.high));
+
+            ////////////////////////////////////////////////////////
             // Try to set memory size to a smaller value than current
+            currMemorySize = TestUtils.GetEffectiveMemorySize(smallerSize, pageSize, out _);
+            Assert.That(currMemorySize, Is.LessThan(initialMemorySize));
             var result = db.Execute("CONFIG", "SET", option, smallerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
-
-            // Verify that head address moved forward
-            info = TestUtils.GetStoreAddressInfo(garnetServer);
-            Assert.That(info.HeadAddress, Is.GreaterThan(prevHead));
-
-            currMemorySize = TestUtils.GetEffectiveMemorySize(smallerSize, pageSize, out _);
+            Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));
 
             // Insert records until head address moves
             prevHead = info.HeadAddress;
             prevTail = info.TailAddress;
+
+            // Precondition: We have too much in memory for the smallSize and must evict.
+            Assert.That(prevTail - prevHead, Is.GreaterThan(tracker.TargetDeltaRange.high));
+
+            // Wait for the head address to move forward. This may be done in iterations because the ReadOnlyAddress
+            // may block the first page-eviction loop.
+#if true
+            while (true)
+            {
+                Thread.Sleep(1000);
+                if (info.HeadAddress > prevHead && (prevTail - prevHead) <= tracker.TargetDeltaRange.high)
+                    break;
+
+                prevHead = info.HeadAddress;
+                prevTail = info.TailAddress;
+                info = TestUtils.GetStoreAddressInfo(garnetServer);
+            }
+#else
             while (info.HeadAddress == prevHead)
             {
                 var key = $"key{i++:00000}";
@@ -319,15 +345,21 @@ namespace Garnet.test
                 prevTail = info.TailAddress;
                 info = TestUtils.GetStoreAddressInfo(garnetServer);
             }
+#endif
+            prevHead = info.HeadAddress;
+            prevTail = info.TailAddress;
 
-            // Verify that records were inserted up to the configured memory size limit
-            Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(currMemorySize));
-            Assert.That(currMemorySize - (prevTail - prevHead), Is.LessThanOrEqualTo(parsedPageSize));
+            // Verify that records were inserted up to the configured memory size limit.
+            // We may have overflowed by multiple pages.
+            Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(tracker.TargetDeltaRange.high));
 
+            ////////////////////////////////////////////////////////
             // Try to set memory size to a larger value than current
+            currMemorySize = TestUtils.GetEffectiveMemorySize(largerSize, pageSize, out _);
+            Assert.That(currMemorySize, Is.GreaterThan(initialMemorySize));
             result = db.Execute("CONFIG", "SET", option, largerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
-            currMemorySize = TestUtils.GetEffectiveMemorySize(largerSize, pageSize, out _);
+            Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));
 
             // Continue to insert records until new memory capacity is reached
             prevHead = info.HeadAddress;
@@ -342,9 +374,8 @@ namespace Garnet.test
                 info = TestUtils.GetStoreAddressInfo(garnetServer);
             }
 
-            // Verify that memory is fully utilized
-            Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(currMemorySize));
-            Assert.That(currMemorySize - (prevTail - prevHead), Is.LessThanOrEqualTo(parsedPageSize));
+            // Verify that memory is fully utilized and within memory bounds
+            Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(tracker.TargetDeltaRange.high));
         }
 
         /// <summary>

@@ -66,9 +66,19 @@ namespace Tsavorite.core
         public int BufferSize => allocatorBase.BufferSize;
 
         /// <summary>
-        /// Actual memory used by log (not including heap objects) and overflow pages
+        /// The log size tracker (currently used only by test)
         /// </summary>
-        public long MemorySizeBytes => allocatorBase.GetLogicalAddressOfStartOfPage(allocatorBase.AllocatedPageCount + allocator.OverflowPageCount);
+        public LogSizeTracker<TStoreFunctions, TAllocator> LogSizeTracker => allocatorBase.logSizeTracker;
+
+        /// <summary>
+        /// Actual memory used by log (not including heap objects)
+        /// </summary>
+        public long MemorySizeBytes => allocatorBase.AllocatedPageCount << allocatorBase.LogPageSizeBits;
+
+        /// <summary>
+        /// Actual memory used by log (not including heap objects), including overflow pages
+        /// </summary>
+        public long MemorySizeBytesIncludingOverflowPages => (allocatorBase.AllocatedPageCount + allocator.OverflowPageCount) << allocatorBase.LogPageSizeBits;
 
         /// <summary>
         /// Heap memory used
@@ -185,6 +195,15 @@ namespace Tsavorite.core
                 allocatorBase.logSizeTracker = tracker;
             return new LogSubscribeDisposable(allocatorBase, isReadOnly: false);
         }
+
+        /// <summary>
+        /// Set the Log Size Tracker to track log size for operations that do not surface to the caller's level
+        /// (e.g. <see cref="ISessionFunctions{TInput, TOutput, TContext}"/> implementations). This includes
+        /// internal copies to log or readcache tail, memory trimming calculations, recovery eviction, etc.
+        /// </summary>
+        /// <param name="logSizeTracker">The tracker to record operations</param>
+        public void SetLogSizeTracker(LogSizeTracker<TStoreFunctions, TAllocator> logSizeTracker)
+            => allocatorBase.logSizeTracker = logSizeTracker;
 
         /// <summary>
         /// Wrapper to help dispose the subscription

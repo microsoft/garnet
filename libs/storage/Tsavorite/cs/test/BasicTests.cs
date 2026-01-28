@@ -320,72 +320,10 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public unsafe void NativeInMemRMWRefKeys([Values] TestDeviceType deviceType)
+        public void NativeInMemRMWKeys([Values] TestDeviceType deviceType)
         {
             InputStruct input = default;
             OutputStruct output = default;
-
-            Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
-
-            var nums = Enumerable.Range(0, 1000).ToArray();
-            var rnd = new Random(11);
-            for (var i = 0; i < nums.Length; ++i)
-            {
-                var randomIndex = rnd.Next(nums.Length);
-                (nums[i], nums[randomIndex]) = (nums[randomIndex], nums[i]);
-            }
-
-            for (var j = 0; j < nums.Length; ++j)
-            {
-                var i = nums[j];
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key1), ref input, Empty.Default);
-            }
-            for (var j = 0; j < nums.Length; ++j)
-            {
-                var i = nums[j];
-                var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                if (bContext.RMW(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default).IsPending)
-                {
-                    _ = bContext.CompletePending(true);
-                }
-                else
-                {
-                    ClassicAssert.AreEqual(2 * i, output.value.vfield1);
-                    ClassicAssert.AreEqual(2 * (i + 1), output.value.vfield2);
-                }
-            }
-
-            Status status;
-            KeyStruct key;
-
-            for (var j = 0; j < nums.Length; ++j)
-            {
-                var i = nums[j];
-
-                key = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
-                ValueStruct value = new() { vfield1 = i, vfield2 = i + 1 };
-
-                status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, Empty.Default);
-
-                AssertCompleted(new(StatusCode.Found), status);
-                ClassicAssert.AreEqual(2 * value.vfield1, output.value.vfield1);
-                ClassicAssert.AreEqual(2 * value.vfield2, output.value.vfield2);
-            }
-
-            key = new KeyStruct { kfield1 = nums.Length, kfield2 = nums.Length + 1 };
-            status = bContext.Read(SpanByte.FromPinnedVariable(ref key), ref input, ref output, Empty.Default);
-            AssertCompleted(new(StatusCode.NotFound), status);
-        }
-
-        // Tests the overload where no reference params used: key,input,userContext
-        [Test]
-        [Category("TsavoriteKV")]
-        public unsafe void NativeInMemRMWNoRefKeys([Values] TestDeviceType deviceType)
-        {
-            InputStruct input = default;
 
             Setup(new() { LogMemorySize = 1L << 22, SegmentSize = 1L << 22, PageSize = 1L << 10 }, deviceType);
 
@@ -412,10 +350,15 @@ namespace Tsavorite.test
                 var i = nums[j];
                 var key1 = new KeyStruct { kfield1 = i, kfield2 = i + 1 };
                 input = new InputStruct { ifield1 = i, ifield2 = i + 1 };
-                _ = bContext.RMW(SpanByte.FromPinnedVariable(ref key1), ref input);
+                if (bContext.RMW(SpanByte.FromPinnedVariable(ref key1), ref input, ref output, Empty.Default).IsPending)
+                {
+                    _ = bContext.CompletePendingWithOutputs(out var completedOutputs, wait: true);
+                    (_ /*status*/, output) = GetSinglePendingResult(completedOutputs);
+                }
+                ClassicAssert.AreEqual(2 * i, output.value.vfield1);
+                ClassicAssert.AreEqual(2 * (i + 1), output.value.vfield2);
             }
 
-            OutputStruct output = default;
             Status status;
             KeyStruct key;
 
@@ -442,7 +385,7 @@ namespace Tsavorite.test
         [Test]
         [Category("TsavoriteKV")]
         [Category("Smoke")]
-        public void ReadNoRefKeyInputOutput([Values] TestDeviceType deviceType)
+        public void ReadKeyInputOutput([Values] TestDeviceType deviceType)
         {
             InputStruct input = default;
 

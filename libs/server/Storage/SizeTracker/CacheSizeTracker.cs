@@ -22,7 +22,7 @@ namespace Garnet.server
 
         int isStarted = 0;
         private const int HighTargetSizeDeltaFraction = 10; // When memory usage grows, trigger trimming at 10% above target size (for both main log and readcache)
-        private const int LowTargetSizeDeltaFraction = 1;   // When trimming memory, trim down to 1% below target size (for both main log and readcache)
+        private const int LowTargetSizeDeltaFraction = HighTargetSizeDeltaFraction * 5;  // When trimming memory, trim down to 1/5 of HighTargetSizeDeltaFraction below target size (for both main log and readcache)
 
         internal bool Stopped => (mainLogTracker == null || mainLogTracker.Stopped) && (readCacheTracker == null || readCacheTracker.Stopped);
 
@@ -68,14 +68,14 @@ namespace Garnet.server
             {
                 mainLogTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.Log, targetSize, 
                         targetSize / HighTargetSizeDeltaFraction, targetSize / LowTargetSizeDeltaFraction, loggerFactory?.CreateLogger("MainLogSizeTracker"));
-                _ = store.Log.SubscribeEvictions(mainLogTracker);
+                store.Log.SetLogSizeTracker(mainLogTracker);
             }
 
             if (store.ReadCache != null && readCacheTargetSize > 0)
             {
                 readCacheTracker = new LogSizeTracker<StoreFunctions, StoreAllocator>(store.ReadCache, readCacheTargetSize, 
                         readCacheTargetSize / HighTargetSizeDeltaFraction, readCacheTargetSize / LowTargetSizeDeltaFraction, loggerFactory?.CreateLogger("ReadCacheSizeTracker"));
-                _ = store.ReadCache.SubscribeEvictions(readCacheTracker);
+                store.ReadCache.SetLogSizeTracker(readCacheTracker);
             }
         }
 

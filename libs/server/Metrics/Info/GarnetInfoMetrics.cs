@@ -61,11 +61,10 @@ namespace Garnet.server
         private void PopulateMemoryInfo(StoreWrapper storeWrapper)
         {
             var store_index_size = 0L;
-            var store_log_memory_size = 0L;
-            var store_read_cache_size = 0L;
-            var store_heap_memory_target_size = 0L;
-            var store_heap_memory_size = 0L;
-            var store_read_cache_heap_memory_size = 0L;
+            var store_mainlog_memory_target_size = 0L;
+            var store_mainlog_memory_size = 0L;
+            var store_readcache_memory_size = 0L;
+            var store_readcache_memory_target_size = 0L;
             long total_store_size;
 
             var enableAof = storeWrapper.serverOptions.EnableAOF;
@@ -76,18 +75,26 @@ namespace Garnet.server
             foreach (var db in databases)
             {
                 store_index_size += db.Store.IndexSize * 64;
-                store_log_memory_size += db.Store.Log.MemorySizeBytes;
-                store_read_cache_size += db.Store.ReadCache?.MemorySizeBytes ?? 0;
-
                 aof_log_memory_size += db.AppendOnlyFile?.MemorySizeBytes ?? 0;
 
-                store_heap_memory_target_size += db.SizeTracker?.mainLogTracker.TargetSize ?? 0;
-                store_heap_memory_size += db.SizeTracker?.mainLogTracker.LogHeapSizeBytes ?? 0;
-                store_read_cache_heap_memory_size += db.SizeTracker?.readCacheTracker?.LogHeapSizeBytes ?? 0;
+                if (db.SizeTracker?.mainLogTracker is null)
+                    store_mainlog_memory_size += db.Store.Log.MemorySizeBytes;
+                else
+                {
+                    store_mainlog_memory_target_size += db.SizeTracker?.mainLogTracker?.TargetSize ?? 0;
+                    store_mainlog_memory_size += db.SizeTracker?.mainLogTracker.TotalSize ?? 0;
+                }
+
+                if (db.SizeTracker?.mainLogTracker is null)
+                    store_readcache_memory_size += db.Store.ReadCache?.MemorySizeBytes ?? 0;
+                else
+                {
+                    store_readcache_memory_target_size += db.SizeTracker?.readCacheTracker?.TargetSize ?? 0;
+                    store_readcache_memory_size += db.SizeTracker?.readCacheTracker?.TotalSize ?? 0;
+                }
             }
 
-            total_store_size = store_index_size + store_log_memory_size + store_read_cache_size +
-                               store_heap_memory_size + store_read_cache_heap_memory_size;
+            total_store_size = store_index_size + store_mainlog_memory_size + store_readcache_memory_size;
 
             var gcMemoryInfo = GC.GetGCMemoryInfo();
             var gcAvailableMemory = gcMemoryInfo.TotalCommittedBytes - gcMemoryInfo.HeapSizeBytes;
@@ -120,12 +127,10 @@ namespace Garnet.server
                 new("gc_managed_memory_bytes_excluding_heap", gcAvailableMemory.ToString()),
                 new("gc_fragmented_bytes", gcMemoryInfo.FragmentedBytes.ToString()),
                 new("store_index_size", store_index_size.ToString()),
-                new("store_log_memory_size", store_log_memory_size.ToString()),
-                new("store_read_cache_size", store_read_cache_size.ToString()),
+                new("store_mainlog_memory_size", store_mainlog_memory_size.ToString()),
+                new("store_readcache_memory_size", store_readcache_memory_size.ToString()),
                 new("total_main_store_size", total_store_size.ToString()),
-                new("store_heap_memory_target_size", store_heap_memory_target_size.ToString()),
-                new("store_heap_memory_size", store_heap_memory_size.ToString()),
-                new("store_read_cache_heap_memory_size", store_read_cache_heap_memory_size.ToString()),
+                new("store_heap_memory_target_size", store_mainlog_memory_target_size.ToString()),
                 new("aof_memory_size", aof_log_memory_size.ToString())
             ];
         }

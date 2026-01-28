@@ -63,18 +63,14 @@ namespace Tsavorite.test
 
             // Set Default entry data
             for (int i = 0; i < entryLength; i++)
-            {
                 entry[i] = (byte)i;
-            }
 
             bool disposeCommitThread = false;
             var commit =
                 new Thread(() =>
                 {
                     while (!disposeCommitThread)
-                    {
                         log.Commit(true);
-                    }
                 });
 
             if (commitThread)
