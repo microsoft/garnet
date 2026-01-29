@@ -716,7 +716,7 @@ namespace Garnet.server
             ReadOnlySpan<byte> attributes)
         {
             AssertHaveStorageSession();
-            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out var indexPtr, out _);
+            ReadIndex(indexValue, out var context, out _, out _, out _, out _, out _, out _, out var indexPtr, out _);
             var found = Service.TryUpdateAtttributes(context, indexPtr, element, attributes);
             return found ? VectorManagerResult.OK : VectorManagerResult.MissingElement;
         }

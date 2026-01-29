@@ -1233,6 +1233,12 @@ namespace Garnet.server
             var element = parseState.GetArgSliceByRef(1);
             var attributes = parseState.GetArgSliceByRef(2);
 
+            if (attributes.Length > maximumVectorSetValueBytes)
+            {
+                WriteError("ERR Attribute exceed configured page size"u8);
+                return true;
+            }
+
             var res = storageApi.VectorSetUpdateAttributes(key, element, attributes);
             if (res == GarnetStatus.NOTFOUND)
             {
