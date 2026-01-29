@@ -261,6 +261,31 @@ namespace Garnet.server
                 SendAndReset();
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteLargeSimpleString(scoped ReadOnlySpan<byte> simpleString)
+        {
+            // Simple strings are of the form "+OK\r\n"
+            while (dcurr == dend)
+                SendAndReset();
+
+            *dcurr++ = (byte)'+';
+            while (simpleString.Length > 0)
+            {
+                if (dcurr == dend)
+                {
+                    SendAndReset();
+                }
+
+                int toCopy = Math.Min((int)(dend - dcurr), simpleString.Length);
+                simpleString.Slice(0, toCopy).CopyTo(new Span<byte>(dcurr, toCopy));
+                dcurr += toCopy;
+                simpleString = simpleString.Slice(toCopy);
+            }
+
+            while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
+                SendAndReset();
+        }
+
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteUtf8BulkString(ReadOnlySpan<char> chars)
