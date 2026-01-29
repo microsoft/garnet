@@ -260,5 +260,21 @@ namespace Garnet.server
 
             return true;
         }
+
+        /// <summary>
+        /// Determines if a simplified key spec represents a multi-key command
+        /// </summary>
+        /// <param name="simpleCommandInfo">The simplified key spec</param>
+        /// <returns>True if successful</returns>
+        public static bool IsMultiKeyCommand(this SimpleRespCommandInfo simpleCommandInfo)
+        {
+            if (simpleCommandInfo.KeySpecs.Length > 1) 
+                return true;
+
+            var findKeys = simpleCommandInfo.KeySpecs[0].FindKeys;
+            return !findKeys.IsRangeType || findKeys.IsRangeLimitType ||
+                   findKeys.LastKeyOrLimit < 0 ||
+                   findKeys.FirstKey < findKeys.LastKeyOrLimit;
+        }
     }
 }

@@ -596,10 +596,11 @@ namespace Garnet.server
             }
 
             var objectContext = txnManager.ObjectTransactionalContext;
-            var unifiedContext = txnManager.UnifiedTransactionalContext;
 
             try
             {
+                _ = GET(destinationKey, out var destObjectOutput, ref objectContext);
+
                 var status = SortedSetDifference(keys, ref objectContext, out var pairs);
 
                 if (status != GarnetStatus.OK)
@@ -616,12 +617,12 @@ namespace Garnet.server
                         newSetObject.Add(element, score);
                     }
 
-                    _ = SET(destinationKey, newSetObject, ref objectContext);
+                    _ = SET(destinationKey, newSetObject, in destObjectOutput, ref objectContext);
                     itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                 }
                 else
                 {
-                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
+                    _ = DELETE_ObjectStore(destinationKey, ref objectContext);
                 }
 
                 return status;
@@ -732,7 +733,6 @@ namespace Garnet.server
 
             // SetObject
             var ssObjectTransactionalContext = txnManager.ObjectTransactionalContext;
-            var ssUnifiedTransactionalContext = txnManager.UnifiedTransactionalContext;
 
             try
             {
@@ -747,11 +747,13 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     // Expire/Delete the destination key if the source key is not found
-                    _ = EXPIRE(dstKey, TimeSpan.Zero, out _, ExpireOption.None, ref ssUnifiedTransactionalContext);
+                    _ = DELETE_ObjectStore(dstKey, ref ssObjectTransactionalContext);
                     return GarnetStatus.OK;
                 }
 
                 Debug.Assert(!rangeOutputMem.IsSpanByte, "Output should not be in SpanByte format when the status is OK");
+
+                _ = GET(dstKey, out var destObjectOutput, ref ssObjectTransactionalContext);
 
                 var rangeOutputHandler = rangeOutputMem.Memory.Memory.Pin();
                 try
@@ -761,9 +763,6 @@ namespace Garnet.server
                     var endOutPtr = rangeOutPtr + rangeOutputMem.Length;
 
                     var destinationKey = dstKey.ReadOnlySpan;
-                    ssObjectTransactionalContext.Delete(destinationKey);
-
-                    metaCommandInfo.Initialize();
 
                     RespReadUtils.TryReadUnsignedArrayLength(out var arrayLen, ref currOutPtr, endOutPtr);
                     Debug.Assert(arrayLen % 2 == 0, "Should always contain element and its score");
@@ -771,20 +770,15 @@ namespace Garnet.server
 
                     if (result > 0)
                     {
-                        parseState.Initialize(arrayLen); // 2 elements per pair (result * 2)
-
-                        for (int j = 0; j < result; j++)
+                        SortedSetObject newSortedSetObject = new();
+                        for (var j = 0; j < result; j++)
                         {
-                            // Read member/element into parse state
-                            parseState.Read((2 * j) + 1, ref currOutPtr, endOutPtr);
-                            // Read score into parse state
-                            parseState.Read(2 * j, ref currOutPtr, endOutPtr);
+                            RespReadUtils.TryReadByteArrayWithLengthHeader(out var element, ref currOutPtr, endOutPtr);
+                            RespReadUtils.TryReadDoubleWithLengthHeader(out var score, out _, ref currOutPtr, endOutPtr);
+                            newSortedSetObject.Add(element, score);
                         }
 
-                        var zAddInput = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState) { SortedSetOp = SortedSetOperation.ZADD };
-
-                        var zAddOutput = new ObjectOutput();
-                        RMWObjectStoreOperationWithOutput(destinationKey, ref zAddInput, ref ssObjectTransactionalContext, ref zAddOutput);
+                        _ = SET(dstKey, newSortedSetObject, in destObjectOutput, ref ssObjectTransactionalContext);
                         itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                     }
                 }
@@ -1359,10 +1353,11 @@ namespace Garnet.server
             }
 
             var objectContext = txnManager.ObjectTransactionalContext;
-            var unifiedContext = txnManager.UnifiedTransactionalContext;
 
             try
             {
+                _ = GET(destinationKey, out var destObjectOutput, ref objectContext);
+
                 var status = SortedSetIntersection(keys, weights, aggregateType, ref objectContext, out var pairs);
 
                 if (status != GarnetStatus.OK)
@@ -1380,12 +1375,12 @@ namespace Garnet.server
                         newSortedSetObject.Add(element, score);
                     }
 
-                    _ = SET(destinationKey, newSortedSetObject, ref objectContext);
+                    _ = SET(destinationKey, newSortedSetObject, in destObjectOutput, ref objectContext);
                     itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                 }
                 else
                 {
-                    _ = EXPIRE(destinationKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedContext);
+                    _ = DELETE_ObjectStore(destinationKey, ref objectContext);
                 }
 
                 return status;

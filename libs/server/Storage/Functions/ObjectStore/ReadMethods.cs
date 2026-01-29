@@ -40,7 +40,10 @@ namespace Garnet.server
                     _ = HandleMetaCommandAndOperate(garnetObject, ref input, ref output, srcLogRecord.ETag, out _, readOnly: true);
 
                     if (srcLogRecord.Info.HasETag)
+                    {
+                        output.Header.etag = srcLogRecord.ETag;
                         ETagState.ResetState(ref functionsState.etagState);
+                    }
 
                     return true;
                 }
