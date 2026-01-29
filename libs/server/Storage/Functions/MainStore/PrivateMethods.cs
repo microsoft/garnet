@@ -118,6 +118,13 @@ namespace Garnet.server
                     value.CopyTo(dst.Memory.Memory.Span);
                     break;
 
+                case RespCommand.VADD:
+                case RespCommand.VSIM:
+                case RespCommand.VEMB:
+                case RespCommand.VGETATTR:
+                case RespCommand.VINFO:
+                case RespCommand.VREM:
+                case RespCommand.VDIM:
                 case RespCommand.GET:
                     // Get value without RESP header; exclude expiration
                     if (value.LengthWithoutMetadata <= dst.Length)
@@ -242,12 +249,12 @@ namespace Garnet.server
                     throw new GarnetException($"Not enough space in {input.header.cmd} buffer");
 
                 case RespCommand.TTL:
-                    var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var ttlValue = ConvertUtils.SecondsFromDiffUtcNowTicks(value.MetadataSize == 8 ? value.ExtraMetadata : -1);
                     CopyRespNumber(ttlValue, ref dst);
                     return;
 
                 case RespCommand.PTTL:
-                    var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var pttlValue = ConvertUtils.MillisecondsFromDiffUtcNowTicks(value.MetadataSize == 8 ? value.ExtraMetadata : -1);
                     CopyRespNumber(pttlValue, ref dst);
                     return;
 
@@ -260,12 +267,12 @@ namespace Garnet.server
                     CopyRespTo(ref value, ref dst, start + functionsState.etagState.etagSkippedStart, end + functionsState.etagState.etagSkippedStart);
                     return;
                 case RespCommand.EXPIRETIME:
-                    var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var expireTime = ConvertUtils.UnixTimeInSecondsFromTicks(value.MetadataSize == 8 ? value.ExtraMetadata : -1);
                     CopyRespNumber(expireTime, ref dst);
                     return;
 
                 case RespCommand.PEXPIRETIME:
-                    var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(value.MetadataSize > 0 ? value.ExtraMetadata : -1);
+                    var pexpireTime = ConvertUtils.UnixTimeInMillisecondsFromTicks(value.MetadataSize == 8 ? value.ExtraMetadata : -1);
                     CopyRespNumber(pexpireTime, ref dst);
                     return;
 
@@ -730,6 +737,11 @@ namespace Garnet.server
         {
             if (functionsState.StoredProcMode) return;
 
+            if (input.header.cmd == RespCommand.VADD && input.arg1 is not (VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg))
+            {
+                return;
+            }
+
             // We need this check because when we ingest records from the primary
             // if the input is zero then input overlaps with value so any update to RespInputHeader->flags
             // will incorrectly modify the total length of value.
@@ -751,6 +763,12 @@ namespace Garnet.server
             where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
+
+            if (input.header.cmd == RespCommand.VADD && input.arg1 is not (VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg))
+            {
+                return;
+            }
+
             input.header.flags |= RespInputFlags.Deterministic;
 
             functionsState.appendOnlyFile.Enqueue(

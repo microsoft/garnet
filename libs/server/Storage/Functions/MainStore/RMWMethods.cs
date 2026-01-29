@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -242,6 +243,39 @@ namespace Garnet.server
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
                     CopyUpdateNumber(incrByFloat, ref value, ref output);
                     break;
+
+                case RespCommand.VADD:
+                    {
+                        if (input.arg1 is VectorManager.VADDAppendLogArg or VectorManager.MigrateElementKeyLogArg or VectorManager.MigrateIndexKeyLogArg)
+                        {
+                            // Synthetic op, do nothing
+                            break;
+                        }
+
+                        var dims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(0).Span);
+                        var reduceDims = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(1).Span);
+                        // ValueType is here, skipping during index creation
+                        // Values is here, skipping during index creation
+                        // Element is here, skipping during index creation
+                        var quantizer = MemoryMarshal.Read<VectorQuantType>(input.parseState.GetArgSliceByRef(5).Span);
+                        var buildExplorationFactor = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(6).Span);
+                        // Attributes is here, skipping during index creation
+                        var numLinks = MemoryMarshal.Read<uint>(input.parseState.GetArgSliceByRef(8).Span);
+                        var distanceMetric = MemoryMarshal.Read<VectorDistanceMetricType>(input.parseState.GetArgSliceByRef(9).Span);
+
+                        // Pre-allocated by caller because DiskANN needs to be able to call into Garnet as part of create_index
+                        // and thus we can't call into it from session functions
+                        var context = MemoryMarshal.Read<ulong>(input.parseState.GetArgSliceByRef(10).Span);
+                        var index = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
+
+                        recordInfo.VectorSet = true;
+
+                        functionsState.vectorManager.CreateIndex(dims, reduceDims, quantizer, buildExplorationFactor, numLinks, distanceMetric, context, index, ref value);
+                    }
+                    break;
+                case RespCommand.VREM:
+                    Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Should only see VREM writes as part of replication");
+                    break;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -327,7 +361,7 @@ namespace Garnet.server
         {
             RespCommand cmd = input.header.cmd;
             // Expired data
-            if (value.MetadataSize > 0 && input.header.CheckExpiry(value.ExtraMetadata))
+            if (value.MetadataSize == 8 && input.header.CheckExpiry(value.ExtraMetadata))
             {
                 rmwInfo.Action = cmd is RespCommand.DELIFEXPIM ? RMWAction.ExpireAndStop : RMWAction.ExpireAndResume;
                 recordInfo.ClearHasETag();
@@ -583,7 +617,7 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.EXPIRE:
-                    var expiryExists = value.MetadataSize > 0;
+                    var expiryExists = value.MetadataSize == 8;
 
                     var expirationWithOption = new ExpirationWithOption(input.arg1);
 
@@ -593,7 +627,7 @@ namespace Garnet.server
                     return EvaluateExpireInPlace(expirationWithOption.ExpireOption, expiryExists, expirationWithOption.ExpirationTimeInTicks, ref value, ref output);
 
                 case RespCommand.PERSIST:
-                    if (value.MetadataSize != 0)
+                    if (value.MetadataSize == 8)
                     {
                         rmwInfo.ClearExtraValueLength(ref recordInfo, ref value, value.TotalSize);
                         value.AsSpan().CopyTo(value.AsSpanWithMetadata());
@@ -752,7 +786,7 @@ namespace Garnet.server
                         var _output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
 
                         var newExpiry = input.arg1;
-                        return EvaluateExpireInPlace(ExpireOption.None, expiryExists: value.MetadataSize > 0, newExpiry, ref value, ref _output);
+                        return EvaluateExpireInPlace(ExpireOption.None, expiryExists: value.MetadataSize == 8, newExpiry, ref value, ref _output);
                     }
 
                     if (input.parseState.Count > 0)
@@ -794,6 +828,38 @@ namespace Garnet.server
                     // this is the case where it isn't expired
                     shouldUpdateEtag = false;
                     break;
+                case RespCommand.VADD:
+                    // Adding to an existing VectorSet is modeled as a read operations
+                    //
+                    // However, we do synthesize some (pointless) writes to implement replication
+                    // and a "make me delete=able"-update during drop.
+                    //
+                    // Another "not quite write" is the recreate an index write operation
+                    // that occurs if we're adding to an index that was restored from disk 
+                    // or a primary node.
+
+                    // Handle "make me delete-able"
+                    if (input.arg1 == VectorManager.DeleteAfterDropArg)
+                    {
+                        value.AsSpan().Clear();
+                    }
+                    else if (input.arg1 == VectorManager.RecreateIndexArg)
+                    {
+                        var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
+
+                        functionsState.vectorManager.RecreateIndex(newIndexPtr, ref value);
+                    }
+
+                    // Ignore everything else
+                    return IPUResult.Succeeded;
+                case RespCommand.VREM:
+                    // Removing from a VectorSet is modeled as a read operations
+                    //
+                    // However, we do synthesize some (pointless) writes to implement replication
+                    // in a similar manner to VADD.
+
+                    Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "VREM in place update should only happen for replication");                    // Ignore everything else
+                    return IPUResult.Succeeded;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -877,7 +943,7 @@ namespace Garnet.server
             switch (input.header.cmd)
             {
                 case RespCommand.DELIFEXPIM:
-                    if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
+                    if (oldValue.MetadataSize == 8 && input.header.CheckExpiry(oldValue.ExtraMetadata))
                     {
                         rmwInfo.Action = RMWAction.ExpireAndStop;
                     }
@@ -940,7 +1006,7 @@ namespace Garnet.server
                 case RespCommand.SETEXNX:
                     // Expired data, return false immediately
                     // ExpireAndResume ensures that we set as new value, since it does not exist
-                    if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
+                    if (oldValue.MetadataSize == 8 && input.header.CheckExpiry(oldValue.ExtraMetadata))
                     {
                         rmwInfo.Action = RMWAction.ExpireAndResume;
                         rmwInfo.RecordInfo.ClearHasETag();
@@ -968,7 +1034,7 @@ namespace Garnet.server
                 case RespCommand.SETEXXX:
                     // Expired data, return false immediately so we do not set, since it does not exist
                     // ExpireAndStop ensures that caller sees a NOTFOUND status
-                    if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
+                    if (oldValue.MetadataSize == 8 && input.header.CheckExpiry(oldValue.ExtraMetadata))
                     {
                         rmwInfo.RecordInfo.ClearHasETag();
                         rmwInfo.Action = RMWAction.ExpireAndStop;
@@ -1009,7 +1075,7 @@ namespace Garnet.server
         public bool CopyUpdater(ref SpanByte key, ref RawStringInput input, ref SpanByte oldValue, ref SpanByte newValue, ref SpanByteAndMemory output, ref RMWInfo rmwInfo, ref RecordInfo recordInfo)
         {
             // Expired data
-            if (oldValue.MetadataSize > 0 && input.header.CheckExpiry(oldValue.ExtraMetadata))
+            if (oldValue.MetadataSize == 8 && input.header.CheckExpiry(oldValue.ExtraMetadata))
             {
                 recordInfo.ClearHasETag();
                 rmwInfo.Action = RMWAction.ExpireAndResume;
@@ -1171,7 +1237,7 @@ namespace Garnet.server
                 case RespCommand.EXPIRE:
                     shouldUpdateEtag = false;
 
-                    var expiryExists = oldValue.MetadataSize > 0;
+                    var expiryExists = oldValue.MetadataSize == 8;
 
                     var expirationWithOption = new ExpirationWithOption(input.arg1);
 
@@ -1181,7 +1247,7 @@ namespace Garnet.server
                 case RespCommand.PERSIST:
                     shouldUpdateEtag = false;
                     oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
-                    if (oldValue.MetadataSize != 0)
+                    if (oldValue.MetadataSize == 8)
                     {
                         newValue.AsSpan().CopyTo(newValue.AsSpanWithMetadata());
                         newValue.ShrinkSerializedLength(newValue.Length - newValue.MetadataSize);
@@ -1306,7 +1372,7 @@ namespace Garnet.server
                         byte* pbOutput = stackalloc byte[ObjectOutputHeader.Size];
                         var _output = new SpanByteAndMemory(SpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size));
                         var newExpiry = input.arg1;
-                        EvaluateExpireCopyUpdate(ExpireOption.None, expiryExists: oldValue.MetadataSize > 0, newExpiry, ref oldValue, ref newValue, ref _output);
+                        EvaluateExpireCopyUpdate(ExpireOption.None, expiryExists: oldValue.MetadataSize == 8, newExpiry, ref oldValue, ref newValue, ref _output);
                     }
 
                     oldValue.AsReadOnlySpan().CopyTo(newValue.AsSpan());
@@ -1335,6 +1401,27 @@ namespace Garnet.server
                     appendValue.ReadOnlySpan.CopyTo(newValue.AsSpan().Slice(oldValue.LengthWithoutMetadata));
 
                     CopyValueLengthToOutput(ref newValue, ref output, functionsState.etagState.etagSkippedStart);
+                    break;
+
+                case RespCommand.VADD:
+                    // Handle "make me delete-able"
+                    if (input.arg1 == VectorManager.DeleteAfterDropArg)
+                    {
+                        newValue.AsSpan().Clear();
+                    }
+                    else if (input.arg1 == VectorManager.RecreateIndexArg)
+                    {
+                        var newIndexPtr = MemoryMarshal.Read<nint>(input.parseState.GetArgSliceByRef(11).Span);
+
+                        oldValue.CopyTo(ref newValue);
+
+                        functionsState.vectorManager.RecreateIndex(newIndexPtr, ref newValue);
+                    }
+
+                    break;
+
+                case RespCommand.VREM:
+                    Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Unexpected CopyUpdater call on VREM key");
                     break;
 
                 default:

@@ -23,10 +23,10 @@ namespace Garnet.server
 
         #region GET
         /// <inheritdoc />
-        public GarnetStatus GET(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus GET(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output)
         {
-            garnetApi.WATCH(new ArgSlice(ref key), StoreType.Main);
-            return garnetApi.GET(ref key, ref input, ref output);
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.GET(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -645,6 +645,51 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ResetScratchBuffer(int offset)
             => garnetApi.ResetScratchBuffer(offset);
+
+        #endregion
+
+        #region Vector Sets
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetValueSimilarity(ArgSlice key, VectorValueType valueType, ArgSlice value, int count, float delta, int searchExplorationFactor, ArgSlice filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetValueSimilarity(key, valueType, value, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, out result);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetElementSimilarity(ArgSlice key, ArgSlice element, int count, float delta, int searchExplorationFactor, ArgSlice filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetElementSimilarity(key, element, count, delta, searchExplorationFactor, filter, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, out result);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetEmbedding(ArgSlice key, ArgSlice element, ref SpanByteAndMemory outputDistances)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetEmbedding(key, element, ref outputDistances);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetDimensions(ArgSlice key, out int dimensions)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetDimensions(key, out dimensions);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetInfo(ArgSlice key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetInfo(key, out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
+        }
+
+        /// <inheritdoc/>
+        public GarnetStatus VectorSetGetAttribute(ArgSlice key, ArgSlice element, ref SpanByteAndMemory outputAttributes)
+        {
+            garnetApi.WATCH(key, StoreType.Main);
+            return garnetApi.VectorSetGetAttribute(key, element, ref outputAttributes);
+        }
 
         #endregion
     }
