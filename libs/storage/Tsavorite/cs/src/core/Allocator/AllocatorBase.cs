@@ -119,6 +119,11 @@ namespace Tsavorite.core
         /// <remarks>The long is actually a byte*, but storing as 'long' makes going through logicalAddress/physicalAddress translation more easily</remarks>
         protected long* pagePointers;
 
+        /// <summary>
+        /// Array of pages kept to ensure the pinned pages are not garbage collected.
+        /// </summary>
+        protected readonly byte[][] values;
+
         #endregion
 
         #region Public addresses
@@ -663,6 +668,7 @@ namespace Tsavorite.core
 
             if (BufferSize > 0)
             {
+                values = new byte[BufferSize][];
                 var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
                 pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
                 NativeMemory.Clear(pagePointers, bufferSizeInBytes);
