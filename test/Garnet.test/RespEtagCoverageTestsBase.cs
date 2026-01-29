@@ -126,6 +126,35 @@ namespace Garnet.test
             }
 
             [Test]
+            public async Task ZExpireETagAdvancedTestAsync()
+            {
+                var cmdArgs = new object[] { SortedSetKeys[0], 2, "MEMBERS", 1, SortedSetData[0][0].Element };
+                await CheckCommandsAsync(RespCommand.ZEXPIRE, cmdArgs, VerifyResult);
+
+                static void VerifyResult(RedisResult result)
+                {
+                    var results = (RedisResult[])result;
+                    ClassicAssert.AreEqual(1, results!.Length);
+                    ClassicAssert.AreEqual(1, (long)results[0]);
+                }
+            }
+
+            [Test]
+            public async Task ZExpireAtETagAdvancedTestAsync()
+            {
+                var expireAt = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds();
+                var cmdArgs = new object[] { SortedSetKeys[0], expireAt, "MEMBERS", 1, SortedSetData[0][0].Element };
+                await CheckCommandsAsync(RespCommand.ZEXPIREAT, cmdArgs, VerifyResult);
+
+                static void VerifyResult(RedisResult result)
+                {
+                    var results = (RedisResult[])result;
+                    ClassicAssert.AreEqual(1, results!.Length);
+                    ClassicAssert.AreEqual(1, (long)results[0]);
+                }
+            }
+
+            [Test]
             public async Task ZIncrByETagAdvancedTestAsync()
             {
                 var cmdArgs = new object[] { SortedSetKeys[0], 2, SortedSetData[0][0].Element };
@@ -151,11 +180,105 @@ namespace Garnet.test
             }
 
             [Test]
+            public async Task ZMPopETagAdvancedTestAsync()
+            {
+                var cmdArgs = new object[] { 1, SortedSetKeys[0], "MAX"};
+
+                await CheckCommandsAsync(RespCommand.ZMPOP, cmdArgs, VerifyResult);
+
+                static void VerifyResult(RedisResult result)
+                {
+                    var results = (RedisResult[])result;
+                    ClassicAssert.AreEqual(2, results!.Length);
+                    ClassicAssert.AreEqual(SortedSetKeys[0], results[0].ToString());
+                    var entries = (RedisResult[])results[1];
+                    ClassicAssert.AreEqual(1, entries!.Length);
+                    var entry = entries[0];
+                    ClassicAssert.AreEqual(2, entry!.Length);
+                    ClassicAssert.AreEqual(SortedSetData[0].Last().Element, entry[0].ToString());
+                    ClassicAssert.AreEqual(SortedSetData[0].Last().Score, (double)entry[1]);
+                }
+            }
+
+            [Test]
+            public async Task ZPExpireETagAdvancedTestAsync()
+            {
+                var cmdArgs = new object[] { SortedSetKeys[0], 2000, "MEMBERS", 1, SortedSetData[0][0].Element };
+                await CheckCommandsAsync(RespCommand.ZPEXPIRE, cmdArgs, VerifyResult);
+
+                static void VerifyResult(RedisResult result)
+                {
+                    var results = (RedisResult[])result;
+                    ClassicAssert.AreEqual(1, results!.Length);
+                    ClassicAssert.AreEqual(1, (long)results[0]);
+                }
+            }
+
+            [Test]
+            public async Task ZPExpireAtETagAdvancedTestAsync()
+            {
+                var expireAt = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds();
+                var cmdArgs = new object[] { SortedSetKeys[0], expireAt, "MEMBERS", 1, SortedSetData[0][0].Element };
+                await CheckCommandsAsync(RespCommand.ZPEXPIREAT, cmdArgs, VerifyResult);
+
+                static void VerifyResult(RedisResult result)
+                {
+                    var results = (RedisResult[])result;
+                    ClassicAssert.AreEqual(1, results!.Length);
+                    ClassicAssert.AreEqual(1, (long)results[0]);
+                }
+            }
+
+            [Test]
+            public async Task ZPopMaxETagAdvancedTestAsync()
+            {
+                var cmdArgs = new object[] { SortedSetKeys[0] };
+
+                await CheckCommandsAsync(RespCommand.ZPOPMAX, cmdArgs, VerifyResult);
+
+                static void VerifyResult(RedisResult result)
+                {
+                    var entry = (RedisResult[])result;
+                    ClassicAssert.AreEqual(2, entry!.Length);
+                    ClassicAssert.AreEqual(SortedSetData[0].Last().Element, entry[0].ToString());
+                    ClassicAssert.AreEqual(SortedSetData[0].Last().Score, (double)entry[1]);
+                }
+            }
+
+            [Test]
+            public async Task ZPopMinETagAdvancedTestAsync()
+            {
+                var cmdArgs = new object[] { SortedSetKeys[0] };
+
+                await CheckCommandsAsync(RespCommand.ZPOPMIN, cmdArgs, VerifyResult);
+
+                static void VerifyResult(RedisResult result)
+                {
+                    var entry = (RedisResult[])result;
+                    ClassicAssert.AreEqual(2, entry!.Length);
+                    ClassicAssert.AreEqual(SortedSetData[0].First().Element, entry[0].ToString());
+                    ClassicAssert.AreEqual(SortedSetData[0].First().Score, (double)entry[1]);
+                }
+            }
+
+            [Test]
             public async Task ZRangeStoreETagAdvancedTestAsync()
             {
                 var cmdArgs = new object[] { SortedSetKeys[0], SortedSetKeys[2], 0, 3, "BYSCORE" };
                 await CheckCommandsAsync(RespCommand.ZRANGESTORE, cmdArgs, VerifyResult);
                 
+                static void VerifyResult(RedisResult result)
+                {
+                    ClassicAssert.AreEqual(1, (long)result);
+                }
+            }
+
+            [Test]
+            public async Task ZRemETagAdvancedTestAsync()
+            {
+                var cmdArgs = new object[] { SortedSetKeys[0], SortedSetData[0][0].Element };
+                await CheckCommandsAsync(RespCommand.ZREM, cmdArgs, VerifyResult);
+
                 static void VerifyResult(RedisResult result)
                 {
                     ClassicAssert.AreEqual(1, (long)result);

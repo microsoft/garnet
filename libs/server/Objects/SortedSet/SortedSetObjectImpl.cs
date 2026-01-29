@@ -742,13 +742,19 @@ namespace Garnet.server
 
             writer.WriteArrayLength(input.parseState.Count);
 
+            var itemsExpSet = 0;
             foreach (var item in input.parseState.Parameters)
             {
                 var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks,
                     expirationWithOption.ExpireOption);
                 writer.WriteInt32(result);
-                output.Header.result1++;
+                itemsExpSet++;
             }
+
+            if (itemsExpSet == 0)
+                output.OutputFlags |= OutputFlags.ValueUnchanged;
+
+            output.Header.result1 = itemsExpSet;
         }
 
         private void SortedSetCollect(ref ObjectOutput output)
