@@ -201,6 +201,20 @@ namespace Garnet.test
             }
 
             [Test]
+            public async Task ZRemRangeByLexETagAdvancedTestAsync()
+            {
+                var cmdArgs = new object[] { SortedSetKeys[0], "[a", "(b" };
+                await CheckCommandsAsync(RespCommand.ZREMRANGEBYLEX, cmdArgs, VerifyResult);
+
+                static void VerifyResult(RedisResult result)
+                {
+                    var results = (RedisResult[])result;
+                    ClassicAssert.AreEqual(1, results!.Length);
+                    ClassicAssert.AreEqual(1, (long)results[0]);
+                }
+            }
+
+            [Test]
             public async Task ZPExpireETagAdvancedTestAsync()
             {
                 var cmdArgs = new object[] { SortedSetKeys[0], 2000, "MEMBERS", 1, SortedSetData[0][0].Element };
@@ -220,6 +234,20 @@ namespace Garnet.test
                 var expireAt = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds();
                 var cmdArgs = new object[] { SortedSetKeys[0], expireAt, "MEMBERS", 1, SortedSetData[0][0].Element };
                 await CheckCommandsAsync(RespCommand.ZPEXPIREAT, cmdArgs, VerifyResult);
+
+                static void VerifyResult(RedisResult result)
+                {
+                    var results = (RedisResult[])result;
+                    ClassicAssert.AreEqual(1, results!.Length);
+                    ClassicAssert.AreEqual(1, (long)results[0]);
+                }
+            }
+
+            [Test]
+            public async Task ZPersistETagAdvancedTestAsync()
+            {
+                var cmdArgs = new object[] { SortedSetKeys[0], "MEMBERS", 1, SortedSetData[0][0].Element };
+                await CheckCommandsAsync(RespCommand.ZPERSIST, cmdArgs, VerifyResult);
 
                 static void VerifyResult(RedisResult result)
                 {
@@ -312,7 +340,10 @@ namespace Garnet.test
                 ClassicAssert.AreEqual(SortedSetData[0].Length, long.Parse(results[0]!));
                 ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
-                var result = db.SortedSetAdd(SortedSetKeys[1], SortedSetData[1]);
+                var result = (long)db.Execute("ZEXPIRE", SortedSetKeys[0], 60, "MEMBERS", 1, SortedSetData[0][0].Element);
+                ClassicAssert.AreEqual(1, result);
+
+                result = db.SortedSetAdd(SortedSetKeys[1], SortedSetData[1]);
                 ClassicAssert.AreEqual(SortedSetData[1].Length, result);
 
                 result = db.SortedSetAdd(SortedSetKeys[2], SortedSetData[2]);
@@ -328,13 +359,13 @@ namespace Garnet.test
             DataSetUp();
 
             var etag = (long)await db.ExecuteAsync("GETETAG", KeyWithEtag);
-            ClassicAssert.AreEqual(1, etag);
+            ClassicAssert.AreEqual(2, etag);
 
             var result = await db.ExecuteAsync(command.ToString(), commandArgs);
             verifyResult(result);
 
             etag = (long)await db.ExecuteAsync("GETETAG", KeyWithEtag);
-            ClassicAssert.AreEqual(2, etag);
+            ClassicAssert.AreEqual(3, etag);
 
             // Multi-key commands do not support meta-commands yet
             if (!MultiKeyCommands.Contains(command))
@@ -344,7 +375,7 @@ namespace Garnet.test
                 var results = (RedisResult[])await db.ExecuteAsync("EXECWITHETAG", args);
                 ClassicAssert.AreEqual(2, results!.Length);
                 verifyResult(results[0]);
-                ClassicAssert.AreEqual(2, (long)results[1]);
+                ClassicAssert.AreEqual(3, (long)results[1]);
             }
         }
     }
