@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -672,7 +673,7 @@ namespace Tsavorite.core
         internal long GetPhysicalAddress(long logicalAddress)
         {
             if (disposed)
-                throw new TsavoriteException("GetPhysicalAddress called when disposed");
+                ThrowTsavoriteException("GetPhysicalAddress called when disposed");
 
             // Index of page within the circular buffer, and offset on the page.
             var pageIndex = GetPageIndexForAddress(logicalAddress);
@@ -981,6 +982,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="message"></param>
         /// <exception cref="TsavoriteException"></exception>
+        [DoesNotReturn]
         [MethodImpl(MethodImplOptions.NoInlining)]
         static void ThrowTsavoriteException(string message)
             => throw new TsavoriteException(message);

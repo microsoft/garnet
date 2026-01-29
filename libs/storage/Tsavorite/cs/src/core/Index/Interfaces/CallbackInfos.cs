@@ -184,7 +184,7 @@ namespace Tsavorite.core
     /// <summary>
     /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
-    public enum ReadAction
+    public enum ReadAction : byte
     {
         /// <summary>
         /// Execute the default action for the method 'false' return.
@@ -215,21 +215,21 @@ namespace Tsavorite.core
         /// <summary>
         /// The Tsavorite execution context version of the operation
         /// </summary>
-        public long Version { get; internal set; }
+        public long Version;
 
         /// <summary>
         /// The logical address of the record being operated on
         /// </summary>
-        public long Address { get; internal set; }
+        public long Address;
 
         /// <summary>
         /// Whether the call is from sync or async (pending) path
         /// </summary>
-        public bool IsFromPending { get; internal set; }
+        public bool IsFromPending;
 
         /// <summary>
         /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
-        public ReadAction Action { get; set; }
+        public ReadAction Action;
     }
 }
