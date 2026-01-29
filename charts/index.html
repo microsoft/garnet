@@ -74,7 +74,7 @@
                     <select class="form-select mb-2" title="Select dot net version" id="framework-type-selector">
                         <option value="ALL" selected>All</option>
                         <option value="dotnet8.0">.NET 8.0</option>
-                        <option value="dotnet9.0">.NET 9.0</option>
+                        <option value="dotnet10.0">.NET 10.0</option>
                     </select>
                     <label for="framework-type-selector">Framework</label>
                 </div>
@@ -207,7 +207,7 @@
         const FRAMEWORK_TYPE = Object.freeze({
             ALL: "ALL",
             DOTNET8_0: "dotnet8.0",
-            DOTNET9_0: "dotnet9.0"
+            DOTNET10_0: "dotnet10.0"
         });
 
         const SELECTED_BENCHMARK_DEFAULT = "SELECT_BENCHMARK";
@@ -281,50 +281,50 @@
                     return data;
                 }
 
-                const [data8, data9] = await Promise.all([
+                const [data8, data10] = await Promise.all([
                     fetchAndParseBenchmarkData('https://microsoft.github.io/garnet/charts/data_net80.js'),
                     fetchAndParseBenchmarkData('https://microsoft.github.io/garnet/charts/data.js')
                 ]);
 
-                if (!data8 && !data9) {
+                if (!data8 && !data10) {
                     throw new Error('No benchmark data available.');
                     return;
                 }
 
                 // Remove unused properties
                 delete data8.entries.Benchmark;
-                delete data9.entries.Benchmark;
+                delete data10.entries.Benchmark;
 
                 data = {
                     lastUpdate: Math.max(
-                        ...([data8, data9]
+                        ...([data8, data10]
                             .filter(Boolean)
                             .map(d => new Date(d.lastUpdate).getTime()))
                     ),
-                    repoUrl: (data8?.repoUrl || data9?.repoUrl || ''),
+                    repoUrl: (data8?.repoUrl || data10?.repoUrl || ''),
                     entries: (() => {
-                        // data.js should contain the latest data (.NET 9.0) and data_net80.js should contain the data for .NET 8.0.
+                        // data.js should contain the latest data (.NET 10.0) and data_net80.js should contain the data for .NET 8.0.
                         // Due to the way the data was structured, both can contain duplicate entries.
                         // We need to merge them, keeping the latest entry for each benchmark.
                         const mergedEntries = {};
                         const allKeys = new Set([
                             ...Object.keys(data8?.entries || {}),
-                            ...Object.keys(data9?.entries || {})
+                            ...Object.keys(data10?.entries || {})
                         ]);
 
                         for (const key of allKeys) {
                             const entry8 = data8?.entries?.[key] || [];
-                            const entry9 = data9?.entries?.[key] || [];
+                            const entry10 = data10?.entries?.[key] || [];
 
                             const latestEntry8 = entry8.reduce((latest, item) =>
                                 !latest || new Date(item.date).getTime() > new Date(item.date).getTime() ? item : latest, null);
-                            const latestEntry9 = entry9.reduce((latest, item) =>
+                            const latestentry10 = entry10.reduce((latest, item) =>
                                 !latest || new Date(item.date).getTime() > new Date(item.date).getTime() ? item : latest, null);
 
                             const latestDate8 = latestEntry8 ? new Date(latestEntry8.date).getTime() : -1;
-                            const latestDate9 = latestEntry9 ? new Date(latestEntry9.date).getTime() : -1;
+                            const latestDate10 = latestentry10 ? new Date(latestentry10.date).getTime() : -1;
 
-                            mergedEntries[key] = latestDate8 >= latestDate9 ? entry8 : entry9;
+                            mergedEntries[key] = latestDate8 >= latestDate10 ? entry8 : entry10;
                         }
 
                         return mergedEntries;
@@ -763,14 +763,18 @@
             // Check framework type
             switch (SELECTED_FRAMEWORK) {
                 case FRAMEWORK_TYPE.ALL:
+                    // When "All" is selected, exclude .NET 9.0 (only show 8.0 and 10.0)
+                    if (nameLower.includes('net9.0')) {
+                        return false;
+                    }
                     break;
                 case FRAMEWORK_TYPE.DOTNET8_0:
                     if (!nameLower.includes('net8.0')) {
                         return false;
                     }
                     break;
-                case FRAMEWORK_TYPE.DOTNET9_0:
-                    if (!nameLower.includes('net9.0')) {
+                case FRAMEWORK_TYPE.DOTNET10_0:
+                    if (!nameLower.includes('net10.0')) {
                         return false;
                     }
                     break;
