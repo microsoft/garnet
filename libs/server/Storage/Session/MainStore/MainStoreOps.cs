@@ -324,11 +324,10 @@ namespace Garnet.server
         /// </summary>
         /// <typeparam name="TObjectContext"></typeparam>
         /// <param name="key">Key of the upserted record</param>
-        /// <param name="value">Value of the updated object</param>
         /// <param name="getOutput">Output obtained by a previous GET command, containing the modified object</param>
         /// <param name="objectContext">Context</param>
         /// <returns></returns>
-        public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, IGarnetObject value, in ObjectOutput getOutput, ref TObjectContext objectContext)
+        public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, in ObjectOutput getOutput, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             // Use the meta-command info to store the existing eTag
@@ -338,24 +337,11 @@ namespace Garnet.server
 
             ObjectOutput upsertOutput = default;
 
-            var upsertInput = new ObjectInput((GarnetObjectType)value.Type, ref metaCommandInfo);
-            objectContext.Upsert(key.ReadOnlySpan, ref upsertInput, value, ref upsertOutput);
+            var upsertInput = new ObjectInput((GarnetObjectType)getOutput.GarnetObject.Type, ref metaCommandInfo);
+            objectContext.Upsert(key.ReadOnlySpan, ref upsertInput, getOutput.GarnetObject, ref upsertOutput);
 
             return GarnetStatus.OK;
         }
-
-        /// <summary>
-        /// This SET method is to be used by a command that retrieved an <see cref="IGarnetObject"/> (using GET) then modified it directly.
-        /// This method will then call Upsert in order for the record to update its eTag if needed.
-        /// </summary>
-        /// <typeparam name="TObjectContext"></typeparam>
-        /// <param name="key">Key of the upserted record</param>
-        /// <param name="getOutput">Output obtained by a previous GET command, containing the modified object</param>
-        /// <param name="objectContext">Context</param>
-        /// <returns></returns>
-        public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, in ObjectOutput getOutput, ref TObjectContext objectContext)
-            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
-            => SET(key, getOutput.GarnetObject, in getOutput, ref objectContext);
 
         public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, IGarnetObject value, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>

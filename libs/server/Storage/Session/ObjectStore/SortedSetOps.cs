@@ -599,8 +599,6 @@ namespace Garnet.server
 
             try
             {
-                _ = GET(destinationKey, out var destObjectOutput, ref objectContext);
-
                 var status = SortedSetDifference(keys, ref objectContext, out var pairs);
 
                 if (status != GarnetStatus.OK)
@@ -617,7 +615,7 @@ namespace Garnet.server
                         newSetObject.Add(element, score);
                     }
 
-                    _ = SET(destinationKey, newSetObject, in destObjectOutput, ref objectContext);
+                    _ = SET(destinationKey, newSetObject, ref objectContext);
                     itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                 }
                 else
@@ -753,8 +751,6 @@ namespace Garnet.server
 
                 Debug.Assert(!rangeOutputMem.IsSpanByte, "Output should not be in SpanByte format when the status is OK");
 
-                _ = GET(dstKey, out var destObjectOutput, ref ssObjectTransactionalContext);
-
                 var rangeOutputHandler = rangeOutputMem.Memory.Memory.Pin();
                 try
                 {
@@ -778,7 +774,7 @@ namespace Garnet.server
                             newSortedSetObject.Add(element, score);
                         }
 
-                        _ = SET(dstKey, newSortedSetObject, in destObjectOutput, ref ssObjectTransactionalContext);
+                        _ = SET(dstKey, newSortedSetObject, ref ssObjectTransactionalContext);
                         itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                     }
                 }
@@ -1097,8 +1093,6 @@ namespace Garnet.server
 
             try
             {
-                _ = GET(destinationKey, out var destObjectOutput, ref objectContext);
-
                 var status = SortedSetUnion(keys, ref objectContext, out var pairs, weights, aggregateType);
 
                 if (status == GarnetStatus.WRONGTYPE)
@@ -1116,7 +1110,7 @@ namespace Garnet.server
                         newSortedSetObject.Add(element, score);
                     }
 
-                    _ = SET(destinationKey, newSortedSetObject, in destObjectOutput, ref objectContext);
+                    _ = SET(destinationKey, newSortedSetObject, ref objectContext);
                     itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                 }
                 else
@@ -1356,8 +1350,6 @@ namespace Garnet.server
 
             try
             {
-                _ = GET(destinationKey, out var destObjectOutput, ref objectContext);
-
                 var status = SortedSetIntersection(keys, weights, aggregateType, ref objectContext, out var pairs);
 
                 if (status != GarnetStatus.OK)
@@ -1375,7 +1367,7 @@ namespace Garnet.server
                         newSortedSetObject.Add(element, score);
                     }
 
-                    _ = SET(destinationKey, newSortedSetObject, in destObjectOutput, ref objectContext);
+                    _ = SET(destinationKey, newSortedSetObject, ref objectContext);
                     itemBroker?.HandleCollectionUpdate(destinationKey.ToArray());
                 }
                 else

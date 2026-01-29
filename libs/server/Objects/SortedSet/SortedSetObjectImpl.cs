@@ -687,18 +687,14 @@ namespace Garnet.server
 
             writer.WriteArrayLength(numFields);
 
-            var persistedItems = 0;
             foreach (var item in input.parseState.Parameters)
             {
                 var result = Persist(item.ToArray());
                 writer.WriteInt32(result);
-                if (result == 1)
-                    persistedItems++;
                 output.Header.result1++;
             }
 
-            if (persistedItems == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+            output.OutputFlags |= OutputFlags.ValueUnchanged;
         }
 
         private void SortedSetTimeToLive(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -748,7 +744,6 @@ namespace Garnet.server
 
             writer.WriteArrayLength(input.parseState.Count);
 
-            var itemsExpired = 0;
             foreach (var item in input.parseState.Parameters)
             {
                 var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks,
@@ -756,13 +751,9 @@ namespace Garnet.server
 
                 writer.WriteInt32((int)result);
                 output.Header.result1++;
-
-                if (result == SortedSetExpireResult.ExpireUpdated)
-                    itemsExpired++;
             }
 
-            if (itemsExpired == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+            output.OutputFlags |= OutputFlags.ValueUnchanged;
         }
 
         private void SortedSetCollect(ref ObjectOutput output)
@@ -770,6 +761,8 @@ namespace Garnet.server
             DeleteExpiredItems();
             
             output.Header.result1 = 1;
+
+            output.OutputFlags |= OutputFlags.ValueUnchanged;
         }
 
         #region CommonMethods

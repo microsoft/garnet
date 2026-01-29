@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -275,6 +276,17 @@ namespace Garnet.server
             return !findKeys.IsRangeType || findKeys.IsRangeLimitType ||
                    findKeys.LastKeyOrLimit < 0 ||
                    findKeys.FirstKey < findKeys.LastKeyOrLimit;
+        }
+
+        /// <summary>
+        /// Determines if a simplified key spec represents an overwrite command
+        /// </summary>
+        /// <param name="simpleCommandInfo">The simplified key spec</param>
+        /// <returns>True if successful</returns>
+        public static bool IsOverwriteCommand(this SimpleRespCommandInfo simpleCommandInfo)
+        {
+            return simpleCommandInfo.KeySpecs.Length > 0 && simpleCommandInfo.KeySpecs.Any(ks =>
+                (ks.Flags & KeySpecificationFlags.OW) == KeySpecificationFlags.OW);
         }
     }
 }
