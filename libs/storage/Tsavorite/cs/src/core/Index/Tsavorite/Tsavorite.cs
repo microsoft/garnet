@@ -875,40 +875,41 @@ namespace Tsavorite.core
             }
 
             var distribution =
-                $"Number of hash buckets: {table_size_}\n" +
-                $"Number of overflow buckets: {OverflowBucketCount}\n" +
-                $"Size of each bucket: {Constants.kEntriesPerBucket * sizeof(HashBucketEntry)} bytes\n" +
-                $"Total distinct hash-table entry count: {{{total_record_count}}}\n" +
-                $"Average #entries per hash bucket: {{{total_record_count / (double)table_size_:0.00}}}\n" +
-                $"Total zeroed out slots: {total_zeroed_out_slots} \n" +
-                $"Total entries below begin addr: {total_entries_below_begin_address} \n" +
-                $"Total entries in overflow buckets: {total_entries_in_ofb} \n" +
-                $"Total entries in overflow buckets below begin addr: {total_entries_in_ofb_below_begin_address} \n" +
-                $"Total entries with tentative bit set: {total_entries_with_tentative_bit_set} \n" +
-                $"Histogram of #entries per bucket:\n";
+                $"Number of hash buckets: {table_size_}\r\n" +
+                $"Number of overflow buckets: {OverflowBucketCount}\r\n" +
+                $"Size of each bucket: {Constants.kEntriesPerBucket * sizeof(HashBucketEntry)} bytes\r\n" +
+                $"Hash-table size: {Constants.kEntriesPerBucket * sizeof(HashBucketEntry) * table_size_} bytes\r\n" +
+                $"Total distinct hash-table entry count: {{{total_record_count}}}\r\n" +
+                $"Average #entries per hash bucket: {{{total_record_count / (double)table_size_:0.00}}}\r\n" +
+                $"Total zeroed out slots: {total_zeroed_out_slots} \r\n" +
+                $"Total entries below begin addr: {total_entries_below_begin_address} \r\n" +
+                $"Total entries in overflow buckets: {total_entries_in_ofb} \r\n" +
+                $"Total entries in overflow buckets below begin addr: {total_entries_in_ofb_below_begin_address} \r\n" +
+                $"Total entries with tentative bit set: {total_entries_with_tentative_bit_set} \r\n" +
+                $"Histogram of #entries per bucket:\r\n";
 
             foreach (var kvp in histogram.OrderBy(e => e.Key))
             {
-                distribution += $"  {kvp.Key} : {kvp.Value}\n";
+                distribution += $"  {kvp.Key} : {kvp.Value}\r\n";
             }
 
-            distribution += $"Histogram of #buckets per OFB chain and their frequencies: \n";
+            distribution += $"Histogram of #buckets per OFB chain and their frequencies: \r\n";
             foreach (var kvp in ofb_chaining_histogram.OrderBy(e => e.Key))
             {
-                distribution += $"  {kvp.Key} : {kvp.Value}\n";
+                distribution += $"  {kvp.Key} : {kvp.Value}\r\n";
             }
 
             // Histogram of slots unused per bucket in OFB and non-OFB
-            distribution += $"Histogram of #unused slots per bucket in main hash index:\n";
+            distribution += $"Histogram of #unused slots per bucket in main hash index:\r\n";
             foreach (var kvp in slots_unused_by_nonofb_buckets_histogram.OrderBy(e => e.Key))
             {
-                distribution += $"  {kvp.Key} : {kvp.Value}\n";
+                distribution += $"  {kvp.Key} : {kvp.Value}\r\n";
             }
 
-            distribution += $"Histogram of #unused slots per bucket in overflow buckets:\n";
+            distribution += $"Histogram of #unused slots per bucket in overflow buckets:\r\n";
             foreach (var kvp in slots_unused_by_ofb_buckets_histogram.OrderBy(e => e.Key))
             {
-                distribution += $"  {kvp.Key} : {kvp.Value}\n";
+                distribution += $"  {kvp.Key} : {kvp.Value}\r\n";
             }
 
             return distribution;
