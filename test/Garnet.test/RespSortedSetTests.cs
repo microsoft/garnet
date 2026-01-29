@@ -2135,6 +2135,22 @@ namespace Garnet.test
         }
 
         [Test]
+        public void CanDoSortedSetExpireAndRemove()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.SortedSetAdd("mysortedset", [new SortedSetEntry("a1", 1.1), new SortedSetEntry("a2", 1.2), new SortedSetEntry("a3", 1.3)]);
+
+            var result = db.Execute("ZEXPIRE", "mysortedset", "60", "MEMBERS", "1", "a1");
+            var results = (RedisResult[])result;
+            ClassicAssert.AreEqual(1, results!.Length);
+            ClassicAssert.AreEqual(1, (long)results[0]);
+
+            result = db.Execute("ZREMRANGEBYLEX", "mysortedset", "[a", "(b");
+            ClassicAssert.AreEqual(3, (long)result);
+        }
+
+        [Test]
         public async Task CanDoSortedSetExpireLTM()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
