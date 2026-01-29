@@ -957,10 +957,10 @@ namespace Tsavorite.core
             var shiftAddress = GetLogicalAddressOfStartOfPage(pageIndex);
             var tailAddress = GetTailAddress();
 
-            // First check whether we need to shift HeadAddress. If we have a logSizeTracker then we have already issued a shift if needed;
-            // otherwise make sure we stay in the PageCount (which may be less than BufferSize).
+            // First check whether we need to shift HeadAddress. If we have a logSizeTracker that's over budget then we have already issued
+            // a shift if needed; otherwise make sure we stay in the PageCount (which may be less than BufferSize).
             var desiredHeadAddress = HeadAddress;
-            if (logSizeTracker is null)
+            if (logSizeTracker is null || !logSizeTracker.IsSizeBeyondLimit)
             {
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxPageCount)

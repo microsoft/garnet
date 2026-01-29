@@ -323,31 +323,14 @@ namespace Garnet.test
             Assert.That(prevTail - prevHead, Is.GreaterThan(tracker.TargetDeltaRange.high));
 
             // Wait for the head address to move forward. This may be done in iterations because the ReadOnlyAddress
-            // may block the first page-eviction loop.
-#if true
-            while (true)
+            // may block the first page-eviction loop iteration(s).
+            while (tracker.IsSizeBeyondLimit)
             {
                 Thread.Sleep(1000);
-                if (info.HeadAddress > prevHead && (prevTail - prevHead) <= tracker.TargetDeltaRange.high)
-                    break;
-
+                info = TestUtils.GetStoreAddressInfo(garnetServer);
                 prevHead = info.HeadAddress;
                 prevTail = info.TailAddress;
-                info = TestUtils.GetStoreAddressInfo(garnetServer);
             }
-#else
-            while (info.HeadAddress == prevHead)
-            {
-                var key = $"key{i++:00000}";
-                _ = db.StringSet(key, val);
-
-                prevHead = info.HeadAddress;
-                prevTail = info.TailAddress;
-                info = TestUtils.GetStoreAddressInfo(garnetServer);
-            }
-#endif
-            prevHead = info.HeadAddress;
-            prevTail = info.TailAddress;
 
             // Verify that records were inserted up to the configured memory size limit.
             // We may have overflowed by multiple pages.
