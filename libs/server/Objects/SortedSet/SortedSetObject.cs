@@ -677,17 +677,17 @@ namespace Garnet.server
             CleanupExpirationStructuresIfEmpty();
         }
 
-        private int SetExpiration(byte[] key, long expiration, ExpireOption expireOption)
+        private SortedSetExpireResult SetExpiration(byte[] key, long expiration, ExpireOption expireOption)
         {
             if (!sortedSetDict.ContainsKey(key))
-                return (int)SortedSetExpireResult.KeyNotFound;
+                return SortedSetExpireResult.KeyNotFound;
 
             if (expiration <= DateTimeOffset.UtcNow.Ticks)
             {
                 _ = sortedSetDict.Remove(key, out var value);
                 _ = sortedSet.Remove((value, key));
                 UpdateSize(key, add: false);
-                return (int)SortedSetExpireResult.KeyAlreadyExpired;
+                return SortedSetExpireResult.KeyAlreadyExpired;
             }
 
             InitializeExpirationStructures();
@@ -698,7 +698,7 @@ namespace Garnet.server
                     (expireOption.HasFlag(ExpireOption.GT) && expiration <= currentExpiration) ||
                     (expireOption.HasFlag(ExpireOption.LT) && expiration >= currentExpiration))
                 {
-                    return (int)SortedSetExpireResult.ExpireConditionNotMet;
+                    return SortedSetExpireResult.ExpireConditionNotMet;
                 }
 
                 expirationTimes[key] = expiration;
@@ -711,14 +711,14 @@ namespace Garnet.server
             else
             {
                 if ((expireOption & ExpireOption.XX) == ExpireOption.XX || (expireOption & ExpireOption.GT) == ExpireOption.GT)
-                    return (int)SortedSetExpireResult.ExpireConditionNotMet;
+                    return SortedSetExpireResult.ExpireConditionNotMet;
 
                 expirationTimes[key] = expiration;
                 expirationQueue.Enqueue(key, expiration);
                 UpdateExpirationSize(add: true);
             }
 
-            return (int)SortedSetExpireResult.ExpireUpdated;
+            return SortedSetExpireResult.ExpireUpdated;
         }
 
         private int Persist(byte[] key)
