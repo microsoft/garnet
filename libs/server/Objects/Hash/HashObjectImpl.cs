@@ -259,6 +259,7 @@ namespace Garnet.server
         {
             DeleteExpiredItems();
             output.Header.result1 = 1;
+            output.OutputFlags |= OutputFlags.ValueUnchanged;
         }
 
         private void HashGetKeysOrValues(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -436,7 +437,6 @@ namespace Garnet.server
 
             writer.WriteArrayLength(input.parseState.Count);
 
-            var expired = 0;
             foreach (var item in input.parseState.Parameters)
             {
 #if NET9_0_OR_GREATER
@@ -447,13 +447,9 @@ namespace Garnet.server
                 writer.WriteInt32((int)result);
 
                 output.Header.result1++;
-
-                if (result == ExpireResult.ExpireUpdated)
-                    expired++;
             }
 
-            if (expired == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+            output.OutputFlags |= OutputFlags.ValueUnchanged;
         }
 
         private void HashTimeToLive(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
@@ -507,7 +503,6 @@ namespace Garnet.server
 
             writer.WriteArrayLength(numFields);
 
-            var persisted = 0;
             foreach (var item in input.parseState.Parameters)
             {
 #if NET9_0_OR_GREATER
@@ -517,13 +512,9 @@ namespace Garnet.server
 #endif
                 writer.WriteInt32((int)result);
                 output.Header.result1++;
-
-                if (result == ExpireResult.ExpireUpdated)
-                    persisted++;
             }
 
-            if (persisted == 0)
-                output.OutputFlags |= OutputFlags.ValueUnchanged;
+            output.OutputFlags |= OutputFlags.ValueUnchanged;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
