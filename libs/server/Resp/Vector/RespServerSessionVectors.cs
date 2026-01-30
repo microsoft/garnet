@@ -832,8 +832,7 @@ namespace Garnet.server
                                         var attr = remaininingAttributes.Slice(sizeof(int), attrLen);
                                         remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
 
-                                        while (!RespWriteUtils.TryWriteBulkString(attr, ref dcurr, dend))
-                                            SendAndReset();
+                                        WriteDirectLargeRespString(attr);
                                     }
                                 }
                             }
@@ -1054,7 +1053,7 @@ namespace Garnet.server
                     return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
                 }
 
-                WriteSimpleString(attributesOutput.AsReadOnlySpan());
+                WriteLargeSimpleString(attributesOutput.AsReadOnlySpan());
                 return true;
             }
             finally
