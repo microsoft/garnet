@@ -3,6 +3,7 @@
 
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Garnet.server;
 using NUnit.Framework;
@@ -34,6 +35,21 @@ namespace Garnet.test.Resp.ETag
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(2, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ZCollectETagAdvancedTestAsync()
+        {
+            // Wait for the expiration of one member in the sorted set
+            Thread.Sleep(TimeSpan.FromSeconds(5));
+
+            var cmdArgs = new object[] { SortedSetKeys[0] };
+            await CheckCommandsAsync(RespCommand.ZCOLLECT, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual("OK", result.ToString());
             }
         }
 
@@ -127,14 +143,36 @@ namespace Garnet.test.Resp.ETag
         [Test]
         public async Task ZRemRangeByLexETagAdvancedTestAsync()
         {
-            var cmdArgs = new object[] { SortedSetKeys[0], "[a", "(b" };
+            var cmdArgs = new object[] { SortedSetKeys[0], "[a1", "(a3" };
             await CheckCommandsAsync(RespCommand.ZREMRANGEBYLEX, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
-                var results = (RedisResult[])result;
-                ClassicAssert.AreEqual(1, results!.Length);
-                ClassicAssert.AreEqual(1, (long)results[0]);
+                ClassicAssert.AreEqual(2, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ZRemRangeByRankETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], 1, 2};
+            await CheckCommandsAsync(RespCommand.ZREMRANGEBYRANK, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ZRemRangeByScoreETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], 0, 1.25 };
+            await CheckCommandsAsync(RespCommand.ZREMRANGEBYSCORE, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(2, (long)result);
             }
         }
 
@@ -264,7 +302,7 @@ namespace Garnet.test.Resp.ETag
             ClassicAssert.AreEqual(SortedSetData[0].Length, long.Parse(results[0]!));
             ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
-            var result = (long)db.Execute("ZEXPIRE", SortedSetKeys[0], 60, "MEMBERS", 1, SortedSetData[0][0].Element);
+            var result = (long)db.Execute("ZEXPIRE", SortedSetKeys[0], 3, "MEMBERS", 1, SortedSetData[0][0].Element);
             ClassicAssert.AreEqual(1, result);
 
             result = db.SortedSetAdd(SortedSetKeys[1], SortedSetData[1]);

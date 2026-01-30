@@ -664,7 +664,9 @@ namespace Garnet.server
                 RespCommand.HPEXPIREAT or 
                 RespCommand.PERSIST or
                 RespCommand.ZPERSIST or
-                RespCommand.HPERSIST => true,
+                RespCommand.HPERSIST or 
+                RespCommand.ZCOLLECT or 
+                RespCommand.HCOLLECT => true,
                 _ => false
             };
         }

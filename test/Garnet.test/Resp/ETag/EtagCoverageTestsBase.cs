@@ -69,7 +69,11 @@ namespace Garnet.test.Resp.ETag
             var result = await db.ExecuteAsync(command.ToString(), commandArgs);
             verifyResult(result);
 
+            var exists = await db.KeyExistsAsync(KeyWithEtag);
+            ClassicAssert.IsTrue(exists);
+
             etag = (long)await db.ExecuteAsync("GETETAG", KeyWithEtag);
+
             var expectedEtag = OverwriteCommands.Contains(command) ? 0 : command.IsMetadataCommand() ? 1 : 2;
             ClassicAssert.AreEqual(expectedEtag, etag);
 
@@ -78,7 +82,7 @@ namespace Garnet.test.Resp.ETag
             {
                 DataSetUp();
                 var args = new object[] { command.ToString() }.Union(commandArgs).ToArray();
-                var results = (RedisResult[])await db.ExecuteAsync("EXECWITHETAG", args);
+                var results = await db.ExecuteAsync("EXECWITHETAG", args);
                 ClassicAssert.AreEqual(2, results!.Length);
                 verifyResult(results[0]);
                 expectedEtag = command.IsMetadataCommand() ? 1 : 2;

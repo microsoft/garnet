@@ -666,10 +666,10 @@
   {
     "Command": "HCOLLECT",
     "Name": "HCOLLECT",
-    "Arity": 2,
+    "Arity": -2,
     "Flags": "Admin, Write",
     "FirstKey": 1,
-    "LastKey": 1,
+    "LastKey": -1,
     "Step": 1,
     "AclCategories": "Admin, Hash, Write, Garnet",
     "KeySpecifications": [
@@ -680,7 +680,7 @@
         },
         "FindKeys": {
           "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
+          "LastKey": -1,
           "KeyStep": 1,
           "Limit": 0
         },
@@ -1097,10 +1097,10 @@
   {
     "Command": "ZCOLLECT",
     "Name": "ZCOLLECT",
-    "Arity": 2,
+    "Arity": -2,
     "Flags": "Admin, Write",
     "FirstKey": 1,
-    "LastKey": 1,
+    "LastKey": -1,
     "Step": 1,
     "AclCategories": "SortedSet, Write, Admin, Garnet",
     "KeySpecifications": [
@@ -1111,7 +1111,7 @@
         },
         "FindKeys": {
           "TypeDiscriminator": "FindKeysRange",
-          "LastKey": 0,
+          "LastKey": -1,
           "KeyStep": 1,
           "Limit": 0
         },

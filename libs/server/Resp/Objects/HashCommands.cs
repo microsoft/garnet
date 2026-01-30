@@ -45,7 +45,10 @@ namespace Garnet.server
             // Prepare input
             var input = new ObjectInput(GarnetObjectType.Hash, ref metaCommandInfo, ref parseState, startIdx: 1) { HashOp = hop };
 
-            var status = storageApi.HashSet(key, ref input, out var output);
+            // Prepare output
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+
+            var status = storageApi.HashSet(key, ref input, ref output);
 
             switch (status)
             {
@@ -61,8 +64,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        while (!RespWriteUtils.TryWriteInt32(output.result1, ref dcurr, dend))
-                            SendAndReset();
+                        ProcessOutput(output.SpanByteAndMemory);
                     }
                     break;
             }

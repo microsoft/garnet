@@ -450,8 +450,8 @@ namespace Garnet.server
          => storageSession.HashSet(key, elements, out count, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashSet(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.HashSet(key, ref input, out output, ref objectContext);
+        public GarnetStatus HashSet(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.HashSet(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashDelete(PinnedSpanByte key, PinnedSpanByte field, out int count)

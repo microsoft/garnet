@@ -761,7 +761,6 @@ namespace Garnet.server
             DeleteExpiredItems();
             
             output.Header.result1 = 1;
-
             output.OutputFlags |= OutputFlags.ValueUnchanged;
         }
 

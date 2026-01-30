@@ -1009,7 +1009,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashSet(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus HashSet(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Set only if field does not yet exist. If key does not exist, a new key holding a hash is created.
