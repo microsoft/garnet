@@ -36,9 +36,8 @@ namespace Garnet.server
         GEOSEARCH,
         GET,
         GETBIT,
-        GETIFNOTMATCH,
+        GETETAG,
         GETRANGE,
-        GETWITHETAG,
         HEXISTS,
         HGET,
         HGETALL,
@@ -118,7 +117,6 @@ namespace Garnet.server
         DECRBY,
         DEL,
         DELIFEXPIM,
-        DELIFGREATER,
         EXPIRE,
         EXPIREAT,
         FLUSHALL,
@@ -183,8 +181,6 @@ namespace Garnet.server
         SETEXNX,
         SETEXXX,
         SETNX,
-        SETIFMATCH,
-        SETIFGREATER,
         SETKEEPTTL,
         SETKEEPTTLXX,
         SETRANGE,
@@ -384,6 +380,12 @@ namespace Garnet.server
         CLUSTER_SLOTS,
         CLUSTER_SLOTSTATE,
         CLUSTER_SYNC, // Note: Update IsClusterSubCommand if adding new cluster subcommands after this
+
+        // Meta commands (commands that envelop other commands)
+        EXECWITHETAG,
+        EXECIFMATCH,
+        EXECIFNOTMATCH,
+        EXECIFGREATER, // Note: Update IsMetaCommand if adding new etag commands after this
 
         // Don't require AUTH (if auth is enabled)
         AUTH, // Note: Update IsNoAuth if adding new no-auth commands before this
@@ -627,6 +629,47 @@ namespace Garnet.server
             bool inRange = test <= (RespCommand.CLUSTER_SYNC - RespCommand.CLUSTER_ADDSLOTS);
             return inRange;
         }
+
+        /// <summary>
+        /// Returns true if <paramref name="cmd"/> is a meta command.
+        /// </summary>
+        public static bool IsMetaCommand(this RespCommand cmd)
+        {
+            // If cmd < RespCommand.EXECWITHETAG - underflows, setting high bits
+            var test = (uint)((int)cmd - (int)RespCommand.EXECWITHETAG);
+            return test <= (RespCommand.EXECIFGREATER - RespCommand.EXECWITHETAG);
+        }
+
+        /// <summary>
+        /// Returns true if <paramref name="cmd"/> is a write command that only modifies record metadata.
+        /// </summary>
+        public static bool IsMetadataCommand(this RespCommand cmd)
+        {
+            if (!IsDataCommand(cmd) || IsReadOnly(cmd)) 
+                return false;
+
+            return cmd switch
+            {
+                RespCommand.EXPIRE or 
+                RespCommand.EXPIREAT or 
+                RespCommand.PEXPIRE or 
+                RespCommand.PEXPIREAT or 
+                RespCommand.ZEXPIRE or 
+                RespCommand.ZEXPIREAT or
+                RespCommand.ZPEXPIRE or 
+                RespCommand.ZPEXPIREAT or
+                RespCommand.HEXPIRE or 
+                RespCommand.HEXPIREAT or 
+                RespCommand.HPEXPIRE or
+                RespCommand.HPEXPIREAT or 
+                RespCommand.PERSIST or
+                RespCommand.ZPERSIST or
+                RespCommand.HPERSIST or 
+                RespCommand.ZCOLLECT or 
+                RespCommand.HCOLLECT => true,
+                _ => false
+            };
+        }
     }
 
     /// <summary>
@@ -649,10 +692,9 @@ namespace Garnet.server
         /// <param name="count">Outputs the number of arguments stored with the command.</param>
         /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand FastParseInlineCommand(out int count)
+        private RespCommand FastParseInlineCommand(ref int count)
         {
             byte* ptr = recvBufferPtr + readHead;
-            count = 0;
 
             if (bytesRead - readHead >= 6)
             {
@@ -663,11 +705,13 @@ namespace Garnet.server
 
                     if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("PING"u8))
                     {
+                        count = 0;
                         return RespCommand.PING;
                     }
 
                     if ((*(uint*)ptr) == MemoryMarshal.Read<uint>("QUIT"u8))
                     {
+                        count = 0;
                         return RespCommand.QUIT;
                     }
 
@@ -686,21 +730,24 @@ namespace Garnet.server
         /// <param name="count">Outputs the number of arguments stored with the command</param>
         /// <returns>RespCommand that was parsed or RespCommand.NONE, if no command was matched in this pass.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private RespCommand FastParseCommand(out int count)
+        private RespCommand FastParseCommand(ref int count)
         {
             var ptr = recvBufferPtr + readHead;
             var remainingBytes = bytesRead - readHead;
+            var skipCountParse = count != -1;
 
             // Check if the package starts with "*_\r\n$_\r\n" (_ = masked out),
             // i.e. an array with a single-digit length and single-digit first string length.
-            if ((remainingBytes >= 8) && (*(ulong*)ptr & 0xFFFF00FFFFFF00FF) == MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8))
+            if ((!skipCountParse && (remainingBytes >= 8) && (*(ulong*)ptr & 0xFFFF00FFFFFF00FF) == MemoryMarshal.Read<ulong>("*\0\r\n$\0\r\n"u8)) ||
+                (skipCountParse && ((remainingBytes >= 4) && (*(uint*)ptr & 0xFFFF00FF) == MemoryMarshal.Read<uint>("$\0\r\n"u8))))
             {
                 // Extract total element count from the array header.
                 // NOTE: Subtracting one to account for first token being parsed.
-                count = ptr[1] - '1';
+                count = !skipCountParse ? ptr[1] - '1' : count - 1;
 
                 // Extract length of the first string header
-                var length = ptr[5] - '0';
+                var lengthIdx = skipCountParse ? 1 : 5;
+                var length = ptr[lengthIdx] - '0';
                 Debug.Assert(length is > 0 and <= 9);
 
                 var oldReadHead = readHead;
@@ -708,13 +755,15 @@ namespace Garnet.server
                 // Ensure that the complete command string is contained in the package. Otherwise exit early.
                 // Include 10 bytes to account for array and command string headers, and terminator
                 // 10 bytes = "*_\r\n$_\r\n" (8 bytes) + "\r\n" (2 bytes) at end of command name
-                if (remainingBytes >= length + 10)
+                var lenWithoutCommand = skipCountParse ? 6 : 10;
+                var totalLen = length + lenWithoutCommand;
+                if (remainingBytes >= totalLen)
                 {
                     // Optimistically advance read head to the end of the command name
-                    readHead += length + 10;
+                    readHead += totalLen;
 
                     // Last 8 byte word of the command name, for quick comparison
-                    var lastWord = *(ulong*)(ptr + length + 2);
+                    var lastWord = *(ulong*)(ptr + length + (lenWithoutCommand - 8));
 
                     //
                     // Fast path for common commands with fixed numbers of arguments
@@ -793,7 +842,8 @@ namespace Garnet.server
             }
             else
             {
-                return FastParseInlineCommand(out count);
+                count = !skipCountParse ? 0 : count - 1;
+                return FastParseInlineCommand(ref count);
             }
 
             // Couldn't find a matching command in this pass
@@ -1684,6 +1734,10 @@ namespace Garnet.server
                                 {
                                     return RespCommand.ZEXPIRETIME;
                                 }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nEXECI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("FMATCH\r\n"u8))
+                                {
+                                    return RespCommand.EXECIFMATCH;
+                                }
                                 break;
 
                             case 12:
@@ -1703,12 +1757,20 @@ namespace Garnet.server
                                 {
                                     return RespCommand.ZPEXPIRETIME;
                                 }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nEXECWI"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("THETAG\r\n"u8))
+                                {
+                                    return RespCommand.EXECWITHETAG;
+                                }
                                 break;
 
                             case 13:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nZRANGEB"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("YSCORE\r\n"u8))
                                 {
                                     return RespCommand.ZRANGEBYSCORE;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("\nEXECIFG"u8) && *(ulong*)(ptr + 12) == MemoryMarshal.Read<ulong>("REATER\r\n"u8))
+                                {
+                                    return RespCommand.EXECIFGREATER;
                                 }
                                 break;
 
@@ -1724,6 +1786,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nZREVRA"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NGEBYLEX"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
                                 {
                                     return RespCommand.ZREVRANGEBYLEX;
+                                }
+                                else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\r\nEXECIF"u8) && *(ulong*)(ptr + 11) == MemoryMarshal.Read<ulong>("NOTMATCH"u8) && *(ushort*)(ptr + 19) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.EXECIFNOTMATCH;
                                 }
                                 break;
 
@@ -2578,25 +2644,9 @@ namespace Garnet.server
                 return RespCommand.ZCOLLECT;
             }
             // Note: The commands below are not slow path commands, so they should probably move to earlier.
-            else if (command.SequenceEqual(CmdStrings.SETIFMATCH))
+            else if (command.SequenceEqual(CmdStrings.GETETAG))
             {
-                return RespCommand.SETIFMATCH;
-            }
-            else if (command.SequenceEqual(CmdStrings.SETIFGREATER))
-            {
-                return RespCommand.SETIFGREATER;
-            }
-            else if (command.SequenceEqual(CmdStrings.GETWITHETAG))
-            {
-                return RespCommand.GETWITHETAG;
-            }
-            else if (command.SequenceEqual(CmdStrings.GETIFNOTMATCH))
-            {
-                return RespCommand.GETIFNOTMATCH;
-            }
-            else if (command.SequenceEqual(CmdStrings.DELIFGREATER))
-            {
-                return RespCommand.DELIFGREATER;
+                return RespCommand.GETETAG;
             }
 
             // If this command name was not known to the slow pass, we are out of options and the command is unknown.
@@ -2725,15 +2775,15 @@ namespace Garnet.server
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private RespCommand ParseCommand(bool writeErrorOnFailure, out bool success)
         {
-            RespCommand cmd = RespCommand.INVALID;
+            metaCommandInfo.MetaCommand = RespMetaCommand.None;
 
             // Initialize count as -1 (i.e., read head has not been advanced)
-            int count = -1;
+            var count = -1;
             success = true;
             endReadHead = readHead;
 
             // Attempt parsing using fast parse pass for most common operations
-            cmd = FastParseCommand(out count);
+            var cmd = FastParseCommand(ref count);
 
             // If we have not found a command, continue parsing on slow path
             if (cmd == RespCommand.NONE)
@@ -2742,10 +2792,55 @@ namespace Garnet.server
                 if (!success) return cmd;
             }
 
+            if (cmd.IsMetaCommand())
+            {
+                // Get the meta command and its argument count
+                var (metaCmd, metaCmdArgCount) = GetMetaCommandAndArgumentCount(cmd);
+                count -= metaCmdArgCount;
+
+                metaCommandInfo.MetaCommand = metaCmd;
+
+                // Set up meta command parse state
+                metaCommandInfo.MetaCommandParseState.Initialize(metaCmdArgCount);
+                var currPtr = recvBufferPtr + readHead;
+
+                if (metaCmdArgCount > 0)
+                {
+                    for (var i = 0; i < metaCmdArgCount; i++)
+                    {
+                        if (!metaCommandInfo.MetaCommandParseState.Read(i, ref currPtr, recvBufferPtr + bytesRead))
+                            return RespCommand.INVALID;
+                    }
+
+                    // Move read head to the start of the main command
+                    readHead = (int)(currPtr - recvBufferPtr);
+                }
+
+                // Attempt parsing nested main command
+                cmd = FastParseCommand(ref count);
+                if (cmd == RespCommand.SET)
+                    cmd = RespCommand.SETEXNX;
+
+                // If we have not found a command, continue parsing on slow path
+                if (cmd == RespCommand.NONE)
+                {
+                    count++;
+                    cmd = ArrayParseCommand(writeErrorOnFailure, ref count, ref success, skipReadCount: true);
+                    if (!success) return cmd;
+                }
+            }
+            else
+            {
+                metaCommandInfo.MetaCommand = RespMetaCommand.None;
+            }
+
             // Set up parse state
             parseState.Initialize(count);
+
             var ptr = recvBufferPtr + readHead;
-            for (int i = 0; i < count; i++)
+
+            // Read main command arguments
+            for (var i = 0; i < count; i++)
             {
                 if (!parseState.Read(i, ref ptr, recvBufferPtr + bytesRead))
                 {
@@ -2753,12 +2848,32 @@ namespace Garnet.server
                     return RespCommand.INVALID;
                 }
             }
+
             endReadHead = (int)(ptr - recvBufferPtr);
 
             if (storeWrapper.serverOptions.EnableAOF && storeWrapper.serverOptions.WaitForCommit)
                 HandleAofCommitMode(cmd);
 
             return cmd;
+        }
+
+        private (RespMetaCommand metaCommand, int argCount) GetMetaCommandAndArgumentCount(RespCommand cmd)
+        {
+            if (!RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var info, logger: logger))
+                throw new GarnetException($"Unable to retrieve simple command info for command: {cmd}");
+
+            var argCount = info.Arity - 1;
+
+            var metaCommand = cmd switch
+            {
+                RespCommand.EXECWITHETAG => RespMetaCommand.ExecWithEtag,
+                RespCommand.EXECIFMATCH => RespMetaCommand.ExecIfMatch,
+                RespCommand.EXECIFNOTMATCH => RespMetaCommand.ExecIfNotMatch,
+                RespCommand.EXECIFGREATER => RespMetaCommand.ExecIfGreater,
+                _ => throw new GarnetException($"Invalid meta command: {cmd}")
+            };
+
+            return (metaCommand, argCount);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -2781,9 +2896,9 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private RespCommand ArrayParseCommand(bool writeErrorOnFailure, ref int count, ref bool success)
+        private RespCommand ArrayParseCommand(bool writeErrorOnFailure, ref int count, ref bool success, bool skipReadCount = false)
         {
-            RespCommand cmd = RespCommand.INVALID;
+            RespCommand cmd;
             ReadOnlySpan<byte> specificErrorMessage = default;
             endReadHead = readHead;
             var ptr = recvBufferPtr + readHead;
@@ -2791,30 +2906,34 @@ namespace Garnet.server
             // See if input command is all upper-case. If not, convert and try fast parse pass again.
             if (MakeUpperCase(ptr, bytesRead - readHead))
             {
-                cmd = FastParseCommand(out count);
+                count = -1;
+                cmd = FastParseCommand(ref count);
                 if (cmd != RespCommand.NONE)
                 {
                     return cmd;
                 }
             }
 
-            // Ensure we are attempting to read a RESP array header
-            if (recvBufferPtr[readHead] != '*')
+            if (!skipReadCount)
             {
-                // We might have received an inline command package. Skip until the end of the line in the input package.
-                success = AttemptSkipLine();
-                return RespCommand.INVALID;
-            }
+                // Ensure we are attempting to read a RESP array header
+                if (recvBufferPtr[readHead] != '*')
+                {
+                    // We might have received an inline command package. Skip until the end of the line in the input package.
+                    success = AttemptSkipLine();
+                    return RespCommand.INVALID;
+                }
 
-            // Read the array length
-            if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
-            {
-                success = false;
-                return RespCommand.INVALID;
-            }
+                // Read the array length
+                if (!RespReadUtils.TryReadUnsignedArrayLength(out count, ref ptr, recvBufferPtr + bytesRead))
+                {
+                    success = false;
+                    return RespCommand.INVALID;
+                }
 
-            // Move readHead to start of command payload
-            readHead = (int)(ptr - recvBufferPtr);
+                // Move readHead to start of command payload
+                readHead = (int)(ptr - recvBufferPtr);
+            }
 
             // Try parsing the most important variable-length commands
             cmd = FastParseArrayCommand(ref count, ref specificErrorMessage);

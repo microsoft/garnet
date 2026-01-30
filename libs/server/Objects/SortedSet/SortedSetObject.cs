@@ -54,7 +54,7 @@ namespace Garnet.server
     /// Options for specifying the range in sorted set operations.
     /// </summary>
     [Flags]
-    public enum SortedSetRangeOpts : byte
+    public enum SortedSetRangeOptions : byte
     {
         /// <summary>
         /// No options specified.
@@ -79,11 +79,15 @@ namespace Garnet.server
         /// <summary>
         /// Include scores in the result.
         /// </summary>
-        WithScores = 1 << 4
+        WithScores = 1 << 4,
+        /// <summary>
+        /// Obtain a sub-range from the matching elements
+        /// </summary>
+        Limit = 1 << 5,
     }
 
     [Flags]
-    public enum SortedSetAddOption
+    public enum SortedSetAddOption : ushort
     {
         None = 0,
         /// <summary>
@@ -116,7 +120,7 @@ namespace Garnet.server
     /// <summary>
     /// Order variations for sorted set commands
     /// </summary>
-    public enum SortedSetOrderOperation
+    public enum SortedSetOrderOperation : byte
     {
         /// <summary>
         /// Rank(by index of the elements)
@@ -316,10 +320,10 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                     byte respProtocolVersion, out long memorySizeChange)
+                                     ref RespMemoryWriter writer, out long memorySizeChange)
         {
             memorySizeChange = 0;
-
+            
             var header = input.header;
             if (header.type != GarnetObjectType.SortedSet)
             {
@@ -331,88 +335,83 @@ namespace Garnet.server
 
             var prevMemorySize = HeapMemorySize;
             var op = header.SortedSetOp;
+
             switch (op)
             {
                 case SortedSetOperation.ZADD:
-                    SortedSetAdd(ref input, ref output, respProtocolVersion);
+                    SortedSetAdd(ref input, ref output, ref writer);
                     break;
                 case SortedSetOperation.ZREM:
-                    SortedSetRemove(ref input, ref output);
+                    SortedSetRemove(ref input, ref output, ref writer);
                     break;
                 case SortedSetOperation.ZCARD:
-                    SortedSetLength(ref output);
-                    break;
-                case SortedSetOperation.ZPOPMAX:
-                    SortedSetPopMinOrMaxCount(ref input, ref output, respProtocolVersion, op);
-                    break;
-                case SortedSetOperation.ZSCORE:
-                    SortedSetScore(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZMSCORE:
-                    SortedSetScores(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZCOUNT:
-                    SortedSetCount(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZINCRBY:
-                    SortedSetIncrement(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZRANK:
-                    SortedSetRank(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZEXPIRE:
-                    SortedSetExpire(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZTTL:
-                    SortedSetTimeToLive(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZPERSIST:
-                    SortedSetPersist(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZCOLLECT:
-                    SortedSetCollect(ref input, ref output);
-                    break;
-                case SortedSetOperation.GEOADD:
-                    GeoAdd(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.GEOHASH:
-                    GeoHash(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.GEODIST:
-                    GeoDistance(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.GEOPOS:
-                    GeoPosition(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZRANGE:
-                    SortedSetRange(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZREVRANK:
-                    SortedSetRank(ref input, ref output, respProtocolVersion, ascending: false);
-                    break;
-                case SortedSetOperation.ZREMRANGEBYLEX:
-                    SortedSetRemoveOrCountRangeByLex(ref input, ref output, op);
-                    break;
-                case SortedSetOperation.ZREMRANGEBYRANK:
-                    SortedSetRemoveRangeByRank(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZREMRANGEBYSCORE:
-                    SortedSetRemoveRangeByScore(ref input, ref output, respProtocolVersion);
-                    break;
-                case SortedSetOperation.ZLEXCOUNT:
-                    SortedSetRemoveOrCountRangeByLex(ref input, ref output, op);
+                    SortedSetLength(ref input, ref output, ref writer);
                     break;
                 case SortedSetOperation.ZPOPMIN:
-                    SortedSetPopMinOrMaxCount(ref input, ref output, respProtocolVersion, op);
+                case SortedSetOperation.ZPOPMAX:
+                    SortedSetPopMinOrMaxCount(ref input, ref output, ref writer);
+                    break;
+                case SortedSetOperation.ZSCORE:
+                    SortedSetScore(ref input, ref output, ref writer);
+                    break;
+                case SortedSetOperation.ZMSCORE:
+                    SortedSetScores(ref input, ref output, ref writer);
+                    break;
+                case SortedSetOperation.ZCOUNT:
+                    SortedSetCount(ref input, ref writer);
+                    break;
+                case SortedSetOperation.ZINCRBY:
+                    SortedSetIncrement(ref input, ref output, ref writer);
+                    break;
+                case SortedSetOperation.ZRANK:
+                case SortedSetOperation.ZREVRANK:
+                    SortedSetRank(ref input, ref writer);
+                    break;
+                case SortedSetOperation.ZEXPIRE:
+                    SortedSetExpire(ref input, ref output, ref writer);
+                    break;
+                case SortedSetOperation.ZTTL:
+                    SortedSetTimeToLive(ref input, ref output, ref writer);
+                    break;
+                case SortedSetOperation.ZPERSIST:
+                    SortedSetPersist(ref input, ref output, ref writer);
+                    break;
+                case SortedSetOperation.ZCOLLECT:
+                    SortedSetCollect(ref output);
+                    break;
+                case SortedSetOperation.GEOADD:
+                    GeoAdd(ref input, ref output, ref writer);
+                    break;
+                case SortedSetOperation.GEOHASH:
+                    GeoHash(ref input, ref writer);
+                    break;
+                case SortedSetOperation.GEODIST:
+                    GeoDistance(ref input, ref writer);
+                    break;
+                case SortedSetOperation.GEOPOS:
+                    GeoPosition(ref input, ref writer);
+                    break;
+                case SortedSetOperation.ZRANGE:
+                    SortedSetRange(ref input, ref writer);
+                    break;
+                case SortedSetOperation.ZLEXCOUNT:
+                case SortedSetOperation.ZREMRANGEBYLEX:
+                    SortedSetRemoveOrCountRangeByLex(ref input, ref output, ref writer);
+                    break;
+                case SortedSetOperation.ZREMRANGEBYRANK:
+                    SortedSetRemoveRangeByRank(ref input, ref output, ref writer);
+                    break;
+                case SortedSetOperation.ZREMRANGEBYSCORE:
+                    SortedSetRemoveRangeByScore(ref input, ref output, ref writer);
                     break;
                 case SortedSetOperation.ZRANDMEMBER:
-                    SortedSetRandomMember(ref input, ref output, respProtocolVersion);
+                    SortedSetRandomMember(ref input, ref output, ref writer);
                     break;
                 case SortedSetOperation.ZSCAN:
-                    Scan(ref input, ref output, respProtocolVersion);
+                    Scan(ref input, ref output, ref writer);
                     break;
                 default:
-                    throw new GarnetException($"Unsupported operation {op} in SortedSetObject.Operate");
+                    throw new GarnetException($"Unsupported operation {op} in {nameof(SortedSetObject)}.{nameof(Operate)}");
             }
 
             memorySizeChange = HeapMemorySize - prevMemorySize;
@@ -635,7 +634,7 @@ namespace Garnet.server
             if (expirationTimes.Count != 0)
                 return;
 
-            HeapMemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueOverhead) * expirationQueue.Count;
+            HeapMemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead) * expirationQueue.Count;
             HeapMemorySize -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
             expirationTimes = null;
             expirationQueue = null;
@@ -678,17 +677,17 @@ namespace Garnet.server
             CleanupExpirationStructuresIfEmpty();
         }
 
-        private int SetExpiration(byte[] key, long expiration, ExpireOption expireOption)
+        private SortedSetExpireResult SetExpiration(byte[] key, long expiration, ExpireOption expireOption)
         {
             if (!sortedSetDict.ContainsKey(key))
-                return (int)SortedSetExpireResult.KeyNotFound;
+                return SortedSetExpireResult.KeyNotFound;
 
             if (expiration <= DateTimeOffset.UtcNow.Ticks)
             {
                 _ = sortedSetDict.Remove(key, out var value);
                 _ = sortedSet.Remove((value, key));
                 UpdateSize(key, add: false);
-                return (int)SortedSetExpireResult.KeyAlreadyExpired;
+                return SortedSetExpireResult.KeyAlreadyExpired;
             }
 
             InitializeExpirationStructures();
@@ -699,7 +698,7 @@ namespace Garnet.server
                     (expireOption.HasFlag(ExpireOption.GT) && expiration <= currentExpiration) ||
                     (expireOption.HasFlag(ExpireOption.LT) && expiration >= currentExpiration))
                 {
-                    return (int)SortedSetExpireResult.ExpireConditionNotMet;
+                    return SortedSetExpireResult.ExpireConditionNotMet;
                 }
 
                 expirationTimes[key] = expiration;
@@ -712,14 +711,14 @@ namespace Garnet.server
             else
             {
                 if ((expireOption & ExpireOption.XX) == ExpireOption.XX || (expireOption & ExpireOption.GT) == ExpireOption.GT)
-                    return (int)SortedSetExpireResult.ExpireConditionNotMet;
+                    return SortedSetExpireResult.ExpireConditionNotMet;
 
                 expirationTimes[key] = expiration;
                 expirationQueue.Enqueue(key, expiration);
                 UpdateExpirationSize(add: true);
             }
 
-            return (int)SortedSetExpireResult.ExpireUpdated;
+            return SortedSetExpireResult.ExpireUpdated;
         }
 
         private int Persist(byte[] key)
