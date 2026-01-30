@@ -1,0 +1,28 @@
+{
+  "id": "dev/garnet-api",
+  "title": "Garnet API",
+  "description": "The IGarnetApi interface contains the operators exposed to the public API, which ultimately perform operations over the keys stored in Garnet. It inherits from IGarnetReadApi (read-only commands interface) and IGarnetAdvancedApi (advanced API calls).",
+  "source": "@site/docs/dev/garnet-api.md",
+  "sourceDirName": "dev",
+  "slug": "/dev/garnet-api",
+  "permalink": "/garnet/docs/dev/garnet-api",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/garnet-api.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "garnet-api",
+    "sidebar_label": "Garnet API",
+    "title": "Garnet API"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Processing Layer",
+    "permalink": "/garnet/docs/dev/processing"
+  },
+  "next": {
+    "title": "Introduction",
+    "permalink": "/garnet/docs/dev/tsavorite/intro"
+  }
+}

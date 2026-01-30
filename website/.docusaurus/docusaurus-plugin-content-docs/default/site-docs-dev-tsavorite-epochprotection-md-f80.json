@@ -1,0 +1,28 @@
+{
+  "id": "dev/tsavorite/epoch",
+  "title": "Epoch Protection Framework",
+  "description": "Context",
+  "source": "@site/docs/dev/tsavorite/epochprotection.md",
+  "sourceDirName": "dev/tsavorite",
+  "slug": "/dev/tsavorite/epoch",
+  "permalink": "/garnet/docs/dev/tsavorite/epoch",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/tsavorite/epochprotection.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "epoch",
+    "sidebar_label": "EpochProtection",
+    "title": "Epoch Protection Framework"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "StoreFunctions",
+    "permalink": "/garnet/docs/dev/tsavorite/storefunctions"
+  },
+  "next": {
+    "title": "Transactions",
+    "permalink": "/garnet/docs/dev/transactions"
+  }
+}

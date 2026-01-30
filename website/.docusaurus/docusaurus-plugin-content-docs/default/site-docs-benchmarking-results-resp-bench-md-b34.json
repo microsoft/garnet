@@ -1,0 +1,28 @@
+{
+  "id": "benchmarking/results-resp-bench",
+  "title": "Evaluating Garnet's Performance Benefits",
+  "description": "We have tested Garnet thoroughly in a variety of deployment modes:",
+  "source": "@site/docs/benchmarking/results-resp-bench.md",
+  "sourceDirName": "benchmarking",
+  "slug": "/benchmarking/results-resp-bench",
+  "permalink": "/garnet/docs/benchmarking/results-resp-bench",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/benchmarking/results-resp-bench.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "results-resp-bench",
+    "sidebar_label": "Results (Resp.bench)",
+    "Title": "Performance Results (Resp.bench)"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Overview",
+    "permalink": "/garnet/docs/benchmarking/overview"
+  },
+  "next": {
+    "title": "Resp.benchmark",
+    "permalink": "/garnet/docs/benchmarking/resp-bench"
+  }
+}

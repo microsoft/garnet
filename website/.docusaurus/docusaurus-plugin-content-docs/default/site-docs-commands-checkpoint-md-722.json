@@ -1,0 +1,29 @@
+{
+  "id": "commands/checkpoint-commands",
+  "title": "Checkpoint API",
+  "description": "BGSAVE",
+  "source": "@site/docs/commands/checkpoint.md",
+  "sourceDirName": "commands",
+  "slug": "/commands/checkpoint",
+  "permalink": "/garnet/docs/commands/checkpoint",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/commands/checkpoint.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "checkpoint-commands",
+    "sidebar_label": "Checkpoint",
+    "title": "Checkpoint API",
+    "slug": "checkpoint"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Client Management",
+    "permalink": "/garnet/docs/commands/client"
+  },
+  "next": {
+    "title": "Transactions",
+    "permalink": "/garnet/docs/commands/transactions"
+  }
+}

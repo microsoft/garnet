@@ -1,0 +1,28 @@
+{
+  "id": "azure/faq",
+  "title": "Frequently Asked Questions",
+  "description": "General Questions",
+  "source": "@site/docs/azure/faq.md",
+  "sourceDirName": "azure",
+  "slug": "/azure/faq",
+  "permalink": "/garnet/docs/azure/faq",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/azure/faq.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "faq",
+    "sidebar_label": "FAQ",
+    "title": "Frequently Asked Questions"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Monitoring",
+    "permalink": "/garnet/docs/azure/monitoring"
+  },
+  "next": {
+    "title": "Papers",
+    "permalink": "/garnet/docs/research/papers"
+  }
+}

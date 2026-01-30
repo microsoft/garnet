@@ -1,0 +1,28 @@
+{
+  "id": "dev/network",
+  "title": "Network Layer",
+  "description": "Overview",
+  "source": "@site/docs/dev/network.md",
+  "sourceDirName": "dev",
+  "slug": "/dev/network",
+  "permalink": "/garnet/docs/dev/network",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/network.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "network",
+    "sidebar_label": "Network Layer",
+    "title": "Network Layer"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Configuration",
+    "permalink": "/garnet/docs/dev/configuration"
+  },
+  "next": {
+    "title": "Processing Layer",
+    "permalink": "/garnet/docs/dev/processing"
+  }
+}

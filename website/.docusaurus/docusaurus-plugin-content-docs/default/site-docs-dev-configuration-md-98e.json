@@ -1,0 +1,28 @@
+{
+  "id": "dev/configuration",
+  "title": "Garnet Configuration",
+  "description": "Code Overview",
+  "source": "@site/docs/dev/configuration.md",
+  "sourceDirName": "dev",
+  "slug": "/dev/configuration",
+  "permalink": "/garnet/docs/dev/configuration",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/configuration.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "configuration",
+    "sidebar_label": "Configuration",
+    "title": "Garnet Configuration"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Code Structure",
+    "permalink": "/garnet/docs/dev/code-structure"
+  },
+  "next": {
+    "title": "Network Layer",
+    "permalink": "/garnet/docs/dev/network"
+  }
+}

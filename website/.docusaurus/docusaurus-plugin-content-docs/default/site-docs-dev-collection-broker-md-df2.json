@@ -1,0 +1,29 @@
+{
+  "id": "dev/collection-broker",
+  "title": "Collection Broker",
+  "description": "The role of the collection broker is to facilitate blocking commands on collections in Garnet.\\",
+  "source": "@site/docs/dev/collection-broker.md",
+  "sourceDirName": "dev",
+  "slug": "/dev/collection-broker",
+  "permalink": "/garnet/docs/dev/collection-broker",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/microsoft/garnet/tree/main/website/docs/dev/collection-broker.md",
+  "tags": [],
+  "version": "current",
+  "frontMatter": {
+    "id": "collection-broker",
+    "sidebar_label": "Collection Broker",
+    "title": "Collection Broker",
+    "slug": "collection-broker"
+  },
+  "sidebar": "garnetDocSidebar",
+  "previous": {
+    "title": "Logical Databases",
+    "permalink": "/garnet/docs/dev/multi-db"
+  },
+  "next": {
+    "title": "Cluster Overview",
+    "permalink": "/garnet/docs/dev/cluster/overview"
+  }
+}

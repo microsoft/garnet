@@ -1,0 +1,568 @@
+{
+  "/garnet/__docusaurus/debug-ace": {
+    "__comp": "__comp---theme-debug-config-23-a-2ff",
+    "__context": {
+      "plugin": "plugin---garnet-docusaurus-debugb-38-de5"
+    }
+  },
+  "/garnet/__docusaurus/debug/config-b10": {
+    "__comp": "__comp---theme-debug-config-23-a-2ff",
+    "__context": {
+      "plugin": "plugin---garnet-docusaurus-debugb-38-de5"
+    }
+  },
+  "/garnet/__docusaurus/debug/content-839": {
+    "__comp": "__comp---theme-debug-contentba-8-ce7",
+    "__context": {
+      "plugin": "plugin---garnet-docusaurus-debugb-38-de5"
+    },
+    "__props": "__props---garnet-docusaurus-debug-content-656-0a5"
+  },
+  "/garnet/__docusaurus/debug/globalData-4ac": {
+    "__comp": "__comp---theme-debug-global-dataede-0fa",
+    "__context": {
+      "plugin": "plugin---garnet-docusaurus-debugb-38-de5"
+    }
+  },
+  "/garnet/__docusaurus/debug/metadata-8e9": {
+    "__comp": "__comp---theme-debug-site-metadata-68-e-3d4",
+    "__context": {
+      "plugin": "plugin---garnet-docusaurus-debugb-38-de5"
+    }
+  },
+  "/garnet/__docusaurus/debug/registry-46c": {
+    "__comp": "__comp---theme-debug-registry-679-501",
+    "__context": {
+      "plugin": "plugin---garnet-docusaurus-debugb-38-de5"
+    }
+  },
+  "/garnet/__docusaurus/debug/routes-54b": {
+    "__comp": "__comp---theme-debug-routes-946-699",
+    "__context": {
+      "plugin": "plugin---garnet-docusaurus-debugb-38-de5"
+    }
+  },
+  "/garnet/blog-dc2": {
+    "__comp": "__comp---theme-blog-list-pagea-6-a-7ba",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "items": [
+      {
+        "content": "content---garnet-bloga-1-a-9a2"
+      },
+      {
+        "content": "content---garnet-blogfaf-5ae"
+      },
+      {
+        "content": "content---garnet-bloga-2-a-f7d"
+      }
+    ],
+    "__props": "__props---garnet-blogf-6-e-fba"
+  },
+  "/garnet/blog/archive-b6d": {
+    "__comp": "__comp---theme-blog-archive-page-9-e-4-1d8",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "__props": "__props---garnet-blog-archiveca-7-eef"
+  },
+  "/garnet/blog/authors-b4f": {
+    "__comp": "__comp---theme-blog-pages-blog-authors-list-page-621-70c",
+    "__context": {
+      "data": {
+        "blogMetadata": "blogMetadata---garnet-blog-authorsace-043"
+      },
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "__props": "__props---garnet-blog-authors-0-e-2-332"
+  },
+  "/garnet/blog/brief-history-362": {
+    "__comp": "__comp---theme-blog-post-pageccc-cab",
+    "__context": {
+      "data": {
+        "blogMetadata": "blogMetadata---garnet-blog-authorsace-043"
+      },
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "content": "content---garnet-blog-brief-historya-7-f-350"
+  },
+  "/garnet/blog/etags-when-and-how-d1e": {
+    "__comp": "__comp---theme-blog-post-pageccc-cab",
+    "__context": {
+      "data": {
+        "blogMetadata": "blogMetadata---garnet-blog-authorsace-043"
+      },
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "content": "content---garnet-blog-etags-when-and-howcaf-e2b"
+  },
+  "/garnet/blog/msr-blog-announcement-c52": {
+    "__comp": "__comp---theme-blog-post-pageccc-cab",
+    "__context": {
+      "data": {
+        "blogMetadata": "blogMetadata---garnet-blog-authorsace-043"
+      },
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "content": "content---garnet-blog-msr-blog-announcement-5-ec-b08"
+  },
+  "/garnet/blog/tags-3ac": {
+    "__comp": "__comp---theme-blog-tags-list-page-01-a-d0b",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "__props": "__props---garnet-blog-tags-04-f-049"
+  },
+  "/garnet/blog/tags/announcement-933": {
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "items": [
+      {
+        "content": "content---garnet-blogfaf-5ae"
+      }
+    ],
+    "__props": "__props---garnet-blog-tags-announcement-942-a7f"
+  },
+  "/garnet/blog/tags/caching-e07": {
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "items": [
+      {
+        "content": "content---garnet-bloga-1-a-9a2"
+      }
+    ],
+    "__props": "__props---garnet-blog-tags-caching-336-887"
+  },
+  "/garnet/blog/tags/concurrency-f2c": {
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "items": [
+      {
+        "content": "content---garnet-bloga-1-a-9a2"
+      }
+    ],
+    "__props": "__props---garnet-blog-tags-concurrency-68-a-4b1"
+  },
+  "/garnet/blog/tags/etags-806": {
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "items": [
+      {
+        "content": "content---garnet-bloga-1-a-9a2"
+      }
+    ],
+    "__props": "__props---garnet-blog-tags-etags-5-d-7-cf6"
+  },
+  "/garnet/blog/tags/garnet-102": {
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "items": [
+      {
+        "content": "content---garnet-bloga-1-a-9a2"
+      },
+      {
+        "content": "content---garnet-blogfaf-5ae"
+      },
+      {
+        "content": "content---garnet-bloga-2-a-f7d"
+      }
+    ],
+    "__props": "__props---garnet-blog-tags-garnet-49-c-148"
+  },
+  "/garnet/blog/tags/history-b41": {
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "items": [
+      {
+        "content": "content---garnet-bloga-2-a-f7d"
+      }
+    ],
+    "__props": "__props---garnet-blog-tags-history-44-a-73c"
+  },
+  "/garnet/blog/tags/introduction-0af": {
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "items": [
+      {
+        "content": "content---garnet-bloga-2-a-f7d"
+      }
+    ],
+    "__props": "__props---garnet-blog-tags-introductiona-98-661"
+  },
+  "/garnet/blog/tags/lock-free-c23": {
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "items": [
+      {
+        "content": "content---garnet-bloga-1-a-9a2"
+      }
+    ],
+    "__props": "__props---garnet-blog-tags-lock-freebf-6-bb7"
+  },
+  "/garnet/blog/tags/msr-bb8": {
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "items": [
+      {
+        "content": "content---garnet-blogfaf-5ae"
+      }
+    ],
+    "__props": "__props---garnet-blog-tags-msr-750-025"
+  },
+  "/garnet/blog/tags/oss-031": {
+    "__comp": "__comp---theme-blog-tags-posts-page-687-b6c",
+    "__context": {
+      "plugin": "plugin---garnet-blog-369-35f"
+    },
+    "sidebar": "sidebar---garnet-blog-814-9e6",
+    "items": [
+      {
+        "content": "content---garnet-blogfaf-5ae"
+      }
+    ],
+    "__props": "__props---garnet-blog-tags-ossc-2-d-bd1"
+  },
+  "/garnet/markdown-page-442": {
+    "__comp": "__comp---theme-mdx-page-1-f-3-b90",
+    "__context": {
+      "plugin": "plugin---garnet-markdown-pagea-74-a82"
+    },
+    "content": "content---garnet-markdown-page-393-8f5"
+  },
+  "/garnet/search-921": {
+    "__comp": "__comp---theme-search-page-1-a-4-d6f",
+    "__context": {
+      "plugin": "plugin---garnet-search-138-66a"
+    }
+  },
+  "/garnet/docs-ab9": {
+    "__comp": "__comp---theme-docs-root-5-e-9-0b6",
+    "__context": {
+      "plugin": "plugin---garnet-docsaba-6dc"
+    }
+  },
+  "/garnet/docs-f09": {
+    "__comp": "__comp---theme-doc-version-roota-7-b-5de",
+    "__props": "__props---garnet-docsd-99-e83"
+  },
+  "/garnet/docs-70a": {
+    "__comp": "__comp---theme-doc-roota-94-67a"
+  },
+  "/garnet/docs-5c8": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-8-d-6-ff4"
+  },
+  "/garnet/docs/azure/api-compatibility-d83": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-azure-api-compatibility-6-ea-109"
+  },
+  "/garnet/docs/azure/cluster-configuration-2d2": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-azure-cluster-configurationcdb-950"
+  },
+  "/garnet/docs/azure/faq-cc7": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-azure-faq-024-128"
+  },
+  "/garnet/docs/azure/monitoring-b9c": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-azure-monitoring-249-082"
+  },
+  "/garnet/docs/azure/overview-e50": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-azure-overviewd-61-828"
+  },
+  "/garnet/docs/azure/quickstart-a38": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-azure-quickstartcaa-f2b"
+  },
+  "/garnet/docs/azure/resiliency-5a0": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-azure-resiliencyc-8-a-e08"
+  },
+  "/garnet/docs/azure/security-f8a": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-azure-security-231-3f1"
+  },
+  "/garnet/docs/benchmarking/overview-1e0": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-benchmarking-overview-4-ae-926"
+  },
+  "/garnet/docs/benchmarking/resp-bench-6d2": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-benchmarking-resp-benche-1-c-511"
+  },
+  "/garnet/docs/benchmarking/results-resp-bench-40b": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-benchmarking-results-resp-benchb-34-77e"
+  },
+  "/garnet/docs/cluster/key-migration-3a2": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-cluster-key-migration-49-e-2c5"
+  },
+  "/garnet/docs/cluster/overview-cc0": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-cluster-overview-506-8eb"
+  },
+  "/garnet/docs/cluster/replication-765": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-cluster-replication-6-f-6-eb2"
+  },
+  "/garnet/docs/commands/acl-7af": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-acl-1-cc-f98"
+  },
+  "/garnet/docs/commands/analytics-896": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-analytics-0-cb-365"
+  },
+  "/garnet/docs/commands/api-compatibility-0db": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-api-compatibility-798-df9"
+  },
+  "/garnet/docs/commands/checkpoint-1d2": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-checkpoint-722-95a"
+  },
+  "/garnet/docs/commands/client-e83": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-clienta-4-a-61f"
+  },
+  "/garnet/docs/commands/cluster-fe3": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-cluster-641-aa1"
+  },
+  "/garnet/docs/commands/data-structures-e6a": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-data-structuresa-19-6e9"
+  },
+  "/garnet/docs/commands/garnet-specific-commands-091": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-garnet-specific-commands-3-d-1-19d"
+  },
+  "/garnet/docs/commands/generic-bb2": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-generic-1-bd-50e"
+  },
+  "/garnet/docs/commands/json-cbf": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-json-30-c-69a"
+  },
+  "/garnet/docs/commands/overview-221": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-overview-3-aa-e3e"
+  },
+  "/garnet/docs/commands/raw-string-4b5": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-raw-stringa-87-0fb"
+  },
+  "/garnet/docs/commands/scripting-4fc": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-scripting-78-a-58b"
+  },
+  "/garnet/docs/commands/server-77a": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-serverf-34-152"
+  },
+  "/garnet/docs/commands/transactions-726": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-commands-transactions-3-f-7-7e6"
+  },
+  "/garnet/docs/dev/cluster-800": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-cluster-72-a-75c"
+  },
+  "/garnet/docs/dev/cluster/overview-283": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-cluster-overview-85-b-059"
+  },
+  "/garnet/docs/dev/cluster/sharding-a39": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-cluster-sharding-1-d-3-e95"
+  },
+  "/garnet/docs/dev/cluster/slot-migration-025": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-cluster-slot-migration-2-ca-7ad"
+  },
+  "/garnet/docs/dev/code-structure-1d6": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-code-structure-85-c-19f"
+  },
+  "/garnet/docs/dev/collection-broker-1c9": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-collection-brokerdf-2-267"
+  },
+  "/garnet/docs/dev/configuration-e80": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-configuration-98-e-264"
+  },
+  "/garnet/docs/dev/contributing-599": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-contributing-767-1d5"
+  },
+  "/garnet/docs/dev/custom-commands-41b": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-custom-commandsf-99-a71"
+  },
+  "/garnet/docs/dev/garnet-api-1b5": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-garnet-apie-6-c-67d"
+  },
+  "/garnet/docs/dev/multi-db-d52": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-multi-dbea-2-c8c"
+  },
+  "/garnet/docs/dev/network-2f8": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-network-05-a-e8b"
+  },
+  "/garnet/docs/dev/onboarding-c3a": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-onboardingb-12-948"
+  },
+  "/garnet/docs/dev/processing-27c": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-processingaa-5-6db"
+  },
+  "/garnet/docs/dev/transactions-b62": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-transactions-2-ff-23b"
+  },
+  "/garnet/docs/dev/tsavorite/epoch-066": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-tsavorite-epochf-80-c20"
+  },
+  "/garnet/docs/dev/tsavorite/intro-d12": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-tsavorite-intro-8-d-6-fa3"
+  },
+  "/garnet/docs/dev/tsavorite/locking-9fb": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-tsavorite-locking-88-c-176"
+  },
+  "/garnet/docs/dev/tsavorite/reviv-4ec": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-tsavorite-revive-83-d1a"
+  },
+  "/garnet/docs/dev/tsavorite/storefunctions-a2e": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-dev-tsavorite-storefunctions-577-b59"
+  },
+  "/garnet/docs/extensions/module-f48": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-extensions-module-6-bd-e11"
+  },
+  "/garnet/docs/extensions/objects-4dd": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-extensions-objects-87-e-626"
+  },
+  "/garnet/docs/extensions/overview-821": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-extensions-overviewecd-ee7"
+  },
+  "/garnet/docs/extensions/procedure-ab6": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-extensions-proceduree-60-0b8"
+  },
+  "/garnet/docs/extensions/raw-strings-7e6": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-extensions-raw-stringsf-6-d-eac"
+  },
+  "/garnet/docs/extensions/transactions-a1b": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-extensions-transactionsfb-7-167"
+  },
+  "/garnet/docs/getting-started-de7": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-getting-started-274-8ca"
+  },
+  "/garnet/docs/getting-started/compaction-f45": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-getting-started-compaction-846-164"
+  },
+  "/garnet/docs/getting-started/configuration-389": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-getting-started-configuration-009-eca"
+  },
+  "/garnet/docs/getting-started/memory-3bb": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-getting-started-memory-1-e-4-c12"
+  },
+  "/garnet/docs/research/papers-005": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-research-papersbc-0-76a"
+  },
+  "/garnet/docs/security-4e6": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-security-671-5df"
+  },
+  "/garnet/docs/welcome/about-us-cf3": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-welcome-about-us-994-d68"
+  },
+  "/garnet/docs/welcome/compatibility-d6e": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-welcome-compatibilityb-75-c9a"
+  },
+  "/garnet/docs/welcome/faq-a57": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-welcome-faq-6-dd-54f"
+  },
+  "/garnet/docs/welcome/features-13a": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-welcome-features-680-ebe"
+  },
+  "/garnet/docs/welcome/news-585": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-welcome-news-6-d-0-609"
+  },
+  "/garnet/docs/welcome/releases-7cc": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-welcome-releasesc-79-b3b"
+  },
+  "/garnet/docs/welcome/roadmap-845": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---garnet-docs-welcome-roadmap-27-c-fd2"
+  },
+  "/garnet/-5b9": {
+    "__comp": "__comp---site-src-pages-index-jsc-4-f-f99",
+    "__context": {
+      "plugin": "plugin---garnet-markdown-pagea-74-a82"
+    },
+    "config": "config---garnet-5-e-9-c7a"
+  }
+}
