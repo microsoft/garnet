@@ -53,13 +53,13 @@ namespace Tsavorite.benchmark
                     case BenchmarkType.SpanByte:
                         if (options.UseSBA)
                         {
-                            var tester = new SpanByteYcsbBenchmark<SpanByteAllocator<SpanByteStoreFunctions>>(testLoader.init_span_keys, testLoader.txn_span_keys, testLoader);
+                            var tester = new SpanByteYcsbBenchmark<SpanByteAllocator<SpanByteStoreFunctions>>(testLoader.init_span_keys, testLoader.txn_span_keys, testLoader, (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
                             testStats.AddResult(tester.Run(testLoader));
                             tester.Dispose();
                         }
                         else
                         {
-                            var tester = new SpanByteYcsbBenchmark<ObjectAllocator<SpanByteStoreFunctions>>(testLoader.init_span_keys, testLoader.txn_span_keys, testLoader);
+                            var tester = new SpanByteYcsbBenchmark<ObjectAllocator<SpanByteStoreFunctions>>(testLoader.init_span_keys, testLoader.txn_span_keys, testLoader, (allocatorSettings, storeFunctions) => new(allocatorSettings, storeFunctions));
                             testStats.AddResult(tester.Run(testLoader));
                             tester.Dispose();
                         }

@@ -6,7 +6,7 @@ namespace Tsavorite.core
     /// <summary>
     /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
-    public enum UpsertAction
+    public enum UpsertAction : byte
     {
         /// <summary>
         /// Execute the default action for the method 'false' return.
@@ -65,7 +65,7 @@ namespace Tsavorite.core
     /// <summary>
     /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
-    public enum RMWAction
+    public enum RMWAction : byte
     {
         /// <summary>
         /// Execute the default action for the method 'false' return.
@@ -138,7 +138,7 @@ namespace Tsavorite.core
     /// <summary>
     /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
-    public enum DeleteAction
+    public enum DeleteAction : byte
     {
         /// <summary>
         /// Execute the default action for the method 'false' return.
@@ -184,7 +184,7 @@ namespace Tsavorite.core
     /// <summary>
     /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
-    public enum ReadAction
+    public enum ReadAction : byte
     {
         /// <summary>
         /// Execute the default action for the method 'false' return.

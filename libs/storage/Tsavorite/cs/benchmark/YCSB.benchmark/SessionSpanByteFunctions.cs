@@ -11,7 +11,8 @@ namespace Tsavorite.benchmark
         /// <inheritdoc />
         public override bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref PinnedSpanByte input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
         {
-            srcLogRecord.ValueSpan.CopyTo(output.SpanByte.Span);
+            // Copy only the first cache line for more interpretable results
+            srcLogRecord.ValueSpan.Slice(0, 32).CopyTo(output.SpanByte.Span);
             return true;
         }
 

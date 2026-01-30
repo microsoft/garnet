@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -195,7 +196,7 @@ namespace Tsavorite.core
             {
                 var (revivKeyLenBytes, revivRecLenBytes) = DeconstructKVByteLengths(out _ /*headerLength*/);
                 if (numKeyLengthBytes > revivKeyLenBytes || numRecordLengthBytes != revivRecLenBytes)
-                    throw new TsavoriteException($"In revivification, cannot exceed previous KeyLengthBytes {revivKeyLenBytes} or change RecordLengthBytes {revivRecLenBytes}");
+                    ThrowTsavoriteException($"In revivification, cannot exceed previous KeyLengthBytes {revivKeyLenBytes} or change RecordLengthBytes {revivRecLenBytes}");
                 numKeyLengthBytes = revivKeyLenBytes;
             }
 
@@ -424,5 +425,16 @@ namespace Tsavorite.core
             var recordLength = GetRecordLength(DeconstructKVByteLengths(out _ /*headerLength*/).numRecordLengthBytes);
             return recordLength - GetFillerLength(recordInfo, recordLength);
         }
+
+        /// <summary>
+        /// Throw Tsavorite exception with message. We use a method wrapper so that
+        /// the caller method can execute inlined.
+        /// </summary>
+        /// <param name="message"></param>
+        /// <exception cref="TsavoriteException"></exception>
+        [DoesNotReturn]
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void ThrowTsavoriteException(string message)
+            => throw new TsavoriteException(message);
     }
 }

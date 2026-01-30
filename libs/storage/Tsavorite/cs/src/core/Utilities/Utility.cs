@@ -240,22 +240,28 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static long HashBytes(ReadOnlySpan<byte> byteSpan)
         {
-            const long magicno = 40343;
+            unsafe
+            {
+                fixed (byte* pbString = byteSpan)
+                {
+                    const long magicno = 40343;
+                    char* pwString = (char*)pbString;
+                    int len = byteSpan.Length;
+                    int cbBuf = len / 2;
+                    ulong hashState = (ulong)len;
 
-            // Convert to char for faster enumeration (two bytes per iteration)
-            var charSpan = byteSpan.UncheckedCast<char>();
-            var hashState = (ulong)byteSpan.Length;
+                    for (int i = 0; i < cbBuf; i++, pwString++)
+                        hashState = magicno * hashState + *pwString;
 
-            // Explicit enumerator calls are faster than foreach
-            var charEnumerator = charSpan.GetEnumerator();
-            while (charEnumerator.MoveNext())
-                hashState = (magicno * hashState) + charEnumerator.Current;
+                    if ((len & 1) > 0)
+                    {
+                        byte* pC = (byte*)pwString;
+                        hashState = magicno * hashState + *pC;
+                    }
 
-            // If we had an odd number of bytes, get the last byte
-            if ((byteSpan.Length & 1) > 0)
-                hashState = magicno * hashState + byteSpan[^1];
-
-            return (long)Rotr64(magicno * hashState, 4);
+                    return (long)Rotr64(magicno * hashState, 4);
+                }
+            }
         }
 
         /// <summary>
