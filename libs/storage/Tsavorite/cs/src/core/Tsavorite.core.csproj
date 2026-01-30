@@ -5,7 +5,7 @@
     <AssemblyOriginatorKeyFile>../../../../../../Garnet.snk</AssemblyOriginatorKeyFile>
     <DelaySign>false</DelaySign>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
-	</PropertyGroup>
+  </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
     <WarningsAsErrors>;NU1605</WarningsAsErrors>
