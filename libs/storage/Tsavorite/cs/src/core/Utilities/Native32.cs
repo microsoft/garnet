@@ -256,7 +256,7 @@ namespace Tsavorite.core
             public uint Size;
             public uint Type;
         }
- 
+
         [StructLayoutAttribute(LayoutKind.Sequential)]
         private struct GROUP_AFFINITY
         {
