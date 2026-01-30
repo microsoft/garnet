@@ -134,8 +134,8 @@ namespace Garnet.test
                             exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VREM", ["foo", new byte[] { 0, 0, 0, 0 }]));
                             break;
                         case RespCommand.VSETATTR:
-                            // TODO: Implement when VSETATTR works
-                            continue;
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSETATTR", ["foo", new byte[] { 0, 0, 0, 0 }, new byte[] { 0, 0, 0, 0 }]));
+                            break;
                         case RespCommand.VSIM:
                             exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "75", "110.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]));
                             break;
@@ -799,8 +799,16 @@ namespace Garnet.test
                                 }
                                 break;
                             case RespCommand.VSETATTR:
-                                // TODO: Implement once VSETATTR is implemented
-                                continue;
+                                try
+                                {
+                                    var res = db.Execute("VSETATTR", [key, "wololo", new byte[] { 0, 0, 0, 5 }]);
+                                    ClassicAssert.AreEqual(0, (int)res);
+                                }
+                                catch (RedisServerException e)
+                                {
+                                    exc = e;
+                                }
+                                break;
                             case RespCommand.VSIM:
                                 try
                                 {
