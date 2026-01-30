@@ -214,6 +214,22 @@ namespace Garnet.server
 
             return NativeDiskANNMethods.check_internal_id_valid(context, index, (nint)internal_id_data, (nuint)internal_id_len) == 1;
         }
+
+        public bool TryUpdateAtttributes(ulong context, nint index, ReadOnlySpan<byte> id, ReadOnlySpan<byte> attributes)
+        {
+            var id_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(id));
+            var id_len = id.Length;
+                        
+            var attributes_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(attributes));
+            var attributes_len = attributes.Length;
+
+            return NativeDiskANNMethods.set_attribute(context,
+                index,
+                (nint) id_data, 
+                (nuint) id_len,
+                (nint) attributes_data,
+                (nuint) attributes_len) == 1;
+        }
     }
 
     public static partial class NativeDiskANNMethods

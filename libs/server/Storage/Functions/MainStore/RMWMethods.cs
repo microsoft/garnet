@@ -276,6 +276,9 @@ namespace Garnet.server
                 case RespCommand.VREM:
                     Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Should only see VREM writes as part of replication");
                     break;
+                case RespCommand.VSETATTR:
+                    Debug.Assert(input.arg1 == VectorManager.VSETATTRAppendLogArg, "Should only see VSETATTR writes as part of replication");
+                    break;
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -860,6 +863,9 @@ namespace Garnet.server
 
                     Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "VREM in place update should only happen for replication");                    // Ignore everything else
                     return IPUResult.Succeeded;
+                case RespCommand.VSETATTR:
+                    Debug.Assert(input.arg1 == VectorManager.VSETATTRAppendLogArg, "VSETATTR in place update should only happen for replication");
+                    return IPUResult.Succeeded;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
@@ -1422,6 +1428,10 @@ namespace Garnet.server
 
                 case RespCommand.VREM:
                     Debug.Assert(input.arg1 == VectorManager.VREMAppendLogArg, "Unexpected CopyUpdater call on VREM key");
+                    break;
+
+                case RespCommand.VSETATTR:
+                    Debug.Assert(input.arg1 == VectorManager.VSETATTRAppendLogArg, "Unexpected CopyUpdater call on VSETATTR key");
                     break;
 
                 default:

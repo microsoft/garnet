@@ -122,6 +122,7 @@ namespace Garnet.server
                 case RespCommand.VSIM:
                 case RespCommand.VEMB:
                 case RespCommand.VGETATTR:
+                case RespCommand.VSETATTR:
                 case RespCommand.VINFO:
                 case RespCommand.VREM:
                 case RespCommand.VDIM:

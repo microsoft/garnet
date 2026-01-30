@@ -188,6 +188,36 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteBooleanTrue()
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteTrue(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteOne(ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteBooleanFalse()
+        {
+            if (respProtocolVersion >= 3)
+            {
+                while (!RespWriteUtils.TryWriteFalse(ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                while (!RespWriteUtils.TryWriteZero(ref dcurr, dend))
+                    SendAndReset();
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void WriteNull()
         {
             if (respProtocolVersion >= 3)
@@ -258,6 +288,31 @@ namespace Garnet.server
         private void WriteSimpleString(ReadOnlySpan<char> simpleString)
         {
             while (!RespWriteUtils.TryWriteSimpleString(simpleString, ref dcurr, dend))
+                SendAndReset();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void WriteLargeSimpleString(scoped ReadOnlySpan<byte> simpleString)
+        {
+            // Simple strings are of the form "+OK\r\n"
+            while (dcurr == dend)
+                SendAndReset();
+
+            *dcurr++ = (byte)'+';
+            while (simpleString.Length > 0)
+            {
+                if (dcurr == dend)
+                {
+                    SendAndReset();
+                }
+
+                int toCopy = Math.Min((int)(dend - dcurr), simpleString.Length);
+                simpleString.Slice(0, toCopy).CopyTo(new Span<byte>(dcurr, toCopy));
+                dcurr += toCopy;
+                simpleString = simpleString.Slice(toCopy);
+            }
+
+            while (!RespWriteUtils.TryWriteNewLine(ref dcurr, dend))
                 SendAndReset();
         }
 

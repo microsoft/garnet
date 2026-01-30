@@ -405,10 +405,15 @@ namespace Garnet.server
                 // Any other op (include other vector ops) need to wait for pending VADDs to complete
                 vectorManager.WaitForVectorOperationsToComplete();
 
-                // VREM is also read-like, so requires special handling - shove it over to the VectorManager
+                // VREM and VSETATTR are also read-like, so require special handling - shove it over to the VectorManager
                 if (storeInput.header.cmd == RespCommand.VREM)
                 {
                     vectorManager.HandleVectorSetRemoveReplication(currentSession.storageSession, ref key, ref storeInput);
+                    return;
+                }
+                else if (storeInput.header.cmd == RespCommand.VSETATTR)
+                {
+                    vectorManager.HandleVectorUpdateAttributesReplication(currentSession.storageSession, ref key, ref storeInput);
                     return;
                 }
             }
