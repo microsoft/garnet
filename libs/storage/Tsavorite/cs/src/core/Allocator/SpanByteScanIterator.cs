@@ -95,7 +95,6 @@ namespace Tsavorite.core
             {
                 hlogBase._wrapper.DisposeRecord(ref diskLogRecord, DisposeReason.DeserializedFromDisk);
                 diskLogRecord.Dispose();
-                diskLogRecord = default;
             }
             diskLogRecord = default;
             currentAddress = nextAddress;

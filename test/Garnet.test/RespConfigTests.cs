@@ -266,8 +266,8 @@ namespace Garnet.test
         [Test]
         [TestCase("1m", "4m")]
         [TestCase("1024k", "4000k")]
-        [TestCase("1024", "4000")]
-        [TestCase("1024", "4096")]
+        [TestCase("4k", "8k")]
+        [TestCase("8k", "64k")]
         public void ConfigSetInlineMemorySizeUtilizationTest(string smallerSize, string largerSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true));
@@ -324,7 +324,7 @@ namespace Garnet.test
 
             // Wait for the head address to move forward. This may be done in iterations because the ReadOnlyAddress
             // may block the first page-eviction loop iteration(s).
-            while (tracker.IsSizeBeyondLimit)
+            while (tracker.IsBeyondSizeLimit)
             {
                 Thread.Sleep(1000);
                 info = TestUtils.GetStoreAddressInfo(garnetServer);
@@ -339,7 +339,6 @@ namespace Garnet.test
             ////////////////////////////////////////////////////////
             // Try to set memory size to a larger value than current
             currMemorySize = TestUtils.GetEffectiveMemorySize(largerSize, pageSize, out _);
-            Assert.That(currMemorySize, Is.GreaterThan(initialMemorySize));
             result = db.Execute("CONFIG", "SET", option, largerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
             Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));

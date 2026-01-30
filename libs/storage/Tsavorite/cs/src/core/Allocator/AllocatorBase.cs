@@ -960,7 +960,7 @@ namespace Tsavorite.core
             // First check whether we need to shift HeadAddress. If we have a logSizeTracker that's over budget then we have already issued
             // a shift if needed; otherwise make sure we stay in the PageCount (which may be less than BufferSize).
             var desiredHeadAddress = HeadAddress;
-            if (logSizeTracker is null || !logSizeTracker.IsSizeBeyondLimit)
+            if (logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimit)
             {
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxPageCount)
@@ -1007,8 +1007,16 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool NeedToWaitForClose(int page)
-            => page >= BufferSize + GetPage(ClosedUntilAddress)     // wraps around the BufferSize
-            || (logSizeTracker is not null && logSizeTracker.IsSizeBeyondLimit);
+        {
+            if (page >= BufferSize + GetPage(ClosedUntilAddress))   // wraps around the BufferSize
+                return true;
+            if (logSizeTracker is not null && logSizeTracker.IsBeyondSizeLimit)
+            {
+                logSizeTracker.Signal();
+                return true;
+            }
+            return false;
+        }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         long HandlePageOverflow(ref PageOffset localTailPageOffset, int numSlots)

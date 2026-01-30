@@ -61,6 +61,9 @@ namespace Tsavorite.core
         /// <summary>High and low deltas for <see cref="TargetSize"/></summary>
         public (long high, long low) TargetDeltaRange => (highTargetSize, lowTargetSize);
 
+        /// <summary>Return true if the total size is outside the target plus delta</summary>
+        public bool IsBeyondSizeLimit => TotalSize > highTargetSize;
+
         /// <summary>Creates a new log size tracker</summary>
         /// <param name="logAccessor">Hybrid log accessor</param>
         /// <param name="targetSize">Target size for the hybrid log memory utilization</param>
@@ -104,6 +107,9 @@ namespace Tsavorite.core
             Debug.Assert(newTargetSize > highDelta);
             Debug.Assert(newTargetSize > lowDelta);
 
+            if (newTargetSize < logAccessor.allocatorBase.PageSize * 4)
+                throw new TsavoriteException("Target size must be at least 4 pages");
+
             var shrink = newTargetSize < TargetSize;
             TargetSize = newTargetSize;
             highTargetSize = newTargetSize + highDelta;
@@ -114,9 +120,6 @@ namespace Tsavorite.core
             if (shrink)
                 resizeTaskEvent.Set();
         }
-
-        /// <summary>Return true if the total size is outside the target plus delta</summary>
-        public bool IsSizeBeyondLimit => TotalSize > highTargetSize;
 
         /// <summary>Callback on allocator completion</summary>
         public void OnCompleted() { }
@@ -130,7 +133,6 @@ namespace Tsavorite.core
             long size = 0;
             while (recordIter.GetNext())
                 size += MemoryUtils.CalculateHeapMemorySize(in recordIter);
-
             if (size != 0)
                 heapSize.Increment(-size); // Reduce size as records are being evicted
         }
@@ -141,7 +143,7 @@ namespace Tsavorite.core
             if (size != 0)
             {
                 heapSize.Increment(size);
-                if (size > 0 && IsSizeBeyondLimit)
+                if (size > 0 && IsBeyondSizeLimit)
                     resizeTaskEvent.Set();
                 Debug.Assert(size > 0 || heapSize.Total >= 0, $"HeapSize.Total should be >= 0 but is {heapSize.Total} in Resize");
             }
@@ -157,7 +159,7 @@ namespace Tsavorite.core
                 if (add)
                 {
                     heapSize.Increment(size);
-                    if (IsSizeBeyondLimit)
+                    if (IsBeyondSizeLimit)
                         resizeTaskEvent.Set();
                 }
                 else
@@ -168,6 +170,9 @@ namespace Tsavorite.core
                 }
             }
         }
+
+        /// <summary>Called when the caller has determined we are over budget, to signal the event.</summary>
+        public void Signal() => resizeTaskEvent.Set();
 
         /// <summary>
         /// Performs resizing by waiting for an event that is signaled whenever memory utilization changes.
@@ -207,28 +212,35 @@ namespace Tsavorite.core
 
             // TODO: If heapSize.Total == 0 then we can just do math to advance HA (up to ROA) and then calculate pages to evict.
 
+            // This will iterate until iterator.CurrentAddress == untilAddress
             var iterator = logAccessor.Scan(fromAddress, untilAddress);
             allocatedPageCount = allocator.AllocatedPageCount;
             evictPageCount = 0;
             var pageTrimmedSize = 0L;
-            isPartialLastPage = false;
             while (heapTrimmedSize + pageTrimmedSize < overSize && iterator.GetNext())
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 heapTrimmedSize += iterator.CalculateHeapMemorySize();
 
                 // If we've crossed a page boundary, we can subtract the pagesize as well.
-                fromAddress = iterator.CurrentAddress;
-                var currentPage = allocator.GetPage(fromAddress);
+                var currentPage = allocator.GetPage(iterator.CurrentAddress);
                 if (currentPage > fromPage)
                 {
-                    isPartialLastPage = false;
                     fromPage = currentPage;
                     ++evictPageCount;
                     pageTrimmedSize += allocator.PageSize;
                 }
-                else
-                    isPartialLastPage = true;
+            }
+
+            // iterator.NextAddress is the end of the last-processed record; if we did not advance far enough to clear all the oversize space
+            // it is the start of the next record we would have processed (and probably equal to untilAddress). In both cases it is how far we
+            // can evict to, and because it is the next address we've not yet evaluated whether it's crossed the page boundary; do that here.
+            fromAddress = iterator.NextAddress;
+            isPartialLastPage = allocator.GetOffsetOnPage(fromAddress) > PageHeader.Size;
+            if (!isPartialLastPage)
+            {
+                ++evictPageCount;
+                pageTrimmedSize += allocator.PageSize;
             }
 
             // Return whether we could satisfy the resize request; for Recovery, we may need to wait on flush.
@@ -250,12 +262,12 @@ namespace Tsavorite.core
             {
                 var currentSize = TotalSize;
                 if (currentSize <= highTargetSize)
-                    return;
+                    break;
 
                 logger?.LogDebug("Heap size {totalLogSize} > target {highTargetSize}. Alloc: {AllocatedPageCount} BufferSize: {BufferSize}", heapSize.Total, highTargetSize, logAccessor.AllocatedPageCount, logAccessor.BufferSize);
 
                 headAddress = logAccessor.HeadAddress;
-                var untilAddress = logAccessor.ReadOnlyAddress + 1;     // Plus 1 to make it inclusive
+                var untilAddress = logAccessor.ReadOnlyAddress; // Only go up as far as we have (or will have flushed)
 
                 // For this call, fromAddress starts at HeadAddress and the updated fromAddress becomes the new HeadAddress.
                 isComplete = DetermineEvictionRange(fromAddress: ref headAddress, untilAddress, currentSize, requiredSize: 0, cancellationToken,
@@ -296,7 +308,7 @@ namespace Tsavorite.core
             var isComplete = DetermineEvictionRange(ref fromAddress, untilAddress, currentSize, requiredSize, cancellationToken,
                 out _ /*allocatedPageCount*/, out evictPageCount, out var heapTrimmedSize, out var isPartialLastPage);
 
-            // For recovery we want to evict the page if any part of it went oversize.
+            // For recovery we want to evict the page if any part of it went oversize. This might include the space after the final records.
             if (isPartialLastPage)
                 evictPageCount++;
  

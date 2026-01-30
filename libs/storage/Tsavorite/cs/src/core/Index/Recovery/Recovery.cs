@@ -735,7 +735,7 @@ namespace Tsavorite.core
 
             // See how many pages we need to evict. Do not evict the current page.
             var fromAddress = hlogBase.GetLogicalAddressOfStartOfPage(startPage);
-            var untilAddress = hlogBase.GetLogicalAddressOfStartOfPage(startPage + hlogBase.AllocatedPageCount - 2) + 1;    // Plus 1 to make it inclusive
+            var untilAddress = hlogBase.GetLogicalAddressOfStartOfPage(startPage + hlogBase.AllocatedPageCount - 2);
             return hlogBase.logSizeTracker.ResizeForRecoveryIfNeeded(fromAddress, untilAddress, requiredSize: numPagesToRead * hlogBase.PageSize, cancellationToken, out evictPageCount);
         }
 
