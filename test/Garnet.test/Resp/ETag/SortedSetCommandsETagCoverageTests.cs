@@ -15,7 +15,7 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public class SortedSetCommandsETagCoverageTests : EtagCoverageTestsBase
     {
-        static readonly RedisKey[] SortedSetKeys = [KeyWithEtag, "ssKey2", "ssKey3"];
+        static readonly RedisKey[] SortedSetKeys = [KeysWithEtag[0], "ssKey2", "ssKey3"];
 
         static readonly SortedSetEntry[][] SortedSetData =
         [

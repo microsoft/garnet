@@ -40,12 +40,13 @@ namespace Garnet.test.Resp.ETag
             }
 
             // Check tests against RespCommand
-            {
-                var allWriteCommands = Enum.GetValues<RespCommand>().Where(c => c.IsWriteOnly()).Select(static x => x.NormalizeForACLs()).Distinct();
-                var notCovered = allWriteCommands.Where(cmd => !covered.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
+            var allWriteCommands = Enum.GetValues<RespCommand>().Where(c => c.IsDataCommand() && c.IsWriteOnly()).Except(NoKeyDataCommands)
+                .Select(static x => x.NormalizeForACLs()).Distinct();
+            var notCovered = allWriteCommands.Where(cmd =>
+                !covered.Contains(cmd.ToString().Replace("_", ""), StringComparer.OrdinalIgnoreCase));
 
-                ClassicAssert.IsEmpty(notCovered, $"Commands in RespCommand not covered by ETag Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
-            }
+            ClassicAssert.IsEmpty(notCovered,
+                $"Commands in RespCommand not covered by ETag Tests:{Environment.NewLine}{string.Join(Environment.NewLine, notCovered.OrderBy(static x => x))}");
         }
     }
 }

@@ -1,3 +1,4 @@
+
 [
   {
     "Command": "ACL",
@@ -4417,7 +4418,7 @@
           "KeyStep": 1,
           "Limit": 0
         },
-        "Flags": "RW, Update"
+        "Flags": "OW, Update"
       },
       {
         "BeginSearch": {

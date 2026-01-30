@@ -57,15 +57,7 @@ namespace Garnet.server
                         SendAndReset();
                     break;
                 default:
-                    if (command == RespCommand.HMSET)
-                    {
-                        while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                            SendAndReset();
-                    }
-                    else
-                    {
-                        ProcessOutput(output.SpanByteAndMemory);
-                    }
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
             return true;

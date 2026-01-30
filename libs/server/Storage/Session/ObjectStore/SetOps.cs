@@ -272,7 +272,6 @@ namespace Garnet.server
             }
 
             var objectTransactionalContext = txnManager.ObjectTransactionalContext;
-            var unifiedTransactionalContext = txnManager.UnifiedTransactionalContext;
 
             try
             {
@@ -311,24 +310,19 @@ namespace Garnet.server
 
                 srcSetObject.UpdateSize(arrMember, false);
 
-                if (srcSetObject.Set.Count == 0)
-                {
-                    _ = EXPIRE(sourceKey, TimeSpan.Zero, out _, ExpireOption.None, ref unifiedTransactionalContext);
-                }
+                _ = srcSetObject.Set.Count == 0
+                    ? DELETE_ObjectStore(sourceKey, ref objectTransactionalContext)
+                    : SET(sourceKey, in srcObject, ref objectTransactionalContext);
 
                 _ = dstSetObject.Set.Add(arrMember);
                 dstSetObject.UpdateSize(arrMember);
 
-                if (dstGetStatus == GarnetStatus.NOTFOUND)
-                {
-                    var setStatus = SET(destinationKey, dstSetObject, ref objectTransactionalContext);
-                    if (setStatus == GarnetStatus.OK)
-                        smoveResult = 1;
-                }
-                else
-                {
+                var setStatus = dstGetStatus == GarnetStatus.NOTFOUND ?
+                    SET(destinationKey, dstSetObject, ref objectTransactionalContext) :
+                    SET(destinationKey, in dstObject, ref objectTransactionalContext);
+
+                if (setStatus == GarnetStatus.OK)
                     smoveResult = 1;
-                }
             }
             finally
             {
@@ -412,7 +406,6 @@ namespace Garnet.server
 
             // SetObject
             var setObjectTransactionalContext = txnManager.ObjectTransactionalContext;
-            var setUnifiedTransactionalContext = txnManager.UnifiedTransactionalContext;
 
             try
             {
@@ -433,7 +426,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
+                        _ = DELETE_ObjectStore(key, ref setObjectTransactionalContext);
                     }
 
                     count = members.Count;
@@ -843,7 +836,6 @@ namespace Garnet.server
 
             // SetObject
             var setObjectTransactionalContext = txnManager.ObjectTransactionalContext;
-            var setUnifiedTransactionalContext = txnManager.UnifiedTransactionalContext;
 
             try
             {
@@ -863,7 +855,7 @@ namespace Garnet.server
                     }
                     else
                     {
-                        _ = EXPIRE(key, TimeSpan.Zero, out _, ExpireOption.None, ref setUnifiedTransactionalContext);
+                        _ = DELETE_ObjectStore(key, ref setObjectTransactionalContext);
                     }
 
                     count = diffSet.Count;

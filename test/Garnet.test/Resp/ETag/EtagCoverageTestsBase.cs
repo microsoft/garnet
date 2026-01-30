@@ -17,7 +17,8 @@ namespace Garnet.test.Resp.ETag
     {
         private GarnetServer server;
 
-        protected static readonly string KeyWithEtag = "keyWithEtag";
+        protected static readonly string[] KeysWithEtag = ["keyWithEtag1", "keyWithEtag2"];
+        protected HashSet<RespCommand> NoKeyDataCommands = new();
         protected HashSet<RespCommand> MultiKeyCommands = new();
         protected HashSet<RespCommand> OverwriteCommands = new();
         
@@ -36,8 +37,14 @@ namespace Garnet.test.Resp.ETag
                 var cmd = (RespCommand)(ushort)i;
                 var simpleRespCommandInfo = allSimpleInfo[i];
 
-                if (!cmd.IsDataCommand() || simpleRespCommandInfo.KeySpecs == null)
+                if (!cmd.IsDataCommand())
                     continue;
+
+                if (simpleRespCommandInfo.KeySpecs == null || simpleRespCommandInfo.KeySpecs.Length == 0)
+                {
+                    NoKeyDataCommands.Add(cmd);
+                    continue;
+                }
 
                 if (simpleRespCommandInfo.IsMultiKeyCommand())
                     MultiKeyCommands.Add(cmd);
@@ -56,26 +63,34 @@ namespace Garnet.test.Resp.ETag
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        protected async Task CheckCommandsAsync(RespCommand command, object[] commandArgs, Action<RedisResult> verifyResult)
+        protected async Task CheckCommandsAsync(RespCommand command, object[] commandArgs, Action<RedisResult> verifyResult, int[] checkKeysWithEtag = null)
         {
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
             DataSetUp();
 
-            var etag = (long)await db.ExecuteAsync("GETETAG", KeyWithEtag);
-            ClassicAssert.AreEqual(1, etag);
+            checkKeysWithEtag ??= [0];
+
+            foreach (var i in checkKeysWithEtag)
+            {
+                var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithEtag[i]);
+                ClassicAssert.AreEqual(1, etag);
+            }
 
             var result = await db.ExecuteAsync(command.ToString(), commandArgs);
             verifyResult(result);
 
-            var exists = await db.KeyExistsAsync(KeyWithEtag);
-            ClassicAssert.IsTrue(exists);
+            foreach (var i in checkKeysWithEtag)
+            {
+                var exists = await db.KeyExistsAsync(KeysWithEtag[i]);
+                ClassicAssert.IsTrue(exists);
 
-            etag = (long)await db.ExecuteAsync("GETETAG", KeyWithEtag);
+                var etag = (long)await db.ExecuteAsync("GETETAG", KeysWithEtag[i]);
 
-            var expectedEtag = OverwriteCommands.Contains(command) ? 0 : command.IsMetadataCommand() ? 1 : 2;
-            ClassicAssert.AreEqual(expectedEtag, etag);
+                var expectedEtag = OverwriteCommands.Contains(command) ? 0 : command.IsMetadataCommand() ? 1 : 2;
+                ClassicAssert.AreEqual(expectedEtag, etag);
+            }
 
             // Multi-key commands do not support meta-commands yet
             if (!MultiKeyCommands.Contains(command))
@@ -85,7 +100,7 @@ namespace Garnet.test.Resp.ETag
                 var results = await db.ExecuteAsync("EXECWITHETAG", args);
                 ClassicAssert.AreEqual(2, results!.Length);
                 verifyResult(results[0]);
-                expectedEtag = command.IsMetadataCommand() ? 1 : 2;
+                var expectedEtag = command.IsMetadataCommand() ? 1 : 2;
                 ClassicAssert.AreEqual(expectedEtag, (long)results[1]);
             }
         }

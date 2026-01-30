@@ -250,7 +250,18 @@ namespace Garnet.server
             }
 
             if (!input.header.CheckSkipRespOutputFlag())
-                writer.WriteInt32(added);
+            {
+                switch (hashOp)
+                {
+                    case HashOperation.HSET:
+                    case HashOperation.HSETNX:
+                        writer.WriteInt32(added);
+                        break;
+                    case HashOperation.HMSET:
+                        writer.WriteDirect(CmdStrings.RESP_OK);
+                        break;
+                }
+            }
 
             output.Header.result1 = added;
         }

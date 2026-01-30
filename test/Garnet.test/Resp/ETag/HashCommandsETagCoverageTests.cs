@@ -14,7 +14,7 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public class HashCommandsETagCoverageTests : EtagCoverageTestsBase
     {
-        static readonly RedisKey[] HashKeys = [KeyWithEtag, "hKey2", "hKey3"];
+        static readonly RedisKey[] HashKeys = [KeysWithEtag[0], "hKey2", "hKey3"];
 
         static readonly HashEntry[][] HashData =
         [
@@ -101,6 +101,18 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task HMSetETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0], HashData[1][0].Name, HashData[1][0].Value };
+            await CheckCommandsAsync(RespCommand.HMSET, cmdArgs, VerifyResult);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual("OK", (string)result);
+            }
+        }
+
+        [Test]
         public async Task HPExpireETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], 2000, "FIELDS", 1, HashData[0][0].Name };
@@ -149,6 +161,18 @@ namespace Garnet.test.Resp.ETag
             var cmdArgs = new object[] { HashKeys[0], HashData[1][0].Name, HashData[1][0].Value };
             await CheckCommandsAsync(RespCommand.HSET, cmdArgs, VerifyResult);
 
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task HSetNxETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { HashKeys[0], HashData[1][0].Name, HashData[1][0].Value };
+            await CheckCommandsAsync(RespCommand.HSETNX, cmdArgs, VerifyResult);
+            
             static void VerifyResult(RedisResult result)
             {
                 ClassicAssert.AreEqual(1, (long)result);

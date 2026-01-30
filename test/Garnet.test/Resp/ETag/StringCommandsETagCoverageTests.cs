@@ -12,7 +12,7 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public class StringCommandsETagCoverageTests : EtagCoverageTestsBase
     {
-        static readonly RedisKey[] StringKeys = [KeyWithEtag, "key2", "key3"];
+        static readonly RedisKey[] StringKeys = [KeysWithEtag[0], "key2", "key3"];
 
         static readonly string[] StringData = ["1", "2", "3"];
 

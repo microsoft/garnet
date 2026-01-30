@@ -742,11 +742,11 @@ namespace Garnet.server
                 keys[i - 1] = parseState.GetArgSliceByRef(i);
             }
 
-            var status = storageApi.SetDiffStore(key, keys, out var output);
+            var status = storageApi.SetDiffStore(key, keys, out var count);
             switch (status)
             {
                 case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteInt32(output, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt32(count, ref dcurr, dend))
                         SendAndReset();
                     break;
                 case GarnetStatus.WRONGTYPE:

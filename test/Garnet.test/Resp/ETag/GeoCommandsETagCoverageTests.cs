@@ -13,7 +13,7 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public class GeoCommandsETagCoverageTests : EtagCoverageTestsBase
     {
-        static readonly RedisKey[] GeoKeys = [KeyWithEtag, "geoKey2", "geoKey3"];
+        static readonly RedisKey[] GeoKeys = [KeysWithEtag[0], "geoKey2", "geoKey3"];
 
         static readonly GeoEntry[][] GeoData =
         [
