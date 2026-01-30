@@ -776,7 +776,7 @@ namespace Garnet.server
                     TryRecoverLatest = false,
                     SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
                     FastCommitMode = EnableFastCommit,
-                    AutoCommit = CommitFrequencyMs == 0,
+                    AutoCommit = AofAutoCommit && (AofPhysicalSublogCount == 1),
                     MutableFraction = 0.9,
                 };
 

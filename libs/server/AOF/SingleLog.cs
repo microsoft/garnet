@@ -7,10 +7,21 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Provides a wrapper for a single Tsavorite log instance, exposing key log addresses and management operations.
+    /// </summary>
+    /// <remarks>This class simplifies access to the core addresses and lifecycle operations of a Tsavorite
+    /// log. It is intended for scenarios where a single log instance is managed directly
+    /// </remarks>
+    /// <param name="logSettings">The settings used to configure the underlying Tsavorite log. Cannot be null.</param>
+    /// <param name="logger">An optional logger used for diagnostic and operational messages. If null, logging is disabled.</param>
     public class SingleLog(TsavoriteLogSettings logSettings, ILogger logger = null)
     {
         readonly TsavoriteLogSettings logSettings = logSettings;
-        public readonly TsavoriteLog log = new(logSettings, logger);
+        /// <summary>
+        /// The underlying TsavoriteLog instance for direct log operations.
+        /// </summary>
+        public readonly TsavoriteLog log = new(logSettings, logger: logger);
 
         public long HeaderSize => log.HeaderSize;
 

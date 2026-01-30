@@ -10,6 +10,19 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Provides a sharded log abstraction that manages multiple physical sublogs for scalable and concurrent log
+    /// operations.
+    /// </summary>
+    /// <remarks>ShardedLog enables partitioning of log data across multiple sublogs to improve throughput and
+    /// concurrency. Each sublog operates independently but can be coordinated through the provided locking and address
+    /// management methods. Thread safety is provided for sublog access via explicit locking mechanisms. The class is
+    /// intended for advanced scenarios where high-performance, partitioned logging is required.</remarks>
+    /// <param name="physicalSublogCount">The number of physical sublogs to create and manage. Must be a positive integer.</param>
+    /// <param name="logSettings">An array of settings used to configure each physical sublog. The length must match the value of
+    /// physicalSublogCount.</param>
+    /// <param name="logger">An optional logger instance used to record diagnostic or operational information for each sublog. If null,
+    /// logging is disabled.</param>
     public class ShardedLog(int physicalSublogCount, TsavoriteLogSettings[] logSettings, ILogger logger = null)
     {
         /// <summary>
@@ -17,7 +30,7 @@ namespace Garnet.server
         /// </summary>
         public int Length { get; private set; } = physicalSublogCount;
         readonly TsavoriteLogSettings[] logSettings = logSettings;
-        
+
         /// <summary>
         /// Physical sublog instances
         /// </summary>
