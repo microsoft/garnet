@@ -253,12 +253,16 @@ namespace Tsavorite.core
             }
         }
 
+        /// <summary>Whether the value in this record is a valid IHeapObject; an exception is thrown if it is a Span, either inline or overflow byte[].</summary>
         public readonly bool ValueObjectIsSet
         {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
             get
             {
                 if (Info.ValueIsObject)
+                {
                     return *(int*)new RecordDataHeader((byte*)DataHeaderAddress).GetValueFieldInfo(Info).valueAddress != ObjectIdMap.InvalidObjectId;
+                }
                 ThrowTsavoriteException("ValueObjectIsSet is not valid for Span values");
                 return default;
             }

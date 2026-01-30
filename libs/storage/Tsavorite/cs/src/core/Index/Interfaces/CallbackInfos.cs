@@ -215,21 +215,21 @@ namespace Tsavorite.core
         /// <summary>
         /// The Tsavorite execution context version of the operation
         /// </summary>
-        public long Version;
+        public long Version { get; internal set; }
 
         /// <summary>
         /// The logical address of the record being operated on
         /// </summary>
-        public long Address;
+        public long Address { get; internal set; }
 
         /// <summary>
         /// Whether the call is from sync or async (pending) path
         /// </summary>
-        public bool IsFromPending;
+        public bool IsFromPending { get; internal set; }
 
         /// <summary>
         /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
-        public ReadAction Action;
+        public ReadAction Action { get; set; }
     }
 }
