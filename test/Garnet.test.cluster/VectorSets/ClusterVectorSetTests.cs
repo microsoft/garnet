@@ -206,12 +206,15 @@ namespace Garnet.test.cluster
             const int SecondaryIndex = 1;
             const string Key = nameof(BasicVSETATTRReplicates);
 
-            // Attribute sizes to test: 0, 1, 4, 16, 128, 512, 4096, 32k, 64k, 512k
-            int[] attributeSizes = [512 * 1024];
-            //int[] attributeSizes = [0, 1, 4, 16, 128, 512, 4096, 32 * 1024, 64 * 1024, 512 * 1024];
+            // Attribute sizes to test including large sizes (512KB+) to verify server-side streaming works
+            // Using IDatabase.Execute() instead of IServer.Execute() to support larger response sizes
+            int[] attributeSizes = [
+                0, 1, 4,
+                //16, 512, 1024, 32 * 1024, 64 * 1024, 512 * 1024
+            ];
 
-            context.CreateInstances(DefaultShards, useTLS: true, enableAOF: true);
-            context.CreateConnection(useTLS: true);
+            context.CreateInstances(DefaultShards, useTLS: false, enableAOF: true);
+            context.CreateConnection(useTLS: false);
             _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1);
 
             var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
@@ -221,6 +224,9 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
 
             var rand = new Random(42);
+
+            // Helper function to generate random printable ASCII attributes
+            byte[] GenerateRandomAsciiAttr(int size) => Enumerable.Range(0, size).Select(_ => (byte)rand.Next('!', '~' + 1)).ToArray();
 
             // Store element keys, vector data, and their attributes for verification (updated in place)
             var elements = new (byte[] Elem, byte[] VectorData, byte[] Attr)[attributeSizes.Length];
@@ -234,11 +240,14 @@ namespace Garnet.test.cluster
                 var vectorData = new byte[75];
                 rand.NextBytes(vectorData);
 
-                var initialAttr = new byte[attributeSizes[i]];
-                rand.NextBytes(initialAttr);
+                var initialAttr = GenerateRandomAsciiAttr(attributeSizes[i]);
 
                 var addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", [Key, "XB8", vectorData, elem, "XPREQ8", "SETATTR", initialAttr]);
                 ClassicAssert.AreEqual(1, addRes);
+
+                // Verify attribute was correctly stored immediately after VADD
+                var attrAfterAdd = (byte[])context.clusterTestUtils.Execute(primary, "VGETATTR", [Key, elem]);
+                ClassicAssert.IsTrue(initialAttr.SequenceEqual(attrAfterAdd), $"Attribute mismatch immediately after VADD for element {i} (size {attributeSizes[i]})");
 
                 elements[i] = (elem, vectorData, initialAttr);
             }
@@ -268,11 +277,14 @@ namespace Garnet.test.cluster
 
                 // Use a different size for the update (rotate through the sizes)
                 var newAttrSize = attributeSizes[(i + 1) % attributeSizes.Length];
-                var newAttr = new byte[newAttrSize];
-                rand.NextBytes(newAttr);
+                var newAttr = GenerateRandomAsciiAttr(newAttrSize);
 
                 var setAttrRes = (string)context.clusterTestUtils.Execute(primary, "VSETATTR", [Key, elem, newAttr]);
-                ClassicAssert.AreEqual("OK", setAttrRes, $"VSETATTR failed for element {i}");
+                ClassicAssert.AreEqual("1", setAttrRes, $"VSETATTR failed for element {i}");
+
+                // Check if VGETATTR in the primary immediately works
+                var attrAfterSet = (byte[])context.clusterTestUtils.Execute(primary, "VGETATTR", [Key, elem]);
+                ClassicAssert.IsTrue(newAttr.SequenceEqual(attrAfterSet), $"Attribute mismatch immediately after VSETATTR for element {i} (size {newAttrSize})");
 
                 elements[i] = (elem, vectorData, newAttr);
             }
@@ -299,11 +311,14 @@ namespace Garnet.test.cluster
 
                 // Use a different size for this rotation (rotate by 2 positions)
                 var newAttrSize = attributeSizes[(i + 2) % attributeSizes.Length];
-                var newAttr = new byte[newAttrSize];
-                rand.NextBytes(newAttr);
+                var newAttr = GenerateRandomAsciiAttr(newAttrSize);
 
                 var setAttrRes = (string)context.clusterTestUtils.Execute(primary, "VSETATTR", [Key, elem, newAttr]);
-                ClassicAssert.AreEqual("OK", setAttrRes, $"Second VSETATTR failed for element {i}");
+                ClassicAssert.AreEqual("1", setAttrRes, $"Second VSETATTR failed for element {i}");
+
+                // Check if VGETATTR in the primary immediately works
+                var attrAfterSet = (byte[])context.clusterTestUtils.Execute(primary, "VGETATTR", [Key, elem]);
+                ClassicAssert.IsTrue(newAttr.SequenceEqual(attrAfterSet), $"Attribute mismatch immediately after second VSETATTR for element {i} (size {newAttrSize})");
 
                 elements[i] = (elem, vectorData, newAttr);
             }

@@ -180,7 +180,6 @@ namespace Garnet.server
             key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
 
             var res = context.RMW(ref keyWithNamespace, ref inputCopy);
-
             if (res.IsPending)
             {
                 CompletePending(ref res, ref context);

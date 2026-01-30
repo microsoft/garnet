@@ -1239,6 +1239,11 @@ namespace Garnet.server
             }
 
             var res = storageApi.VectorSetUpdateAttributes(key, element, attributes);
+            if (res == GarnetStatus.OK)
+            {
+                WriteBooleanTrue();
+                return true;
+            }
             if (res == GarnetStatus.NOTFOUND)
             {
                 WriteBooleanFalse();
@@ -1252,9 +1257,10 @@ namespace Garnet.server
             {
                 return AbortVectorSetPartiallyDeleted(ref key);
             }
-
-            WriteBooleanTrue();
-            return true;
+            else
+            {
+                return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
+            }
         }
 
         private bool AbortVectorSetPartiallyDeleted(ref ArgSlice key)

@@ -1883,6 +1883,11 @@ namespace Garnet.test
                 // Add element with attribute of specific size
                 var addRes = db.Execute("VADD", [vectorSetKey, "VALUES", "3", "1.0", "2.0", "3.0", elementId, "XPREQ8", "SETATTR", attrData]);
                 ClassicAssert.AreEqual(1, (int)addRes, $"Failed to add element with attribute size {attrSize}");
+
+                // Verify attribute was correctly stored immediately after VADD
+                var getAttrRes = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+                ClassicAssert.AreEqual(attrSize, getAttrRes.Length, $"Attribute size mismatch immediately after VADD for size {attrSize}");
+                ClassicAssert.IsTrue(attrData.SequenceEqual(getAttrRes), $"Attribute content mismatch immediately after VADD for size {attrSize}");
             }
 
             // Verify all attributes using VGETATTR
@@ -1971,7 +1976,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(attrData1.SequenceEqual(res4));
 
             // Test updating with various attribute sizes
-            int[] attributeSizes = [64, 128, 256, 257, 512, 1024];
+            int[] attributeSizes = [64, 128, 256, 257, 512, 1024, 16 * 1024, 64 * 1024, 256 * 1024, 512 * 1024];
 
             for (var i = 0; i < attributeSizes.Length; i++)
             {
@@ -1988,12 +1993,12 @@ namespace Garnet.test
                 ClassicAssert.IsTrue(attrData.SequenceEqual(getAttrRes), $"Attribute content mismatch for size {attrSize}");
             }
 
-            // TODO: Test setting empty attribute (removes attribute)
-            //var res5 = db.Execute("VSETATTR", [vectorSetKey, elementId, Array.Empty<byte>()]);
-            //ClassicAssert.IsFalse(res5.IsNull);
+            // Test setting empty attribute (removes attribute)
+            var res5 = db.Execute("VSETATTR", [vectorSetKey, elementId, Array.Empty<byte>()]);
+            ClassicAssert.IsFalse(res5.IsNull);
 
-            //var res6 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
-            //ClassicAssert.AreEqual(0, res6.Length);
+            var res6 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.AreEqual(0, res6.Length);
 
             // Set attribute again after clearing
             var attrData2 = "restored attribute"u8.ToArray();
@@ -2003,6 +2008,42 @@ namespace Garnet.test
             var res8 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
             ClassicAssert.AreEqual(attrData2.Length, res8.Length);
             ClassicAssert.IsTrue(attrData2.SequenceEqual(res8));
+        }
+
+        [Test]
+        public void VSETATTR_OverflowRejected()
+        {
+            var options = GetOpts(server);
+
+            var overflowSizeBytes = (int)(GarnetServerOptions.ParseSize(options.PageSize, out _) * 2);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var vectorSetKey = "foo";
+            var elementId = new byte[] { 0, 0, 0, 0 };
+
+            // Create a simple vector set with one element
+            var res1 = db.Execute("VADD", [vectorSetKey, "VALUES", "3", "1.0", "2.0", "3.0", elementId, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Successful VSETATTR with normal-sized attribute
+            var normalAttribute = "normal attribute"u8.ToArray();
+            var res2 = db.Execute("VSETATTR", [vectorSetKey, elementId, normalAttribute]);
+            ClassicAssert.IsFalse(res2.IsNull);
+
+            // Verify attribute was set
+            var res3 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.IsTrue(normalAttribute.SequenceEqual(res3));
+
+            // Try VSETATTR with oversized attribute - should be rejected
+            var oversizedAttribute = Enumerable.Repeat<byte>(2, overflowSizeBytes).ToArray();
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSETATTR", [vectorSetKey, elementId, oversizedAttribute]));
+            ClassicAssert.AreEqual("ERR Attribute exceed configured page size", exc.Message);
+
+            // Verify the original attribute is still intact after the failed VSETATTR
+            var res4 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.IsTrue(normalAttribute.SequenceEqual(res4));
         }
 
         [Test]
