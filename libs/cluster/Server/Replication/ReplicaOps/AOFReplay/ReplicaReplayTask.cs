@@ -71,7 +71,7 @@ namespace Garnet.cluster
                             if (payloadLength > 0)
                             {
                                 var entryPtr = ptr + entryLength;
-                                if (replicationManager.AofProcessor.ShouldReplay(entryPtr, replayTaskIdx, out var sequenceNumber))
+                                if (replicationManager.AofProcessor.CanReplay(entryPtr, replayTaskIdx, out var sequenceNumber))
                                 {
                                     replicationManager.AofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart);
                                     // Encountered checkpoint start marker, log the ReplicationCheckpointStartOffset so we know the correct AOF truncation

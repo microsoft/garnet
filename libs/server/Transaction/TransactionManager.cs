@@ -366,8 +366,8 @@ namespace Garnet.server
                                 storeVersion = txnVersion,
                                 sessionID = stringBasicContext.Session.ID,
                             },
-                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                         },
+                        txnId = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                         participantCount = (short)proc.virtualSublogParticipantCount
                     };
                     appendOnlyFile.Log.Enqueue(header, ref procInput, proc);
@@ -415,8 +415,8 @@ namespace Garnet.server
                                 storeVersion = txnVersion,
                                 txnID = stringBasicContext.Session.ID,
                             },
-                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
                         },
+                        txnId = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                         participantCount = (short)virtualSublogParticipantCount
                     };
 
@@ -557,8 +557,8 @@ namespace Garnet.server
                                 storeVersion = txnVersion,
                                 txnID = stringBasicContext.Session.ID
                             },
-                            sequenceNumber = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber()
                         },
+                        txnId = functionsState.appendOnlyFile.seqNumGen.GetSequenceNumber(),
                         participantCount = (short)virtualSublogParticipantCount
                     };
 

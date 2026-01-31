@@ -60,15 +60,18 @@ namespace Garnet.server
                     untilAddress.SetValueIf(appendOnlyFile.Log.TailAddress, -1);
 
                     var recordsReplayed = 0L;
-                    if (storeWrapper.serverOptions.DisableLegacyAOFRecover)
+                    if (storeWrapper.serverOptions.MultiLogEnabled)
                     {
-                        var beginAddress = appendOnlyFile.Log.BeginAddress;
-                        var recoverDrivers = Enumerable.Range(0, untilAddress.Length)
-                            .Select(physicalSublogIdx => new RecoverLogDriver(this, appendOnlyFile, storeWrapper.serverOptions, db.Id, physicalSublogIdx, beginAddress[physicalSublogIdx], untilAddress[physicalSublogIdx], logger))
-                            .ToArray();
+                        if (appendOnlyFile.Log.RecoverLatestSequenceNumber(out var recoverUntilSequenceNumber))
+                        {
+                            var beginAddress = appendOnlyFile.Log.BeginAddress;
+                            var recoverDrivers = Enumerable.Range(0, untilAddress.Length)
+                                .Select(physicalSublogIdx => new RecoverLogDriver(this, appendOnlyFile, storeWrapper.serverOptions, db.Id, physicalSublogIdx, beginAddress[physicalSublogIdx], untilAddress[physicalSublogIdx], recoverUntilSequenceNumber, logger))
+                                .ToArray();
 
-                        Task.WaitAll([.. recoverDrivers.Select(driver => driver.CreateRecoverTask())]);
-                        recordsReplayed = recoverDrivers.Sum(driver => driver.ReplayedRecordCount);
+                            Task.WaitAll([.. recoverDrivers.Select(driver => driver.CreateRecoverTask())]);
+                            recordsReplayed = recoverDrivers.Sum(driver => driver.ReplayedRecordCount);
+                        }
                     }
                     else
                     {

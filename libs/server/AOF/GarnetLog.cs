@@ -13,21 +13,52 @@ using Tsavorite.core;
 
 namespace Garnet.server
 {
+    /// <summary>
+    /// Provides a unified interface for managing append-only logs in both single-log and sharded-log modes, supporting
+    /// operations such as recovery, commit, truncation, and scanning across all sublogs as configured by the server
+    /// options.
+    /// </summary>
     public sealed class GarnetLog
     {
         readonly GarnetServerOptions serverOptions;
         readonly SingleLog singleLog;
         readonly ShardedLog shardedLog;
+        readonly RefCallback<AofShardedHeader> shardedHeaderModifier;
+        readonly RefCallback<AofTransactionHeader> transactionHeaderModifier;
+        readonly Func<byte[]> cookieGeneratorCallback;
+        readonly GarnetAppendOnlyFile appendOnlyFile;
+
+        public static unsafe long GetSequenceNumberFromCookie(byte[] cookie)
+        {
+            fixed(byte*ptr = cookie)
+            {
+                return *(long*)ptr;
+            }
+        }
 
         /// <summary>
         /// Initializes a new GarnetLog instance with the specified configuration.
         /// </summary>
+        /// <param name="appendOnlyFile">Append only file instance.</param>
         /// <param name="serverOptions">Server configuration determining log mode and sharding.</param>
         /// <param name="logSettings">Settings for the underlying log(s).</param>
         /// <param name="logger">Optional logger for recording events.</param>
-        public GarnetLog(GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
+        public GarnetLog(GarnetAppendOnlyFile appendOnlyFile, GarnetServerOptions serverOptions, TsavoriteLogSettings[] logSettings, ILogger logger = null)
         {
             Debug.Assert(serverOptions.EnableFastCommit || serverOptions.AofPhysicalSublogCount == 1, "Cannot use sharded-log without FastCommit!");
+            this.appendOnlyFile = appendOnlyFile;
+            this.shardedHeaderModifier = (ref h) => h.sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber();
+            this.transactionHeaderModifier = (ref h) => h.shardedHeader.sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber();
+            this.cookieGeneratorCallback = () =>
+            {
+                unsafe
+                {
+                    var cookie = stackalloc byte[8];
+                    *(long*)cookie = appendOnlyFile.seqNumGen.GetSequenceNumber();
+                    return new Span<byte>(cookie, 8).ToArray();
+                }
+            };
+
             this.serverOptions = serverOptions;
             this.singleLog = serverOptions.AofVirtualSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
             this.shardedLog = serverOptions.MultiLogEnabled ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger: logger) : null;
@@ -123,6 +154,24 @@ namespace Garnet.server
                 singleLog.Recover();
             else
                 shardedLog.Recover();
+        }
+
+        public unsafe bool RecoverLatestSequenceNumber(out long recoverUntilSequenceNumber)
+        {
+            recoverUntilSequenceNumber = -1;
+            if (serverOptions.AofPhysicalSublogCount == 1)
+                return true;
+            var sublogCount = shardedLog.sublog.Length;
+            for(var physicalSublogIdx = 0; physicalSublogIdx < sublogCount; physicalSublogIdx++)
+            {
+                var physicalSublog = shardedLog.sublog[physicalSublogIdx];
+                var cookie = physicalSublog.RecoveredCookie;
+                if (cookie == null)
+                    return false;
+                var latestSequenceNumber = GetSequenceNumberFromCookie(cookie);
+                recoverUntilSequenceNumber = recoverUntilSequenceNumber == -1 ? latestSequenceNumber : Math.Min(recoverUntilSequenceNumber, latestSequenceNumber);
+            }
+            return true;
         }
 
         public void Reset()
@@ -369,7 +418,7 @@ namespace Garnet.server
             else
             {
                 for (var i = 0; i < shardedLog.Length; i++)
-                    shardedLog.sublog[i].Commit(spinWait, cookie);
+                    shardedLog.sublog[i].Commit(spinWait, cookieGeneratorCallback: cookieGeneratorCallback);
             }
         }
 
@@ -402,14 +451,14 @@ namespace Garnet.server
             if (singleLog != null)
             {
                 // Optimization for single log case
-                await singleLog.log.CommitAsync(cookie, token);
+                await singleLog.log.CommitAsync(cookie: cookie, token);
             }
             else
             {
                 // Create tasks for all sublogs
                 var tasks = new Task[shardedLog.Length];
                 for (var i = 0; i < shardedLog.Length; i++)
-                    tasks[i] = shardedLog.sublog[i].CommitAsync(cookie, token).AsTask();
+                    tasks[i] = shardedLog.sublog[i].CommitAsync(token: token, cookieGeneratorCallback: cookieGeneratorCallback).AsTask();
 
                 await Task.WhenAll(tasks);
             }
@@ -490,6 +539,7 @@ namespace Garnet.server
                 key,
                 value,
                 ref input,
+                in shardedHeaderModifier,
                 out logicalAddress);
 
             if (serverOptions.AofAutoCommit)
@@ -509,6 +559,7 @@ namespace Garnet.server
                 shardedHeader,
                 key,
                 ref input,
+                in shardedHeaderModifier,
                 out logicalAddress);
 
             if (serverOptions.AofAutoCommit)
@@ -527,6 +578,7 @@ namespace Garnet.server
                 shardedHeader,
                 key,
                 value,
+                in shardedHeaderModifier,
                 out logicalAddress);
 
             if (serverOptions.AofAutoCommit)
@@ -546,7 +598,7 @@ namespace Garnet.server
                     // Update corresponding sublog participating vector before enqueue to related physical sublog
                     proc.replayTaskAccessVector[physicalSublogIdx].CopyTo(
                         new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
-                    shardedLog.sublog[physicalSublogIdx].Enqueue(header, ref procInput, out _);
+                    shardedLog.sublog[physicalSublogIdx].Enqueue(header, ref procInput, in transactionHeaderModifier, out _);
                 }
             }
             finally
@@ -571,7 +623,31 @@ namespace Garnet.server
                     var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
                     // Update corresponding sublog participating vector before enqueue to related physical sublog
                     virtualSublogAccessVector[physicalSublogIdx].CopyTo(new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
-                    shardedLog.sublog[physicalSublogIdx].Enqueue(header, out _);
+                    shardedLog.sublog[physicalSublogIdx].Enqueue(header, in transactionHeaderModifier, out _);
+                }
+            }
+            finally
+            {
+                if (serverOptions.AofPhysicalSublogCount > 1)
+                    UnlockSublogs(physicalSublogAccessVector);
+            }
+
+            if (serverOptions.AofAutoCommit)
+                Commit();
+        }
+
+        internal void Enqueue(AofTransactionHeader header, ulong physicalSublogAccessVector)
+        {
+            try
+            {
+                if (serverOptions.AofPhysicalSublogCount > 1)
+                    LockSublogs(physicalSublogAccessVector);
+                var _physicalSublogAccessVector = physicalSublogAccessVector;
+
+                while (_physicalSublogAccessVector > 0)
+                {
+                    var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
+                    shardedLog.sublog[physicalSublogIdx].Enqueue(header, in transactionHeaderModifier, out _);
                 }
             }
             finally
@@ -586,6 +662,7 @@ namespace Garnet.server
 
         /// <summary>
         /// Enqueue a signal to refresh sublog tail
+        /// NOTE: This is a control signal so it does not need to be committed its sequence number to updated within epoch protection.
         /// </summary>
         /// <param name="sublogIdx"></param>
         /// <param name="sequenceNumber"></param>
@@ -598,28 +675,6 @@ namespace Garnet.server
                 sequenceNumber = sequenceNumber
             };
             shardedLog.sublog[sublogIdx].Enqueue(refreshSublogTailHeader, out _);
-
-            if (serverOptions.AofAutoCommit)
-                Commit();
-        }
-
-        internal void Enqueue(AofTransactionHeader header, ulong physicalSublogAccessVector)
-        {
-            try
-            {
-                LockSublogs(physicalSublogAccessVector);
-                var _logAccessBitmap = physicalSublogAccessVector;
-
-                while (_logAccessBitmap > 0)
-                {
-                    var sublogIdx = _logAccessBitmap.GetNextOffset();
-                    shardedLog.sublog[sublogIdx].Enqueue(header, out _);
-                }
-            }
-            finally
-            {
-                UnlockSublogs(physicalSublogAccessVector);
-            }
         }
     }
 }

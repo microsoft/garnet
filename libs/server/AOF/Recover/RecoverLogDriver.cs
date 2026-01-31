@@ -22,6 +22,7 @@ namespace Garnet.server
     /// <param name="physicalSublogIdx">Index of the physical sublog to scan.</param>
     /// <param name="startAddress">Start address in the append-only file for recovery.</param>
     /// <param name="untilAddress">End address in the append-only file for recovery.</param>
+    /// <param name="untilSequenceNumber">Replay all records with sequence number to ensure prefix consistent recovery.</param>
     /// <param name="logger">Optional logger for diagnostic output.</param>
     internal sealed class RecoverLogDriver(
         AofProcessor aofProcessor,
@@ -31,6 +32,7 @@ namespace Garnet.server
         int physicalSublogIdx,
         long startAddress,
         long untilAddress,
+        long untilSequenceNumber,
         ILogger logger = null) : IBulkLogEntryConsumer, IDisposable
     {
         readonly int physicalSublogIdx = physicalSublogIdx;
@@ -43,6 +45,7 @@ namespace Garnet.server
         readonly ILogger logger = logger;
         readonly long startAddress = startAddress;
         readonly long untilAddress = untilAddress;
+        readonly long untilSequenceNumber = untilSequenceNumber;
         readonly int dbId = dbId;
         readonly ReplayBatchContext replayBatchContext = new(serverOptions.AofReplayTaskCount);
         Task[] replayTasks = null;
@@ -78,7 +81,11 @@ namespace Garnet.server
                     var payloadLength = physicalSublog.UnsafeGetLength(ptr);
                     if (payloadLength > 0)
                     {
-                        aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, ptr + entryLength, payloadLength, true, out var isCheckpointStart);
+                        var entryPtr = ptr + entryLength;
+                        if (aofProcessor.ContinueReplaying(entryPtr, untilSequenceNumber))
+                        {
+                            aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart);
+                        }
                         entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                     }
                     else if (payloadLength < 0)
@@ -161,11 +168,14 @@ namespace Garnet.server
                             if (payloadLength > 0)
                             {
                                 var entryPtr = ptr + entryLength;
-                                if (aofProcessor.ShouldReplay(entryPtr, replayTaskIdx, out var sequenceNumber))
+                                // Check if entry is assigned for processing to this replay task and
+                                // the sequence number is bellow the threshold to ensure prefix consistency
+                                if (aofProcessor.CanReplay(entryPtr, replayTaskIdx, out var sequenceNumber) &&
+                                    (untilSequenceNumber == -1 || sequenceNumber <= untilSequenceNumber))
                                 {
                                     aofProcessor.ProcessAofRecordInternal(virtualSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart);
+                                    maxSequenceNumber = Math.Max(sequenceNumber, maxSequenceNumber);
                                 }
-                                maxSequenceNumber = Math.Max(sequenceNumber, maxSequenceNumber);
                                 entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                             }
                             else if (payloadLength < 0)
@@ -215,6 +225,7 @@ namespace Garnet.server
             {
                 try
                 {
+                    if (startAddress == untilAddress) return;
                     logger?.LogInformation("Recover sublog [{physicalSublogIdx}] for addres range ({startAddress},{untilAddress})", physicalSublogIdx, startAddress, untilAddress);
                     while (!cts.IsCancellationRequested)
                     {

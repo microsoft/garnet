@@ -26,23 +26,23 @@ namespace Garnet.server
     struct BarrierKey : IEquatable<BarrierKey>
     {
         /// <summary>
-        /// Id
+        /// Session Id
         /// </summary>
-        public int Id;
+        public int SessionId;
 
         /// <summary>
-        /// Sequence number
+        /// Transaction Id
         /// </summary>
-        public long SequenceNumber;
+        public long txnId;
 
         public bool Equals(BarrierKey other)
-            => Id == other.Id && SequenceNumber == other.SequenceNumber;
+            => SessionId == other.SessionId && txnId == other.txnId;
 
         public override bool Equals(object obj)
             => obj is BarrierKey other && Equals(other);
 
         public override int GetHashCode()
-            => HashCode.Combine(Id, SequenceNumber);
+            => HashCode.Combine(SessionId, txnId);
     }
 
     public sealed unsafe partial class AofProcessor
@@ -89,12 +89,6 @@ namespace Garnet.server
             {
                 foreach (var replayContext in aofReplayContext)
                     replayContext.output.MemoryOwner?.Dispose();
-            }
-
-            LeaderBarier GetBarrier(int sessionId, long sequenceNumber, int participantCount)
-            {
-                var barrierID = new BarrierKey() { Id = sessionId, SequenceNumber = sequenceNumber };
-                return leaderBarriers.GetOrAdd(barrierID, _ => new LeaderBarier(participantCount));
             }
 
             /// <summary>
@@ -383,7 +377,7 @@ namespace Garnet.server
                 var txnHeader = *(AofTransactionHeader*)ptr;
 
                 // Synchronize execution across sublogs
-                var leaderBarrier = GetBarrier(barrierId, txnHeader.shardedHeader.sequenceNumber, txnHeader.participantCount);
+                var leaderBarrier = GetBarrier(barrierId, txnHeader.txnId, txnHeader.participantCount);
                 var isLeader = leaderBarrier.TrySignalAndWait(out var signalException, serverOptions.ReplicaSyncTimeout);
                 Exception removeBarrierException = null;
 
@@ -409,7 +403,7 @@ namespace Garnet.server
                     // The leader will always perform a cleanup
                     if (isLeader)
                     {
-                        if (!TryRemoveBarrier(barrierId, txnHeader.shardedHeader.sequenceNumber, out _))
+                        if (!TryRemoveBarrier(barrierId, txnHeader.txnId, out _))
                             removeBarrierException = new GarnetException($"RemoveBarrier failed when processing {barrierId}");
 
                         // Release participants if any
@@ -429,10 +423,18 @@ namespace Garnet.server
                 // Update timestamp
                 aofProcessor.storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(sublogIdx, txnHeader.shardedHeader.sequenceNumber);
 
-                // Remove barrier helper
-                bool TryRemoveBarrier(int sessionId, long sequenceNumber, out LeaderBarier eventBarrier)
+                // Get barrier helper
+                LeaderBarier GetBarrier(int sessionId, long txnId, int participantCount)
                 {
-                    var barrierID = new BarrierKey() { Id = sessionId, SequenceNumber = sequenceNumber };
+                    // Use session ID and txn ID as the barrier key to prevent conflicts between transactions from the same session that access disjoint logs
+                    var barrierID = new BarrierKey() { SessionId = sessionId, txnId = txnId };
+                    return leaderBarriers.GetOrAdd(barrierID, _ => new LeaderBarier(participantCount));
+                }
+
+                // Remove barrier helper
+                bool TryRemoveBarrier(int sessionId, long txnId, out LeaderBarier eventBarrier)
+                {
+                    var barrierID = new BarrierKey() { SessionId = sessionId, txnId = txnId };
                     return leaderBarriers.TryRemove(barrierID, out eventBarrier);
                 }
             }
