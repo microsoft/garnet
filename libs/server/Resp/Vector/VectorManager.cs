@@ -7,6 +7,7 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Garnet.common;
@@ -564,6 +565,12 @@ namespace Garnet.server
                 FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
             }
 
+            // Apply post-filtering if filter is specified
+            if (!filter.IsEmpty && includeAttributes)
+            {
+                found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes, includeAttributes);
+            }
+
             if (continuation != 0)
             {
                 // TODO: paged results!
@@ -664,6 +671,12 @@ namespace Garnet.server
             if (includeAttributes)
             {
                 FetchVectorElementAttributes(context, found, outputIds, ref outputAttributes);
+            }
+
+            // Apply post-filtering if filter is specified
+            if (!filter.IsEmpty && includeAttributes)
+            {
+                found = ApplyPostFilter(filter, found, ref outputIds, ref outputDistances, ref outputAttributes, includeAttributes);
             }
 
             if (continuation != 0)
@@ -880,6 +893,108 @@ namespace Garnet.server
             else
             {
                 throw new NotImplementedException($"{valueType}");
+            }
+        }
+
+        /// <summary>
+        /// Apply post-filtering to vector search results based on JSON path filter expression.
+        /// </summary>
+        private int ApplyPostFilter(
+            ReadOnlySpan<byte> filter,
+            int numResults,
+            ref SpanByteAndMemory outputIds,
+            ref SpanByteAndMemory outputDistances,
+            ref SpanByteAndMemory outputAttributes,
+            bool hasAttributes)
+        {
+            if (numResults == 0 || !hasAttributes)
+            {
+                return numResults;
+            }
+
+            var filterStr = Encoding.UTF8.GetString(filter);
+            var filteredCount = 0;
+
+            var idsSpan = outputIds.AsSpan();
+            var distancesSpan = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
+            var attributesSpan = outputAttributes.AsSpan();
+
+            var idReadPos = 0;
+            var attrReadPos = 0;
+            var idWritePos = 0;
+            var distWritePos = 0;
+            var attrWritePos = 0;
+
+            for (var i = 0; i < numResults; i++)
+            {
+                // Read ID
+                var idLen = BinaryPrimitives.ReadInt32LittleEndian(idsSpan[idReadPos..]);
+                var idTotalLen = sizeof(int) + idLen;
+
+                // Read attribute
+                var attrLen = BinaryPrimitives.ReadInt32LittleEndian(attributesSpan[attrReadPos..]);
+                var attrData = attributesSpan.Slice(attrReadPos + sizeof(int), attrLen);
+
+                // Evaluate filter
+                if (EvaluateFilter(filterStr, attrData))
+                {
+                    // Copy ID if not already in place
+                    if (idReadPos != idWritePos)
+                    {
+                        idsSpan.Slice(idReadPos, idTotalLen).CopyTo(idsSpan[idWritePos..]);
+                    }
+
+                    // Copy distance if not already in place
+                    if (i != distWritePos)
+                    {
+                        distancesSpan[distWritePos] = distancesSpan[i];
+                    }
+
+                    // Copy attribute if not already in place
+                    if (attrReadPos != attrWritePos)
+                    {
+                        attributesSpan.Slice(attrReadPos, sizeof(int) + attrLen).CopyTo(attributesSpan[attrWritePos..]);
+                    }
+
+                    idWritePos += idTotalLen;
+                    distWritePos++;
+                    attrWritePos += sizeof(int) + attrLen;
+                    filteredCount++;
+                }
+
+                idReadPos += idTotalLen;
+                attrReadPos += sizeof(int) + attrLen;
+            }
+
+            // Update lengths
+            outputIds.Length = idWritePos;
+            outputDistances.Length = distWritePos * sizeof(float);
+            outputAttributes.Length = attrWritePos;
+
+            return filteredCount;
+        }
+
+        /// <summary>
+        /// Evaluate a JSON path filter expression against attribute data.
+        /// Supports: arithmetic, comparison, logical operators, containment (in), and grouping with parentheses.
+        /// </summary>
+        private static bool EvaluateFilter(string filter, ReadOnlySpan<byte> attributeJson)
+        {
+            try
+            {
+                using var jsonDoc = JsonDocument.Parse(attributeJson.ToArray());
+                var root = jsonDoc.RootElement;
+
+                var tokens = VectorFilterTokenizer.Tokenize(filter);
+                var expr = VectorFilterParser.ParseExpression(tokens, 0, out _);
+                var result = VectorFilterEvaluator.EvaluateExpression(expr, root);
+
+                return VectorFilterEvaluator.IsTruthy(result);
+            }
+            catch (Exception)
+            {
+                // If filter evaluation fails, exclude the result for safety
+                return false;
             }
         }
 
