@@ -832,8 +832,7 @@ namespace Garnet.server
                                         var attr = remaininingAttributes.Slice(sizeof(int), attrLen);
                                         remaininingAttributes = remaininingAttributes[(sizeof(int) + attrLen)..];
 
-                                        while (!RespWriteUtils.TryWriteBulkString(attr, ref dcurr, dend))
-                                            SendAndReset();
+                                        WriteDirectLargeRespString(attr);
                                     }
                                 }
                             }
@@ -1054,7 +1053,7 @@ namespace Garnet.server
                     return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
                 }
 
-                WriteSimpleString(attributesOutput.AsReadOnlySpan());
+                WriteLargeSimpleString(attributesOutput.AsReadOnlySpan());
                 return true;
             }
             finally
@@ -1224,12 +1223,44 @@ namespace Garnet.server
                 return AbortWithErrorMessage("ERR Vector Set (preview) commands are not enabled");
             }
 
-            // TODO: implement!
+            if (parseState.Count != 3)
+            {
+                return AbortWithWrongNumberOfArguments("VSETATTR");
+            }
 
-            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
-                SendAndReset();
+            var key = parseState.GetArgSliceByRef(0);
+            var element = parseState.GetArgSliceByRef(1);
+            var attributes = parseState.GetArgSliceByRef(2);
 
-            return true;
+            if (attributes.Length > maximumVectorSetValueBytes)
+            {
+                WriteError("ERR Attribute exceed configured page size"u8);
+                return true;
+            }
+
+            var res = storageApi.VectorSetUpdateAttributes(key, element, attributes);
+            if (res == GarnetStatus.OK)
+            {
+                WriteBooleanTrue();
+                return true;
+            }
+            if (res == GarnetStatus.NOTFOUND)
+            {
+                WriteBooleanFalse();
+                return true;
+            }
+            else if (res == GarnetStatus.WRONGTYPE)
+            {
+                return AbortVectorSetWrongType();
+            }
+            else if (res == GarnetStatus.BADSTATE)
+            {
+                return AbortVectorSetPartiallyDeleted(ref key);
+            }
+            else
+            {
+                return AbortWithErrorMessage($"Unexpected GarnetStatus: {res}");
+            }
         }
 
         private bool AbortVectorSetPartiallyDeleted(ref ArgSlice key)

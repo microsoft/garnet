@@ -32,6 +32,6 @@
     <PackageVersion Include="System.Numerics.Tensors" Version="9.0.9" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.8" />
-    <PackageVersion Include="diskann-garnet" Version="1.0.20" />
+    <PackageVersion Include="diskann-garnet" Version="1.0.21" />
   </ItemGroup>
 </Project>

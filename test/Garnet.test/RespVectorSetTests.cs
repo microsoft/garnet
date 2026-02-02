@@ -134,8 +134,8 @@ namespace Garnet.test
                             exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VREM", ["foo", new byte[] { 0, 0, 0, 0 }]));
                             break;
                         case RespCommand.VSETATTR:
-                            // TODO: Implement when VSETATTR works
-                            continue;
+                            exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSETATTR", ["foo", new byte[] { 0, 0, 0, 0 }, new byte[] { 0, 0, 0, 0 }]));
+                            break;
                         case RespCommand.VSIM:
                             exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSIM", ["foo", "VALUES", "75", "110.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40"]));
                             break;
@@ -523,13 +523,18 @@ namespace Garnet.test
             var res4 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "120.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 3 }, "CAS", "Q8", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res4);
 
-            // Very long attribute
+            // Very long attribute (1KB)
             var bigAttr = Enumerable.Repeat((byte)'a', 1_024).ToArray();
             var res5 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "130.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 4 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", bigAttr]);
             ClassicAssert.AreEqual(1, (int)res5);
 
-            var res6 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "75", "140.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40", "WITHATTRIBS"]);
-            ClassicAssert.AreEqual(10, res6.Length);
+            // Super long attribute (512KB)
+            var superBigAttr = Enumerable.Range(0, 512 * 1024).Select(x => (byte)(x % 256)).ToArray();
+            var res5b = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "135.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 5 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", superBigAttr]);
+            ClassicAssert.AreEqual(1, (int)res5b);
+
+            var res6 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "75", "140.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "6", "EPSILON", "1.0", "EF", "40", "WITHATTRIBS"]);
+            ClassicAssert.AreEqual(12, res6.Length);
             for (var i = 0; i < res6.Length; i += 2)
             {
                 var id = res6[i];
@@ -555,6 +560,10 @@ namespace Garnet.test
                 {
                     ClassicAssert.True(bigAttr.SequenceEqual(attr));
                 }
+                else if (id.SequenceEqual(new byte[] { 0, 0, 0, 5 }))
+                {
+                    ClassicAssert.True(superBigAttr.SequenceEqual(attr));
+                }
                 else
                 {
                     ClassicAssert.Fail("Unexpected id");
@@ -562,8 +571,8 @@ namespace Garnet.test
             }
 
             // WITHSCORES
-            var res7 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "75", "140.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "5", "EPSILON", "1.0", "EF", "40", "WITHATTRIBS", "WITHSCORES"]);
-            ClassicAssert.AreEqual(15, res7.Length);
+            var res7 = (byte[][])db.Execute("VSIM", ["foo", "VALUES", "75", "140.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "COUNT", "6", "EPSILON", "1.0", "EF", "40", "WITHATTRIBS", "WITHSCORES"]);
+            ClassicAssert.AreEqual(18, res7.Length);
             for (var i = 0; i < res7.Length; i += 3)
             {
                 var id = res7[i];
@@ -591,6 +600,10 @@ namespace Garnet.test
                 else if (id.SequenceEqual(new byte[] { 0, 0, 0, 4 }))
                 {
                     ClassicAssert.True(bigAttr.SequenceEqual(attr));
+                }
+                else if (id.SequenceEqual(new byte[] { 0, 0, 0, 5 }))
+                {
+                    ClassicAssert.True(superBigAttr.SequenceEqual(attr));
                 }
                 else
                 {
@@ -792,8 +805,16 @@ namespace Garnet.test
                                 }
                                 break;
                             case RespCommand.VSETATTR:
-                                // TODO: Implement once VSETATTR is implemented
-                                continue;
+                                try
+                                {
+                                    var res = db.Execute("VSETATTR", [key, "wololo", new byte[] { 0, 0, 0, 5 }]);
+                                    ClassicAssert.AreEqual(0, (int)res);
+                                }
+                                catch (RedisServerException e)
+                                {
+                                    exc = e;
+                                }
+                                break;
                             case RespCommand.VSIM:
                                 try
                                 {
@@ -1852,42 +1873,191 @@ namespace Garnet.test
             var db = redis.GetDatabase();
 
             var vectorSetKey = "foo";
-            var elementId1 = new byte[] { 0, 0, 0, 0 };
 
-            // Create a vector set with first element (no attribute)
-            var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", elementId1, "XPREQ8"]);
-            ClassicAssert.AreEqual(1, (int)res1);
+            // Predefined attribute sizes to test
+            int[] attributeSizes = [
+                1, 4, 16, 512, 1024, 32 * 1024, 64 * 1024, 512 * 1024,
+                131066, 131071, 131072, 131073,
+                262138, 262142, 262143, 262144, 262145, 262146, 262147
+            ];
 
-            // Test success case - element with no attribute
-            var res2 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId1]);
-            ClassicAssert.AreEqual(0, res2.Length);
-
-            // Test various attribute sizes
-            int[] attributeSizes = [64, 128, 256, 257, 512, 1024];
+            // Store element IDs and their corresponding attributes for later verification
+            var elementsWithAttributes = new List<(byte[] ElementId, byte[] Attribute)>();
 
             for (var i = 0; i < attributeSizes.Length; i++)
             {
                 var attrSize = attributeSizes[i];
-                var attrData = Enumerable.Repeat((byte)(i + '0'), attrSize).ToArray();
-                var elementId = new byte[] { 0, 0, 0, (byte)(i + 1) };
+                var elementId = BitConverter.GetBytes(i);
+
+                // Create attribute data filled with a pattern based on index
+                var attrData = Enumerable.Range(0, attrSize).Select(x => (byte)((x + i) % 256)).ToArray();
+
+                elementsWithAttributes.Add((elementId, attrData));
 
                 // Add element with attribute of specific size
-                var addRes = db.Execute("VADD", ["foo", "VALUES", "3", "4.0", "5.0", "6.0", elementId, "XPREQ8", "SETATTR", attrData]);
-                ClassicAssert.AreEqual(1, (int)addRes);
+                var addRes = db.Execute("VADD", [vectorSetKey, "VALUES", "3", "1.0", "2.0", "3.0", elementId, "XPREQ8", "SETATTR", attrData]);
+                ClassicAssert.AreEqual(1, (int)addRes, $"Failed to add element with attribute size {attrSize}");
 
-                // Get and validate attribute
-                var getAttrRes = (byte[])db.Execute(command: "VGETATTR", [vectorSetKey, elementId]);
+                // Verify attribute was correctly stored immediately after VADD
+                var getAttrRes = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+                ClassicAssert.AreEqual(attrSize, getAttrRes.Length, $"Attribute size mismatch immediately after VADD for size {attrSize}");
+                ClassicAssert.IsTrue(attrData.SequenceEqual(getAttrRes), $"Attribute content mismatch immediately after VADD for size {attrSize}");
+            }
+
+            // Verify all attributes using VGETATTR
+            foreach (var (elementId, expectedAttr) in elementsWithAttributes)
+            {
+                var attrSize = expectedAttr.Length;
+                var getAttrRes = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+
+                ClassicAssert.AreEqual(attrSize, getAttrRes.Length, $"Attribute size mismatch for expected size {attrSize}");
+                ClassicAssert.IsTrue(expectedAttr.SequenceEqual(getAttrRes), $"Attribute content mismatch for size {attrSize}");
+            }
+
+            // Test empty string attribute explicitly set (equivalent to no attribute)
+            var emptyAttrElement = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF };
+            var res = db.Execute("VADD", [vectorSetKey, "VALUES", "3", "1.0", "2.0", "3.0", emptyAttrElement, "XPREQ8", "SETATTR", ""]);
+            ClassicAssert.AreEqual(1, (int)res);
+
+            var emptyAttrRes = (byte[])db.Execute("VGETATTR", [vectorSetKey, emptyAttrElement]);
+            ClassicAssert.AreEqual(0, emptyAttrRes.Length);
+        }
+
+        [Test]
+        public void VSETATTR_NotFound()
+        {
+            var vectorSetKey = "foo";
+            var elementId1 = new byte[] { 0, 0, 0, 0 };
+            var nonExistentElementId = new byte[] { 9, 9, 9, 9 };
+            var attrData = "test attribute"u8.ToArray();
+
+            // Test not found case - non-existent vector set (RESP3)
+            using var redisResp3 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp3));
+            var dbResp3 = redisResp3.GetDatabase();
+
+            var resp3Result1 = dbResp3.Execute("VSETATTR", [vectorSetKey, elementId1, attrData]);
+            ClassicAssert.IsTrue(resp3Result1.Resp3Type == ResultType.Boolean);
+            ClassicAssert.IsFalse((bool)resp3Result1);
+
+            // Test not found case - non-existent vector set (RESP2)
+            using var redisResp2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var dbResp2 = redisResp2.GetDatabase();
+
+            var resp2Result1 = dbResp2.Execute("VSETATTR", [vectorSetKey, elementId1, attrData]);
+            ClassicAssert.IsTrue(resp2Result1.Resp2Type == ResultType.Integer);
+            ClassicAssert.AreEqual(0, (int)resp2Result1);
+
+            // Create a vector set with first element
+            var res1 = dbResp3.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", elementId1, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Test not found case - non-existent element (RESP3)
+            var resp3Result2 = dbResp3.Execute("VSETATTR", [vectorSetKey, nonExistentElementId, attrData]);
+            ClassicAssert.IsTrue(resp3Result2.Resp3Type == ResultType.Boolean);
+            ClassicAssert.IsFalse((bool)resp3Result2);
+
+            // Test not found case - non-existent element (RESP2)
+            var resp2Result2 = dbResp2.Execute("VSETATTR", [vectorSetKey, nonExistentElementId, attrData]);
+            ClassicAssert.IsTrue(resp2Result2.Resp2Type == ResultType.Integer);
+            ClassicAssert.AreEqual(0, (int)resp2Result2);
+        }
+
+        [Test]
+        public void VSETATTR()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            var vectorSetKey = "foo";
+            var elementId = new byte[] { 0, 0, 0, 0 };
+
+            // Create a vector set with first element (no attribute)
+            var res1 = db.Execute("VADD", ["foo", "VALUES", "3", "1.0", "2.0", "3.0", elementId, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Confirm no attribute initially
+            var res2 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.AreEqual(0, res2.Length);
+
+            // Set initial attribute
+            var attrData1 = "initial attribute"u8.ToArray();
+            var res3 = db.Execute("VSETATTR", [vectorSetKey, elementId, attrData1]);
+            ClassicAssert.IsFalse(res3.IsNull);
+
+            // Verify attribute was set
+            var res4 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.AreEqual(attrData1.Length, res4.Length);
+            ClassicAssert.IsTrue(attrData1.SequenceEqual(res4));
+
+            // Test updating with various attribute sizes
+            int[] attributeSizes = [64, 128, 256, 257, 512, 1024, 16 * 1024, 64 * 1024, 256 * 1024, 512 * 1024];
+
+            for (var i = 0; i < attributeSizes.Length; i++)
+            {
+                var attrSize = attributeSizes[i];
+                var attrData = Enumerable.Repeat((byte)(i + 'A'), attrSize).ToArray();
+
+                // Update attribute using VSETATTR
+                var setRes = db.Execute("VSETATTR", [vectorSetKey, elementId, attrData]);
+                ClassicAssert.IsFalse(setRes.IsNull);
+
+                // Verify updated attribute
+                var getAttrRes = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
                 ClassicAssert.AreEqual(attrSize, getAttrRes.Length, $"Attribute size mismatch for size {attrSize}");
                 ClassicAssert.IsTrue(attrData.SequenceEqual(getAttrRes), $"Attribute content mismatch for size {attrSize}");
             }
 
-            // Test empty string attribute (equivalent to no attribute)
-            var emptyAttrElement = new byte[] { 0, 0, 0, 99 };
-            var res3 = db.Execute("VADD", ["foo", "VALUES", "3", "7.0", "8.0", "9.0", emptyAttrElement, "XPREQ8", "SETATTR", ""]);
-            ClassicAssert.AreEqual(1, (int)res3);
+            // Test setting empty attribute (removes attribute)
+            var res5 = db.Execute("VSETATTR", [vectorSetKey, elementId, Array.Empty<byte>()]);
+            ClassicAssert.IsFalse(res5.IsNull);
 
-            var res4 = (byte[])db.Execute("VGETATTR", [vectorSetKey, emptyAttrElement]);
-            ClassicAssert.AreEqual(0, res4.Length);
+            var res6 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.AreEqual(0, res6.Length);
+
+            // Set attribute again after clearing
+            var attrData2 = "restored attribute"u8.ToArray();
+            var res7 = db.Execute("VSETATTR", [vectorSetKey, elementId, attrData2]);
+            ClassicAssert.IsFalse(res7.IsNull);
+
+            var res8 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.AreEqual(attrData2.Length, res8.Length);
+            ClassicAssert.IsTrue(attrData2.SequenceEqual(res8));
+        }
+
+        [Test]
+        public void VSETATTR_OverflowRejected()
+        {
+            var options = GetOpts(server);
+
+            var overflowSizeBytes = (int)(GarnetServerOptions.ParseSize(options.PageSize, out _) * 2);
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            var vectorSetKey = "foo";
+            var elementId = new byte[] { 0, 0, 0, 0 };
+
+            // Create a simple vector set with one element
+            var res1 = db.Execute("VADD", [vectorSetKey, "VALUES", "3", "1.0", "2.0", "3.0", elementId, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Successful VSETATTR with normal-sized attribute
+            var normalAttribute = "normal attribute"u8.ToArray();
+            var res2 = db.Execute("VSETATTR", [vectorSetKey, elementId, normalAttribute]);
+            ClassicAssert.IsFalse(res2.IsNull);
+
+            // Verify attribute was set
+            var res3 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.IsTrue(normalAttribute.SequenceEqual(res3));
+
+            // Try VSETATTR with oversized attribute - should be rejected
+            var oversizedAttribute = Enumerable.Repeat<byte>(2, overflowSizeBytes).ToArray();
+            var exc = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VSETATTR", [vectorSetKey, elementId, oversizedAttribute]));
+            ClassicAssert.AreEqual("ERR Attribute exceed configured page size", exc.Message);
+
+            // Verify the original attribute is still intact after the failed VSETATTR
+            var res4 = (byte[])db.Execute("VGETATTR", [vectorSetKey, elementId]);
+            ClassicAssert.IsTrue(normalAttribute.SequenceEqual(res4));
         }
 
         [Test]

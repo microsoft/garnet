@@ -364,5 +364,37 @@ namespace Garnet.server
                 return result == VectorManagerResult.OK ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
             }
         }
+
+        /// <summary>
+        /// Set or update the attributes for an element in the VectorSet
+        /// </summary>
+        [SkipLocalsInit]
+        internal unsafe GarnetStatus VectorSetUpdateAttributes(SpanByte key, ArgSlice element, ArgSlice attributes)
+        {
+            parseState.InitializeWithArguments([element, attributes]);
+            var input = new RawStringInput(RespCommand.VSETATTR, ref parseState);
+            Span<byte> indexSpan = stackalloc byte[VectorManager.IndexSizeBytes];
+
+            using (vectorManager.ReadVectorIndex(this, ref key, ref input, indexSpan, out var status))
+            {
+                if (status != GarnetStatus.OK)
+                {
+                    return status;
+                }
+
+                var result = vectorManager.TryUpdateElementAttributes(indexSpan,
+                    element.ReadOnlySpan,
+                    attributes.ReadOnlySpan);
+
+                if (result == VectorManagerResult.OK)
+                {
+                    // On successful attribute update, we need to manually replicate it
+                    vectorManager.ReplicateVectorUpdateAttributes(ref key, ref input, ref basicContext);
+                    return GarnetStatus.OK;
+                }
+
+                return GarnetStatus.NOTFOUND;
+            }
+        }
     }
 }

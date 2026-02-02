@@ -200,6 +200,156 @@ namespace Garnet.test.cluster
         }
 
         [Test]
+        public void BasicVSETATTRReplicates()
+        {
+            const int PrimaryIndex = 0;
+            const int SecondaryIndex = 1;
+            const string Key = nameof(BasicVSETATTRReplicates);
+
+            // Attribute sizes to test including large sizes (512KB+) to verify server-side streaming works
+            // Using IDatabase.Execute() instead of IServer.Execute() to support larger response sizes
+            int[] attributeSizes = [
+                0, 1, 4,
+                //16, 512, 1024, 32 * 1024, 64 * 1024, 512 * 1024
+            ];
+
+            context.CreateInstances(DefaultShards, useTLS: false, enableAOF: true);
+            context.CreateConnection(useTLS: false);
+            _ = context.clusterTestUtils.SimpleSetupCluster(primary_count: 1, replica_count: 1);
+
+            var primary = (IPEndPoint)context.endpoints[PrimaryIndex];
+            var secondary = (IPEndPoint)context.endpoints[SecondaryIndex];
+
+            ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary).Value);
+            ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary).Value);
+
+            var rand = new Random(42);
+
+            // Helper function to generate random printable ASCII attributes
+            byte[] GenerateRandomAsciiAttr(int size) => Enumerable.Range(0, size).Select(_ => (byte)rand.Next('!', '~' + 1)).ToArray();
+
+            // Store element keys, vector data, and their attributes for verification (updated in place)
+            var elements = new (byte[] Elem, byte[] VectorData, byte[] Attr)[attributeSizes.Length];
+
+            // Step 1: Do multiple VADDs with different initial attribute sizes
+            for (var i = 0; i < attributeSizes.Length; i++)
+            {
+                var elem = new byte[4];
+                BinaryPrimitives.WriteInt32LittleEndian(elem, i);
+
+                var vectorData = new byte[75];
+                rand.NextBytes(vectorData);
+
+                var initialAttr = GenerateRandomAsciiAttr(attributeSizes[i]);
+
+                var addRes = (int)context.clusterTestUtils.Execute(primary, "VADD", [Key, "XB8", vectorData, elem, "XPREQ8", "SETATTR", initialAttr]);
+                ClassicAssert.AreEqual(1, addRes);
+
+                // Verify attribute was correctly stored immediately after VADD
+                var attrAfterAdd = (byte[])context.clusterTestUtils.Execute(primary, "VGETATTR", [Key, elem]);
+                ClassicAssert.IsTrue(initialAttr.SequenceEqual(attrAfterAdd), $"Attribute mismatch immediately after VADD for element {i} (size {attributeSizes[i]})");
+
+                elements[i] = (elem, vectorData, initialAttr);
+            }
+
+            // Step 2: Wait for AOF sync
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+
+            var readonlyOnReplica = (string)context.clusterTestUtils.Execute(secondary, "READONLY", []);
+            ClassicAssert.AreEqual("OK", readonlyOnReplica);
+
+            // Step 3: Verify initial attributes on both primary and secondary
+            for (var i = 0; i < elements.Length; i++)
+            {
+                var (elem, _, expectedAttr) = elements[i];
+
+                var primaryAttr = (byte[])context.clusterTestUtils.Execute(primary, "VGETATTR", [Key, elem]);
+                ClassicAssert.IsTrue(expectedAttr.SequenceEqual(primaryAttr), $"Initial attribute mismatch on primary for element {i}");
+
+                var secondaryAttr = (byte[])context.clusterTestUtils.Execute(secondary, "VGETATTR", [Key, elem]);
+                ClassicAssert.IsTrue(expectedAttr.SequenceEqual(secondaryAttr), $"Initial attribute mismatch on secondary for element {i}");
+            }
+
+            // Step 4: Do multiple VSETATTRs with different sizes on each element
+            for (var i = 0; i < elements.Length; i++)
+            {
+                var (elem, vectorData, _) = elements[i];
+
+                // Use a different size for the update (rotate through the sizes)
+                var newAttrSize = attributeSizes[(i + 1) % attributeSizes.Length];
+                var newAttr = GenerateRandomAsciiAttr(newAttrSize);
+
+                var setAttrRes = (string)context.clusterTestUtils.Execute(primary, "VSETATTR", [Key, elem, newAttr]);
+                ClassicAssert.AreEqual("1", setAttrRes, $"VSETATTR failed for element {i}");
+
+                // Check if VGETATTR in the primary immediately works
+                var attrAfterSet = (byte[])context.clusterTestUtils.Execute(primary, "VGETATTR", [Key, elem]);
+                ClassicAssert.IsTrue(newAttr.SequenceEqual(attrAfterSet), $"Attribute mismatch immediately after VSETATTR for element {i} (size {newAttrSize})");
+
+                elements[i] = (elem, vectorData, newAttr);
+            }
+
+            // Step 5: Wait for AOF sync
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+
+            // Step 6: Verify updated attributes on both primary and secondary
+            for (var i = 0; i < elements.Length; i++)
+            {
+                var (elem, _, expectedAttr) = elements[i];
+
+                var primaryAttr = (byte[])context.clusterTestUtils.Execute(primary, "VGETATTR", [Key, elem]);
+                ClassicAssert.IsTrue(expectedAttr.SequenceEqual(primaryAttr), $"Updated attribute mismatch on primary for element {i}");
+
+                var secondaryAttr = (byte[])context.clusterTestUtils.Execute(secondary, "VGETATTR", [Key, elem]);
+                ClassicAssert.IsTrue(expectedAttr.SequenceEqual(secondaryAttr), $"Updated attribute mismatch on secondary for element {i}");
+            }
+
+            // Step 7: Do another rotation of VSETATTRs with different sizes
+            for (var i = 0; i < elements.Length; i++)
+            {
+                var (elem, vectorData, _) = elements[i];
+
+                // Use a different size for this rotation (rotate by 2 positions)
+                var newAttrSize = attributeSizes[(i + 2) % attributeSizes.Length];
+                var newAttr = GenerateRandomAsciiAttr(newAttrSize);
+
+                var setAttrRes = (string)context.clusterTestUtils.Execute(primary, "VSETATTR", [Key, elem, newAttr]);
+                ClassicAssert.AreEqual("1", setAttrRes, $"Second VSETATTR failed for element {i}");
+
+                // Check if VGETATTR in the primary immediately works
+                var attrAfterSet = (byte[])context.clusterTestUtils.Execute(primary, "VGETATTR", [Key, elem]);
+                ClassicAssert.IsTrue(newAttr.SequenceEqual(attrAfterSet), $"Attribute mismatch immediately after second VSETATTR for element {i} (size {newAttrSize})");
+
+                elements[i] = (elem, vectorData, newAttr);
+            }
+
+            // Step 8: Wait for AOF sync and verify with VSIM WITHATTRIBS
+            context.clusterTestUtils.WaitForReplicaAofSync(PrimaryIndex, SecondaryIndex);
+
+            // Final verification: Use VSIM WITHATTRIBS for each element to ensure attributes are returned correctly
+            for (var i = 0; i < elements.Length; i++)
+            {
+                var (expectedElem, vectorData, expectedAttr) = elements[i];
+
+                // Verify on primary
+                var simResPrimary = (byte[][])context.clusterTestUtils.Execute(primary, "VSIM", [Key, "XB8", vectorData, "WITHATTRIBS", "COUNT", "1"]);
+                ClassicAssert.AreEqual(2, simResPrimary.Length, $"VSIM on primary should return 2 elements (elem, attr) for element {i}");
+                ClassicAssert.IsTrue(expectedElem.SequenceEqual(simResPrimary[0]),
+                    $"VSIM WITHATTRIBS element mismatch on primary for element {i}");
+                ClassicAssert.IsTrue(expectedAttr.SequenceEqual(simResPrimary[1]),
+                    $"VSIM WITHATTRIBS attribute mismatch on primary for element {i}");
+
+                // Verify on secondary
+                var simResSecondary = (byte[][])context.clusterTestUtils.Execute(secondary, "VSIM", [Key, "XB8", vectorData, "WITHATTRIBS", "COUNT", "1"]);
+                ClassicAssert.AreEqual(2, simResSecondary.Length, $"VSIM on secondary should return 2 elements (elem, attr) for element {i}");
+                ClassicAssert.IsTrue(expectedElem.SequenceEqual(simResSecondary[0]),
+                    $"VSIM WITHATTRIBS element mismatch on secondary for element {i}");
+                ClassicAssert.IsTrue(expectedAttr.SequenceEqual(simResSecondary[1]),
+                    $"VSIM WITHATTRIBS attribute mismatch on secondary for element {i}");
+            }
+        }
+
+        [Test]
         [TestCase(false)]
         [TestCase(true)]
         public async Task ConcurrentVADDReplicatedVSimsAsync(bool withAttributes)
