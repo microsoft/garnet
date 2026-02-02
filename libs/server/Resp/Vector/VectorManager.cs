@@ -518,7 +518,7 @@ namespace Garnet.server
                     outputDistances.Memory.Dispose();
                 }
 
-                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)));
+                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)), count * sizeof(float));
             }
 
             // Indicate requested # of matches
