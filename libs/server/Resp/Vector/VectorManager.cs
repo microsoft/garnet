@@ -534,7 +534,7 @@ namespace Garnet.server
                     outputIds.Memory.Dispose();
                 }
 
-                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId));
+                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId), count * MinimumSpacePerId);
             }
 
             var found =
