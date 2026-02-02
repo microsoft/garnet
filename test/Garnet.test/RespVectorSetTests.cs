@@ -495,6 +495,12 @@ namespace Garnet.test
             ClassicAssert.IsTrue(res8.Where(static (x, ix) => (ix % 2) == 0).Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
             ClassicAssert.IsFalse(double.IsNaN(double.Parse(Encoding.UTF8.GetString(res8[1]))));
             ClassicAssert.IsFalse(double.IsNaN(double.Parse(Encoding.UTF8.GetString(res8[3]))));
+
+            // Large Count
+            var res9 = (byte[][])db.Execute("VSIM", ["foo", "XB8", byte7, "COUNT", "1000"]);
+            ClassicAssert.AreEqual(2, res9.Length);
+            ClassicAssert.IsTrue(res9.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
+            ClassicAssert.IsTrue(res9.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
         }
 
         [Test]

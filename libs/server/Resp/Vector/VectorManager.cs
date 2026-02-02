@@ -547,8 +547,8 @@ namespace Garnet.server
                     searchExplorationFactor,
                     filter,
                     maxFilteringEffort,
-                    outputIds.AsSpan(),
-                    MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan()),
+                    outputIds,
+                    outputDistances,
                     out var continuation
                 );
 
@@ -621,7 +621,7 @@ namespace Garnet.server
                     outputDistances.Memory.Dispose();
                 }
 
-                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)));
+                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * sizeof(float)), count * sizeof(float));
             }
 
             // Indicate requested # of matches
@@ -637,7 +637,7 @@ namespace Garnet.server
                     outputIds.Memory.Dispose();
                 }
 
-                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId));
+                outputIds = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(count * MinimumSpacePerId), count * MinimumSpacePerId);
             }
 
             var found =
@@ -649,8 +649,8 @@ namespace Garnet.server
                     searchExplorationFactor,
                     filter,
                     maxFilteringEffort,
-                    outputIds.AsSpan(),
-                    MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan()),
+                    outputIds,
+                    outputDistances,
                     out var continuation
                 );
 
