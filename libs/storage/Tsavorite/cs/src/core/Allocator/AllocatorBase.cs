@@ -45,7 +45,7 @@ namespace Tsavorite.core
         where TAllocator : IAllocator<TStoreFunctions>
     {
         /// <summary>The epoch we are operating with</summary>
-        protected readonly LightEpoch epoch;
+        internal readonly LightEpoch epoch;
         /// <summary>Whether we own (and thus must dispose) <see cref="epoch"/></summary>
         private readonly bool ownedEpoch;
 
@@ -80,8 +80,8 @@ namespace Tsavorite.core
         /// exceed this (for example, knowing in advance that large objects will be allocated, the caller can specify a large
         /// <see cref="LogSettings.MemorySize"/> but a small <see cref="LogSettings.PageCount"/>; should there be no large objects, the
         /// memory will be used for additional log pages (until we go over budget and need to trim). Otherwise, there is no <see cref="logSizeTracker"/>,
-        /// and we ensure the actual number of pages does not exceed <see cref="MaxPageCount"/>. This handles the non-powerOf2 inline log size.</summary>
-        internal readonly int MaxPageCount;
+        /// and we ensure the actual number of pages does not exceed <see cref="MaxAllocatedPageCount"/>. This handles the non-powerOf2 inline log size.</summary>
+        internal readonly int MaxAllocatedPageCount;
 
         /// <summary>Page size mask</summary>
         internal readonly int PageSizeMask;
@@ -620,16 +620,16 @@ namespace Tsavorite.core
             // Total HLOG size. Do not set logSettings.MemorySize if it is not already set, as this indicates enforcement of that size.
             if (logSettings.MemorySize > 0)
             {
-                MaxPageCount = (int)(logSettings.MemorySize / PageSize);
-                if (logSettings.PageCount > MaxPageCount)
-                    logger?.LogInformation("Warning: overriding specified PageCount of {logSettingsPageCount} with smaller page count calculated from MemorySize limit divided by PageSize: {pageCount}", logSettings.PageCount, MaxPageCount);
-                BufferSize = (int)NextPowerOf2(MaxPageCount);
+                MaxAllocatedPageCount = (int)(logSettings.MemorySize / PageSize);
+                if (logSettings.PageCount > MaxAllocatedPageCount)
+                    logger?.LogInformation("Warning: overriding specified PageCount of {logSettingsPageCount} with smaller page count calculated from MemorySize limit divided by PageSize: {pageCount}", logSettings.PageCount, MaxAllocatedPageCount);
+                BufferSize = (int)NextPowerOf2(MaxAllocatedPageCount);
             }
             else
             {
                 if (logSettings.PageCount == 0)
                     throw new TsavoriteException($"Log Memory size or PageCount must be specified");
-                MaxPageCount = logSettings.PageCount;
+                MaxAllocatedPageCount = logSettings.PageCount;
                 BufferSize = (int)NextPowerOf2(logSettings.PageCount);
             }
 
@@ -788,7 +788,7 @@ namespace Tsavorite.core
         public int AllocatedPageCount;
 
         /// <summary>High-water mark of the number of memory pages that were allocated in the circular buffer</summary>
-        public int MaxAllocatedPageCount;
+        public int HighWaterAllocatedPageCount;
 
         /// <summary>Maximum memory size in bytes</summary>
         public long MaxMemorySizeBytes => BufferSize * PageSize;
@@ -798,12 +798,12 @@ namespace Tsavorite.core
         protected void IncrementAllocatedPageCount()
         {
             var newAllocatedPageCount = Interlocked.Increment(ref AllocatedPageCount);
-            var currMaxAllocatedPageCount = MaxAllocatedPageCount;
+            var currMaxAllocatedPageCount = HighWaterAllocatedPageCount;
             while (currMaxAllocatedPageCount < newAllocatedPageCount)
             {
-                if (Interlocked.CompareExchange(ref MaxAllocatedPageCount, newAllocatedPageCount, currMaxAllocatedPageCount) == currMaxAllocatedPageCount)
+                if (Interlocked.CompareExchange(ref HighWaterAllocatedPageCount, newAllocatedPageCount, currMaxAllocatedPageCount) == currMaxAllocatedPageCount)
                     return;
-                currMaxAllocatedPageCount = MaxAllocatedPageCount;
+                currMaxAllocatedPageCount = HighWaterAllocatedPageCount;
             }
         }
 
@@ -929,7 +929,7 @@ namespace Tsavorite.core
             if (logSizeTracker is null)
             {
                 var headPage = GetPage(desiredHeadAddress);
-                if (pageIndex - headPage >= MaxPageCount)
+                if (pageIndex - headPage >= MaxAllocatedPageCount)
                 {
                     desiredHeadAddress += PageSize;
                     if (desiredHeadAddress > tailAddress)
@@ -963,7 +963,7 @@ namespace Tsavorite.core
             if (logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimit)
             {
                 var headPage = GetPage(desiredHeadAddress);
-                if (pageIndex - headPage >= MaxPageCount)
+                if (pageIndex - headPage >= MaxAllocatedPageCount)
                 {
                     desiredHeadAddress += PageSize;
                     if (desiredHeadAddress > tailAddress)
@@ -1335,8 +1335,6 @@ namespace Tsavorite.core
                     // will have seen a record below the eviction range as "in mutable region".
                     if (onEvictionObserver is not null)
                         MemoryPageScan(start, end, onEvictionObserver);
-                    if (logSizeTracker is not null)
-                        MemoryPageScan(start, end, logSizeTracker);
 
                     // If we are using a null storage device, we must also shift BeginAddress (leave it in-memory)
                     if (IsNullDevice)

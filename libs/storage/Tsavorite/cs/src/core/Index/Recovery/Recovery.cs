@@ -671,36 +671,10 @@ namespace Tsavorite.core
             return true;
         }
 
-        /// <summary>
-        /// This method ensures that before 'pagesToRead' number of pages are read into memory, any previously allocated pages 
-        /// that would cause total number of pages in memory to go beyond usableCapacity are freed. This is to ensure that 
-        /// memory size constraint is maintained during recovery.
-        /// Illustration with capacity 32, usableCapacity 20, pagesToRead 2:
-        ///     beg: startPage - 32
-        ///     end: startPage - 18
-        /// We free these 14 pages, leaving 18 allocated, and then read 2, which fills up usableCapacity.
-        /// The beg, end can only be zero on the first pass through the buffer, as the page number continuously increases 
-        /// </summary>
-        private void FreePagesBeyondUsableCapacity(long startPage, int capacity, int usableCapacity, int pagesToRead, RecoveryStatus recoveryStatus)
-        {
-            var beg = Math.Max(0, startPage - capacity);
-            var end = Math.Max(0, startPage - (usableCapacity - pagesToRead));
-
-            for (var page = beg; page < end; page++)
-            {
-                var pageIndex = hlogBase.GetPageIndexForPage(page);
-                if (hlogBase.IsAllocated(pageIndex))
-                {
-                    recoveryStatus.WaitFlush(pageIndex);
-                    hlogBase.EvictPageForRecovery(page);
-                }
-            }
-        }
-
         private void ReadPagesWithMemoryConstraint(long endAddress, RecoveryStatus recoveryStatus, long page, long endPage, int numPagesToRead)
         {
             // Before reading in additional pages, trim memory if needed to make room for the inline space (we can't know the heap size yet)
-            TrimLogMemorySize(recoveryStatus, tailPage: page, numPagesToRead);
+            _ = TrimLogMemorySize(recoveryStatus, tailPage: page, numPagesToRead);
 
             // Set all page read statuses to Pending
             for (var p = page; p < endPage; p++)
@@ -723,7 +697,7 @@ namespace Tsavorite.core
             // If no log size tracker, just ensure MaxPageCount is not exceeded.
             if (hlogBase.logSizeTracker is null)
             {
-                int pagesAllowed = hlogBase.MaxPageCount - hlogBase.AllocatedPageCount;
+                var pagesAllowed = hlogBase.MaxAllocatedPageCount - hlogBase.AllocatedPageCount;
                 if (numPagesToRead > pagesAllowed)
                 {
                     evictPageCount = numPagesToRead - pagesAllowed;
@@ -733,23 +707,21 @@ namespace Tsavorite.core
                 return false;
             }
 
-            // See how many pages we need to evict. Do not evict the current page.
-            var fromAddress = hlogBase.GetLogicalAddressOfStartOfPage(startPage);
-            var untilAddress = hlogBase.GetLogicalAddressOfStartOfPage(startPage + hlogBase.AllocatedPageCount - 2);
-            return hlogBase.logSizeTracker.ResizeForRecoveryIfNeeded(fromAddress, untilAddress, requiredSize: numPagesToRead * hlogBase.PageSize, cancellationToken, out evictPageCount);
+            // We have a log size tracker, so we'll stop evictPageCount when we are at the minimum (the caller will also test logSizeTracker.IsBeyondSizeLimit);
+            evictPageCount = hlogBase.AllocatedPageCount - 2;
+            return hlogBase.logSizeTracker.IsBeyondSizeLimit;
         }
 
         private long TrimLogMemorySize(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead = 0)
         {
-            long lastFreedPage = NoPageFreed;
-            if (hlogBase.logSizeTracker is null)
-                return lastFreedPage;
-
+            var lastFreedPage = NoPageFreed;
             if (GetEvictionPageRange(tailPage, numPagesToRead, cancellationToken: default, out long startPage, out int evictPageCount))
             {
                 // Evict pages one at a time
                 for (var ii = 0; ii < evictPageCount; ii++)
                 {
+                    if (hlogBase.logSizeTracker is not null && !hlogBase.logSizeTracker.IsBeyondSizeLimit)
+                        break;
                     var page = startPage + ii;
                     var pageIndex = hlogBase.GetPageIndexForPage(page);
                     if (hlogBase.IsAllocated(pageIndex))
@@ -766,15 +738,14 @@ namespace Tsavorite.core
 
         private async Task<long> TrimLogMemorySizeAsync(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead = 0, CancellationToken cancellationToken = default)
         {
-            long lastFreedPage = NoPageFreed;
-            if (hlogBase.logSizeTracker is null)
-                return lastFreedPage;
-
+            var lastFreedPage = NoPageFreed;
             if (GetEvictionPageRange(tailPage, numPagesToRead, cancellationToken: default, out long startPage, out int evictPageCount))
             {
                 // Evict pages one at a time
                 for (var ii = 0; ii < evictPageCount; ii++)
                 {
+                    if (hlogBase.logSizeTracker is not null && !hlogBase.logSizeTracker.IsBeyondSizeLimit)
+                        break;
                     var page = startPage + ii;
                     var pageIndex = hlogBase.GetPageIndexForPage(page);
                     if (hlogBase.IsAllocated(pageIndex))

@@ -10,6 +10,7 @@ using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using StackExchange.Redis;
 using Tsavorite.core;
+using static Tsavorite.core.Utility;
 
 namespace Garnet.test
 {
@@ -27,7 +28,7 @@ namespace Garnet.test
         private readonly bool useReviv;
 
         // The HLOG will always have at least two pages allocated.
-        const int MinLogAllocatedPageCount = 2;
+        internal const int MinLogAllocatedPageCount = 2;
 
         public RespConfigTests(bool useReviv)
         {
@@ -316,21 +317,17 @@ namespace Garnet.test
             Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));
 
             // Insert records until head address moves
-            prevHead = info.HeadAddress;
-            prevTail = info.TailAddress;
-
             // Precondition: We have too much in memory for the smallSize and must evict.
             Assert.That(prevTail - prevHead, Is.GreaterThan(tracker.TargetDeltaRange.high));
 
-            // Wait for the head address to move forward. This may be done in iterations because the ReadOnlyAddress
+            // Wait for the logSizeTracker to stabilize. This may be done in iterations because the ReadOnlyAddress
             // may block the first page-eviction loop iteration(s).
             while (tracker.IsBeyondSizeLimit)
-            {
                 Thread.Sleep(1000);
-                info = TestUtils.GetStoreAddressInfo(garnetServer);
-                prevHead = info.HeadAddress;
-                prevTail = info.TailAddress;
-            }
+
+            info = TestUtils.GetStoreAddressInfo(garnetServer);
+            prevHead = info.HeadAddress;
+            prevTail = info.TailAddress;
 
             // Verify that records were inserted up to the configured memory size limit.
             // We may have overflowed by multiple pages.
@@ -375,8 +372,19 @@ namespace Garnet.test
 
             var currMemorySize = TestUtils.GetEffectiveMemorySize(initMemorySize, pageSize, out var parsedPageSize);
 
+            var store = server.Provider.StoreWrapper.store;
+            var tracker = store.Log.LogSizeTracker;
+            Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));
+
             int lastIdxSecondRound;
             int keysInsertedFirstRound;
+            
+            // These are outside the individual blocks for debugging
+            var lastIdxFirstRound = -1;
+            var allocatedPagesFirstRound = -1;
+            var allocatedPagesSecondRound = -1;
+            long highTarget1 = -1, lowTarget1 = -1;
+            int maxAllocatedPageCount1 = -1;
 
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
@@ -405,11 +413,11 @@ namespace Garnet.test
                     info = TestUtils.GetStoreAddressInfo(garnetServer);
                 }
 
-                var lastIdxFirstRound = i - 1;
+                lastIdxFirstRound = i - 1;
 
                 // Verify that records were inserted up to the configured memory size limit
-                Assert.That(prevTail, Is.LessThanOrEqualTo(currMemorySize));
-                Assert.That(currMemorySize - prevTail, Is.LessThanOrEqualTo(parsedPageSize));
+                // We may have overflowed by multiple pages.
+                Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(tracker.TargetDeltaRange.high));
 
                 // Find the first key index that still exists in the server
                 ClassicAssert.IsTrue(db.KeyExists($"key{lastIdxFirstRound:00000}"));
@@ -419,7 +427,12 @@ namespace Garnet.test
 
                 // Record the number of keys inserted in the first round
                 keysInsertedFirstRound = lastIdxFirstRound + 1 - c;
+                allocatedPagesFirstRound = store.hlogBase.AllocatedPageCount;
 
+                (highTarget1, lowTarget1) = tracker.TargetDeltaRange;
+                maxAllocatedPageCount1 = tracker.logAccessor.allocatorBase.MaxAllocatedPageCount;
+
+                ////////////////////////////////////////////////////////
                 // Try to set memory size to a larger value than current
                 var result = db.Execute("CONFIG", "SET", option, largerSize);
                 ClassicAssert.AreEqual("OK", result.ToString());
@@ -440,8 +453,9 @@ namespace Garnet.test
                 }
 
                 lastIdxSecondRound = i - 1;
+                allocatedPagesSecondRound = store.hlogBase.AllocatedPageCount;
 
-                // Verify that memory is fully utilized
+                 // Verify that memory is fully utilized
                 Assert.That(prevTail - prevHead, Is.LessThanOrEqualTo(currMemorySize));
                 Assert.That(currMemorySize - (prevTail - prevHead), Is.LessThanOrEqualTo(parsedPageSize));
 
@@ -451,6 +465,10 @@ namespace Garnet.test
                     Thread.Sleep(10);
             }
 
+            // Doing this here so lastIdxFirstRound remains visible for debugging without getting a warning.
+            Assert.That(lastIdxSecondRound, Is.GreaterThan(lastIdxFirstRound));
+
+            ///////////////////////////////////////////////////////////
             // Restart server with initial memory size and recover data
             server.Dispose(deleteDir: false);
             server = TestUtils.CreateGarnetServer(null,
@@ -461,6 +479,22 @@ namespace Garnet.test
                 tryRecover: true);
             server.Start();
 
+            store = server.Provider.StoreWrapper.store;
+            tracker = store.Log.LogSizeTracker;
+            var allocatedPagesRestore = store.hlogBase.AllocatedPageCount;
+
+            var (highTargetRestore, lowTargetRestore) = tracker.TargetDeltaRange;
+            Assert.That(highTargetRestore, Is.EqualTo(highTarget1));
+            Assert.That(lowTargetRestore, Is.EqualTo(lowTarget1));
+            var maxAllocatedPageCount2 = tracker.logAccessor.allocatorBase.MaxAllocatedPageCount;
+            Assert.That(maxAllocatedPageCount2, Is.EqualTo(maxAllocatedPageCount1));
+
+            // Recovery and insertion don't track sizes exactly the same way with logSizeTracker enabled, so this is not entirely deterministic; just verify the ranges.
+            Assert.That(allocatedPagesRestore, Is.GreaterThanOrEqualTo(allocatedPagesFirstRound));
+            Assert.That(allocatedPagesRestore, Is.LessThan(allocatedPagesSecondRound));
+            Assert.That(allocatedPagesRestore, Is.GreaterThanOrEqualTo(lowTargetRestore / store.Log.allocatorBase.PageSize));
+            Assert.That(allocatedPagesRestore, Is.LessThanOrEqualTo(RoundUp(highTargetRestore, store.Log.allocatorBase.PageSize) / store.Log.allocatorBase.PageSize));
+
             using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
             {
                 var db = redis.GetDatabase(0);
@@ -470,8 +504,12 @@ namespace Garnet.test
                 while (c > 0 && db.KeyExists($"key{--c:00000}"))
                     continue;
 
-                // Verify that the number of existing keys matches the count of inserted keys in the first round of insertions
-                ClassicAssert.AreEqual(keysInsertedFirstRound, lastIdxSecondRound + 1 - c);
+                // Verify the head/tail addresses are within range and that the number of existing keys matches the head/tail range. We should have two keys per page.
+                var addressRange = store.Log.TailAddress - store.Log.HeadAddress;
+                var addressRangePages = RoundUp(addressRange, store.Log.allocatorBase.PageSize) / store.Log.allocatorBase.PageSize;
+                Assert.That(addressRange, Is.LessThanOrEqualTo(highTargetRestore));
+                Assert.That(lastIdxSecondRound + 1 - c, Is.LessThanOrEqualTo(allocatedPagesRestore * 2));
+                Assert.That(lastIdxSecondRound + 1 - c, Is.EqualTo(addressRangePages * 2));
 
                 // Verify that all previous keys are not present in the database
                 while (c > 0)
@@ -623,7 +661,7 @@ namespace Garnet.test
 
         /// <summary>
         /// This test verifies that dynamically changing the object store heap size configuration using CONFIG SET
-        /// incurs a reduction in the empty page count of the object store.
+        /// incurs a reduction in the used memory of the store.
         /// </summary>
         /// <param name="largerSize">Heap size larger than configured size</param>
         [Test]
@@ -634,10 +672,14 @@ namespace Garnet.test
             var db = redis.GetDatabase(0);
             var option = "memory";
 
-            // Verify that initial empty page count is zero
+            // Verify that initial allocated page count is the minimum (before we've added anything)
             var store = server.Provider.StoreWrapper.store;
-            var initialApc = 3 * 1024;  // Based on initial config, AllocatedPageCount should be this
+            var tracker = store.Log.LogSizeTracker;
+            var initialApc = RespConfigTests.MinLogAllocatedPageCount;
             ClassicAssert.AreEqual(initialApc, store.Log.AllocatedPageCount);
+
+            // TODO make this larger. Assert that HA has advanced before reaching MaxAllocatedPageCount
+
 
             // Add objects to store to fill up heap
             var values = new RedisValue[16];
@@ -645,14 +687,11 @@ namespace Garnet.test
                 values[i] = "x";
 
             for (var i = 0; i < 8; i++)
-            {
-                var key = $"key{i++:00000}";
-                _ = db.ListRightPush(key, values);
-            }
+                _ = db.ListRightPush($"key{i++:00000}", values);
 
-            // Wait for log size tracker
-            var sizeTrackerDelay = TimeSpan.FromSeconds(LogSizeTracker<StoreFunctions, StoreAllocator>.ResizeTaskDelaySeconds + 2);
-            Thread.Sleep(sizeTrackerDelay);
+            // Wait for the logSizeTracker to stabilize.
+            while (tracker.IsBeyondSizeLimit)
+                Thread.Sleep(1000);
 
             // Verify that allocated page count has decreased
             ClassicAssert.Less(store.Log.AllocatedPageCount, initialApc);
@@ -660,14 +699,14 @@ namespace Garnet.test
 
             // TODO verify that the HeadAddress has moved
 
+            //////////////////////////////////////////////////////
             // Try to set heap size to a larger value than current
             var result = db.Execute("CONFIG", "SET", option, largerSize);
             ClassicAssert.AreEqual("OK", result.ToString());
 
-            // Wait for log size tracker
-            Thread.Sleep(sizeTrackerDelay);
+            // There is no need to wait for the logSizeTracker to stabilize, as it will simply increase the page count.
 
-            // Verify that empty page count has decreased
+            // Verify that MaxAllocatedPageCount has increased.
             ClassicAssert.Less(store.Log.AllocatedPageCount, prevApc);
         }
     }
