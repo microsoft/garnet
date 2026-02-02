@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -101,8 +103,8 @@ namespace Garnet.server
             int searchExplorationFactor,
             ReadOnlySpan<byte> filter,
             int maxFilteringEffort,
-            Span<byte> outputIds,
-            Span<float> outputDistances,
+            SpanByteAndMemory outputIds,
+            SpanByteAndMemory outputDistances,
             out nint continuation
         )
         {
@@ -125,34 +127,72 @@ namespace Garnet.server
             var filter_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(filter));
             var filter_len = filter.Length;
 
-            var output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds));
-            var output_ids_len = outputIds.Length;
+            void* output_ids;
+            void* output_distances;
 
-            var output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances));
-            var output_distances_len = outputDistances.Length;
+            GCHandle? outputIdsHandle = null;
+            GCHandle? outputDistancesHandle = null;
+            try
+            {
+                if (!outputIds.IsSpanByte)
+                {
+                    var getRes = MemoryMarshal.TryGetArray<byte>(outputIds.Memory.Memory, out var arrSeg);
+                    Debug.Assert(getRes, "Should always be able to get array to pin");
 
+                    outputIdsHandle = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
+                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(arrSeg.Array));
+                }
+                else
+                {
+                    outputIdsHandle = null;
+                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds.AsSpan()));
+                }
 
-            continuation = 0;
-            ref var continuationRef = ref continuation;
-            var continuationAddr = (nint)Unsafe.AsPointer(ref continuationRef);
+                var output_ids_len = outputIds.Length;
 
-            return NativeDiskANNMethods.search_vector(
-                context,
-                index,
-                vectorType,
-                (nint)vector_data,
-                (nuint)vector_len,
-                delta,
-                searchExplorationFactor,
-                (nint)filter_data,
-                (nuint)filter_len,
-                (nuint)maxFilteringEffort,
-                (nint)output_ids,
-                (nuint)output_ids_len,
-                (nint)output_distances,
-                (nuint)output_distances_len,
-                continuationAddr
-            );
+                if (!outputDistances.IsSpanByte)
+                {
+                    var getRes = MemoryMarshal.TryGetArray<byte>(outputDistances.Memory.Memory, out var arrSeg);
+                    Debug.Assert(getRes, "Should always be able to get array to pin");
+
+                    outputDistancesHandle = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
+                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(arrSeg.Array));
+                }
+                else
+                {
+                    outputDistancesHandle = null;
+                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances.AsSpan()));
+                }
+
+                var output_distances_len = outputDistances.Length / sizeof(float);
+
+                continuation = 0;
+                ref var continuationRef = ref continuation;
+                var continuationAddr = (nint)Unsafe.AsPointer(ref continuationRef);
+
+                return NativeDiskANNMethods.search_vector(
+                    context,
+                    index,
+                    vectorType,
+                    (nint)vector_data,
+                    (nuint)vector_len,
+                    delta,
+                    searchExplorationFactor,
+                    (nint)filter_data,
+                    (nuint)filter_len,
+                    (nuint)maxFilteringEffort,
+                    (nint)output_ids,
+                    (nuint)output_ids_len,
+                    (nint)output_distances,
+                    (nuint)output_distances_len,
+                    continuationAddr
+                );
+            }
+            finally
+            {
+                outputIdsHandle?.Free();
+                outputDistancesHandle?.Free();
+            }
         }
 
         public int SearchElement(
@@ -163,8 +203,8 @@ namespace Garnet.server
             int searchExplorationFactor,
             ReadOnlySpan<byte> filter,
             int maxFilteringEffort,
-            Span<byte> outputIds,
-            Span<float> outputDistances,
+            SpanByteAndMemory outputIds,
+            SpanByteAndMemory outputDistances,
             out nint continuation
         )
         {
@@ -174,32 +214,71 @@ namespace Garnet.server
             var filter_data = Unsafe.AsPointer(ref MemoryMarshal.GetReference(filter));
             var filter_len = filter.Length;
 
-            var output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds));
-            var output_ids_len = outputIds.Length;
+            void* output_ids;
+            void* output_distances;
 
-            var output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances));
-            var output_distances_len = outputDistances.Length;
+            GCHandle? outputIdsHandle = null;
+            GCHandle? outputDistancesHandle = null;
+            try
+            {
+                if (!outputIds.IsSpanByte)
+                {
+                    var getRes = MemoryMarshal.TryGetArray<byte>(outputIds.Memory.Memory, out var arrSeg);
+                    Debug.Assert(getRes, "Should always be able to get array to pin");
 
-            continuation = 0;
-            ref var continuationRef = ref continuation;
-            var continuationAddr = (nint)Unsafe.AsPointer(ref continuationRef);
+                    outputIdsHandle = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
+                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(arrSeg.Array));
+                }
+                else
+                {
+                    outputIdsHandle = null;
+                    output_ids = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputIds.AsSpan()));
+                }
 
-            return NativeDiskANNMethods.search_element(
-                context,
-                index,
-                (nint)id_data,
-                (nuint)id_len,
-                delta,
-                searchExplorationFactor,
-                (nint)filter_data,
-                (nuint)filter_len,
-                (nuint)maxFilteringEffort,
-                (nint)output_ids,
-                (nuint)output_ids_len,
-                (nint)output_distances,
-                (nuint)output_distances_len,
-                continuationAddr
-            );
+                var output_ids_len = outputIds.Length;
+
+                if (!outputDistances.IsSpanByte)
+                {
+                    var getRes = MemoryMarshal.TryGetArray<byte>(outputDistances.Memory.Memory, out var arrSeg);
+                    Debug.Assert(getRes, "Should always be able to get array to pin");
+
+                    outputDistancesHandle = GCHandle.Alloc(arrSeg.Array, GCHandleType.Pinned);
+                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(arrSeg.Array));
+                }
+                else
+                {
+                    outputDistancesHandle = null;
+                    output_distances = Unsafe.AsPointer(ref MemoryMarshal.GetReference(outputDistances.AsSpan()));
+                }
+
+                var output_distances_len = outputDistances.Length / sizeof(float);
+
+                continuation = 0;
+                ref var continuationRef = ref continuation;
+                var continuationAddr = (nint)Unsafe.AsPointer(ref continuationRef);
+
+                return NativeDiskANNMethods.search_element(
+                    context,
+                    index,
+                    (nint)id_data,
+                    (nuint)id_len,
+                    delta,
+                    searchExplorationFactor,
+                    (nint)filter_data,
+                    (nuint)filter_len,
+                    (nuint)maxFilteringEffort,
+                    (nint)output_ids,
+                    (nuint)output_ids_len,
+                    (nint)output_distances,
+                    (nuint)output_distances_len,
+                    continuationAddr
+                );
+            }
+            finally
+            {
+                outputIdsHandle?.Free();
+                outputDistancesHandle?.Free();
+            }
         }
 
         public int ContinueSearch(ulong context, nint index, nint continuation, Span<byte> outputIds, Span<float> outputDistances, out nint newContinuation)
