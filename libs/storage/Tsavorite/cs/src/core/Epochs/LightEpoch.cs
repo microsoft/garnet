@@ -439,7 +439,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Try to acquire an entry by probing startOffset1, startOffset2 (if set), 
+        /// Try to acquire an entry by probing startOffset1, startOffset2, 
         /// then circling twice around the epoch table.
         /// </summary>
         /// <returns>True if entry was acquired, false if table is full</returns>
@@ -483,6 +483,8 @@ namespace Tsavorite.core
                 }
             }
 
+            // Note: Metadata.startOffset2 should now be back to where it started because
+            // we circled the entire table twice.
             entry = 0;
             return false;
         }
