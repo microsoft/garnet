@@ -4,6 +4,7 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -481,5 +482,10 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal static string GetCurrentMethodName([CallerMemberName] string memberName = "") => memberName;
+
+        /// <summary>Throw Tsavorite exception with message. We use a method wrapper so that the caller method can execute inlined.</summary>
+        [DoesNotReturn]
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal static void ThrowTsavoriteException(string message) => throw new TsavoriteException(message);
     }
 }

@@ -29,7 +29,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>The pages of the log, containing object storage. In parallel with AllocatorBase.pagePointers</summary>
-        internal ObjectPage[] pages;
+        internal ObjectPage[] objectPages;
 
         /// <summary>The position information for the next write to the object log.</summary>
         ObjectLogFilePositionInfo objectLogTail;
@@ -77,9 +77,9 @@ namespace Tsavorite.core
                 throw new TsavoriteException($"{nameof(settings.LogSettings.ObjectLogSegmentSizeBits)} must be between {LogSettings.kMinObjectLogSegmentSizeBits} and {LogSettings.kMaxSegmentSizeBits}");
             objectLogTail = new(0, settings.LogSettings.ObjectLogSegmentSizeBits);
 
-            pages = new ObjectPage[BufferSize];
+            objectPages = new ObjectPage[BufferSize];
             for (var ii = 0; ii < BufferSize; ii++)
-                pages[ii] = new();
+                objectPages[ii] = new();
         }
 
         internal int OverflowPageCount => freePagePool.Count;
@@ -103,17 +103,13 @@ namespace Tsavorite.core
             if (freePagePool.TryGet(out var item))
             {
                 pagePointers[index] = item.pointer;
-                pages[index] = item.value;
+                objectPages[index] = item.value;
             }
             else
             {
                 // No free pages are available so allocate new
-                var adjustedSize = PageSize + 2 * sectorSize;
-                byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
-                long p = (long)Unsafe.AsPointer(ref tmp[0]);
-                pagePointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
-                values[index] = tmp;
-                pages[index] = new();
+                AllocatePinnedPageArray(index);
+                objectPages[index] = new();
             }
             PageHeader.Initialize(pagePointers[index]);
         }
@@ -126,7 +122,7 @@ namespace Tsavorite.core
                 _ = freePagePool.TryAdd(new()
                 {
                     pointer = pagePointers[index],
-                    value = pages[index]
+                    value = objectPages[index]
                 });
                 pagePointers[index] = default;
                 _ = Interlocked.Decrement(ref AllocatedPageCount);
@@ -137,14 +133,14 @@ namespace Tsavorite.core
         internal LogRecord CreateLogRecord(long logicalAddress) => CreateLogRecord(logicalAddress, GetPhysicalAddress(logicalAddress));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap);
+        internal LogRecord CreateLogRecord(long logicalAddress, long physicalAddress) => new(physicalAddress, objectPages[GetPageIndexForAddress(logicalAddress)].objectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal LogRecord CreateRemappedLogRecordOverPinnedTransientMemory(long logicalAddress, long physicalAddress)
-            => LogRecord.CreateRemappedOverPinnedTransientMemory(physicalAddress, pages[GetPageIndexForAddress(logicalAddress)].objectIdMap, transientObjectIdMap);
+            => LogRecord.CreateRemappedOverPinnedTransientMemory(physicalAddress, objectPages[GetPageIndexForAddress(logicalAddress)].objectIdMap, transientObjectIdMap);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal ObjectIdMap GetObjectIdMap(long logicalAddress) => pages[GetPageIndexForAddress(logicalAddress)].objectIdMap;
+        internal ObjectIdMap GetObjectIdMap(long logicalAddress) => objectPages[GetPageIndexForAddress(logicalAddress)].objectIdMap;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void InitializeRecord(ReadOnlySpan<byte> key, long logicalAddress, in RecordSizeInfo sizeInfo, ref LogRecord logRecord)
@@ -263,7 +259,7 @@ namespace Tsavorite.core
         /// </summary>
         public override void Dispose()
         {
-            var localValues = Interlocked.Exchange(ref pages, null);
+            var localValues = Interlocked.Exchange(ref objectPages, null);
             if (localValues != null)
             {
                 freePagePool.Dispose();
@@ -388,7 +384,7 @@ namespace Tsavorite.core
 
         internal void FreePage(long page)
         {
-            pages[page % BufferSize].objectIdMap.Clear();
+            objectPages[page % BufferSize].objectIdMap.Clear();
 
             ClearPage(page, 0);
 
@@ -454,7 +450,7 @@ namespace Tsavorite.core
             }
 
             Debug.Assert(asyncResult.page == flushPage, $"asyncResult.page {asyncResult.page} should equal flushPage {flushPage}");
-            var allocatorPage = pages[flushPage % BufferSize];
+            var allocatorPage = objectPages[flushPage % BufferSize];
 
             // numBytesToWrite is calculated from start and end logical addresses, either for the full page or a subset of records (aligned to start and end of record boundaries),
             // in the allocator page (including the objectId space for Overflow and Heap Objects). Note: "Aligned" in this discussion refers to sector (as opposed to record) alignment.
@@ -513,7 +509,7 @@ namespace Tsavorite.core
                 // not change record sizes, so the logicalAddress space is unchanged. Also, we will not advance HeadAddress until this flush is complete
                 // and has updated FlushedUntilAddress, so we don't have to worry about the page being yanked out from underneath us (and Objects
                 // won't be disposed before we're done). TODO: Loop on successive subsets of the page's records to make this initial copy buffer smaller.
-                var objectIdMap = pages[flushPage % BufferSize].objectIdMap;
+                var objectIdMap = objectPages[flushPage % BufferSize].objectIdMap;
                 srcBuffer = bufferPool.Get(alignedBufferSize);
                 asyncResult.freeBuffer1 = srcBuffer;
 
@@ -728,7 +724,7 @@ namespace Tsavorite.core
                 var logReader = new ObjectLogReader<TStoreFunctions>(result.readBuffers, storeFunctions);
                 logReader.OnBeginReadRecords(startPosition, totalBytesToRead);
 
-                var objectIdMapToUse = result.isForRecovery ? pages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
+                var objectIdMapToUse = result.isForRecovery ? objectPages[result.page % BufferSize].objectIdMap : transientObjectIdMap;
 
                 while (recordAddress < endAddress)
                 {

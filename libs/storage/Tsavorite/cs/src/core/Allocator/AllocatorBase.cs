@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -122,7 +121,7 @@ namespace Tsavorite.core
         /// <summary>
         /// Array of pages kept to ensure the pinned pages are not garbage collected.
         /// </summary>
-        protected readonly byte[][] values;
+        protected readonly byte[][] pageArrays;
 
         #endregion
 
@@ -663,7 +662,7 @@ namespace Tsavorite.core
 
             if (BufferSize > 0)
             {
-                values = new byte[BufferSize][];
+                pageArrays = new byte[BufferSize][];
                 var bufferSizeInBytes = (nuint)RoundUp(sizeof(long*) * BufferSize, Constants.kCacheLineBytes);
                 pagePointers = (long*)NativeMemory.AlignedAlloc(bufferSizeInBytes, Constants.kCacheLineBytes);
                 NativeMemory.Clear(pagePointers, bufferSizeInBytes);
@@ -743,6 +742,16 @@ namespace Tsavorite.core
                     RemoveSegment(s);
                 }
             }
+        }
+
+        /// <summary>Allocate a pinned byte[] for the page at <paramref name="index"/></summary>
+        protected void AllocatePinnedPageArray(int index)
+        {
+            var adjustedSize = PageSize + 2 * sectorSize;
+            byte[] tmp = GC.AllocateArray<byte>(adjustedSize, true);
+            long p = (long)Unsafe.AsPointer(ref tmp[0]);
+            pagePointers[index] = (p + (sectorSize - 1)) & ~((long)sectorSize - 1);
+            pageArrays[index] = tmp;
         }
 
         /// <summary>Initialize allocator</summary>
@@ -976,17 +985,6 @@ namespace Tsavorite.core
                 throw;
             }
         }
-
-        /// <summary>
-        /// Throw Tsavorite exception with message. We use a method wrapper so that
-        /// the caller method can execute inlined.
-        /// </summary>
-        /// <param name="message"></param>
-        /// <exception cref="TsavoriteException"></exception>
-        [DoesNotReturn]
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        static void ThrowTsavoriteException(string message)
-            => throw new TsavoriteException(message);
 
         /// <summary>
         /// Whether we need to shift addresses when turning the page.

@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
@@ -1265,13 +1264,6 @@ namespace Tsavorite.core
             var eTagStr = Info.HasETag ? ETag.ToString() : "na";
             var expirStr = Info.HasExpiration ? Expiration.ToString() : "na";
             return $"ri {Info} | hdr: {dataHeader.ToString(keyString, valueString)} | OIDs k:{keyOid} v:{valOid} | ETag {eTagStr} Expir {expirStr}";
-        }
-
-        [DoesNotReturn]
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        static void ThrowTsavoriteException(string str)
-        {
-            throw new TsavoriteException(str);
         }
     }
 }

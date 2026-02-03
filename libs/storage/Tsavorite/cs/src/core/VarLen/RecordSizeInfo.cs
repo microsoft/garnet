@@ -2,8 +2,6 @@
 // Licensed under the MIT license.
 
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
-using System.Runtime.CompilerServices;
 
 namespace Tsavorite.core
 {
@@ -130,16 +128,5 @@ namespace Tsavorite.core
             var valString = ValueIsInline ? "inl" : (ValueIsObject ? "obj" : "ovf");
             return $"[{FieldInfo}] | Key::{keyString}, Val::{valString}, ActRecSize {ActualInlineRecordSize}, AllocRecSize {AllocatedInlineRecordSize}, OptSize {OptionalSize}";
         }
-
-        /// <summary>
-        /// Throw Tsavorite exception with message. We use a method wrapper so that
-        /// the caller method can execute inlined.
-        /// </summary>
-        /// <param name="message"></param>
-        /// <exception cref="TsavoriteException"></exception>
-        [DoesNotReturn]
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        static void ThrowTsavoriteException(string message)
-            => throw new TsavoriteException(message);
     }
 }
