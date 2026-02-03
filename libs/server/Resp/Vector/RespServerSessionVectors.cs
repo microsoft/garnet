@@ -675,7 +675,7 @@ namespace Garnet.server
                     {
                         if (truth)
                         {
-
+                            return AbortWithErrorMessage("TRUTH specified multiple times");
                         }
 
                         // TODO: should we implement TRUTH?

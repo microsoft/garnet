@@ -833,7 +833,6 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary1).Value);
 
             var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var primary1Id = context.clusterTestUtils.ClusterMyId(primary1);
 
             var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
@@ -1319,7 +1318,6 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary1).Value);
 
             var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var primary1Id = context.clusterTestUtils.ClusterMyId(primary1);
 
             var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
@@ -1491,7 +1489,6 @@ namespace Garnet.test.cluster
             ClassicAssert.AreEqual("master", context.clusterTestUtils.RoleCommand(primary1).Value);
 
             var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-            var primary1Id = context.clusterTestUtils.ClusterMyId(primary1);
 
             var slots = context.clusterTestUtils.ClusterSlots(primary0);
 
@@ -1646,7 +1643,6 @@ namespace Garnet.test.cluster
                 ClassicAssert.AreEqual("slave", context.clusterTestUtils.RoleCommand(secondary1).Value);
 
                 var primary0Id = context.clusterTestUtils.ClusterMyId(primary0);
-                var primary1Id = context.clusterTestUtils.ClusterMyId(primary1);
 
                 var slots = context.clusterTestUtils.ClusterSlots(primary0);
 

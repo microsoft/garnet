@@ -170,8 +170,6 @@ namespace Garnet.server
             keyWithNamespace.SetNamespaceInPayload(0);
             key.AsReadOnlySpan().CopyTo(keyWithNamespace.AsSpan());
 
-            Span<byte> dummyBytes = stackalloc byte[4];
-
             var res = context.Delete(ref keyWithNamespace);
 
             if (res.IsPending)
@@ -407,8 +405,6 @@ namespace Garnet.server
             // Actually apply a replicated VADD
             static unsafe void ApplyVectorSetAdd(VectorManager self, StorageSession storageSession, VADDReplicationState state, ref SessionParseState reusableParseState)
             {
-                ref var context = ref storageSession.basicContext;
-
                 var (keyBytes, dims, reduceDims, valueType, valuesBytes, elementBytes, quantizer, buildExplorationFactor, attributesBytes, numLinks, distanceMetric) = state;
                 try
                 {
@@ -425,7 +421,6 @@ namespace Garnet.server
                         var attributes = SpanByte.FromPinnedPointer(attributesPtr, attributesBytes.Length);
 
                         var indexBytes = stackalloc byte[IndexSizeBytes];
-                        SpanByteAndMemory indexConfig = new(indexBytes, IndexSizeBytes);
 
                         var dimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref dims, 1)));
                         var reduceDimsArg = ArgSlice.FromPinnedSpan(MemoryMarshal.Cast<uint, byte>(MemoryMarshal.CreateSpan(ref reduceDims, 1)));

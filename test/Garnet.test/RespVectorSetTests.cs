@@ -409,8 +409,6 @@ namespace Garnet.test
             var res4 = db.StringSet(new byte[] { 0, 0, 0, 0 }, "def", when: When.NotExists);
             ClassicAssert.IsTrue(res4);
 
-            Span<byte> buffer = stackalloc byte[128];
-
             // Check we haven't messed up the element
             var res7 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
             ClassicAssert.AreEqual(75, res7.Length);
@@ -1517,7 +1515,7 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(1, (int)res1);
 
                     var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
-                    ClassicAssert.AreEqual(1, (int)res1);
+                    ClassicAssert.AreEqual(1, (int)res2);
 
                     expectedVSimResult = (byte[][])db.Execute("VSIM", ["foo", "ELE", new byte[] { 0, 0, 0, 0 }]);
                     ClassicAssert.AreEqual(2, expectedVSimResult.Length);
