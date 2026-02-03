@@ -61,9 +61,8 @@ namespace Resp.benchmark
                 AofPhysicalSublogCount = options.AofPhysicalSublogCount
             };
             aofServerOptions.GetAofSettings(0, out var logSettings);
-            garnetLog = new GarnetLog(aofServerOptions, logSettings);
-
             appendOnlyFile = new GarnetAppendOnlyFile(aofServerOptions, logSettings, Program.loggerFactory.CreateLogger("AofGen - AOF instance"));
+            garnetLog = new GarnetLog(appendOnlyFile, aofServerOptions, logSettings);
 
             if (options.AofBenchType == AofBenchType.Replay)
             {

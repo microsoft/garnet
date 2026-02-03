@@ -868,32 +868,6 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Append a user-defined blittable struct header atomically to the log.
-        /// </summary>
-        /// <param name="userHeader"></param>
-        /// <param name="headerModifier">Header modifier callback</param>
-        /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, in RefCallback<THeader> headerModifier, out long logicalAddress)
-            where THeader : unmanaged
-        {
-            logicalAddress = 0;
-            var length = sizeof(THeader);
-            var allocatedLength = headerSize + Align(length);
-            ValidateAllocatedLength(allocatedLength);
-
-            epoch.Resume();
-
-            headerModifier.Invoke(ref userHeader);
-            logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-        }
-
-        /// <summary>
         /// Append a user-defined blittable struct header and one <see cref="ReadOnlySpan{_byte_}"/> entry atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
@@ -950,38 +924,6 @@ namespace Tsavorite.core
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (autoCommit) Commit();
-        }
-
-        /// <summary>
-        /// Append a user-defined blittable struct header and two <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
-        /// </summary>
-        /// <param name="userHeader"></param>
-        /// <param name="item1"></param>
-        /// <param name="item2"></param>
-        /// <param name="headerModifier">Header modifier callback</param>
-        /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, in RefCallback<THeader> headerModifier, out long logicalAddress)
-            where THeader : unmanaged
-        {
-            logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize();
-            var allocatedLength = headerSize + Align(length);
-            ValidateAllocatedLength(allocatedLength);
-
-            epoch.Resume();
-
-            headerModifier.Invoke(ref userHeader);
-            logicalAddress = AllocateBlock(allocatedLength);
-
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            var offset = headerSize + sizeof(THeader);
-            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            offset += item1.TotalSize();
-            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
         }
 
         /// <summary>
@@ -1075,33 +1017,6 @@ namespace Tsavorite.core
         /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
         /// <param name="userHeader"></param>
-        /// <param name="input"></param>
-        /// <param name="headerModifier">Header modifier callback</param>
-        /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ref TInput input, in RefCallback<THeader> headerModifier, out long logicalAddress)
-            where THeader : unmanaged where TInput : IStoreInput
-        {
-            logicalAddress = 0;
-            var length = sizeof(THeader) + input.SerializedLength;
-            var allocatedLength = headerSize + Align(length);
-            ValidateAllocatedLength(allocatedLength);
-
-            epoch.Resume();
-            headerModifier.Invoke(ref userHeader);
-
-            logicalAddress = AllocateBlock(allocatedLength);
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            _ = input.CopyTo(physicalAddress + headerSize + sizeof(THeader), input.SerializedLength);
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
-        }
-
-        /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
-        /// </summary>
-        /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="input"></param>
         /// <param name="logicalAddress">Logical address of added entry</param>
@@ -1126,37 +1041,6 @@ namespace Tsavorite.core
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (autoCommit) Commit();
-        }
-
-        /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
-        /// </summary>
-        /// <param name="userHeader"></param>
-        /// <param name="item1"></param>
-        /// <param name="input"></param>
-        /// <param name="headerModifier">Header modifier callback</param>
-        /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ReadOnlySpan<byte> item1, ref TInput input, in RefCallback<THeader> headerModifier, out long logicalAddress)
-            where THeader : unmanaged where TInput : IStoreInput
-        {
-            logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize() + input.SerializedLength;
-            var allocatedLength = headerSize + Align(length);
-            ValidateAllocatedLength(allocatedLength);
-
-            epoch.Resume();
-            headerModifier.Invoke(ref userHeader);
-
-            logicalAddress = AllocateBlock(allocatedLength);
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            var offset = headerSize + sizeof(THeader);
-            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            offset += item1.TotalSize();
-            _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
         }
 
         /// <summary>
@@ -1190,43 +1074,6 @@ namespace Tsavorite.core
             safeTailRefreshEntryEnqueued?.Signal();
             epoch.Suspend();
             if (autoCommit) Commit();
-        }
-
-        /// <summary>
-        /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
-        /// </summary>
-        /// <remarks>
-        /// The headerModifier callback allows the caller to update the header data under epoch protection when necessary as per the application requirements.
-        /// </remarks>
-        /// <param name="userHeader"></param>
-        /// <param name="item1"></param>
-        /// <param name="item2"></param>
-        /// <param name="input"></param>
-        /// <param name="headerModifier">Header modifier callback</param>
-        /// <param name="logicalAddress">Logical address of added entry</param>
-        public unsafe void Enqueue<THeader, TInput>(THeader userHeader, ReadOnlySpan<byte> item1, ReadOnlySpan<byte> item2, ref TInput input, in RefCallback<THeader> headerModifier, out long logicalAddress)
-            where THeader : unmanaged where TInput : IStoreInput
-        {
-            logicalAddress = 0;
-            var length = sizeof(THeader) + item1.TotalSize() + item2.TotalSize() + input.SerializedLength;
-            var allocatedLength = headerSize + Align(length);
-            ValidateAllocatedLength(allocatedLength);
-
-            epoch.Resume();
-            headerModifier.Invoke(ref userHeader);
-
-            logicalAddress = AllocateBlock(allocatedLength);
-            var physicalAddress = (byte*)allocator.GetPhysicalAddress(logicalAddress);
-            *(THeader*)(physicalAddress + headerSize) = userHeader;
-            var offset = headerSize + sizeof(THeader);
-            item1.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            offset += item1.TotalSize();
-            item2.SerializeTo(new Span<byte>(physicalAddress + offset, allocatedLength - offset));
-            offset += item2.TotalSize();
-            _ = input.CopyTo(physicalAddress + offset, input.SerializedLength);
-            SetHeader(length, physicalAddress);
-            safeTailRefreshEntryEnqueued?.Signal();
-            epoch.Suspend();
         }
 
         /// <summary>
@@ -1686,17 +1533,14 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="spinWait">If true, spin-wait until commit completes. Otherwise, issue commit and return immediately.</param>
         /// <param name="cookie"></param>
-        /// <param name="cookieGeneratorCallback"></param>
         /// <returns> whether there is anything to commit. </returns>
-        public void Commit(bool spinWait = false, byte[] cookie = null, Func<byte[]> cookieGeneratorCallback = null)
+        public void Commit(bool spinWait = false, byte[] cookie = null)
         {
-            Debug.Assert(cookie == null || cookieGeneratorCallback == null,
-                "Both cookie and cookieGeneratorCallback cannot be provided");
             // Take a lower-bound of the content of this commit in case our request is filtered but we need to spin
             var tail = TailAddress;
             var lastCommit = commitNum;
 
-            var success = CommitInternal(out var actualTail, out var actualCommitNum, cookie == null, cookie, -1, null, cookieGeneratorCallback);
+            var success = CommitInternal(out var actualTail, out var actualCommitNum, cookie == null, cookie, -1, null);
             if (!spinWait) return;
             if (success)
                 WaitForCommit(actualTail, actualCommitNum);
@@ -1741,12 +1585,9 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="cookie"></param>
         /// <param name="token"></param>
-        /// <param name="cookieGeneratorCallback"></param>
         /// <returns></returns>
-        public async ValueTask CommitAsync(byte[] cookie = null, CancellationToken token = default, Func<byte[]> cookieGeneratorCallback = null)
+        public async ValueTask CommitAsync(byte[] cookie = null, CancellationToken token = default)
         {
-            Debug.Assert(cookie == null || cookieGeneratorCallback == null,
-                "Both cookie and cookieGeneratorCallback cannot be provided");
             token.ThrowIfCancellationRequested();
 
             // Take a lower-bound of the content of this commit in case our request is filtered but we need to wait
@@ -1754,7 +1595,7 @@ namespace Tsavorite.core
             var lastCommit = commitNum;
 
             var task = CommitTask;
-            var success = CommitInternal(out var actualTail, out var actualCommitNum, cookie == null, cookie, -1, null, cookieGeneratorCallback);
+            var success = CommitInternal(out var actualTail, out var actualCommitNum, cookie == null, cookie, -1, null);
 
             if (success)
             {
@@ -2436,20 +2277,8 @@ namespace Tsavorite.core
             commitQueue.AddWorkItem(commitInfo);
         }
 
-        private unsafe bool TryEnqueueCommitRecord(ref TsavoriteLogRecoveryInfo info, Func<byte[]> cookieGenerationCallback)
+        private unsafe bool TryEnqueueCommitRecord(ref TsavoriteLogRecoveryInfo info)
         {
-            if (cookieGenerationCallback != null)
-            {
-                using (var semaphore = new SemaphoreSlim(0))
-                {
-                    epoch.Resume();
-                    info.Cookie = cookieGenerationCallback();
-                    epoch.BumpCurrentEpoch(() => semaphore.Release());
-                    epoch.Suspend();
-                    semaphore.Wait();
-                }
-            }
-
             var entryBodySize = info.SerializedSize();
 
             var allocatedLength = headerSize + Align(entryBodySize);
@@ -3084,7 +2913,7 @@ namespace Tsavorite.core
             return length;
         }
 
-        private bool CommitInternal(out long commitTail, out long actualCommitNum, bool fastForwardAllowed, byte[] cookie, long proposedCommitNum, Action callback, Func<byte[]> cookieGeneratorCallback = null)
+        private bool CommitInternal(out long commitTail, out long actualCommitNum, bool fastForwardAllowed, byte[] cookie, long proposedCommitNum, Action callback)
         {
             if (cannedException != null)
                 throw cannedException;
@@ -3101,7 +2930,7 @@ namespace Tsavorite.core
             var info = new TsavoriteLogRecoveryInfo
             {
                 FastForwardAllowed = fastForwardAllowed,
-                Cookie = cookieGeneratorCallback == null ? cookie : null,
+                Cookie = cookie,
                 Callback = callback,
             };
             var commitRequired = ShouldCommmitMetadata(ref info) || (commitCoveredAddress < TailAddress);
@@ -3139,7 +2968,7 @@ namespace Tsavorite.core
                 {
                     // Ok to retry in critical section, any concurrently invoked commit would block, but cannot progress
                     // anyways if no record can be enqueued
-                    while (!TryEnqueueCommitRecord(ref info, cookieGeneratorCallback)) _ = Thread.Yield();
+                    while (!TryEnqueueCommitRecord(ref info)) _ = Thread.Yield();
                     commitTail = info.UntilAddress;
                 }
                 else

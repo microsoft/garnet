@@ -217,6 +217,7 @@ namespace Garnet.test.cluster
             var keys = (string[])primaryServer.Execute("KEYS", ["*"]);
             Array.Sort(keys);
             Array.Sort(expectedKeys);
+            ClassicAssert.AreEqual(expectedKeys.Length, keys.Length);
             ClassicAssert.AreEqual(expectedKeys, keys);
         }
 
