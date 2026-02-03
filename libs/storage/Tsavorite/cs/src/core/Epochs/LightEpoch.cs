@@ -432,7 +432,10 @@ namespace Tsavorite.core
                 (threadIndexAligned + Metadata.threadEntryIndex)->threadId = 0;
                 Metadata.threadEntryIndex = kInvalidIndex;
 
-                // Signal a waiting thread if any (fast volatile read when no waiters)
+                // Signal a waiting thread if any (fast volatile read when no waiters).
+                // This approach can lead to spurious semaphore releases if multiple
+                // threads see the non-zero waiterCount, but this is acceptable for
+                // performance reasons.
                 if (waiterCount > 0)
                     waiterSemaphore.Release();
             }
@@ -517,7 +520,10 @@ namespace Tsavorite.core
             {
                 while (true)
                 {
-                    // Re-check for free slot after incrementing waiterCount to avoid lost wakeup
+                    // Re-check for free slot after incrementing waiterCount. This avoids
+                    // us waiting on the semaphore forever in case we increment waiterCount
+                    // immediately after the epoch releaser sees a zero waiterCount (and
+                    // therefore does not release the semaphore).
                     if (TryAcquireEntry(out var entry))
                         return entry;
 
