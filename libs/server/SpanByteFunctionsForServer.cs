@@ -12,17 +12,12 @@ namespace Garnet.server
     public class SpanByteFunctionsForServer<Context> : SpanByteFunctions<Context>
     {
         /// <summary>
-        /// Memory pool
-        /// </summary>
-        protected new readonly MemoryPool<byte> memoryPool;
-
-        /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="memoryPool"></param>
         public SpanByteFunctionsForServer(MemoryPool<byte> memoryPool = default)
+            : base(memoryPool)
         {
-            this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
         }
 
         /// <inheritdoc />
