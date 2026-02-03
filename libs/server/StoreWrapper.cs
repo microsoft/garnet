@@ -975,7 +975,7 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Start background maintenance tasks that hsould only be run when this node is a replica.
+        /// Start background maintenance tasks that should only be run when this node is a replica.
         /// </summary>
         public void StartReplicaTasks()
         {
