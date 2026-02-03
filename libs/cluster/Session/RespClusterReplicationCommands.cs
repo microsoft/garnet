@@ -146,7 +146,7 @@ namespace Garnet.cluster
             // This is an initialization message
             if (previousAddress == -1 && currentAddress == -1 && nextAddress == -1)
             {
-                if (clusterProvider.replicationManager.InitializeReplicaReplayGroup(physicalSublogIdx, networkSender))
+                if (clusterProvider.replicationManager.InitializeReplicaReplayDriver(physicalSublogIdx, networkSender))
                     replicaReplayDriverStore = clusterProvider.replicationManager.ReplicaReplayDriverStore;
                 else
                     throw new GarnetException($"[physicalSublogIdx: {physicalSublogIdx}] Received initialization message but ReplicaReplayDriver is already initialized!", LogLevel.Warning, clientResponse: false);

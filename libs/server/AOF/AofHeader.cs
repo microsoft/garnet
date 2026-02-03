@@ -52,13 +52,13 @@ namespace Garnet.server
         public const int TotalSize = AofHeader.TotalSize + 8;
 
         /// <summary>
-        /// AofHeader used with singleLog
+        /// Basic AOF header used with single log.
         /// </summary>
         [FieldOffset(0)]
         public AofHeader basicHeader;
 
         /// <summary>
-        /// Used for multilog operations
+        /// Used with multi-log to implement read consistency protocol.
         /// </summary>
         [FieldOffset(AofHeader.TotalSize)]
         public long sequenceNumber;

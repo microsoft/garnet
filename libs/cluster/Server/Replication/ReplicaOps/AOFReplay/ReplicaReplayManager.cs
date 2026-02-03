@@ -14,12 +14,12 @@ namespace Garnet.cluster
         public ReplicaReplayDriverStore ReplicaReplayDriverStore;
 
         /// <summary>
-        /// Initialize replica replay group
+        /// Initialize replica replay driver
         /// </summary>
         /// <param name="physicalSublogIdx"></param>
         /// <param name="networkSender"></param>
         /// <returns>True if re</returns>
-        public bool InitializeReplicaReplayGroup(int physicalSublogIdx, INetworkSender networkSender)
+        public bool InitializeReplicaReplayDriver(int physicalSublogIdx, INetworkSender networkSender)
         {
             if (ReplicaReplayDriverStore.GetReplayDriver(physicalSublogIdx) != null)
                 return false;
@@ -29,9 +29,9 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Resets the state of the replica replay group
+        /// Resets the state of the replica replay driver store
         /// </summary>
-        public void ResetReplicaReplayGroup()
+        public void ResetReplicaReplayDriverStore()
         {
             ReplicaReplayDriverStore?.Dispose();
             ReplicaReplayDriverStore = new ReplicaReplayDriverStore(clusterProvider, logger);

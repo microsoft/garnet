@@ -139,9 +139,9 @@ namespace Garnet.cluster
             {
                 var tasks = new List<Task>();
 
-                // Add refresh sublog task only when using more than 1 physical sublog
+                // Create advance physical sublog time task when the instance is configured to use more than one physical sublogs.
                 if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1)
-                    tasks.Add(RefreshSublogTail());
+                    tasks.Add(AdvancePhysicalSublogTime());
 
                 for (var i = 0; i < aofSyncTasks.Length; i++)
                     tasks.Add(aofSyncTasks[i].RunAofSyncTask(this));
@@ -162,7 +162,7 @@ namespace Garnet.cluster
             }
         }
 
-        async Task RefreshSublogTail()
+        async Task AdvancePhysicalSublogTime()
         {
             var acquireReadLock = false;
             var client = new GarnetClientSession(
@@ -178,7 +178,7 @@ namespace Garnet.cluster
             {
                 acquireReadLock = ResumeAofStreaming();
                 if (!acquireReadLock)
-                    throw new GarnetException($"Failed to acquire read lock at {nameof(RefreshSublogTail)}");
+                    throw new GarnetException($"Failed to acquire read lock at {nameof(AdvancePhysicalSublogTime)}");
 
                 // Connect to replica
                 client.Connect((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token);

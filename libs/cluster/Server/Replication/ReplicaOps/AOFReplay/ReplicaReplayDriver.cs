@@ -32,6 +32,15 @@ namespace Garnet.cluster
         readonly ReplicaReplayTask[] replayTasks;
         readonly TsavoriteLog physicalSublog;
 
+        /// <summary>
+        /// Initializes a new instance of the ReplicaReplayDriver class, setting up replay tasks for a specific physical
+        /// sublog.
+        /// </summary>
+        /// <param name="physicalSublogIdx">The index of the physical sublog to be replayed.</param>
+        /// <param name="clusterProvider">The cluster provider containing server options and storage components.</param>
+        /// <param name="respSessionNetworkSender">The network sender used for response sessions.</param>
+        /// <param name="cts">The cancellation token source for managing task cancellation.</param>
+        /// <param name="logger">The logger instance for logging operations, or null to disable logging.</param>
         public ReplicaReplayDriver(int physicalSublogIdx, ClusterProvider clusterProvider, INetworkSender respSessionNetworkSender, CancellationTokenSource cts, ILogger logger = null)
         {
             this.physicalSublogIdx = physicalSublogIdx;

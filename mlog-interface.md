@@ -1,8 +1,111 @@
-This PR implements sharded-log support for Garnet replication.
-This is a draft PR to keep track of the major TODOs still needed.
+
+# Multi-Log Architecture Overview
+
+This PR introduces multi-log based AppendOnlyFile (AOF) support to enhance write throughput and optimize replication replay performance. While designed primarily for Garnet's cluster mode, this feature can also be used with standalone mode.
+
+The multi-log model uses a `GarnetAppendOnlyFile` class that manages multiple `TsavoriteLog` instances (physical log instances) to:
+- Shard write operations across multiple logs.
+- Parallelize log scanning and shipping with multiple connections and iterators.
+- Enable parallel replay at replicas through one or more tasks-per-physical-log architecture.
+
+# Configuration Parameters
+
+| Parameter | Purpose |
+|-----------|---------|
+| `AofPhysicalSublogCount` | Number of physical `TsavoriteLog` instances that back the `GarnetAppendOnlyFile` |
+| `AofReplayTaskCount` | Number of virtual replay tasks per physical sublog at the replica |
+| `AofTailWitnessFreq` | Background task frequency at the primary for advancing timestamps across multiple physical sublogs |
+
+# Log Record Headers
+
+To support multi-log functionality, two new AOF record header types are introduced in `AofHeader.cs`. These are designed as extensions to the basic header to preserve backward compatibility with single-log implementations.
+
+## ShardedHeader
+Records standalone upsert and RMW operations with an additional timestamp/sequence number field (long) indicating when the operation occurred.
+
+## TransactionHeader
+Used for coordinated operations including transactions, custom transaction procedures, and checkpointing. Contains metadata describing which physical sublogs and virtual replay tasks participate in the operation.
+
+## Log Shipping
+
+For each attached replica, the primary maintains an `AofSyncDriver` instance responsible for coordinating log shipping. When configured with `k` physical logs, the driver manages:
+
+- **k AofSyncTasks**: Each task maintains an independent log iterator and ships log pages for one physical sublog across the network
+- **AdvancePhysicalSublogTime**: A background task that advances timestamps for idle sublogs, ensuring time progresses uniformly across all physical logs
+
+If any task fails, the replication connection drops and replay stops. Recovery is triggered either manually via the `REPLICAOF` command or automatically after the `ClusterReplicationReestablishmentTimeout` expires, matching single-log behavior.
+
+# Log Replay
+The replica receives log pages from the primary and replays them.
+The order in which the replay operation executes is as follows:
+1. When configured with k-sublogs the replica will establish k-(replay) resp server sessions.
+2. Each replay session receives an initialization message and establishes a ReplicaReplayDriver instance which maintains metadata associated with the physical sublog it owns and is responsible for managing and replaying.
+3. When configured with multiple replay tasks, the corresponding ReplicaReplayDriver instance spawns an equivalent number of background ReplicaReplayTasks.
+4. Every ReplicaReplayTask will scan each log page and identify the record it is responsible of replaying by inspecting the corresponding AofHeader metadata.
+
+With `k` physical sublogs and `m` replay tasks per sublog configured at the replica, the system effectively operates with `k × m` virtual sublogs.
+In that case, every replayed operation moves time ahead for the associated key and corresponding virtual sublog.
+
+NOTE: If any of the ReplicaReplayDriver instances encounters an error during replay it will signal the shared cancellation token in order to cancel the other ReplicaReplayDrivers associated with the same AOF replay unit.
+
+## Standalone Write Operation Replay
+
+Standalone write operations can be replayed in parallel with minimal coordination. Unlike single-log replay, each operation updates the timestamp tracker sketch in `ReadConsistencyManager` for the affected key. Operations execute using `BasicContext` instances from the Tsavorite store.
+
+## Transaction Operation Replay
+There are two types of transactions supported by Garnet and which need to be .
+Mainly multi-exec transactions and custom transaction procedures.
+
+Each replay instance maintains its own `ReplayContext` within the `AofProcessor` to coordinate transaction replay. The workflow proceeds as follows:
+
+1. Upon encountering a `TxnStart` record, each participating replay task creates an entry in the `activeTxns` dictionary (indexed by session ID) to collect operations for that transaction.
+2. Operations are gathered and mapped to their respective replay tasks based on the key hash.
+3. When a `TxnCommit` record is encountered, all participating tasks acquire exclusive locks on their respective keys.
+4. Tasks execute their transaction operations in parallel while holding locks.
+5. Once all tasks complete, the transaction is committed, locks are released, and updates become visible to read requests.
+
+**Custom Transaction Procedures**: A single replay task (from the set of participants) coordinates execution. Operations execute after lock acquisition, and all participants wait for completion before proceeding with subsequent operations.
+This ensures atomicity and consistency across distributed replay tasks.
+
+# Consistent Read Protocol
+Parallel replay leverages a timestamp-based read protocol to ensure prefix consistency at replicas. The protocol uses sequence numbers generated at the primary for every AOF record, tracked via a `ReadConsistencyManager` on each replica.
+
+Each replica session maintains a `MaximumSessionTimestamp` (MST) to control read operations. The consistent read protocol executes three phases:
+
+1. **Prepare Phase**: Verify the key's timestamp (Ts) against the current MST. If Ts ≤ MST, proceed; otherwise, wait until Ts catches up.
+2. **Read Phase**: Execute the read operation through Tsavorite to retrieve the value.
+3. **Update Phase**: Update the MST with the key's timestamp to ensure all subsequent reads reflect prefix consistency.
+
+## Read Consistency Manager
+
+The `ReadConsistencyManager` maintains prefix consistency by tracking key timestamps across virtual sublogs. It holds an array of `VirtualSublogReplayState` instances (one per virtual sublog), each storing a sketch of key sequence numbers.
+
+### Data Structure
+- **Sketch**: A 32K-slot array (2^15) per virtual sublog that maps key hashes to their sequence numbers.
+- **Max Sequence Number**: The global maximum sequence number observed across all keys in a virtual sublog.
+- **Wait Queue**: Readers waiting for replay to progress are enqueued and signaled when conditions are met.
+
+### Key Operations
+
+**Tracking Updates**: When a replay operation updates a key, the corresponding virtual sublog's sketch is updated with the new sequence number, and the global max is advanced if needed.
+
+**Frontier Sequence Number**: Rather than tracking just per-key timestamps, the manager computes a "frontier" that combines:
+- The key's specific sequence number (from the sketch)
+- The virtual sublog's global maximum (ensuring time always moves forward)
+
+This handles cases where a key hasn't been updated in a batch but time has advanced on the sublog.
+
+**Consistent Read Coordination**: 
+- **Prepare Phase**: `ConsistentReadKeyPrepare()` checks if the key's frontier sequence number is ahead of the session's maximum sequence number. If not, the reader is enqueued in a wait queue until replay catches up.
+- **Update Phase**: `ConsistentReadSequenceNumberUpdate()` updates the session's maximum sequence number after the actual read to prevent underestimating the read timestamp.
+
+**Waiter Signaling**: When timestamps progress, the manager processes the wait queue, comparing each waiter's required timestamp against the current frontier. Satisfied waiters are signaled to proceed; unsatisfied ones are re-enqueued.
+
+# Failover Behavior
+
 
 TODO:
-- [X] Ensure that monotonicity of timestamps is fullfilled across failovers
+- [X] Ensure that monotonicity of timestamps is fulfilled across failovers
 <ul><ul>
 What happens in the event the timestamp generated by a replica that became the new primary was behind the primary generated by the old primary?
 </ul></ul>
@@ -200,42 +303,11 @@ In that situation, possible solutions include
 
 <ul><ul>
 
-### Prefix Consistent Recovery
+### Prefix Consistent Recovery and Commit Operation
 
-In the single log case, issuing a Commit operation (with FastCommit enable), will result in persisting the log data into the disk up to that point
-and including the Commit metadata.
-Currently on recovery of a single log, Garnet will scan and recover its AOF log until the latest (flushed to disk) Commit record.
-In the multi-log case, Commit operations happen in parallel for each individual sublog.
-There is no guarantee that an issued commit operation will succeed for all logs.
-In addition, even if the commit operation succeeds for all logs, we cannot replay all records blindly until the commit marker per sublog because that may result in a prefix inconsistent view of the database after recovery.
-
-Consider the below sequence of operations as they occur in the single log case with commit markers added indicating a flush operation
-On recovery, of that specific example, Garnet will replay all operations until c1 as they have been persisted on disk.
-single log snapshot
-<----------------------------->
-[A, B, C, c1], D, E, F
-
-When Garnet is configured with multi-log enabled, the corresponding operations may be recorded on any of the available sublogs
-based on the hash function that is being used.
-In the below example, the commit marker can be inserted in arbitrary position per log.
-Following the legacy single log recover protocol, we would have recovered a snapshot of the database until the c1 marker for each individual sublog.
-This will be an prefix inconsistent snapshot of the database, because operation E can be observed without D.
-
-s1: [A, C, E, c1], F
-s2: [B, c1], D
-
-In order to avoid this scenario, we need to include a timestamp within the commit metadata to be able to resolve this scenario
-by skipping on replay records with timestamps highers than the minimum timestamp established by the commit markers.
-
-Including timestamps to the commit metadata is done through the CommitCookie.
-The timestamp (Ts) needs to be calculated under epoch protection within each sublog to ensure that writers to log have had a chance to observe the Ts value, hence the associated flush operation would guarantee that all records generated with Ts' <= Ts would have been persisted into the disk.
-
-There are two ways to issue commit operations on a TsavoriteLog instance.
-1. Using an external API call using Commit/CommitAsync methods
-2. Using an internal call to Commit by enabling the AutoCommit flag
-
-In both cases, we need to ensure that Commit operations are issued in unison across all sublogs.
-This is necessary because the recover process requires having observed a minimum timestamp across all sublogs to ensure prefix consistency.
+In the single log case, issuing a Commit operation (with FastCommit enabled), will result in a Commit record added to the log.
+The corresponding operation for the multi-log case, will execute across all sublogs and create a commit record that includes a timestamp which is added as a cookie.
+The timestamp is used during recovery to determine which records can be replayed.
 More specifically on recovery, Garnet will acquire the latest commit metadata for every sublog and calculate the minimum timestamp across all.
 Then it will scan through the log and replay only those records with timestamp equal or less to the recovered minimum commit timestamp
 across all physical sublogs.

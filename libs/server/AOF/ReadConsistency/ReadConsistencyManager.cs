@@ -7,15 +7,8 @@ using System.Linq;
 namespace Garnet.server
 {
     /// <summary>
-    /// This implements the replica sequence manager to track the sequence number of keys for all sessions in a given replica.
-    /// The class maintains a 2D-array of size [SublogCount][KeyOffsetCount + 1] which tracks the timestamps for a set of keys per sublog
-    /// Every data replay operation will update this map on per key basis using a hash function to determine the keyOffset.
-    /// This is done to mitigate the read delay for the following scenario if we only maintain a maximum timestamp per sublog
-    ///     time: ----(k1,t1)---(k2,t2)---(k3,t3)----
-    ///     s1: (k1,t1) (k3,t3)
-    ///     s2: (k2,t2)
-    ///     read k1 (at t3 because s1 has replayed until k3)
-    ///     read k2 (at t2 have to wait because reading k1 established that we are in t3 though no updates have arrived for k1 by t3)
+    /// Manages read consistency for append-only file operations, tracking sequence numbers and ensuring consistent
+    /// reads across virtual sublogs and keys.
     /// </summary>
     /// <param name="currentVersion"></param>
     /// <param name="appendOnlyFile"></param>
@@ -25,7 +18,7 @@ namespace Garnet.server
         /// <summary>
         /// Read consistency manager version.
         /// </summary>
-        public long CurrentVersion { get; private set; } = currentVersion;
+    public long CurrentVersion { get; private set; } = currentVersion;
         readonly GarnetServerOptions serverOptions = serverOptions;
 
         readonly VirtualSublogReplayState[] vsrs = [.. Enumerable.Range(0, serverOptions.AofVirtualSublogCount).Select(_ => new VirtualSublogReplayState())];

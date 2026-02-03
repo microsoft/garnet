@@ -141,7 +141,7 @@ namespace Garnet.cluster
                 clusterProvider.replicationManager.TryUpdateForFailover();
 
                 // Cancel active replication tasks
-                clusterProvider.replicationManager.ResetReplicaReplayGroup();
+                clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
 
                 // Update sequence number generator for sharded log if needed
                 if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1)
