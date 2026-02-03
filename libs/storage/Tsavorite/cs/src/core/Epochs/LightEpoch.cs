@@ -89,6 +89,17 @@ namespace Tsavorite.core
         static readonly Entry* threadIndexAligned;
 
         /// <summary>
+        /// Semaphore for threads waiting for an epoch table entry
+        /// </summary>
+        static readonly SemaphoreSlim waiterSemaphore = new(0);
+
+        /// <summary>
+        /// Number of threads waiting for an epoch table entry.
+        /// Used as a fast-path check to avoid semaphore overhead when no waiters.
+        /// </summary>
+        static volatile int waiterCount = 0;
+
+        /// <summary>
         /// List of action, epoch pairs containing actions to be performed when an epoch becomes safe to reclaim.
         /// Marked volatile to ensure latest value is seen by the last suspended thread.
         /// </summary>
@@ -420,39 +431,109 @@ namespace Tsavorite.core
             {
                 (threadIndexAligned + Metadata.threadEntryIndex)->threadId = 0;
                 Metadata.threadEntryIndex = kInvalidIndex;
+
+                // Signal a waiting thread if any (fast volatile read when no waiters).
+                // This approach can lead to spurious semaphore releases if multiple
+                // threads see the non-zero waiterCount, but this is acceptable for
+                // performance reasons.
+                if (waiterCount > 0)
+                    waiterSemaphore.Release();
             }
         }
 
         /// <summary>
-        /// Reserve entry for thread. This method relies on the fact that no
-        /// thread will ever have ID 0.
+        /// Try to acquire an entry by probing startOffset1, startOffset2, 
+        /// then circling twice around the epoch table.
         /// </summary>
-        /// <returns>Reserved entry</returns>
-        static int ReserveEntry()
+        /// <returns>True if entry was acquired, false if table is full</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static bool TryAcquireEntry(out int entry)
         {
-            while (true)
+            // Try primary offset
+            entry = Metadata.startOffset1;
+            if (0 == (threadIndexAligned + entry)->threadId)
             {
-                // Try to acquire entry
-                if (0 == (threadIndexAligned + Metadata.startOffset1)->threadId)
+                if (0 == Interlocked.CompareExchange(
+                    ref (threadIndexAligned + entry)->threadId,
+                    Metadata.threadId, 0))
+                    return true;
+            }
+
+            // Try alternate offset
+            entry = Metadata.startOffset2;
+            if (0 == (threadIndexAligned + entry)->threadId)
+            {
+                if (0 == Interlocked.CompareExchange(
+                    ref (threadIndexAligned + entry)->threadId,
+                    Metadata.threadId, 0))
+                    return true;
+            }
+
+            // Circle twice around the table looking for free entries
+            for (var i = 0; i < 2 * kTableSize; i++)
+            {
+                Metadata.startOffset2++;
+                if (Metadata.startOffset2 > kTableSize)
+                    Metadata.startOffset2 -= kTableSize;
+
+                entry = Metadata.startOffset2;
+                if (0 == (threadIndexAligned + entry)->threadId)
                 {
                     if (0 == Interlocked.CompareExchange(
-                        ref (threadIndexAligned + Metadata.startOffset1)->threadId,
+                        ref (threadIndexAligned + entry)->threadId,
                         Metadata.threadId, 0))
-                        return Metadata.startOffset1;
+                        return true;
                 }
+            }
 
-                if (Metadata.startOffset2 > 0)
+            // Note: Metadata.startOffset2 should now be back to where it started because
+            // we circled the entire table twice.
+            entry = 0;
+            return false;
+        }
+
+        /// <summary>
+        /// Reserve entry for thread. This method relies on the fact that no
+        /// thread will ever have ID 0. Fast path that probes the table without waiting.
+        /// </summary>
+        /// <returns>Reserved entry</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        static int ReserveEntry()
+        {
+            if (TryAcquireEntry(out var entry))
+                return entry;
+
+            // Table is full, fall back to slow path with waiting
+            return ReserveEntryWait();
+        }
+
+        /// <summary>
+        /// Slow path for reserving an entry when the table is full.
+        /// Waits on semaphore until an entry becomes available.
+        /// </summary>
+        /// <returns>Reserved entry</returns>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static int ReserveEntryWait()
+        {
+            _ = Interlocked.Increment(ref waiterCount);
+            try
+            {
+                while (true)
                 {
-                    // Try alternate entry
-                    Metadata.startOffset1 = Metadata.startOffset2;
-                    Metadata.startOffset2 = 0;
+                    // Re-check for free slot after incrementing waiterCount. This avoids
+                    // us waiting on the semaphore forever in case we increment waiterCount
+                    // immediately after the epoch releaser sees a zero waiterCount (and
+                    // therefore does not release the semaphore).
+                    if (TryAcquireEntry(out var entry))
+                        return entry;
+
+                    // No slot available, wait for a signal from Release()
+                    waiterSemaphore.Wait();
                 }
-                else Metadata.startOffset1++; // Probe next sequential entry
-                if (Metadata.startOffset1 > kTableSize)
-                {
-                    Metadata.startOffset1 -= kTableSize;
-                    Thread.Yield();
-                }
+            }
+            finally
+            {
+                _ = Interlocked.Decrement(ref waiterCount);
             }
         }
 
