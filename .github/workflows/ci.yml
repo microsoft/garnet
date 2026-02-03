@@ -190,7 +190,7 @@ jobs:
         shell: bash
         run: |
           npm install -g azurite
-          azurite &
+          azurite --skipApiVersionCheck &
       - name: Install dependencies
         run: dotnet restore
       - name: Build Tsavorite
