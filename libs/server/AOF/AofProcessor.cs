@@ -547,14 +547,17 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Determines whether replaying should continue based on the sequence number in the specified header.
+        /// Determines whether the specified log entry should be skipped during replay based on its sequence number.
         /// </summary>
-        /// <param name="ptr">A pointer to the memory location containing the header to evaluate.</param>
-        /// <param name="untilSequenceNumber">The maximum sequence number up to which replaying is allowed.</param>
-        /// <returns>true if replaying should continue for the specified header; otherwise, false.</returns>
-        /// <exception cref="GarnetException">Thrown if the header type referenced by ptr is not supported.</exception>
-        public bool ContinueReplaying(byte* ptr, long untilSequenceNumber)
+        /// <param name="ptr">A pointer to the start of the log entry header in memory. Must point to a valid header structure.</param>
+        /// <param name="untilSequenceNumber">The sequence number threshold. Entries with a sequence number greater than this value will be skipped.
+        /// Specify -1 to skip all entries.</param>
+        /// <param name="entrySequenceNumber">When this method returns, contains the sequence number of the current log entry, or -1 if unavailable.</param>
+        /// <returns>true if the log entry should be skipped; otherwise, false.</returns>
+        /// <exception cref="GarnetException">Thrown if the log entry header type is not supported.</exception>
+        public bool SkipReplay(byte* ptr, long untilSequenceNumber, out long entrySequenceNumber)
         {
+            entrySequenceNumber = -1;
             if (untilSequenceNumber == -1)
                 return true;
             var header = *(AofHeader*)ptr;
@@ -563,10 +566,12 @@ namespace Garnet.server
             {
                 case AofHeaderType.ShardedHeader:
                     var shardedHeader = *(AofShardedHeader*)ptr;
-                    return shardedHeader.sequenceNumber <= untilSequenceNumber;
+                    entrySequenceNumber = shardedHeader.sequenceNumber;
+                    return shardedHeader.sequenceNumber > untilSequenceNumber;
                 case AofHeaderType.TransactionHeader:
                     var txnHeader = *(AofTransactionHeader*)ptr;
-                    return txnHeader.shardedHeader.sequenceNumber <= untilSequenceNumber;
+                    entrySequenceNumber = txnHeader.shardedHeader.sequenceNumber;
+                    return txnHeader.shardedHeader.sequenceNumber > untilSequenceNumber;
                 default:
                     throw new GarnetException($"Replay header type {replayHeaderType} not supported!");
             }

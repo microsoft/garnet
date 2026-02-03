@@ -60,8 +60,11 @@ namespace Garnet.server
             };
 
             this.serverOptions = serverOptions;
-            this.singleLog = serverOptions.AofVirtualSublogCount == 1 ? new SingleLog(logSettings[0], logger) : null;
-            this.shardedLog = serverOptions.MultiLogEnabled ? new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger: logger) : null;
+
+            if (serverOptions.AofPhysicalSublogCount == 1)
+                this.singleLog = new SingleLog(logSettings[0], logger);
+            else
+                this.shardedLog = new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger: logger);
         }
 
         public TsavoriteLog SingleLog => singleLog.log;
@@ -528,136 +531,195 @@ namespace Garnet.server
         internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
-            var physicalSublogIdx = 0L;
-            if (serverOptions.AofPhysicalSublogCount > 1)
+            if(serverOptions.AofPhysicalSublogCount == 1)
+            {
+                // Single log with multi-replay enabled needs to add sharderHeader to implement read protocol.
+                // Header modifier callback not needed because single physical sublog commit marker is read consistent when flushed.
+                singleLog.log.Enqueue(shardedHeader,
+                    key,
+                    value,
+                    ref input,
+                    out logicalAddress);
+            }
+            else
             {
                 var hash = HASH(key);
-                physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
-            }
-            shardedLog.sublog[physicalSublogIdx].Enqueue(
-                shardedHeader,
-                key,
-                value,
-                ref input,
-                in shardedHeaderModifier,
-                out logicalAddress);
+                var physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+                shardedLog.sublog[physicalSublogIdx].Enqueue(
+                    shardedHeader,
+                    key,
+                    value,
+                    ref input,
+                    in shardedHeaderModifier,
+                    out logicalAddress);
 
-            if (serverOptions.AofAutoCommit)
-                Commit();
+                if (serverOptions.AofAutoCommit)
+                    Commit();
+            }
         }
 
         internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
-            var physicalSublogIdx = 0L;
-            if (serverOptions.AofPhysicalSublogCount > 1)
+            if (serverOptions.AofPhysicalSublogCount == 1)
+            {
+                // Single log with multi-replay enabled needs to add sharderHeader to implement read protocol.
+                // Header modifier callback not needed because single physical sublog commit marker is read consistent when flushed.
+                singleLog.log.Enqueue(
+                    shardedHeader,
+                    key,
+                    ref input,
+                    out logicalAddress);
+            }
+            else
             {
                 var hash = HASH(key);
-                physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
-            }
-            shardedLog.sublog[physicalSublogIdx].Enqueue(
-                shardedHeader,
-                key,
-                ref input,
-                in shardedHeaderModifier,
-                out logicalAddress);
+                var physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+                shardedLog.sublog[physicalSublogIdx].Enqueue(
+                    shardedHeader,
+                    key,
+                    ref input,
+                    in shardedHeaderModifier,
+                    out logicalAddress);
 
-            if (serverOptions.AofAutoCommit)
-                Commit();
+                if (serverOptions.AofAutoCommit)
+                    Commit();
+            }
         }
 
         internal void Enqueue(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out long logicalAddress)
         {
-            var physicalSublogIdx = 0L;
-            if (serverOptions.AofPhysicalSublogCount > 1)
+            if (serverOptions.AofPhysicalSublogCount == 1)
+            {
+                // Single log with multi-replay enabled needs to add sharderHeader to implement read protocol.
+                // Header modifier callback not needed because single physical sublog commit marker is read consistent when flushed.
+                singleLog.log.Enqueue(
+                    shardedHeader,
+                    key,
+                    value,
+                    in shardedHeaderModifier,
+                    out logicalAddress);
+            }
+            else
             {
                 var hash = HASH(key);
-                physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
-            }
-            shardedLog.sublog[physicalSublogIdx].Enqueue(
-                shardedHeader,
-                key,
-                value,
-                in shardedHeaderModifier,
-                out logicalAddress);
+                var physicalSublogIdx = hash % serverOptions.AofPhysicalSublogCount;
+                shardedLog.sublog[physicalSublogIdx].Enqueue(
+                    shardedHeader,
+                    key,
+                    value,
+                    in shardedHeaderModifier,
+                    out logicalAddress);
 
-            if (serverOptions.AofAutoCommit)
-                Commit();
+                if (serverOptions.AofAutoCommit)
+                    Commit();
+            }
         }
 
         internal unsafe void Enqueue(AofTransactionHeader header, ref CustomProcedureInput procInput, CustomTransactionProcedure proc)
         {
-            try
+            if (serverOptions.AofPhysicalSublogCount == 1)
             {
-                if (serverOptions.AofPhysicalSublogCount > 1)
-                    LockSublogs(proc.physicalSublogAccessVector);
-                var _physicalSublogAccessVector = proc.physicalSublogAccessVector;
-                while (_physicalSublogAccessVector > 0)
+                // Update corresponding sublog participating vector before enqueue to related physical sublog
+                proc.replayTaskAccessVector[0].CopyTo(
+                    new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
+                // Single log with multi-replay enabled needs to add sharderHeader to implement read protocol.
+                // Header modifier callback not needed because single physical sublog commit marker is read consistent when flushed.
+                singleLog.log.Enqueue(header, ref procInput, out _);
+            }
+            else
+            {
+                try
                 {
-                    var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
-                    // Update corresponding sublog participating vector before enqueue to related physical sublog
-                    proc.replayTaskAccessVector[physicalSublogIdx].CopyTo(
-                        new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
-                    shardedLog.sublog[physicalSublogIdx].Enqueue(header, ref procInput, in transactionHeaderModifier, out _);
+                    if (serverOptions.AofPhysicalSublogCount > 1)
+                        LockSublogs(proc.physicalSublogAccessVector);
+                    var _physicalSublogAccessVector = proc.physicalSublogAccessVector;
+                    while (_physicalSublogAccessVector > 0)
+                    {
+                        var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
+                        // Update corresponding sublog participating vector before enqueue to related physical sublog
+                        proc.replayTaskAccessVector[physicalSublogIdx].CopyTo(
+                            new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
+                        shardedLog.sublog[physicalSublogIdx].Enqueue(header, ref procInput, in transactionHeaderModifier, out _);
+                    }
                 }
-            }
-            finally
-            {
-                if (serverOptions.AofPhysicalSublogCount > 1)
-                    UnlockSublogs(proc.physicalSublogAccessVector);
-            }
+                finally
+                {
+                    if (serverOptions.AofPhysicalSublogCount > 1)
+                        UnlockSublogs(proc.physicalSublogAccessVector);
+                }
 
-            if (serverOptions.AofAutoCommit)
-                Commit();
+                if (serverOptions.AofAutoCommit)
+                    Commit();
+            }
         }
 
         internal unsafe void Enqueue(AofTransactionHeader header, ulong physicalSublogAccessVector, BitVector[] virtualSublogAccessVector, int participantCount)
         {
-            try
+            if (serverOptions.AofPhysicalSublogCount == 1)
             {
-                if (serverOptions.AofPhysicalSublogCount > 1)
-                    LockSublogs(physicalSublogAccessVector);
-                var _physicalSublogAccessVector = physicalSublogAccessVector;
-                while (_physicalSublogAccessVector > 0)
+                virtualSublogAccessVector[0].CopyTo(new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
+                // Single log with multi-replay enabled needs to add sharderHeader to implement read protocol.
+                // Header modifier callback not needed because single physical sublog commit marker is read consistent when flushed.
+                singleLog.log.Enqueue(header, out _);
+            }
+            else
+            {
+                try
                 {
-                    var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
-                    // Update corresponding sublog participating vector before enqueue to related physical sublog
-                    virtualSublogAccessVector[physicalSublogIdx].CopyTo(new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
-                    shardedLog.sublog[physicalSublogIdx].Enqueue(header, in transactionHeaderModifier, out _);
+                    if (serverOptions.AofPhysicalSublogCount > 1)
+                        LockSublogs(physicalSublogAccessVector);
+                    var _physicalSublogAccessVector = physicalSublogAccessVector;
+                    while (_physicalSublogAccessVector > 0)
+                    {
+                        var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
+                        // Update corresponding sublog participating vector before enqueue to related physical sublog
+                        virtualSublogAccessVector[physicalSublogIdx].CopyTo(new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
+                        shardedLog.sublog[physicalSublogIdx].Enqueue(header, in transactionHeaderModifier, out _);
+                    }
                 }
-            }
-            finally
-            {
-                if (serverOptions.AofPhysicalSublogCount > 1)
-                    UnlockSublogs(physicalSublogAccessVector);
-            }
+                finally
+                {
+                    if (serverOptions.AofPhysicalSublogCount > 1)
+                        UnlockSublogs(physicalSublogAccessVector);
+                }
 
-            if (serverOptions.AofAutoCommit)
-                Commit();
+                if (serverOptions.AofAutoCommit)
+                    Commit();
+            }
         }
 
         internal void Enqueue(AofTransactionHeader header, ulong physicalSublogAccessVector)
         {
-            try
+            if (serverOptions.AofPhysicalSublogCount == 1)
             {
-                if (serverOptions.AofPhysicalSublogCount > 1)
-                    LockSublogs(physicalSublogAccessVector);
-                var _physicalSublogAccessVector = physicalSublogAccessVector;
-
-                while (_physicalSublogAccessVector > 0)
+                // Single log with multi-replay enabled needs to add sharderHeader to implement read protocol.
+                // Header modifier callback not needed because single physical sublog commit marker is read consistent when flushed.
+                singleLog.log.Enqueue(header, out _);
+            }
+            else
+            {
+                try
                 {
-                    var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
-                    shardedLog.sublog[physicalSublogIdx].Enqueue(header, in transactionHeaderModifier, out _);
-                }
-            }
-            finally
-            {
-                if (serverOptions.AofPhysicalSublogCount > 1)
-                    UnlockSublogs(physicalSublogAccessVector);
-            }
+                    if (serverOptions.AofPhysicalSublogCount > 1)
+                        LockSublogs(physicalSublogAccessVector);
+                    var _physicalSublogAccessVector = physicalSublogAccessVector;
 
-            if (serverOptions.AofAutoCommit)
-                Commit();
+                    while (_physicalSublogAccessVector > 0)
+                    {
+                        var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
+                        shardedLog.sublog[physicalSublogIdx].Enqueue(header, in transactionHeaderModifier, out _);
+                    }
+                }
+                finally
+                {
+                    if (serverOptions.AofPhysicalSublogCount > 1)
+                        UnlockSublogs(physicalSublogAccessVector);
+                }
+
+                if (serverOptions.AofAutoCommit)
+                    Commit();
+            }
         }
 
         /// <summary>

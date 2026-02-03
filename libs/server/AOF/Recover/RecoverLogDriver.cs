@@ -82,9 +82,14 @@ namespace Garnet.server
                     if (payloadLength > 0)
                     {
                         var entryPtr = ptr + entryLength;
-                        if (aofProcessor.ContinueReplaying(entryPtr, untilSequenceNumber))
+                        var entrySequenceNumber = 0L;
+                        if (!aofProcessor.SkipReplay(entryPtr, untilSequenceNumber, out entrySequenceNumber))
                         {
                             aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart);
+                        }
+                        else
+                        {
+                            logger?.LogTrace("Skipping entry replay {entrySequenceNumber} > {untilSequenceNumber}", entrySequenceNumber, untilSequenceNumber);
                         }
                         entryLength += TsavoriteLog.UnsafeAlign(payloadLength);
                     }

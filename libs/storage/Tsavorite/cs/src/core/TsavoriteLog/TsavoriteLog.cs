@@ -1195,6 +1195,9 @@ namespace Tsavorite.core
         /// <summary>
         /// Append a user-defined blittable struct header and three <see cref="ReadOnlySpan{_byte_}"/> entries entries atomically to the log.
         /// </summary>
+        /// <remarks>
+        /// The headerModifier callback allows the caller to update the header data under epoch protection when necessary as per the application requirements.
+        /// </remarks>
         /// <param name="userHeader"></param>
         /// <param name="item1"></param>
         /// <param name="item2"></param>
@@ -1687,8 +1690,8 @@ namespace Tsavorite.core
         /// <returns> whether there is anything to commit. </returns>
         public void Commit(bool spinWait = false, byte[] cookie = null, Func<byte[]> cookieGeneratorCallback = null)
         {
-            Debug.Assert((cookie == null) != (cookieGeneratorCallback == null),
-                "Exactly one of cookie or cookieGenerationCallback must be provided");
+            Debug.Assert(cookie == null || cookieGeneratorCallback == null,
+                "Both cookie and cookieGeneratorCallback cannot be provided");
             // Take a lower-bound of the content of this commit in case our request is filtered but we need to spin
             var tail = TailAddress;
             var lastCommit = commitNum;
@@ -1742,8 +1745,8 @@ namespace Tsavorite.core
         /// <returns></returns>
         public async ValueTask CommitAsync(byte[] cookie = null, CancellationToken token = default, Func<byte[]> cookieGeneratorCallback = null)
         {
-            Debug.Assert((cookie == null) != (cookieGeneratorCallback == null),
-                "Exactly one of cookie or cookieGenerationCallback must be provided");
+            Debug.Assert(cookie == null || cookieGeneratorCallback == null,
+                "Both cookie and cookieGeneratorCallback cannot be provided");
             token.ThrowIfCancellationRequested();
 
             // Take a lower-bound of the content of this commit in case our request is filtered but we need to wait
