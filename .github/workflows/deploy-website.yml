@@ -16,7 +16,8 @@ on:
       - completed
 permissions:
   contents: write
-
+  actions: read
+  
 jobs:
   deploy:
     if: always()
@@ -45,6 +46,13 @@ jobs:
         with:
           ref: allure_data_history
           path: allure_data_history
+
+      # Checkout gh-pages to preserve existing Allure content when not updating from Nightly
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-current
+
       - name: Copy charts
         run: |
           mkdir -p static/charts
@@ -54,6 +62,18 @@ jobs:
       - name: DEBUG Show triggering workflow name
         run: echo ${{ github.event.workflow_run.name }}
 
+      # When NOT triggered by Nightly, preserve existing Allure content from gh-pages
+      - name: Preserve existing Allure from gh-pages
+        if: ${{ github.event.workflow_run.name != 'Garnet Nightly Tests' }}
+        run: |
+          if [ -d "../gh-pages-current/allure" ]; then
+            mkdir -p static/allure
+            cp -R ../gh-pages-current/allure/* static/allure/
+            echo "Preserved existing Allure content from gh-pages"
+          else
+            echo "No existing Allure content found on gh-pages"
+          fi
+
       # Download the current allure_report artifact which is big with A LOT of test result files
       # Nightly run does not put full allure_report up in the allure_data_history branch to keep that branch small
       - name: Download Allure artifact
@@ -62,6 +82,8 @@ jobs:
         with:
           name: allure-report
           path: allure_artifact
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
       # The one thing that is pulled from allure_data_history branch is the historical test result data
       # This data is then copied into the downloaded allure_report to create a full report with history
       - name: Copy Allure report
@@ -70,8 +92,11 @@ jobs:
           mkdir -p static/allure
 
           # Base: Allure full report from Nightly Run artifact
-          if [ -d "allure_artifact/allure-report" ]; then
-            cp -R allure_artifact/allure-report/* static/allure
+          # Note: artifact downloads to workspace root, not working-directory, so use ../
+          # The artifact contents are directly in allure_artifact/ (not in a nested allure-report folder)
+          if [ -d "../allure_artifact" ]; then
+            cp -R ../allure_artifact/* static/allure
+            echo "Copied Allure report from artifact"
           else
             echo "Allure artifact missing; skipping base report copy."
           fi

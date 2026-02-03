@@ -637,7 +637,7 @@ namespace Garnet.server
         {
             if (expirationTimes.Count == 0)
             {
-                this.Size -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueOverhead) * expirationQueue.Count;
+                this.Size -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead) * expirationQueue.Count;
                 this.Size -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
                 expirationTimes = null;
                 expirationQueue = null;

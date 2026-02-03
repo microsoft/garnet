@@ -18,7 +18,7 @@
     "@docusaurus/plugin-content-docs": "^3.9.2",
     "@docusaurus/preset-classic": "^3.9.2",
     "@docusaurus/theme-mermaid": "^3.9.2",
-    "@easyops-cn/docusaurus-search-local": "^0.52.1",
+    "@easyops-cn/docusaurus-search-local": "^0.52.3",
     "@mdx-js/react": "^3.1.1",
     "clsx": "^2.1.1",
     "docusaurus-plugin-clarity": "^2.1.0",
@@ -33,7 +33,8 @@
   },
   "overrides": {
     "webpack-dev-server": "^5.2.1",
-    "on-headers": "^1.1.0"
+    "on-headers": "^1.1.0",
+    "lodash-es": "4.17.23"
   },
   "browserslist": {
     "production": [
