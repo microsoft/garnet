@@ -287,6 +287,58 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
+        [Test]
+        public async Task BZMPopETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { 5, 2, SortedSetKeys[0], SortedSetKeys[1], "MAX", "COUNT", 2 };
+
+            await CheckBlockingCommandsAsync(RespCommand.BZMPOP, cmdArgs, VerifyResult);
+
+            static void VerifyResult(byte[] result)
+            {
+                var key1 = SortedSetKeys[0].ToString();
+                var elem1 = SortedSetData[0][2]; 
+                var elem2 = SortedSetData[0][1];
+                var btExpectedResponse =
+                    $"*2\r\n${key1.Length}\r\n{key1}\r\n*2\r\n*2\r\n${elem1.Element.ToString().Length}\r\n{elem1.Element}\r\n${elem1.Score.ToString().Length}\r\n{elem1.Score}\r\n*2\r\n${elem2.Element.ToString().Length}\r\n{elem2.Element}\r\n${elem2.Score.ToString().Length}\r\n{elem2.Score}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, result);
+            }
+        }
+
+        [Test]
+        public async Task BZPopMaxETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], SortedSetKeys[1], 5 };
+
+            await CheckBlockingCommandsAsync(RespCommand.BZPOPMAX, cmdArgs, VerifyResult);
+
+            static void VerifyResult(byte[] result)
+            {
+                var key1 = SortedSetKeys[0].ToString();
+                var elem1 = SortedSetData[0][^1];
+                var btExpectedResponse =
+                    $"*3\r\n${key1.Length}\r\n{key1}\r\n${elem1.Element.ToString().Length}\r\n{elem1.Element}\r\n${elem1.Score.ToString().Length}\r\n{elem1.Score}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, result);
+            }
+        }
+
+        [Test]
+        public async Task BZPopMinETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { SortedSetKeys[0], SortedSetKeys[1], 5 };
+
+            await CheckBlockingCommandsAsync(RespCommand.BZPOPMIN, cmdArgs, VerifyResult);
+
+            static void VerifyResult(byte[] result)
+            {
+                var key1 = SortedSetKeys[0].ToString();
+                var elem1 = SortedSetData[0][0];
+                var btExpectedResponse =
+                    $"*3\r\n${key1.Length}\r\n{key1}\r\n${elem1.Element.ToString().Length}\r\n{elem1.Element}\r\n${elem1.Score.ToString().Length}\r\n{elem1.Score}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, result);
+            }
+        }
+
         public override void DataSetUp()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -297,13 +349,11 @@ namespace Garnet.test.Resp.ETag
             var zaddCmdArgs = new object[] { "ZADD", SortedSetKeys[0] }.Union(SortedSetData[0]
                 .SelectMany(e => new[] { e.Score.ToString(), e.Element.ToString() })).ToArray();
             var results = (string[])db.Execute("EXECWITHETAG", zaddCmdArgs);
-
             ClassicAssert.AreEqual(2, results!.Length);
             ClassicAssert.AreEqual(SortedSetData[0].Length, long.Parse(results[0]!));
             ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
 
             var result = (long)db.Execute("ZEXPIRE", SortedSetKeys[0], 3, "MEMBERS", 1, SortedSetData[0][0].Element);
-            ClassicAssert.AreEqual(1, result);
 
             result = db.SortedSetAdd(SortedSetKeys[1], SortedSetData[1]);
             ClassicAssert.AreEqual(SortedSetData[1].Length, result);

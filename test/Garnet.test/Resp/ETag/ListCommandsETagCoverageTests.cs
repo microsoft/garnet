@@ -197,6 +197,55 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
+        [Test]
+        public async Task BLMoveETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { ListKeys[0], ListKeys[1], "LEFT", "RIGHT", 5 };
+
+            await CheckBlockingCommandsAsync(RespCommand.BLMOVE, cmdArgs, VerifyResult, [0, 1]);
+
+            static void VerifyResult(byte[] result)
+            {
+                var elem1 = ListData[0][0];
+                var btExpectedResponse = $"${elem1.ToString().Length}\r\n{elem1.ToString()}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, result);
+            }
+        }
+
+        [Test]
+        public async Task BLPopETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { ListKeys[0], ListKeys[1], 5 };
+
+            await CheckBlockingCommandsAsync(RespCommand.BLPOP, cmdArgs, VerifyResult);
+
+            static void VerifyResult(byte[] result)
+            {
+                var key1 = ListKeys[0].ToString();
+                var elem1 = ListData[0][0];
+                var btExpectedResponse =
+                    $"*2\r\n${key1.Length}\r\n{key1}\r\n${elem1.ToString().Length}\r\n{elem1.ToString()}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, result);
+            }
+        }
+
+        [Test]
+        public async Task BRPopETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { ListKeys[0], ListKeys[1], 5 };
+
+            await CheckBlockingCommandsAsync(RespCommand.BRPOP, cmdArgs, VerifyResult);
+
+            static void VerifyResult(byte[] result)
+            {
+                var key1 = ListKeys[0].ToString();
+                var elem1 = ListData[0][^1];
+                var btExpectedResponse =
+                    $"*2\r\n${key1.Length}\r\n{key1}\r\n${elem1.ToString().Length}\r\n{elem1.ToString()}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, result);
+            }
+        }
+
         public override void DataSetUp()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
