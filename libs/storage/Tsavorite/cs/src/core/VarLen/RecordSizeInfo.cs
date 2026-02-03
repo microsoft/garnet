@@ -83,7 +83,7 @@ namespace Tsavorite.core
         internal void CalculateSizes(int keySize, int valueSize)
         {
             if (FieldInfo.ExtendedNamespaceSize > sbyte.MaxValue)
-                throw new TsavoriteException($"FieldInfo.ExtendedNamespaceSize ({FieldInfo.ExtendedNamespaceSize}) exceeds max allowable ({sbyte.MaxValue})");
+                ThrowTsavoriteException($"FieldInfo.ExtendedNamespaceSize ({FieldInfo.ExtendedNamespaceSize}) exceeds max allowable ({sbyte.MaxValue})");
 
             // Calculate full used record size. Use the full possible RecordLengthBytes initially to reserve space in the record for it;
             // later we'll replace it with the exact size needed.
