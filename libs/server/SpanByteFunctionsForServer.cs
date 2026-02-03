@@ -14,7 +14,7 @@ namespace Garnet.server
         /// <summary>
         /// Memory pool
         /// </summary>
-        protected readonly MemoryPool<byte> memoryPool;
+        protected new readonly MemoryPool<byte> memoryPool;
 
         /// <summary>
         /// Constructor

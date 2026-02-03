@@ -19,8 +19,7 @@ namespace Tsavorite.core
             ref PendingContext<TInput, TOutput, TContext> pendingContext)
             where TSessionFunctionsWrapper : ISessionFunctionsWrapper<TKey, TValue, TInput, TOutput, TContext, TStoreFunctions, TAllocator>
             => (internalStatus & OperationStatus.BASIC_MASK) > OperationStatus.MAX_MAP_TO_COMPLETED_STATUSCODE
-                && HandleRetryStatus(internalStatus, sessionFunctions, ref pendingContext)
-                ;
+                && HandleRetryStatus(internalStatus, sessionFunctions, ref pendingContext);
 
         /// <summary>
         /// Handle retry for operations that will not go pending (e.g., InternalLock)
