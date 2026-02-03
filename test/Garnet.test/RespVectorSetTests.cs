@@ -156,7 +156,7 @@ namespace Garnet.test
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
 
-            // VALUES + NOQUANT
+            // VALUES
             var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
@@ -170,7 +170,7 @@ namespace Garnet.test
                 float3[i] = float3[i - 1] + 1;
             }
 
-            // FP32 + NOQUANT
+            // FP32
             var res3 = db.Execute("VADD", ["foo", "REDUCE", "50", "FP32", MemoryMarshal.Cast<float, byte>(float3).ToArray(), new byte[] { 2, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
             ClassicAssert.AreEqual(1, (int)res3);
 
@@ -225,7 +225,7 @@ namespace Garnet.test
 
             foreach (var id in ids)
             {
-                var addRes = (int)db.Execute("VADD", ["foo", "VALUES", "1", ((float)(byte)id.Length).ToString(), id, "NOQUANT"]);
+                var addRes = (int)db.Execute("VADD", ["foo", "VALUES", "1", ((float)(byte)id.Length).ToString(), id, "XPREQ8"]);
                 ClassicAssert.AreEqual(1, addRes);
             }
 
@@ -360,7 +360,7 @@ namespace Garnet.test
 
             var exc16 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "2", "1.0", "2.0", "fizz", "NOQUANT", "EF", "6", "M", "10"]));
             ClassicAssert.AreEqual("ERR Vector dimension mismatch - got 2 but set has 75", exc16.Message);
-            var exc17 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "fizz", "Q8", "EF", "6", "M", "10"]));
+            var exc17 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "fizz", "XPREQ8", "EF", "6", "M", "10"]));
             ClassicAssert.AreEqual("ERR asked quantization mismatch with existing vector set", exc17.Message);
             var exc18 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "fizz", "NOQUANT", "EF", "12", "M", "20"]));
             ClassicAssert.AreEqual("ERR asked M value mismatch with existing vector set", exc18.Message);
@@ -370,40 +370,154 @@ namespace Garnet.test
             // Empty Vector Set keys are forbidden (TODO: Remove this constraint)
             var exc19 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", ["", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]));
             ClassicAssert.AreEqual("ERR Vector Set key cannot be empty", exc19.Message);
+
+            // Unsupported quantization types (Q8 and BIN are not yet supported)
+            var exc28 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar"]));
+            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc28.Message);
+            var exc29 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "Q8"]));
+            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc29.Message);
+            var exc30 = ClassicAssert.Throws<RedisServerException>(() => db.Execute("VADD", [vectorSetKey, "VALUES", "1", "2.0", "bar", "BIN"]));
+            ClassicAssert.AreEqual("ERR Unsupported quantization type", exc30.Message);
         }
 
         [Test]
-        public void VEMB()
+        public void VEMB_FP32Storage()
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase();
 
-            var res1 = db.Execute("VADD", ["foo", "REDUCE", "50", "VALUES", "75", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", "4.0", "1.0", "2.0", "3.0", new byte[] { 0, 0, 0, 0 }, "CAS", "NOQUANT", "EF", "16", "M", "32"]);
+            // Add a vector using VALUES format with NOQUANT (FP32 storage)
+            var res1 = db.Execute("VADD", ["foo", "VALUES", "8", "1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "7.0", "8.0", new byte[] { 0, 0, 0, 0 }, "NOQUANT"]);
             ClassicAssert.AreEqual(1, (int)res1);
 
-            var res2 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
-            ClassicAssert.AreEqual(75, res2.Length);
-            for (var i = 0; i < 75; i += 4)
+            // Add a vector using XB8 format with NOQUANT (FP32 storage)
+            byte[] vectorBytes = new byte[8];
+            for (int i = 0; i < 8; i++)
             {
-                ClassicAssert.AreEqual(float.Parse("1.0"), float.Parse(res2[i + 0]));
-                if (i + 1 < res2.Length)
-                {
-                    ClassicAssert.AreEqual(float.Parse("2.0"), float.Parse(res2[i + 1]));
-                }
-
-                if (i + 2 < res2.Length)
-                {
-                    ClassicAssert.AreEqual(float.Parse("3.0"), float.Parse(res2[i + 2]));
-                }
-
-                if (i + 3 < res2.Length)
-                {
-                    ClassicAssert.AreEqual(float.Parse("4.0"), float.Parse(res2[i + 3]));
-                }
+                vectorBytes[i] = (byte)(i + 10);
             }
 
-            var res3 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 1 }]);
-            ClassicAssert.AreEqual(0, res3.Length);
+            var res2 = db.Execute("VADD", ["foo", "XB8", vectorBytes, new byte[] { 0, 0, 0, 2 }, "NOQUANT"]);
+            ClassicAssert.AreEqual(1, (int)res2);
+
+            // Verify VEMB for XB8 input vector
+            var res3 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 2 }]);
+            ClassicAssert.AreEqual(8, res3.Length);
+            for (var i = 0; i < 8; i++)
+            {
+                ClassicAssert.AreEqual((float)vectorBytes[i], float.Parse(res3[i]));
+            }
+
+            // Verify VEMB for VALUES input vector
+            var res4 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(8, res4.Length);
+            for (var i = 0; i < 8; i++)
+            {
+                ClassicAssert.AreEqual((float)(i + 1), float.Parse(res4[i]));
+            }
+
+            // Verify non-existent element returns empty
+            var res5 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 1 }]);
+            ClassicAssert.AreEqual(0, res5.Length);
+        }
+
+        [Test]
+        public void VEMB_BinaryStorage()
+        {
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase();
+
+            // Add a vector using VALUES format with XPREQ8 (Binary storage)
+            var res1 = db.Execute("VADD", ["foo", "VALUES", "8", "1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "7.0", "8.0", new byte[] { 0, 0, 0, 0 }, "XPREQ8"]);
+            ClassicAssert.AreEqual(1, (int)res1);
+
+            // Add a vector using XB8 format with XPREQ8 (Binary storage)
+            //byte[] vectorBytes = new byte[8];
+            //for (int i = 0; i < 8; i++)
+            //{
+            //    vectorBytes[i] = (byte)(i + 10);
+            //}
+
+            //var res2 = db.Execute("VADD", ["foo", "XB8", vectorBytes, new byte[] { 0, 0, 0, 2 }, "XPREQ8"]);
+            //ClassicAssert.AreEqual(1, (int)res2);
+
+            // Verify VEMB for XB8 input vector
+            //var res3 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 2 }]);
+            //ClassicAssert.AreEqual(8, res3.Length);
+            //for (var i = 0; i < 8; i++)
+            //{
+                //ClassicAssert.AreEqual((float)vectorBytes[i], float.Parse(res3[i]));
+            //}
+
+            // Verify VEMB for VALUES input vector - should return the original float values
+            var res4 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 0 }]);
+            ClassicAssert.AreEqual(8, res4.Length);
+            for (var i = 0; i < 8; i++)
+            {
+                ClassicAssert.AreEqual((float)(i + 1), float.Parse(res4[i]));
+            }
+
+            // Verify non-existent element returns empty
+            var res5 = (string[])db.Execute("VEMB", ["foo", new byte[] { 0, 0, 0, 1 }]);
+            ClassicAssert.AreEqual(0, res5.Length);
+        }
+
+        [Test]
+        public void VEMB_RespVersions()
+        {
+            // VEMB response format depends on the RESP version used:
+            // - Resp3: Array of doubles
+            // - Resp2: Array of bulk strings
+
+            var vectorSetKey = "foo";
+            var elementId = new byte[] { 0, 0, 0, 0 };
+
+            // Create a vector set with known values
+            using var redisResp3 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp3));
+            var dbResp3 = redisResp3.GetDatabase();
+
+            var addRes = dbResp3.Execute("VADD", [vectorSetKey, "VALUES", "4", "1.0", "2.0", "3.0", "4.0", elementId, "NOQUANT"]);
+            ClassicAssert.AreEqual(1, (int)addRes);
+
+            // Test RESP3 response - should be array of doubles
+            var resp3Result = dbResp3.Execute("VEMB", [vectorSetKey, elementId]);
+            ClassicAssert.IsFalse(resp3Result.IsNull);
+            ClassicAssert.AreEqual(ResultType.Array, resp3Result.Resp3Type);
+
+            var resp3Array = (RedisValue[])resp3Result;
+            ClassicAssert.AreEqual(4, resp3Array.Length);
+            for (var i = 0; i < resp3Array.Length; i++)
+            {
+                // In RESP3, the values should be doubles that can be directly cast
+                ClassicAssert.AreEqual((double)(i + 1), (double)resp3Array[i]);
+            }
+
+            // Test RESP2 response - should be array of bulk strings
+            using var redisResp2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig(protocol: RedisProtocol.Resp2));
+            var dbResp2 = redisResp2.GetDatabase();
+
+            var resp2Result = dbResp2.Execute("VEMB", [vectorSetKey, elementId]);
+            ClassicAssert.IsFalse(resp2Result.IsNull);
+            ClassicAssert.AreEqual(ResultType.Array, resp2Result.Resp2Type);
+
+            var resp2Array = (RedisValue[])resp2Result;
+            ClassicAssert.AreEqual(4, resp2Array.Length);
+            for (var i = 0; i < resp2Array.Length; i++)
+            {
+                // In RESP2, the values are bulk strings that need parsing
+                ClassicAssert.AreEqual((float)(i + 1), float.Parse((string)resp2Array[i]));
+            }
+
+            // Test not found case - both should return empty array
+            var nonExistentElementId = new byte[] { 9, 9, 9, 9 };
+
+            var resp3NotFound = dbResp3.Execute("VEMB", [vectorSetKey, nonExistentElementId]);
+            ClassicAssert.AreEqual(ResultType.Array, resp3NotFound.Resp3Type);
+            ClassicAssert.AreEqual(0, ((RedisValue[])resp3NotFound).Length);
+
+            var resp2NotFound = dbResp2.Execute("VEMB", [vectorSetKey, nonExistentElementId]);
+            ClassicAssert.AreEqual(ResultType.Array, resp2NotFound.Resp2Type);
+            ClassicAssert.AreEqual(0, ((RedisValue[])resp2NotFound).Length);
         }
 
         [Test]

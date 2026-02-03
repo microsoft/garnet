@@ -5,6 +5,7 @@ using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Channels;
@@ -801,26 +802,11 @@ namespace Garnet.server
         /// <summary>
         /// Try to read the associated dimensions for an element out of a Vector Set.
         /// </summary>
-        internal bool TryGetEmbedding(ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element, ref SpanByteAndMemory outputDistances)
+        internal bool TryGetEmbedding(ReadOnlySpan<byte> indexValue, ReadOnlySpan<byte> element, out VectorQuantType quantType, ref SpanByteAndMemory outputDistances)
         {
             AssertHaveStorageSession();
 
-            ReadIndex(indexValue, out var context, out var dimensions, out _, out _, out _, out _, out _, out var indexPtr, out _);
-
-            // Make sure enough space in distances for requested count
-            if (dimensions * sizeof(float) > outputDistances.Length)
-            {
-                if (!outputDistances.IsSpanByte)
-                {
-                    outputDistances.Memory.Dispose();
-                }
-
-                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent((int)dimensions * sizeof(float)), (int)dimensions * sizeof(float));
-            }
-            else
-            {
-                outputDistances.Length = (int)dimensions * sizeof(float);
-            }
+            ReadIndex(indexValue, out var context, out var dimensions, out _, out quantType, out _, out _, out _, out var indexPtr, out _);
 
             Span<byte> internalId = stackalloc byte[sizeof(int)];
             var internalIdBytes = SpanByteAndMemory.FromPinnedSpan(internalId);
@@ -837,30 +823,89 @@ namespace Garnet.server
             {
                 internalIdBytes.Memory?.Dispose();
             }
+            
+            if (quantType == VectorQuantType.NoQuant)
+            {
+                return TryGetEmbeddingRaw<float>(context, indexPtr, (int)dimensions, internalId, ref outputDistances);
+            }
+            else if (quantType == VectorQuantType.XPreQ8)
+            {
+                return TryGetEmbeddingRaw<byte>(context, indexPtr, (int)dimensions, internalId, ref outputDistances);
+            }
+            else
+            {
+                throw new GarnetException($"Unsupported quantization type for embedding retrieval: {quantType}");
+            }
+        }
 
-            Span<byte> asBytesSpan = stackalloc byte[(int)dimensions];
-            var asBytes = SpanByteAndMemory.FromPinnedSpan(asBytesSpan);
+        private bool TryGetEmbeddingRaw<T>(ulong context, nint indexPtr, int dimensions, ReadOnlySpan<byte> internalId, ref SpanByteAndMemory outputDistances)
+            where T : unmanaged
+        {
+            var requiredBytes = dimensions * Unsafe.SizeOf<T>();
+            if (requiredBytes > outputDistances.Length)
+            {
+                outputDistances.Memory?.Dispose();
+                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(requiredBytes), requiredBytes);
+            }
+            else
+            {
+                outputDistances.Length = requiredBytes;
+            }
+
+            Span<byte> storedVectorAsBytesSpan = stackalloc byte[requiredBytes];
+            var storedVectorAsBytes = SpanByteAndMemory.FromPinnedSpan(storedVectorAsBytesSpan);
             try
             {
-                if (!ReadSizeUnknown(context | DiskANNService.FullVector, internalId, ref asBytes))
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, internalId, ref storedVectorAsBytes))
                 {
                     return false;
                 }
 
-                var from = asBytes.AsReadOnlySpan();
-                var into = MemoryMarshal.Cast<byte, float>(outputDistances.AsSpan());
+                Debug.Assert(storedVectorAsBytes.Length == requiredBytes, "Unexpected length for raw FP32 stored vector");
 
-                for (var i = 0; i < asBytes.Length; i++)
-                {
-                    into[i] = from[i];
-                }
+                var into = MemoryMarshal.Cast<byte, T>(outputDistances.AsSpan());
+                MemoryMarshal.Cast<byte, T>(storedVectorAsBytes.AsReadOnlySpan()).CopyTo(into);
 
                 // Vector might have been deleted, so check that after getting data
                 return Service.CheckInternalIdValid(context, indexPtr, internalId);
             }
             finally
             {
-                asBytes.Memory?.Dispose();
+                storedVectorAsBytes.Memory?.Dispose();
+            }
+        }
+
+        private bool TryGetEmbeddingU8(ulong context, nint indexPtr, int dimensions, ReadOnlySpan<byte> internalId, ref SpanByteAndMemory outputDistances)
+        {
+            // Make sure enough space in distances for requested count
+            if (dimensions > outputDistances.Length)
+            {
+                outputDistances.Memory?.Dispose();
+                outputDistances = new SpanByteAndMemory(MemoryPool<byte>.Shared.Rent(dimensions), dimensions);
+            }
+            else
+            {
+                outputDistances.Length = dimensions;
+            }
+
+            Span<byte> storedVectorAsBytesSpan = stackalloc byte[dimensions];
+            var storedVectorAsBytes = SpanByteAndMemory.FromPinnedSpan(storedVectorAsBytesSpan);
+            try
+            {
+                if (!ReadSizeUnknown(context | DiskANNService.FullVector, internalId, ref storedVectorAsBytes))
+                {
+                    return false;
+                }
+
+                Debug.Assert(storedVectorAsBytes.Length == dimensions, "Unexpected length for raw stored vector");
+                storedVectorAsBytes.AsReadOnlySpan().CopyTo(outputDistances.AsSpan());
+
+                // Vector might have been deleted, so check that after getting data
+                return Service.CheckInternalIdValid(context, indexPtr, internalId);
+            }
+            finally
+            {
+                storedVectorAsBytes.Memory?.Dispose();
             }
         }
 

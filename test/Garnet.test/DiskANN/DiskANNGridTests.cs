@@ -38,6 +38,10 @@ namespace Garnet.test.DiskANN
         [TestCase(10, 2, VectorQuantType.XPreQ8)]
         [TestCase(3, 7, VectorQuantType.XPreQ8)]
         [TestCase(4, 5, VectorQuantType.XPreQ8)]
+        [TestCase(100, 1, VectorQuantType.NoQuant)]
+        [TestCase(10, 2, VectorQuantType.NoQuant)]
+        [TestCase(3, 7, VectorQuantType.NoQuant)]
+        [TestCase(4, 5, VectorQuantType.NoQuant)]
         public void SearchVectorsInGrid(int gridSize, int dimension, VectorQuantType quantType)
         {
             string quantTypeStr = quantType switch
