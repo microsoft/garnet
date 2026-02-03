@@ -6,7 +6,7 @@
   <ItemGroup>
     <PackageVersion Include="Allure.Net.Commons" Version="2.14.1" />
     <PackageVersion Include="Allure.NUnit" Version="2.14.1" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.26.0" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.27.0" />
     <PackageVersion Include="Azure.Identity" Version="1.17.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.15.2" />
