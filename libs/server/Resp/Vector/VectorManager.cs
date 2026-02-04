@@ -982,7 +982,7 @@ namespace Garnet.server
         {
             try
             {
-                using var jsonDoc = JsonDocument.Parse(attributeJson.ToArray());
+                using var jsonDoc = JsonDocument.Parse(attributeJson);
                 var root = jsonDoc.RootElement;
 
                 var tokens = VectorFilterTokenizer.Tokenize(filter);
