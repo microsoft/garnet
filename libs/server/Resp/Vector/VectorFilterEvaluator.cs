@@ -12,6 +12,8 @@ namespace Garnet.server
     /// </summary>
     internal static class VectorFilterEvaluator
     {
+        private const double ComparisonEpsilon = 0.0001;
+
         public static object EvaluateExpression(Expr expr, JsonElement root)
         {
             if (expr is LiteralExpr lit)
@@ -96,7 +98,7 @@ namespace Garnet.server
             if (left == null || right == null) return false;
 
             if (left is double || right is double)
-                return Math.Abs(ToNumber(left) - ToNumber(right)) < 0.0001;
+                return Math.Abs(ToNumber(left) - ToNumber(right)) < ComparisonEpsilon;
 
             if (left is string ls && right is string rs)
                 return ls == rs;
