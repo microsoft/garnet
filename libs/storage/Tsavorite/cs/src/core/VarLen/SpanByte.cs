@@ -477,6 +477,28 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Copy to given <see cref="SpanByteAndMemory"/> (only payload copied to actual span/memory)
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void CopySliceTo(int sliceLength, ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)
+        {
+            if (dst.IsSpanByte)
+            {
+                if (dst.Length >= Length)
+                {
+                    dst.Length = Length;
+                    AsReadOnlySpan().Slice(0, sliceLength).CopyTo(dst.SpanByte.AsSpan());
+                    return;
+                }
+                dst.ConvertToHeap();
+            }
+
+            dst.Memory = memoryPool.Rent(Length);
+            dst.Length = Length;
+            AsReadOnlySpan().Slice(0, sliceLength).CopyTo(dst.Memory.Memory.Span);
+        }
+
+        /// <summary>
         /// Copy to given <see cref="SpanByteAndMemory"/> (header and payload copied to actual span/memory)
         /// </summary>
         public void CopyWithHeaderTo(ref SpanByteAndMemory dst, MemoryPool<byte> memoryPool)

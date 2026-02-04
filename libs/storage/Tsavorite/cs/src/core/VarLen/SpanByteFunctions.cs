@@ -11,7 +11,7 @@ namespace Tsavorite.core
     /// </summary>
     public class SpanByteFunctions<TContext> : SpanByteFunctions<SpanByteAndMemory, TContext>
     {
-        private protected readonly MemoryPool<byte> memoryPool;
+        protected readonly MemoryPool<byte> memoryPool;
 
         /// <summary>
         /// Constructor
