@@ -75,7 +75,7 @@ namespace Garnet.server
                     var start = ++i;
                     while (i < input.Length && input[i] != quote)
                     {
-                        if (input[i] == '\\') i++; // Skip escaped characters
+                        if (input[i] == '\\' && i + 1 < input.Length) i++; // Skip escaped characters
                         i++;
                     }
                     tokens.Add(new Token { Type = TokenType.String, Value = input.Substring(start, i - start) });
