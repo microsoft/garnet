@@ -27,7 +27,7 @@ namespace Garnet.test.Resp.ETag
         public async Task HCollectETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0] };
-            await CheckCommandsAsync(RespCommand.HCOLLECT, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HCOLLECT, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -39,7 +39,7 @@ namespace Garnet.test.Resp.ETag
         public async Task HDelETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], HashData[0][0].Name };
-            await CheckCommandsAsync(RespCommand.HDEL, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HDEL, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -51,7 +51,7 @@ namespace Garnet.test.Resp.ETag
         public async Task HExpireETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], 2, "FIELDS", 1, HashData[0][0].Name };
-            await CheckCommandsAsync(RespCommand.HEXPIRE, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HEXPIRE, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -66,7 +66,7 @@ namespace Garnet.test.Resp.ETag
         {
             var expireAt = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeSeconds();
             var cmdArgs = new object[] { HashKeys[0], expireAt, "FIELDS", 1, HashData[0][0].Name };
-            await CheckCommandsAsync(RespCommand.HEXPIREAT, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HEXPIREAT, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -80,7 +80,7 @@ namespace Garnet.test.Resp.ETag
         public async Task HIncrByETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], HashData[0][0].Name, 2 };
-            await CheckCommandsAsync(RespCommand.HINCRBY, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HINCRBY, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -92,7 +92,7 @@ namespace Garnet.test.Resp.ETag
         public async Task HIncrByFloatETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], HashData[0][1].Name, 2.2 };
-            await CheckCommandsAsync(RespCommand.HINCRBYFLOAT, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HINCRBYFLOAT, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -104,7 +104,7 @@ namespace Garnet.test.Resp.ETag
         public async Task HMSetETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], HashData[1][0].Name, HashData[1][0].Value };
-            await CheckCommandsAsync(RespCommand.HMSET, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HMSET, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -116,7 +116,7 @@ namespace Garnet.test.Resp.ETag
         public async Task HPExpireETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], 2000, "FIELDS", 1, HashData[0][0].Name };
-            await CheckCommandsAsync(RespCommand.HPEXPIRE, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HPEXPIRE, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -131,7 +131,7 @@ namespace Garnet.test.Resp.ETag
         {
             var expireAt = DateTimeOffset.UtcNow.AddSeconds(3).ToUnixTimeMilliseconds();
             var cmdArgs = new object[] { HashKeys[0], expireAt, "FIELDS", 1, HashData[0][0].Name };
-            await CheckCommandsAsync(RespCommand.HPEXPIREAT, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HPEXPIREAT, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -145,7 +145,7 @@ namespace Garnet.test.Resp.ETag
         public async Task HPersistETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], "FIELDS", 1, HashData[0][0].Name };
-            await CheckCommandsAsync(RespCommand.HPERSIST, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HPERSIST, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -159,7 +159,7 @@ namespace Garnet.test.Resp.ETag
         public async Task HSetETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], HashData[1][0].Name, HashData[1][0].Value };
-            await CheckCommandsAsync(RespCommand.HSET, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HSET, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -171,7 +171,7 @@ namespace Garnet.test.Resp.ETag
         public async Task HSetNxETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { HashKeys[0], HashData[1][0].Name, HashData[1][0].Value };
-            await CheckCommandsAsync(RespCommand.HSETNX, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.HSETNX, cmdArgs, VerifyResult);
             
             static void VerifyResult(RedisResult result)
             {

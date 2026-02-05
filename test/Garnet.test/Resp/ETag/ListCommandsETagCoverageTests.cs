@@ -28,7 +28,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[0], "AFTER", ListData[0][1], ListData[1][0] };
 
-            await CheckCommandsAsync(RespCommand.LINSERT, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.LINSERT, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -41,7 +41,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[1], ListKeys[0], "LEFT", "RIGHT" };
 
-            await CheckCommandsAsync(RespCommand.LMOVE, cmdArgs, VerifyResult, [0, 1]);
+            await CheckCommandAsync(RespCommand.LMOVE, cmdArgs, VerifyResult, [0, 1]);
 
             static void VerifyResult(RedisResult result)
             {
@@ -54,7 +54,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { 1, ListKeys[0], "LEFT" };
 
-            await CheckCommandsAsync(RespCommand.LMPOP, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.LMPOP, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -72,7 +72,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[0] };
 
-            await CheckCommandsAsync(RespCommand.LPOP, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.LPOP, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -85,7 +85,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[0], ListData[1][0] };
 
-            await CheckCommandsAsync(RespCommand.LPUSH, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.LPUSH, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -98,7 +98,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[0], ListData[1][0] };
 
-            await CheckCommandsAsync(RespCommand.LPUSHX, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.LPUSHX, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -111,7 +111,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[0], 0, ListData[0][0] };
 
-            await CheckCommandsAsync(RespCommand.LREM, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.LREM, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -124,7 +124,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[0] };
 
-            await CheckCommandsAsync(RespCommand.RPOP, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.RPOP, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -137,7 +137,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[0], ListKeys[1] };
 
-            await CheckCommandsAsync(RespCommand.RPOPLPUSH, cmdArgs, VerifyResult, [0, 1]);
+            await CheckCommandAsync(RespCommand.RPOPLPUSH, cmdArgs, VerifyResult, [0, 1]);
 
             static void VerifyResult(RedisResult result)
             {
@@ -150,7 +150,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[0], ListData[1][0] };
 
-            await CheckCommandsAsync(RespCommand.RPUSH, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.RPUSH, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -163,7 +163,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[0], ListData[1][0] };
 
-            await CheckCommandsAsync(RespCommand.RPUSHX, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.RPUSHX, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -176,7 +176,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[0], 0, ListData[1][0] };
 
-            await CheckCommandsAsync(RespCommand.LSET, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.LSET, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -189,7 +189,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[0], 0, 1 };
 
-            await CheckCommandsAsync(RespCommand.LTRIM, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.LTRIM, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -200,13 +200,13 @@ namespace Garnet.test.Resp.ETag
         [Test]
         public async Task BLMoveETagAdvancedTestAsync()
         {
-            var cmdArgs = new object[] { ListKeys[0], ListKeys[1], "LEFT", "RIGHT", 5 };
+            var cmdArgs = new object[] { ListKeys[1], ListKeys[0], "LEFT", "RIGHT", 5 };
 
-            await CheckBlockingCommandsAsync(RespCommand.BLMOVE, cmdArgs, VerifyResult, [0, 1]);
+            await CheckBlockingCommandAsync(RespCommand.BLMOVE, cmdArgs, VerifyResult, [0, 1]);
 
             static void VerifyResult(byte[] result)
             {
-                var elem1 = ListData[0][0];
+                var elem1 = ListData[1][0];
                 var btExpectedResponse = $"${elem1.ToString().Length}\r\n{elem1.ToString()}\r\n";
                 TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, result);
             }
@@ -217,7 +217,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { ListKeys[0], ListKeys[1], 5 };
 
-            await CheckBlockingCommandsAsync(RespCommand.BLPOP, cmdArgs, VerifyResult);
+            await CheckBlockingCommandAsync(RespCommand.BLPOP, cmdArgs, VerifyResult);
 
             static void VerifyResult(byte[] result)
             {
@@ -230,11 +230,29 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
+        public async Task BLMPopETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { 5, 2, ListKeys[0], ListKeys[1], "LEFT", "COUNT", 2 };
+
+            await CheckBlockingCommandAsync(RespCommand.BLMPOP, cmdArgs, VerifyResult);
+
+            static void VerifyResult(byte[] result)
+            {
+                var key1 = ListKeys[0].ToString();
+                var elem1 = ListData[0][0];
+                var elem2 = ListData[0][1];
+                var btExpectedResponse =
+                    $"*2\r\n${key1.Length}\r\n{key1}\r\n*2\r\n${elem1.ToString().Length}\r\n{elem1.ToString()}\r\n${elem2.ToString().Length}\r\n{elem2.ToString()}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, result);
+            }
+        }
+
+        [Test]
         public async Task BRPopETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { ListKeys[0], ListKeys[1], 5 };
 
-            await CheckBlockingCommandsAsync(RespCommand.BRPOP, cmdArgs, VerifyResult);
+            await CheckBlockingCommandAsync(RespCommand.BRPOP, cmdArgs, VerifyResult);
 
             static void VerifyResult(byte[] result)
             {
@@ -242,6 +260,21 @@ namespace Garnet.test.Resp.ETag
                 var elem1 = ListData[0][^1];
                 var btExpectedResponse =
                     $"*2\r\n${key1.Length}\r\n{key1}\r\n${elem1.ToString().Length}\r\n{elem1.ToString()}\r\n";
+                TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, result);
+            }
+        }
+
+        [Test]
+        public async Task BRPopLPushETagAdvancedTestAsync()
+        {
+            var cmdArgs = new object[] { ListKeys[1], ListKeys[0], 5 };
+
+            await CheckBlockingCommandAsync(RespCommand.BRPOPLPUSH, cmdArgs, VerifyResult, [0, 1]);
+
+            static void VerifyResult(byte[] result)
+            {
+                var elem1 = ListData[1][^1];
+                var btExpectedResponse = $"${elem1.ToString().Length}\r\n{elem1.ToString()}\r\n";
                 TestUtils.AssertEqualUpToExpectedLength(btExpectedResponse, result);
             }
         }

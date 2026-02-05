@@ -63,7 +63,7 @@ namespace Garnet.test.Resp.ETag
             TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
         }
 
-        protected async Task CheckCommandsAsync(RespCommand command, object[] commandArgs, Action<RedisResult> verifyResult, int[] checkKeysWithEtag = null)
+        protected async Task CheckCommandAsync(RespCommand command, object[] commandArgs, Action<RedisResult> verifyResult, int[] checkKeysWithEtag = null)
         {
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
@@ -105,7 +105,7 @@ namespace Garnet.test.Resp.ETag
             }
         }
 
-        protected async Task CheckBlockingCommandsAsync(RespCommand command, object[] commandArgs, Action<byte[]> verifyResult, int[] checkKeysWithEtag = null)
+        protected async Task CheckBlockingCommandAsync(RespCommand command, object[] commandArgs, Action<byte[]> verifyResult, int[] checkKeysWithEtag = null)
         {
             await using var redis = await ConnectionMultiplexer.ConnectAsync(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);

@@ -21,7 +21,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { StringKeys[0], StringData[1] };
 
-            await CheckCommandsAsync(RespCommand.APPEND, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.APPEND, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
@@ -34,7 +34,7 @@ namespace Garnet.test.Resp.ETag
         {
             var cmdArgs = new object[] { StringKeys[0] };
 
-            await CheckCommandsAsync(RespCommand.INCR, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.INCR, cmdArgs, VerifyResult);
 
             static void VerifyResult(RedisResult result)
             {
