@@ -106,6 +106,11 @@ namespace Tsavorite.core
         readonly SemaphoreSlim waiterSemaphore = new(0);
 
         /// <summary>
+        /// Cancellation token source used to cancel threads waiting on the semaphore during Dispose.
+        /// </summary>
+        readonly CancellationTokenSource cts = new();
+
+        /// <summary>
         /// Number of threads waiting for an epoch table entry.
         /// Used as a fast-path check to avoid semaphore overhead when no waiters.
         /// </summary>
@@ -180,10 +185,19 @@ namespace Tsavorite.core
         /// </summary>
         public void Dispose()
         {
+            // Cancel any threads waiting on the semaphore, then wait for
+            // them to finish unwinding before disposing resources.
+            cts.Cancel();
+            while (waiterCount > 0)
+                Thread.Yield();
+
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
             // Mark this instance ID as available
             InstanceTracker.GetRef(instanceId) = kInvalidIndex;
+
+            cts.Dispose();
+            waiterSemaphore.Dispose();
         }
 
         /// <summary>
@@ -555,7 +569,7 @@ namespace Tsavorite.core
                         return;
 
                     // No slot available, wait for a signal from Release()
-                    waiterSemaphore.Wait();
+                    waiterSemaphore.Wait(cts.Token);
                 }
             }
             finally
