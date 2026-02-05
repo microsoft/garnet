@@ -130,7 +130,6 @@ namespace Garnet.server
                 _ = txnManager.Run(true);
             }
             var geoObjectTransactionalContext = txnManager.ObjectTransactionalContext;
-            var geoUnifiedTransactionalContext = txnManager.UnifiedTransactionalContext;
 
             using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
 
@@ -155,7 +154,7 @@ namespace Garnet.server
                 if (status == GarnetStatus.NOTFOUND)
                 {
                     // Expire/Delete the destination key if the source key is not found
-                    _ = EXPIRE(destination, TimeSpan.Zero, out _, ExpireOption.None, ref geoUnifiedTransactionalContext);
+                    _ = DELETE_ObjectStore(destination, ref geoObjectTransactionalContext);
                     writer.WriteInt32(0);
                     return GarnetStatus.OK;
                 }
@@ -193,12 +192,10 @@ namespace Garnet.server
                         _ = parseState.Read(2 * j, ref currOutPtr, endOutPtr);
                     }
 
+                    metaCommandInfo.Initialize();
+
                     // Prepare the input
-                    var zAddInput = new ObjectInput(new RespInputHeader
-                    {
-                        type = GarnetObjectType.SortedSet,
-                        SortedSetOp = SortedSetOperation.ZADD,
-                    }, ref parseState);
+                    var zAddInput = new ObjectInput(GarnetObjectType.SortedSet, ref metaCommandInfo, ref parseState) { SortedSetOp = SortedSetOperation.ZADD };
 
                     var zAddOutput = new ObjectOutput();
                     RMWObjectStoreOperationWithOutput(destination, ref zAddInput, ref geoObjectTransactionalContext, ref zAddOutput);

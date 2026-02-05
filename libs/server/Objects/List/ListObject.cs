@@ -128,7 +128,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                     byte respProtocolVersion, out long memorySizeChange)
+                                     ref RespMemoryWriter writer, out long memorySizeChange)
         {
             memorySizeChange = 0;
 
@@ -145,41 +145,37 @@ namespace Garnet.server
             {
                 case ListOperation.LPUSH:
                 case ListOperation.LPUSHX:
-                    ListPush(ref input, ref output, true);
-                    break;
-                case ListOperation.LPOP:
-                    ListPop(ref input, ref output, respProtocolVersion, true);
-                    break;
                 case ListOperation.RPUSH:
                 case ListOperation.RPUSHX:
-                    ListPush(ref input, ref output, false);
+                    ListPush(ref input, ref output, ref writer);
                     break;
+                case ListOperation.LPOP:
                 case ListOperation.RPOP:
-                    ListPop(ref input, ref output, respProtocolVersion, false);
+                    ListPop(ref input, ref output, ref writer);
                     break;
                 case ListOperation.LLEN:
-                    ListLength(ref output);
+                    ListLength(ref input, ref output, ref writer);
                     break;
                 case ListOperation.LTRIM:
-                    ListTrim(ref input, ref output);
+                    ListTrim(ref input, ref output, ref writer);
                     break;
                 case ListOperation.LRANGE:
-                    ListRange(ref input, ref output, respProtocolVersion);
+                    ListRange(ref input, ref output, ref writer);
                     break;
                 case ListOperation.LINDEX:
-                    ListIndex(ref input, ref output, respProtocolVersion);
+                    ListIndex(ref input, ref output, ref writer);
                     break;
                 case ListOperation.LINSERT:
-                    ListInsert(ref input, ref output);
+                    ListInsert(ref input, ref output, ref writer);
                     break;
                 case ListOperation.LREM:
-                    ListRemove(ref input, ref output);
+                    ListRemove(ref input, ref output, ref writer);
                     break;
                 case ListOperation.LSET:
-                    ListSet(ref input, ref output, respProtocolVersion);
+                    ListSet(ref input, ref output, ref writer);
                     break;
                 case ListOperation.LPOS:
-                    ListPosition(ref input, ref output, respProtocolVersion);
+                    ListPosition(ref input, ref output, ref writer);
                     break;
 
                 default:

@@ -575,8 +575,7 @@ namespace Garnet.server
 
         private static void ExecuteHashCollect(StorageSession storageSession)
         {
-            var header = new RespInputHeader(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
-            var input = new ObjectInput(header);
+            var input = new ObjectInput(GarnetObjectType.Hash) { HashOp = HashOperation.HCOLLECT };
 
             ReadOnlySpan<PinnedSpanByte> key = [PinnedSpanByte.FromPinnedSpan("*"u8)];
             storageSession.HashCollect(key, ref input, ref storageSession.objectBasicContext);
