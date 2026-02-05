@@ -199,11 +199,9 @@ namespace Tsavorite.core
             // the CAS, retry (they will see the cancelled CTS and exit promptly).
             while (true)
             {
-                while (waiterCount != 0)
-                    Thread.Yield();
-
                 if (Interlocked.CompareExchange(ref waiterCount, kDisposedFlag, 0) == 0)
                     break;
+                Thread.Yield();
             }
 
             CurrentEpoch = 1;
