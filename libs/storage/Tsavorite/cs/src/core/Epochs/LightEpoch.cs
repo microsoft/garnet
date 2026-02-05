@@ -209,7 +209,7 @@ namespace Tsavorite.core
             ref var entry = ref Metadata.Entries.GetRef(instanceId);
             if (kInvalidIndex != entry)
             {
-                if ((*(tableAligned + entry)).threadId == entry)
+                if ((*(tableAligned + entry)).threadId == Metadata.threadId)
                     return true;
             }
             return false;
