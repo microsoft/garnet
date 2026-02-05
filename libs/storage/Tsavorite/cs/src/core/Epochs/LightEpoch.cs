@@ -431,9 +431,12 @@ namespace Tsavorite.core
         void Acquire()
         {
             ref var entry = ref Metadata.Entries.GetRef(instanceId);
-            Debug.Assert(entry == kInvalidIndex, "Trying to acquire an already acquired epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
-            entry = ReserveEntryForThread();
-            Debug.Assert((*(tableAligned + entry)).localCurrentEpoch == 0, "Trying to acquire an already acquired epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
+            Debug.Assert(entry == kInvalidIndex,
+                "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
+            ReserveEntryForThread(ref entry);
+
+            Debug.Assert((*(tableAligned + entry)).localCurrentEpoch == 0,
+                "Trying to acquire protected epoch. Make sure you do not re-enter Tsavorite from callbacks or IDevice implementations. If using tasks, use TaskCreationOptions.RunContinuationsAsynchronously.");
         }
 
         /// <summary>
@@ -462,7 +465,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>True if entry was acquired, false if table is full</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        bool TryAcquireEntry(out int entry)
+        bool TryAcquireEntry(ref int entry)
         {
             // Try primary offset
             entry = Metadata.startOffset1;
@@ -503,7 +506,7 @@ namespace Tsavorite.core
 
             // Note: Metadata.startOffset2 should now be back to where it started because
             // we circled the entire table twice.
-            entry = 0;
+            entry = kInvalidIndex;
             return false;
         }
 
@@ -513,13 +516,13 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>Reserved entry</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        int ReserveEntry()
+        void ReserveEntry(ref int entry)
         {
-            if (TryAcquireEntry(out var entry))
-                return entry;
+            if (TryAcquireEntry(ref entry))
+                return;
 
             // Table is full, fall back to slow path with waiting
-            return ReserveEntryWait();
+            ReserveEntryWait(ref entry);
         }
 
         /// <summary>
@@ -528,7 +531,7 @@ namespace Tsavorite.core
         /// </summary>
         /// <returns>Reserved entry</returns>
         [MethodImpl(MethodImplOptions.NoInlining)]
-        int ReserveEntryWait()
+        void ReserveEntryWait(ref int entry)
         {
             _ = Interlocked.Increment(ref waiterCount);
             try
@@ -539,8 +542,8 @@ namespace Tsavorite.core
                     // us waiting on the semaphore forever in case we increment waiterCount
                     // immediately after the epoch releaser sees a zero waiterCount (and
                     // therefore does not release the semaphore).
-                    if (TryAcquireEntry(out var entry))
-                        return entry;
+                    if (TryAcquireEntry(ref entry))
+                        return;
 
                     // No slot available, wait for a signal from Release()
                     waiterSemaphore.Wait();
@@ -553,20 +556,20 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Allocate a new entry for this instance and thread in epoch table.
+        /// Allocate a new entry in epoch table. This is called 
+        /// once for a thread.
         /// </summary>
         /// <returns>Reserved entry</returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        int ReserveEntryForThread()
+        void ReserveEntryForThread(ref int entry)
         {
-            if (Metadata.threadId == 0) // Calculate start offsets once per thread for performance
+            if (Metadata.threadId == 0) // run once per thread for performance
             {
                 Metadata.threadId = Environment.CurrentManagedThreadId;
                 uint code = (uint)Utility.Murmur3(Metadata.threadId);
                 Metadata.startOffset1 = (ushort)(1 + (code % kTableSize));
                 Metadata.startOffset2 = (ushort)(1 + ((code >> 16) % kTableSize));
             }
-            return ReserveEntry();
+            ReserveEntry(ref entry);
         }
 
         /// <inheritdoc/>
