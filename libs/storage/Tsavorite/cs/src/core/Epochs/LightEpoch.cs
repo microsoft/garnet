@@ -194,9 +194,7 @@ namespace Tsavorite.core
             // unwind and decrement waiterCount.
             cts.Cancel();
 
-            // Spin until all waiters have unwound, then atomically set the
-            // disposed flag. If a new waiter sneaks in between the check and
-            // the CAS, retry (they will see the cancelled CTS and exit promptly).
+            // Atomically set the disposed flag after all waiters are done.
             while (true)
             {
                 if (Interlocked.CompareExchange(ref waiterCount, kDisposedFlag, 0) == 0)
