@@ -575,7 +575,7 @@ namespace Tsavorite.core
             try
             {
                 // If the MSB (disposed flag) is set, the epoch is being disposed.
-                if (newCount < 0)
+                if ((newCount & kDisposedFlag) != 0)
                     throw new ObjectDisposedException(nameof(LightEpoch));
 
                 while (true)
