@@ -1152,7 +1152,7 @@ namespace Tsavorite.core
                 Debug.Assert(logicalAddress == 0);
 
                 epoch.Suspend();
-                var released = epochAccessor.TrySuspend();
+                var suspended = epochAccessor.TrySuspend();
                 try
                 {
                     if (cannedException != null) ThrowException(cannedException);
@@ -1160,7 +1160,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    if (released) epochAccessor.Resume();
+                    if (suspended) epochAccessor.Resume();
                     epoch.Resume();
                 }
             }
