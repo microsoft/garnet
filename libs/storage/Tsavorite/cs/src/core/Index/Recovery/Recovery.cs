@@ -561,9 +561,13 @@ namespace Tsavorite.core
         private void DoPostRecovery(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, long tailAddress, ref long headAddress, ref long readOnlyAddress, long lastFreedPage)
         {
             // Adjust head and read-only address post-recovery
-            var _head = hlogBase.GetFirstValidLogicalAddressOnPage(1 + hlogBase.GetPage(tailAddress) - hlogBase.AllocatedPageCount);
+            var tailPage = hlogBase.GetPage(tailAddress);
+            if (tailAddress > hlogBase.GetFirstValidLogicalAddressOnPage(tailPage))
+                tailPage++;
+            var headPage = hlogBase.GetPage(tailPage - hlogBase.AllocatedPageCount);
+            var _head = hlogBase.GetFirstValidLogicalAddressOnPage(headPage);
 
-            // If additional pages have been freed to accommodate heap memory constraints, adjust head address accordingly
+            // If additional pages have been freed to accommodate memory constraints, adjust head address accordingly
             if (lastFreedPage != NoPageFreed)
             {
                 var nextAddress = hlogBase.GetFirstValidLogicalAddressOnPage(lastFreedPage + 1);

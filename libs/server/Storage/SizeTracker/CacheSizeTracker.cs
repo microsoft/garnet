@@ -60,9 +60,6 @@ namespace Garnet.server
             Debug.Assert(store != null);
             Debug.Assert(targetSize > 0 || readCacheTargetSize > 0);
 
-            TargetSize = targetSize;
-            ReadCacheTargetSize = readCacheTargetSize;
-
             // Subscribe to the eviction notifications. We don't hang onto the LogSubscribeDisposable because the CacheSizeTracker is never disposed once created.
             if (targetSize > 0)
             {
@@ -77,6 +74,9 @@ namespace Garnet.server
                         readCacheTargetSize / HighTargetSizeDeltaFraction, readCacheTargetSize / LowTargetSizeDeltaFraction, loggerFactory?.CreateLogger("ReadCacheSizeTracker"));
                 store.ReadCache.SetLogSizeTracker(readCacheTracker);
             }
+
+            TargetSize = targetSize;
+            ReadCacheTargetSize = readCacheTargetSize;
         }
 
         /// <summary>Start the trackers, ensuring that only one thread does so</summary>

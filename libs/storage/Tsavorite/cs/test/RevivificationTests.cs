@@ -230,7 +230,7 @@ namespace Tsavorite.test.Revivification
         internal static int GetRevivifiableRecordCount<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, int numRecords)
             where TStoreFunctions : IStoreFunctions
             where TAllocator : IAllocator<TStoreFunctions>
-            => (int)(numRecords * store.RevivificationManager.revivifiableFraction);  // Add extra for rounding issues
+            => (int)(numRecords * store.RevivificationManager.revivifiableFraction * store.Log.allocatorBase.logMutableFraction);
 
         internal static int GetMinRevivifiableKey<TStoreFunctions, TAllocator>(TsavoriteKV<TStoreFunctions, TAllocator> store, int numRecords)
             where TStoreFunctions : IStoreFunctions

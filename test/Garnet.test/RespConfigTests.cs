@@ -17,8 +17,8 @@ namespace Garnet.test
     /// <summary>
     /// Test dynamically changing server configuration using CONFIG SET command.
     /// </summary>
-    [TestFixture(false)]
-    [TestFixture(true)]
+    [TestFixture(RevivificationMode.NoReviv)]
+    [TestFixture(RevivificationMode.UseReviv)]
     public class RespConfigTests
     {
         GarnetServer server;
@@ -30,9 +30,9 @@ namespace Garnet.test
         // The HLOG will always have at least two pages allocated.
         internal const int MinLogAllocatedPageCount = 2;
 
-        public RespConfigTests(bool useReviv)
+        public RespConfigTests(RevivificationMode revivMode)
         {
-            this.useReviv = useReviv;
+            this.useReviv = revivMode == RevivificationMode.UseReviv;
         }
 
         [SetUp]
@@ -66,8 +66,8 @@ namespace Garnet.test
         [Test]
         [TestCase("16g", "32g", "64g", "g4")]
         [TestCase("9gB", "28GB", "33G", "2gBB")]
-        [TestCase("16m", "32m", "256GB", "3bm")]
-        [TestCase("5MB", "30M", "128GB", "44d")]
+        [TestCase("128m", "256m", "256GB", "3bm")]
+        [TestCase("500m", "1500M", "128GB", "44d")]
         public void ConfigSetMemorySizeTest(string smallerSize, string largerSize, string largerThanBufferSize, string malformedSize)
         {
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
@@ -78,11 +78,16 @@ namespace Garnet.test
             var initMemorySize = memorySizeStr;
 
             var store = server.Provider.StoreWrapper.store;
+            var tracker = store.Log.LogSizeTracker;
             var currMemorySize = ServerOptions.ParseSize(initMemorySize, out _);
             var pageSize = ServerOptions.ParseSize(pageSizeStr, out _);
 
             var bufferSizeInBytes = ServerOptions.NextPowerOf2(currMemorySize);
             Assert.That(bufferSizeInBytes / pageSize, Is.EqualTo(store.Log.BufferSize));
+
+            // expectedMaxAPC does not change after being set in AllocatorBase initialization
+            var expectedMaxAPC = (int)(RoundUp(currMemorySize, pageSize) / pageSize);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
 
             // Check initial AllocatedPageCount before any changes
             var metrics = server.Metrics.GetInfoMetrics(metricType);
@@ -91,6 +96,7 @@ namespace Garnet.test
             ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out var allocatedPageCount));
             long expectedAPC = MinLogAllocatedPageCount;
             ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
 
             // Try to set memory size to the same value as current
             var result = db.Execute("CONFIG", "SET", option, initMemorySize);
@@ -101,7 +107,9 @@ namespace Garnet.test
             miAPC = metrics.FirstOrDefault(mi => mi.Name == metricName);
             ClassicAssert.IsNotNull(miAPC);
             ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out allocatedPageCount));
+            // expectedAPC remains unchanged because we didn't add records
             ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
 
             // Try to set memory size to a smaller value than current
             result = db.Execute("CONFIG", "SET", option, smallerSize);
@@ -113,8 +121,9 @@ namespace Garnet.test
             miAPC = metrics.FirstOrDefault(mi => mi.Name == metricName);
             ClassicAssert.IsNotNull(miAPC);
             ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out allocatedPageCount));
-            expectedAPC = currMemorySize / pageSize;
+            // expectedAPC remains unchanged because we didn't add records
             ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
 
             // Try to set memory size to a larger value than current
             result = db.Execute("CONFIG", "SET", option, largerSize);
@@ -126,30 +135,33 @@ namespace Garnet.test
             miAPC = metrics.FirstOrDefault(mi => mi.Name == metricName);
             ClassicAssert.IsNotNull(miAPC);
             ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out allocatedPageCount));
-            expectedAPC = currMemorySize / pageSize;
+            // expectedAPC remains unchanged because we didn't add records
             ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
 
             // Try to set memory size larger than the buffer size - this should fail
             _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, largerThanBufferSize),
                 string.Format(CmdStrings.GenericErrMemorySizeGreaterThanBuffer, option));
 
-            // miAPC should remain unchanged
+            // Page counts should remain unchanged
             metrics = server.Metrics.GetInfoMetrics(metricType);
             miAPC = metrics.FirstOrDefault(mi => mi.Name == metricName);
             ClassicAssert.IsNotNull(miAPC);
             ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out allocatedPageCount));
             ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
 
             // Try to set memory size with a malformed size input - this should fail
             _ = Assert.Throws<RedisServerException>(() => db.Execute("CONFIG", "SET", option, malformedSize),
                 string.Format(CmdStrings.GenericErrIncorrectSizeFormat, option));
 
-            // miAPC should remain unchanged
+            // Page counts should remain unchanged
             metrics = server.Metrics.GetInfoMetrics(metricType);
             miAPC = metrics.FirstOrDefault(mi => mi.Name == metricName);
             ClassicAssert.IsNotNull(miAPC);
             ClassicAssert.IsTrue(long.TryParse(miAPC.Value, out allocatedPageCount));
             ClassicAssert.AreEqual(expectedAPC, allocatedPageCount);
+            Assert.That(tracker.logAccessor.allocatorBase.MaxAllocatedPageCount, Is.EqualTo(expectedMaxAPC));
         }
 
         /// <summary>
@@ -224,8 +236,8 @@ namespace Garnet.test
     /// <summary>
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET memory.
     /// </summary>
-    [TestFixture(false)]
-    [TestFixture(true)]
+    [TestFixture(RevivificationMode.NoReviv)]
+    [TestFixture(RevivificationMode.UseReviv)]
     public class RespConfigUtilizationTests
     {
         GarnetServer server;
@@ -234,9 +246,9 @@ namespace Garnet.test
         private readonly string pageSize = "1024";
         private readonly bool useReviv;
 
-        public RespConfigUtilizationTests(bool useReviv)
+        public RespConfigUtilizationTests(RevivificationMode revivMode)
         {
-            this.useReviv = useReviv;
+            this.useReviv = revivMode == RevivificationMode.UseReviv;
         }
 
         [SetUp]
@@ -508,7 +520,7 @@ namespace Garnet.test
                 var addressRange = store.Log.TailAddress - store.Log.HeadAddress;
                 var addressRangePages = RoundUp(addressRange, store.Log.allocatorBase.PageSize) / store.Log.allocatorBase.PageSize;
                 Assert.That(addressRange, Is.LessThanOrEqualTo(highTargetRestore));
-                Assert.That(lastIdxSecondRound + 1 - c, Is.LessThanOrEqualTo(allocatedPagesRestore * 2));
+                Assert.That(lastIdxSecondRound + 1 - c, Is.EqualTo((allocatedPagesRestore - 1) * 2));   // AllocatedPageCount includes the "allocate-ahead" page
                 Assert.That(lastIdxSecondRound + 1 - c, Is.EqualTo(addressRangePages * 2));
 
                 // Verify that all previous keys are not present in the database
@@ -521,8 +533,8 @@ namespace Garnet.test
     /// <summary>
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET.
     /// </summary>
-    [TestFixture(false)]
-    [TestFixture(true)]
+    [TestFixture(RevivificationMode.NoReviv)]
+    [TestFixture(RevivificationMode.UseReviv)]
     public class RespConfigIndexUtilizationTests
     {
         GarnetServer server;
@@ -531,9 +543,9 @@ namespace Garnet.test
         private readonly string pageSize = "1024";
         private readonly bool useReviv;
 
-        public RespConfigIndexUtilizationTests(bool useReviv)
+        public RespConfigIndexUtilizationTests(RevivificationMode revivMode)
         {
-            this.useReviv = useReviv;
+            this.useReviv = revivMode == RevivificationMode.UseReviv;
         }
 
         [SetUp]
@@ -625,8 +637,8 @@ namespace Garnet.test
     /// <summary>
     /// Test memory utilization behavior when dynamically changing the memory size configuration using CONFIG SET memory.
     /// </summary>
-    [TestFixture(false)]
-    [TestFixture(true)]
+    [TestFixture(RevivificationMode.NoReviv)]
+    [TestFixture(RevivificationMode.UseReviv)]
     public class RespConfigHeapUtilizationTests
     {
         GarnetServer server;
@@ -635,9 +647,9 @@ namespace Garnet.test
         private readonly string pageSize = "1024";
         private readonly bool useReviv;
 
-        public RespConfigHeapUtilizationTests(bool useReviv)
+        public RespConfigHeapUtilizationTests(RevivificationMode revivMode)
         {
-            this.useReviv = useReviv;
+            this.useReviv = revivMode == RevivificationMode.UseReviv;
         }
 
         [SetUp]

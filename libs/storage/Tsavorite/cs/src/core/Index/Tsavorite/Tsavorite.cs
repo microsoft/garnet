@@ -46,7 +46,7 @@ namespace Tsavorite.core
         /// <summary>
         /// High-water mark of the number of memory pages that were allocated in the circular buffer
         /// </summary>
-        public long MaxAllocatedPageCount => hlogBase.HighWaterAllocatedPageCount;
+        public long HighWaterAllocatedPageCount => hlogBase.HighWaterAllocatedPageCount;
 
         /// <summary>
         /// Size of index in #cache lines (64 bytes each)

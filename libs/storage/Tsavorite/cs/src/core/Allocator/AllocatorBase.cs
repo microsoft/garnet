@@ -75,14 +75,6 @@ namespace Tsavorite.core
         /// <summary>Page size</summary>
         internal readonly int PageSize;
 
-        /// <summary>Max allocated page count; less than or equal to <see cref="BufferSize"/>. If there is a <see cref="logSizeTracker"/>
-        /// then it manages combined inline and heap memory, and we don't compare this specfically; actual number of allocated pages may
-        /// exceed this (for example, knowing in advance that large objects will be allocated, the caller can specify a large
-        /// <see cref="LogSettings.MemorySize"/> but a small <see cref="LogSettings.PageCount"/>; should there be no large objects, the
-        /// memory will be used for additional log pages (until we go over budget and need to trim). Otherwise, there is no <see cref="logSizeTracker"/>,
-        /// and we ensure the actual number of pages does not exceed <see cref="MaxAllocatedPageCount"/>. This handles the non-powerOf2 inline log size.</summary>
-        internal readonly int MaxAllocatedPageCount;
-
         /// <summary>Page size mask</summary>
         internal readonly int PageSizeMask;
 
@@ -617,21 +609,23 @@ namespace Tsavorite.core
             PageSize = 1 << LogPageSizeBits;
             PageSizeMask = PageSize - 1;
 
-            // Total HLOG size. Do not set logSettings.MemorySize if it is not already set, as this indicates enforcement of that size.
+            // Total HLOG size and MaxAllocatedPageCount. There are a couple ways MaxAllocatedPageCount can be set here; once set it
+            // will never be exceeded by AllocatedPageCount, even if memory usage falls below logSettings.MemorySize. Memory
+            // size tracking will be enforced only if this.logSizeTracker is set; otherwise, we set the MaxAllocatedPageCount here and
+            // do not control heap memory usage.
             if (logSettings.MemorySize > 0)
             {
-                MaxAllocatedPageCount = (int)(logSettings.MemorySize / PageSize);
-                if (logSettings.PageCount > MaxAllocatedPageCount)
-                    logger?.LogInformation("Warning: overriding specified PageCount of {logSettingsPageCount} with smaller page count calculated from MemorySize limit divided by PageSize: {pageCount}", logSettings.PageCount, MaxAllocatedPageCount);
-                BufferSize = (int)NextPowerOf2(MaxAllocatedPageCount);
+                // If LogSettings.PageCount is specified it becomes MaxAllocatedPageCount; otherwise MaxAllocatedPageCount will be
+                // MaxMemorySize divided by page size.
+                MaxAllocatedPageCount = logSettings.PageCount > 0 ? logSettings.PageCount : (int)(logSettings.MemorySize / PageSize);
             }
             else
             {
-                if (logSettings.PageCount == 0)
+                if (logSettings.PageCount <= 0)
                     throw new TsavoriteException($"Log Memory size or PageCount must be specified");
                 MaxAllocatedPageCount = logSettings.PageCount;
-                BufferSize = (int)NextPowerOf2(logSettings.PageCount);
             }
+            BufferSize = (int)NextPowerOf2(MaxAllocatedPageCount);
 
             BufferSizeMask = BufferSize - 1;
 
@@ -784,7 +778,18 @@ namespace Tsavorite.core
             TailPageOffset.Offset = (int)GetOffsetOnPage(firstValidAddress);
         }
 
-        /// <summary>The number of memory pages that are currently allocated in the circular buffer</summary>
+        /// <summary>
+        /// Max allocated page count; less than or equal to <see cref="BufferSize"/>. <see cref="AllocatedPageCount"/> will never exceed this,
+        /// even if <see cref="logSizeTracker"/> is set and memory usage falls below its TargetSize. This is also used to handle non-powerOf2
+        /// inline log sizes..
+        /// </summary>
+        internal int MaxAllocatedPageCount;
+
+        /// <summary>
+        /// The number of memory pages that are currently allocated in the circular buffer. Will never exceed <see cref="MaxAllocatedPageCount"/>.
+        /// If there is a <see cref="logSizeTracker"/> then it manages combined inline and heap memory, and <see cref="AllocatedPageCount"/>
+        /// may increase or decrease (but again, will never exceed <see cref="MaxAllocatedPageCount"/>).
+        /// </summary>
         public int AllocatedPageCount;
 
         /// <summary>High-water mark of the number of memory pages that were allocated in the circular buffer</summary>
@@ -798,12 +803,12 @@ namespace Tsavorite.core
         protected void IncrementAllocatedPageCount()
         {
             var newAllocatedPageCount = Interlocked.Increment(ref AllocatedPageCount);
-            var currMaxAllocatedPageCount = HighWaterAllocatedPageCount;
-            while (currMaxAllocatedPageCount < newAllocatedPageCount)
+            var currHighWaterCount = HighWaterAllocatedPageCount;
+            while (currHighWaterCount < newAllocatedPageCount)
             {
-                if (Interlocked.CompareExchange(ref HighWaterAllocatedPageCount, newAllocatedPageCount, currMaxAllocatedPageCount) == currMaxAllocatedPageCount)
+                if (Interlocked.CompareExchange(ref HighWaterAllocatedPageCount, newAllocatedPageCount, currHighWaterCount) == currHighWaterCount)
                     return;
-                currMaxAllocatedPageCount = HighWaterAllocatedPageCount;
+                currHighWaterCount = HighWaterAllocatedPageCount;
             }
         }
 
@@ -912,6 +917,133 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Sets a new memory limit (replacing <see cref="LogSettings.PageCount"/>) when there is no <see cref="logSizeTracker"/> present.
+        /// </summary>
+        /// <param name="pageCount"></param>
+        internal void SetMaxAllocatedPageCount(int pageCount)
+        {
+            if (logSizeTracker is not null)
+                ThrowTsavoriteException("Cannot set MaxAllocatedPageCount directly when logSizeTracker is present");
+
+            // If we're increasing, just increase the maximum and let normal operations allocate the pages and populate them.
+            if (pageCount > MaxAllocatedPageCount)
+            {
+                if (pageCount > BufferSize)
+                    ThrowTsavoriteException("Cannot set MaxAllocatedPageCount greater than BufferSize");
+                MaxAllocatedPageCount = pageCount;
+                return;
+            }
+
+            // If we're decreasing, we may or may not need to evict, depending on how many pages we have allocated.
+            if (pageCount < MaxAllocatedPageCount)
+            {
+                MaxAllocatedPageCount = pageCount;
+                if (pageCount < AllocatedPageCount)
+                {
+                    // Acquire the epoch long enough to calculate the number of pages we can evict.
+                    epoch.Resume();
+                    var headAddress = HeadAddress;
+                    var readOnlyAddress = ReadOnlyAddress;
+                    var evictPageCount = 0;
+                    try
+                    {
+                        // We can evict pages up to two pages before TailAddress.
+                        var tailPage = GetPage(GetTailAddress());
+                        var headPage = GetPage(headAddress);
+                        if (tailPage - headPage > 2)
+                        {
+                            var evictablePageCount = (int)(tailPage - headPage + 1);
+                            evictPageCount = (int)(evictablePageCount - pageCount);
+                            if (evictPageCount != 0)
+                            {
+                                if (evictPageCount < 0)
+                                    evictPageCount = evictablePageCount;
+                                headAddress = GetLogicalAddressOfStartOfPage(headPage + evictPageCount);
+                                readOnlyAddress = CalculateReadOnlyAddress(GetTailAddress(), headAddress);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        epoch.Suspend();
+                    }
+
+                    // Shift addresses. If ReadOnlyAddress did not change, the ShiftReadOnlyAddressWithWait inside ShiftAddressesWithWait will do nothing.
+                    if (evictPageCount > 0)
+                    {
+                        logger?.LogInformation("Evicting {evictPageCount} pages to reduce MaxAllocatedPageCount to {maxAllocatedPageCount}", evictPageCount, pageCount);
+                        ShiftAddressesWithWait(readOnlyAddress, headAddress, waitForEviction: false);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Shift log read-only address, with an optional wait
+        /// </summary>
+        /// <param name="newReadOnlyAddress">Address to shift read-only until</param>
+        /// <param name="wait">Wait to ensure shift is complete (may involve page flushing)</param>
+        internal void ShiftReadOnlyAddressWithWait(long newReadOnlyAddress, bool wait)
+        {
+            // If we don't have the epoch, acquire it only long enough to launch the shift.
+            if (epoch.ResumeIfNotProtected())
+            {
+                try
+                {
+                    _ = ShiftReadOnlyAddress(newReadOnlyAddress);
+                }
+                finally
+                {
+                    epoch.Suspend();
+                }
+
+                // Wait for flush to complete
+                while (wait && FlushedUntilAddress < newReadOnlyAddress)
+                    _ = Thread.Yield();
+                return;
+            }
+
+            // Epoch already protected, so launch the shift and wait for flush to complete
+            _ = ShiftReadOnlyAddress(newReadOnlyAddress);
+            while (wait && FlushedUntilAddress < newReadOnlyAddress)
+                epoch.ProtectAndDrain();
+        }
+
+        /// <summary>
+        /// Shift log readonly and head addresses, with an optional wait on the head address shift
+        /// </summary>
+        /// <param name="newReadOnlyAddress">New ReadOnlyAddress</param>
+        /// <param name="newHeadAddress">New HeadAddress</param>
+        /// <param name="waitForEviction">Wait for operation to complete (may involve page flushing and closing)</param>
+        public void ShiftAddressesWithWait(long newReadOnlyAddress, long newHeadAddress, bool waitForEviction)
+        {
+            // First shift read-only; force wait so that we do not close unflushed page
+            ShiftReadOnlyAddressWithWait(newReadOnlyAddress, wait: true);
+
+            // Then shift head address. If we don't have the epoch, acquire it only long enough to launch the shift.
+            if (epoch.ResumeIfNotProtected())
+            {
+                try
+                {
+                    _ = ShiftHeadAddress(newHeadAddress);
+                }
+                finally
+                {
+                    epoch.Suspend();
+                }
+
+                while (waitForEviction && SafeHeadAddress < newHeadAddress)
+                    _ = Thread.Yield();
+                return;
+            }
+
+            // Epoch already protected, so launch the shift and wait for eviction to complete
+            _ = ShiftHeadAddress(newHeadAddress);
+            while (waitForEviction && SafeHeadAddress < newHeadAddress)
+                epoch.ProtectAndDrain();
+        }
+
+        /// <summary>
         /// Whether we need to shift HeadAddress and ReadOnlyAddress to higher addresses when turning the page.
         /// </summary>
         /// <param name="pageIndex">The page we are turning to; it has just been allocated and TailAddress will be moving to this page</param>
@@ -940,8 +1072,6 @@ namespace Tsavorite.core
 
             // Check whether we need to shift ROA based on desiredHeadAddress.
             var desiredReadOnlyAddress = CalculateReadOnlyAddress(shiftAddress, desiredHeadAddress);
-            if (desiredReadOnlyAddress > tailAddress)
-                desiredReadOnlyAddress = tailAddress;
             return desiredReadOnlyAddress > ReadOnlyAddress;
         }
 
@@ -973,8 +1103,6 @@ namespace Tsavorite.core
 
             // Check whether we need to shift ROA based on desiredHeadAddress.
             var desiredReadOnlyAddress = CalculateReadOnlyAddress(shiftAddress, desiredHeadAddress);
-            if (desiredReadOnlyAddress > tailAddress)
-                desiredReadOnlyAddress = tailAddress;
             if (desiredReadOnlyAddress > ReadOnlyAddress)
                 _ = ShiftReadOnlyAddress(desiredReadOnlyAddress);
 
@@ -1145,7 +1273,8 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Calculate the new ReadOnlyAddress from the inputs.
+        /// Calculate the new ReadOnlyAddress from the inputs. This may be called when <see cref="AllocatedPageCount"/> has changed due to memory
+        /// size limits, so we cannot use a constant lag approach.
         /// </summary>
         /// <param name="tailAddress">Either the next TailAddress if doing an allocation, or the current TailAddress if trimming memory size.</param>
         /// <param name="headAddress">Either the current HeadAddress if doing an allocation, or the calculated HeadAddress if trimming memory size.</param>
@@ -1153,11 +1282,11 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal long CalculateReadOnlyAddress(long tailAddress, long headAddress)
         {
-            // Snap ReadOnlyAddress to the next-highest page.
-            var readOnlyAddress = tailAddress - (long)(logMutableFraction * (tailAddress - headAddress));
-            readOnlyAddress = RoundUp(readOnlyAddress, PageSize);
-            if (readOnlyAddress > tailAddress)
-                readOnlyAddress = tailAddress;
+            // Snap ReadOnlyAddress to the start of the page that this calculation on logMutableFraction ends up in.
+            var readOnlyAddress = RoundDown(headAddress + (long)((1.0 - logMutableFraction) * (tailAddress - headAddress)), PageSize);
+            if (readOnlyAddress < headAddress)
+                readOnlyAddress = headAddress;
+            Debug.Assert(readOnlyAddress <= tailAddress, $"ReadOnlyAddress {readOnlyAddress} must not exceed TailAddress {tailAddress}");
             return readOnlyAddress;
         }
 

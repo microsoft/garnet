@@ -3,7 +3,6 @@
 
 using System;
 using System.Runtime.CompilerServices;
-using System.Threading;
 
 namespace Tsavorite.core
 {
@@ -135,38 +134,20 @@ namespace Tsavorite.core
         public void ShiftHeadAddress(long newHeadAddress, bool wait) => ShiftAddresses(newHeadAddress, newHeadAddress, wait);
 
         /// <summary>
-        /// Shift log readonly and head addresses
+        /// Shift log read-only address, with an optional wait
+        /// </summary>
+        /// <param name="newReadOnlyAddress">Address to shift read-only until</param>
+        /// <param name="wait">Wait to ensure shift is complete (may involve page flushing)</param>
+        public void ShiftReadOnlyAddress(long newReadOnlyAddress, bool wait) => allocatorBase.ShiftReadOnlyAddressWithWait(newReadOnlyAddress, wait);
+
+        /// <summary>
+        /// Shift log readonly and head addresses, with an optional wait on the head address shift
         /// </summary>
         /// <param name="newReadOnlyAddress">New ReadOnlyAddress</param>
         /// <param name="newHeadAddress">New HeadAddress</param>
-        /// <param name="wait">Wait for operation to complete (may involve page flushing and closing)</param>
-        public void ShiftAddresses(long newReadOnlyAddress, long newHeadAddress, bool wait)
-        {
-            // First shift read-only; force wait so that we do not close unflushed page
-            ShiftReadOnlyAddress(newReadOnlyAddress, true);
-
-            // Then shift head address. If we don't have the epoch, acquire it only long enough to launch the shift.
-            if (store.epoch.ResumeIfNotProtected())
-            {
-                try
-                {
-                    _ = allocatorBase.ShiftHeadAddress(newHeadAddress);
-                }
-                finally
-                {
-                    store.epoch.Suspend();
-                }
-
-                while (wait && allocatorBase.SafeHeadAddress < newHeadAddress)
-                    _ = Thread.Yield();
-            }
-            else
-            {
-                _ = allocatorBase.ShiftHeadAddress(newHeadAddress);
-                while (wait && allocatorBase.SafeHeadAddress < newHeadAddress)
-                    store.epoch.ProtectAndDrain();
-            }
-        }
+        /// <param name="waitForEviction">Wait for operation to complete (may involve page flushing and closing)</param>
+        public void ShiftAddresses(long newReadOnlyAddress, long newHeadAddress, bool waitForEviction)
+            => allocatorBase.ShiftAddressesWithWait(newReadOnlyAddress, newHeadAddress, waitForEviction);
 
         /// <summary>
         /// Subscribe to records (in batches) as they become read-only in the log
@@ -219,39 +200,6 @@ namespace Tsavorite.core
                     allocator.onReadOnlyObserver = null;
                 else
                     allocator.onEvictionObserver = null;
-            }
-        }
-
-        /// <summary>
-        /// Shift log read-only address
-        /// </summary>
-        /// <param name="newReadOnlyAddress">Address to shift read-only until</param>
-        /// <param name="wait">Wait to ensure shift is complete (may involve page flushing)</param>
-        public void ShiftReadOnlyAddress(long newReadOnlyAddress, bool wait)
-        {
-            // If we don't have the epoch, acquire it only long enough to launch the shift.
-            if (store.epoch.ResumeIfNotProtected())
-            {
-                try
-                {
-                    _ = allocatorBase.ShiftReadOnlyAddress(newReadOnlyAddress);
-                }
-                finally
-                {
-                    store.epoch.Suspend();
-                }
-
-                // Wait for flush to complete
-                while (wait && allocatorBase.FlushedUntilAddress < newReadOnlyAddress)
-                    _ = Thread.Yield();
-            }
-            else
-            {
-                _ = allocatorBase.ShiftReadOnlyAddress(newReadOnlyAddress);
-
-                // Wait for flush to complete
-                while (wait && allocatorBase.FlushedUntilAddress < newReadOnlyAddress)
-                    store.epoch.ProtectAndDrain();
             }
         }
 
