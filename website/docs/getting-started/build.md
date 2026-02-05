@@ -26,10 +26,10 @@ dotnet build -c Release
 
 # Run our Test Suite
 
-As a sanity check, you can run our test suite. The command to run tests in Release mode for .NET 9 target with verbose output to console is shown below (make sure you are in the root folder of the repo).
+As a sanity check, you can run our test suite. The command to run tests in Release mode for .NET 10 target with verbose output to console is shown below (make sure you are in the root folder of the repo).
 
 ```bash
-dotnet test -c Release -f net9.0 -l "console;verbosity=detailed"
+dotnet test -c Release -f net10.0 -l "console;verbosity=detailed"
 ```
 
 :::tip
@@ -42,7 +42,7 @@ Now, you are ready to deploy the Garnet server. This is simple, run the below:
 
 ```bash
 cd main/GarnetServer
-dotnet run -c Release -f net9.0
+dotnet run -c Release -f net10.0
 ```
 
 :::tip
@@ -54,13 +54,13 @@ Please make sure to adjust these based on your requirements.
 To see the configurable options and their defaults, run the below command. You can configure index size, memory size, page size, data file paths and checkpoint paths, IP address to bind to, port number to run on, etc.
 
 ```bash
-dotnet run -c Release -f net9.0 -- --help
+dotnet run -c Release -f net10.0 -- --help
 ```
 
 :::tip
 For running the server with an index size of 512MB (instead of the default), run this:
 ```bash
-dotnet run -c Release -f net9.0 -- -i 512m
+dotnet run -c Release -f net10.0 -- -i 512m
 ```
 :::
 
