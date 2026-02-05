@@ -206,7 +206,7 @@ namespace Tsavorite.core
         /// <returns>Result of the check</returns>
         public bool ThisInstanceProtected()
         {
-            var entry = Metadata.Entries.GetRef(instanceId);
+            ref var entry = ref Metadata.Entries.GetRef(instanceId);
             if (kInvalidIndex != entry)
             {
                 if ((*(tableAligned + entry)).threadId == entry)
