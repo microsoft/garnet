@@ -569,7 +569,16 @@ namespace Tsavorite.core
                         return;
 
                     // No slot available, wait for a signal from Release()
-                    waiterSemaphore.Wait(cts.Token);
+                    try
+                    {
+                        waiterSemaphore.Wait(cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // During Dispose(), cts.Cancel() may be invoked, causing this wait to be canceled.
+                        // Translate this into a more appropriate exception for callers.
+                        throw new ObjectDisposedException(nameof(LightEpoch), "LightEpoch has been disposed while waiting for an epoch entry.");
+                    }
                 }
             }
             finally
