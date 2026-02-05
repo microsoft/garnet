@@ -38,7 +38,7 @@ namespace Tsavorite.core
             internal static ushort startOffset2;
 
             /// <summary>
-            /// Per-instance entry in the epoch table
+            /// Per-instance entry in the epoch table, for this thread
             /// </summary>
             [ThreadStatic]
             internal static InstanceIndexBuffer Entries;
@@ -128,7 +128,14 @@ namespace Tsavorite.core
         /// </summary>
         internal long SafeToReclaimEpoch;
 
+        /// <summary>
+        /// ID of this LightEpoch instance
+        /// </summary>
         readonly int instanceId;
+
+        /// <summary>
+        /// Buffer to track assigned LightEpoch instance IDs
+        /// </summary>
         static InstanceIndexBuffer InstanceTracker = default;
 
         /// <summary>
@@ -161,6 +168,7 @@ namespace Tsavorite.core
             for (var i = 0; i < InstanceIndexBuffer.MaxInstances; i++)
             {
                 ref var entry = ref InstanceTracker.GetRef(i);
+                // Try to claim this instance ID (indicated as 1 in the entry)
                 if (kInvalidIndex == Interlocked.CompareExchange(ref entry, 1, kInvalidIndex))
                     return i;
             }
@@ -174,6 +182,7 @@ namespace Tsavorite.core
         {
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
+            // Mark this instance ID as available
             InstanceTracker.GetRef(instanceId) = kInvalidIndex;
         }
 
