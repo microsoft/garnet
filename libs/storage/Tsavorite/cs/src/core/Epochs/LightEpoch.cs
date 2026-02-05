@@ -111,10 +111,15 @@ namespace Tsavorite.core
         readonly CancellationTokenSource cts = new();
 
         /// <summary>
-        /// Number of threads waiting for an epoch table entry.
-        /// Used as a fast-path check to avoid semaphore overhead when no waiters.
+        /// Number of threads waiting for an epoch table entry (lower 31 bits).
+        /// MSB is set during Dispose to prevent new waiters from entering.
         /// </summary>
         volatile int waiterCount = 0;
+
+        /// <summary>
+        /// Flag (MSB) used to mark the epoch as disposed in <see cref="waiterCount"/>.
+        /// </summary>
+        const int kDisposedFlag = unchecked((int)0x80000000);
 
         /// <summary>
         /// List of action, epoch pairs containing actions to be performed when an epoch becomes safe to reclaim.
@@ -185,11 +190,21 @@ namespace Tsavorite.core
         /// </summary>
         public void Dispose()
         {
-            // Cancel any threads waiting on the semaphore, then wait for
-            // them to finish unwinding before disposing resources.
+            // Cancel any threads currently waiting on the semaphore so they
+            // unwind and decrement waiterCount.
             cts.Cancel();
-            while (waiterCount > 0)
-                Thread.Yield();
+
+            // Spin until all waiters have unwound, then atomically set the
+            // disposed flag. If a new waiter sneaks in between the check and
+            // the CAS, retry (they will see the cancelled CTS and exit promptly).
+            while (true)
+            {
+                while (waiterCount != 0)
+                    Thread.Yield();
+
+                if (Interlocked.CompareExchange(ref waiterCount, kDisposedFlag, 0) == 0)
+                    break;
+            }
 
             CurrentEpoch = 1;
             SafeToReclaimEpoch = 0;
@@ -556,9 +571,13 @@ namespace Tsavorite.core
         [MethodImpl(MethodImplOptions.NoInlining)]
         void ReserveEntryWait(ref int entry)
         {
-            _ = Interlocked.Increment(ref waiterCount);
+            int newCount = Interlocked.Increment(ref waiterCount);
             try
             {
+                // If the MSB (disposed flag) is set, the epoch is being disposed.
+                if (newCount < 0)
+                    throw new ObjectDisposedException(nameof(LightEpoch));
+
                 while (true)
                 {
                     // Re-check for free slot after incrementing waiterCount. This avoids
@@ -574,9 +593,7 @@ namespace Tsavorite.core
             }
             catch (OperationCanceledException)
             {
-                // During LightEpoch.Dispose(), cts.Cancel() may be invoked, causing this wait to be canceled.
-                // Translate this into a more appropriate exception for callers.
-                throw new ObjectDisposedException(nameof(LightEpoch), "LightEpoch has been disposed while waiting for an epoch entry.");
+                throw new ObjectDisposedException(nameof(LightEpoch));
             }
             finally
             {
