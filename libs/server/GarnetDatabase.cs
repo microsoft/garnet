@@ -194,7 +194,7 @@ namespace Garnet.server
                         Thread.Yield();
                 }
             }
-
+            Epoch?.Dispose();
             disposed = true;
         }
     }

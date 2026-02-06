@@ -56,7 +56,6 @@ namespace Garnet
         private readonly ILoggerFactory loggerFactory;
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
-        private LightEpoch epoch;
 
         /// <summary>
         /// Store and associated information used by this Garnet server
@@ -301,7 +300,8 @@ namespace Garnet
         private GarnetDatabase CreateDatabase(int dbId, GarnetServerOptions serverOptions, ClusterFactory clusterFactory,
             CustomCommandManager customCommandManager)
         {
-            var store = CreateMainStore(dbId, clusterFactory, out epoch, out var stateMachineDriver);
+            var epoch = new LightEpoch();
+            var store = CreateMainStore(dbId, clusterFactory, epoch, out var stateMachineDriver);
             var objectStore = CreateObjectStore(dbId, clusterFactory, customCommandManager, epoch, stateMachineDriver, out var objectStoreSizeTracker);
             var (aofDevice, aof) = CreateAOF(dbId);
             return new GarnetDatabase(dbId, store, objectStore, epoch, stateMachineDriver, objectStoreSizeTracker,
@@ -333,9 +333,8 @@ namespace Garnet
         }
 
         private TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> CreateMainStore(int dbId, IClusterFactory clusterFactory,
-            out LightEpoch epoch, out StateMachineDriver stateMachineDriver)
+            LightEpoch epoch, out StateMachineDriver stateMachineDriver)
         {
-            epoch = new LightEpoch();
             stateMachineDriver = new StateMachineDriver(epoch, loggerFactory?.CreateLogger($"StateMachineDriver"));
 
             kvSettings = opts.GetSettings(loggerFactory, epoch, stateMachineDriver, out logFactory);
@@ -461,7 +460,6 @@ namespace Garnet
                 objKvSettings.LogDevice?.Dispose();
                 objKvSettings.ObjectLogDevice?.Dispose();
             }
-            epoch?.Dispose();
             opts.AuthSettings?.Dispose();
             if (disposeLoggerFactory)
                 loggerFactory?.Dispose();

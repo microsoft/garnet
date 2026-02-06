@@ -55,16 +55,13 @@ namespace Tsavorite.core
         /// </summary>
         public TsavoriteBase(LightEpoch epoch = null, ILogger logger = null)
         {
-            if (epoch != null)
+            if (epoch == null)
             {
-                ownedEpoch = false;
-                this.epoch = epoch;
+                this.epoch = new LightEpoch();
+                ownedEpoch = true;
             }
             else
-            {
-                ownedEpoch = true;
-                this.epoch = new LightEpoch();
-            }
+                this.epoch = epoch;
             overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
         }
 
