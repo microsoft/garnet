@@ -187,6 +187,20 @@ namespace Tsavorite.core
 
         /// <summary>
         /// Number of active LightEpoch instances. Used for testing and diagnostics.
+        /// </summary>
+        /// <returns></returns>
+        public static int ActiveInstances()
+        {
+            int count = 0;
+            for (var i = 0; i < InstanceIndexBuffer.MaxInstances; i++)
+            {
+                if (kInvalidIndex != InstanceTracker.GetRef(i))
+                    count++;
+            }
+            return count;
+        }
+
+        /// <summary>
         /// Clean up epoch table
         /// </summary>
         public void Dispose()
