@@ -656,6 +656,10 @@ namespace Garnet.server
                     await databaseManager.TaskCheckpointBasedOnAofSizeLimitAsync(aofSizeLimit, token, logger);
                 }
             }
+            catch (TaskCanceledException) when (token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because of store wrapper disposal
+            }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Exception received at AutoCheckpointTask");

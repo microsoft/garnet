@@ -316,6 +316,10 @@ namespace Tsavorite.core
                     }
                 }
             }
+            catch (TaskCanceledException) when (safeTailRefreshTaskCts.Token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because of store wrapper disposal
+            }
             catch (Exception e)
             {
                 logger?.LogError(e, "Exception encountered during PeriodicSafeTailRefreshRunner");
