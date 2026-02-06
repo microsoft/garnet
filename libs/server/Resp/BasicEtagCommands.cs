@@ -33,10 +33,7 @@ namespace Garnet.server
                     WriteNull();
                     break;
                 default:
-                    if (!output.SpanByteAndMemory.IsSpanByte)
-                        SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
-                    else
-                        dcurr += output.SpanByteAndMemory.Length;
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
 
@@ -64,10 +61,7 @@ namespace Garnet.server
                     WriteNull();
                     break;
                 default:
-                    if (!output.SpanByteAndMemory.IsSpanByte)
-                        SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
-                    else
-                        dcurr += output.SpanByteAndMemory.Length;
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
             }
 

@@ -457,10 +457,7 @@ namespace Garnet.server
             var output = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
 
-            if (!output.SpanByteAndMemory.IsSpanByte)
-                SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
-            else
-                dcurr += output.SpanByteAndMemory.Length;
+            ProcessOutput(output.SpanByteAndMemory);
 
             return true;
         }

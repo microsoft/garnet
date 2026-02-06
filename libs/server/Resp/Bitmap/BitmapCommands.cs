@@ -225,10 +225,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                if (!o.SpanByteAndMemory.IsSpanByte)
-                    SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
-                else
-                    dcurr += o.SpanByteAndMemory.Length;
+                ProcessOutput(o.SpanByteAndMemory);
             }
             else if (status == GarnetStatus.NOTFOUND)
             {
@@ -288,10 +285,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                if (!o.SpanByteAndMemory.IsSpanByte)
-                    SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
-                else
-                    dcurr += o.SpanByteAndMemory.Length;
+                ProcessOutput(o.SpanByteAndMemory);
             }
             else if (status == GarnetStatus.NOTFOUND)
             {
@@ -521,10 +515,7 @@ namespace Garnet.server
                 }
                 else
                 {
-                    if (!output.SpanByteAndMemory.IsSpanByte)
-                        SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
-                    else
-                        dcurr += output.SpanByteAndMemory.Length;
+                    ProcessOutput(output.SpanByteAndMemory);
                 }
             }
 

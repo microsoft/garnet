@@ -317,10 +317,7 @@ namespace Garnet.server
 
             if (status == GarnetStatus.OK)
             {
-                if (!o.SpanByteAndMemory.IsSpanByte)
-                    SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
-                else
-                    dcurr += o.SpanByteAndMemory.Length;
+                ProcessOutput(o.SpanByteAndMemory);
             }
             else
             {

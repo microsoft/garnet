@@ -39,10 +39,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    if (!output.SpanByteAndMemory.IsSpanByte)
-                        SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
-                    else
-                        dcurr += output.SpanByteAndMemory.Length;
+                    ProcessOutput(output.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     Debug.Assert(output.SpanByteAndMemory.IsSpanByte);
@@ -110,10 +107,7 @@ namespace Garnet.server
             switch (status)
             {
                 case GarnetStatus.OK:
-                    if (!o.SpanByteAndMemory.IsSpanByte)
-                        SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
-                    else
-                        dcurr += o.SpanByteAndMemory.Length;
+                    ProcessOutput(o.SpanByteAndMemory);
                     break;
                 case GarnetStatus.NOTFOUND:
                     Debug.Assert(o.SpanByteAndMemory.IsSpanByte);
@@ -149,10 +143,7 @@ namespace Garnet.server
                 switch (status)
                 {
                     case GarnetStatus.OK:
-                        if (!o.SpanByteAndMemory.IsSpanByte)
-                            SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
-                        else
-                            dcurr += o.SpanByteAndMemory.Length;
+                        ProcessOutput(o.SpanByteAndMemory);
                         break;
                     case GarnetStatus.NOTFOUND:
                         Debug.Assert(o.SpanByteAndMemory.IsSpanByte);
@@ -199,10 +190,7 @@ namespace Garnet.server
                         if (firstPending == -1)
                         {
                             // Found in memory without IO, and no earlier pending, so we can add directly to the output
-                            if (!o.SpanByteAndMemory.IsSpanByte)
-                                SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
-                            else
-                                dcurr += o.SpanByteAndMemory.Length;
+                            ProcessOutput(o.SpanByteAndMemory);
                             o = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
                         }
                         else
@@ -240,10 +228,7 @@ namespace Garnet.server
                     var output = outputArr[i].Item2;
                     if (status == GarnetStatus.OK)
                     {
-                        if (!output.SpanByteAndMemory.IsSpanByte)
-                            SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
-                        else
-                            dcurr += output.SpanByteAndMemory.Length;
+                        ProcessOutput(output.SpanByteAndMemory);
                     }
                     else
                     {
@@ -349,10 +334,7 @@ namespace Garnet.server
             if (status == GarnetStatus.OK)
             {
                 sessionMetrics?.incr_total_found();
-                if (!o.SpanByteAndMemory.IsSpanByte)
-                    SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
-                else
-                    dcurr += o.SpanByteAndMemory.Length;
+                ProcessOutput(o.SpanByteAndMemory);
             }
             else
             {
@@ -666,18 +648,15 @@ namespace Garnet.server
                     input.header.SetSetGetFlag();
 
                 // anything with getValue or withEtag always writes to the buffer in the happy path
-                StringOutput outputBuffer = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
-                GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref outputBuffer);
+                StringOutput output = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+                GarnetStatus status = storageApi.SET_Conditional(key, ref input, ref output);
 
                 // The data will be on the buffer either when we know the response is ok or when the withEtag flag is set.
                 bool ok = status != GarnetStatus.NOTFOUND || withEtag;
 
                 if (ok)
                 {
-                    if (!outputBuffer.SpanByteAndMemory.IsSpanByte)
-                        SendAndReset(outputBuffer.SpanByteAndMemory.Memory, outputBuffer.SpanByteAndMemory.Length);
-                    else
-                        dcurr += outputBuffer.SpanByteAndMemory.Length;
+                    ProcessOutput(output.SpanByteAndMemory);
                 }
                 else
                 {
