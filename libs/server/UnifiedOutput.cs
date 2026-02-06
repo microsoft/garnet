@@ -47,8 +47,7 @@ namespace Garnet.server
 
         public void Dispose()
         {
-            if (SpanByteAndMemory.IsSpanByte)
-                SpanByteAndMemory.Dispose();
+            SpanByteAndMemory.Dispose();
         }
     }
 }

@@ -250,7 +250,7 @@ namespace Garnet.server
             Debug.Assert(input.header.cmd is RespCommand.DELIFGREATER);
 
             Span<byte> outputSpan = stackalloc byte[8];
-            var output = new StringOutput(SpanByteAndMemory.FromPinnedSpan(outputSpan));
+            var output = StringOutput.FromPinnedSpan(outputSpan);
             var status = context.RMW(key, ref input, ref output);
 
             if (status.IsPending)

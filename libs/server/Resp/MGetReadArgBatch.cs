@@ -52,7 +52,7 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public readonly unsafe void GetOutput(int i, out StringOutput output)
-        => output = new StringOutput(SpanByteAndMemory.FromPinnedSpan(MemoryMarshal.CreateSpan(ref Unsafe.AsRef<byte>(session.dcurr), (int)(session.dend - session.dcurr))));
+        => output = StringOutput.FromPinnedSpan(MemoryMarshal.CreateSpan(ref Unsafe.AsRef<byte>(session.dcurr), (int)(session.dend - session.dcurr)));
 
         /// <inheritdoc/>
         public void SetStatus(int i, Status status)

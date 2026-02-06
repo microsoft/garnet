@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -17,12 +18,25 @@ namespace Garnet.server
         /// </summary>
         public SpanByteAndMemory SpanByteAndMemory;
 
+        /// <summary>
+        /// Output header
+        /// </summary>
+        public OutputHeader Header;
+
+        /// <summary>
+        /// Output flags
+        /// </summary>
+        public OutputFlags OutputFlags;
+
         public StringOutput() => SpanByteAndMemory = new(null);
 
         public StringOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;
 
         public static unsafe StringOutput FromPinnedPointer(byte* pointer, int length)
             => new(SpanByteAndMemory.FromPinnedPointer(pointer, length));
+
+        public static unsafe StringOutput FromPinnedSpan(ReadOnlySpan<byte> span)
+            => new(SpanByteAndMemory.FromPinnedSpan(span));
 
         public void ConvertToHeap()
         {
