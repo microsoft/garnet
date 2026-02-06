@@ -8,7 +8,7 @@ title: Azure Cosmos DB Garnet Cache Overview
 
 Azure Cosmos DB Garnet Cache is a fully managed, high-performance caching service built on the Garnet remote cache-store from Microsoft Research. It provides enterprise-grade reliability, security, and scalability without the operational overhead of managing your own cache infrastructure. With consistent low latency and high throughput even with many client connections, Azure Cosmos DB Garnet Cache accelerates data access and leads to cost savings for large apps and services.
 
-The Azure Cosmos DB Garnet Cache is currently in an expanded Private Preview. Please [sign up here](https://aka.ms/cosmos-db-garnet-preview).
+The Azure Cosmos DB Garnet Cache is currently in an expanded Private Preview. Please [register your subscription](#register-your-subscription).
 
 ## Key Benefits
 
@@ -79,8 +79,15 @@ Recommended for in-memory databases, large datasets, gaming leaderboards, vector
 - **Network**: Up to 16 Gbps
 
 ## Getting Started
+Ready to get started? First, register your subscription for access to the preview. Then, check out our [quick start guide](./quickstart.md) to create your first Azure Cosmos DB Garnet Cache instance in minutes.
 
-Ready to get started? Check out our [quick start guide](./quickstart.md) to create your first Azure Cosmos DB Garnet Cache instance in minutes.
+### Register your Subscription
+Register your subscription to provision Azure Cosmos DB Garnet Caches. Here are the steps to request access. Please note that registration is not automatic and can take up to one week to process.
+1. Go to **Preview Features** page in your Azure subscription.
+2. Filter by **Garnet** in the feature name search.
+3. Click the **Register** button to join the preview.
+
+![Register Subscription for Azure Cosmos DB Garnet Cache](../../static/img/azure/register-subscription.png)
 
 ## Learn More
 
