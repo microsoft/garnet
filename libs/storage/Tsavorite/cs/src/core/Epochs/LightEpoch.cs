@@ -186,6 +186,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Number of active LightEpoch instances. Used for testing and diagnostics.
         /// Clean up epoch table
         /// </summary>
         public void Dispose()
