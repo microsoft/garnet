@@ -21,9 +21,10 @@ namespace Garnet.server
     /// <summary>
     /// Garnet API implementation
     /// </summary>
-    public partial struct GarnetApi<TContext, TObjectContext> : IGarnetApi, IGarnetWatchApi
+    public partial struct GarnetApi<TContext, TObjectContext, TVectorContext> : IGarnetApi, IGarnetWatchApi
         where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
+        where TVectorContext : ITsavoriteContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions, MainStoreFunctions, MainStoreAllocator>
     {
         readonly StorageSession storageSession;
         TContext context;
@@ -48,8 +49,12 @@ namespace Garnet.server
 
         #region GET
         /// <inheritdoc />
-        public GarnetStatus GET(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
-            => storageSession.GET(ref key, ref input, ref output, ref context);
+        public GarnetStatus GET(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output)
+        {
+            var asSpanByte = key.SpanByte;
+
+            return storageSession.GET(ref asSpanByte, ref input, ref output, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus GET_WithPending(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output, long ctx, out bool pending)
@@ -68,7 +73,9 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public unsafe GarnetStatus GET(ArgSlice key, out ArgSlice value)
-            => storageSession.GET(key, out value, ref context);
+        {
+            return storageSession.GET(key, out value, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus GET(byte[] key, out GarnetObjectStoreOutput value)
@@ -118,33 +125,52 @@ namespace Garnet.server
         #endregion
 
         #region SET
-        /// <inheritdoc />
+
         public GarnetStatus SET(ref SpanByte key, ref SpanByte value)
-            => storageSession.SET(ref key, ref value, ref context);
+           => storageSession.SET(ref key, ref value, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus SET(ref SpanByte key, ref RawStringInput input, ref SpanByte value)
-            => storageSession.SET(ref key, ref input, ref value, ref context);
+        public GarnetStatus SET(ArgSlice key, ref RawStringInput input, ref SpanByte value)
+        {
+            var asSpanByte = key.SpanByte;
 
-        /// <inheritdoc />
-        public GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input)
-            => storageSession.SET_Conditional(ref key, ref input, ref context);
+            return storageSession.SET(ref asSpanByte, ref input, ref value, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus DEL_Conditional(ref SpanByte key, ref RawStringInput input)
             => storageSession.DEL_Conditional(ref key, ref input, ref context);
 
         /// <inheritdoc />
-        public GarnetStatus SET_Conditional(ref SpanByte key, ref RawStringInput input, ref SpanByteAndMemory output)
-            => storageSession.SET_Conditional(ref key, ref input, ref output, ref context);
+        public GarnetStatus SET_Conditional(ArgSlice key, ref RawStringInput input, ref SpanByteAndMemory output)
+        {
+            var asSpanByte = key.SpanByte;
+
+            return storageSession.SET_Conditional(ref asSpanByte, ref input, ref output, ref context);
+        }
+
+        /// <inheritdoc />
+        public GarnetStatus SET_Conditional(ArgSlice key, ref RawStringInput input)
+        {
+            var asSpanByte = key.SpanByte;
+
+            return storageSession.SET_Conditional(ref asSpanByte, ref input, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus SET(ArgSlice key, Memory<byte> value)
-            => storageSession.SET(key, value, ref context);
+        {
+            return storageSession.SET(key, value, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus SET(ArgSlice key, ArgSlice value)
-            => storageSession.SET(key, value, ref context);
+        {
+            var asSpanByte = key.SpanByte;
+            var valSpanByte = value.SpanByte;
+
+            return storageSession.SET(ref asSpanByte, ref valSpanByte, ref context);
+        }
 
         /// <inheritdoc />
         public GarnetStatus SET(byte[] key, IGarnetObject value)
@@ -302,7 +328,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus DELETE(ref SpanByte key, StoreType storeType = StoreType.All)
-            => storageSession.DELETE(ref key, storeType, ref context, ref objectContext);
+        => storageSession.DELETE(ref key, storeType, ref context, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus DELETE(byte[] key, StoreType storeType = StoreType.All)
@@ -481,6 +507,42 @@ namespace Garnet.server
         /// <inheritdoc />
         public bool ResetScratchBuffer(int offset)
             => storageSession.scratchBufferBuilder.ResetScratchBuffer(offset);
+        #endregion
+
+        #region VectorSet commands
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus VectorSetAdd(ArgSlice key, int reduceDims, VectorValueType valueType, ArgSlice values, ArgSlice element, VectorQuantType quantizer, int buildExplorationFactor, ArgSlice attributes, int numLinks, VectorDistanceMetricType distanceMetric, out VectorManagerResult result, out ReadOnlySpan<byte> errorMsg)
+        => storageSession.VectorSetAdd(SpanByte.FromPinnedPointer(key.ptr, key.length), reduceDims, valueType, values, element, quantizer, buildExplorationFactor, attributes, numLinks, distanceMetric, out result, out errorMsg);
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus VectorSetRemove(ArgSlice key, ArgSlice element)
+        => storageSession.VectorSetRemove(SpanByte.FromPinnedPointer(key.ptr, key.length), SpanByte.FromPinnedPointer(element.ptr, element.length));
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus VectorSetValueSimilarity(ArgSlice key, VectorValueType valueType, ArgSlice values, int count, float delta, int searchExplorationFactor, ArgSlice filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
+        => storageSession.VectorSetValueSimilarity(SpanByte.FromPinnedPointer(key.ptr, key.length), valueType, values, count, delta, searchExplorationFactor, filter.ReadOnlySpan, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, out result);
+
+        /// <inheritdoc />
+        public unsafe GarnetStatus VectorSetElementSimilarity(ArgSlice key, ArgSlice element, int count, float delta, int searchExplorationFactor, ArgSlice filter, int maxFilteringEffort, bool includeAttributes, ref SpanByteAndMemory outputIds, out VectorIdFormat outputIdFormat, ref SpanByteAndMemory outputDistances, ref SpanByteAndMemory outputAttributes, out VectorManagerResult result)
+        => storageSession.VectorSetElementSimilarity(SpanByte.FromPinnedPointer(key.ptr, key.length), element.ReadOnlySpan, count, delta, searchExplorationFactor, filter.ReadOnlySpan, maxFilteringEffort, includeAttributes, ref outputIds, out outputIdFormat, ref outputDistances, ref outputAttributes, out result);
+
+        /// <inheritdoc/>
+        public unsafe GarnetStatus VectorSetEmbedding(ArgSlice key, ArgSlice element, ref SpanByteAndMemory outputDistances)
+        => storageSession.VectorSetEmbedding(SpanByte.FromPinnedPointer(key.ptr, key.length), element.ReadOnlySpan, ref outputDistances);
+
+        /// <inheritdoc/>
+        public unsafe GarnetStatus VectorSetDimensions(ArgSlice key, out int dimensions)
+        => storageSession.VectorSetDimensions(SpanByte.FromPinnedPointer(key.ptr, key.length), out dimensions);
+
+        /// <inheritdoc/>
+        public unsafe GarnetStatus VectorSetInfo(ArgSlice key, out VectorQuantType quantType, out VectorDistanceMetricType distanceMetricType, out uint vectorDimensions, out uint reducedDimensions, out uint buildExplorationFactor, out uint numberOfLinks, out long size)
+        => storageSession.VectorSetInfo(SpanByte.FromPinnedPointer(key.ptr, key.length), out quantType, out distanceMetricType, out vectorDimensions, out reducedDimensions, out buildExplorationFactor, out numberOfLinks, out size);
+
+        /// <inheritdoc/>
+        public unsafe GarnetStatus VectorSetGetAttribute(ArgSlice key, ArgSlice element, ref SpanByteAndMemory outputAttributes)
+        => storageSession.VectorSetGetAttribute(SpanByte.FromPinnedPointer(key.ptr, key.length), element, ref outputAttributes);
+
         #endregion
     }
 }

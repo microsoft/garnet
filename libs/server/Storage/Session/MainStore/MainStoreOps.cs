@@ -36,6 +36,10 @@ namespace Garnet.server
                 incr_session_found();
                 return GarnetStatus.OK;
             }
+            else if (status.IsCanceled)
+            {
+                return GarnetStatus.WRONGTYPE;
+            }
             else
             {
                 incr_session_notfound();
@@ -107,7 +111,7 @@ namespace Garnet.server
         public unsafe GarnetStatus GET<TContext>(ArgSlice key, out MemoryResult<byte> value, ref TContext context)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
         {
-            var input = new RawStringInput(RespCommand.GET);
+            var input = new RawStringInput(RespCommand.GET, arg1: -1);
 
             var _key = key.SpanByte;
             var _output = new SpanByteAndMemory();
@@ -589,6 +593,12 @@ namespace Garnet.server
             if (storeType == StoreType.Main || storeType == StoreType.All)
             {
                 var status = context.Delete(ref key);
+                if (status.IsCanceled)
+                {
+                    // Might be a vector set
+                    status = vectorManager.TryDeleteVectorSet(this, ref key, out _);
+                }
+
                 Debug.Assert(!status.IsPending);
                 if (status.Found) found = true;
             }
@@ -600,10 +610,11 @@ namespace Garnet.server
                 Debug.Assert(!status.IsPending);
                 if (status.Found) found = true;
             }
+
             return found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
-        public GarnetStatus DELETE<TContext, TObjectContext>(byte[] key, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
+        public unsafe GarnetStatus DELETE<TContext, TObjectContext>(byte[] key, StoreType storeType, ref TContext context, ref TObjectContext objectContext)
             where TContext : ITsavoriteContext<SpanByte, SpanByte, RawStringInput, SpanByteAndMemory, long, MainSessionFunctions, MainStoreFunctions, MainStoreAllocator>
             where TObjectContext : ITsavoriteContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions, ObjectStoreFunctions, ObjectStoreAllocator>
         {
@@ -612,6 +623,18 @@ namespace Garnet.server
             if ((storeType == StoreType.Object || storeType == StoreType.All) && !objectStoreBasicContext.IsNull)
             {
                 var status = objectContext.Delete(key);
+                if (status.IsCanceled)
+                {
+                    // Might be a vector set
+                    fixed (byte* keyPtr = key)
+                    {
+                        SpanByte keySpan = new(key.Length, (nint)keyPtr);
+                        status = vectorManager.TryDeleteVectorSet(this, ref keySpan, out _);
+                    }
+
+                    if (status.Found) found = true;
+                }
+
                 Debug.Assert(!status.IsPending);
                 if (status.Found) found = true;
             }

@@ -274,5 +274,12 @@ namespace Garnet.server
         /// </summary>
         /// <returns></returns>
         public (HybridLogScanMetrics mainStore, HybridLogScanMetrics objectStore)[] CollectHybridLogStats();
+
+        /// <summary>
+        /// Perform any recovery necessary for Vector Sets.
+        /// 
+        /// Must be called after checkpoints and AOF are recovered, as Vector Sets may make modifications to the log.
+        /// </summary>
+        public void RecoverVectorSets();
     }
 }
