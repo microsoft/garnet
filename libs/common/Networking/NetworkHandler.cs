@@ -328,9 +328,9 @@ namespace Garnet.networking
             {
                 DoubleNetworkReceiveBuffer();
             }
-            else if (networkReceiveBuffer.Length > networkBufferSettings.maxReceiveBufferSize)
+            else if (networkReceiveBuffer.Length > networkBufferSettings.maxReceiveBufferSize && networkReadHead <= networkBufferSettings.maxReceiveBufferSize)
             {
-                // If we've exceeded our maximum _and_ didn't need to double to serve the request, shrink back down
+                // If we've exceeded our maximum _and_ didn't need to double to serve the request, shrink back down if possible
                 ShrinkNetworkReceiveBuffer();
             }
         }
