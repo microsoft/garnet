@@ -13,7 +13,7 @@ namespace Garnet.server
         /// Adds all the element arguments to the HyperLogLog data structure stored at the variable name specified as key.
         /// </summary>
         public unsafe GarnetStatus HyperLogLogAdd<TStringContext>(PinnedSpanByte key, string[] elements, out bool updated, ref TStringContext context)
-             where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             updated = false;
 
@@ -29,7 +29,8 @@ namespace Garnet.server
                 var elementSlice = scratchBufferBuilder.CreateArgSlice(element);
                 parseState.SetArgument(0, elementSlice);
 
-                var o = SpanByteAndMemory.FromPinnedPointer(output, 1);
+                StringOutput o = default;
+                o.SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(output, 1);
                 _ = RMW_MainStore(key.ReadOnlySpan, ref input, ref o, ref context);
 
                 scratchBufferBuilder.RewindScratchBuffer(elementSlice);
@@ -56,12 +57,12 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <param name="context"></param>
         /// <returns></returns>
-        public GarnetStatus HyperLogLogAdd<TStringContext>(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output, ref TStringContext context)
-          where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        public GarnetStatus HyperLogLogAdd<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
+          where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
             => RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref context);
 
         public unsafe GarnetStatus HyperLogLogLength<TStringContext>(Span<PinnedSpanByte> keys, out long count, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             parseState.Initialize(keys.Length);
             for (var i = 0; i < keys.Length; i++)
@@ -84,7 +85,7 @@ namespace Garnet.server
         /// <param name="context"></param>
         /// <returns></returns>
         public unsafe GarnetStatus HyperLogLogLength<TStringContext>(ref StringInput input, out long count, out bool error, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+            where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             error = false;
             count = default;
@@ -119,8 +120,10 @@ namespace Garnet.server
                     sectorAlignedMemoryPoolAlignment);
                 var srcReadBuffer = sectorAlignedMemoryHll1.GetValidPointer();
                 var dstReadBuffer = sectorAlignedMemoryHll2.GetValidPointer();
-                var dstMergeBuffer = SpanByteAndMemory.FromPinnedPointer(srcReadBuffer, hllBufferSize);
-                var srcMergeBuffer = SpanByteAndMemory.FromPinnedPointer(dstReadBuffer, hllBufferSize);
+                StringOutput dstMergeBuffer = default;
+                dstMergeBuffer.SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(srcReadBuffer, hllBufferSize);
+                StringOutput srcMergeBuffer = default;
+                srcMergeBuffer.SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(dstReadBuffer, hllBufferSize);
                 var isFirst = false;
 
                 for (var i = 0; i < input.parseState.Count; i++)
@@ -140,8 +143,8 @@ namespace Garnet.server
                         break;
                     }
 
-                    var sbSrcHLL = srcMergeBuffer.SpanByte;
-                    var sbDstHLL = dstMergeBuffer.SpanByte;
+                    var sbSrcHLL = srcMergeBuffer.SpanByteAndMemory.SpanByte;
+                    var sbDstHLL = dstMergeBuffer.SpanByteAndMemory.SpanByte;
 
                     var srcHLL = sbSrcHLL.ToPointer();
                     var dstHLL = sbDstHLL.ToPointer();
@@ -150,7 +153,7 @@ namespace Garnet.server
                     {
                         isFirst = true;
                         if (i == input.parseState.Count - 1)
-                            count = HyperLogLog.DefaultHLL.Count(srcMergeBuffer.SpanByte.ToPointer());
+                            count = HyperLogLog.DefaultHLL.Count(srcMergeBuffer.SpanByteAndMemory.SpanByte.ToPointer());
                         else
                             Buffer.MemoryCopy(srcHLL, dstHLL, sbSrcHLL.Length, sbSrcHLL.Length);
                         continue;
@@ -218,7 +221,8 @@ namespace Garnet.server
 
                     var currInput = new StringInput(RespCommand.PFMERGE);
 
-                    var mergeBuffer = SpanByteAndMemory.FromPinnedPointer(readBuffer, hllBufferSize);
+                    StringOutput mergeBuffer = default;
+                    mergeBuffer.SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(readBuffer, hllBufferSize);
                     var srcKey = input.parseState.GetArgSliceByRef(i);
 
                     var status = GET(srcKey, ref currInput, ref mergeBuffer, ref currTransactionalContext);
@@ -236,7 +240,7 @@ namespace Garnet.server
 
                     #region mergeToDst
 
-                    var mergeSlice = mergeBuffer.SpanByte;
+                    var mergeSlice = mergeBuffer.SpanByteAndMemory.SpanByte;
 
                     parseState.InitializeWithArgument(mergeSlice);
 

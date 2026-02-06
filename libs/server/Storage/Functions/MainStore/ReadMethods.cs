@@ -10,10 +10,10 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, StringOutput, long>
     {
         /// <inheritdoc />
-        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref SpanByteAndMemory output, ref ReadInfo readInfo)
+        public bool Reader<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             if (srcLogRecord.Info.ValueIsObject)
@@ -29,20 +29,20 @@ namespace Garnet.server
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
             if (cmd == RespCommand.GETIFNOTMATCH)
             {
-                if (handleGetIfNotMatch(in srcLogRecord, ref input, ref output, ref readInfo))
+                if (handleGetIfNotMatch(in srcLogRecord, ref input, ref output.SpanByteAndMemory, ref readInfo))
                     return true;
             }
             else if (cmd > RespCommandExtensions.LastValidCommand)
             {
                 if (srcLogRecord.Info.HasETag)
                 {
-                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output);
+                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
                     return true;
                 }
 
                 var valueLength = value.Length;
 
-                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                 try
                 {
                     var ret = functionsState.GetCustomCommandFunctions((ushort)cmd)
@@ -62,15 +62,15 @@ namespace Garnet.server
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
             if (cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH)
             {
-                CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
+                CopyRespWithEtagData(value, ref output.SpanByteAndMemory, srcLogRecord.Info.HasETag, functionsState.memoryPool);
                 ETagState.ResetState(ref functionsState.etagState);
                 return true;
             }
 
             if (cmd == RespCommand.NONE)
-                CopyRespTo(value, ref output);
+                CopyRespTo(value, ref output.SpanByteAndMemory);
             else
-                CopyRespToWithInput(in srcLogRecord, ref input, ref output, readInfo.IsFromPending);
+                CopyRespToWithInput(in srcLogRecord, ref input, ref output.SpanByteAndMemory, readInfo.IsFromPending);
 
             if (srcLogRecord.Info.HasETag)
                 ETagState.ResetState(ref functionsState.etagState);

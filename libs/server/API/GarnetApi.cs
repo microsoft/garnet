@@ -14,7 +14,7 @@ namespace Garnet.server
     /// Garnet API implementation
     /// </summary>
     public partial struct GarnetApi<TStringContext, TObjectContext, TUnifiedContext> : IGarnetApi, IGarnetWatchApi
-        where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
+        where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         where TUnifiedContext : ITsavoriteContext<UnifiedInput, UnifiedOutput, long, UnifiedSessionFunctions, StoreFunctions, StoreAllocator>
     {
@@ -39,18 +39,18 @@ namespace Garnet.server
 
         #region GET
         /// <inheritdoc />
-        public GarnetStatus GET(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus GET(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.GET(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus GET_WithPending(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output, long ctx, out bool pending)
+        public GarnetStatus GET_WithPending(PinnedSpanByte key, ref StringInput input, ref StringOutput output, long ctx, out bool pending)
             => storageSession.GET_WithPending(key.ReadOnlySpan, ref input, ref output, ctx, out pending, ref stringContext);
 
         /// <inheritdoc />
-        public bool GET_CompletePending((GarnetStatus, SpanByteAndMemory)[] outputArr, bool wait = false)
+        public bool GET_CompletePending((GarnetStatus, StringOutput)[] outputArr, bool wait = false)
             => storageSession.GET_CompletePending(outputArr, wait, ref stringContext);
 
-        public bool GET_CompletePending(out CompletedOutputIterator<StringInput, SpanByteAndMemory, long> completedOutputs, bool wait)
+        public bool GET_CompletePending(out CompletedOutputIterator<StringInput, StringOutput, long> completedOutputs, bool wait)
             => storageSession.GET_CompletePending(out completedOutputs, wait, ref stringContext);
 
         /// <inheritdoc />
@@ -66,21 +66,21 @@ namespace Garnet.server
             => storageSession.GET(key, out value, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
+        public GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref StringOutput output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
             => storageSession.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
         #endregion
 
         #region GETEX
 
         /// <inheritdoc />
-        public GarnetStatus GETEX(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus GETEX(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.GETEX(key, ref input, ref output, ref stringContext);
 
         #endregion
 
         #region GETRANGE
         /// <inheritdoc />
-        public GarnetStatus GETRANGE(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus GETRANGE(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.GETRANGE(key, ref input, ref output, ref stringContext);
         #endregion
 
@@ -102,7 +102,7 @@ namespace Garnet.server
             => storageSession.DEL_Conditional(key, ref input, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus SET_Conditional(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.SET_Conditional(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
@@ -153,7 +153,7 @@ namespace Garnet.server
         #region APPEND
 
         /// <inheritdoc />
-        public GarnetStatus APPEND(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus APPEND(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.APPEND(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />    
@@ -233,17 +233,17 @@ namespace Garnet.server
 
         #region GETDEL
         /// <inheritdoc />
-        public GarnetStatus GETDEL(PinnedSpanByte key, ref SpanByteAndMemory output)
+        public GarnetStatus GETDEL(PinnedSpanByte key, ref StringOutput output)
             => storageSession.GETDEL(key, ref output, ref stringContext);
         #endregion
 
         #region Advanced ops
         /// <inheritdoc />
-        public GarnetStatus RMW_MainStore(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus RMW_MainStore(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.RMW_MainStore(key.ReadOnlySpan, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus Read_MainStore(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus Read_MainStore(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.Read_MainStore(key.ReadOnlySpan, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
@@ -264,7 +264,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public void ReadWithPrefetch<TBatch>(ref TBatch batch, long userContext = default)
-            where TBatch : IReadArgBatch<StringInput, SpanByteAndMemory>
+            where TBatch : IReadArgBatch<StringInput, StringOutput>
 #if NET9_0_OR_GREATER
             , allows ref struct
 #endif
@@ -278,11 +278,11 @@ namespace Garnet.server
            => storageSession.StringSetBit(key, offset, bit, out previous, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus StringSetBit(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus StringSetBit(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
            => storageSession.StringSetBit(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus StringGetBit(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus StringGetBit(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.StringGetBit(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
@@ -290,7 +290,7 @@ namespace Garnet.server
             => storageSession.StringGetBit(key, offset, out bValue, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus StringBitCount(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitCount(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.StringBitCount(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
@@ -306,15 +306,15 @@ namespace Garnet.server
             => storageSession.StringBitOperation(bitop, destinationKey, keys, out result);
 
         /// <inheritdoc />
-        public GarnetStatus StringBitPosition(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitPosition(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.StringBitPosition(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus StringBitField(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitField(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref StringOutput output)
             => storageSession.StringBitField(key, ref input, secondaryCommand, ref output, ref stringContext);
 
         /// <inheritdoc />
-        public GarnetStatus StringBitFieldReadOnly(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref SpanByteAndMemory output)
+        public GarnetStatus StringBitFieldReadOnly(PinnedSpanByte key, ref StringInput input, RespCommand secondaryCommand, ref StringOutput output)
             => storageSession.StringBitFieldReadOnly(key, ref input, secondaryCommand, ref output, ref stringContext);
 
         /// <inheritdoc />
@@ -325,7 +325,7 @@ namespace Garnet.server
 
         #region HyperLogLog Methods
         /// <inheritdoc />
-        public GarnetStatus HyperLogLogAdd(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output)
+        public GarnetStatus HyperLogLogAdd(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.HyperLogLogAdd(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />

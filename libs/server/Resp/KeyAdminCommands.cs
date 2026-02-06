@@ -312,19 +312,19 @@ namespace Garnet.server
             }
 
             var sbKey = parseState.GetArgSliceByRef(0);
-            var o = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var o = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = garnetApi.GETDEL(sbKey, ref o);
 
             if (status == GarnetStatus.OK)
             {
-                if (!o.IsSpanByte)
-                    SendAndReset(o.Memory, o.Length);
+                if (!o.SpanByteAndMemory.IsSpanByte)
+                    SendAndReset(o.SpanByteAndMemory.Memory, o.SpanByteAndMemory.Length);
                 else
-                    dcurr += o.Length;
+                    dcurr += o.SpanByteAndMemory.Length;
             }
             else
             {
-                Debug.Assert(o.IsSpanByte);
+                Debug.Assert(o.SpanByteAndMemory.IsSpanByte);
                 WriteNull();
             }
 

@@ -454,13 +454,13 @@ namespace Garnet.server
                 return AbortWithErrorMessage(CmdStrings.RESP_ERR_LENGTH_AND_INDEXES);
             }
 
-            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = StringOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
             var status = storageApi.LCS(key1, key2, ref output, lenOnly, withIndices, withMatchLen, minMatchLen);
 
-            if (!output.IsSpanByte)
-                SendAndReset(output.Memory, output.Length);
+            if (!output.SpanByteAndMemory.IsSpanByte)
+                SendAndReset(output.SpanByteAndMemory.Memory, output.SpanByteAndMemory.Length);
             else
-                dcurr += output.Length;
+                dcurr += output.SpanByteAndMemory.Length;
 
             return true;
         }

@@ -13,10 +13,10 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
+    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, StringOutput, long>
     {
         /// <inheritdoc />
-        public readonly bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool NeedInitialUpdate(ReadOnlySpan<byte> key, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
             switch (input.header.cmd)
             {
@@ -30,7 +30,7 @@ namespace Garnet.server
                     if (input.header.CheckWithETagFlag())
                     {
                         // XX when unsuccesful will write back NIL
-                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output);
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     }
                     return false;
                 case RespCommand.SETIFGREATER:
@@ -43,7 +43,7 @@ namespace Garnet.server
                 default:
                     if (input.header.cmd > RespCommandExtensions.LastValidCommand)
                     {
-                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                         try
                         {
                             var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
@@ -61,7 +61,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool InitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
             Debug.Assert(!logRecord.Info.HasETag && !logRecord.Info.HasExpiration, "Should not have Expiration or ETag on InitialUpdater log records");
 
@@ -84,7 +84,7 @@ namespace Garnet.server
                         fixed (byte* valuePtr = value)
                             HyperLogLog.DefaultHLL.Init(ref input, valuePtr, value.Length);
 
-                    *output.SpanByte.ToPointer() = 1;
+                    *output.SpanByteAndMemory.SpanByte.ToPointer() = 1;
                     break;
 
                 case RespCommand.PFMERGE:
@@ -128,7 +128,7 @@ namespace Garnet.server
                         4 + 1 + NumUtils.CountDigits(functionsState.etagState.ETag) + 2 + nilResponse.Length,
                         nilResponse,
                         functionsState.etagState.ETag,
-                        ref output,
+                        ref output.SpanByteAndMemory,
                         functionsState.memoryPool,
                         writeDirect: true
                     );
@@ -151,7 +151,7 @@ namespace Garnet.server
                     }
                     ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
                     // Copy initial etag to output only for SET + WITHETAG and not SET NX or XX. TODO: Is this condition satisfied here?
-                    functionsState.CopyRespNumber(LogRecord.NoETag + 1, ref output);
+                    functionsState.CopyRespNumber(LogRecord.NoETag + 1, ref output.SpanByteAndMemory);
 
                     // Set or remove expiration
                     if (sizeInfo.FieldInfo.HasExpiration && !logRecord.TrySetExpiration(input.arg1))
@@ -173,7 +173,7 @@ namespace Garnet.server
                     }
                     ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
                     // Copy initial etag to output
-                    functionsState.CopyRespNumber(LogRecord.NoETag + 1, ref output);
+                    functionsState.CopyRespNumber(LogRecord.NoETag + 1, ref output.SpanByteAndMemory);
                     break;
 
                 case RespCommand.SETKEEPTTLXX:
@@ -201,7 +201,7 @@ namespace Garnet.server
                         fixed (byte* valuePtr = value)
                             _ = BitmapManager.UpdateBitmap(valuePtr, bOffset, bSetVal);
 
-                    functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output);
+                    functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
                     break;
 
                 case RespCommand.BITFIELD:
@@ -226,9 +226,9 @@ namespace Garnet.server
                             (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, valuePtr, value.Length);
 
                     if (!overflow)
-                        functionsState.CopyRespNumber(bitfieldReturnValue, ref output);
+                        functionsState.CopyRespNumber(bitfieldReturnValue, ref output.SpanByteAndMemory);
                     else
-                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output);
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     break;
 
                 case RespCommand.SETRANGE:
@@ -241,7 +241,7 @@ namespace Garnet.server
                         value.Slice(0, offset).Clear();
                     newValue.CopyTo(value.Slice(offset));
 
-                    if (!TryCopyValueLengthToOutput(value, ref output))
+                    if (!TryCopyValueLengthToOutput(value, ref output.SpanByteAndMemory))
                         return false;
                     break;
 
@@ -251,7 +251,7 @@ namespace Garnet.server
                     value = logRecord.ValueSpan;
                     appendValue.ReadOnlySpan.CopyTo(value);
 
-                    if (!TryCopyValueLengthToOutput(value, ref output))
+                    if (!TryCopyValueLengthToOutput(value, ref output.SpanByteAndMemory))
                         return false;
                     break;
                 case RespCommand.INCR:
@@ -263,7 +263,7 @@ namespace Garnet.server
                     }
 
                     value = logRecord.ValueSpan;
-                    _ = TryCopyUpdateNumber(1L, value, ref output);
+                    _ = TryCopyUpdateNumber(1L, value, ref output.SpanByteAndMemory);
                     break;
                 case RespCommand.INCRBY:
                     var incrBy = input.arg1;
@@ -275,7 +275,7 @@ namespace Garnet.server
                         return false;
                     }
 
-                    _ = TryCopyUpdateNumber(incrBy, logRecord.ValueSpan, ref output);
+                    _ = TryCopyUpdateNumber(incrBy, logRecord.ValueSpan, ref output.SpanByteAndMemory);
                     break;
                 case RespCommand.DECR:
                     // This is InitialUpdater so set the value to -1 and the length to the # of digits in "-1"
@@ -285,7 +285,7 @@ namespace Garnet.server
                         return false;
                     }
                     value = logRecord.ValueSpan;
-                    _ = TryCopyUpdateNumber(-1, value, ref output);
+                    _ = TryCopyUpdateNumber(-1, value, ref output.SpanByteAndMemory);
                     break;
                 case RespCommand.DECRBY:
                     var decrBy = -input.arg1;
@@ -297,11 +297,11 @@ namespace Garnet.server
                         return false;
                     }
 
-                    _ = TryCopyUpdateNumber(decrBy, logRecord.ValueSpan, ref output);
+                    _ = TryCopyUpdateNumber(decrBy, logRecord.ValueSpan, ref output.SpanByteAndMemory);
                     break;
                 case RespCommand.INCRBYFLOAT:
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
-                    if (!TryCopyUpdateNumber(incrByFloat, logRecord.ValueSpan, ref output))
+                    if (!TryCopyUpdateNumber(incrByFloat, logRecord.ValueSpan, ref output.SpanByteAndMemory))
                         return false;
                     break;
                 default:
@@ -319,7 +319,7 @@ namespace Garnet.server
                             return false;
                         }
 
-                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                         try
                         {
                             functions.InitialUpdater(logRecord.Key, ref input, logRecord.ValueSpan, ref writer, ref rmwInfo);
@@ -340,7 +340,7 @@ namespace Garnet.server
                     }
 
                     // Copy value to output
-                    CopyTo(logRecord.ValueSpan, ref output, functionsState.memoryPool);
+                    CopyTo(logRecord.ValueSpan, ref output.SpanByteAndMemory, functionsState.memoryPool);
                     break;
             }
 
@@ -350,7 +350,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly void PostInitialUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
             // reset etag state set at need initial update
             if (input.header.cmd is (RespCommand.SET or RespCommand.SETEXNX or RespCommand.SETKEEPTTL or RespCommand.SETIFMATCH or RespCommand.SETIFGREATER))
@@ -365,7 +365,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool InPlaceUpdater(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
             if (logRecord.Info.ValueIsObject)
             {
@@ -392,7 +392,7 @@ namespace Garnet.server
 
         // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with TRUE,
         // you must make sure you must reset etagState in FunctionState
-        private readonly IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        private readonly IPUResult InPlaceUpdaterWorker(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
         {
             RespCommand cmd = input.header.cmd;
             // Expired data
@@ -415,13 +415,13 @@ namespace Garnet.server
                     if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
-                        CopyRespTo(logRecord.ValueSpan, ref output);
+                        CopyRespTo(logRecord.ValueSpan, ref output.SpanByteAndMemory);
                     }
                     else if (input.header.CheckWithETagFlag())
                     {
                         // when called withetag all output needs to be placed on the buffer
                         // EXX when unsuccesful will write back NIL
-                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output);
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     }
 
                     // reset etag state after done using
@@ -445,7 +445,7 @@ namespace Garnet.server
                     if (comparisonResult != expectedResult)
                     {
                         if (input.header.CheckSetGetFlag())
-                            CopyRespWithEtagData(logRecord.ValueSpan, ref output, shouldUpdateEtag, functionsState.memoryPool);
+                            CopyRespWithEtagData(logRecord.ValueSpan, ref output.SpanByteAndMemory, shouldUpdateEtag, functionsState.memoryPool);
                         else
                         {
                             // write back array of the format [etag, nil]
@@ -455,7 +455,7 @@ namespace Garnet.server
                                 4 + 1 + NumUtils.CountDigits(functionsState.etagState.ETag) + 2 + nilResponse.Length,
                                 nilResponse,
                                 functionsState.etagState.ETag,
-                                ref output,
+                                ref output.SpanByteAndMemory,
                                 functionsState.memoryPool,
                                 writeDirect: true
                             );
@@ -482,7 +482,7 @@ namespace Garnet.server
                     var nilResp = functionsState.nilResp;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                     var numDigitsInEtag = NumUtils.CountDigits(newEtag);
-                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, nilResp, newEtag, ref output, functionsState.memoryPool, writeDirect: true);
+                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + nilResp.Length, nilResp, newEtag, ref output.SpanByteAndMemory, functionsState.memoryPool, writeDirect: true);
                     // reset etag state after done using
                     ETagState.ResetState(ref functionsState.etagState);
                     shouldUpdateEtag = false;   // since we already updated the ETag
@@ -493,7 +493,7 @@ namespace Garnet.server
                     if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
-                        CopyRespTo(logRecord.ValueSpan, ref output);
+                        CopyRespTo(logRecord.ValueSpan, ref output.SpanByteAndMemory);
                     }
 
                     // If the user calls withetag then we need to either update an existing etag and set the value or set the value with an etag and increment it.
@@ -517,7 +517,7 @@ namespace Garnet.server
                         var newETag = functionsState.etagState.ETag + 1;
                         if (!logRecord.TrySetETag(newETag))
                             return IPUResult.Failed;
-                        functionsState.CopyRespNumber(newETag, ref output);
+                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
                         // reset etag state after done using
                         ETagState.ResetState(ref functionsState.etagState);
                     }
@@ -541,7 +541,7 @@ namespace Garnet.server
                         Debug.Assert(!input.header.CheckWithETagFlag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
 
                         // Copy value to output for the GET part of the command.
-                        CopyRespTo(logRecord.ValueSpan, ref output);
+                        CopyRespTo(logRecord.ValueSpan, ref output.SpanByteAndMemory);
                     }
 
                     setValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -554,7 +554,7 @@ namespace Garnet.server
                     {
                         var newETag = functionsState.etagState.ETag + 1;
                         logRecord.TrySetETag(newETag);
-                        functionsState.CopyRespNumber(newETag, ref output);
+                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
                     }
                     else
                         logRecord.RemoveETag();
@@ -562,27 +562,27 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.INCR:
-                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: 1))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output.SpanByteAndMemory, ref rmwInfo, input: 1))
                         return IPUResult.Failed;
                     break;
                 case RespCommand.DECR:
-                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: -1))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output.SpanByteAndMemory, ref rmwInfo, input: -1))
                         return IPUResult.Failed;
                     break;
                 case RespCommand.INCRBY:
                     // Check if input contains a valid number
                     var incrBy = input.arg1;
-                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: incrBy))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output.SpanByteAndMemory, ref rmwInfo, input: incrBy))
                         return IPUResult.Failed;
                     break;
                 case RespCommand.DECRBY:
                     var decrBy = input.arg1;
-                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, input: -decrBy))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output.SpanByteAndMemory, ref rmwInfo, input: -decrBy))
                         return IPUResult.Failed;
                     break;
                 case RespCommand.INCRBYFLOAT:
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
-                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output, ref rmwInfo, incrByFloat))
+                    if (!TryInPlaceUpdateNumber(ref logRecord, in sizeInfo, ref output.SpanByteAndMemory, ref rmwInfo, incrByFloat))
                         return IPUResult.Failed;
                     break;
 
@@ -604,7 +604,7 @@ namespace Garnet.server
                             oldValSet = BitmapManager.UpdateBitmap(valuePtr, bOffset, bSetVal);
 
                     functionsState.CopyDefaultResp(
-                        oldValSet == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output);
+                        oldValSet == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
                     break;
                 case RespCommand.BITFIELD:
                     var bitFieldArgs = GetBitFieldArguments(ref input);
@@ -624,7 +624,7 @@ namespace Garnet.server
 
                     if (overflow)
                     {
-                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output);
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
 
                         // reset etag state that may have been initialized earlier, but don't update etag
                         ETagState.ResetState(ref functionsState.etagState);
@@ -632,7 +632,7 @@ namespace Garnet.server
                         return IPUResult.Succeeded;
                     }
 
-                    functionsState.CopyRespNumber(bitfieldReturnValue, ref output);
+                    functionsState.CopyRespNumber(bitfieldReturnValue, ref output.SpanByteAndMemory);
                     break;
 
                 case RespCommand.PFADD:
@@ -663,7 +663,7 @@ namespace Garnet.server
 
                     if (!parseOk)
                     {
-                        *output.SpanByte.ToPointer() = (byte)0xFF;  // Flags invalid HLL
+                        *output.SpanByteAndMemory.SpanByte.ToPointer() = (byte)0xFF;  // Flags invalid HLL
 
                         // reset etag state that may have been initialized earlier, but don't update etag
                         ETagState.ResetState(ref functionsState.etagState);
@@ -671,7 +671,7 @@ namespace Garnet.server
                     }
 
                     if (result)
-                        *output.SpanByte.ToPointer() = updated ? (byte)1 : (byte)0;
+                        *output.SpanByteAndMemory.SpanByte.ToPointer() = updated ? (byte)1 : (byte)0;
                     if (!result)
                         return IPUResult.Failed;
                     break;
@@ -708,7 +708,7 @@ namespace Garnet.server
                     if (!parseOk)
                     {
                         //InvalidType                                                
-                        *output.SpanByte.ToPointer() = (byte)0xFF;  // Flags invalid HLL
+                        *output.SpanByteAndMemory.SpanByte.ToPointer() = (byte)0xFF;  // Flags invalid HLL
 
                         // reset etag state that may have been initialized earlier, but don't update etag
                         ETagState.ResetState(ref functionsState.etagState);
@@ -727,19 +727,19 @@ namespace Garnet.server
                         return IPUResult.Failed;
 
                     newValue.CopyTo(logRecord.ValueSpan.Slice(offset));
-                    if (!TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output))
+                    if (!TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output.SpanByteAndMemory))
                         return IPUResult.Failed;
                     break;
 
                 case RespCommand.GETDEL:
                     // Copy value to output for the GET part of the command.
                     // Then, set ExpireAndStop action to delete the record.
-                    CopyRespTo(logRecord.ValueSpan, ref output);
+                    CopyRespTo(logRecord.ValueSpan, ref output.SpanByteAndMemory);
                     rmwInfo.Action = RMWAction.ExpireAndStop;
                     return IPUResult.Failed;
 
                 case RespCommand.GETEX:
-                    CopyRespTo(logRecord.ValueSpan, ref output);
+                    CopyRespTo(logRecord.ValueSpan, ref output.SpanByteAndMemory);
 
                     var ipuResult = IPUResult.NotUpdated;
 
@@ -778,20 +778,20 @@ namespace Garnet.server
 
                         // Append the new value with the client input at the end of the old data
                         appendValue.ReadOnlySpan.CopyTo(logRecord.ValueSpan.Slice(originalLength));
-                        if (!TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output))
+                        if (!TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output.SpanByteAndMemory))
                             return IPUResult.Failed;
                         break;
                     }
 
                     // reset etag state that may have been initialized earlier, but don't update etag
                     ETagState.ResetState(ref functionsState.etagState);
-                    return TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output) ? IPUResult.Succeeded : IPUResult.Failed;
+                    return TryCopyValueLengthToOutput(logRecord.ValueSpan, ref output.SpanByteAndMemory) ? IPUResult.Succeeded : IPUResult.Failed;
                 default:
                     if (cmd > RespCommandExtensions.LastValidCommand)
                     {
                         if (shouldUpdateEtag)
                         {
-                            functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output);
+                            functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
                             // reset etag state that may have been initialized earlier but don't update ETag
                             ETagState.ResetState(ref functionsState.etagState);
                             return IPUResult.Succeeded;
@@ -814,7 +814,7 @@ namespace Garnet.server
 
                         var value = logRecord.ValueSpan;
                         var valueLength = value.Length;
-                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                         try
                         {
                             var ret = functions.InPlaceUpdater(logRecord.Key, ref input, value, ref valueLength, ref writer, ref rmwInfo);
@@ -850,7 +850,7 @@ namespace Garnet.server
 
         // NOTE: In the below control flow if you decide to add a new command or modify a command such that it will now do an early return with FALSE, you must make sure you must reset etagState in FunctionState
         /// <inheritdoc />
-        public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool NeedCopyUpdate<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             switch (input.header.cmd)
@@ -885,7 +885,7 @@ namespace Garnet.server
                     if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
-                        CopyRespWithEtagData(srcLogRecord.ValueSpan, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
+                        CopyRespWithEtagData(srcLogRecord.ValueSpan, ref output.SpanByteAndMemory, srcLogRecord.Info.HasETag, functionsState.memoryPool);
                     }
                     else
                     {
@@ -896,7 +896,7 @@ namespace Garnet.server
                             4 + 1 + NumUtils.CountDigits(functionsState.etagState.ETag) + 2 + nilResponse.Length,
                             nilResponse,
                             functionsState.etagState.ETag,
-                            ref output,
+                            ref output.SpanByteAndMemory,
                             functionsState.memoryPool,
                             writeDirect: true
                         );
@@ -921,12 +921,12 @@ namespace Garnet.server
                     if (input.header.CheckSetGetFlag())
                     {
                         // Copy value to output for the GET part of the command.
-                        CopyRespTo(srcLogRecord.ValueSpan, ref output);
+                        CopyRespTo(srcLogRecord.ValueSpan, ref output.SpanByteAndMemory);
                     }
                     else if (input.header.CheckWithETagFlag())
                     {
                         // EXX when unsuccesful will write back NIL
-                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output);
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     }
 
                     // reset etag state that may have been initialized earlier
@@ -948,13 +948,13 @@ namespace Garnet.server
                     {
                         if (srcLogRecord.Info.HasETag)
                         {
-                            functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output);
+                            functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
                             // reset etag state that may have been initialized earlier
                             ETagState.ResetState(ref functionsState.etagState);
                             return false;
                         }
 
-                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                         try
                         {
                             var ret = functionsState.GetCustomCommandFunctions((ushort)input.header.cmd)
@@ -972,7 +972,7 @@ namespace Garnet.server
 
         // NOTE: Before doing any return from this method, please make sure you are calling reset on etagState in functionsState.
         /// <inheritdoc />
-        public readonly bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool CopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             // Expired data
@@ -1021,7 +1021,7 @@ namespace Garnet.server
                     long eTagForResponse = cmd == RespCommand.SETIFMATCH ? functionsState.etagState.ETag + 1 : functionsState.etagState.ETag;
                     // *2\r\n: + <numDigitsInEtag> + \r\n + <nilResp.Length>
                     var numDigitsInEtag = NumUtils.CountDigits(eTagForResponse);
-                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + functionsState.nilResp.Length, functionsState.nilResp, eTagForResponse, ref output, functionsState.memoryPool, writeDirect: true);
+                    WriteValAndEtagToDst(4 + 1 + numDigitsInEtag + 2 + functionsState.nilResp.Length, functionsState.nilResp, eTagForResponse, ref output.SpanByteAndMemory, functionsState.memoryPool, writeDirect: true);
                     shouldUpdateEtag = false;   // since we already updated the ETag
                     break;
                 case RespCommand.SET:
@@ -1033,7 +1033,7 @@ namespace Garnet.server
                     {
                         Debug.Assert(!input.header.CheckWithETagFlag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
                         // Copy value to output for the GET part of the command.
-                        CopyRespTo(srcLogRecord.ValueSpan, ref output);
+                        CopyRespTo(srcLogRecord.ValueSpan, ref output.SpanByteAndMemory);
                     }
 
                     var newInputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -1056,7 +1056,7 @@ namespace Garnet.server
                         var newETag = functionsState.etagState.ETag + 1;
                         if (!dstLogRecord.TrySetETag(newETag))
                             return false;
-                        functionsState.CopyRespNumber(newETag, ref output);
+                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
                         ETagState.ResetState(ref functionsState.etagState);
                     }
                     else
@@ -1080,7 +1080,7 @@ namespace Garnet.server
                         Debug.Assert(!input.header.CheckWithETagFlag(), "SET GET CANNNOT BE CALLED WITH WITHETAG");
 
                         // Copy value to output for the GET part of the command.
-                        CopyRespTo(srcLogRecord.ValueSpan, ref output);
+                        CopyRespTo(srcLogRecord.ValueSpan, ref output.SpanByteAndMemory);
                     }
 
                     inputValue = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
@@ -1093,7 +1093,7 @@ namespace Garnet.server
                     {
                         var newETag = functionsState.etagState.ETag + 1;
                         dstLogRecord.TrySetETag(newETag);
-                        functionsState.CopyRespNumber(newETag, ref output);
+                        functionsState.CopyRespNumber(newETag, ref output.SpanByteAndMemory);
                     }
                     else
                         dstLogRecord.RemoveETag();
@@ -1102,30 +1102,30 @@ namespace Garnet.server
                     break;
 
                 case RespCommand.INCR:
-                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: 1))
+                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output.SpanByteAndMemory, input: 1))
                         return false;
                     break;
 
                 case RespCommand.DECR:
-                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: -1))
+                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output.SpanByteAndMemory, input: -1))
                         return false;
                     break;
 
                 case RespCommand.INCRBY:
                     var incrBy = input.arg1;
-                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: incrBy))
+                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output.SpanByteAndMemory, input: incrBy))
                         return false;
                     break;
 
                 case RespCommand.DECRBY:
                     var decrBy = input.arg1;
-                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: -decrBy))
+                    if (!TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output.SpanByteAndMemory, input: -decrBy))
                         return false;
                     break;
 
                 case RespCommand.INCRBYFLOAT:
                     var incrByFloat = BitConverter.Int64BitsToDouble(input.arg1);
-                    _ = TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output, input: incrByFloat);
+                    _ = TryCopyUpdateNumber(in srcLogRecord, ref dstLogRecord, in sizeInfo, ref output.SpanByteAndMemory, input: incrByFloat);
                     break;
 
                 case RespCommand.SETBIT:
@@ -1180,7 +1180,7 @@ namespace Garnet.server
                     }
 
                     functionsState.CopyDefaultResp(
-                        oldValSet == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output);
+                        oldValSet == 0 ? CmdStrings.RESP_RETURN_VAL_0 : CmdStrings.RESP_RETURN_VAL_1, ref output.SpanByteAndMemory);
                     break;
 
                 case RespCommand.BITFIELD:
@@ -1205,9 +1205,9 @@ namespace Garnet.server
                             (bitfieldReturnValue, overflow) = BitmapManager.BitFieldExecute(bitFieldArgs, newValuePtr, newValue.Length);
 
                     if (!overflow)
-                        functionsState.CopyRespNumber(bitfieldReturnValue, ref output);
+                        functionsState.CopyRespNumber(bitfieldReturnValue, ref output.SpanByteAndMemory);
                     else
-                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output);
+                        functionsState.CopyDefaultResp(functionsState.nilResp, ref output.SpanByteAndMemory);
                     break;
 
                 case RespCommand.PFADD:
@@ -1279,7 +1279,7 @@ namespace Garnet.server
                         }
                     }
 
-                    *output.SpanByte.ToPointer() = updated ? (byte)1 : (byte)0;
+                    *output.SpanByteAndMemory.SpanByte.ToPointer() = updated ? (byte)1 : (byte)0;
                     break;
 
                 case RespCommand.PFMERGE:
@@ -1346,13 +1346,13 @@ namespace Garnet.server
 
                     input.parseState.GetArgSliceByRef(1).ReadOnlySpan.CopyTo(newValue.Slice(offset));
 
-                    _ = TryCopyValueLengthToOutput(newValue, ref output);
+                    _ = TryCopyValueLengthToOutput(newValue, ref output.SpanByteAndMemory);
                     break;
 
                 case RespCommand.GETDEL:
                     // Copy value to output for the GET part of the command.
                     // Then, set ExpireAndStop action to delete the record.
-                    CopyRespTo(oldValue, ref output);
+                    CopyRespTo(oldValue, ref output.SpanByteAndMemory);
                     rmwInfo.Action = RMWAction.ExpireAndStop;
 
                     // reset etag state that may have been initialized earlier
@@ -1361,7 +1361,7 @@ namespace Garnet.server
 
                 case RespCommand.GETEX:
                     shouldUpdateEtag = false;
-                    CopyRespTo(oldValue, ref output);
+                    CopyRespTo(oldValue, ref output.SpanByteAndMemory);
 
                     if (!dstLogRecord.TryCopyFrom(in srcLogRecord, in sizeInfo))
                         return false;
@@ -1394,7 +1394,7 @@ namespace Garnet.server
                     newValue = dstLogRecord.ValueSpan;
                     appendValue.ReadOnlySpan.CopyTo(newValue.Slice(oldValue.Length));
 
-                    _ = TryCopyValueLengthToOutput(newValue, ref output);
+                    _ = TryCopyValueLengthToOutput(newValue, ref output.SpanByteAndMemory);
                     break;
 
                 default:
@@ -1402,7 +1402,7 @@ namespace Garnet.server
                     {
                         if (srcLogRecord.Info.HasETag)
                         {
-                            functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output);
+                            functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
                             // reset etag state that may have been initialized earlier
                             ETagState.ResetState(ref functionsState.etagState);
                             return true;
@@ -1417,7 +1417,7 @@ namespace Garnet.server
                                 return false;
                         }
 
-                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output);
+                        var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
                         try
                         {
                             return functions.CopyUpdater(srcLogRecord.Key, ref input, oldValue, dstLogRecord.ValueSpan, ref writer, ref rmwInfo);
@@ -1449,7 +1449,7 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public readonly bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref SpanByteAndMemory output, ref RMWInfo rmwInfo)
+        public readonly bool PostCopyUpdater<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref StringInput input, ref StringOutput output, ref RMWInfo rmwInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
