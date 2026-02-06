@@ -26,6 +26,11 @@ namespace Garnet.server
         /// Wrong type of value
         /// </summary>
         WrongType = 1 << 1,
+
+        /// <summary>
+        /// Operation failed due to NaN/infinity
+        /// </summary>
+        NanOrInfinity
     }
 
     /// <summary>
