@@ -615,7 +615,47 @@ namespace Tsavorite.core
         }
 
         /// <inheritdoc/>
-        public override string ToString() => $"Current {CurrentEpoch}, SafeToReclaim {SafeToReclaimEpoch}, drainCount {drainCount}";
+        public override string ToString()
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"CurrentEpoch: {CurrentEpoch}, SafeToReclaimEpoch: {SafeToReclaimEpoch}");
+
+            var wc = waiterCount;
+            bool disposed = (wc & kDisposedFlag) != 0;
+            sb.AppendLine($"Waiters: {wc & ~kDisposedFlag}, Disposed: {disposed}");
+
+            // Active epoch table entries
+            sb.Append("Threads: [");
+            bool first = true;
+            for (int i = 1; i <= kTableSize; i++)
+            {
+                var e = *(tableAligned + i);
+                if (e.threadId != 0)
+                {
+                    if (!first) sb.Append(", ");
+                    sb.Append($"tid={e.threadId} epoch={e.localCurrentEpoch}");
+                    first = false;
+                }
+            }
+            sb.AppendLine(first ? "none]" : "]");
+
+            // Drain list entries
+            sb.Append("DrainList: [");
+            first = true;
+            for (int i = 0; i < kDrainListSize; i++)
+            {
+                var d = drainList[i];
+                if (d.epoch != long.MaxValue)
+                {
+                    if (!first) sb.Append(", ");
+                    sb.Append($"epoch={d.epoch} action={(d.action is null ? "null" : d.action.Method.Name)}");
+                    first = false;
+                }
+            }
+            sb.Append(first ? "none]" : "]");
+
+            return sb.ToString();
+        }
 
         /// <summary>
         /// Epoch table entry (cache line size).
