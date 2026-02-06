@@ -509,7 +509,7 @@ namespace Garnet.networking
             networkReceiveBufferPtr = tmp.entryPtr;
         }
 
-        // NoInling as this should be a rare call if Garnet is properly configured
+        // NoInlining as this should be a rare call if Garnet is properly configured
         [MethodImpl(MethodImplOptions.NoInlining)]
         unsafe void ShrinkNetworkReceiveBuffer()
         {
