@@ -18,7 +18,7 @@ Azure Cosmos DB Garnet Cache is currently in an expanded Private Preview. Please
 As a fully managed service, Azure Cosmos DB Garnet Cache handles infrastructure provisioning, scaling, patching, and monitoring automatically. Self-hosted Garnet requires you to manage the infrastructure, updates, and operations yourself.
 
 ### How does it work with Azure Cosmos DB?
-Azure Cosmos DB Garnet Cache works alongside Azure Cosmos DB to reduce latency for frequently accessed data. Your application manages the integration: checking the cache before reading from Azure Cosmos DB, and updating or invalidating cached entries after writing to Azure Cosmos DB. You control when to update or invalidate cached data to maintain consistency.
+Azure Cosmos DB Garnet Cache works alongside Azure Cosmos DB to reduce latency for frequently accessed data. Your application manages the integration including checking the cache before reading from Azure Cosmos DB, and updating or invalidating cached entries after writing to Azure Cosmos DB. You control when to update or invalidate cached data to maintain consistency.
 
 ### Is it compatible with Redis clients?
 Yes, Azure Cosmos DB Garnet Cache uses the Redis RESP protocol, making it compatible with existing Redis clients in all major programming languages without code changes. 

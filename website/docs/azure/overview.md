@@ -83,14 +83,15 @@ Ready to get started? First, register your subscription for access to the previe
 
 ### Register your Subscription
 Register your subscription to provision Azure Cosmos DB Garnet Caches. Here are the steps to request access. Please note that registration is not automatic and can take up to one week to process.
-1. Go to **Preview Features** page in your Azure subscription.
+1. Go to the **Preview Features** page in your Azure subscription.
 2. Filter by **Garnet** in the feature name search.
-3. Click the **Register** button to join the preview.
+3. Select the **Register** button.
 
 ![Register Subscription for Azure Cosmos DB Garnet Cache](../../static/img/azure/register-subscription.png)
 
 ## Learn More
 
+- [Quickstart](./quickstart.md)
 - [Cluster Configuration](./cluster-configuration.md)
 - [Resiliency](./resiliency.md)
 - [Security](./security.md)
