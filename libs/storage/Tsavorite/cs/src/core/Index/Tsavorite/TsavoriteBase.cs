@@ -35,8 +35,8 @@ namespace Tsavorite.core
         // Used as an atomic counter to check if resizing is complete
         internal long numPendingChunksToBeSplit;
 
-        internal LightEpoch epoch;
-        bool ownedEpoch;
+        internal readonly LightEpoch epoch;
+        readonly bool ownedEpoch;
 
         internal ResizeInfo resizeInfo;
 
