@@ -846,7 +846,7 @@ namespace Garnet.server
                     var functionsState = databaseManager.CreateFunctionsState();
                     var objstorefunctions = new ObjectSessionFunctions(functionsState);
                     var objectStoreSession = objectStore?.NewSession<ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions>(objstorefunctions);
-                    var iter = objectStoreSession.Iterate();
+                    using var iter = objectStoreSession.Iterate();
                     while (!hasKeyInSlots && iter.GetNext(out RecordInfo record))
                     {
                         ref var key = ref iter.GetKey();
