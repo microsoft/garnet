@@ -325,7 +325,14 @@ namespace Garnet.networking
 
             // Double network buffer if out of space after processing is complete
             if (networkBytesRead == networkReceiveBuffer.Length)
+            {
                 DoubleNetworkReceiveBuffer();
+            }
+            else if (networkReceiveBuffer.Length > networkBufferSettings.maxReceiveBufferSize)
+            {
+                // If we've exceeded our maximum _and_ didn't need to double to serve the request, string back down
+                ShrinkNetworkReceiveBuffer();
+            }
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -496,6 +503,24 @@ namespace Garnet.networking
         {
             var tmp = networkPool.Get(networkReceiveBuffer.Length * 2);
             Array.Copy(networkReceiveBuffer, tmp.entry, networkReceiveBuffer.Length);
+            networkReceiveBufferEntry.Dispose();
+            networkReceiveBufferEntry = tmp;
+            networkReceiveBuffer = tmp.entry;
+            networkReceiveBufferPtr = tmp.entryPtr;
+        }
+
+        // NoInling as this should be a rare call if Garnet is properly configured
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        unsafe void ShrinkNetworkReceiveBuffer()
+        {
+            Debug.Assert(networkReadHead == 0, "Shouldn't call if remaining data not already moved to head of receive buffer");
+
+            var tmp = networkPool.Get(networkBufferSettings.maxReceiveBufferSize);
+            if (networkBytesRead > 0)
+            {
+                Array.Copy(networkReceiveBuffer, tmp.entry, networkBytesRead);
+            }
+
             networkReceiveBufferEntry.Dispose();
             networkReceiveBufferEntry = tmp;
             networkReceiveBuffer = tmp.entry;
