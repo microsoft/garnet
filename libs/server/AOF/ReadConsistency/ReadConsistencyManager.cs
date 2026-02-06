@@ -18,7 +18,7 @@ namespace Garnet.server
         /// <summary>
         /// Read consistency manager version.
         /// </summary>
-    public long CurrentVersion { get; private set; } = currentVersion;
+        public long CurrentVersion { get; private set; } = currentVersion;
         readonly GarnetServerOptions serverOptions = serverOptions;
 
         readonly VirtualSublogReplayState[] vsrs = [.. Enumerable.Range(0, serverOptions.AofVirtualSublogCount).Select(_ => new VirtualSublogReplayState())];
@@ -29,7 +29,7 @@ namespace Garnet.server
         public long MaxSequenceNumber => vsrs.Max(sublog => sublog.Max);
 
         /// <summary>
-        /// Get snapshot of maximum replayed timestamp for all sublogs
+        /// Get snapshot of maximum replayed timestamp for all physical sublogs
         /// </summary>
         /// <returns></returns>
         public AofAddress GetSublogMaxKeySequenceNumber()
@@ -69,22 +69,16 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Update max sequence number of physical sublog associated with the specified sublogIdx.
-        /// NOTE: This will update all virtual sublogs max sequence number
+        /// Update physical sublog max sequence number
         /// </summary>
         /// <param name="physicalSublogIdx"></param>
-        public void UpdatePhysicalSublogMaxSequenceNumber(int physicalSublogIdx)
+        /// <param name="sequenceNumber"></param>
+        public void UpdatePhysicalSublogMaxSequenceNumber(int physicalSublogIdx, long sequenceNumber)
         {
             var replayTaskCount = serverOptions.AofReplayTaskCount;
-            var globalMaxSequenceNumber = 0L;
-
-            // Get maximum value across all virtual sublogs
+            // Update virtual sublog maximum value for all virtual sublogs
             for (var rt = 0; rt < replayTaskCount; rt++)
-                globalMaxSequenceNumber = Math.Max(globalMaxSequenceNumber, vsrs[appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, rt)].Max);
-
-            // Update virtual sublog maximum value to ensure time moves forward when replaying with multiple tasks
-            for (var rt = 0; rt < replayTaskCount; rt++)
-                vsrs[appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, rt)].UpdateMaxSequenceNumber(globalMaxSequenceNumber);
+                vsrs[appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, rt)].UpdateMaxSequenceNumber(sequenceNumber);
         }
 
         /// <summary>

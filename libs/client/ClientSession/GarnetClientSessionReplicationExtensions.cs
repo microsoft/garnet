@@ -22,6 +22,7 @@ namespace Garnet.client
         static ReadOnlySpan<byte> attach_sync => "ATTACH_SYNC"u8;
         static ReadOnlySpan<byte> sync => "SYNC"u8;
         static ReadOnlySpan<byte> sharded_log_key_sequence_vector => "SHARDED_LOG_KEY_SEQUENCE_VECTOR"u8;
+        static ReadOnlySpan<byte> advance_time => "advance_time"u8;
 
         /// <summary>
         /// Initiate checkpoint retrieval from replica by sending replica checkpoint information and AOF address range
@@ -492,6 +493,65 @@ namespace Garnet.client
 
             //2
             while (!RespWriteUtils.TryWriteBulkString(sharded_log_key_sequence_vector, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            Flush();
+            Interlocked.Increment(ref numCommands);
+            return tcs.Task;
+        }
+
+        /// <summary>
+        /// Issue CLUSTER ADVANCE_TIME
+        /// </summary>
+        /// <param name="sequenceNumber"></param>
+        /// <param name="aofAddress"></param>
+        /// <returns></returns>
+        /// <seealso cref="T:Garnet.cluster.ClusterSession.NetworkClusterAdvanceTime"/>
+        public Task<string> ExecuteClusterAdvanceTime(long sequenceNumber, Span<byte> aofAddress)
+        {
+            var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            tcsQueue.Enqueue(tcs);
+            var curr = offset;
+            var argCount = 2;
+            var arraySize = 2 + argCount;
+
+            while (!RespWriteUtils.TryWriteArrayLength(arraySize, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //1
+            while (!RespWriteUtils.TryWriteDirect(CLUSTER, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //2
+            while (!RespWriteUtils.TryWriteBulkString(advance_time, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //3
+            while (!RespWriteUtils.TryWriteArrayItem(sequenceNumber, ref curr, end))
+            {
+                Flush();
+                curr = offset;
+            }
+            offset = curr;
+
+            //4
+            while (!RespWriteUtils.TryWriteBulkString(aofAddress, ref curr, end))
             {
                 Flush();
                 curr = offset;

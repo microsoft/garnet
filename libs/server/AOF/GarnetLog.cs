@@ -27,7 +27,7 @@ namespace Garnet.server
 
         public static unsafe long GetSequenceNumberFromCookie(byte[] cookie)
         {
-            fixed(byte*ptr = cookie)
+            fixed (byte* ptr = cookie)
             {
                 return *(long*)ptr;
             }
@@ -159,7 +159,7 @@ namespace Garnet.server
             if (serverOptions.AofPhysicalSublogCount == 1)
                 return true;
             var sublogCount = shardedLog.sublog.Length;
-            for(var physicalSublogIdx = 0; physicalSublogIdx < sublogCount; physicalSublogIdx++)
+            for (var physicalSublogIdx = 0; physicalSublogIdx < sublogCount; physicalSublogIdx++)
             {
                 var physicalSublog = shardedLog.sublog[physicalSublogIdx];
                 var cookie = physicalSublog.RecoveredCookie;
@@ -527,7 +527,7 @@ namespace Garnet.server
         internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, out long logicalAddress)
             where TInput : IStoreInput
         {
-            if(serverOptions.AofPhysicalSublogCount == 1)
+            if (serverOptions.AofPhysicalSublogCount == 1)
             {
                 // Single log with multi-replay enabled needs to add sharderHeader to implement read protocol.
                 // Header modifier callback not needed because single physical sublog commit marker is read consistent when flushed.
@@ -712,23 +712,6 @@ namespace Garnet.server
                 if (serverOptions.AofAutoCommit)
                     Commit();
             }
-        }
-
-        /// <summary>
-        /// Enqueue a signal to refresh sublog tail.
-        /// NOTE: This is just a control signal.
-        /// </summary>
-        /// <param name="sublogIdx"></param>
-        /// <param name="sequenceNumber"></param>
-        public void EnqueueRefreshSublogTail(int sublogIdx, long sequenceNumber)
-        {
-            Debug.Assert(shardedLog != null && serverOptions.AofPhysicalSublogCount == shardedLog.sublog.Length);
-            var refreshSublogTailHeader = new AofShardedHeader
-            {
-                basicHeader = new AofHeader { opType = AofEntryType.RefreshSublogTail },
-                sequenceNumber = sequenceNumber
-            };
-            shardedLog.sublog[sublogIdx].Enqueue(refreshSublogTailHeader, out _);
         }
     }
 }

@@ -26,6 +26,20 @@ namespace Garnet.server
         public readonly int Length => length;
 
         /// <summary>
+        /// Provides a span of bytes representing the underlying addresses array.
+        /// </summary>
+        public Span<byte> Span
+        {
+            get
+            {
+                fixed (long* ptr = addresses)
+                {
+                    return new Span<byte>((byte*)ptr, sizeof(long) * length);
+                }
+            }
+        }
+
+        /// <summary>
         /// Indexer
         /// </summary>
         /// <param name="i"></param>
@@ -82,6 +96,27 @@ namespace Garnet.server
             using var ms = new MemoryStream(data);
             using var reader = new BinaryReader(ms, Encoding.ASCII);
             return Deserialize(reader);
+        }
+
+        /// <summary>
+        /// Create AofAddress from span
+        /// </summary>
+        /// <param name="span"></param>
+        /// <returns></returns>
+        public static AofAddress FromSpan(Span<byte> span)
+        {
+            var length = span.Length >> 3;
+            var aofAddress = new AofAddress(length);
+            fixed (byte* ptr = span)
+            {
+                var curr = ptr;
+                for (var i = 0; i < length; i++)
+                {
+                    aofAddress[i] = *(long*)curr;
+                    curr += sizeof(long);
+                }
+            }
+            return aofAddress;
         }
 
         /// <summary>

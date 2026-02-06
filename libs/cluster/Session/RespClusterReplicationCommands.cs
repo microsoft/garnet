@@ -479,26 +479,27 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// Implements CLUSTER_SHARDED_LOG_KEY_SEQUENCE_VECTOR
+        /// Implements CLUSTER_ADVANCE_TIME
         /// </summary>
         /// <param name="invalidParameters"></param>
         /// <returns></returns>
-        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterShardedLogKeySequenceVector"/>
-        private bool NetworkShardedLogKeySequenceVector(out bool invalidParameters)
+        /// <seealso cref="T:Garnet.client.GarnetClientSession.ExecuteClusterAdvanceTime"/>
+        private bool NetworkClusterAdvanceTime(out bool invalidParameters)
         {
             invalidParameters = false;
 
-            // Expecting exactly 0 arguments
-            if (parseState.Count != 0)
+            // Expecting exactly 2
+            if (parseState.Count != 2)
             {
                 invalidParameters = true;
                 return true;
             }
 
-            var maxKeySeqNumVector = clusterProvider.storeWrapper.appendOnlyFile.readConsistencyManager.GetSublogMaxKeySequenceNumber();
-            while (!RespWriteUtils.TryWriteAsciiBulkString(maxKeySeqNumVector.ToString(), ref dcurr, dend))
+            var sequenceNumber = parseState.GetLong(0);
+            var tailAddressSpan = parseState.GetArgSliceByRef(1).Span;
+            var converged = clusterProvider.replicationManager.AdvanceTime(sequenceNumber, AofAddress.FromSpan(tailAddressSpan));
+            while (!RespWriteUtils.TryWriteAsciiBulkString(converged.ToString(), ref dcurr, dend))
                 SendAndReset();
-
             return true;
         }
     }

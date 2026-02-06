@@ -120,6 +120,7 @@ namespace Garnet.cluster
             {
                 RespCommand.CLUSTER_ADDSLOTS => NetworkClusterAddSlots(out invalidParameters),
                 RespCommand.CLUSTER_ADDSLOTSRANGE => NetworkClusterAddSlotsRange(out invalidParameters),
+                RespCommand.CLUSTER_ADVANCE_TIME => NetworkClusterAdvanceTime(out invalidParameters),
                 RespCommand.CLUSTER_APPENDLOG => NetworkClusterAppendLog(out invalidParameters),
                 RespCommand.CLUSTER_ATTACH_SYNC => NetworkClusterAttachSync(out invalidParameters),
                 RespCommand.CLUSTER_BANLIST => NetworkClusterBanList(out invalidParameters),
@@ -157,7 +158,6 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_SETCONFIGEPOCH => NetworkClusterSetConfigEpoch(out invalidParameters),
                 RespCommand.CLUSTER_SETSLOT => NetworkClusterSetSlot(out invalidParameters),
                 RespCommand.CLUSTER_SETSLOTSRANGE => NetworkClusterSetSlotsRange(out invalidParameters),
-                RespCommand.CLUSTER_SHARDED_LOG_KEY_SEQUENCE_VECTOR => NetworkShardedLogKeySequenceVector(out invalidParameters),
                 RespCommand.CLUSTER_SHARDS => NetworkClusterShards(out invalidParameters),
                 RespCommand.CLUSTER_SLOTS => NetworkClusterSlots(out invalidParameters),
                 RespCommand.CLUSTER_SLOTSTATE => NetworkClusterSlotState(out invalidParameters),

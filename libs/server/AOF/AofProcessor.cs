@@ -243,11 +243,6 @@ namespace Garnet.server
                             () => storeWrapper.FlushDatabase(unsafeTruncateLog: header.unsafeTruncateLog == 1, dbId: header.databaseId));
                     }
                     break;
-                case AofEntryType.RefreshSublogTail:
-                    shardedHeader = *(AofShardedHeader*)ptr;
-                    //logger?.LogDebug("RefreshSublogTail {sublogIdx} {idx}", sublogIdx, extendedHeader.sequenceNumber);
-                    storeWrapper.appendOnlyFile.readConsistencyManager.UpdateVirtualSublogMaxSequenceNumber(virtualSublogIdx, shardedHeader.sequenceNumber);
-                    break;
                 default:
                     _ = ReplayOp(virtualSublogIdx, stringBasicContext, objectBasicContext, unifiedBasicContext, ptr, length, asReplica);
                     break;
@@ -521,19 +516,11 @@ namespace Garnet.server
                 case AofHeaderType.ShardedHeader:
                     var shardedHeader = *(AofShardedHeader*)ptr;
                     sequenceNumber = shardedHeader.sequenceNumber;
-                    if (header.opType == AofEntryType.RefreshSublogTail)
-                    {
-                        // refresh sublog tail watermark can be replayed by all tasks
-                        return true;
-                    }
-                    else
-                    {
-                        var curr = AofHeader.SkipHeader(ptr);
-                        var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
-                        var hash = GarnetLog.HASH(key);
-                        var _replayTaskIdx = hash % storeWrapper.serverOptions.AofReplayTaskCount;
-                        return replayTaskIdx == _replayTaskIdx;
-                    }
+                    var curr = AofHeader.SkipHeader(ptr);
+                    var key = PinnedSpanByte.FromLengthPrefixedPinnedPointer(curr).ReadOnlySpan;
+                    var hash = GarnetLog.HASH(key);
+                    var _replayTaskIdx = hash % storeWrapper.serverOptions.AofReplayTaskCount;
+                    return replayTaskIdx == _replayTaskIdx;
                 // If no key to inspect, check bit vector for participating replay tasks in the transaction
                 // NOTE: HeaderType transactions include MULTI-EXEC transactions, custom txn procedures, and any operation that executes across physical and virtual sublogs (e.g. checkpoint, flushdb)
                 case AofHeaderType.TransactionHeader:

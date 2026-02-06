@@ -94,10 +94,6 @@ namespace Garnet.server
         /// Unified store delete
         /// </summary>
         UnifiedStoreDelete = 0x73,
-        /// <summary>
-        /// Refresh sublog tail (used only with ShardedLog)
-        /// </summary>
-        RefreshSublogTail = 0x80,
     }
 
     internal enum AofStoreType : byte

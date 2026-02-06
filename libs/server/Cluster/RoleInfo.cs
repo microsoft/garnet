@@ -13,7 +13,7 @@ namespace Garnet.server
         /// <summary>
         /// Max send timemstamp
         /// </summary>
-        public AofAddress maxSendTimestamp;
+        public AofAddress sequenceNumber;
 
         /// <summary>
         /// Replication offset lag. 
@@ -43,7 +43,7 @@ namespace Garnet.server
         /// <returns>string</returns>
         public override readonly string ToString()
         {
-            return $"ip={address},port={port},state={replication_state},offset={replication_offset},lag={replication_lag},timestamp={maxSendTimestamp}";
+            return $"ip={address},port={port},state={replication_state},offset={replication_offset},lag={replication_lag},sequenceNumber={sequenceNumber}";
         }
     }
 }

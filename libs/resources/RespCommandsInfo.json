@@ -614,6 +614,14 @@
         "AclCategories": "Admin, Dangerous, Slow"
       },
       {
+        "Command": "CLUSTER_ADVANCE_TIME",
+        "Name": "CLUSTER|ADVANCE_TIME",
+        "IsInternal": true,
+        "Arity": 2,
+        "Flags": "Admin, NoMulti, NoScript",
+        "AclCategories": "Admin, Dangerous, Slow, Garnet"
+      },
+      {
         "Command": "CLUSTER_APPENDLOG",
         "Name": "CLUSTER|APPENDLOG",
         "IsInternal": true,
@@ -785,13 +793,6 @@
         "Command": "CLUSTER_KEYSLOT",
         "Name": "CLUSTER|KEYSLOT",
         "Arity": 3,
-        "Flags": "Stale",
-        "AclCategories": "Slow"
-      },
-      {
-        "Command": "CLUSTER_SHARDED_LOG_KEY_SEQUENCE_VECTOR",
-        "Name": "CLUSTER|SHARDED_LOG_KEY_SEQUENCE_VECTOR",
-        "Arity": 2,
         "Flags": "Stale",
         "AclCategories": "Slow"
       },

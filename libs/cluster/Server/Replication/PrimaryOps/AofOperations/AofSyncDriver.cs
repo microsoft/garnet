@@ -162,6 +162,12 @@ namespace Garnet.cluster
             }
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <returns></returns>
+        /// <exception cref="GarnetException"></exception>
+        /// <seealso cref="T:Garnet.cluster.ReplicationManager.AdvanceTime"/>
         async Task AdvancePhysicalSublogTime()
         {
             var acquireReadLock = false;
@@ -183,30 +189,32 @@ namespace Garnet.cluster
                 // Connect to replica
                 client.Connect((int)clusterProvider.serverOptions.ReplicaSyncTimeout.TotalMilliseconds, cts.Token);
 
+                var appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
+                var previousTailAddress = AofAddress.Create(appendOnlyFile.Log.Size, 0);
+
                 while (true)
                 {
                     await Task.Delay(clusterProvider.serverOptions.AofTailWitnessFreq, cts.Token);
+                    var currentTailAddress = appendOnlyFile.Log.TailAddress;
+                    var newWrites = previousTailAddress.AnyLesser(currentTailAddress);
 
-                    var tailAddress = clusterProvider.storeWrapper.appendOnlyFile.Log.TailAddress;
-                    var previousAddress = PreviousAddress;
-
-                    // Acquire key sequence number vector from the replica
-                    var resp = await client.ExecuteClusterShardedLogKeySequenceVector().WaitAsync(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token);
-                    var maxSublogSeqNumber = AofAddress.FromString(resp);
-                    var mssn = maxSublogSeqNumber.Max();
-
-                    // At least one sublog has stalled if both of the following conditions hold
-                    //  1. the maximum sequence number of the sublog is smaller than MSSN
-                    //  2. The sublog does not have any more data to send.
-                    // If (1) is false then it is safe to read from that sublog because it will have the highest sequence number
-                    // If (2) is false the we still have more data to process hence the sequence number will possible change in the future.
-                    for (var i = 0; i < maxSublogSeqNumber.Length; i++)
+                    if (newWrites)
                     {
-                        cts.Token.ThrowIfCancellationRequested();
-                        if (maxSublogSeqNumber[i] < mssn && previousAddress[i] == tailAddress[i])
+                        var sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber();
+                        var resp = await client.ExecuteClusterAdvanceTime(sequenceNumber, currentTailAddress.Span).
+                            WaitAsync(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token).
+                            ConfigureAwait(false);
+                        // This is a bitmap of flags indicating convergence
+                        var converged = ulong.Parse(resp);
+
+                        // For each converged sublog, advance previousTailAddress to currentTailAddress.
+                        // Convergence means the replica has replayed up to currentTailAddress
+                        // and the sequence number for that sublog has advanced beyond the maximum sequence number
+                        // observed up to currentTailAddress.
+                        while (converged > 0)
                         {
-                            // logger?.LogError("refresh> {i} {mssn}", i, mssn);
-                            clusterProvider.storeWrapper.appendOnlyFile.Log.EnqueueRefreshSublogTail(i, mssn);
+                            var physicalSublogIdx = converged.GetNextOffset();
+                            previousTailAddress[physicalSublogIdx] = currentTailAddress[physicalSublogIdx];
                         }
                     }
                 }

@@ -579,5 +579,31 @@ namespace Garnet.cluster
                 logger?.LogWarning("Replication manager starting configuration inconsistent role:{role} replicaOfId:{replicaOfNodeId}", replicaOfNodeId, localNodeRole);
             }
         }
+
+        /// <summary>
+        /// Process message from primary related to observing a specific tail address snapshot at a given sequence number (timestamp)
+        /// </summary>
+        /// <param name="sequenceNumber">Sequence number associated with observing the given tail address.</param>
+        /// <param name="tailAddress">Tail address snapshot</param>
+        /// <returns></returns>
+        public long AdvanceTime(long sequenceNumber, AofAddress tailAddress)
+        {
+            var replicationOffset = ReplicationOffset;
+            var maxSublogSequenceNumber = storeWrapper.appendOnlyFile.readConsistencyManager.GetSublogMaxKeySequenceNumber();
+            var converged = 0L;
+            for (var i = 0; i < tailAddress.Length; i++)
+            {
+                // Move logical time forward for sublog if the replay has progressed at least until the tailAddress
+                // and the new logical time is ahead of the maximum as indicated by the replayed operations.
+                if (tailAddress[i] <= replicationOffset[i] && maxSublogSequenceNumber[i] < sequenceNumber)
+                {
+                    storeWrapper.appendOnlyFile.readConsistencyManager.UpdatePhysicalSublogMaxSequenceNumber(i, sequenceNumber);
+                    // Signal convergence for this sublig since logical time has moved
+                    // forward beyond the point indicated by the last replayed record
+                    converged |= (1L << i);
+                }
+            }
+            return converged;
+        }
     }
 }

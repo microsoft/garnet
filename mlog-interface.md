@@ -154,3 +154,5 @@ In that situation, possible solutions include
 </ul></ul>
 
 - [ ] Transaction replay task spin wait while holding the epoch is bad.
+- [ ] Ensure sequence number update happens before replay
+- [ ] Ensure read wait semaphore does not deadlock due to race condition between insertion and release.
