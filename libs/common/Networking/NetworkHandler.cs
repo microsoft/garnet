@@ -330,7 +330,7 @@ namespace Garnet.networking
             }
             else if (networkReceiveBuffer.Length > networkBufferSettings.maxReceiveBufferSize)
             {
-                // If we've exceeded our maximum _and_ didn't need to double to serve the request, string back down
+                // If we've exceeded our maximum _and_ didn't need to double to serve the request, shrink back down
                 ShrinkNetworkReceiveBuffer();
             }
         }
