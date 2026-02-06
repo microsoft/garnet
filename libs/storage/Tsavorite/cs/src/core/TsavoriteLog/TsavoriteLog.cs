@@ -24,6 +24,7 @@ namespace Tsavorite.core
 
         readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
         readonly LightEpoch epoch;
+        readonly bool ownedEpoch;
         readonly ILogCommitManager logCommitManager;
         readonly bool disposeLogCommitManager;
         readonly GetMemory getMemory;
@@ -203,7 +204,13 @@ namespace Tsavorite.core
             logChecksum = logSettings.LogChecksum;
             headerSize = logChecksum == LogChecksumType.PerEntry ? 12 : 4;
             getMemory = logSettings.GetMemory;
-            epoch = new LightEpoch();
+            if (logSettings.Epoch == null)
+            {
+                epoch = new LightEpoch();
+                ownedEpoch = true;
+            }
+            else
+                epoch = logSettings.Epoch;
             CommittedUntilAddress = Constants.kFirstValidAddress;
             CommittedBeginAddress = Constants.kFirstValidAddress;
             SafeTailAddress = Constants.kFirstValidAddress;
@@ -524,7 +531,8 @@ namespace Tsavorite.core
             commitQueue.Dispose();
             commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
             allocator.Dispose();
-            epoch.Dispose();
+            if (ownedEpoch)
+                epoch.Dispose();
             if (disposeLogCommitManager)
                 logCommitManager.Dispose();
         }
