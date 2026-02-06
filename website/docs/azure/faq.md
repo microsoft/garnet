@@ -29,7 +29,7 @@ Azure Cosmos DB Garnet Cache supports the RESP protocol and doesn't have full su
 ### How is Azure Cosmos DB Garnet Cache priced?
 Azure Cosmos DB Garnet Cache clusters are billed per instance per hour with no licensing fees. Each node will be billed for the chosen SKU plus an attached disk, used for [data persistence](./resiliency.md#data-persistence), with 2x the storage available for the SKU. Pricing per SKU is set at different rates than the underlying Azure VM and is subject to change between our extended Private Preview and Public Preview. 
 
-For information about pricing for specific SKUs, reach out to [ManagedGarnet@service.microsoft.com](mailto:ManagedGarnet@service.microsoft.com).
+For information about pricing for specific SKUs, reach out to [CosmosGarnetCache@service.microsoft.com](mailto:cosmosgarnetcache@service.microsoft.com).
 
 
 ## Performance and Scalability
