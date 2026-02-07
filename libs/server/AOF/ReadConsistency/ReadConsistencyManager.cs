@@ -3,6 +3,7 @@
 
 using System;
 using System.Linq;
+using System.Threading;
 
 namespace Garnet.server
 {
@@ -121,8 +122,8 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="replicaReadSessionContext"></param>
-        /// <param name="readSessionWaiter"></param>
-        public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
+        /// <param name="ct"></param>
+        public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
         {
             var hash = GarnetLog.HASH(key);
             var virtualSublogIdx = (short)(hash % serverOptions.AofVirtualSublogCount);
@@ -143,22 +144,16 @@ namespace Garnet.server
 
             // Here we have to wait for replay to catch up
             // Don't have to wait if reading from same sublog or maximumSessionTimestamp is behind the sublog frontier timestamp
-            if (replicaReadSessionContext.lastVirtualSublogIdx != virtualSublogIdx && replicaReadSessionContext.maximumSessionSequenceNumber > GetSublogFrontierSequenceNumber(hash))
+            if (replicaReadSessionContext.lastVirtualSublogIdx != virtualSublogIdx)
             {
-                // Before adding to the waitQ set timestamp and reader associated information
-                readSessionWaiter.rrsc = new ReplicaReadSessionContext()
+                // Optimistic check without lock
+                while (replicaReadSessionContext.maximumSessionSequenceNumber > GetSublogFrontierSequenceNumber(hash))
                 {
-                    lastHash = hash,
-                    lastVirtualSublogIdx = virtualSublogIdx,
-                    maximumSessionSequenceNumber = replicaReadSessionContext.maximumSessionSequenceNumber
-                };
-
-                // Enqueue waiter and wait
-                vsrs[virtualSublogIdx].AddWaiter(readSessionWaiter);
-                readSessionWaiter.Wait(TimeSpan.FromSeconds(1000));
-
-                // Reset waiter for next iteration
-                readSessionWaiter.Reset();
+                    vsrs[virtualSublogIdx].WaitForSequenceNumber(
+                        hash,
+                        replicaReadSessionContext.maximumSessionSequenceNumber,
+                        ct).Wait();
+                }
             }
 
         updateContext:

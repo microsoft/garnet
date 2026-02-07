@@ -107,9 +107,9 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         /// <param name="replicaReadSessionContext"></param>
-        /// <param name="readSessionWaiter"></param>
-        public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, ReadSessionWaiter readSessionWaiter)
-            => readConsistencyManager.ConsistentReadKeyPrepare(key, ref replicaReadSessionContext, readSessionWaiter);
+        /// <param name="ct"></param>
+        public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
+            => readConsistencyManager.ConsistentReadKeyPrepare(key, ref replicaReadSessionContext, ct);
 
         /// <summary>
         /// Invoke the update phase of the consistent read protocol

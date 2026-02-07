@@ -3,6 +3,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -18,9 +19,9 @@ namespace Garnet.server
         ReplicaReadSessionContext replicaReadContext = new() { sessionVersion = -1, maximumSessionSequenceNumber = 0, lastVirtualSublogIdx = -1 };
 
         /// <summary>
-        /// Read session waiter used with sharded log to avoid spin-wait
+        /// A CancellationTokenSource used to signal cancellation for consistent read operations.
         /// </summary>
-        ReadSessionWaiter readSessionWaiter = new() { eventSlim = new(), rrsc = new() };
+        CancellationTokenSource consistentReadCts = new();
 
         /// <summary>
         /// This method is used to verify slot ownership for provided array of key argslices.
@@ -63,7 +64,11 @@ namespace Garnet.server
         /// </summary>
         /// <param name="key"></param>
         public void ValidateKeySequenceNumber(PinnedSpanByte key)
-            => storeWrapper.appendOnlyFile.ConsistentReadKeyPrepare(key, ref replicaReadContext, readSessionWaiter);
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(consistentReadCts.Token);
+            timeoutCts.CancelAfter(storeWrapper.serverOptions.ReplicaSyncTimeout);
+            storeWrapper.appendOnlyFile.ConsistentReadKeyPrepare(key, ref replicaReadContext, timeoutCts.Token);
+        }
 
         /// <summary>
         /// Consistent read key update callback

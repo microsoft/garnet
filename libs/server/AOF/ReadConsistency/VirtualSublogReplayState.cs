@@ -2,8 +2,8 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -15,7 +15,8 @@ namespace Garnet.server
 
         readonly long[] sketch = new long[SketchSlotSize];
         long sketchMaxValue;
-        readonly ConcurrentQueue<ReadSessionWaiter> waitQs = new();
+        private readonly object _lock = new();
+        TaskCompletionSource<bool> update = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public long Max => sketchMaxValue;
 
@@ -28,9 +29,6 @@ namespace Garnet.server
             sketchMaxValue = 0;
         }
 
-        public void AddWaiter(ReadSessionWaiter waiter)
-            => waitQs.Enqueue(waiter);
-
         public long GetFrontierSequenceNumber(long hash)
             => Math.Max(sketch[hash & SketchSlotMask], Max);
 
@@ -40,35 +38,48 @@ namespace Garnet.server
         public void UpdateMaxSequenceNumber(long sequenceNumber)
         {
             _ = Utility.MonotonicUpdate(ref sketchMaxValue, sequenceNumber, out _);
-            SignalWaiters();
+            SignalAdvanceTime();
         }
 
         public void UpdateKeySequenceNumber(long hash, long sequenceNumber)
         {
             _ = Utility.MonotonicUpdate(ref sketch[hash & SketchSlotMask], sequenceNumber, out _);
             _ = Utility.MonotonicUpdate(ref sketchMaxValue, sequenceNumber, out _);
-            SignalWaiters();
+            SignalAdvanceTime();
         }
 
         /// <summary>
-        /// Signal any readers waiting for timestamp to progress
-        /// </summary>        
-        void SignalWaiters()
+        /// Signal time has advanced
+        /// </summary>
+        void SignalAdvanceTime()
         {
-            var waiterList = new List<ReadSessionWaiter>();
-            while (waitQs.TryDequeue(out var waiter))
-            {
-                // If timestamp has not progressed enough will re-add this waiter to the waitQ
-                if (waiter.rrsc.maximumSessionSequenceNumber > GetFrontierSequenceNumber(waiter.rrsc.lastHash))
-                    waiterList.Add(waiter);
-                else
-                    // Signal for waiter to proceed
-                    waiter.Set();
-            }
+            TaskCompletionSource<bool> release;
 
-            // Re-insert any waiters that have not been released yet
-            foreach (var waiter in waiterList)
-                waitQs.Enqueue(waiter);
+            lock (_lock)
+            {
+                release = update;
+                update = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+            _ = release.TrySetResult(true);
+        }
+
+        /// <summary>
+        /// Waits asynchronously until the session's frontier sequence number for the specified hash reaches or exceeds
+        /// the given maximum sequence number.
+        /// </summary>
+        /// <param name="hash">The hash value identifying the session whose sequence number is being monitored.</param>
+        /// <param name="maximumSessionSequenceNumber">The target sequence number to wait for.</param>
+        /// <param name="ct">A cancellation token that can be used to cancel the wait operation.</param>
+        /// <returns>A task that completes when the session's frontier sequence number for the specified hash reaches or exceeds
+        /// the target value, or immediately if the condition is already met.</returns>
+        public Task WaitForSequenceNumber(long hash, long maximumSessionSequenceNumber, CancellationToken ct)
+        {
+            lock (_lock)
+            {
+                if (maximumSessionSequenceNumber > GetFrontierSequenceNumber(hash))
+                    return update.Task.WaitAsync(ct);
+                return Task.CompletedTask;
+            }
         }
     }
 }
