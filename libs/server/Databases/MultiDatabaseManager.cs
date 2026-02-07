@@ -1079,16 +1079,16 @@ namespace Garnet.server
             Disposed = true;
 
             // Disable changes to databases map and dispose all databases
-            while (!databases.mapLock.TryCloseLock())
+            while (!databases.mapLock.TryWriteLock())
                 _ = Thread.Yield();
 
             foreach (var db in databases.Map)
                 db?.Dispose();
 
-            while (!databasesContentLock.TryCloseLock())
+            while (!databasesContentLock.TryWriteLock())
                 _ = Thread.Yield();
 
-            while (!activeDbIds.mapLock.TryCloseLock())
+            while (!activeDbIds.mapLock.TryWriteLock())
                 _ = Thread.Yield();
         }
 

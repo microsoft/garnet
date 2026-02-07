@@ -118,10 +118,10 @@ namespace Garnet.server
 
         public void Dispose()
         {
-            while (!_zcollectTaskLock.TryCloseLock())
+            while (!_zcollectTaskLock.TryWriteLock())
                 _ = Thread.Yield();
 
-            while (!_hcollectTaskLock.TryCloseLock())
+            while (!_hcollectTaskLock.TryWriteLock())
                 _ = Thread.Yield();
 
             sectorAlignedMemoryBitmap?.Dispose();
