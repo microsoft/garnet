@@ -13,7 +13,7 @@ namespace Garnet.cluster
 {
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
-        public static bool Expired(ref SpanByte value) => value.MetadataSize > 0 && value.ExtraMetadata < DateTimeOffset.UtcNow.Ticks;
+        public static bool Expired(ref SpanByte value) => value.MetadataSize == 8 && value.ExtraMetadata < DateTimeOffset.UtcNow.Ticks;
 
         public static bool Expired(ref IGarnetObject value) => value.Expiration != 0 && value.Expiration < DateTimeOffset.UtcNow.Ticks;
 

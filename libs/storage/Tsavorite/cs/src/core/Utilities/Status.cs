@@ -82,6 +82,16 @@ namespace Tsavorite.core
         public static Status CreatePending() => new(StatusCode.Pending);
 
         /// <summary>
+        /// Create a <see cref="NotFound"/> Status value.
+        /// </summary>
+        public static Status CreateNotFound() => new(StatusCode.NotFound);
+
+        /// <summary>
+        /// Create a Error Status value.
+        /// </summary>
+        public static Status CreateError() => new(StatusCode.Error);
+
+        /// <summary>
         /// Whether a Read or RMW found the key
         /// </summary>
         public bool Found => (Record.statusCode & StatusCode.BasicMask) == StatusCode.Found;

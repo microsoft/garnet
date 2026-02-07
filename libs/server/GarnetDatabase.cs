@@ -101,6 +101,14 @@ namespace Garnet.server
         public SingleWriterMultiReaderLock CheckpointingLock;
 
         /// <summary>
+        /// Per-DB VectorManager
+        /// 
+        /// Contexts, metadata, and associated namespaces are DB-specific, and meaningless
+        /// outside of the container DB.
+        /// </summary>
+        public readonly VectorManager VectorManager;
+
+        /// <summary>
         /// Storage session intended for store-wide object collection operations
         /// </summary>
         internal StorageSession ObjectStoreCollectionDbStorageSession;
@@ -128,7 +136,7 @@ namespace Garnet.server
             KVSettings<SpanByte, SpanByte> kvSettings, KVSettings<byte[], IGarnetObject> objKvSettings,
             LightEpoch epoch, StateMachineDriver stateMachineDriver,
             CacheSizeTracker objectStoreSizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile,
-            bool mainStoreIndexMaxedOut, bool objectStoreIndexMaxedOut) : this()
+            bool mainStoreIndexMaxedOut, bool objectStoreIndexMaxedOut, VectorManager vectorManager) : this()
         {
             Id = id;
             MainStore = mainStore;
@@ -142,6 +150,7 @@ namespace Garnet.server
             AppendOnlyFile = appendOnlyFile;
             MainStoreIndexMaxedOut = mainStoreIndexMaxedOut;
             ObjectStoreIndexMaxedOut = objectStoreIndexMaxedOut;
+            VectorManager = vectorManager;
         }
 
         public GarnetDatabase(int id, GarnetDatabase srcDb, bool enableAof, bool copyLastSaveData = false) : this()
@@ -158,6 +167,7 @@ namespace Garnet.server
             AppendOnlyFile = enableAof ? srcDb.AppendOnlyFile : null;
             MainStoreIndexMaxedOut = srcDb.MainStoreIndexMaxedOut;
             ObjectStoreIndexMaxedOut = srcDb.ObjectStoreIndexMaxedOut;
+            VectorManager = srcDb.VectorManager;
 
             if (copyLastSaveData)
             {
@@ -181,6 +191,9 @@ namespace Garnet.server
         public void Dispose()
         {
             if (disposed) return;
+
+            // Shutdown vector replays and cleanup operations
+            VectorManager?.Dispose();
 
             // Wait for checkpoints to complete and disable checkpointing
             CheckpointingLock.CloseLock();

@@ -33,6 +33,7 @@ namespace Garnet.server.ACL
             ["stream"] = RespAclCategories.Stream,
             ["string"] = RespAclCategories.String,
             ["transaction"] = RespAclCategories.Transaction,
+            ["vector"] = RespAclCategories.Vector,
             ["write"] = RespAclCategories.Write,
             ["garnet"] = RespAclCategories.Garnet,
             ["custom"] = RespAclCategories.Custom,

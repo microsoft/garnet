@@ -81,6 +81,15 @@ namespace Garnet.server
         SUNION,
         TTL,
         TYPE,
+        VCARD,
+        VDIM,
+        VEMB,
+        VGETATTR,
+        VINFO,
+        VISMEMBER,
+        VLINKS,
+        VRANDMEMBER,
+        VSIM,
         WATCH,
         WATCHMS,
         WATCHOS,
@@ -195,6 +204,9 @@ namespace Garnet.server
         SUNIONSTORE,
         SWAPDB,
         UNLINK,
+        VADD,
+        VREM,
+        VSETATTR,
         ZADD,
         ZCOLLECT,
         ZDIFFSTORE,
@@ -374,6 +386,7 @@ namespace Garnet.server
         CLUSTER_SPUBLISH,
         CLUSTER_REPLICAS,
         CLUSTER_REPLICATE,
+        CLUSTER_RESERVE,
         CLUSTER_RESET,
         CLUSTER_SEND_CKPT_FILE_SEGMENT,
         CLUSTER_SEND_CKPT_METADATA,
@@ -627,6 +640,12 @@ namespace Garnet.server
             bool inRange = test <= (RespCommand.CLUSTER_SYNC - RespCommand.CLUSTER_ADDSLOTS);
             return inRange;
         }
+
+        /// <summary>
+        /// Returns true if this command can operate on a Vector Set.
+        /// </summary>
+        public static bool IsLegalOnVectorSet(this RespCommand cmd)
+        => cmd is RespCommand.DEL or server.RespCommand.UNLINK or RespCommand.TYPE or RespCommand.DEBUG or RespCommand.RENAME or RespCommand.RENAMENX or RespCommand.VADD or RespCommand.VCARD or RespCommand.VDIM or RespCommand.VEMB or RespCommand.VGETATTR or RespCommand.VINFO or server.RespCommand.VISMEMBER or RespCommand.VLINKS or RespCommand.VRANDMEMBER or RespCommand.VREM or RespCommand.VSETATTR or RespCommand.VSIM;
     }
 
     /// <summary>
@@ -961,6 +980,29 @@ namespace Garnet.server
                                         }
                                         break;
 
+                                    case 'V':
+                                        if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nVADD\r\n"u8))
+                                        {
+                                            return RespCommand.VADD;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nVDIM\r\n"u8))
+                                        {
+                                            return RespCommand.VDIM;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nVEMB\r\n"u8))
+                                        {
+                                            return RespCommand.VEMB;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nVREM\r\n"u8))
+                                        {
+                                            return RespCommand.VREM;
+                                        }
+                                        else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nVSIM\r\n"u8))
+                                        {
+                                            return RespCommand.VSIM;
+                                        }
+                                        break;
+
                                     case 'Z':
                                         if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("\r\nZADD\r\n"u8))
                                         {
@@ -1138,6 +1180,17 @@ namespace Garnet.server
                                         else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nSDIFF\r\n"u8))
                                         {
                                             return RespCommand.SDIFF;
+                                        }
+                                        break;
+
+                                    case 'V':
+                                        if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nVCARD\r\n"u8))
+                                        {
+                                            return RespCommand.VCARD;
+                                        }
+                                        else if (*(ulong*)(ptr + 3) == MemoryMarshal.Read<ulong>("\nVINFO\r\n"u8))
+                                        {
+                                            return RespCommand.VINFO;
                                         }
                                         break;
 
@@ -1335,6 +1388,13 @@ namespace Garnet.server
                                         }
                                         break;
 
+                                    case 'V':
+                                        if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("VLINKS\r\n"u8))
+                                        {
+                                            return RespCommand.VLINKS;
+                                        }
+                                        break;
+
                                     case 'Z':
                                         if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZCOUNT\r\n"u8))
                                         {
@@ -1510,6 +1570,14 @@ namespace Garnet.server
                                 {
                                     return RespCommand.SPUBLISH;
                                 }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("VGETATTR"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.VGETATTR;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("VSETATTR"u8) && *(ushort*)(ptr + 12) == MemoryMarshal.Read<ushort>("\r\n"u8))
+                                {
+                                    return RespCommand.VSETATTR;
+                                }
                                 break;
                             case 9:
                                 if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("SUBSCRIB"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("BE\r\n"u8))
@@ -1547,6 +1615,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("ZEXPIREA"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("AT\r\n"u8))
                                 {
                                     return RespCommand.ZEXPIREAT;
+                                }
+                                else if (*(ulong*)(ptr + 4) == MemoryMarshal.Read<ulong>("VISMEMBE"u8) && *(uint*)(ptr + 11) == MemoryMarshal.Read<uint>("ER\r\n"u8))
+                                {
+                                    return RespCommand.VISMEMBER;
                                 }
                                 break;
                             case 10:
@@ -1683,6 +1755,10 @@ namespace Garnet.server
                                 else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nZEXPI"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("RETIME\r\n"u8))
                                 {
                                     return RespCommand.ZEXPIRETIME;
+                                }
+                                else if (*(ulong*)(ptr + 2) == MemoryMarshal.Read<ulong>("1\r\nVRAND"u8) && *(ulong*)(ptr + 10) == MemoryMarshal.Read<ulong>("MEMBER\r\n"u8))
+                                {
+                                    return RespCommand.VRANDMEMBER;
                                 }
                                 break;
 
@@ -2200,6 +2276,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.MIGRATE))
                 {
                     return RespCommand.CLUSTER_MIGRATE;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.reserve))
+                {
+                    return RespCommand.CLUSTER_RESERVE;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.mtasks))
                 {

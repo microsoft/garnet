@@ -135,7 +135,7 @@ namespace Garnet.cluster
         /// <param name="command">Subcommand to execute.</param>
         /// <param name="invalidParameters">True if number of parameters is invalid</param>
         /// <returns>True if command is fully processed, false if more processing is needed.</returns>
-        private void ProcessClusterCommands(RespCommand command, out bool invalidParameters)
+        private void ProcessClusterCommands(RespCommand command, VectorManager vectorManager, out bool invalidParameters)
         {
             _ = command switch
             {
@@ -173,6 +173,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_PUBLISH or RespCommand.CLUSTER_SPUBLISH => NetworkClusterPublish(out invalidParameters),
                 RespCommand.CLUSTER_REPLICAS => NetworkClusterReplicas(out invalidParameters),
                 RespCommand.CLUSTER_REPLICATE => NetworkClusterReplicate(out invalidParameters),
+                RespCommand.CLUSTER_RESERVE => NetworkClusterReserve(vectorManager, out invalidParameters),
                 RespCommand.CLUSTER_RESET => NetworkClusterReset(out invalidParameters),
                 RespCommand.CLUSTER_SEND_CKPT_FILE_SEGMENT => NetworkClusterSendCheckpointFileSegment(out invalidParameters),
                 RespCommand.CLUSTER_SEND_CKPT_METADATA => NetworkClusterSendCheckpointMetadata(out invalidParameters),

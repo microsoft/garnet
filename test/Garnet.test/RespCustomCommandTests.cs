@@ -211,8 +211,7 @@ namespace Garnet.test
                 ArgSlice valForKey1 = new ArgSlice(valuePtr, valueToMessWith.Count);
                 input.parseState.InitializeWithArgument(valForKey1);
                 // since we are setting with retain to etag, this change should be reflected in an etag update
-                SpanByte sameKeyToUse = key.SpanByte;
-                garnetApi.SET_Conditional(ref sameKeyToUse, ref input);
+                garnetApi.SET_Conditional(key, ref input);
             }
 
 

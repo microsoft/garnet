@@ -120,6 +120,9 @@ namespace Garnet.server
         public abstract IDatabaseManager Clone(bool enableAof);
 
         /// <inheritdoc/>
+        public abstract void RecoverVectorSets();
+
+        /// <inheritdoc/>
         public TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> MainStore => DefaultDatabase.MainStore;
 
         /// <inheritdoc/>
@@ -414,7 +417,7 @@ namespace Garnet.server
             {
                 var scratchBufferManager = new ScratchBufferBuilder();
                 db.ObjectStoreCollectionDbStorageSession =
-                    new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+                    new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, db.VectorManager, Logger);
             }
 
             ExecuteHashCollect(db.ObjectStoreCollectionDbStorageSession);
@@ -722,7 +725,7 @@ namespace Garnet.server
             if (db.MainStoreExpiredKeyDeletionDbStorageSession == null)
             {
                 var scratchBufferManager = new ScratchBufferBuilder();
-                db.MainStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+                db.MainStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, db.VectorManager, Logger);
             }
 
             var scanFrom = StoreWrapper.store.Log.ReadOnlyAddress;
@@ -738,7 +741,7 @@ namespace Garnet.server
             if (db.ObjectStoreExpiredKeyDeletionDbStorageSession == null)
             {
                 var scratchBufferManager = new ScratchBufferBuilder();
-                db.ObjectStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+                db.ObjectStoreExpiredKeyDeletionDbStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, db.VectorManager, Logger);
             }
 
             var scanFrom = StoreWrapper.objectStore.Log.ReadOnlyAddress;
@@ -778,7 +781,7 @@ namespace Garnet.server
             if (db.HybridLogStatScanStorageSession == null)
             {
                 var scratchBufferManager = new ScratchBufferBuilder();
-                db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, Logger);
+                db.HybridLogStatScanStorageSession = new StorageSession(StoreWrapper, scratchBufferManager, null, null, db.Id, db.VectorManager, Logger);
             }
 
             using var session = store.NewSession<TInput, TOutput, long, ISessionFunctions<TKey, TValue, TInput, TOutput, long>>(sessionFunctions);
