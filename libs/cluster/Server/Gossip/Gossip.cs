@@ -103,7 +103,7 @@ namespace Garnet.cluster
 
             // Startup gossip background task
             _ = Interlocked.Increment(ref numActiveTasks);
-            _ = Task.Run(mina);
+            _ = Task.Run(GossipMain);
         }
 
         /// <summary>
