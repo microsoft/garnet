@@ -103,7 +103,7 @@ namespace Garnet.cluster
 
             // Startup gossip background task
             _ = Interlocked.Increment(ref numActiveTasks);
-            _ = Task.Run(GossipMain);
+            _ = Task.Run(mina);
         }
 
         /// <summary>
@@ -275,6 +275,10 @@ namespace Garnet.cluster
 
                     await Task.Delay(gossipDelay, ctsGossip.Token);
                 }
+            }
+            catch (TaskCanceledException) when (ctsGossip.Token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled because of store wrapper disposal
             }
             catch (Exception ex)
             {
