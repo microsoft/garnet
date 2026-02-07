@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Threading;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -10,8 +11,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespTransactionProcTests
+    public class RespTransactionProcTests : AllureTestBase
     {
         GarnetServer server;
 

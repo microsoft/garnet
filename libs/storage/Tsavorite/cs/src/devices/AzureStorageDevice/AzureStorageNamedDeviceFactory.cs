@@ -3,6 +3,7 @@
 
 using System.Collections.Generic;
 using System.Linq;
+using Azure.Storage.Blobs.Models;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -68,9 +69,9 @@ namespace Tsavorite.devices
             var client = pageBlobContainer.Default;
 
             HashSet<string> directories = new();
-            foreach (var item in client.GetBlobs(prefix: $"{dir.Prefix}/")
-                .OrderByDescending(f => client.GetBlobClient(f.Name).GetProperties().Value.LastModified)
-                )
+            var options = new GetBlobsOptions() { Prefix = $"{dir.Prefix}/" };
+            foreach (var item in client.GetBlobs(options)
+                .OrderByDescending(f => client.GetBlobClient(f.Name).GetProperties().Value.LastModified))
             {
                 // get the directory name
                 var name = item.Name.Substring(dir.Prefix.Length + 1);

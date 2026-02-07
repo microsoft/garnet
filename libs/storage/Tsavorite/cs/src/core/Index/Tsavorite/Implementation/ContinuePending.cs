@@ -200,6 +200,12 @@ namespace Tsavorite.core
             if (keyFound)
                 SpinWaitUntilClosed(request.logicalAddress);
 
+            RMWInfo rmwInfo = new()
+            {
+                Version = sessionFunctions.Ctx.version,
+                SessionID = sessionFunctions.Ctx.sessionID
+            };
+
             OperationStatus status;
 
             while (true)
@@ -231,11 +237,12 @@ namespace Tsavorite.core
                     // Here, the input data for 'doingCU' is the from the request, so populate the RecordSource copy from that, preserving LowestReadCache*.
                     stackCtx.recSrc.LogicalAddress = request.logicalAddress;
                     status = CreateNewRecordRMW(pendingContext.requestKey.Get(), in pendingContext.diskLogRecord, ref pendingContext.input.Get(), ref pendingContext.output,
-                                                ref pendingContext, sessionFunctions, ref stackCtx, doingCU: keyFound && !pendingContext.diskLogRecord.Info.Tombstone);
+                                                ref pendingContext, sessionFunctions, ref stackCtx, doingCU: keyFound && !pendingContext.diskLogRecord.Info.Tombstone, ref rmwInfo);
                 }
                 finally
                 {
                     stackCtx.HandleNewRecordOnException(this);
+                    sessionFunctions.PostRMWOperation(pendingContext.requestKey.Get(), ref pendingContext.input.Get(), ref rmwInfo, epoch);
                     EphemeralXUnlock<TInput, TOutput, TContext, TSessionFunctionsWrapper>(sessionFunctions, ref stackCtx);
                 }
 
