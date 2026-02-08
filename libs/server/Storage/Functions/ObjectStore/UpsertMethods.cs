@@ -65,7 +65,7 @@ namespace Garnet.server
             var garnetObject = (IGarnetObject)srcValue;
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                    upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
 
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
             functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));

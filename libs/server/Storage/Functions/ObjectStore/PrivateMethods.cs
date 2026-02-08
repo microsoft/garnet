@@ -64,7 +64,7 @@ namespace Garnet.server
 
             functionsState.appendOnlyFile.Enqueue(
                 new AofHeader { opType = AofEntryType.ObjectStoreRMW, storeVersion = version, sessionID = sessionID },
-                key, ref input,epochAccessor, out _);
+                key, ref input, epochAccessor, out _);
         }
 
         /// <summary>
