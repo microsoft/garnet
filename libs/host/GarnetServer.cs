@@ -542,9 +542,12 @@ namespace Garnet
             long count = 0;
             if (servers != null)
             {
-                foreach (var garnetServerBase in servers.OfType<GarnetServerBase>())
+                foreach (var garnetServer in servers)
                 {
-                    count += garnetServerBase.get_conn_active();
+                    if (garnetServer is GarnetServerBase garnetServerBase)
+                    {
+                        count += garnetServerBase.get_conn_active();
+                    }
                 }
             }
             return count;
