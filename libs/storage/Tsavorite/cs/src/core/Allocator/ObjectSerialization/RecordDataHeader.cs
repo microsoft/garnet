@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using static Tsavorite.core.Utility;
 
 namespace Tsavorite.core
 {
@@ -195,7 +196,7 @@ namespace Tsavorite.core
             {
                 var (revivKeyLenBytes, revivRecLenBytes) = DeconstructKVByteLengths(out _ /*headerLength*/);
                 if (numKeyLengthBytes > revivKeyLenBytes || numRecordLengthBytes != revivRecLenBytes)
-                    throw new TsavoriteException($"In revivification, cannot exceed previous KeyLengthBytes {revivKeyLenBytes} or change RecordLengthBytes {revivRecLenBytes}");
+                    ThrowTsavoriteException($"In revivification, cannot exceed previous KeyLengthBytes {revivKeyLenBytes} or change RecordLengthBytes {revivRecLenBytes}");
                 numKeyLengthBytes = revivKeyLenBytes;
             }
 

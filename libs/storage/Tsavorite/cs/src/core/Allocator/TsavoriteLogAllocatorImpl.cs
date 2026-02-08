@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Tsavorite.core
@@ -73,8 +72,7 @@ namespace Tsavorite.core
             else
             {
                 // No free pages are available so allocate new
-                pagePointers[index] = (long)NativeMemory.AlignedAlloc((nuint)PageSize, (nuint)sectorSize);
-                NativeMemory.Clear((void*)pagePointers[index], (nuint)PageSize);
+                AllocatePinnedPageArray(index);
             }
             PageHeader.Initialize(pagePointers[index]);
         }
