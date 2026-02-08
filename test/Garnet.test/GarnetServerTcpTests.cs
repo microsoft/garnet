@@ -102,7 +102,7 @@ namespace Garnet.test
         {
             // Arrange - Start multiple connection attempts
             var connectionTasks = new System.Collections.Generic.List<Task>();
-            var cts = new CancellationTokenSource();
+            using var cts = new CancellationTokenSource();
 
             for (int i = 0; i < 10; i++)
             {
