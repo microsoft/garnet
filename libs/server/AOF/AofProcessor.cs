@@ -268,53 +268,58 @@ namespace Garnet.server
             var bufferLength = replayContext.objectOutputBuffer.Length;
 
             var isSharded = storeWrapper.serverOptions.AofPhysicalSublogCount > 1;
-            var updateKey = true;
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
+                    if(isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     StoreUpsert(stringContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoreRMW:
+                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     StoreRMW(stringContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoreDelete:
+                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     StoreDelete(stringContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.ObjectStoreRMW:
+                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     ObjectStoreRMW(objectContext, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreUpsert:
+                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     ObjectStoreUpsert(objectContext, storeWrapper.GarnetObjectSerializer, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.ObjectStoreDelete:
+                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     ObjectStoreDelete(objectContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.UnifiedStoreRMW:
+                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     UnifiedStoreRMW(unifiedContext, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreStringUpsert:
+                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     UnifiedStoreStringUpsert(unifiedContext, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreObjectUpsert:
+                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     UnifiedStoreObjectUpsert(unifiedContext, storeWrapper.GarnetObjectSerializer, AofHeader.SkipHeader(entryPtr), bufferPtr, bufferLength);
                     break;
                 case AofEntryType.UnifiedStoreDelete:
+                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     UnifiedStoreDelete(unifiedContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoredProcedure:
-                    updateKey = false;
                     aofReplayCoordinator.ReplayStoredProc(sublogIdx, header.procedureId, entryPtr);
                     break;
                 case AofEntryType.TxnCommit:
-                    updateKey = false;
                     aofReplayCoordinator.ProcessFuzzyRegionTransactionGroup(sublogIdx, entryPtr, asReplica);
                     break;
                 default:
                     throw new GarnetException($"Unknown AOF header operation type {header.opType}");
             }
 
-            if (isSharded && updateKey)
-                UpdateKeySequenceNumber(sublogIdx, entryPtr);
             return true;
         }
 

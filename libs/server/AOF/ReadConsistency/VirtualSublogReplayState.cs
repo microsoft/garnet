@@ -76,7 +76,7 @@ namespace Garnet.server
         {
             lock (_lock)
             {
-                if (maximumSessionSequenceNumber > GetFrontierSequenceNumber(hash))
+                if (maximumSessionSequenceNumber >= GetFrontierSequenceNumber(hash))
                     return update.Task.WaitAsync(ct);
                 return Task.CompletedTask;
             }

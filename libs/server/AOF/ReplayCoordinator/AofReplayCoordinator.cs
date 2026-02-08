@@ -340,11 +340,11 @@ namespace Garnet.server
                         // Initialize custom proc collection to keep track of hashes for keys for which their timestamp needs to be updated
                         CustomProcedureKeyHashCollection customProcKeyHashTracker = new(aofProcessor.storeWrapper.appendOnlyFile);
 
-                        // Replay StoredProc
-                        StoredProcRunnerBase(sublogIdx, id, ptr, shardedLog: true, customProcKeyHashTracker);
-
                         // Update timestamps for associated keys
                         customProcKeyHashTracker?.UpdateSequenceNumber(shardedHeader.sequenceNumber);
+
+                        // Replay StoredProc
+                        StoredProcRunnerBase(sublogIdx, id, ptr, shardedLog: true, customProcKeyHashTracker);
                     }
                 }
 
