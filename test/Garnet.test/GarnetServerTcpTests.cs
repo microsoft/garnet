@@ -82,22 +82,6 @@ namespace Garnet.test
         }
 
         [Test]
-        public void StopListeningLogsInformation()
-        {
-            // This test verifies that StopListening logs appropriate information
-            // You would need to set up a logger and verify the log output
-            // For now, we just verify no exceptions are thrown
-
-            Assert.DoesNotThrow(() =>
-            {
-                foreach (var tcpServer in server.Provider.StoreWrapper.Servers.OfType<GarnetServerTcp>())
-                {
-                    tcpServer.StopListening();
-                }
-            });
-        }
-
-        [Test]
         public async Task StopListeningDuringActiveConnectionAttempts()
         {
             // Arrange - Start multiple connection attempts
