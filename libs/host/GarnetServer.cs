@@ -448,19 +448,34 @@ namespace Garnet
                 // Stop accepting new connections first
                 StopListening();
 
-                // Wait for existing connections to complete
-                await WaitForActiveConnectionsAsync(shutdownTimeout, token).ConfigureAwait(false);
-
-                // Commit AOF and take checkpoint if needed
-                await FinalizeDataAsync(token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // Force shutdown requested
+                // Wait for existing connections to complete (cancellable)
+                try
+                {
+                    await WaitForActiveConnectionsAsync(shutdownTimeout, token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    logger?.LogWarning("Connection draining was cancelled. Proceeding with data finalization...");
+                }
             }
             catch (Exception ex)
             {
                 logger?.LogError(ex, "Error during graceful shutdown");
+            }
+            finally
+            {
+                // Always attempt AOF commit and checkpoint as best-effort,
+                // even if connection draining was cancelled or failed.
+                // Use a bounded timeout instead of the caller's token to ensure completion.
+                using var finalizeCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                try
+                {
+                    await FinalizeDataAsync(finalizeCts.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogError(ex, "Error during data finalization");
+                }
             }
         }
 
