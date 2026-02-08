@@ -527,7 +527,11 @@ namespace Tsavorite.core
             }
 
             // Try alternate offset
-            entry = Metadata.startOffset2;
+            var tmp = Metadata.startOffset1;
+            Metadata.startOffset1 = Metadata.startOffset2;
+            Metadata.startOffset2 = tmp;
+
+            entry = Metadata.startOffset1;
             if (0 == (tableAligned + entry)->threadId)
             {
                 if (0 == Interlocked.CompareExchange(
@@ -539,11 +543,11 @@ namespace Tsavorite.core
             // Circle twice around the table looking for free entries
             for (var i = 0; i < 2 * kTableSize; i++)
             {
-                Metadata.startOffset2++;
-                if (Metadata.startOffset2 > kTableSize)
-                    Metadata.startOffset2 -= kTableSize;
+                Metadata.startOffset1++;
+                if (Metadata.startOffset1 > kTableSize)
+                    Metadata.startOffset1 -= kTableSize;
 
-                entry = Metadata.startOffset2;
+                entry = Metadata.startOffset1;
                 if (0 == (tableAligned + entry)->threadId)
                 {
                     if (0 == Interlocked.CompareExchange(
@@ -553,7 +557,7 @@ namespace Tsavorite.core
                 }
             }
 
-            // Note: Metadata.startOffset2 should now be back to where it started because
+            // Note: Metadata.startOffset1 should now be back to where it started because
             // we circled the entire table twice.
             entry = kInvalidIndex;
             return false;
