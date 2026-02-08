@@ -12,7 +12,7 @@ namespace Tsavorite.core
         where TStoreFunctions : IStoreFunctions<TKey, TValue>
         where TAllocator : IAllocator<TKey, TValue, TStoreFunctions>
     {
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [MethodImpl(MethodImplOptions.NoInlining)]
         internal bool FindInReadCache(ref TKey key, ref OperationStackContext<TKey, TValue, TStoreFunctions, TAllocator> stackCtx, long minAddress = Constants.kInvalidAddress, bool alwaysFindLatestLA = true)
         {
             Debug.Assert(UseReadCache, "Should not call FindInReadCache if !UseReadCache");

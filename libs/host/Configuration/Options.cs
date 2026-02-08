@@ -672,6 +672,10 @@ namespace Garnet
         [Option("cluster-replica-resume-with-data", Required = false, HelpText = "If a Cluster Replica resumes with data, allow it to be served prior to a Primary being available")]
         public bool ClusterReplicaResumeWithData { get; set; }
 
+        [RequiresMinimumMemory(nameof(PageSize), minimumValue: "16K")]
+        [Option("enable-vector-set-preview", Required = false, HelpText = "Enable Vector Sets (preview) - this feature (and associated commands) are incomplete, unstable, and subject to change while still in preview")]
+        public bool EnableVectorSetPreview { get; set; }
+
         /// <summary>
         /// This property contains all arguments that were not parsed by the command line argument parser
         /// </summary>
@@ -960,6 +964,7 @@ namespace Garnet
                 ExpiredKeyDeletionScanFrequencySecs = ExpiredKeyDeletionScanFrequencySecs,
                 ClusterReplicationReestablishmentTimeout = ClusterReplicationReestablishmentTimeout,
                 ClusterReplicaResumeWithData = ClusterReplicaResumeWithData,
+                EnableVectorSetPreview = EnableVectorSetPreview,
             };
         }
 

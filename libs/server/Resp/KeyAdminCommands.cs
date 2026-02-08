@@ -99,8 +99,6 @@ namespace Garnet.server
 
             var valArgSlice = scratchBufferBuilder.CreateArgSlice(val);
 
-            var sbKey = key.SpanByte;
-
             parseState.InitializeWithArgument(valArgSlice);
 
             RawStringInput input;
@@ -114,7 +112,7 @@ namespace Garnet.server
                 input = new RawStringInput(RespCommand.SETEXNX, ref parseState);
             }
 
-            var status = storageApi.SET_Conditional(ref sbKey, ref input);
+            var status = storageApi.SET_Conditional(key, ref input);
 
             if (status is GarnetStatus.NOTFOUND)
             {

@@ -17,7 +17,10 @@ namespace Garnet.cluster
         SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>,
     BasicContext<byte[], IGarnetObject, ObjectInput, GarnetObjectStoreOutput, long, ObjectSessionFunctions,
         /* ObjectStoreFunctions */ StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>,
-        GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>>;
+        GenericAllocator<byte[], IGarnetObject, StoreFunctions<byte[], IGarnetObject, ByteArrayKeyComparer, DefaultRecordDisposer<byte[], IGarnetObject>>>>,
+        BasicContext<SpanByte, SpanByte, VectorInput, SpanByte, long, VectorSessionFunctions,
+            /* VectorStoreFunctions */ StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>,
+            SpanByteAllocator<StoreFunctions<SpanByte, SpanByte, SpanByteComparer, SpanByteRecordDisposer>>>>;
 
     internal sealed unsafe partial class ClusterSession : IClusterSession
     {
@@ -103,18 +106,30 @@ namespace Garnet.cluster
                                 continue;
                             }
 
-                            var slot = HashSlotUtils.HashSlot(ref key);
-                            if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                            // TODO: better way to handle namespaces
+                            if (key.MetadataSize == 1)
                             {
-                                migrateState = 1;
-                                i++;
-                                continue;
+                                // This is a Vector Set namespace key being migrated - it won't necessarily look like it's "in" a hash slot
+                                // because it's dependent on some other key (the index key) being migrated which itself is in a moving hash slot
+
+                                clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedElementKey(ref basicContext, ref vectorContext, ref key, ref value);
+                            }
+                            else
+                            {
+                                var slot = HashSlotUtils.HashSlot(ref key);
+                                if (!currentConfig.IsImportingSlot(slot)) // Slot is not in importing state
+                                {
+                                    migrateState = 1;
+                                    i++;
+                                    continue;
+                                }
+
+                                // Set if key replace flag is set or key does not exist
+                                var keySlice = new ArgSlice(key.ToPointer(), key.Length);
+                                if (replaceOption || !Exists(ref keySlice))
+                                    _ = basicGarnetApi.SET(ref key, ref value);
                             }
 
-                            // Set if key replace flag is set or key does not exist
-                            var keySlice = new ArgSlice(key.ToPointer(), key.Length);
-                            if (replaceOption || !Exists(ref keySlice))
-                                _ = basicGarnetApi.SET(ref key, ref value);
                             i++;
                         }
                     }
@@ -147,6 +162,35 @@ namespace Garnet.cluster
                             if (replaceOption || !CheckIfKeyExists(key))
                                 _ = basicGarnetApi.SET(key, value);
 
+                            i++;
+                        }
+                    }
+                    else if (storeTypeSpan.Equals("VSTORE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // This is the subset of the main store that holds Vector Set _index_ keys
+                        // 
+                        // Namespace'd element keys are handled by the SSTORE path
+
+                        var keyCount = *(int*)payloadPtr;
+                        payloadPtr += 4;
+                        var i = 0;
+
+                        TrackImportProgress(keyCount, isMainStore: true, keyCount == 0);
+                        while (i < keyCount)
+                        {
+                            ref var key = ref SpanByte.Reinterpret(payloadPtr);
+                            payloadPtr += key.TotalSize;
+                            ref var value = ref SpanByte.Reinterpret(payloadPtr);
+                            payloadPtr += value.TotalSize;
+
+                            // An error has occurred
+                            if (migrateState > 0)
+                            {
+                                i++;
+                                continue;
+                            }
+
+                            clusterProvider.storeWrapper.DefaultDatabase.VectorManager.HandleMigratedIndexKey(clusterProvider.storeWrapper.DefaultDatabase, clusterProvider.storeWrapper, ref key, ref value);
                             i++;
                         }
                     }
