@@ -135,11 +135,11 @@ namespace Garnet.server
                 // Close the listen socket to stop accepting new connections
                 // This will cause any pending AcceptAsync to complete with an error
                 listenSocket.Close();
-                logger?.LogInformation("Stopped accepting new connections on {endpoint}", EndPoint);
+                logger?.LogDebug("Stopped accepting new connections on {endpoint}", EndPoint);
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "Error closing listen socket on {endpoint}", EndPoint);
+                logger?.LogDebug(ex, "Error closing listen socket on {endpoint}", EndPoint);
             }
         }
 

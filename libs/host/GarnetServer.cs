@@ -471,7 +471,7 @@ namespace Garnet
         {
             if (servers == null) return;
 
-            logger?.LogInformation("Stopping listeners to prevent new connections...");
+            logger?.LogDebug("Stopping listeners to prevent new connections...");
             foreach (var server in servers)
             {
                 try
@@ -560,19 +560,16 @@ namespace Garnet
         /// </summary>
         private async Task FinalizeDataAsync(CancellationToken token)
         {
-            var enableAOF = opts.EnableAOF;
-            var enableStorageTier = opts.EnableStorageTier;
-
             // Commit AOF before checkpoint/shutdown
-            if (enableAOF)
+            if (opts.EnableAOF)
             {
-                logger?.LogInformation("Committing AOF before shutdown...");
+                logger?.LogDebug("Committing AOF before shutdown...");
                 try
                 {
                     var commitSuccess = await Store.CommitAOFAsync(token).ConfigureAwait(false);
                     if (commitSuccess)
                     {
-                        logger?.LogInformation("AOF committed successfully.");
+                        logger?.LogDebug("AOF committed successfully.");
                     }
                     else
                     {
@@ -586,15 +583,15 @@ namespace Garnet
             }
 
             // Take checkpoint for tiered storage
-            if (enableStorageTier)
+            if (opts.EnableStorageTier)
             {
-                logger?.LogInformation("Taking checkpoint for tiered storage...");
+                logger?.LogDebug("Taking checkpoint for tiered storage...");
                 try
                 {
                     var checkpointSuccess = Store.TakeCheckpoint(background: false, token);
                     if (checkpointSuccess)
                     {
-                        logger?.LogInformation("Checkpoint completed successfully.");
+                        logger?.LogDebug("Checkpoint completed successfully.");
                     }
                     else
                     {
