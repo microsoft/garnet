@@ -492,16 +492,18 @@ namespace Garnet
         {
             if (servers == null) return;
 
-            var stopwatch = Stopwatch.StartNew();
+            // Linked Token : between external token and timeout
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            cts.CancelAfter(timeout);
+
             var delays = new[] { 50, 300, 1000 };
             var delayIndex = 0;
 
-            while (stopwatch.Elapsed < timeout && !token.IsCancellationRequested)
+            try
             {
-                try
+                while (!cts.Token.IsCancellationRequested)
                 {
                     var activeConnections = GetActiveConnectionCount();
-
                     if (activeConnections == 0)
                     {
                         logger?.LogInformation("All connections have been closed gracefully.");
@@ -513,24 +515,24 @@ namespace Garnet
                     var currentDelay = delays[delayIndex];
                     if (delayIndex < delays.Length - 1) delayIndex++;
 
-                    await Task.Delay(currentDelay, token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogWarning(ex, "Error checking active connections");
-                    delayIndex = 0;
-                    await Task.Delay(500, token).ConfigureAwait(false);
+                    await Task.Delay(currentDelay, cts.Token).ConfigureAwait(false);
                 }
             }
-
-            if (stopwatch.Elapsed >= timeout)
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                // timeout reached error logging
                 logger?.LogWarning("Timeout reached after {TimeoutSeconds} seconds. Some connections may still be active.",
                     timeout.TotalSeconds);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Error checking active connections");
+                delayIndex = 0;
+                await Task.Delay(500, token).ConfigureAwait(false);
             }
         }
 
