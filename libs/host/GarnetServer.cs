@@ -537,14 +537,14 @@ namespace Garnet
         /// <summary>
         /// Gets the current number of active connections directly from server instances.
         /// </summary>
-        private int GetActiveConnectionCount()
+        private long GetActiveConnectionCount()
         {
-            int count = 0;
+            long count = 0;
             if (servers != null)
             {
                 foreach (var garnetServerBase in servers.OfType<GarnetServerBase>())
                 {
-                    count += (int)garnetServerBase.get_conn_active();
+                    count += garnetServerBase.get_conn_active();
                 }
             }
             return count;
