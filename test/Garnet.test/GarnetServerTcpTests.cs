@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -136,6 +137,87 @@ namespace Garnet.test
 
             // Assert - All tasks should complete without unhandled exceptions
             Assert.DoesNotThrowAsync(async () => await Task.WhenAll(connectionTasks));
+        }
+
+        [Test]
+        public async Task ShutdownAsyncCompletesGracefully()
+        {
+            // Arrange - Write data that should survive shutdown
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.StringSet("shutdown-test", "data");
+            ClassicAssert.AreEqual("data", (string)db.StringGet("shutdown-test"));
+
+            // Act - Graceful shutdown
+            await server.ShutdownAsync(timeout: TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+            // Assert - New connections should fail after shutdown
+            Assert.Throws<RedisConnectionException>(() =>
+            {
+                using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                redis2.GetDatabase(0).Ping();
+            });
+        }
+
+        [Test]
+        public async Task ShutdownAsyncRespectsTimeout()
+        {
+            // Arrange - Establish a connection that will stay open
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.Ping();
+
+            // Act - Shutdown with a very short timeout
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await server.ShutdownAsync(timeout: TimeSpan.FromMilliseconds(200)).ConfigureAwait(false);
+            sw.Stop();
+
+            // Assert - Should complete without hanging indefinitely
+            // Allow generous upper bound for CI environments
+            ClassicAssert.Less(sw.ElapsedMilliseconds, 10_000,
+                "ShutdownAsync should complete within a reasonable time even with active connections");
+        }
+
+        [Test]
+        public async Task ShutdownAsyncRespectsCancellation()
+        {
+            // Arrange
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            redis.GetDatabase(0).Ping();
+
+            using var cts = new CancellationTokenSource();
+
+            // Act - Cancel immediately
+            cts.Cancel();
+            Assert.DoesNotThrowAsync(async () =>
+            {
+                await server.ShutdownAsync(timeout: TimeSpan.FromSeconds(30), token: cts.Token).ConfigureAwait(false);
+            });
+        }
+
+        [Test]
+        public async Task ShutdownAsyncWithAofCommit()
+        {
+            // Arrange - Create server with AOF enabled
+            server?.Dispose();
+            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            server.Start();
+
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+
+            // Write some data
+            for (int i = 0; i < 100; i++)
+            {
+                db.StringSet($"aof-key-{i}", $"value-{i}");
+            }
+
+            // Act - Shutdown should commit AOF without errors
+            Assert.DoesNotThrowAsync(async () =>
+            {
+                await server.ShutdownAsync(timeout: TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            });
         }
     }
 }
