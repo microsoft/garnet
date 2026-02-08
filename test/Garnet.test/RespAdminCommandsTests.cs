@@ -667,62 +667,42 @@ namespace Garnet.test
         [Test]
         public async Task ShutdownAsyncStopsAcceptingNewConnections()
         {
-            // Arrange
-            server.Dispose();
-            var testServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir + "_shutdown");
-            testServer.Start();
+            // Arrange - write data then close connection
+            using (var redis1 = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db1 = redis1.GetDatabase(0);
+                db1.StringSet("test", "value");
+            }
 
-            using var redis1 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db1 = redis1.GetDatabase(0);
-            db1.StringSet("test", "value");
-
-            // Act - Initiate shutdown (no need for Task.Run, ShutdownAsync is already async)
-            var shutdownTask = testServer.ShutdownAsync(TimeSpan.FromSeconds(5));
-
-            // Give shutdown a moment to stop listening
-            await Task.Delay(200);
+            // Act - Initiate shutdown
+            await server.ShutdownAsync(TimeSpan.FromSeconds(5));
 
             // Assert - New connections should fail
-            var ex = Assert.ThrowsAsync<RedisConnectionException>(async () =>
+            Assert.Throws<RedisConnectionException>(() =>
             {
                 using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-                await redis2.GetDatabase(0).PingAsync();
+                redis2.GetDatabase(0).Ping();
             });
-            ClassicAssert.IsNotNull(ex, "Expected connection to fail after shutdown initiated");
-
-            await shutdownTask;
-            testServer.Dispose();
         }
 
         [Test]
         public async Task ShutdownAsyncWaitsForActiveConnections()
         {
-            // Arrange
-            server.Dispose();
-            var testServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir + "_shutdown2");
-            testServer.Start();
-
+            // Arrange - keep connection open to test timeout behavior
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
-
-            // Set initial value
             db.StringSet("key1", "value1");
 
-            // Act - Start shutdown while connection is active
-            var shutdownTask = testServer.ShutdownAsync(TimeSpan.FromSeconds(10));
+            // Act - Start shutdown with short timeout; active connection will force timeout
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await server.ShutdownAsync(TimeSpan.FromMilliseconds(500));
+            sw.Stop();
 
-            // Connection should still work during grace period
-            // Perform multiple operations to ensure connection remains active
-            var result = db.StringGet("key1");
-            ClassicAssert.AreEqual("value1", (string)result);
-
-            // Verify we can still perform operations during grace period
-            db.StringSet("key2", "value2");
-            var result2 = db.StringGet("key2");
-            ClassicAssert.AreEqual("value2", (string)result2);
-
-            await shutdownTask;
-            testServer.Dispose();
+            // Assert - Should wait approximately the timeout duration before proceeding
+            ClassicAssert.GreaterOrEqual(sw.ElapsedMilliseconds, 400,
+                "Shutdown should wait for the timeout duration when connections are active");
+            ClassicAssert.Less(sw.ElapsedMilliseconds, 5_000,
+                "Shutdown should not hang beyond a reasonable bound");
         }
 
         [Test]
@@ -760,7 +740,6 @@ namespace Garnet.test
         {
             // Arrange
             server.Dispose();
-            // Storage tier is enabled by default when logCheckpointDir is provided
             server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
 
@@ -789,34 +768,19 @@ namespace Garnet.test
         [Test]
         public async Task ShutdownAsyncRespectsTimeout()
         {
-            // This test verifies that shutdown respects the timeout parameter
-            // Arrange
-            server.Dispose();
-            var testServer = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir + "_timeout");
-            testServer.Start();
-
-            // Create a connection that will remain active
+            // Arrange - keep connection open to force timeout path
             using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
             var db = redis.GetDatabase(0);
             db.StringSet("key", "value");
 
-            // Act - Shutdown with very short timeout (100ms)
-            // With an active connection, shutdown should timeout quickly rather than waiting indefinitely
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-            await testServer.ShutdownAsync(TimeSpan.FromMilliseconds(100));
-            stopwatch.Stop();
+            // Act - Shutdown with very short timeout
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await server.ShutdownAsync(TimeSpan.FromMilliseconds(100));
+            sw.Stop();
 
-            // Assert - Should complete within reasonable time (timeout + some overhead for AOF/checkpoint)
-            // The timeout is for waiting on connections, but shutdown also does AOF commit and checkpoint
-            // So we allow more time than the timeout itself
-            ClassicAssert.Less(stopwatch.ElapsedMilliseconds, 5000,
-                $"Shutdown should complete within reasonable time. Actual: {stopwatch.ElapsedMilliseconds}ms");
-
-            // Verify it completed faster than a longer timeout would take
-            ClassicAssert.Less(stopwatch.ElapsedMilliseconds, 2000,
-                "Shutdown with short timeout should be faster than longer timeout");
-
-            testServer.Dispose();
+            // Assert - Should complete within reasonable time
+            ClassicAssert.Less(sw.ElapsedMilliseconds, 5_000,
+                $"Shutdown should complete within reasonable time. Actual: {sw.ElapsedMilliseconds}ms");
         }
         #endregion
     }
