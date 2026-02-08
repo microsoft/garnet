@@ -8,6 +8,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -16,8 +17,9 @@ using NUnit.Framework.Legacy;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    internal class LuaScriptRunnerTests
+    internal class LuaScriptRunnerTests : AllureTestBase
     {
         [Test]
         public void CannotRunUnsafeScript()

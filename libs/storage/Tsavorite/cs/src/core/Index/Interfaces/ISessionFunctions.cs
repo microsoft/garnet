@@ -145,6 +145,27 @@ namespace Tsavorite.core
         /// <remarks>If the value is shrunk in-place, the caller must first zero the data that is no longer used, to ensure log-scan correctness.</remarks>
         bool InPlaceWriter<TSourceLogRecord>(ref LogRecord logRecord, in RecordSizeInfo sizeInfo, ref TInput input, in TSourceLogRecord inputLogRecord, ref TOutput output, ref UpsertInfo upsertInfo)
             where TSourceLogRecord : ISourceLogRecord;
+
+        /// <summary>
+        /// Called after the Upsert operation but before we unlock the record (if it was ephemerally locked).
+        /// </summary>
+        /// <remarks>
+        /// This is always called after the operation whether it succeeds or not (including when it has gone pending), so must have information indicating whether
+        /// the action is to be performed (such as by checking <see cref="UpsertInfo.UserData"/>
+        /// </remarks>
+        void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor;
+
+        /// <summary>
+        /// Called after the Upsert operation but before we unlock the record (if it was ephemerally locked).
+        /// </summary>
+        /// <remarks>
+        /// This is always called after the operation whether it succeeds or not, so must have information indicating whether
+        /// the action is to be performed (such as by checking <see cref="UpsertInfo.UserData"/>
+        /// </remarks>
+        void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor;
+
         #endregion Upserts
 
         #region RMWs
@@ -235,6 +256,16 @@ namespace Tsavorite.core
         #endregion InPlaceUpdater
 
         /// <summary>
+        /// Called after the RMW operation, but before we unlock the record (if it was ephemerally locked).
+        /// </summary>
+        /// <remarks>
+        /// This is always called after the operation whether it succeeds or not (including when it has gone pending), so must have information indicating whether
+        /// the action is to be performed (such as by checking <see cref="RMWInfo.UserData"/>
+        /// </remarks>
+        void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor;
+
+        /// <summary>
         /// RMW completion
         /// </summary>
         /// <param name="diskLogRecord">The log record that was read from disk</param>
@@ -252,7 +283,8 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="logRecord">The log record that is being created with a tombstone</param>
         /// <param name="deleteInfo">Information about this update operation and its context</param>
-        /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
+        /// <remarks>For Object Value types, Dispose() can be called here. If recordInfo.Invalid is true, this is called after the record was allocated and populated,
+        /// but could not be appended at the end of the log.</remarks>
         /// <returns>True if the deleted record should be added, else false (e.g. cancellation)</returns>
         bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo);
 
@@ -270,9 +302,20 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="logRecord">The log record that is being deleted in-place</param>
         /// <param name="deleteInfo">Information about this update operation and its context</param>
-        /// <remarks>For Object Value types, Dispose() can be called here. If logRecord.Info.Invalid is true, this is called after the record was allocated and populated, but could not be appended at the end of the log.</remarks>
+        /// <remarks>For Object Value types, Dispose() can be called here. If logRecord.Info.Invalid is true, this is called after the record was allocated and populated,
+        /// but could not be appended at the end of the log.</remarks>
         /// <returns>True if the value was successfully deleted, else false (e.g. the record was sealed)</returns>
         bool InPlaceDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo);
+
+        /// <summary>
+        /// Called after the Delete operation but before we unlock the record (if it was ephemerally locked).
+        /// </summary>
+        /// <remarks>
+        /// This is always called after the operation whether it succeeds or not, so must have information indicating whether
+        /// the action is to be performed (such as by checking <see cref="DeleteInfo.UserData"/>
+        /// </remarks>
+        void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor;
         #endregion Deletes
 
         #region Utilities

@@ -3,6 +3,8 @@
 
 using System;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -13,8 +15,9 @@ namespace Tsavorite.test.Objects
     /// This also tests <see cref="MultiLevelPageArray{TestObjectValue}"/> and <see cref="SimpleConcurrentStack{_int_}"/>,
     /// which in turn tests <see cref="MultiLevelPageArray{_int_}"/>.
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
-    class ObjectIdMapTests
+    class ObjectIdMapTests : AllureTestBase
     {
         ObjectIdMap map;
 

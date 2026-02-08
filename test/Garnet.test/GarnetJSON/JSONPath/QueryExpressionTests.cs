@@ -24,17 +24,19 @@
 // OTHER DEALINGS IN THE SOFTWARE.
 
 #endregion
-
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
+using Allure.NUnit;
 using GarnetJSON.JSONPath;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
+
 namespace Garnet.test.JSONPath
 {
+    [AllureNUnit]
     [TestFixture]
-    public class QueryExpressionTests
+    public class QueryExpressionTests : AllureTestBase
     {
         [Test]
         public void AndExpressionTest()

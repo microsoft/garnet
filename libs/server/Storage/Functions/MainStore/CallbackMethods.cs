@@ -8,7 +8,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
+    public readonly partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
         public void ReadCompletionCallback(ref DiskLogRecord diskLogRecord, ref StringInput input, ref SpanByteAndMemory output, long ctx, Status status, RecordMetadata recordMetadata)

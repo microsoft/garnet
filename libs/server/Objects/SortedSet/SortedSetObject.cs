@@ -635,7 +635,7 @@ namespace Garnet.server
             if (expirationTimes.Count != 0)
                 return;
 
-            HeapMemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueOverhead) * expirationQueue.Count;
+            HeapMemorySize -= (IntPtr.Size + sizeof(long) + MemoryUtils.PriorityQueueEntryOverhead) * expirationQueue.Count;
             HeapMemorySize -= MemoryUtils.DictionaryOverhead + MemoryUtils.PriorityQueueOverhead;
             expirationTimes = null;
             expirationQueue = null;

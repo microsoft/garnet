@@ -2,6 +2,8 @@
 // Licensed under the MIT license.
 
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -13,8 +15,9 @@ namespace Tsavorite.test
     using StructAllocator = SpanByteAllocator<StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>>;
     using StructStoreFunctions = StoreFunctions<KeyStruct.Comparer, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    internal class BasicStorageTests
+    internal class BasicStorageTests : AllureTestBase
     {
         [Test]
         [Category("TsavoriteKV")]

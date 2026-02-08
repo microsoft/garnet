@@ -3,6 +3,8 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -12,8 +14,9 @@ namespace Tsavorite.test.InputOutputParameterTests
     using IntAllocator = SpanByteAllocator<StoreFunctions<IntKeyComparer, SpanByteRecordDisposer>>;
     using IntStoreFunctions = StoreFunctions<IntKeyComparer, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    class InputOutputParameterTests
+    class InputOutputParameterTests : AllureTestBase
     {
         const int AddValue = 10_000;
         const int MultValue = 100;

@@ -42,7 +42,7 @@ namespace Garnet.server
         {
             functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogUpsert(logRecord.Key, ref input, srcValue, upsertInfo.Version, upsertInfo.SessionID);
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
         }
 
         /// <inheritdoc />
@@ -57,7 +57,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
             {
                 Debug.Assert(!inputLogRecord.Info.ValueIsObject, "String store should not be called with IHeapObject");
-                WriteLogUpsert(logRecord.Key, ref input, inputLogRecord.ValueSpan, upsertInfo.Version, upsertInfo.SessionID);
+                upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             }
         }
 
@@ -85,7 +85,7 @@ namespace Garnet.server
                 if (!logRecord.Info.Modified)
                     functionsState.watchVersionMap.IncrementVersion(upsertInfo.KeyHash);
                 if (functionsState.appendOnlyFile != null)
-                    WriteLogUpsert(logRecord.Key, ref input, srcValue, upsertInfo.Version, upsertInfo.SessionID);
+                    upsertInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
                 return true;
             }
             return false;
@@ -102,6 +102,21 @@ namespace Garnet.server
             if (inputLogRecord.Info.ValueIsObject)
                 throw new GarnetException("String store should not be called with IHeapObject");
             return logRecord.TryCopyFrom(in inputLogRecord, in sizeInfo);
+        }
+
+        /// <inheritdoc />
+        public void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref StringInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        {
+            if ((upsertInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
+                WriteLogUpsert(key, ref input, valueSpan, upsertInfo.Version, upsertInfo.SessionID, epochAccessor);
+        }
+
+        /// <inheritdoc />
+        public void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref StringInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        {
+            throw new GarnetException("String store should not be called with IHeapObject");
         }
     }
 }

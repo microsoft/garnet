@@ -1149,10 +1149,13 @@ namespace Tsavorite.core
         {
             while ((logicalAddress = TryAllocate(numSlots)) < 0)
             {
+                // -1: RETRY_NOW
                 _ = TryComplete();
                 epoch.ProtectAndDrain();
                 _ = Thread.Yield();
             }
+
+            // 0: RETRY_LATER
             return logicalAddress != 0;
         }
 

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -8,7 +9,7 @@ namespace Garnet.server
     /// <summary>
     /// Callback functions for main store
     /// </summary>
-    public readonly unsafe partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
+    public readonly partial struct MainSessionFunctions : ISessionFunctions<StringInput, SpanByteAndMemory, long>
     {
         /// <inheritdoc />
         public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
@@ -22,7 +23,7 @@ namespace Garnet.server
         public void PostInitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
         {
             if (functionsState.appendOnlyFile != null)
-                WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
+                deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
         }
 
         /// <inheritdoc />
@@ -32,8 +33,16 @@ namespace Garnet.server
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
+                deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             return true;
+        }
+
+        /// <inheritdoc />
+        public void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        {
+            if ((deleteInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
+                WriteLogDelete(key, deleteInfo.Version, deleteInfo.SessionID, epochAccessor);
         }
     }
 }

@@ -17,7 +17,7 @@
     ./run_bdnperftest.ps1
     ./run_bdnperftest.ps1 BDN.benchmark.Operations.BasicOperations.*
     ./run_bdnperftest.ps1 Operations.BasicOperations    <-- can run this way but this is how specify in ci-bdnbenchmark.yml
-    ./run_bdnperftest.ps1 Operations.BasicOperations net9.0
+    ./run_bdnperftest.ps1 Operations.BasicOperations net8.0
 #>
 
 param (

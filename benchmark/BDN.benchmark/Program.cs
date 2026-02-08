@@ -21,7 +21,7 @@ BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly)
 public class BaseConfig : ManualConfig
 {
     public Job Net8BaseJob { get; }
-    public Job Net9BaseJob { get; }
+    public Job Net10BaseJob { get; }
 
     public BaseConfig()
     {
@@ -35,11 +35,11 @@ public class BaseConfig : ManualConfig
         Net8BaseJob = baseJob
             .WithRuntime(CoreRuntime.Core80)
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
-        Net9BaseJob = baseJob
-            .WithRuntime(CoreRuntime.Core90)
+        Net10BaseJob = baseJob
+            .WithRuntime(CoreRuntime.Core10_0)
             .WithEnvironmentVariables(new EnvironmentVariable("DOTNET_TieredPGO", "0"));
 
-        // Get value of environment variable BDNRUNPARAM - determines if running net8.0, net9.0 or both (if env var is not set or invalid)
+        // Get value of environment variable BDNRUNPARAM - determines if running net8.0, net10.0 or both (if env var is not set or invalid)
         var bdnRunParam = Environment.GetEnvironmentVariable("BDNRUNPARAM");
 
         switch (bdnRunParam)
@@ -47,13 +47,13 @@ public class BaseConfig : ManualConfig
             case "net8.0":
                 _ = AddJob(Net8BaseJob.WithId(".NET 8"));
                 break;
-            case "net9.0":
-                _ = AddJob(Net9BaseJob.WithId(".NET 9"));
+            case "net10.0":
+                _ = AddJob(Net10BaseJob.WithId(".NET 10"));
                 break;
             default:
                 _ = AddJob(
                     Net8BaseJob.WithId(".NET 8"),
-                    Net9BaseJob.WithId(".NET 9")
+                    Net10BaseJob.WithId(".NET 10")
                     );
                 break;
         }

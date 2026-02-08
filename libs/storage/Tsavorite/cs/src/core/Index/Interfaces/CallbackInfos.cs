@@ -50,6 +50,11 @@ namespace Tsavorite.core
         public UpsertAction Action { get; set; }
 
         /// <summary>
+        /// User-defined byte of data associated with the operation
+        /// </summary>
+        public byte UserData { get; set; }
+
+        /// <summary>
         /// Utility ctor
         /// </summary>
         public UpsertInfo(ref RMWInfo rmwInfo)
@@ -133,6 +138,11 @@ namespace Tsavorite.core
         /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public RMWAction Action { get; set; }
+
+        /// <summary>
+        /// User-defined byte of data associated with the operation
+        /// </summary>
+        public byte UserData { get; set; }
     }
 
     /// <summary>
@@ -179,6 +189,11 @@ namespace Tsavorite.core
         /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public DeleteAction Action { get; set; }
+
+        /// <summary>
+        /// User-defined byte of data associated with the operation
+        /// </summary>
+        public byte UserData { get; set; }
     }
 
     /// <summary>
