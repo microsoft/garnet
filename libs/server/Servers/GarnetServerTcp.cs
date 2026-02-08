@@ -150,7 +150,13 @@ namespace Garnet.server
                 do
                 {
                     // Check isListening flag before processing and before calling AcceptAsync again
-                    if (!isListening) break;
+                    if (!isListening)
+                    {
+                        // Dispose any accepted socket that won't be handled
+                        e.AcceptSocket?.Dispose();
+                        e.AcceptSocket = null;
+                        break;
+                    }
 
                     if (!HandleNewConnection(e)) break;
                     e.AcceptSocket = null;
