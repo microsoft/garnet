@@ -22,7 +22,7 @@ namespace Garnet
                 // Start the server
                 server.Start();
 
-                var shutdownEvent = new ManualResetEventSlim(false);
+                using var shutdownEvent = new ManualResetEventSlim(false);
 
                 Console.CancelKeyPress += (sender, e) =>
                 {
