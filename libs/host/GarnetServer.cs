@@ -531,7 +531,6 @@ namespace Garnet
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "Error checking active connections");
-                delayIndex = 0;
                 await Task.Delay(500, token).ConfigureAwait(false);
             }
         }
