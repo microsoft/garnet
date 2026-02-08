@@ -57,7 +57,8 @@ namespace Garnet
             }
             finally
             {
-                await base.StopAsync(cancellationToken).ConfigureAwait(false);
+                // Ensure base class cleanup although cancellationToken is cancelled
+                await base.StopAsync(CancellationToken.None).ConfigureAwait(false);
                 Dispose();
             }
         }
