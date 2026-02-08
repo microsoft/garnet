@@ -662,5 +662,126 @@ namespace Garnet.test
             ClassicAssert.AreEqual(expectedMessage, ex.Message);
         }
         #endregion
+
+        #region GracefulShutdownTests
+        [Test]
+        public async Task ShutdownAsyncStopsAcceptingNewConnections()
+        {
+            // Arrange - write data then close connection
+            using (var redis1 = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db1 = redis1.GetDatabase(0);
+                db1.StringSet("test", "value");
+            }
+
+            // Act - Initiate shutdown
+            await server.ShutdownAsync(TimeSpan.FromSeconds(5));
+
+            // Assert - New connections should fail
+            Assert.Throws<RedisConnectionException>(() =>
+            {
+                using var redis2 = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+                redis2.GetDatabase(0).Ping();
+            });
+        }
+
+        [Test]
+        public async Task ShutdownAsyncWaitsForActiveConnections()
+        {
+            // Arrange - keep connection open to test timeout behavior
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.StringSet("key1", "value1");
+
+            // Act - Start shutdown with short timeout; active connection will force timeout
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await server.ShutdownAsync(TimeSpan.FromMilliseconds(500));
+            sw.Stop();
+
+            // Assert - Should wait approximately the timeout duration before proceeding
+            ClassicAssert.GreaterOrEqual(sw.ElapsedMilliseconds, 400,
+                "Shutdown should wait for the timeout duration when connections are active");
+            ClassicAssert.Less(sw.ElapsedMilliseconds, 5_000,
+                "Shutdown should not hang beyond a reasonable bound");
+        }
+
+        [Test]
+        public async Task ShutdownAsyncCommitsAOF()
+        {
+            // Arrange
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                db.StringSet("aofKey", "aofValue");
+            }
+
+            // Act - Shutdown which should commit AOF
+            await server.ShutdownAsync(TimeSpan.FromSeconds(5));
+            server.Dispose(false);
+
+            // Assert - Recover and verify data persisted
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, enableAOF: true, tryRecover: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                var recoveredValue = db.StringGet("aofKey");
+                ClassicAssert.AreEqual("aofValue", recoveredValue.ToString());
+            }
+        }
+
+        [Test]
+        public async Task ShutdownAsyncTakesCheckpointWhenStorageTierEnabled()
+        {
+            // Arrange
+            server.Dispose();
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig(allowAdmin: true)))
+            {
+                var db = redis.GetDatabase(0);
+                db.StringSet("checkpointKey", "checkpointValue");
+            }
+
+            // Act - Shutdown which should take checkpoint
+            await server.ShutdownAsync(TimeSpan.FromSeconds(5));
+            server.Dispose(false);
+
+            // Assert - Recover from checkpoint
+            server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir, tryRecover: true);
+            server.Start();
+
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                var recoveredValue = db.StringGet("checkpointKey");
+                ClassicAssert.AreEqual("checkpointValue", recoveredValue.ToString());
+            }
+        }
+
+        [Test]
+        public async Task ShutdownAsyncRespectsTimeout()
+        {
+            // Arrange - keep connection open to force timeout path
+            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
+            var db = redis.GetDatabase(0);
+            db.StringSet("key", "value");
+
+            // Act - Shutdown with very short timeout
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            await server.ShutdownAsync(TimeSpan.FromMilliseconds(100));
+            sw.Stop();
+
+            // Assert - Should complete within reasonable time
+            ClassicAssert.Less(sw.ElapsedMilliseconds, 5_000,
+                $"Shutdown should complete within reasonable time. Actual: {sw.ElapsedMilliseconds}ms");
+        }
+        #endregion
     }
 }

@@ -43,8 +43,24 @@ namespace Garnet
         /// <param name="cancellationToken">Indicates that the shutdown process should no longer be graceful.</param>
         public override async Task StopAsync(CancellationToken cancellationToken)
         {
-            Dispose();
-            await base.StopAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (server != null)
+                {
+                    // Perform graceful shutdown with AOF commit and checkpoint
+                    await server.ShutdownAsync(timeout: TimeSpan.FromSeconds(5), token: cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Force shutdown requested - proceed to dispose
+            }
+            finally
+            {
+                // Ensure base class cleanup although cancellationToken is cancelled
+                await base.StopAsync(CancellationToken.None).ConfigureAwait(false);
+                Dispose();
+            }
         }
 
         public override void Dispose()
@@ -55,6 +71,8 @@ namespace Garnet
             }
             server?.Dispose();
             _isDisposed = true;
+            base.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
 }
