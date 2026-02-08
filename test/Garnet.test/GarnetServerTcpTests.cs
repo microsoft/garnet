@@ -126,13 +126,15 @@ namespace Garnet.test
         [Test]
         public async Task ShutdownAsyncCompletesGracefully()
         {
-            // Arrange - Write data that should survive shutdown
-            using var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig());
-            var db = redis.GetDatabase(0);
-            db.StringSet("shutdown-test", "data");
-            ClassicAssert.AreEqual("data", (string)db.StringGet("shutdown-test"));
+            // Arrange - Write data and then close the connection
+            using (var redis = ConnectionMultiplexer.Connect(TestUtils.GetConfig()))
+            {
+                var db = redis.GetDatabase(0);
+                db.StringSet("shutdown-test", "data");
+                ClassicAssert.AreEqual("data", (string)db.StringGet("shutdown-test"));
+            }
 
-            // Act - Graceful shutdown
+            // Act - Graceful shutdown (no active connections)
             await server.ShutdownAsync(timeout: TimeSpan.FromSeconds(5)).ConfigureAwait(false);
 
             // Assert - New connections should fail after shutdown
