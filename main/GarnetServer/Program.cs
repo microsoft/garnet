@@ -10,75 +10,34 @@ namespace Garnet
     /// </summary>
     public class Program
     {
-        static async Task Main(string[] args)
+        static void Main(string[] args)
         {
-            GarnetServer server = null;
-            using var shutdownCts = new CancellationTokenSource();
-            int shutdownInitiated = 0; // Guard to ensure single shutdown/dispose
-            int serverStarted = 0; // Guard to track if server started successfully
-
             try
             {
-                server = new GarnetServer(args);
+                using var server = new GarnetServer(args);
 
                 // Optional: register custom extensions
                 RegisterExtensions(server);
 
-                // Set up graceful shutdown handlers for Ctrl+C and SIGTERM
-                Console.CancelKeyPress += (sender, e) =>
-                {
-                    e.Cancel = true; // Prevent immediate termination
-                    Console.WriteLine("Shutdown signal received. Starting graceful shutdown...");
-                    shutdownCts.Cancel();
-                };
-
-                AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
-                {
-                    // Only initiate shutdown if not already done and server has started
-                    if (Interlocked.Exchange(ref shutdownInitiated, 1) == 0 &&
-                        Interlocked.CompareExchange(ref serverStarted, 0, 0) == 1)
-                    {
-                        Console.WriteLine("Process exit signal received. Starting graceful shutdown...");
-                        shutdownCts.Cancel();
-                        // Wait for graceful shutdown with timeout
-                        server?.ShutdownAsync(TimeSpan.FromSeconds(3), CancellationToken.None)
-                            .GetAwaiter().GetResult();
-                        server?.Dispose();
-                    }
-                };
-
                 // Start the server
                 server.Start();
-                Interlocked.Exchange(ref serverStarted, 1); // Mark server as started
 
-                // Wait for shutdown signal
-                try
-                {
-                    await Task.Delay(Timeout.Infinite, shutdownCts.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Normal shutdown path
-                }
+                var shutdownEvent = new ManualResetEventSlim(false);
 
-                // Only initiate shutdown if not already done by ProcessExit handler and server has started
-                if (Interlocked.Exchange(ref shutdownInitiated, 1) == 0 &&
-                    Interlocked.CompareExchange(ref serverStarted, 0, 0) == 1)
+                Console.CancelKeyPress += (sender, e) =>
                 {
-                    // Block synchronously for shutdown - ensures cleanup completes before process exits
-                    server.ShutdownAsync(TimeSpan.FromSeconds(5), CancellationToken.None)
+                    e.Cancel = true;
+                    // Graceful shutdown: drain connections, commit AOF, take checkpoint
+                    server.ShutdownAsync(TimeSpan.FromSeconds(5))
                         .GetAwaiter().GetResult();
-                    server.Dispose();
-                }
+                    shutdownEvent.Set();
+                };
+
+                shutdownEvent.Wait();
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Unable to initialize server due to exception: {ex.Message}");
-                // Ensure cleanup on exception if shutdown wasn't initiated
-                if (Interlocked.Exchange(ref shutdownInitiated, 1) == 0)
-                {
-                    server?.Dispose();
-                }
             }
         }
 
