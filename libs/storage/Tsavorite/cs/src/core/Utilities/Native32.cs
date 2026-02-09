@@ -345,7 +345,7 @@ namespace Tsavorite.core
             {
                 uint logicalPerCore = GetLogicalProcessorsPerCore();
                 uint nrOfPhysicalCores = nrOfProcessors / logicalPerCore;
-                threadIdx = (threadIdx % nrOfPhysicalCores) * logicalPerCore + ((threadIdx / nrOfPhysicalCores) %  logicalPerCore);
+                threadIdx = (threadIdx % nrOfPhysicalCores) * logicalPerCore + ((threadIdx / nrOfPhysicalCores) % logicalPerCore);
             }
             else
             {
