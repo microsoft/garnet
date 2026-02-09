@@ -300,7 +300,7 @@ namespace Garnet.server
 
         IPUResult EvaluateExpireInPlace(ref LogRecord logRecord, ExpireOption optionType, long newExpiry, ref StringOutput output)
         {
-            var o = (OutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
+            var o = (ObjectOutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
             o->result1 = 0;
 
             if (!EvaluateExpire(ref logRecord, optionType, newExpiry, logRecord.Info.HasExpiration, logErrorOnFail: false, functionsState.logger, out var expirationChanged))
@@ -316,7 +316,7 @@ namespace Garnet.server
         {
             var hasExpiration = logRecord.Info.HasExpiration;
 
-            var o = (OutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
+            var o = (ObjectOutputHeader*)output.SpanByteAndMemory.SpanByte.ToPointer();
             o->result1 = 0;
 
             // TODO ETag?

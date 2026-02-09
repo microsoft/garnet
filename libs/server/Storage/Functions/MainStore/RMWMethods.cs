@@ -746,8 +746,8 @@ namespace Garnet.server
                     // If both EX and PERSIST were specified, EX wins
                     if (input.arg1 > 0)
                     {
-                        var pbOutput = stackalloc byte[OutputHeader.Size];
-                        var _output = new StringOutput(new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, OutputHeader.Size)));
+                        var pbOutput = stackalloc byte[ObjectOutputHeader.Size];
+                        var _output = new StringOutput(new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size)));
 
                         var newExpiry = input.arg1;
                         ipuResult = EvaluateExpireInPlace(ref logRecord, ExpireOption.None, newExpiry, ref _output);
@@ -1370,8 +1370,8 @@ namespace Garnet.server
                     Debug.Assert(newValue.Length == oldValue.Length);
                     if (input.arg1 > 0)
                     {
-                        var pbOutput = stackalloc byte[OutputHeader.Size];
-                        var _output = new StringOutput(new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, OutputHeader.Size)));
+                        var pbOutput = stackalloc byte[ObjectOutputHeader.Size];
+                        var _output = new StringOutput(new SpanByteAndMemory(PinnedSpanByte.FromPinnedPointer(pbOutput, ObjectOutputHeader.Size)));
                         var newExpiry = input.arg1;
                         if (!EvaluateExpireCopyUpdate(ref dstLogRecord, in sizeInfo, ExpireOption.None, newExpiry, newValue, ref _output))
                             return false;

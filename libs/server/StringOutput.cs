@@ -18,6 +18,11 @@ namespace Garnet.server
         /// </summary>
         public SpanByteAndMemory SpanByteAndMemory;
 
+        /// <summary>
+        /// Output flags
+        /// </summary>
+        public StringOutputFlags OutputFlags;
+
         public StringOutput() => SpanByteAndMemory = new(null);
 
         public StringOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;
@@ -37,5 +42,33 @@ namespace Garnet.server
         {
             SpanByteAndMemory.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Output flags for <see cref="StringOutput"/>."/>
+    /// </summary>
+    [Flags]
+    public enum StringOutputFlags : byte
+    {
+        // Non-error flags
+        None = 0,
+
+        // Error marker
+        Error = 1 << 7,
+
+        // Error flags (Error bit always set)
+        InvalidTypeError = Error | (1 << 0),
+        NaNOrInfinityError = Error | (1 << 1),
+    }
+
+    public static class StringOutputExtensions
+    {
+        /// <summary>
+        /// Check if <see cref="StringOutputFlags"/> has error bit set.
+        /// </summary>
+        /// <param name="flags">Output flags</param>
+        /// <returns>True if <see cref="StringOutputFlags"/> has error bit set.</returns>
+        public static bool HasError(this StringOutputFlags flags)
+            => (flags & StringOutputFlags.Error) != 0;
     }
 }

@@ -25,24 +25,24 @@ namespace Garnet.server
         /// <summary>
         /// Output header
         /// </summary>
-        public OutputHeader Header;
+        public ObjectOutputHeader Header;
 
         /// <summary>
         /// Output flags
         /// </summary>
-        public OutputFlags OutputFlags;
+        public ObjectOutputFlags OutputFlags;
 
         /// <summary>
         /// True if output flag WrongType is set
         /// </summary>
         public readonly bool HasWrongType =>
-            (OutputFlags & OutputFlags.WrongType) == OutputFlags.WrongType;
+            (OutputFlags & ObjectOutputFlags.WrongType) == ObjectOutputFlags.WrongType;
 
         /// <summary>
         /// True if output flag RemoveKey is set
         /// </summary>
         public readonly bool HasRemoveKey =>
-            (OutputFlags & OutputFlags.RemoveKey) == OutputFlags.RemoveKey;
+            (OutputFlags & ObjectOutputFlags.RemoveKey) == ObjectOutputFlags.RemoveKey;
 
         public ObjectOutput() => SpanByteAndMemory = new(null);
 

@@ -10,7 +10,7 @@ namespace Garnet.server
     /// Flags for store outputs.
     /// </summary>
     [Flags]
-    public enum OutputFlags : byte
+    public enum ObjectOutputFlags : byte
     {
         /// <summary>
         /// No flags set
@@ -32,7 +32,7 @@ namespace Garnet.server
     /// Object output header (sometimes used as footer)
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = Size)]
-    public struct OutputHeader
+    public struct ObjectOutputHeader
     {
         /// <summary>
         /// Expected size of this struct
