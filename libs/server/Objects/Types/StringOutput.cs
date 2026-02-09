@@ -18,16 +18,6 @@ namespace Garnet.server
         /// </summary>
         public SpanByteAndMemory SpanByteAndMemory;
 
-        /// <summary>
-        /// Output header
-        /// </summary>
-        public OutputHeader Header;
-
-        /// <summary>
-        /// Output flags
-        /// </summary>
-        public OutputFlags OutputFlags;
-
         public StringOutput() => SpanByteAndMemory = new(null);
 
         public StringOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;

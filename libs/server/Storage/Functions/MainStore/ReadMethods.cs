@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 using System.Diagnostics;
@@ -29,7 +29,7 @@ namespace Garnet.server
             var value = srcLogRecord.ValueSpan; // reduce redundant length calculations
             if (cmd == RespCommand.GETIFNOTMATCH)
             {
-                if (handleGetIfNotMatch(in srcLogRecord, ref input, ref output.SpanByteAndMemory, ref readInfo))
+                if (handleGetIfNotMatch(in srcLogRecord, ref input, ref output, ref readInfo))
                     return true;
             }
             else if (cmd > RespCommandExtensions.LastValidCommand)
@@ -62,15 +62,15 @@ namespace Garnet.server
             // Unless the command explicitly asks for the ETag in response, we do not write back the ETag
             if (cmd is RespCommand.GETWITHETAG or RespCommand.GETIFNOTMATCH)
             {
-                CopyRespWithEtagData(value, ref output.SpanByteAndMemory, srcLogRecord.Info.HasETag, functionsState.memoryPool);
+                CopyRespWithEtagData(value, ref output, srcLogRecord.Info.HasETag, functionsState.memoryPool);
                 ETagState.ResetState(ref functionsState.etagState);
                 return true;
             }
 
             if (cmd == RespCommand.NONE)
-                CopyRespTo(value, ref output.SpanByteAndMemory);
+                CopyRespTo(value, ref output);
             else
-                CopyRespToWithInput(in srcLogRecord, ref input, ref output.SpanByteAndMemory, readInfo.IsFromPending);
+                CopyRespToWithInput(in srcLogRecord, ref input, ref output, readInfo.IsFromPending);
 
             if (srcLogRecord.Info.HasETag)
                 ETagState.ResetState(ref functionsState.etagState);
@@ -78,7 +78,7 @@ namespace Garnet.server
             return true;
         }
 
-        private bool handleGetIfNotMatch<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref SpanByteAndMemory dst, ref ReadInfo readInfo)
+        private bool handleGetIfNotMatch<TSourceLogRecord>(in TSourceLogRecord srcLogRecord, ref StringInput input, ref StringOutput dst, ref ReadInfo readInfo)
             where TSourceLogRecord : ISourceLogRecord
         {
             // Any value without an etag is treated the same as a value with an etag
