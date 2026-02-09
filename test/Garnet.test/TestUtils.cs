@@ -637,7 +637,8 @@ namespace Garnet.test
             int loggingFrequencySecs = 5,
             int checkpointThrottleFlushDelayMs = 0,
             bool clusterReplicaResumeWithData = false,
-            int replicaSyncTimeout = 60)
+            int replicaSyncTimeout = 60,
+            bool enableVectorSetPreview = true)
         {
             if (useAzureStorage)
                 IgnoreIfNotRunningAzureTests();
@@ -757,6 +758,7 @@ namespace Garnet.test
                 CheckpointThrottleFlushDelayMs = checkpointThrottleFlushDelayMs,
                 ClusterReplicaResumeWithData = clusterReplicaResumeWithData,
                 ReplicaSyncTimeout = replicaSyncTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(replicaSyncTimeout),
+                EnableVectorSetPreview = enableVectorSetPreview,
             };
 
             if (lowMemory)

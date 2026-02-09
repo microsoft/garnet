@@ -477,6 +477,12 @@ namespace Garnet.test
             ClassicAssert.IsTrue(res8.Where(static (x, ix) => (ix % 2) == 0).Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
             ClassicAssert.IsFalse(double.IsNaN(double.Parse(Encoding.UTF8.GetString(res8[1]))));
             ClassicAssert.IsFalse(double.IsNaN(double.Parse(Encoding.UTF8.GetString(res8[3]))));
+
+            // Large Count
+            var res9 = (byte[][])db.Execute("VSIM", ["foo", "XB8", byte7, "COUNT", "1000"]);
+            ClassicAssert.AreEqual(2, res9.Length);
+            ClassicAssert.IsTrue(res9.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 0 })));
+            ClassicAssert.IsTrue(res9.Any(static x => x.SequenceEqual(new byte[] { 0, 0, 0, 1 })));
         }
 
         [Test]
@@ -1480,7 +1486,7 @@ namespace Garnet.test
                     ClassicAssert.AreEqual(1, (int)res1);
 
                     var res2 = db.Execute("VADD", ["foo", "XB8", addData2, new byte[] { 0, 0, 0, 1 }, "CAS", "Q8", "EF", "16", "M", "32", "SETATTR", "hello world"]);
-                    ClassicAssert.AreEqual(1, (int)res1);
+                    ClassicAssert.AreEqual(1, (int)res2);
 
                     expectedVSimResult = (byte[][])db.Execute("VSIM", ["foo", "ELE", new byte[] { 0, 0, 0, 0 }]);
                     ClassicAssert.AreEqual(2, expectedVSimResult.Length);

@@ -317,8 +317,6 @@ namespace Garnet.server
                     var isMigrating = (migrating & mask) != 0;
                     var cleanup = (cleaningUp & mask) != 0;
 
-                    var hashSlot = this.slots[ix];
-
                     if (isInUse || isMigrating || cleanup)
                     {
                         var ctxStart = (ulong)ix * ContextStep;
