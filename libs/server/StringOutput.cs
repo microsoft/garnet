@@ -64,11 +64,11 @@ namespace Garnet.server
     public static class StringOutputExtensions
     {
         /// <summary>
-        /// Check if <see cref="StringOutputFlags"/> has error bit set.
+        /// Check if <see cref="StringOutput"/>.<see cref="StringOutput.OutputFlags"/> has error bit set.
         /// </summary>
-        /// <param name="flags">Output flags</param>
-        /// <returns>True if <see cref="StringOutputFlags"/> has error bit set.</returns>
-        public static bool HasError(this StringOutputFlags flags)
-            => (flags & StringOutputFlags.Error) != 0;
+        /// <param name="output">String output</param>
+        /// <returns>True if <see cref="StringOutput"/>.<see cref="StringOutput.OutputFlags"/> has error bit set.</returns>
+        public static bool HasError(this StringOutput output)
+            => (output.OutputFlags & StringOutputFlags.Error) != 0;
     }
 }

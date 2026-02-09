@@ -397,14 +397,14 @@ namespace Garnet.server
             long val;
             if (logRecord.IsPinnedValue)
             {
-                if (!IsValidNumber(value.Length, logRecord.PinnedValuePointer, output.SpanByteAndMemory.SpanByte.Span, out val))
+                if (!IsValidNumber(value.Length, logRecord.PinnedValuePointer, ref output, out val))
                     return true;
             }
             else
             {
                 fixed (byte* valuePtr = value)
                 {
-                    if (!IsValidNumber(value.Length, valuePtr, output.SpanByteAndMemory.SpanByte.Span, out val))
+                    if (!IsValidNumber(value.Length, valuePtr, ref output, out val))
                         return true;
                 }
             }
@@ -415,7 +415,7 @@ namespace Garnet.server
             }
             catch
             {
-                output.SpanByteAndMemory.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
+                output.OutputFlags |= StringOutputFlags.InvalidTypeError;
                 return true;
             }
 
@@ -429,14 +429,14 @@ namespace Garnet.server
             double val;
             if (logRecord.IsPinnedValue)
             {
-                if (!IsValidDouble(value.Length, logRecord.PinnedValuePointer, output.SpanByteAndMemory.SpanByte.Span, out val))
+                if (!IsValidDouble(value.Length, logRecord.PinnedValuePointer, ref output, out val))
                     return true;
             }
             else
             {
                 fixed (byte* valuePtr = value)
                 {
-                    if (!IsValidDouble(value.Length, valuePtr, output.SpanByteAndMemory.SpanByte.Span, out val))
+                    if (!IsValidDouble(value.Length, valuePtr, ref output, out val))
                         return true;
                 }
             }
@@ -446,7 +446,7 @@ namespace Garnet.server
 
             if (!double.IsFinite(val))
             {
-                output.SpanByteAndMemory.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
+                output.OutputFlags |= StringOutputFlags.InvalidTypeError;
                 return true;
             }
 
@@ -490,11 +490,11 @@ namespace Garnet.server
             long val;
             if (srcLogRecord.IsPinnedValue)
             {
-                if (!IsValidNumber(srcValue.Length, srcLogRecord.PinnedValuePointer, output.SpanByteAndMemory.SpanByte.Span, out val))
+                if (!IsValidNumber(srcValue.Length, srcLogRecord.PinnedValuePointer, ref output, out val))
                 {
                     // Move to tail of the log even when oldValue is alphanumeric
                     // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
-                    output.SpanByteAndMemory.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
+                    output.OutputFlags |= StringOutputFlags.InvalidTypeError;
                     return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcLogRecord.ValueSpan, in sizeInfo);
                 }
             }
@@ -502,11 +502,11 @@ namespace Garnet.server
             {
                 fixed (byte* valuePtr = srcValue)
                 {
-                    if (!IsValidNumber(srcValue.Length, valuePtr, output.SpanByteAndMemory.SpanByte.Span, out val))
+                    if (!IsValidNumber(srcValue.Length, valuePtr, ref output, out val))
                     {
                         // Move to tail of the log even when oldValue is alphanumeric
                         // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
-                        output.SpanByteAndMemory.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
+                        output.OutputFlags |= StringOutputFlags.InvalidTypeError;
                         return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcLogRecord.ValueSpan, in sizeInfo);
                     }
                 }
@@ -519,7 +519,7 @@ namespace Garnet.server
             }
             catch
             {
-                output.SpanByteAndMemory.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
+                output.OutputFlags |= StringOutputFlags.InvalidTypeError;
                 return false;
             }
 
@@ -546,11 +546,11 @@ namespace Garnet.server
             double val;
             if (srcLogRecord.IsPinnedValue)
             {
-                if (!IsValidDouble(srcValue.Length, srcLogRecord.PinnedValuePointer, output.SpanByteAndMemory.SpanByte.Span, out val))
+                if (!IsValidDouble(srcValue.Length, srcLogRecord.PinnedValuePointer, ref output, out val))
                 {
                     // Move to tail of the log even when oldValue is alphanumeric
                     // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
-                    output.SpanByteAndMemory.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
+                    output.OutputFlags |= StringOutputFlags.InvalidTypeError;
                     return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcLogRecord.ValueSpan, in sizeInfo);
                 }
             }
@@ -558,11 +558,11 @@ namespace Garnet.server
             {
                 fixed (byte* valuePtr = srcValue)
                 {
-                    if (!IsValidDouble(srcValue.Length, valuePtr, output.SpanByteAndMemory.SpanByte.Span, out val))
+                    if (!IsValidDouble(srcValue.Length, valuePtr, ref output, out val))
                     {
                         // Move to tail of the log even when oldValue is alphanumeric
                         // We have already paid the cost of bringing from disk so we are treating as a regular access and bring it into memory
-                        output.SpanByteAndMemory.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
+                        output.OutputFlags |= StringOutputFlags.InvalidTypeError;
                         return dstLogRecord.TrySetValueSpanAndPrepareOptionals(srcLogRecord.ValueSpan, in sizeInfo);
                     }
                 }
@@ -571,7 +571,7 @@ namespace Garnet.server
             val += input;
             if (!double.IsFinite(val))
             {
-                output.SpanByteAndMemory.SpanByte.Span[0] = (byte)OperationError.INVALID_TYPE;
+                output.OutputFlags |= StringOutputFlags.InvalidTypeError;
                 return false;
             }
 
@@ -587,32 +587,32 @@ namespace Garnet.server
         /// <param name="output">Output error flag</param>
         /// <param name="val">Parsed long value</param>
         /// <returns>True if input contained only ASCII decimal characters, otherwise false</returns>
-        static bool IsValidNumber(int length, byte* source, Span<byte> output, out long val)
+        static bool IsValidNumber(int length, byte* source, ref StringOutput output, out long val)
         {
             // Check for valid number
             if (!NumUtils.TryReadInt64(length, source, out val))
             {
                 // Signal value is not a valid number
-                output[0] = (byte)OperationError.INVALID_TYPE;
+                output.OutputFlags |= StringOutputFlags.InvalidTypeError;
                 return false;
             }
             return true;
         }
 
-        static bool IsValidDouble(int length, byte* source, Span<byte> output, out double val)
+        static bool IsValidDouble(int length, byte* source, ref StringOutput output, out double val)
         {
             // Check for valid number
             if (!NumUtils.TryParseWithInfinity(new ReadOnlySpan<byte>(source, length), out val))
             {
                 // Signal value is not a valid number
-                output[0] = (byte)OperationError.INVALID_TYPE;
+                output.OutputFlags |= StringOutputFlags.InvalidTypeError;
                 return false;
             }
 
             if (!double.IsFinite(val))
             {
                 // Signal value is not a Nan/Infinity
-                output[0] = (byte)OperationError.NAN_OR_INFINITY;
+                output.OutputFlags |= StringOutputFlags.NaNOrInfinityError;
                 return false;
             }
 

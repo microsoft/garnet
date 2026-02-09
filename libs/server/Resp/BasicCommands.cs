@@ -690,26 +690,20 @@ namespace Garnet.server
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
+            StringOutput stringOutput = new(new SpanByteAndMemory(output));
 
             var input = new StringInput(cmd, 0, incrByValue);
-            _ = storageApi.Increment(key, ref input, ref output);
+            _ = storageApi.Increment(key, ref input, ref stringOutput);
+            output.Length = stringOutput.SpanByteAndMemory.Length;
 
-            var errorFlag = output.Length == NumUtils.MaximumFormatInt64Length + 1
-                ? (OperationError)output.Span[0]
-                : OperationError.SUCCESS;
-
-            switch (errorFlag)
+            if (!stringOutput.HasError())
             {
-                case OperationError.SUCCESS:
-                    while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case OperationError.NAN_OR_INFINITY:
-                case OperationError.INVALID_TYPE:
-                    WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                    break;
-                default:
-                    throw new GarnetException($"Invalid OperationError {errorFlag}");
+                while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
             }
 
             return true;
@@ -735,21 +729,30 @@ namespace Garnet.server
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
             var output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
-            var status = storageApi.IncrementByFloat(key, ref output, dbl);
+            StringOutput stringOutput = new(new SpanByteAndMemory(output));
 
-            switch (status)
+            _ = storageApi.IncrementByFloat(key, ref stringOutput, dbl);
+            output.Length = stringOutput.SpanByteAndMemory.Length;
+
+            if (!stringOutput.HasError())
             {
-                case GarnetStatus.OK:
-                    while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
-                        SendAndReset();
-                    break;
-                case GarnetStatus.WRONGTYPE:
-                default:
-                    if ((OperationError)output.Span[0] == OperationError.NAN_OR_INFINITY)
-                        WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
-                    else
-                        WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
-                    break;
+                while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
+                    SendAndReset();
+            }
+            else
+            {
+                if ((stringOutput.OutputFlags & StringOutputFlags.NaNOrInfinityError) != 0)
+                {
+                    WriteError(CmdStrings.RESP_ERR_GENERIC_NAN_INFINITY_INCR);
+                }
+                else if ((stringOutput.OutputFlags & StringOutputFlags.InvalidTypeError) != 0)
+                {
+                    WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                }
+                else
+                {
+                    throw new GarnetException($"Unrecognized return output flags value: {stringOutput.OutputFlags}");
+                }
             }
 
             return true;

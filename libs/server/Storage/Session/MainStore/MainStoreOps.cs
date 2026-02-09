@@ -463,16 +463,12 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public GarnetStatus Increment<TStringContext>(PinnedSpanByte key, ref StringInput input, ref PinnedSpanByte output, ref TStringContext context)
+        public GarnetStatus Increment<TStringContext>(PinnedSpanByte key, ref StringInput input, ref StringOutput output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            StringOutput _output = new(new SpanByteAndMemory(output));
-
-            var status = context.RMW(key.ReadOnlySpan, ref input, ref _output);
+            var status = context.RMW(key.ReadOnlySpan, ref input, ref output);
             if (status.IsPending)
-                CompletePendingForSession(ref status, ref _output, ref context);
-            Debug.Assert(_output.SpanByteAndMemory.IsSpanByte);
-            output.Length = _output.SpanByteAndMemory.Length;
+                CompletePendingForSession(ref status, ref output, ref context);
             return GarnetStatus.OK;
         }
 
@@ -491,15 +487,15 @@ namespace Garnet.server
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
             var outputBuffer = stackalloc byte[outputBufferLength];
 
-            var _output = StringOutput.FromPinnedPointer(outputBuffer, outputBufferLength);
+            var stringOutput = StringOutput.FromPinnedPointer(outputBuffer, outputBufferLength);
 
-            var status = context.RMW(key.ReadOnlySpan, ref input, ref _output);
+            var status = context.RMW(key.ReadOnlySpan, ref input, ref stringOutput);
             if (status.IsPending)
-                CompletePendingForSession(ref status, ref _output, ref context);
+                CompletePendingForSession(ref status, ref stringOutput, ref context);
 
-            Debug.Assert(_output.SpanByteAndMemory.IsSpanByte);
+            Debug.Assert(stringOutput.SpanByteAndMemory.IsSpanByte);
 
-            output = NumUtils.ReadInt64(_output.SpanByteAndMemory.Length, outputBuffer);
+            output = NumUtils.ReadInt64(stringOutput.SpanByteAndMemory.Length, outputBuffer);
             return GarnetStatus.OK;
         }
 

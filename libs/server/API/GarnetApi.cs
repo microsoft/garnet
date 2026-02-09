@@ -174,7 +174,7 @@ namespace Garnet.server
 
         #region Increment (INCR, INCRBY, DECR, DECRBY)
         /// <inheritdoc />
-        public GarnetStatus Increment(PinnedSpanByte key, ref StringInput input, ref PinnedSpanByte output)
+        public GarnetStatus Increment(PinnedSpanByte key, ref StringInput input, ref StringOutput output)
             => storageSession.Increment(key, ref input, ref output, ref stringContext);
 
         /// <inheritdoc />
@@ -186,48 +186,34 @@ namespace Garnet.server
             => Increment(key, out output, -decrementCount);
 
         /// <inheritdoc />
-        public GarnetStatus IncrementByFloat(PinnedSpanByte key, ref PinnedSpanByte output, double val)
+        public GarnetStatus IncrementByFloat(PinnedSpanByte key, ref StringOutput output, double val)
         {
             SessionParseState parseState = default;
 
             var input = new StringInput(RespCommand.INCRBYFLOAT, ref parseState, BitConverter.DoubleToInt64Bits(val));
             _ = Increment(key, ref input, ref output);
-
-            if (output.Length != NumUtils.MaximumFormatDoubleLength + 1)
-                return GarnetStatus.OK;
-
-            var errorFlag = (OperationError)output.Span[0];
-
-            switch (errorFlag)
-            {
-                case OperationError.INVALID_TYPE:
-                case OperationError.NAN_OR_INFINITY:
-                    return GarnetStatus.WRONGTYPE;
-                default:
-                    throw new GarnetException($"Invalid OperationError {errorFlag}");
-            }
+            return GarnetStatus.OK;
         }
 
         /// <inheritdoc />
         public GarnetStatus IncrementByFloat(PinnedSpanByte key, out double output, double val)
         {
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
-            var _output = PinnedSpanByte.FromPinnedSpan(outputBuffer);
-            var status = IncrementByFloat(key, ref _output, val);
+            var outputSpan = PinnedSpanByte.FromPinnedSpan(outputBuffer);
+            StringOutput stringOutput = new(new SpanByteAndMemory(outputSpan));
 
-            switch (status)
+            _ = IncrementByFloat(key, ref stringOutput, val);
+
+            if (!stringOutput.HasError())
             {
-                case GarnetStatus.OK:
-                    _ = NumUtils.TryReadDouble(_output.ReadOnlySpan, out output);
-                    break;
-                case GarnetStatus.WRONGTYPE:
-                default:
-                    var errorFlag = (OperationError)_output.Span[0];
-                    output = errorFlag == OperationError.NAN_OR_INFINITY ? double.NaN : 0;
-                    break;
+                _ = NumUtils.TryReadDouble(outputSpan.ReadOnlySpan, out output);
+            }
+            else
+            {
+                output = (stringOutput.OutputFlags & StringOutputFlags.NaNOrInfinityError) != 0 ? double.NaN : 0;
             }
 
-            return status;
+            return GarnetStatus.OK;
         }
         #endregion
 

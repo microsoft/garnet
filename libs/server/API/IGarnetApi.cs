@@ -250,7 +250,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus Increment(PinnedSpanByte key, ref StringInput input, ref PinnedSpanByte output);
+        GarnetStatus Increment(PinnedSpanByte key, ref StringInput input, ref StringOutput output);
 
         /// <summary>
         /// Increment (INCR, INCRBY)
@@ -277,7 +277,7 @@ namespace Garnet.server
         /// <param name="val"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus IncrementByFloat(PinnedSpanByte key, ref PinnedSpanByte output, double val);
+        GarnetStatus IncrementByFloat(PinnedSpanByte key, ref StringOutput output, double val);
 
         /// <summary>
         /// Increment by float (INCRBYFLOAT)
