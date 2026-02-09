@@ -25,8 +25,10 @@ namespace Tsavorite.core
         private const int UnserializedBitMask = 1 << 31;
         // Byte #30 is used to denote extra metadata present (1) or absent (0) in payload
         private const int ExtraMetadataBitMask = 1 << 30;
+        // Bit #29 used to denote if a namespace is present in payload
+        private const int NamespaceBitMask = 1 << 29;
         // Mask for header
-        private const int HeaderMask = 0x3 << 30;
+        private const int HeaderMask = UnserializedBitMask | ExtraMetadataBitMask | NamespaceBitMask;
 
         /// <summary>
         /// Length of the payload
@@ -93,9 +95,9 @@ namespace Tsavorite.core
         public readonly int TotalSize => sizeof(int) + Length;
 
         /// <summary>
-        /// Size of metadata header, if any (returns 0 or 8)
+        /// Size of metadata header, if any (returns 0, 1, 8, or 9)
         /// </summary>
-        public readonly int MetadataSize => (length & ExtraMetadataBitMask) >> (30 - 3);
+        public readonly int MetadataSize => ((length & ExtraMetadataBitMask) >> (30 - 3)) + ((length & NamespaceBitMask) >> 29);
 
         /// <summary>
         /// Create a <see cref="SpanByte"/> around a given <paramref name="payload"/> pointer and given <paramref name="length"/>
@@ -144,6 +146,7 @@ namespace Tsavorite.core
         public void MarkExtraMetadata()
         {
             Debug.Assert(Length >= 8);
+            Debug.Assert((length & NamespaceBitMask) == 0, "Don't use both extension for now");
             length |= ExtraMetadataBitMask;
         }
 
@@ -152,6 +155,23 @@ namespace Tsavorite.core
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void UnmarkExtraMetadata() => length &= ~ExtraMetadataBitMask;
+
+        /// <summary>
+        /// Mark <see cref="SpanByte"/> as having 1-byte namespace in header of payload
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void MarkNamespace()
+        {
+            Debug.Assert(Length >= 1);
+            Debug.Assert((length & ExtraMetadataBitMask) == 0, "Don't use both extension for now");
+            length |= NamespaceBitMask;
+        }
+
+        /// <summary>
+        /// Unmark <see cref="SpanByte"/> as having 1-byte namespace in header of payload
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void UnmarkNamespace() => length &= ~NamespaceBitMask;
 
         /// <summary>
         /// Check or set struct as invalid
@@ -547,6 +567,18 @@ namespace Tsavorite.core
         /// <param name="etag">The Etag value to set</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void SetEtagInPayload(long etag) => *(long*)this.ToPointer() = etag;
+
+        /// <summary>
+        /// Gets a namespace from the payload of the SpanByte, caller should make sure the SpanByte has a namespace for the record by checking RecordInfo
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public byte GetNamespaceInPayload() => *(byte*)this.ToPointerWithMetadata();
+
+        /// <summary>
+        /// Gets a namespace from the payload of the SpanByte, caller should make sure the SpanByte has a namespace for the record by checking RecordInfo
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void SetNamespaceInPayload(byte ns) => *(byte*)this.ToPointerWithMetadata() = ns;
 
         /// <inheritdoc/>
         public override string ToString()

@@ -163,18 +163,19 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Initialize the parse state with a given set of arguments
+        /// Expand (if necessary) capacity of <see cref="SessionParseState"/>, preserving contents.
         /// </summary>
-        /// <param name="args">Set of arguments to initialize buffer with</param>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void InitializeWithArguments(ArgSlice[] args)
+        public void EnsureCapacity(int count)
         {
-            Initialize(args.Length);
-
-            for (var i = 0; i < args.Length; i++)
+            if (count <= Count)
             {
-                *(bufferPtr + i) = args[i];
+                return;
             }
+
+            var oldBuffer = rootBuffer;
+            Initialize(count);
+
+            oldBuffer?.AsSpan().CopyTo(rootBuffer);
         }
 
         /// <summary>
@@ -430,6 +431,28 @@ namespace Garnet.server
         {
             Debug.Assert(i < Count);
             return ParseUtils.TryReadDouble(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), out value, canBeInfinite);
+        }
+
+        /// <summary>
+        /// Get float argument at the given index
+        /// </summary>
+        /// <returns>True if double parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public float GetFloat(int i, bool canBeInfinite = true)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.ReadFloat(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), canBeInfinite);
+        }
+
+        /// <summary>
+        /// Try to get double argument at the given index
+        /// </summary>
+        /// <returns>True if double parsed successfully</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGetFloat(int i, out float value, bool canBeInfinite = true)
+        {
+            Debug.Assert(i < Count);
+            return ParseUtils.TryReadFloat(ref Unsafe.AsRef<ArgSlice>(bufferPtr + i), out value, canBeInfinite);
         }
 
         /// <summary>
