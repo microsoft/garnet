@@ -62,7 +62,7 @@ namespace Garnet.server
                     src.Slice(start, srcLength).CopyTo(new Span<byte>(tmp, srcLength));
                     tmp += srcLength;
                     *tmp++ = (byte)'\r';
-                    *tmp++ = (byte)'\n';
+                    *tmp = (byte)'\n';
                     return;
                 }
                 dst.ConvertToHeap();
