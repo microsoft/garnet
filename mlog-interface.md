@@ -152,7 +152,3 @@ In that situation, possible solutions include
 2. Include sessionId and dedicated counter per session to resolve ordering at the replica (i.e. consistent read) (ts, sid, ctr)
 3. Use the concept of closing down timestamp. We only read at t-1 and read at t only when all sublogs have replayed t. Is that correct what are th caveats
 </ul></ul>
-
-- [ ] Transaction replay task spin wait while holding the epoch is bad.
-- [ ] Ensure sequence number update happens before replay
-- [ ] Ensure read wait semaphore does not deadlock due to race condition between insertion and release.

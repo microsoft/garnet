@@ -118,7 +118,7 @@ namespace Garnet.server
         /// NOTE:
         ///     This method waits until the log sequence number of the associated key is lesser or equal than the maximum session log sequence number.
         ///     It executes before store.Read is processed to ensure that the log sequence number of the associated key is ahead of the last read in accordance to the consistent read protocol
-        ///     The replica read context is updated (<seealso creCancellationTokenSource.CreateLinkedTokenSourcef="T:Garnet.server.ReplicaReadConsistencyManager.ConsistentReadKeyUpdate"/>) after the actual store.Read call to ensure that we don't underestimate the true log sequence number.
+        ///     The replica read context is updated (<seealso cref="T:Garnet.server.ReplicaReadConsistencyManager.ConsistentReadSequenceNumberUpdate"/>) after the actual store.Read call to ensure that we don't underestimate the true log sequence number.
         /// </summary>
         /// <param name="key"></param>
         /// <param name="replicaReadSessionContext"></param>
