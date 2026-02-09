@@ -44,6 +44,19 @@ namespace Garnet.cluster
             return true;
         }
 
+        public bool TryHashAndStore(ulong ns, Span<byte> key)
+        {
+            if (!argSliceVector.TryAddItem(ns, key))
+                return false;
+
+            var slot = (int)HashUtils.MurmurHash2x64A(key, seed: (uint)ns) & (size - 1);
+            var byteOffset = slot >> 3;
+            var bitOffset = slot & 7;
+            bitmap[byteOffset] = (byte)(bitmap[byteOffset] | (1UL << bitOffset));
+
+            return true;
+        }
+
         /// <summary>
         /// Hash key to bloomfilter and store it for future use (NOTE: Use only with KEYS option)
         /// </summary>
@@ -65,7 +78,19 @@ namespace Garnet.cluster
         /// <returns></returns>
         public unsafe bool Probe(SpanByte key, out SketchStatus status)
         {
-            var slot = (int)HashUtils.MurmurHash2x64A(key.ToPointer(), key.Length) & (size - 1);
+            int slot;
+
+            // TODO: better way to detect namespace
+            if (key.MetadataSize == 1)
+            {
+                var ns = key.GetNamespaceInPayload();
+                slot = (int)HashUtils.MurmurHash2x64A(key.ToPointer(), key.Length, seed: (uint)ns) & (size - 1);
+            }
+            else
+            {
+                slot = (int)HashUtils.MurmurHash2x64A(key.ToPointer(), key.Length) & (size - 1);
+            }
+
             var byteOffset = slot >> 3;
             var bitOffset = slot & 7;
 

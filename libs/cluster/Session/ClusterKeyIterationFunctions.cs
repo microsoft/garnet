@@ -34,6 +34,14 @@ namespace Garnet.cluster
 
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
+                    // TODO: better way to detect namespace
+                    if (key.MetadataSize == 1)
+                    {
+                        // Namespace means not visible
+                        cursorRecordResult = CursorRecordResult.Skip;
+                        return true;
+                    }
+
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here
                     if (HashSlotUtils.HashSlot(ref key) == Slot && !Expired(ref value))
                         KeyCount++;
@@ -87,7 +95,16 @@ namespace Garnet.cluster
 
                 public bool SingleReader(ref SpanByte key, ref SpanByte value, RecordMetadata recordMetadata, long numberOfRecords, out CursorRecordResult cursorRecordResult)
                 {
+                    // TODO: better way to detect namespace
+                    if (key.MetadataSize == 1)
+                    {
+                        // Namespace means not visible
+                        cursorRecordResult = CursorRecordResult.Skip;
+                        return true;
+                    }
+
                     cursorRecordResult = CursorRecordResult.Accept; // default; not used here, out CursorRecordResult cursorRecordResult
+
                     if (HashSlotUtils.HashSlot(ref key) == slot && !Expired(ref value))
                         keys.Add(key.ToByteArray());
                     return keys.Count < maxKeyCount;

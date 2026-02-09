@@ -147,6 +147,9 @@ namespace Garnet.server
                     if (StoreWrapper.serverOptions.FailOnRecoveryError)
                         throw new GarnetException("Main store and object store checkpoint versions do not match");
                 }
+
+                // Once everything is setup, initialize the VectorManager
+                db.VectorManager.Initialize();
             }
         }
 
@@ -711,7 +714,7 @@ namespace Garnet.server
                 throw new GarnetException($"Database with ID {dbId} was not found.");
 
             return new(db.AppendOnlyFile, db.VersionMap, StoreWrapper.customCommandManager, null, db.ObjectStoreSizeTracker,
-                StoreWrapper.GarnetObjectSerializer, respProtocolVersion);
+                StoreWrapper.GarnetObjectSerializer, db.VectorManager, respProtocolVersion);
         }
 
         /// <inheritdoc/>
@@ -1051,6 +1054,21 @@ namespace Garnet.server
 
                 if (db.ObjectStore != null && objectStoreTailAddress.HasValue)
                     db.LastSaveObjectStoreTailAddress = objectStoreTailAddress.Value;
+            }
+        }
+
+        /// <inheritdoc/>
+        public override void RecoverVectorSets()
+        {
+            var databasesMapSnapshot = databases.Map;
+
+            var activeDbIdsMapSize = activeDbIds.ActualSize;
+            var activeDbIdsMapSnapshot = activeDbIds.Map;
+
+            for (var i = 0; i < activeDbIdsMapSize; i++)
+            {
+                var dbId = activeDbIdsMapSnapshot[i];
+                databasesMapSnapshot[dbId].VectorManager.ResumePostRecovery();
             }
         }
 

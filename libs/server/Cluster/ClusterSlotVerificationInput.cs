@@ -34,5 +34,14 @@ namespace Garnet.server
         /// Offset of key num if any
         /// </summary>
         public int keyNumOffset;
+
+        /// <summary>
+        /// If the command being executed requires a slot be STABLE for executing.
+        /// 
+        /// This requires special handling during migrations.
+        /// 
+        /// Currently only true for Vector Set commands that are writes.
+        /// </summary>
+        public bool waitForStableSlot;
     }
 }

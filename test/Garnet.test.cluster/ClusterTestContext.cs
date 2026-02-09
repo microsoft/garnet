@@ -117,7 +117,6 @@ namespace Garnet.test.cluster
             nodes[nodeIndex].Start();
         }
 
-
         public void TearDown()
         {
             cts.Cancel();
@@ -671,7 +670,7 @@ namespace Garnet.test.cluster
             }
         }
 
-        public void ClusterFailoveSpinWait(int replicaNodeIndex, ILogger logger)
+        public void ClusterFailoverSpinWait(int replicaNodeIndex, ILogger logger)
         {
             // Failover primary
             _ = clusterTestUtils.ClusterFailover(replicaNodeIndex, "ABORT", logger);
