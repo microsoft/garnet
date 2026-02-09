@@ -10,7 +10,7 @@
 
 
 <script>!function(t,e,n,c,a,r,s){t[n]=t[n]||function(){(t[n].q=t[n].q||[]).push(arguments)},(r=e.createElement(c)).async=1,r.src="https://www.clarity.ms/tag/loh6v65ww5",(s=e.getElementsByTagName(c)[0]).parentNode.insertBefore(r,s)}(window,document,"clarity","script")</script><link rel="stylesheet" href="/garnet/assets/css/styles.a0a59612.css">
-<script src="/garnet/assets/js/runtime~main.e7179374.js" defer="defer"></script>
+<script src="/garnet/assets/js/runtime~main.4680cb4e.js" defer="defer"></script>
 <script src="/garnet/assets/js/main.3523f085.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -36,7 +36,7 @@
 <li class="">40.64.0.0/10</li>
 </ul>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="authentication-and-access-control">Authentication and Access Control<a href="#authentication-and-access-control" class="hash-link" aria-label="Direct link to Authentication and Access Control" title="Direct link to Authentication and Access Control" translate="no">​</a></h2>
-<p>Azure Cosmos DB Garnet Cache uses Azure RBAC to secure your data by granting permissions for supported Redis commands. Microsoft Entra ID RBAC roles define fine-grained permissions and are required to use data plane operations. No roles are assigned by default, including to the resource creator. You can assign roles to users, groups, service principals or managed identities for data access.</p>
+<p>Azure Cosmos DB Garnet Cache uses Azure RBAC to secure your data by granting permissions for supported Redis commands. Microsoft Entra ID RBAC roles define fine-grained permissions and are required to use data plane operations. No roles are assigned by default, including to the resource creator. You can assign roles to users, groups, service principals or managed identities for data access. Note that role assignments can take several minutes to propagate after being created or modified.</p>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="built-in-roles">Built-in Roles<a href="#built-in-roles" class="hash-link" aria-label="Direct link to Built-in Roles" title="Direct link to Built-in Roles" translate="no">​</a></h3>
 <p>There are several built-in roles to help you manage data access. Learn how to <a class="" href="/garnet/docs/azure/quickstart#step-2-configure-data-access-with-rbac">assign roles</a> using the Azure portal or Azure CLI.</p>
 <table><thead><tr><th>Role</th><th>Use Case</th><th>Access Level</th></tr></thead><tbody><tr><td><code>Garnet Data Reader</code></td><td>Read-only applications, monitoring</td><td>GET, EXISTS etc.</td></tr><tr><td><code>Garnet Data Contributor</code></td><td>Most applications</td><td>Read/write string, hash, set, sorted set</td></tr><tr><td><code>Garnet Data Owner</code></td><td>Admin access, full control</td><td>All operations including destructive ones</td></tr><tr><td><code>Garnet Script Data Contributor</code></td><td>Script execution and management</td><td>All scripting</td></tr><tr><td><code>Garnet PubSub Data Reader</code></td><td>Reading pub/sub messages</td><td>Read access to pub/sub channels</td></tr><tr><td><code>Garnet PubSub Data Contributor</code></td><td>All pub/sub messaging</td><td>Publish/subscribe operations</td></tr></tbody></table>

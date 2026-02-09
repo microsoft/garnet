@@ -10,7 +10,7 @@
 
 
 <script>!function(t,e,n,c,a,r,s){t[n]=t[n]||function(){(t[n].q=t[n].q||[]).push(arguments)},(r=e.createElement(c)).async=1,r.src="https://www.clarity.ms/tag/loh6v65ww5",(s=e.getElementsByTagName(c)[0]).parentNode.insertBefore(r,s)}(window,document,"clarity","script")</script><link rel="stylesheet" href="/garnet/assets/css/styles.a0a59612.css">
-<script src="/garnet/assets/js/runtime~main.e7179374.js" defer="defer"></script>
+<script src="/garnet/assets/js/runtime~main.4680cb4e.js" defer="defer"></script>
 <script src="/garnet/assets/js/main.3523f085.js" defer="defer"></script>
 </head>
 <body class="navigation-with-keyboard">
@@ -38,66 +38,66 @@
 <p>High CPU usage can indicate various performance bottlenecks in your cluster. Use the <strong>Average CPU Usage Active</strong> and <strong>CPU Usage Active</strong> metrics to identify and resolve CPU-related issues.</p>
 <h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="symptoms">Symptoms<a href="#symptoms" class="hash-link" aria-label="Direct link to Symptoms" title="Direct link to Symptoms" translate="no">​</a></h4>
 <ul>
-<li class=""><strong>Average CPU Usage Active</strong> consistently above 80%</li>
-<li class=""><strong>CPU Usage Active</strong> showing spikes during peak usage</li>
-<li class="">Increased <strong>Query Latency P99</strong> and <strong>Query Latency Mean</strong> values</li>
-<li class="">Degraded <strong>Command Process Rate</strong> performance</li>
+<li class=""><strong>Average CPU Usage Active</strong> consistently above 80%.</li>
+<li class=""><strong>CPU Usage Active</strong> showing spikes during peak usage.</li>
+<li class="">Increased <strong>Query Latency P99</strong> and <strong>Query Latency Mean</strong> values.</li>
+<li class="">Degraded <strong>Command Process Rate</strong> performance.</li>
 </ul>
 <h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="resolution-steps">Resolution Steps<a href="#resolution-steps" class="hash-link" aria-label="Direct link to Resolution Steps" title="Direct link to Resolution Steps" translate="no">​</a></h4>
 <ol>
-<li class=""><strong>Analyze Command Patterns</strong>: Review <strong>Command Process Rate</strong> trends to identify peak usage periods causing high CPU load</li>
-<li class=""><strong>Monitor Node Distribution</strong>: Use the Node split feature to identify if specific nodes are experiencing higher CPU usage than others</li>
-<li class=""><strong>Scale Compute Resources</strong>: Consider increasing the replication factor if <strong>Read Command Process Rate</strong> is high, or increase the shard count if <strong>Write Command Process Rate</strong> is high</li>
+<li class=""><strong>Analyze Command Patterns</strong>: Review <strong>Command Process Rate</strong> trends to identify peak usage periods causing high CPU load.</li>
+<li class=""><strong>Monitor Node Distribution</strong>: Use the Node split feature to identify if specific nodes are experiencing higher CPU usage than others.</li>
+<li class=""><strong>Scale Compute Resources</strong>: Consider increasing the replication factor if <strong>Read Command Process Rate</strong> is high, or increase the shard count if <strong>Write Command Process Rate</strong> is high.</li>
 </ol>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="high-memory-usage">High Memory Usage<a href="#high-memory-usage" class="hash-link" aria-label="Direct link to High Memory Usage" title="Direct link to High Memory Usage" translate="no">​</a></h3>
 <p>Memory utilization issues can lead to performance degradation and potential data eviction. Monitor <strong>Memory Utilization</strong> alongside store-specific metrics to maintain optimal performance.</p>
 <h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="symptoms-1">Symptoms<a href="#symptoms-1" class="hash-link" aria-label="Direct link to Symptoms" title="Direct link to Symptoms" translate="no">​</a></h4>
 <ul>
-<li class=""><strong>Memory Utilization</strong> approaching or exceeding 85%</li>
-<li class=""><strong>Main Store Size</strong> growing rapidly or unexpectedly</li>
-<li class=""><strong>Index Size</strong> or <strong>Log Size</strong> consuming excessive memory</li>
-<li class="">Increased cache misses or eviction events</li>
+<li class=""><strong>Memory Utilization</strong> approaching or exceeding 85%.</li>
+<li class=""><strong>Main Store Size</strong> growing rapidly or unexpectedly.</li>
+<li class=""><strong>Index Size</strong> or <strong>Log Size</strong> consuming excessive memory.</li>
+<li class="">Increased cache misses or eviction events.</li>
 </ul>
 <h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="resolution-steps-1">Resolution Steps<a href="#resolution-steps-1" class="hash-link" aria-label="Direct link to Resolution Steps" title="Direct link to Resolution Steps" translate="no">​</a></h4>
 <ol>
-<li class=""><strong>Analyze Memory Distribution</strong>: Review <strong>Main Store Size</strong>, <strong>Index Size</strong>, <strong>Log Size</strong>, and <strong>Read Cache Size</strong> to identify which component is consuming the most memory</li>
-<li class=""><strong>Implement TTL Strategies</strong>: Set appropriate time-to-live values for cached data to ensure automatic cleanup</li>
-<li class=""><strong>Optimize Data Structures</strong>: Use more memory-efficient data types where appropriate</li>
-<li class=""><strong>Scale Memory Resources</strong>: Consider increasing the shard count for more memory, or scale-up to a higher SKU</li>
+<li class=""><strong>Analyze Memory Distribution</strong>: Review <strong>Main Store Size</strong>, <strong>Index Size</strong>, <strong>Log Size</strong>, and <strong>Read Cache Size</strong> to identify which component is consuming the most memory.</li>
+<li class=""><strong>Implement TTL Strategies</strong>: Set appropriate time-to-live values for cached data to ensure automatic cleanup.</li>
+<li class=""><strong>Optimize Data Structures</strong>: Use more memory-efficient data types where appropriate.</li>
+<li class=""><strong>Scale Memory Resources</strong>: Consider increasing the shard count for more memory, or scale-up to a higher SKU.</li>
 </ol>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="connection-issues">Connection Issues<a href="#connection-issues" class="hash-link" aria-label="Direct link to Connection Issues" title="Direct link to Connection Issues" translate="no">​</a></h3>
 <p>Connection problems can manifest through various network and client metrics. Use <strong>Connected Clients</strong>, <strong>Network Received/Transmitted Bytes</strong>, and <strong>Network Received/Transmitted Packets</strong> to diagnose connectivity issues.</p>
 <h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="symptoms-2">Symptoms<a href="#symptoms-2" class="hash-link" aria-label="Direct link to Symptoms" title="Direct link to Symptoms" translate="no">​</a></h4>
 <ul>
-<li class=""><strong>Connected Clients</strong> count dropping unexpectedly or remaining at zero</li>
-<li class=""><strong>Network Received Bytes</strong> or <strong>Network Transmitted Bytes</strong> showing irregular patterns</li>
-<li class="">Client applications reporting connection timeouts or failures</li>
-<li class="">Inconsistent <strong>Command Process Rate</strong> despite steady application load</li>
+<li class=""><strong>Connected Clients</strong> count dropping unexpectedly or remaining at zero.</li>
+<li class=""><strong>Network Received Bytes</strong> or <strong>Network Transmitted Bytes</strong> showing irregular patterns.</li>
+<li class="">Client applications reporting connection timeouts or failures.</li>
+<li class="">Inconsistent <strong>Command Process Rate</strong> despite steady application load.</li>
 </ul>
 <h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="resolution-steps-2">Resolution Steps<a href="#resolution-steps-2" class="hash-link" aria-label="Direct link to Resolution Steps" title="Direct link to Resolution Steps" translate="no">​</a></h4>
 <ol>
-<li class=""><strong>Verify Network Connectivity</strong>: Test basic network connectivity from client applications to the cache endpoint</li>
-<li class=""><strong>Review Authentication</strong>: Verify that authentication credentials are valid and have appropriate permissions</li>
-<li class=""><strong>Monitor Connection Patterns</strong>: Analyze <strong>Connected Clients</strong> trends to identify if connection issues are intermittent or persistent</li>
-<li class=""><strong>Review Client Configuration</strong>: Ensure client applications are using appropriate connection timeout and retry settings</li>
+<li class=""><strong>Verify Network Connectivity</strong>: Test basic network connectivity from client applications to the cache endpoint.</li>
+<li class=""><strong>Review Authentication</strong>: Verify that authentication credentials are valid and have appropriate permissions. If you recently assigned roles, wait a few minutes for the assignments to propagate.</li>
+<li class=""><strong>Monitor Connection Patterns</strong>: Analyze <strong>Connected Clients</strong> trends to identify if connection issues are intermittent or persistent.</li>
+<li class=""><strong>Review Client Configuration</strong>: Ensure client applications are using appropriate connection timeout and retry settings.</li>
 </ol>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="performance-degradation">Performance Degradation<a href="#performance-degradation" class="hash-link" aria-label="Direct link to Performance Degradation" title="Direct link to Performance Degradation" translate="no">​</a></h3>
 <p>Performance issues can affect various aspects of your cache operations. Use latency and throughput metrics to identify and resolve performance bottlenecks.</p>
 <h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="symptoms-3">Symptoms<a href="#symptoms-3" class="hash-link" aria-label="Direct link to Symptoms" title="Direct link to Symptoms" translate="no">​</a></h4>
 <ul>
-<li class=""><strong>Query Latency P99</strong> exceeding SLA thresholds (consistently above 3ms)</li>
-<li class=""><strong>Query Latency Mean</strong> showing consistent increases</li>
-<li class=""><strong>Command Process Rate</strong> declining despite steady or increased demand</li>
-<li class=""><strong>Read Command Process Rate</strong> or <strong>Write Command Process Rate</strong> not meeting expected throughput</li>
+<li class=""><strong>Query Latency P99</strong> exceeding SLA thresholds (consistently above 3ms).</li>
+<li class=""><strong>Query Latency Mean</strong> showing consistent increases.</li>
+<li class=""><strong>Command Process Rate</strong> declining despite steady or increased demand.</li>
+<li class=""><strong>Read Command Process Rate</strong> or <strong>Write Command Process Rate</strong> not meeting expected throughput.</li>
 </ul>
 <h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="resolution-steps-3">Resolution Steps<a href="#resolution-steps-3" class="hash-link" aria-label="Direct link to Resolution Steps" title="Direct link to Resolution Steps" translate="no">​</a></h4>
 <ol>
-<li class=""><strong>Analyze Latency Patterns</strong>: Compare <strong>Query Latency P99</strong> and <strong>Query Latency Mean</strong> to identify if performance issues are persistent</li>
-<li class=""><strong>Check Resource Utilization</strong>: Review <strong>CPU Usage Active</strong> and <strong>Memory Utilization</strong> to identify resource constraints</li>
-<li class=""><strong>Evaluate Network Performance</strong>: Check <strong>Network Received/Transmitted Bytes</strong> and <strong>Packets</strong> for signs of network congestion</li>
-<li class=""><strong>Review Command Distribution</strong>: Analyze <strong>Read Command Process Rate</strong> vs <strong>Write Command Process Rate</strong> to understand workload characteristics</li>
-<li class=""><strong>Identify Node Hotspots</strong>: Use Node-level metrics to detect if specific nodes are experiencing disproportionate load</li>
-<li class=""><strong>Scale Appropriately</strong>: Consider upgrading to higher performance tiers or adding more nodes based on the specific bottleneck identified</li>
+<li class=""><strong>Analyze Latency Patterns</strong>: Compare <strong>Query Latency P99</strong> and <strong>Query Latency Mean</strong> to identify if performance issues are persistent.</li>
+<li class=""><strong>Check Resource Utilization</strong>: Review <strong>CPU Usage Active</strong> and <strong>Memory Utilization</strong> to identify resource constraints.</li>
+<li class=""><strong>Evaluate Network Performance</strong>: Check <strong>Network Received/Transmitted Bytes</strong> and <strong>Packets</strong> for signs of network congestion.</li>
+<li class=""><strong>Review Command Distribution</strong>: Analyze <strong>Read Command Process Rate</strong> vs <strong>Write Command Process Rate</strong> to understand workload characteristics.</li>
+<li class=""><strong>Identify Node Hotspots</strong>: Use Node-level metrics to detect if specific nodes are experiencing disproportionate load.</li>
+<li class=""><strong>Scale Appropriately</strong>: Consider upgrading to higher performance tiers or adding more nodes based on the specific bottleneck identified.</li>
 </ol>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="learn-more">Learn More<a href="#learn-more" class="hash-link" aria-label="Direct link to Learn More" title="Direct link to Learn More" translate="no">​</a></h2>
 <ul>
