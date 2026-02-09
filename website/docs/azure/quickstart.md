@@ -11,7 +11,7 @@ This guide will walk you through creating and connecting to your first Azure Cos
 ## Prerequisites
 
 - An active Azure subscription
-- Confirmed registration to the expanded Private Preview. If your subscription isn't already enrolled, [sign up](https://aka.ms/cosmos-db-garnet-preview).
+- Confirmed registration to the expanded Private Preview. If your subscription isn't already registered, [sign up](./overview.md#register-your-subscription).
 - Access to the Azure portal and the [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli?view=azure-cli-latest)
 - Required role assignment permissions. 
     - For successful provisioning, you must have **Microsoft.Authorization/roleAssignments/write** permissions at either the *Subscription* or *Resource Group* scope. Example built-in roles are [Owner](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/privileged#owner) and [User Access Administrator](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#user-access-administrator), or you can use a custom role with this permission.
@@ -24,7 +24,7 @@ During provisioning, you must either create a new virtual network for your cache
 2. Click **Create a resource** and search for **Azure Cosmos DB Garnet Cache**.
 3. Select **Azure Cosmos DB Garnet Cache** and click **Create**.
 4. Fill in the required information:
-   - **Subscription**: Select your Azure subscription. This subscription must be enrolled in the expanded Private Preview. For access, [sign up here](https://aka.ms/cosmos-db-garnet-preview).
+   - **Subscription**: Select your Azure subscription. This subscription must be enrolled in the expanded Private Preview. For access, [sign up here](./overview.md#register-your-subscription).
    - **Resource Group**: Create new or select existing.
    - **Region**: Select the region closest to your application. See the list of [supported regions](./cluster-configuration.md#regional-availability).
    - **Cluster Name**: Choose a unique name for your cache.
