@@ -30,6 +30,18 @@ namespace Garnet.server
         public long MaxSequenceNumber => vsrs.Max(sublog => sublog.Max);
 
         /// <summary>
+        /// Get sequence number for provided key.
+        /// </summary>
+        /// <param name="key"></param>
+        /// <param name="frontier"></param>
+        /// <returns></returns>
+        public long GetKeySequenceNumber(ReadOnlySpan<byte> key, bool frontier = false)
+        {
+            var hash = GarnetLog.HASH(key);
+            return frontier ? GetSublogFrontierSequenceNumber(hash) : GetKeySequenceNumber(hash);
+        }
+
+        /// <summary>
         /// Get snapshot of maximum replayed timestamp for all physical sublogs
         /// </summary>
         /// <returns></returns>

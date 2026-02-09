@@ -2403,6 +2403,53 @@ namespace Garnet.test.Resp.ACL
         }
 
         [Test]
+        public async Task ClusterMlogKeyTimeACLsAsync()
+        {
+            // All cluster command "success" is a thrown exception, because clustering is disabled
+
+            await CheckCommandsAsync(
+                "CLUSTER MLOG_KEY_TIME",
+                [DoClusterMlogKeyTimeAsync, DoClusterMlogKeyTimeFrontierAsync]
+            );
+
+            static async Task DoClusterMlogKeyTimeAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["MLOG_KEY_TIME", "key"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+
+            static async Task DoClusterMlogKeyTimeFrontierAsync(GarnetClient client)
+            {
+                try
+                {
+                    await client.ExecuteForStringResultAsync("CLUSTER", ["MLOG_KEY_TIME", "key", "FRONTIER"]);
+                    Assert.Fail("Shouldn't be reachable, cluster isn't enabled");
+                }
+                catch (Exception e)
+                {
+                    if (e.Message == "ERR This instance has cluster support disabled")
+                    {
+                        return;
+                    }
+
+                    throw;
+                }
+            }
+        }
+
+        [Test]
         public async Task ClusterPublishACLsAsync()
         {
             // All cluster command "success" is a thrown exception, because clustering is disabled

@@ -366,6 +366,7 @@ namespace Garnet.server
         CLUSTER_KEYSLOT,
         CLUSTER_MEET,
         CLUSTER_MIGRATE,
+        CLUSTER_MLOG_KEY_TIME,
         CLUSTER_MTASKS,
         CLUSTER_MYID,
         CLUSTER_MYPARENTID,
@@ -2252,6 +2253,10 @@ namespace Garnet.server
                 else if (subCommand.SequenceEqual(CmdStrings.send_ckpt_metadata))
                 {
                     return RespCommand.CLUSTER_SEND_CKPT_METADATA;
+                }
+                else if (subCommand.SequenceEqual(CmdStrings.mlog_key_time))
+                {
+                    return RespCommand.CLUSTER_MLOG_KEY_TIME;
                 }
                 else if (subCommand.SequenceEqual(CmdStrings.cluster_sync))
                 {

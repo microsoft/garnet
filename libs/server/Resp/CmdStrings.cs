@@ -450,6 +450,7 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> initiate_replica_sync => "INITIATE_REPLICA_SYNC"u8;
         public static ReadOnlySpan<byte> send_ckpt_file_segment => "SEND_CKPT_FILE_SEGMENT"u8;
         public static ReadOnlySpan<byte> send_ckpt_metadata => "SEND_CKPT_METADATA"u8;
+        public static ReadOnlySpan<byte> mlog_key_time => "MLOG_KEY_TIME"u8;
         public static ReadOnlySpan<byte> cluster_sync => "SYNC"u8;
         public static ReadOnlySpan<byte> cluster_advance_time => "ADVANCE_TIME"u8;
 

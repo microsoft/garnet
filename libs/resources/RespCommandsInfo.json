@@ -972,6 +972,13 @@
         ]
       },
       {
+        "Command": "CLUSTER_MLOG_KEY_TIME",
+        "Name": "CLUSTER|MLOG_KEY_TIME",
+        "Arity": -2,
+        "Flags": "Admin, Readonly, NoMulti, NoScript",
+        "AclCategories": "Admin, Slow, Garnet"
+      },
+      {
         "Command": "CLUSTER_SYNC",
         "Name": "CLUSTER|SYNC",
         "IsInternal": true,

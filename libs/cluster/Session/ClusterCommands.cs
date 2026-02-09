@@ -161,6 +161,7 @@ namespace Garnet.cluster
                 RespCommand.CLUSTER_SHARDS => NetworkClusterShards(out invalidParameters),
                 RespCommand.CLUSTER_SLOTS => NetworkClusterSlots(out invalidParameters),
                 RespCommand.CLUSTER_SLOTSTATE => NetworkClusterSlotState(out invalidParameters),
+                RespCommand.CLUSTER_MLOG_KEY_TIME => NetworkClusterMlogKeyTime(out invalidParameters),
                 RespCommand.CLUSTER_SYNC => NetworkClusterSync(out invalidParameters),
                 _ => throw new Exception($"Unexpected cluster subcommand: {command}")
             };

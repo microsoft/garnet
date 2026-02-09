@@ -101,6 +101,7 @@ namespace CommandInfoUpdater
                 new("CLUSTER|SHARDS", RespCommand.CLUSTER_SHARDS),
                 new("CLUSTER|SLOTS", RespCommand.CLUSTER_SLOTS),
                 new("CLUSTER|SLOTSTATE", RespCommand.CLUSTER_SLOTSTATE),
+                new("CLUSTER|MLOG_KEY_TIME", RespCommand.CLUSTER_MLOG_KEY_TIME),
                 new("CLUSTER|SYNC", RespCommand.CLUSTER_SYNC),
             ]),
             new("COMMAND", RespCommand.COMMAND, StoreType.None,

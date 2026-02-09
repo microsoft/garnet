@@ -203,6 +203,19 @@
         "SubCommands": null
       },
       {
+        "Command": "CLUSTER_MLOG_KEY_TIME",
+        "Name": "CLUSTER|MLOG_KEY_TIME",
+        "IsInternal": true,
+        "Arity": -2,
+        "Flags": "Admin, NoScript, NoMulti",
+        "FirstKey": 0,
+        "LastKey": 0,
+        "Step": 0,
+        "AclCategories": "Admin, Dangerous, Slow, Garnet",
+        "KeySpecifications": null,
+        "SubCommands": null
+      },
+      {
         "Command": "CLUSTER_MTASKS",
         "Name": "CLUSTER|MTASKS",
         "IsInternal": true,
