@@ -9,13 +9,17 @@ using System.Threading;
 namespace Garnet.common
 {
     /// <summary>
-    /// Single writer multiple readers lock
+    /// Single writer multiple readers lock with lock closure capability
     /// </summary>
     [StructLayout(LayoutKind.Explicit, Size = 4)]
     public struct SingleWriterMultiReaderLock
     {
         [FieldOffset(0)]
         int _lock;
+
+        const int ExclusiveLock = 1 << 31;
+        const int ClosedLock = 1 << 30;
+        const int MaxReaders = ClosedLock - 1;
 
         /// <summary>
         /// Basic Constructor
@@ -25,7 +29,12 @@ namespace Garnet.common
         /// <summary>
         /// Check if write locked
         /// </summary>
-        public bool IsWriteLocked => _lock < 0;
+        public bool IsWriteLocked => _lock == ExclusiveLock;
+
+        /// <summary>
+        /// Check if closed (no new locks can be acquired)
+        /// </summary>
+        public bool IsClosed => _lock == ClosedLock;
 
         /// <summary>
         /// Attempt to acquire write lock but do not wait on failure
@@ -33,7 +42,13 @@ namespace Garnet.common
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryWriteLock()
-            => Interlocked.CompareExchange(ref _lock, int.MinValue, 0) == 0;
+        {
+            if (Interlocked.CompareExchange(ref _lock, ExclusiveLock, 0) == 0)
+                return true;
+            if (_lock == ClosedLock)
+                ThrowException("Lock is closed; cannot take write lock");
+            return false;
+        }
 
         /// <summary>
         /// Acquire writer lock or spin wait until it can be acquired
@@ -42,18 +57,17 @@ namespace Garnet.common
         public void WriteLock()
         {
             while (!TryWriteLock())
-                Thread.Yield();
+                _ = Thread.Yield();
         }
 
         /// <summary>
-        /// Release write lock (spin wait until it can be released)
+        /// Release write lock.
         /// </summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void WriteUnlock()
         {
-            Debug.Assert(_lock < 0);
-            while (Interlocked.CompareExchange(ref _lock, 0, int.MinValue) != int.MinValue)
-                Thread.Yield();
+            Debug.Assert(_lock == ExclusiveLock);
+            _lock = 0;
         }
 
         /// <summary>
@@ -63,12 +77,15 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryReadLock()
         {
-            if (_lock >= 0)
+            if (_lock < MaxReaders)
             {
-                if (Interlocked.Increment(ref _lock) > 0)
+                if (Interlocked.Increment(ref _lock) <= MaxReaders)
                     return true;
-                Interlocked.Decrement(ref _lock);
+                _ = Interlocked.Decrement(ref _lock);
             }
+
+            if (_lock == ClosedLock)
+                ThrowException("Lock is closed; cannot take read lock");
             return false;
         }
 
@@ -79,7 +96,7 @@ namespace Garnet.common
         public void ReadLock()
         {
             while (!TryReadLock())
-                Thread.Yield();
+                _ = Thread.Yield();
         }
 
         /// <summary>
@@ -88,8 +105,8 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void ReadUnlock()
         {
-            Debug.Assert(_lock > 0);
-            Interlocked.Decrement(ref _lock);
+            Debug.Assert(_lock > 0 && _lock <= MaxReaders);
+            _ = Interlocked.Decrement(ref _lock);
         }
 
         /// <summary>
@@ -98,10 +115,10 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryUpgradeReadLock()
         {
-            Debug.Assert(_lock > 0, "Illegal to call when not holding a read lock");
+            Debug.Assert(_lock > 0 && _lock <= MaxReaders, "Illegal to call when not holding a read lock");
 
-            // If caller is the only reader (_lock == 1), this will succeed in becoming a write lock (_lock == int.MinValue)
-            return Interlocked.CompareExchange(ref _lock, int.MinValue, 1) == 1;
+            // If caller is the only reader (_lock == 1), this will succeed in becoming a write lock
+            return Interlocked.CompareExchange(ref _lock, ExclusiveLock, 1) == 1;
         }
 
         /// <summary>
@@ -110,39 +127,35 @@ namespace Garnet.common
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void DowngradeWriteLock()
         {
-            Debug.Assert(_lock < 0, "Illegal to call when not holding write lock");
-
-            while (Interlocked.CompareExchange(ref _lock, 1, int.MinValue) != int.MinValue)
-            {
-                _ = Thread.Yield();
-            }
+            Debug.Assert(_lock == ExclusiveLock, "Illegal to call when not holding write lock");
+            _lock = 1;
         }
 
         /// <summary>
-        /// Try acquire write lock and spin wait until isWriteLocked
-        /// NOTE: once closed this lock should never be unlocked because is considered disposed
+        /// Close lock, spin waiting until it is closed.
+        /// NOTE: once closed this lock cannot be used for reads or writes as it is considered disposed.
         /// </summary>
         /// <returns>
-        /// Return true if current thread acquired write lock.
-        /// Return false if some other thread acquired write lock.
+        /// Return true if current thread closes the lock.
+        /// Return false if some other thread closes the lock.
         /// </returns>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryCloseLock()
+        public bool CloseLock()
         {
             while (true)
             {
-                var isWriteLocked = IsWriteLocked;
-                var acquiredWriteLock = TryWriteLock();
-                if (isWriteLocked || acquiredWriteLock)
-                {
-                    return acquiredWriteLock;
-                }
-                Thread.Yield();
+                if (Interlocked.CompareExchange(ref _lock, ClosedLock, 0) == 0)
+                    return true;
+                if (_lock == ClosedLock)
+                    return false;
+                _ = Thread.Yield();
             }
         }
 
         /// <inheritdoc />
         public override string ToString()
             => _lock.ToString();
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void ThrowException(string str) => throw new GarnetException(str);
     }
 }

@@ -3,7 +3,6 @@
 
 using System;
 using System.Diagnostics;
-using System.Threading;
 using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 
@@ -118,12 +117,8 @@ namespace Garnet.server
 
         public void Dispose()
         {
-            while (!_zcollectTaskLock.TryWriteLock())
-                _ = Thread.Yield();
-
-            while (!_hcollectTaskLock.TryWriteLock())
-                _ = Thread.Yield();
-
+            _zcollectTaskLock.CloseLock();
+            _hcollectTaskLock.CloseLock();
             sectorAlignedMemoryBitmap?.Dispose();
             basicContext.Session.Dispose();
             objectStoreBasicContext.Session?.Dispose();

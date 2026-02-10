@@ -182,7 +182,9 @@ namespace Garnet.cluster
         /// </summary>
         public void Dispose()
         {
-            if (!_disposed.TryWriteLock()) return;
+            // Close lock, only allow closing thread to proceed
+            if (!_disposed.CloseLock())
+                return;
             _cts?.Cancel();
             _cts?.Dispose();
 

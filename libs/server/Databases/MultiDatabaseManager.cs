@@ -1079,17 +1079,13 @@ namespace Garnet.server
             Disposed = true;
 
             // Disable changes to databases map and dispose all databases
-            while (!databases.mapLock.TryWriteLock())
-                _ = Thread.Yield();
+            databases.mapLock.CloseLock();
 
             foreach (var db in databases.Map)
                 db?.Dispose();
 
-            while (!databasesContentLock.TryWriteLock())
-                _ = Thread.Yield();
-
-            while (!activeDbIds.mapLock.TryWriteLock())
-                _ = Thread.Yield();
+            databasesContentLock.CloseLock();
+            activeDbIds.mapLock.CloseLock();
         }
 
         public override (long numExpiredKeysFound, long totalRecordsScanned) ExpiredKeyDeletionScan(int dbId)

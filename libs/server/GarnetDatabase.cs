@@ -196,8 +196,7 @@ namespace Garnet.server
             VectorManager?.Dispose();
 
             // Wait for checkpoints to complete and disable checkpointing
-            while (!CheckpointingLock.TryWriteLock())
-                _ = Thread.Yield();
+            CheckpointingLock.CloseLock();
 
             MainStore?.Dispose();
             ObjectStore?.Dispose();
