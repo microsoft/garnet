@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -41,6 +42,7 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Run multiple sessions that stress AUTH
+            var timeout = TimeSpan.FromSeconds(300);
             await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
             {
                 using var c = TestUtils.GetGarnetClient();
@@ -70,7 +72,7 @@ namespace Garnet.test.Resp.ACL
                     ClassicAssert.IsTrue(task.Exception.InnerExceptions.Count == 1);
                     ClassicAssert.IsTrue(task.Exception.InnerExceptions[0].Message.StartsWith("WRONGPASS"));
                 }
-            });
+            }).WaitAsync(timeout).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -115,6 +117,7 @@ namespace Garnet.test.Resp.ACL
             var response = await c.ExecuteForStringResultAsync("ACL", activeUserWithGetCommand.Split(" "));
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
+            var timeout = TimeSpan.FromSeconds(300);
             await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
             {
                 using var c = TestUtils.GetGarnetClient();
@@ -136,7 +139,7 @@ namespace Garnet.test.Resp.ACL
                         throw new AssertionException($"Invalid ACL: {corruptedAcl}");
                     }
                 }
-            });
+            }).WaitAsync(timeout).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -154,6 +157,7 @@ namespace Garnet.test.Resp.ACL
         {
             string setUserCommand = $"SETUSER {TestUserA} on >{DummyPassword}";
 
+            var timeout = TimeSpan.FromSeconds(300);
             await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
             {
                 // Use client with support for single thread.
@@ -164,7 +168,7 @@ namespace Garnet.test.Resp.ACL
                     var response = await c.ExecuteForStringResultAsync("ACL", setUserCommand.Split(" "));
                     ClassicAssert.IsTrue(response.StartsWith("OK"));
                 }
-            });
+            }).WaitAsync(timeout).ConfigureAwait(false);
         }
     }
 }
