@@ -318,7 +318,7 @@ namespace Tsavorite.core
             }
             catch (TaskCanceledException) when (safeTailRefreshTaskCts.Token.IsCancellationRequested)
             {
-                // Suppress the exception if the task was cancelled because of store wrapper disposal
+                // Suppress the exception if the task was cancelled due to TsavoriteLog disposal or refresh task cancellation
             }
             catch (Exception e)
             {
