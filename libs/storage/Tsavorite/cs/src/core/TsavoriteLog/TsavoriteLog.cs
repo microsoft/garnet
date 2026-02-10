@@ -24,7 +24,7 @@ namespace Tsavorite.core
 
         readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
         readonly LightEpoch epoch;
-        readonly bool ownedEpoch;
+        readonly bool isEpochOwned;
         readonly ILogCommitManager logCommitManager;
         readonly bool disposeLogCommitManager;
         readonly GetMemory getMemory;
@@ -207,7 +207,7 @@ namespace Tsavorite.core
             if (logSettings.Epoch == null)
             {
                 epoch = new LightEpoch();
-                ownedEpoch = true;
+                isEpochOwned = true;
             }
             else
                 epoch = logSettings.Epoch;
@@ -535,7 +535,7 @@ namespace Tsavorite.core
             commitQueue.Dispose();
             commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
             allocator.Dispose();
-            if (ownedEpoch)
+            if (isEpochOwned)
                 epoch.Dispose();
             if (disposeLogCommitManager)
                 logCommitManager.Dispose();
