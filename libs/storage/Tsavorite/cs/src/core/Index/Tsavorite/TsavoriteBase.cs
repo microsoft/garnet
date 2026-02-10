@@ -35,7 +35,8 @@ namespace Tsavorite.core
         // Used as an atomic counter to check if resizing is complete
         internal long numPendingChunksToBeSplit;
 
-        internal LightEpoch epoch;
+        internal readonly LightEpoch epoch;
+        readonly bool isEpochOwned;
 
         internal ResizeInfo resizeInfo;
 
@@ -54,7 +55,13 @@ namespace Tsavorite.core
         /// </summary>
         public TsavoriteBase(LightEpoch epoch = null, ILogger logger = null)
         {
-            this.epoch = epoch ?? new LightEpoch();
+            if (epoch == null)
+            {
+                this.epoch = new LightEpoch();
+                isEpochOwned = true;
+            }
+            else
+                this.epoch = epoch;
             overflowBucketsAllocator = new MallocFixedPageSize<HashBucket>(logger);
         }
 
@@ -62,7 +69,8 @@ namespace Tsavorite.core
         {
             Free(0);
             Free(1);
-            epoch.Dispose();
+            if (isEpochOwned)
+                epoch.Dispose();
             overflowBucketsAllocator.Dispose();
         }
 

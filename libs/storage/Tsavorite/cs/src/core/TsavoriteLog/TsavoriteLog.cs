@@ -24,6 +24,7 @@ namespace Tsavorite.core
 
         readonly BlittableAllocatorImpl<Empty, byte, EmptyStoreFunctions> allocator;
         readonly LightEpoch epoch;
+        readonly bool isEpochOwned;
         readonly ILogCommitManager logCommitManager;
         readonly bool disposeLogCommitManager;
         readonly GetMemory getMemory;
@@ -203,7 +204,13 @@ namespace Tsavorite.core
             logChecksum = logSettings.LogChecksum;
             headerSize = logChecksum == LogChecksumType.PerEntry ? 12 : 4;
             getMemory = logSettings.GetMemory;
-            epoch = new LightEpoch();
+            if (logSettings.Epoch == null)
+            {
+                epoch = new LightEpoch();
+                isEpochOwned = true;
+            }
+            else
+                epoch = logSettings.Epoch;
             CommittedUntilAddress = Constants.kFirstValidAddress;
             CommittedBeginAddress = Constants.kFirstValidAddress;
             SafeTailAddress = Constants.kFirstValidAddress;
@@ -308,6 +315,10 @@ namespace Tsavorite.core
                         await safeTailRefreshEntryEnqueued.WaitAsync().ConfigureAwait(false);
                     }
                 }
+            }
+            catch (TaskCanceledException) when (safeTailRefreshTaskCts.Token.IsCancellationRequested)
+            {
+                // Suppress the exception if the task was cancelled due to TsavoriteLog disposal or refresh task cancellation
             }
             catch (Exception e)
             {
@@ -524,7 +535,8 @@ namespace Tsavorite.core
             commitQueue.Dispose();
             commitTcs.TrySetException(new ObjectDisposedException("Log has been disposed"));
             allocator.Dispose();
-            epoch.Dispose();
+            if (isEpochOwned)
+                epoch.Dispose();
             if (disposeLogCommitManager)
                 logCommitManager.Dispose();
         }
@@ -1152,7 +1164,7 @@ namespace Tsavorite.core
                 Debug.Assert(logicalAddress == 0);
 
                 epoch.Suspend();
-                var released = epochAccessor.ReleaseIfHeld();
+                var suspended = epochAccessor.TrySuspend();
                 try
                 {
                     if (cannedException != null) ThrowException(cannedException);
@@ -1160,7 +1172,7 @@ namespace Tsavorite.core
                 }
                 finally
                 {
-                    if (released) epochAccessor.Resume();
+                    if (suspended) epochAccessor.Resume();
                     epoch.Resume();
                 }
             }

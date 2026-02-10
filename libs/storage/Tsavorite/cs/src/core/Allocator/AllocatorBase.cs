@@ -21,7 +21,7 @@ namespace Tsavorite.core
         /// <summary>The epoch we are operating with</summary>
         protected readonly LightEpoch epoch;
         /// <summary>Whether we own (and thus must dispose) <see cref="epoch"/></summary>
-        private readonly bool ownedEpoch;
+        private readonly bool isEpochOwned;
 
         /// <summary>The store functions for this instance of TsavoriteKV</summary>
         internal readonly TStoreFunctions _storeFunctions;
@@ -376,7 +376,7 @@ namespace Tsavorite.core
         {
             disposed = true;
 
-            if (ownedEpoch)
+            if (isEpochOwned)
                 epoch.Dispose();
             bufferPool.Free();
 
@@ -545,7 +545,7 @@ namespace Tsavorite.core
             if (epoch == null)
             {
                 this.epoch = new LightEpoch();
-                ownedEpoch = true;
+                isEpochOwned = true;
             }
             else
                 this.epoch = epoch;
