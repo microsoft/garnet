@@ -4,6 +4,7 @@
 using System;
 using System.Linq;
 using System.Threading;
+using Allure.NUnit;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -12,8 +13,9 @@ using StackExchange.Redis;
 
 namespace Garnet.test
 {
+    [AllureNUnit]
     [TestFixture]
-    public class RespMetricsTest
+    public class RespMetricsTest : AllureTestBase
     {
         GarnetServer server;
         ILoggerFactory loggerFactory;

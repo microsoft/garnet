@@ -44,7 +44,7 @@ After cloning the repository you can either run the unit tests or run the server
 2. Run the tests suite
 
 ```bash
-dotnet test -c Release -f net9.0 -l "console;verbosity=detailed"
+dotnet test -c Release -f net10.0 -l "console;verbosity=detailed"
 ```
 
 3. Run the server
@@ -53,7 +53,7 @@ Using a size memory of 4 GB and index size of 64 MB:
 
 ```bash
 cd <root>/main/GarnetServer/
-dotnet run -c Debug -f net9.0 -- --logger-level Trace -m 4g -i 64m
+dotnet run -c Debug -f net10.0 -- --logger-level Trace -m 4g -i 64m
 ```
 
 4. Use the Memurai client in Windows to send commands to Garnet. A guide about how to install Memurai on Windows can be found [here](https://docs.memurai.com/en/installation.html).
@@ -126,7 +126,14 @@ Any new feature, change to existing functionality or bug fixing needs to be done
 
     `<username>`/branch-name
 
-3. Include Unit Tests to test the new commands or feature. 
+3. Include Unit Tests for any new commands or feature. Allure enabled tests are required.  
+
+   Full documentation about Allure can be found [here](https://allurereport.org/docs/).  
+
+   Each test class must:  
+    * Apply [AllureNUnit] custom attribute  
+    * Apply [TestFixture] attribute 
+    * Inherit from the AllureTestBase base class 
 
 4. Once it is ready for review, create a [Pull Request](https://github.com/microsoft/Garnet/pulls). Make sure to link it to your issue item in the development section.
 
@@ -179,11 +186,11 @@ public bool DbScan(ArgSlice patternB, bool allKeys, long cursor, out long storeC
 
 ## Test
 
-As a sanity check, you can run the Garnet test suite. The command to run tests in Release mode for .NET 9 is shown below (make sure you are in the root folder of the repo).
+As a sanity check, you can run the Garnet test suite. The command to run tests in Release mode for .NET 10 is shown below (make sure you are in the root folder of the repo).
 
 ``` bash
-dotnet test -c Release -f net9.0 -l "console;verbosity=detailed"
-``` 
+dotnet test -c Release -f net10.0 -l "console;verbosity=detailed"
+```
 
 Note that Tsavorite has its own solution file and test suite in the folder `<root>`/Garnet/libs/storage/Tsavorite.
 

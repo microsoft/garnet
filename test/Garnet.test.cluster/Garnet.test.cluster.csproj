@@ -17,6 +17,7 @@
     <Compile Include="..\..\test\Garnet.test\Extensions\RateLimiterTxn.cs" Link="RateLimiterTxn.cs" />
 		<Compile Include="..\..\test\Garnet.test\Extensions\BulkIncrementBy.cs" Link="BulkIncrementBy.cs" />
 		<Compile Include="..\..\test\Garnet.test\Extensions\BulkRead.cs" Link="BulkRead.cs" />
+		<Compile Include="..\Garnet.test\AllureTestBase.cs" Link="AllureTestBase.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +27,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Allure.Net.Commons" />
+    <PackageReference Include="Allure.NUnit" />
     <PackageReference Include="CommandLineParser" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
@@ -53,4 +56,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+	<PropertyGroup>
+		<!-- Nuget package used by Allure.NUnit that fails to build using .NET Core. This package is only needed if use attribute-based steps (the [AllureStep] attribute)   -->
+		<AspectInjector_Enabled>false</AspectInjector_Enabled>
+	</PropertyGroup>
 </Project>

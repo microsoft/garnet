@@ -3,6 +3,8 @@
 
 using System;
 using System.Runtime.InteropServices;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using Tsavorite.core;
 using static Tsavorite.test.TestUtils;
@@ -16,8 +18,9 @@ namespace Tsavorite.test.LogRecordTests
     /// This also tests <see cref="MultiLevelPageArray{TestObjectValue}"/> and <see cref="SimpleConcurrentStack{_int_}"/>,
     /// which in turn tests <see cref="MultiLevelPageArray{_int_}"/>.
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
-    unsafe class LogRecordTests
+    unsafe class LogRecordTests : AllureTestBase
     {
         long nativePointer;
         ObjectIdMap objectIdMap;

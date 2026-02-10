@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -8,7 +9,7 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
+    public readonly partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
     {
         /// <inheritdoc />
         public bool InitialDeleter(ref LogRecord logRecord, ref DeleteInfo deleteInfo)
@@ -20,7 +21,7 @@ namespace Garnet.server
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
+                deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
         }
 
         /// <inheritdoc />
@@ -29,7 +30,7 @@ namespace Garnet.server
             if (!logRecord.Info.Modified)
                 functionsState.watchVersionMap.IncrementVersion(deleteInfo.KeyHash);
             if (functionsState.appendOnlyFile != null)
-                WriteLogDelete(logRecord.Key, deleteInfo.Version, deleteInfo.SessionID);
+                deleteInfo.UserData |= NeedAofLog; // Mark that we need to write to AOF
             functionsState.objectStoreSizeTracker?.AddTrackedSize(-logRecord.ValueObject.HeapMemorySize);
 
             if (logRecord.Info.ValueIsObject)
@@ -39,6 +40,14 @@ namespace Garnet.server
                 logRecord.ClearValueIfHeap(_ => { });
             }
             return true;
+        }
+
+        /// <inheritdoc />
+        public void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+        {
+            if ((deleteInfo.UserData & NeedAofLog) == NeedAofLog) // Check if we need to write to AOF
+                WriteLogDelete(key, deleteInfo.Version, deleteInfo.SessionID, epochAccessor);
         }
     }
 }
