@@ -9,12 +9,6 @@ using System.Threading;
 
 namespace Tsavorite.core
 {
-    public interface IEpochAccessor
-    {
-        bool ReleaseIfHeld();
-        void Resume();
-    }
-
     /// <summary>
     /// Epoch protection
     /// </summary>
@@ -166,15 +160,15 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Release epoch if held
+        /// Try to suspend the epoch, if it is currently held
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ReleaseIfHeld()
+        public bool TrySuspend()
         {
             if (ThisInstanceProtected())
             {
-                Release();
+                Suspend();
                 return true;
             }
             return false;

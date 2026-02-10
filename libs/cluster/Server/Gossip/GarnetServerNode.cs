@@ -109,7 +109,7 @@ namespace Garnet.cluster
         public void Dispose()
         {
             // Single write lock acquisition only
-            if (!dispose.CloseLock())
+            if (!dispose.TryCloseLock())
             {
                 logger?.LogTrace("GarnetServerNode.Dispose called multiple times");
                 return;
