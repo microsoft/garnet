@@ -6,12 +6,11 @@ title: Replication Overview
 
 # Garnet Replication Overview
 
-Garnet cluster mode allows users to setup a replication stream by assingning certain nodes of the cluster to be replicas/secondaries of another primary.
+Garnet cluster mode allows users to setup a replication stream by assingning certain nodes of the cluster to be replicas of a single primary.
 The replicas are configured by default to serve only reads, redirecting any write request to their primary.
 Replicas server only a single primary but any primary can have multiple replicas.
 Replicas aim to be an exact copy of the primary by receiving and replaying individual operations through log shipping.
 For this reason, the nodes excercising replication need to be setup with the AOF feature enabled.
-
 
 # Garnet Replication Attach/Sync Workflow
 Every node in the cluster starts as a primary node and it can be assigned to be a replica by using either CLUSTER REPLICATE or REPLICAOF commands.
@@ -143,22 +142,22 @@ The `ReadConsistencyManager` uses the `VirtualSublogReplayState` struct to track
 Since it not efficient to track all keys, it uses a sketch tracking a limited amount of slots to which keys being replayed are matched through hashing.
 This an approximation of the actual sequence number per key due to collisions.
 However, it does not affect correctness it only incurs additional read latency when key moves ahead in time as a side-effect of overlapping key mappings to the same slot.
-In addition, to tracking key sequence number per fixed number of slots, each `VirtualSublogReplayState` instance tracks the maximum sequence number across slots and contains a `ConcurrentQueue` used to inform subscribers when the sublog has replayed beyond a specific sequence number.
+In addition to tracking key sequence number per fixed number of slots, each `VirtualSublogReplayState` instance tracks the maximum sequence number across slots and maintains a `TaskCompletionSource<bool>` that is signaled when replay progresses, allowing waiting readers to be awakened.
 
 When a `RespServerSession` processes a read command, it utilizes the `ConsistentReadGarnetApi` (through the `ConsistentReadContext` and `TransactionalConsistentReadContext` for the string and object data types respectively) to call into the `ReadConsistencyManager` and validate that it can serve the read under the prefix consistency constrains.
-This happens into two phases per key
+This happens into two phases per key:
 
 1. ConsistentReadKeyPrepare Phase
     This phase occurs before the actual processing of the corresponding read operation in Tsavorite.
-    Its goal is to validate the key's freshness compared to `maximumSessionSequenceNumber` as determined by any of the previous read operations.
-    Specifically, the frontier((max of(sequence number for key slot, max sublog sequence))) sequence number  of a key is established and compared against `maximumSessionSequenceNumber`.    
-    Otherwise, a waiter instance is established and added to the specific `VirtualSublogReplayState` instance.
-    The waiter is released by the associated background replay task when the sequence number progresses beyond the minimum threshold as established by the waiter instance
+    Its goal is to validate the key's freshness compared to `maximumSessionSequenceNumber` as determined by the previous read operations.
+    Freshness is determined by comparing the frontier sequence number (max of key specific and the virtual sublog's maximum observed value) against the `maximumSessionSequenceNumber`.
+    The frontier value need to be strictly behind the `maximumSessionSequenceNumber` since we cannot determine the order of writes with the same timestamp.
+    If this condition holds reads can proceed otherwise the read needs to wait for and advance time event to occur.
+    This happens every time the `VirtualSublogReplayState` gets updated, which triggers the associated `TaskCompletionSource` to allow for any waiters to re-check the aforementioned condition.
 2. ConsistentReadSequenceNumberUpdate step
     This phase occurs after the read has been processed.
     Its goal is to update the `maximumSessionSequenceNumber` by taking the maximum of the current `maximumSessionSequenceNumber` and the corresponding key's sequence number.
     This update happens after read to ensure that we associate the read with a pessimistic replayed sequence number.
-
 
 The `ReadConsistencyManager` maintains version number that gets incremented every time a new instance is created.
 Creation of a new instance happens at the startup of the attach/sync workflow to ensure that subsequent reads start
@@ -185,6 +184,7 @@ The functionality that had to be extended to support multiple `TsavoriteLog` ins
     The second approach is used to record individual operations to the store's key value pair, specifically Upsert, RMW and Delete operations are recorded through this API for both string and object data.
 
 The `GarnetLog` instance offers also a locking mechanism to atomically insert record headers for coordinated operations. This locking mechanism works by preventing enqueue for coordinated operations that run in parallel.
+This is used for transaction replay to avoid a deadlock when two transactions operate on overlapping sublogs and at commit the need to coordinate using a barrier to ensure prefix consistency.
 
 
 ### AOFSyncDriver

@@ -82,10 +82,9 @@ namespace Garnet.server
                     if (payloadLength > 0)
                     {
                         var entryPtr = ptr + entryLength;
-                        var entrySequenceNumber = 0L;
-                        if (!aofProcessor.SkipReplay(entryPtr, untilSequenceNumber, out entrySequenceNumber))
+                        if (!aofProcessor.SkipReplay(entryPtr, untilSequenceNumber, out var entrySequenceNumber))
                         {
-                            aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, entryPtr, payloadLength, true, out var isCheckpointStart);
+                            aofProcessor.ProcessAofRecordInternal(physicalSublogIdx, entryPtr, payloadLength, true, out _);
                         }
                         else
                         {

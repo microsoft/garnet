@@ -86,8 +86,8 @@ namespace Garnet.server
             // Create manager only if sharded log is enabled
             if (!serverOptions.MultiLogEnabled) return;
             var currentVersion = readConsistencyManager?.CurrentVersion ?? 0L;
-            var _replayTimestampManager = new ReadConsistencyManager(currentVersion + 1, this, serverOptions);
-            _ = Interlocked.CompareExchange(ref readConsistencyManager, _replayTimestampManager, readConsistencyManager);
+            var _readConsistencyManager = new ReadConsistencyManager(currentVersion + 1, this, serverOptions);
+            _ = Interlocked.CompareExchange(ref readConsistencyManager, _readConsistencyManager, readConsistencyManager);
         }
 
         /// <summary>
