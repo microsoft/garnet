@@ -43,23 +43,23 @@ namespace Garnet.test.Resp.ACL
 
             // Run multiple sessions that stress AUTH
             var timeout = TimeSpan.FromSeconds(120);
-            await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
+            await Parallel.ForAsync(0, degreeOfParallelism, async (t, token) =>
             {
                 using var c = TestUtils.GetGarnetClient();
-                await c.ConnectAsync();
+                await c.ConnectAsync(token);
 
                 var firstResponseTasks = new Task<string>[iterationsPerSession];
                 var secondResponseTasks = new Task<string>[iterationsPerSession];
                 for (uint i = 0; i < iterationsPerSession; i++)
                 {
                     // Execute two AUTH commands - one that succeeds and one that fails
-                    firstResponseTasks[i] = c.ExecuteForStringResultAsync("AUTH", [TestUserA, DummyPassword]);
-                    secondResponseTasks[i] = c.ExecuteForStringResultAsync("AUTH", [TestUserA, DummyPasswordB]);
+                    firstResponseTasks[i] = c.ExecuteForStringResultAsync("AUTH", [TestUserA, DummyPassword]).WaitAsync(token);
+                    secondResponseTasks[i] = c.ExecuteForStringResultAsync("AUTH", [TestUserA, DummyPasswordB]).WaitAsync(token);
                 }
 
                 try
                 {
-                    await Task.WhenAll(firstResponseTasks.Concat(secondResponseTasks));
+                    await Task.WhenAll(firstResponseTasks.Concat(secondResponseTasks)).WaitAsync(token);
                 }
                 catch { }
                 foreach (var task in firstResponseTasks)
@@ -118,20 +118,20 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             var timeout = TimeSpan.FromSeconds(120);
-            await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
+            await Parallel.ForAsync(0, degreeOfParallelism, async (t, token) =>
             {
                 using var c = TestUtils.GetGarnetClient();
-                await c.ConnectAsync();
+                await c.ConnectAsync(token);
 
                 for (uint i = 0; i < iterationsPerSession; i++)
                 {
-                    var response1 = await c.ExecuteForStringResultAsync("ACL", activeUserWithGetCommand.Split(" "));
+                    var response1 = await c.ExecuteForStringResultAsync("ACL", activeUserWithGetCommand.Split(" ")).WaitAsync(token);
                     ClassicAssert.IsTrue(response1.StartsWith("OK"));
 
-                    var response2 = await c.ExecuteForStringResultAsync("ACL", inactiveUserWithoutGetCommand.Split(" "));
+                    var response2 = await c.ExecuteForStringResultAsync("ACL", inactiveUserWithoutGetCommand.Split(" ")).WaitAsync(token);
                     ClassicAssert.IsTrue(response2.StartsWith("OK"));
 
-                    var aclListResponse = await c.ExecuteForStringArrayResultAsync("ACL", ["LIST"]);
+                    var aclListResponse = await c.ExecuteForStringArrayResultAsync("ACL", ["LIST"]).WaitAsync(token);
 
                     if (aclListResponse.Contains(inactiveUserWithGet))
                     {
@@ -158,14 +158,14 @@ namespace Garnet.test.Resp.ACL
             string setUserCommand = $"SETUSER {TestUserA} on >{DummyPassword}";
 
             var timeout = TimeSpan.FromSeconds(120);
-            await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
+            await Parallel.ForAsync(0, degreeOfParallelism, async (t, token) =>
             {
                 // Use client with support for single thread.
                 using var c = TestUtils.GetGarnetClient();
-                await c.ConnectAsync();
+                await c.ConnectAsync(token);
                 for (uint i = 0; i < iterationsPerSession; i++)
                 {
-                    var response = await c.ExecuteForStringResultAsync("ACL", setUserCommand.Split(" "));
+                    var response = await c.ExecuteForStringResultAsync("ACL", setUserCommand.Split(" ")).WaitAsync(token);
                     ClassicAssert.IsTrue(response.StartsWith("OK"));
                 }
             }).WaitAsync(timeout).ConfigureAwait(false);
