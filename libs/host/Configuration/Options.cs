@@ -62,8 +62,8 @@ namespace Garnet
         public string PageSize { get; set; }
 
         [IntRangeValidation(0, MemoryUtils.ArrayMaxLength)]
-        [Option('p', "pagecount", Required = false, HelpText = "Number of main-log pages (rounds down to power of 2). This allows specifying less pages initially than LogMemorySize divided by PageSize.")]
-        public string PageCount { get; set; }
+        [Option("pagecount", Required = false, HelpText = "Number of main-log pages (rounds down to power of 2). This allows specifying less pages initially than LogMemorySize divided by PageSize.")]
+        public int PageCount { get; set; }
 
         [MemorySizeValidation]
         [Option('s', "segment", Required = false, HelpText = "Size of each main-log segment in bytes on disk (rounds down to power of 2)")]
@@ -99,7 +99,7 @@ namespace Garnet
 
         [IntRangeValidation(0, MemoryUtils.ArrayMaxLength)]
         [Option("readcache-pagecount", Required = false, HelpText = "Number of readcache-log pages (rounds down to power of 2). This allows specifying less pages initially than ReadCacheMemorySize divided by ReadCachePageSize.")]
-        public string ReadCachePageCount { get; set; }
+        public int ReadCachePageCount { get; set; }
 
         [OptionValidation]
         [Option("storage-tier", Required = false, HelpText = "Enable tiering of records (hybrid log) to storage, to support a larger-than-memory store. Use --logdir to specify storage directory.")]

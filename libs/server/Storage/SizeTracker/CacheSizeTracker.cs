@@ -24,7 +24,7 @@ namespace Garnet.server
         private const int HighTargetSizeDeltaFraction = 10; // When memory usage grows, trigger trimming at 10% above target size (for both main log and readcache)
         private const int LowTargetSizeDeltaFraction = HighTargetSizeDeltaFraction * 5;  // When trimming memory, trim down to 1/5 of HighTargetSizeDeltaFraction below target size (for both main log and readcache)
 
-        internal bool Stopped => (mainLogTracker == null || mainLogTracker.Stopped) && (readCacheTracker == null || readCacheTracker.Stopped);
+        internal bool Stopped => (mainLogTracker == null || mainLogTracker.IsStopped) && (readCacheTracker == null || readCacheTracker.IsStopped);
 
         /// <summary>Total memory size target for main log</summary>
         public long TargetSize
@@ -75,8 +75,9 @@ namespace Garnet.server
                 store.ReadCache.SetLogSizeTracker(readCacheTracker);
             }
 
-            TargetSize = targetSize;
-            ReadCacheTargetSize = readCacheTargetSize;
+            // We've already set the individual Trackers' target sizes on ctor, so set the fields directly here rather than the properties (which calls LogSizeTracker.UpdateSize again).
+            this.targetSize = targetSize;
+            this.readCacheTargetSize = readCacheTargetSize;
         }
 
         /// <summary>Start the trackers, ensuring that only one thread does so</summary>
@@ -93,7 +94,7 @@ namespace Garnet.server
 
         /// <summary>Add to the tracked size of the cache.</summary>
         /// <param name="size">Size to be added</param>
-        public void AddTrackedSize(long size)
+        public void AddHeapSize(long size)
         {
             // mainLogTracker could be null if heap size limit is set just for the read cache
             if (size != 0)
@@ -102,7 +103,7 @@ namespace Garnet.server
 
         /// <summary>Add to the tracked size of read cache.</summary>
         /// <param name="size">Size to be added</param>
-        public void AddReadCacheTrackedSize(long size)
+        public void AddReadCacheHeapSize(long size)
         {
             // readCacheTracker could be null if read cache is not enabled or heap size limit is set only for the main log
             if (size != 0)
@@ -110,13 +111,16 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// If tracker has not started, prevent it from starting
+        /// If tracker has not started, prevent it from starting, else stop it.
         /// </summary>
-        /// <returns>True if tracker hasn't previously started</returns>
-        public bool TryPreventStart()
+        public void Stop()
         {
             var prevStarted = Interlocked.CompareExchange(ref isStarted, 1, 0);
-            return prevStarted == 0;
+            if (prevStarted != 0)
+            {
+                mainLogTracker?.Stop(wait: false);
+                readCacheTracker?.Stop(wait: false);
+            }
         }
     }
 }

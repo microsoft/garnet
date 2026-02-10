@@ -19,7 +19,7 @@ namespace Garnet.server
         public readonly TsavoriteLog appendOnlyFile;
         public readonly WatchVersionMap watchVersionMap;
         public readonly MemoryPool<byte> memoryPool;
-        public readonly CacheSizeTracker objectStoreSizeTracker;
+        public readonly CacheSizeTracker cacheSizeTracker;
         public readonly GarnetObjectSerializer garnetObjectSerializer;
         public IStoreFunctions storeFunctions;
         public ObjectIdMap transientObjectIdMap;
@@ -38,7 +38,7 @@ namespace Garnet.server
             this.watchVersionMap = watchVersionMap;
             this.customCommandManager = storeWrapper.customCommandManager;
             this.memoryPool = memoryPool ?? MemoryPool<byte>.Shared;
-            this.objectStoreSizeTracker = objectStoreSizeTracker;
+            this.cacheSizeTracker = objectStoreSizeTracker;
             this.garnetObjectSerializer = storeWrapper.GarnetObjectSerializer;
             this.storeFunctions = storeWrapper.storeFunctions;
             this.transientObjectIdMap = storeWrapper.store.TransientObjectIdMap;

@@ -12,6 +12,8 @@ namespace Garnet.client
     {
         private SemaphoreSlim semaphore;
 
+        public override string ToString() => semaphore?.ToString();
+
         internal void Initialize() => this.semaphore = new SemaphoreSlim(0);
 
         internal void Set()

@@ -444,7 +444,7 @@ namespace Garnet.server
         /// <summary>
         /// Number of readcache-log pages (rounds down to power of 2). This allows specifying less pages initially than ReadCacheMemorySize divided by ReadCachePageSize.
         /// </summary>
-        public string ReadCachePageCount = "";
+        public int ReadCachePageCount = 0;
 
         /// <summary>Options for Lua script execution</summary>
         public LuaOptions LuaOptions;
@@ -567,7 +567,6 @@ namespace Garnet.server
                 IndexSize = indexCacheLines * 64L,
                 PreallocateLog = false,
                 MutableFraction = MutablePercent / 100.0,
-                LogMemorySize = ParseSize(LogMemorySize, out _),
                 PageSize = 1L << PageSizeBits(),
                 Epoch = epoch,
                 StateMachineDriver = stateMachineDriver,
@@ -576,8 +575,11 @@ namespace Garnet.server
                 logger = loggerFactory?.CreateLogger("TsavoriteKV [main]")
             };
 
-            if (!string.IsNullOrEmpty(PageCount))
-                kvSettings.PageCount = int.Parse(PageCount);
+            if (!string.IsNullOrEmpty(LogMemorySize))
+                kvSettings.LogMemorySize = ParseSize(LogMemorySize, out _);
+
+            if (PageCount != 0)
+                kvSettings.PageCount = PageCount;
 
             logger?.LogInformation("[Store] Using page size of {PageSize}", PrettySize(kvSettings.PageSize));
             logger?.LogInformation("[Store] Each page can hold ~{PageSize} key-value pairs of objects", kvSettings.PageSize / 24);
@@ -639,8 +641,8 @@ namespace Garnet.server
                     throw new Exception("Read cache requires storage tiering to be enabled");
                 kvSettings.ReadCacheEnabled = true;
 
-                if (!string.IsNullOrEmpty(ReadCachePageCount))
-                    kvSettings.ReadCachePageCount = int.Parse(ReadCachePageCount);
+                if (ReadCachePageCount != 0)
+                    kvSettings.ReadCachePageCount = ReadCachePageCount;
 
                 kvSettings.ReadCachePageSize = ParseSize(ReadCachePageSize, out _);
                 kvSettings.ReadCacheMemorySize = ParseSize(ReadCacheMemorySize, out _);

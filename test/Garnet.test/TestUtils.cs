@@ -41,6 +41,7 @@ namespace Garnet.test
         public long ReadOnlyAddress;
         public long TailAddress;
         public long MemorySize;
+        public long ReadCacheHeadAddress;
         public long ReadCacheBeginAddress;
         public long ReadCacheTailAddress;
     }
@@ -227,7 +228,7 @@ namespace Garnet.test
             bool lowMemory = false,
             string memorySize = default,
             string pageSize = default,
-            string pageCount = default,
+            int pageCount = 0,
             bool enableAOF = false,
             bool enableTLS = false,
             bool disableObjects = false,
@@ -252,7 +253,7 @@ namespace Garnet.test
             bool enableReadCache = false,
             string readCacheMemorySize = default,
             string readCachePageSize = default,
-            string readCachePageCount = default,
+            int readCachePageCount = 0,
             ILogger logger = null,
             IEnumerable<string> loadModulePaths = null,
             string pubSubPageSize = null,
@@ -279,44 +280,41 @@ namespace Garnet.test
             if (useAzureStorage && !useLogNullDevice)
                 logDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !useAzureStorage && !useLogNullDevice) logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
+            if (logCheckpointDir != null && !useAzureStorage && !useLogNullDevice)
+                logDir = new DirectoryInfo(string.IsNullOrEmpty(logDir) ? "." : logDir).FullName;
 
             var checkpointDir = logCheckpointDir;
             if (useAzureStorage)
                 checkpointDir = $"{AzureTestContainer}/{AzureTestDirectory}";
 
-            if (logCheckpointDir != null && !useAzureStorage) checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
+            if (logCheckpointDir != null && !useAzureStorage)
+                checkpointDir = new DirectoryInfo(string.IsNullOrEmpty(checkpointDir) ? "." : checkpointDir).FullName;
 
             if (useAcl)
             {
                 if (authenticationSettings != null)
-                {
                     throw new ArgumentException($"Cannot set both {nameof(useAcl)} and {nameof(authenticationSettings)}");
-                }
-
                 authenticationSettings = new AclAuthenticationPasswordSettings(aclFile, defaultPassword);
             }
             else if (defaultPassword != null)
             {
                 if (authenticationSettings != null)
-                {
                     throw new ArgumentException($"Cannot set both {nameof(defaultPassword)} and {nameof(authenticationSettings)}");
-                }
-
                 authenticationSettings = new PasswordAuthenticationSettings(defaultPassword);
             }
 
             // Increase minimum thread pool size to 16 if needed
             int threadPoolMinThreads = 0;
             ThreadPool.GetMinThreads(out int workerThreads, out int completionPortThreads);
-            if (workerThreads < 16 || completionPortThreads < 16) threadPoolMinThreads = 16;
+            if (workerThreads < 16 || completionPortThreads < 16)
+                threadPoolMinThreads = 16;
 
             GarnetServerOptions opts = new(logger)
             {
                 EnableStorageTier = logDir != null,
                 LogDir = logDir,
                 CheckpointDir = checkpointDir,
-                EndPoints = endpoints ?? ([EndPoint]),
+                EndPoints = endpoints ?? [EndPoint],
                 DisablePubSub = disablePubSub,
                 Recover = tryRecover,
                 IndexMemorySize = indexSize,
@@ -364,8 +362,14 @@ namespace Garnet.test
             if (!string.IsNullOrEmpty(pageSize))
                 opts.PageSize = pageSize;
 
-            if (!string.IsNullOrEmpty(pageCount))
+            if (pageCount != 0)
+            {
                 opts.PageCount = pageCount;
+
+                // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
+                if (string.IsNullOrEmpty(memorySize))
+                    opts.LogMemorySize = string.Empty;
+            }
 
             if (!string.IsNullOrEmpty(pubSubPageSize))
                 opts.PubSubPageSize = pubSubPageSize;
@@ -375,15 +379,24 @@ namespace Garnet.test
 
             if (lowMemory)
             {
-                opts.LogMemorySize = memorySize == default ? "1024" : memorySize;
+                opts.LogMemorySize = string.IsNullOrEmpty(memorySize) == default ? "2k" : memorySize; // Must be LogSizeTracker.MinTargetPageCount pages due to memory size tracking
                 opts.PageSize = pageSize == default ? "512" : pageSize;
+
+                // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
+                // This is especially useful for two-page tests, which is less than LogSizeTracker.MinTargetPageCount pages.
+                if (pageCount != 0 && memorySize == default)
+                    opts.LogMemorySize = string.Empty;
             }
 
             if (enableReadCache)
             {
                 opts.ReadCacheMemorySize = readCacheMemorySize ?? opts.LogMemorySize;
                 opts.ReadCachePageSize = readCachePageSize ?? opts.PageSize;
-                opts.ReadCachePageCount = readCachePageCount ?? opts.PageCount;
+                opts.ReadCachePageCount = readCachePageCount != 0 ? readCachePageCount : opts.PageCount;
+
+                // If there is a pageCount and no memorySize, then we are bypassing the size tracker (which is automatically started if memorySize is specified).
+                if (opts.ReadCachePageCount != 0 && string.IsNullOrEmpty(opts.ReadCacheMemorySize))
+                    opts.ReadCacheMemorySize = string.Empty;
             }
 
             ILoggerFactory loggerFactory = null;
@@ -1104,6 +1117,8 @@ using System.Threading.Tasks;
                         result.TailAddress = long.Parse(entry.Value);
                     else if (entry.Key.Equals("Log.MemorySizeBytes"))
                         result.MemorySize = long.Parse(entry.Value);
+                    else if (includeReadCache && entry.Key.Equals("ReadCache.HeadAddress"))
+                        result.ReadCacheHeadAddress = long.Parse(entry.Value);
                     else if (includeReadCache && entry.Key.Equals("ReadCache.BeginAddress"))
                         result.ReadCacheBeginAddress = long.Parse(entry.Value);
                     else if (includeReadCache && entry.Key.Equals("ReadCache.TailAddress"))

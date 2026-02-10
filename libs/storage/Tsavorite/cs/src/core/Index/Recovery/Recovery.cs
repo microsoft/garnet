@@ -561,11 +561,7 @@ namespace Tsavorite.core
         private void DoPostRecovery(IndexCheckpointInfo recoveredICInfo, HybridLogCheckpointInfo recoveredHLCInfo, long tailAddress, ref long headAddress, ref long readOnlyAddress, long lastFreedPage)
         {
             // Adjust head and read-only address post-recovery
-            var tailPage = hlogBase.GetPage(tailAddress);
-            if (tailAddress > hlogBase.GetFirstValidLogicalAddressOnPage(tailPage))
-                tailPage++;
-            var headPage = hlogBase.GetPage(tailPage - hlogBase.AllocatedPageCount);
-            var _head = hlogBase.GetFirstValidLogicalAddressOnPage(headPage);
+            var _head = hlogBase.GetFirstValidLogicalAddressOnPage(1 + hlogBase.GetPage(tailAddress) - hlogBase.MaxAllocatedPageCount);
 
             // If additional pages have been freed to accommodate memory constraints, adjust head address accordingly
             if (lastFreedPage != NoPageFreed)
@@ -711,9 +707,9 @@ namespace Tsavorite.core
                 return false;
             }
 
-            // We have a log size tracker, so we'll stop evictPageCount when we are at the minimum (the caller will also test logSizeTracker.IsBeyondSizeLimit);
-            evictPageCount = hlogBase.AllocatedPageCount - 2;
-            return hlogBase.logSizeTracker.IsBeyondSizeLimit;
+            // We have a log size tracker, so we'll stop evictPageCount when we are at the minimum (the caller will also test logSizeTracker.IsBeyondSizeLimitAndCanEvict);
+            evictPageCount = hlogBase.AllocatedPageCount - LogSizeTracker.MinResizeTargetPageCount;
+            return hlogBase.logSizeTracker.IsBeyondSizeLimitAndCanEvict;
         }
 
         private long TrimLogMemorySize(RecoveryStatus recoveryStatus, long tailPage, int numPagesToRead = 0)
@@ -724,7 +720,7 @@ namespace Tsavorite.core
                 // Evict pages one at a time
                 for (var ii = 0; ii < evictPageCount; ii++)
                 {
-                    if (hlogBase.logSizeTracker is not null && !hlogBase.logSizeTracker.IsBeyondSizeLimit)
+                    if (hlogBase.logSizeTracker is not null && !hlogBase.logSizeTracker.IsBeyondSizeLimitAndCanEvict)
                         break;
                     var page = startPage + ii;
                     var pageIndex = hlogBase.GetPageIndexForPage(page);
@@ -748,7 +744,7 @@ namespace Tsavorite.core
                 // Evict pages one at a time
                 for (var ii = 0; ii < evictPageCount; ii++)
                 {
-                    if (hlogBase.logSizeTracker is not null && !hlogBase.logSizeTracker.IsBeyondSizeLimit)
+                    if (hlogBase.logSizeTracker is not null && !hlogBase.logSizeTracker.IsBeyondSizeLimitAndCanEvict)
                         break;
                     var page = startPage + ii;
                     var pageIndex = hlogBase.GetPageIndexForPage(page);

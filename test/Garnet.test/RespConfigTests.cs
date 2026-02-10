@@ -292,6 +292,9 @@ namespace Garnet.test
             var store = server.Provider.StoreWrapper.store;
             var tracker = store.Log.LogSizeTracker;
             Assert.That(tracker.TargetSize, Is.EqualTo(currMemorySize));
+            
+            using var trimCompleteEvent = new ManualResetEventSlim(false);
+            tracker.PostMemoryTrim = (allocatedPageCount, headAddress) => { trimCompleteEvent.Set(); };
 
             var garnetServer = redis.GetServer(TestUtils.EndPoint);
             var info = TestUtils.GetStoreAddressInfo(garnetServer);
@@ -332,10 +335,9 @@ namespace Garnet.test
             // Precondition: We have too much in memory for the smallSize and must evict.
             Assert.That(prevTail - prevHead, Is.GreaterThan(tracker.TargetDeltaRange.high));
 
-            // Wait for the logSizeTracker to stabilize. This may be done in iterations because the ReadOnlyAddress
-            // may block the first page-eviction loop iteration(s).
-            while (tracker.IsBeyondSizeLimit)
-                Thread.Sleep(1000);
+            // Wait for the logSizeTracker to stabilize.
+            Assert.That(trimCompleteEvent.Wait(TimeSpan.FromSeconds(3 * 3 * LogSizeTracker.ResizeTaskDelaySeconds)),
+                "Timeout occurred. Resizing did not happen within the specified time.");
 
             info = TestUtils.GetStoreAddressInfo(garnetServer);
             prevHead = info.HeadAddress;
@@ -687,6 +689,10 @@ namespace Garnet.test
             // Verify that initial allocated page count is the minimum (before we've added anything)
             var store = server.Provider.StoreWrapper.store;
             var tracker = store.Log.LogSizeTracker;
+
+            using var trimCompleteEvent = new ManualResetEventSlim(false);
+            tracker.PostMemoryTrim = (allocatedPageCount, headAddress) => { trimCompleteEvent.Set(); };
+
             var initialApc = RespConfigTests.MinLogAllocatedPageCount;
             ClassicAssert.AreEqual(initialApc, store.Log.AllocatedPageCount);
 
@@ -702,8 +708,8 @@ namespace Garnet.test
                 _ = db.ListRightPush($"key{i++:00000}", values);
 
             // Wait for the logSizeTracker to stabilize.
-            while (tracker.IsBeyondSizeLimit)
-                Thread.Sleep(1000);
+            Assert.That(trimCompleteEvent.Wait(TimeSpan.FromSeconds(3 * 3 * LogSizeTracker.ResizeTaskDelaySeconds)),
+                "Timeout occurred. Resizing did not happen within the specified time.");
 
             // Verify that allocated page count has decreased
             ClassicAssert.Less(store.Log.AllocatedPageCount, initialApc);

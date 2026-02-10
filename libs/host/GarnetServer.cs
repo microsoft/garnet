@@ -427,14 +427,10 @@ namespace Garnet
             try
             {
                 foreach (string directory in Directory.GetDirectories(path))
-                {
                     DeleteDirectory(directory);
-                }
-
                 Directory.Delete(path, true);
             }
-            catch (Exception ex) when (ex is IOException ||
-                                       ex is UnauthorizedAccessException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 try
                 {

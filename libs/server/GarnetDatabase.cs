@@ -2,7 +2,6 @@
 // Licensed under the MIT license.
 
 using System;
-using System.Threading;
 using Garnet.common;
 using Tsavorite.core;
 
@@ -157,15 +156,7 @@ namespace Garnet.server
             kvSettings?.LogDevice?.Dispose();
             kvSettings?.ObjectLogDevice?.Dispose();
 
-            if (SizeTracker != null)
-            {
-                // If tracker has previously started, wait for it to stop
-                if (!SizeTracker.TryPreventStart())
-                {
-                    while (!SizeTracker.Stopped)
-                        Thread.Yield();
-                }
-            }
+            SizeTracker?.Stop();
         }
     }
 }

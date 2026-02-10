@@ -30,35 +30,21 @@ namespace Garnet.test
 
             using var cts = new CancellationTokenSource();
 
-            if (Debugger.IsAttached)
-            {
-                // If debugging, give us a bit longer before timeouts start happening
-                cts.CancelAfter(300_000);
-            }
-            else
-            {
-                cts.CancelAfter(30_000);
-            }
+            // If debugging, give us a bit longer before timeouts start happening
+            cts.CancelAfter(Debugger.IsAttached ? 300_000 : 30_000);
 
             while (!TestUtils.IsPortAvailable(port))
             {
                 if (cts.IsCancellationRequested)
-                {
                     throw new GarnetException($"Port {port} is not available, and did not become available before timeout");
-                }
 
                 // Wait for port to be available
                 Thread.Sleep(1_000);
             }
 
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                name = string.Concat(name.AsSpan(0, pos), ".exe");
-            }
-            else
-            {
-                name = name.Substring(0, pos);
-            }
+            name = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) 
+                ? string.Concat(name.AsSpan(0, pos), ".exe") 
+                : name.Substring(0, pos);
 
             var endPoint = new IPEndPoint(IPAddress.Loopback, port);
             Options = TestUtils.GetConfig([endPoint]);
@@ -86,23 +72,18 @@ namespace Garnet.test
 
             OutputLog = new();
             _ = OutputLog.AppendLine($"Started PID: {process.Id}");
+
             foreach (var arg in psi.ArgumentList)
-            {
                 _ = OutputLog.AppendLine($"Arg: {arg}");
-            }
 
             foreach (var (k, v) in psi.Environment)
-            {
                 _ = OutputLog.AppendLine($"Env: {k}={v}");
-            }
 
             process.OutputDataReceived +=
                 (obj, lineArgs) =>
                 {
                     if (lineArgs.Data == null)
-                    {
                         return;
-                    }
 
                     lock (OutputLog)
                     {
@@ -119,9 +100,7 @@ namespace Garnet.test
                 (obj, lineArgs) =>
                 {
                     if (lineArgs.Data == null)
-                    {
                         return;
-                    }
 
                     lock (OutputLog)
                     {
@@ -139,7 +118,6 @@ namespace Garnet.test
             catch
             {
                 RecordTestOutput(OutputLog);
-
                 throw;
             }
 

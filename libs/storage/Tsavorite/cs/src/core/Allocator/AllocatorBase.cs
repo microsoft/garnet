@@ -157,7 +157,7 @@ namespace Tsavorite.core
         internal readonly PendingFlushList[] PendingFlush;
 
         /// <summary>Global address of the current tail (next element to be allocated from the circular buffer) </summary>
-        private PageOffset TailPageOffset;
+        internal PageOffset TailPageOffset;
 
         /// <summary>Whether log is disposed</summary>
         private bool disposed = false;
@@ -403,6 +403,7 @@ namespace Tsavorite.core
 
             onReadOnlyObserver?.OnCompleted();
             onEvictionObserver?.OnCompleted();
+            logSizeTracker?.Stop();
         }
 
         #endregion abstract and virtual methods
@@ -841,6 +842,21 @@ namespace Tsavorite.core
             return GetLogicalAddressOfStartOfPage(local.Page) | (uint)local.Offset;
         }
 
+        /// <summary>Get tail address without considering whether it is unstable; this is called during HandlePageOverflow as part of determining
+        /// whether we must evict, which we may not be able to do; if <see cref="GetTailAddress()"/> is called on the thread that owns the tail-address
+        /// stabilization, it will infinite-loop.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal long UnstableGetTailAddress()
+        {
+            var local = TailPageOffset;
+            var address = GetLogicalAddressOfStartOfPage(local.Page);
+            if (local.Offset < PageSize)
+                return address | (uint)local.Offset;
+
+            // It is unstable so stay on the same page, because we will likely restabilize before size tracker evictions commence.
+            return address | (uint)(PageSize - Constants.kRecordAlignment);
+        }
+
         /// <summary>Get page index from <paramref name="logicalAddress"/></summary>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetPage(long logicalAddress) => GetPageOfAddress(logicalAddress, LogPageSizeBits);
@@ -1055,15 +1071,15 @@ namespace Tsavorite.core
             var tailAddress = GetLogicalAddressOfStartOfPage(localTailPageOffset.Page) | ((long)(localTailPageOffset.Offset - numSlots));
             var shiftAddress = GetLogicalAddressOfStartOfPage(pageIndex);
 
-            // First check whether we need to shift HeadAddress. If we have a logSizeTracker then we have already issued a shift if needed;
-            // otherwise make sure we stay in the PageCount (which may be less than BufferSize).
+            // First check whether we need to shift HeadAddress. If we have a logSizeTracker that's over budget then we have already issued
+            // a shift if needed (and allowed by allocated page count); otherwise make sure we stay in the MaxAllocatedPageCount (which may be less than BufferSize).
             var desiredHeadAddress = HeadAddress;
-            if (logSizeTracker is null)
+            if (logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimit)
             {
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxAllocatedPageCount)
                 {
-                    desiredHeadAddress += PageSize;
+                    desiredHeadAddress = GetFirstValidLogicalAddressOnPage(headPage + 1);
                     if (desiredHeadAddress > tailAddress)
                         desiredHeadAddress = tailAddress;
                     return desiredHeadAddress > HeadAddress;
@@ -1080,22 +1096,23 @@ namespace Tsavorite.core
         /// </summary>
         /// <param name="pageIndex">The page we are turning to</param>
         /// <param name="needSHA">If true, we have determined that we must call <see cref="ShiftHeadAddress(long)"/> to Close and evict a
-        ///     page before we can allocate a new one.</param>
+        ///     page before we can allocate a new one. This is done for checks that do not issue a signal to the size tracker, such as a
+        ///     Flush or Close via normal wrapping operations.</param>
         void IssueShiftAddress(long pageIndex, bool needSHA)
         {
             // Issue the shift of address
             var shiftAddress = GetLogicalAddressOfStartOfPage(pageIndex);
             var tailAddress = GetTailAddress();
 
-            // First check whether we need to shift HeadAddress. If we have a logSizeTracker that's over budget then we have already issued
-            // a shift if needed; otherwise make sure we stay in the PageCount (which may be less than BufferSize).
+            // First check whether we need to shift HeadAddress. If we are not forcing for flush and have a logSizeTracker that's over budget then we have already issued
+            // a shift if needed (and allowed by allocated page count); otherwise make sure we stay in the MaxAllocatedPageCount (which may be less than BufferSize).
             var desiredHeadAddress = HeadAddress;
-            if (logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimit)
+            if (needSHA || logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimit)
             {
                 var headPage = GetPage(desiredHeadAddress);
                 if (pageIndex - headPage >= MaxAllocatedPageCount)
                 {
-                    desiredHeadAddress += PageSize;
+                    desiredHeadAddress = GetFirstValidLogicalAddressOnPage(headPage + 1);
                     if (desiredHeadAddress > tailAddress)
                         desiredHeadAddress = tailAddress;
                 }
@@ -1133,17 +1150,22 @@ namespace Tsavorite.core
         /// and are waiting for OnPagesClosed to be completed. Similarly, if the log size tracker is over budget, it has already issued
         /// the ShiftHeadAddress that will close pages, so we can retry immediately.
         /// </summary>
+        /// <param name="page">The page we are about to move to</param>
+        /// <param name="needSHA">Returns whether we need to call <see cref="ShiftHeadAddress(long)"/> to advance HeadAddress so ClosedUntilAddress will advance</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool NeedToWaitForClose(int page)
+        private bool NeedToWaitForClose(int page, out bool needSHA)
         {
             if (page >= BufferSize + GetPage(ClosedUntilAddress))   // wraps around the BufferSize
-                return true;
-            if (logSizeTracker is not null && logSizeTracker.IsBeyondSizeLimit)
             {
-                logSizeTracker.Signal();
+                needSHA = HeadAddress == ClosedUntilAddress;    // Need SHA to advance HeadAddress to advance ClosedUntilAddress
                 return true;
             }
-            return false;
+
+            needSHA = false;
+            if (logSizeTracker is null || !logSizeTracker.IsBeyondSizeLimitAndCanEvict)
+                return false;
+            logSizeTracker.Signal();
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1174,7 +1196,7 @@ namespace Tsavorite.core
                 _ = Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
 
                 // Shift only after TailPageOffset is reset to a valid state
-                IssueShiftAddress(pageIndex, needSHA: false);
+                IssueShiftAddress(pageIndex, needSHA: true);
                 return 0; // RETRY_LATER
             }
 
@@ -1183,14 +1205,14 @@ namespace Tsavorite.core
             // 2. We have issued any necessary address shifting at the page-turn boundary.
             // If either cannot be verified, we can ask the caller to retry now (immediately), because it is
             // an ephemeral state.
-            if (NeedToWaitForClose(pageIndex) || NeedToShiftAddress(pageIndex, localTailPageOffset, numSlots))
+            if (NeedToWaitForClose(pageIndex, out bool needSHA) || NeedToShiftAddress(pageIndex, localTailPageOffset, numSlots))
             {
                 // Reset to previous tail so that next attempt can retry
                 localTailPageOffset.PageAndOffset -= numSlots;
                 _ = Interlocked.Exchange(ref TailPageOffset.PageAndOffset, localTailPageOffset.PageAndOffset);
 
                 // Shift only after TailPageOffset is reset to a valid state
-                IssueShiftAddress(pageIndex, needSHA: true);
+                IssueShiftAddress(pageIndex, needSHA);
                 return -1; // RETRY_NOW
             }
 

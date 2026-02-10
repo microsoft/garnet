@@ -9,7 +9,7 @@ namespace Garnet.server
     /// <summary>
     /// Object store functions
     /// </summary>
-    public readonly unsafe partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
+    public readonly partial struct ObjectSessionFunctions : ISessionFunctions<ObjectInput, ObjectOutput, long>
     {
         /// <inheritdoc />
         public bool InitialWriter(ref LogRecord dstLogRecord, in RecordSizeInfo sizeInfo, ref ObjectInput input, ReadOnlySpan<byte> srcValue, ref ObjectOutput output, ref UpsertInfo upsertInfo)
@@ -47,7 +47,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 WriteLogUpsert(logRecord.Key, ref input, srcValue, upsertInfo.Version, upsertInfo.SessionID);
             if (logRecord.Info.RecordHasObjects)
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
+                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -58,7 +58,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 WriteLogUpsert(logRecord.Key, ref input, garnetObject, upsertInfo.Version, upsertInfo.SessionID);
             if (logRecord.Info.RecordHasObjects)
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
+                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -74,7 +74,7 @@ namespace Garnet.server
                     WriteLogUpsert(logRecord.Key, ref input, (IGarnetObject)logRecord.ValueObject, upsertInfo.Version, upsertInfo.SessionID);
             }
             if (logRecord.Info.RecordHasObjects)
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
+                functionsState.cacheSizeTracker?.AddHeapSize(MemoryUtils.CalculateHeapMemorySize(in logRecord));
         }
 
         /// <inheritdoc />
@@ -96,7 +96,7 @@ namespace Garnet.server
 
             // TODO: Need to track original length as well, if it was overflow, and add overflow here as well as object size
             if (logRecord.Info.ValueIsOverflow)
-                functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.Length - oldSize);
+                functionsState.cacheSizeTracker?.AddHeapSize(srcValue.Length - oldSize);
             return true;
         }
 
@@ -119,7 +119,7 @@ namespace Garnet.server
             if (functionsState.appendOnlyFile != null)
                 WriteLogUpsert(logRecord.Key, ref input, garnetObject, upsertInfo.Version, upsertInfo.SessionID);
 
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(srcValue.HeapMemorySize - oldSize);
+            functionsState.cacheSizeTracker?.AddHeapSize(srcValue.HeapMemorySize - oldSize);
             return true;
         }
 
@@ -149,7 +149,7 @@ namespace Garnet.server
             var newSize = logRecord.Info.ValueIsInline
                 ? 0
                 : (!logRecord.Info.ValueIsObject ? logRecord.ValueSpan.Length : logRecord.ValueObject.HeapMemorySize);
-            functionsState.objectStoreSizeTracker?.AddTrackedSize(newSize - oldSize);
+            functionsState.cacheSizeTracker?.AddHeapSize(newSize - oldSize);
             return true;
         }
     }

@@ -6,7 +6,7 @@ namespace Tsavorite.core
 #pragma warning disable IDE0065 // Misplaced using directive
     using static LogAddress;
 
-    public unsafe partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
+    public partial class TsavoriteKV<TStoreFunctions, TAllocator> : TsavoriteBase
         where TStoreFunctions : IStoreFunctions
         where TAllocator : IAllocator<TStoreFunctions>
     {

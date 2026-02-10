@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 
@@ -29,6 +30,7 @@ namespace Tsavorite.core
             }
 
             // logicalAddress less than 0 (RETRY_NOW) should already have been handled. We expect flushEvent to be signaled.
+            Debug.Assert(logicalAddress == 0, "Expected RETRY_LATER");
             internalStatus = OperationStatus.ALLOCATE_FAILED;
             return false;
         }

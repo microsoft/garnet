@@ -38,7 +38,7 @@ namespace Garnet.server
         /// Number of main-log pages (rounds down to power of 2). This allows specifying less pages initially than <see cref="LogMemorySize"/> divided by <see cref="PageSize"/>
         /// </summary>
         /// <remarks>The default empty value means to calculate <see cref="PageCount"/> based on <see cref="LogMemorySize"/> divided by <see cref="PageSize"/></remarks>
-        public string PageCount = "";
+        public int PageCount = 0;
 
         /// <summary>
         /// Size of each main-log segment in bytes on disk (rounds down to power of 2).
