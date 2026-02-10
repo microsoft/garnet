@@ -781,7 +781,9 @@ namespace Garnet.server
         public GarnetStatus DELETE_ObjectStore<TObjectContext>(PinnedSpanByte key, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = objectContext.Delete(key.ReadOnlySpan);
+            ObjectInput input = default;
+
+            var status = objectContext.Delete(key.ReadOnlySpan, ref input);
             Debug.Assert(!status.IsPending);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }

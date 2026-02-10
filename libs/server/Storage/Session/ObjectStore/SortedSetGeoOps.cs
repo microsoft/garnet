@@ -175,7 +175,7 @@ namespace Garnet.server
                         return GarnetStatus.OK;
                     }
 
-                    _ = geoObjectTransactionalContext.Delete(destination.ReadOnlySpan);
+                    _ = geoObjectTransactionalContext.Delete(destination.ReadOnlySpan, ref input);
 
                     _ = RespReadUtils.TryReadUnsignedArrayLength(out var foundItems, ref currOutPtr, endOutPtr);
 

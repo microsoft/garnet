@@ -189,6 +189,9 @@ namespace Tsavorite.core
         /// <summary>Get the hashcode for a key.</summary>
         public long GetKeyHash(ReadOnlySpan<byte> key) => storeFunctions.GetKeyHashCode64(key);
 
+        /// <summary>Get the hashcode for a key and namespace.</summary>
+        public long GetKeyHash(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes) => storeFunctions.GetKeyHashCode64(key, namespaceBytes);
+
         /// <summary>
         /// Initiate full checkpoint
         /// </summary>

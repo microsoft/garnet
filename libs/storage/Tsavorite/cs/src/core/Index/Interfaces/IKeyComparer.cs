@@ -18,10 +18,24 @@ namespace Tsavorite.core
         long GetHashCode64(ReadOnlySpan<byte> key);
 
         /// <summary>
+        /// Get 64-bit hash code
+        /// </summary>
+        long GetHashCode64(ReadOnlySpan<byte> key, ReadOnlySpan<byte> namespaceBytes);
+
+        /// <summary>
         /// Equality comparison
         /// </summary>
         /// <param name="k1">Left side</param>
         /// <param name="k2">Right side</param>
         bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> k2);
+
+        /// <summary>
+        /// Equality comparison
+        /// </summary>
+        /// <param name="k1">Left side</param>
+        /// <param name="ns1">Left side namespace</param>
+        /// <param name="k2">Right side</param>
+        /// <param name="ns2">Right side namespace</param>
+        bool Equals(ReadOnlySpan<byte> k1, ReadOnlySpan<byte> ns1, ReadOnlySpan<byte> k2, ReadOnlySpan<byte> ns2);
     }
 }

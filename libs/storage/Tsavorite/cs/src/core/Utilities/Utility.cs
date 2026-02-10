@@ -266,6 +266,55 @@ namespace Tsavorite.core
         }
 
         /// <summary>
+        /// Get 64-bit hash code for a byte array. The array does not have to be pinned.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static long HashBytes(ReadOnlySpan<byte> byteSpan, ReadOnlySpan<byte> namespaceBytes)
+        {
+            const long magicno = 40343;
+
+            unsafe
+            {
+                ulong hashState;
+
+                fixed (byte* pbString = byteSpan)
+                {
+                    var pwString = (char*)pbString;
+                    var len = byteSpan.Length;
+                    var cbBuf = len / 2;
+                    hashState = (ulong)len + (ulong)namespaceBytes.Length;
+
+                    for (var i = 0; i < cbBuf; i++, pwString++)
+                        hashState = (magicno * hashState) + *pwString;
+
+                    if ((len & 1) > 0)
+                    {
+                        var pC = (byte*)pwString;
+                        hashState = (magicno * hashState) + *pC;
+                    }
+                }
+
+                fixed (byte* pbString = namespaceBytes)
+                {
+                    var pwString = (char*)pbString;
+                    var len = namespaceBytes.Length;
+                    var cbBuf = len / 2;
+
+                    for (var i = 0; i < cbBuf; i++, pwString++)
+                        hashState = (magicno * hashState) + *pwString;
+
+                    if ((len & 1) > 0)
+                    {
+                        var pC = (byte*)pwString;
+                        hashState = (magicno * hashState) + *pC;
+                    }
+                }
+
+                return (long)Rotr64(magicno * hashState, 4);
+            }
+        }
+
+        /// <summary>
         /// Compute XOR of all provided bytes
         /// </summary>
         /// <param name="src"></param>

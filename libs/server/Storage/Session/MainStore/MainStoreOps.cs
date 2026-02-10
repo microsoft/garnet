@@ -204,7 +204,10 @@ namespace Garnet.server
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            context.Upsert(key.ReadOnlySpan, value.ReadOnlySpan);
+            StringInput input = default;
+            SpanByteAndMemory output = default;
+
+            context.Upsert(key.ReadOnlySpan, ref input, value.ReadOnlySpan, ref output);
             return GarnetStatus.OK;
         }
 
@@ -353,17 +356,23 @@ namespace Garnet.server
         public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, IGarnetObject value, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            objectContext.Upsert(key.ReadOnlySpan, value);
+            ObjectInput input = default;
+            ObjectOutput output = default;
+
+            objectContext.Upsert(key.ReadOnlySpan, ref input, value, ref output);
             return GarnetStatus.OK;
         }
 
         public GarnetStatus SET<TStringContext>(PinnedSpanByte key, Memory<byte> value, ref TStringContext context)   // TODO are memory<byte> overloads needed?
             where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
+            StringInput input = default;
+            SpanByteAndMemory output = default;
+
             unsafe
             {
                 fixed (byte* ptr = value.Span)
-                    context.Upsert(key.ReadOnlySpan, new ReadOnlySpan<byte>(ptr, value.Length));
+                    context.Upsert(key.ReadOnlySpan, ref input, new ReadOnlySpan<byte>(ptr, value.Length), ref output);
             }
             return GarnetStatus.OK;
         }
@@ -433,7 +442,9 @@ namespace Garnet.server
         public GarnetStatus DELETE_MainStore<TStringContext>(PinnedSpanByte key, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var status = context.Delete(key.ReadOnlySpan);
+            StringInput input = default;
+
+            var status = context.Delete(key.ReadOnlySpan, ref input);
             Debug.Assert(!status.IsPending);
             return status.Found ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }

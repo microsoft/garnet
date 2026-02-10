@@ -299,10 +299,21 @@ namespace Garnet.server
 
             // Release context
             if ((storeTypes & TransactionStoreTypes.Main) == TransactionStoreTypes.Main)
-                stringTransactionalContext.ResetModified(key.ReadOnlySpan);
+            {
+                StringInput input = default;
+                stringTransactionalContext.ResetModified(key.ReadOnlySpan, ref input);
+            }
+
             if ((storeTypes & TransactionStoreTypes.Object) == TransactionStoreTypes.Object && !objectBasicContext.IsNull)
-                objectTransactionalContext.ResetModified(key.ReadOnlySpan);
-            unifiedTransactionalContext.ResetModified(key.ReadOnlySpan);
+            {
+                ObjectInput input = default;
+                objectTransactionalContext.ResetModified(key.ReadOnlySpan, ref input);
+            }
+
+            {
+                UnifiedInput input = default;
+                unifiedTransactionalContext.ResetModified(key.ReadOnlySpan, ref input);
+            }
         }
 
         internal void AddTransactionStoreTypes(TransactionStoreTypes transactionStoreTypes)

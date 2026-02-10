@@ -665,7 +665,7 @@ namespace Garnet.server
                 {
                     state = "Tombstoned";
                 }
-                else if (!basicContext.ContainsKeyInMemory(iter.Key, out long tempKeyAddress, fromAddr).Found || iter.CurrentAddress != tempKeyAddress)
+                else if (!basicContext.ContainsKeyInMemory(iter.Key, iter.Namespace, out long tempKeyAddress, fromAddr).Found || iter.CurrentAddress != tempKeyAddress)
                 {
                     // check if this was a record that RCUd by checking if the key when queried via hash index points to the same address
                     state = "RCUdUnsealed";
