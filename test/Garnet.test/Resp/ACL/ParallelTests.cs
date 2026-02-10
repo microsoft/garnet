@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -33,26 +34,45 @@ namespace Garnet.test.Resp.ACL
         [TestCase(128, 2048)]
         public async Task ParallelAuthTest(int degreeOfParallelism, int iterationsPerSession)
         {
-            using var c = TestUtils.GetGarnetClientSession();
-            c.Connect();
+            using var c = TestUtils.GetGarnetClient();
+            await c.ConnectAsync();
 
             // Add the test user and password
-            var response = await c.ExecuteAsync("ACL", "SETUSER", TestUserA, "on", $">{DummyPassword}");
+            var response = await c.ExecuteForStringResultAsync("ACL", ["SETUSER", TestUserA, "on", $">{DummyPassword}"]);
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Run multiple sessions that stress AUTH
-            Parallel.For(0, degreeOfParallelism, (t, state) =>
+            var timeout = TimeSpan.FromSeconds(120);
+            await Parallel.ForAsync(0, degreeOfParallelism, async (t, token) =>
             {
-                using var c = TestUtils.GetGarnetClientSession();
-                c.Connect();
+                using var c = TestUtils.GetGarnetClient();
+                await c.ConnectAsync(token);
 
+                var firstResponseTasks = new Task<string>[iterationsPerSession];
+                var secondResponseTasks = new Task<string>[iterationsPerSession];
                 for (uint i = 0; i < iterationsPerSession; i++)
                 {
                     // Execute two AUTH commands - one that succeeds and one that fails
-                    c.Execute("AUTH", TestUserA, DummyPassword);
-                    c.Execute("AUTH", DummyPasswordB);
+                    firstResponseTasks[i] = c.ExecuteForStringResultAsync("AUTH", [TestUserA, DummyPassword]).WaitAsync(token);
+                    secondResponseTasks[i] = c.ExecuteForStringResultAsync("AUTH", [TestUserA, DummyPasswordB]).WaitAsync(token);
                 }
-            });
+
+                try
+                {
+                    await Task.WhenAll(firstResponseTasks.Concat(secondResponseTasks)).WaitAsync(token);
+                }
+                catch { }
+                foreach (var task in firstResponseTasks)
+                {
+                    ClassicAssert.IsTrue(task.Result.StartsWith("OK"));
+                }
+                foreach (var task in secondResponseTasks)
+                {
+                    ClassicAssert.IsTrue(task.IsFaulted);
+                    ClassicAssert.IsTrue(task.Exception.InnerExceptions.Count == 1);
+                    ClassicAssert.IsTrue(task.Exception.InnerExceptions[0].Message.StartsWith("WRONGPASS"));
+                }
+            }).WaitAsync(timeout).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -85,28 +105,33 @@ namespace Garnet.test.Resp.ACL
         [Repeat(2)]
         public async Task ParallelAclSetUserTest(int degreeOfParallelism, int iterationsPerSession)
         {
-            string activeUserWithGetCommand = $"ACL SETUSER {TestUserA} on >{DummyPassword} +get";
-            string inactiveUserWithoutGetCommand = $"ACL SETUSER {TestUserA} off >{DummyPassword} -get";
+            string activeUserWithGetCommand = $"SETUSER {TestUserA} on >{DummyPassword} +get";
+            string inactiveUserWithoutGetCommand = $"SETUSER {TestUserA} off >{DummyPassword} -get";
 
             // This is a combination of the two commands above indicative of threading issues.
             string inactiveUserWithGet = $"user {TestUserA} off #{DummyPasswordHash} +get";
 
             // Use client with support for single thread.
-            using var c = TestUtils.GetGarnetClientSession();
-            c.Connect();
-            _ = await c.ExecuteAsync(activeUserWithGetCommand.Split(" "));
+            using var c = TestUtils.GetGarnetClient();
+            await c.ConnectAsync();
+            var response = await c.ExecuteForStringResultAsync("ACL", activeUserWithGetCommand.Split(" "));
+            ClassicAssert.IsTrue(response.StartsWith("OK"));
 
-            await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
+            var timeout = TimeSpan.FromSeconds(120);
+            await Parallel.ForAsync(0, degreeOfParallelism, async (t, token) =>
             {
-                using var c = TestUtils.GetGarnetClientSession();
-                c.Connect();
+                using var c = TestUtils.GetGarnetClient();
+                await c.ConnectAsync(token);
 
                 for (uint i = 0; i < iterationsPerSession; i++)
                 {
-                    await c.ExecuteAsync(activeUserWithGetCommand.Split(" "));
-                    await c.ExecuteAsync(inactiveUserWithoutGetCommand.Split(" "));
+                    var response1 = await c.ExecuteForStringResultAsync("ACL", activeUserWithGetCommand.Split(" ")).WaitAsync(token);
+                    ClassicAssert.IsTrue(response1.StartsWith("OK"));
 
-                    var aclListResponse = await c.ExecuteForArrayAsync("ACL", "LIST");
+                    var response2 = await c.ExecuteForStringResultAsync("ACL", inactiveUserWithoutGetCommand.Split(" ")).WaitAsync(token);
+                    ClassicAssert.IsTrue(response2.StartsWith("OK"));
+
+                    var aclListResponse = await c.ExecuteForStringArrayResultAsync("ACL", ["LIST"]).WaitAsync(token);
 
                     if (aclListResponse.Contains(inactiveUserWithGet))
                     {
@@ -114,7 +139,7 @@ namespace Garnet.test.Resp.ACL
                         throw new AssertionException($"Invalid ACL: {corruptedAcl}");
                     }
                 }
-            });
+            }).WaitAsync(timeout).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -126,21 +151,24 @@ namespace Garnet.test.Resp.ACL
         /// Race conditions are not deterministic so test uses repeat.
         ///
         /// </summary>
-        [TestCase(128)]
-        [Repeat(5)]
-        public async Task ParallelAclSetUserAvoidsMapContentionTest(int degreeOfParallelism)
+        [TestCase(128, 2048)]
+        [Repeat(2)]
+        public async Task ParallelAclSetUserAvoidsMapContentionTest(int degreeOfParallelism, int iterationsPerSession)
         {
-            string setUserCommand = $"ACL SETUSER {TestUserA} on >{DummyPassword}";
+            string setUserCommand = $"SETUSER {TestUserA} on >{DummyPassword}";
 
-            await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
+            var timeout = TimeSpan.FromSeconds(120);
+            await Parallel.ForAsync(0, degreeOfParallelism, async (t, token) =>
             {
                 // Use client with support for single thread.
-                using var c = TestUtils.GetGarnetClientSession();
-                c.Connect();
-                await c.ExecuteAsync(setUserCommand.Split(" "));
-            });
-
-            ClassicAssert.Pass();
+                using var c = TestUtils.GetGarnetClient();
+                await c.ConnectAsync(token);
+                for (uint i = 0; i < iterationsPerSession; i++)
+                {
+                    var response = await c.ExecuteForStringResultAsync("ACL", setUserCommand.Split(" ")).WaitAsync(token);
+                    ClassicAssert.IsTrue(response.StartsWith("OK"));
+                }
+            }).WaitAsync(timeout).ConfigureAwait(false);
         }
     }
 }
