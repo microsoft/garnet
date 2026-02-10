@@ -42,7 +42,7 @@ namespace Garnet.test.Resp.ACL
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
             // Run multiple sessions that stress AUTH
-            var timeout = TimeSpan.FromSeconds(300);
+            var timeout = TimeSpan.FromSeconds(120);
             await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
             {
                 using var c = TestUtils.GetGarnetClient();
@@ -117,7 +117,7 @@ namespace Garnet.test.Resp.ACL
             var response = await c.ExecuteForStringResultAsync("ACL", activeUserWithGetCommand.Split(" "));
             ClassicAssert.IsTrue(response.StartsWith("OK"));
 
-            var timeout = TimeSpan.FromSeconds(300);
+            var timeout = TimeSpan.FromSeconds(120);
             await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
             {
                 using var c = TestUtils.GetGarnetClient();
@@ -157,7 +157,7 @@ namespace Garnet.test.Resp.ACL
         {
             string setUserCommand = $"SETUSER {TestUserA} on >{DummyPassword}";
 
-            var timeout = TimeSpan.FromSeconds(300);
+            var timeout = TimeSpan.FromSeconds(120);
             await Parallel.ForAsync(0, degreeOfParallelism, async (t, state) =>
             {
                 // Use client with support for single thread.
