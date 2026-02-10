@@ -19,7 +19,6 @@ namespace Garnet.test.Resp.ETag
 
         protected static readonly string[] KeysWithEtag = ["keyWithEtag1", "keyWithEtag2"];
         protected HashSet<RespCommand> NoKeyDataCommands = new();
-        protected HashSet<RespCommand> MultiKeyCommands = new();
         protected HashSet<RespCommand> OverwriteCommands = new();
         
         [SetUp]
@@ -45,9 +44,6 @@ namespace Garnet.test.Resp.ETag
                     NoKeyDataCommands.Add(cmd);
                     continue;
                 }
-
-                if (simpleRespCommandInfo.IsMultiKeyCommand())
-                    MultiKeyCommands.Add(cmd);
 
                 if (simpleRespCommandInfo.IsOverwriteCommand())
                     OverwriteCommands.Add(cmd);
@@ -93,7 +89,7 @@ namespace Garnet.test.Resp.ETag
             }
 
             // Multi-key commands do not support meta-commands yet
-            if (!MultiKeyCommands.Contains(command))
+            if (!command.IsMultiKeyCommand())
             {
                 DataSetUp();
                 var args = new object[] { command.ToString() }.Union(commandArgs).ToArray();

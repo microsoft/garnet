@@ -28,13 +28,12 @@ namespace Garnet.server
             // Get the key for SortedSet
             var currIdx = 0;
             var key = parseState.GetArgSliceByRef(currIdx++);
-            var options = SortedSetAddOption.None;
             ReadOnlySpan<byte> error = default;
 
             // If the first argument is not a score field - parse and validate options
             if (!parseState.TryGetDouble(currIdx, out _))
             {
-                options = parseState.GetSortedSetAddOptions(currIdx, out var nextIdxStep);
+                var options = parseState.GetSortedSetAddOptions(currIdx, out var nextIdxStep);
 
                 // No options were parsed - invalid Score encountered
                 if (nextIdxStep == 0)
@@ -85,6 +84,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetAdd(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -122,6 +122,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetRemove(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -161,6 +162,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetLength(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -211,6 +213,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetRange(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -296,6 +299,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetScore(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -340,6 +344,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetScores(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -408,6 +413,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetPop(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -579,6 +585,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetCount(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -642,6 +649,7 @@ namespace Garnet.server
             var status = op == SortedSetOperation.ZREMRANGEBYLEX ?
                 storageApi.SortedSetRemoveRangeByLex(key, ref input, ref output) :
                 storageApi.SortedSetLengthByValue(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -694,6 +702,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetIncrement(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -756,6 +765,7 @@ namespace Garnet.server
 
             // Prepare output
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            etag = output.Header.etag;
 
             var status = storageApi.SortedSetRank(key, ref input, ref output);
 
@@ -826,6 +836,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetRemoveRange(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -907,6 +918,7 @@ namespace Garnet.server
                 // Prepare output
                 output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
                 status = storageApi.SortedSetRandomMember(key, ref input, ref output);
+                etag = output.Header.etag;
             }
 
             switch (status)
@@ -1827,6 +1839,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetExpire(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -1918,6 +1931,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetTimeToLive(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -1983,6 +1997,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SortedSetPersist(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {

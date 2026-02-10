@@ -557,6 +557,7 @@ namespace Garnet.server
         public static bool IsReadOnly(this RespCommand cmd)
             => cmd <= LastReadCommand;
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool IsDataCommand(this RespCommand cmd)
         {
             return cmd switch
@@ -571,6 +572,65 @@ namespace Garnet.server
                 RespCommand.SCAN => false,
                 RespCommand.SWAPDB => false,
                 _ => cmd >= FirstReadCommand && cmd <= LastDataCommand
+            };
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsMultiKeyCommand(this RespCommand cmd)
+        {
+            return cmd switch
+            {
+                RespCommand.EXISTS or
+                RespCommand.MGET or
+                RespCommand.PFCOUNT or
+                RespCommand.SDIFF or
+                RespCommand.SINTER or
+                RespCommand.SINTERCARD or
+                RespCommand.SSUBSCRIBE or
+                RespCommand.SUNION or
+                RespCommand.WATCH or
+                RespCommand.WATCHMS or
+                RespCommand.WATCHOS or
+                RespCommand.ZDIFF or
+                RespCommand.ZINTER or
+                RespCommand.ZINTERCARD or
+                RespCommand.ZUNION or
+                RespCommand.BZMPOP or
+                RespCommand.BZPOPMAX or
+                RespCommand.BZPOPMIN or
+                RespCommand.DEL or
+                RespCommand.GEORADIUS or
+                RespCommand.GEORADIUSBYMEMBER or
+                RespCommand.GEOSEARCHSTORE or
+                RespCommand.HCOLLECT or
+                RespCommand.LMOVE or
+                RespCommand.LMPOP or
+                RespCommand.BLPOP or
+                RespCommand.BRPOP or
+                RespCommand.BLMOVE or
+                RespCommand.BRPOPLPUSH or
+                RespCommand.BLMPOP or
+                RespCommand.MSET or
+                RespCommand.MSETNX or
+                RespCommand.PFMERGE or
+                RespCommand.RENAME or
+                RespCommand.RENAMENX or
+                RespCommand.RPOPLPUSH or
+                RespCommand.SDIFFSTORE or
+                RespCommand.SINTERSTORE or
+                RespCommand.SMOVE or
+                RespCommand.SUNIONSTORE or
+                RespCommand.UNLINK or
+                RespCommand.ZCOLLECT or
+                RespCommand.ZDIFFSTORE or
+                RespCommand.ZMPOP or
+                RespCommand.ZINTERSTORE or
+                RespCommand.ZRANGESTORE or
+                RespCommand.ZUNIONSTORE or
+                RespCommand.BITOP or
+                RespCommand.EVAL or
+                RespCommand.EVALSHA => true,
+                _ => false
             };
         }
 

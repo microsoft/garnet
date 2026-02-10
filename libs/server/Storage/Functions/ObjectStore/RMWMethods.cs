@@ -315,19 +315,14 @@ namespace Garnet.server
         {
             sizeChange = 0;
 
-            var metaCmd = input.metaCommandInfo.MetaCommand;
             var updatedEtag = EtagUtils.GetUpdatedEtag(currEtag, ref input.metaCommandInfo, out var execCmd, init, readOnly);
 
-            var isEtagCmd = metaCmd.IsEtagCommand();
             var skipResp = input.header.CheckSkipRespOutputFlag();
             var respProtocolVersion = functionsState.GetRespProtocolVersion(ref input);
             var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             try
             {
-                if (!skipResp && isEtagCmd)
-                    writer.WriteArrayLength(2);
-
                 if (execCmd)
                 {
                     value.Operate(ref input, ref output, ref writer, out sizeChange);
@@ -338,13 +333,7 @@ namespace Garnet.server
                 else if (!skipResp)
                     writer.WriteNull();
 
-                if (isEtagCmd)
-                {
-                    if (!skipResp)
-                        writer.WriteInt64(updatedEtag);
-
-                    output.Header.etag = updatedEtag;
-                }
+                output.Header.etag = updatedEtag;
             }
             finally
             {

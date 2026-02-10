@@ -294,7 +294,9 @@ namespace Garnet.server
         public static ReadOnlySpan<byte> RESP_COMMAND_HAS_NO_KEY_ARGS => "The command has no key arguments"u8;
         public static ReadOnlySpan<byte> RESP_ERR_INVALID_CLIENT_UNBLOCK_REASON => "ERR CLIENT UNBLOCK reason should be TIMEOUT or ERROR"u8;
         public static ReadOnlySpan<byte> RESP_UNBLOCKED_CLIENT_VIA_CLIENT_UNBLOCK => "UNBLOCKED client unblocked via CLIENT UNBLOCK"u8;
-        public static ReadOnlySpan<byte> RESP_ERR_INVALID_ETAG => "ETAG must be a numerical value greater than or equal to 0"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_INVALID_ETAG => "ERR etag must be a numerical value greater than or equal to 0"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ETAG_META_CMD_EXPECTS_DATA_CMD => "ERR eTag meta-commands can only precede data commands"u8;
+        public static ReadOnlySpan<byte> RESP_ERR_ETAG_META_CMD_MULTI_KEY_UNSUPPORTED => "ERR eTag meta-commands do not support multi-key commands"u8;
         public static ReadOnlySpan<byte> RESP_ERR_FLUSHALL_READONLY_REPLICA => "ERR You can't write against a read only replica."u8;
         public static ReadOnlySpan<byte> RESP_ERR_ZSET_MEMBER => "ERR could not decode requested zset member"u8;
         public static ReadOnlySpan<byte> RESP_ERR_EXPDELSCAN_INVALID => "ERR Cannot execute EXPDELSCAN with background expired key deletion scan enabled"u8;

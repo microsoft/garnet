@@ -56,6 +56,7 @@ namespace Garnet.server
         internal SessionParseState parseState;
         internal SessionParseState customCommandParseState;
         internal MetaCommandInfo metaCommandInfo;
+        private long etag;
 
         ClusterSlotVerificationInput csvi;
         GCHandle recvHandle;
@@ -724,13 +725,33 @@ namespace Garnet.server
         private bool ProcessBasicCommands<TGarnetApi>(RespCommand cmd, ref TGarnetApi storageApi)
             where TGarnetApi : IGarnetApi
         {
-            if (metaCommandInfo.MetaCommand != RespMetaCommand.None && !IsMetaCommandInfoValid())
-                return true;
+            var outputEtag = false;
+            if (metaCommandInfo.MetaCommand != RespMetaCommand.None)
+            {
+                if (!IsMetaCommandInfoValid())
+                    return true;
+
+                if (metaCommandInfo.MetaCommand.IsEtagCommand())
+                {
+                    if (!cmd.IsDataCommand())
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ETAG_META_CMD_EXPECTS_DATA_CMD, ref dcurr, dend))
+                            SendAndReset();
+
+                    if (cmd.IsMultiKeyCommand())
+                        while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_ETAG_META_CMD_MULTI_KEY_UNSUPPORTED, ref dcurr, dend))
+                            SendAndReset();
+
+                    outputEtag = true;
+                    while (!RespWriteUtils.TryWriteArrayLength(2, ref dcurr, dend))
+                        SendAndReset();
+                }
+            }
 
             /*
              * WARNING: Do not add any command here classified as @slow!
              * Only @fast commands otherwise latency tracking will break for NET_RS (check how containsSlowCommand is used).
              */
+            etag = -1;
             _ = cmd switch
             {
                 RespCommand.GET => NetworkGET(ref storageApi),
@@ -786,6 +807,13 @@ namespace Garnet.server
 
                 _ => ProcessArrayCommands(cmd, ref storageApi)
             };
+
+            if (outputEtag)
+            {
+                Debug.Assert(etag != -1);
+                while (!RespWriteUtils.TryWriteInt64(etag, ref dcurr, dend))
+                    SendAndReset();
+            }
 
             return true;
         }
@@ -956,6 +984,7 @@ namespace Garnet.server
                 RespCommand.SDIFFSTORE => SetDiffStore(ref storageApi),
                 _ => ProcessOtherCommands(cmd, ref storageApi)
             };
+
             return success;
         }
 

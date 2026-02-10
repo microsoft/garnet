@@ -269,6 +269,9 @@ namespace Garnet.server
         /// <returns>True if successful</returns>
         public static bool IsMultiKeyCommand(this SimpleRespCommandInfo simpleCommandInfo)
         {
+            if (simpleCommandInfo.KeySpecs == null)
+                return false;
+
             if (simpleCommandInfo.KeySpecs.Length > 1) 
                 return true;
 
