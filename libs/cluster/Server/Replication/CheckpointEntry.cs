@@ -70,7 +70,7 @@ namespace Garnet.cluster
             => _lock.ReadUnlock();
 
         /// <summary>
-        /// Suspend addition of new readers by setting the lock to write locked (if not already)
+        /// Suspend addition of new readers by setting the reader counter to int.MinValue
         /// </summary>
         /// <returns>(true) if operation succeeded, (false) otherwise</returns>
         public bool TrySuspendReaders()
