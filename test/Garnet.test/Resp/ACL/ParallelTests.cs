@@ -148,9 +148,9 @@ namespace Garnet.test.Resp.ACL
         /// Race conditions are not deterministic so test uses repeat.
         ///
         /// </summary>
-        [TestCase(128)]
+        [TestCase(128, 2048)]
         [Repeat(2)]
-        public async Task ParallelAclSetUserAvoidsMapContentionTest(int degreeOfParallelism)
+        public async Task ParallelAclSetUserAvoidsMapContentionTest(int degreeOfParallelism, int iterationsPerSession)
         {
             string setUserCommand = $"SETUSER {TestUserA} on >{DummyPassword}";
 
@@ -159,8 +159,11 @@ namespace Garnet.test.Resp.ACL
                 // Use client with support for single thread.
                 using var c = TestUtils.GetGarnetClient();
                 await c.ConnectAsync();
-                var response = await c.ExecuteForStringResultAsync("ACL", setUserCommand.Split(" "));
-                ClassicAssert.IsTrue(response.StartsWith("OK"));
+                for (uint i = 0; i < iterationsPerSession; i++)
+                {
+                    var response = await c.ExecuteForStringResultAsync("ACL", setUserCommand.Split(" "));
+                    ClassicAssert.IsTrue(response.StartsWith("OK"));
+                }
             });
         }
     }
