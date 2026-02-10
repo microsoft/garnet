@@ -82,7 +82,7 @@ namespace Garnet.test.Resp.ACL
         public void ParallelPasswordHashTest(int degreeOfParallelism, int iterationsPerSession)
         {
             // Run multiple sessions that stress password hashing
-            Parallel.For(0, degreeOfParallelism, (t, token) =>
+            Parallel.For(0, degreeOfParallelism, (t, state) =>
             {
                 for (uint i = 0; i < iterationsPerSession; i++)
                 {
