@@ -126,10 +126,14 @@ namespace Garnet.server
 
         internal StorageSession HybridLogStatScanStorageSession;
 
+        readonly KVSettings<SpanByte, SpanByte> KvSettings;
+        readonly KVSettings<byte[], IGarnetObject> ObjKvSettings;
+
         bool disposed = false;
 
         public GarnetDatabase(int id, TsavoriteKV<SpanByte, SpanByte, MainStoreFunctions, MainStoreAllocator> mainStore,
             TsavoriteKV<byte[], IGarnetObject, ObjectStoreFunctions, ObjectStoreAllocator> objectStore,
+            KVSettings<SpanByte, SpanByte> kvSettings, KVSettings<byte[], IGarnetObject> objKvSettings,
             LightEpoch epoch, StateMachineDriver stateMachineDriver,
             CacheSizeTracker objectStoreSizeTracker, IDevice aofDevice, TsavoriteLog appendOnlyFile,
             bool mainStoreIndexMaxedOut, bool objectStoreIndexMaxedOut, VectorManager vectorManager) : this()
@@ -137,6 +141,8 @@ namespace Garnet.server
             Id = id;
             MainStore = mainStore;
             ObjectStore = objectStore;
+            KvSettings = kvSettings;
+            ObjKvSettings = objKvSettings;
             Epoch = epoch;
             StateMachineDriver = stateMachineDriver;
             ObjectStoreSizeTracker = objectStoreSizeTracker;
@@ -152,6 +158,8 @@ namespace Garnet.server
             Id = id;
             MainStore = srcDb.MainStore;
             ObjectStore = srcDb.ObjectStore;
+            KvSettings = srcDb.KvSettings;
+            ObjKvSettings = srcDb.ObjKvSettings;
             Epoch = srcDb.Epoch;
             StateMachineDriver = srcDb.StateMachineDriver;
             ObjectStoreSizeTracker = srcDb.ObjectStoreSizeTracker;
@@ -188,10 +196,19 @@ namespace Garnet.server
             VectorManager?.Dispose();
 
             // Wait for checkpoints to complete and disable checkpointing
-            CheckpointingLock.CloseLock();
+            while (!CheckpointingLock.TryWriteLock())
+                _ = Thread.Yield();
 
             MainStore?.Dispose();
             ObjectStore?.Dispose();
+
+            KvSettings?.LogDevice?.Dispose();
+            if (ObjKvSettings != null)
+            {
+                ObjKvSettings.LogDevice?.Dispose();
+                ObjKvSettings.ObjectLogDevice?.Dispose();
+            }
+
             AofDevice?.Dispose();
             AppendOnlyFile?.Dispose();
             ObjectStoreCollectionDbStorageSession?.Dispose();
@@ -207,7 +224,6 @@ namespace Garnet.server
                         Thread.Yield();
                 }
             }
-
             disposed = true;
         }
     }
