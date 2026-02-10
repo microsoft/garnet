@@ -141,6 +141,11 @@ namespace Tsavorite.core
         public bool AutoCommit = false;
 
         /// <summary>
+        /// Epoch instance used by the log
+        /// </summary>
+        public LightEpoch Epoch = null;
+
+        /// <summary>
         /// Create default configuration settings for TsavoriteLog. You need to create and specify LogDevice 
         /// explicitly with this API.
         /// Use Utility.ParseSize to specify sizes in familiar string notation (e.g., "4k" and "4 MB").

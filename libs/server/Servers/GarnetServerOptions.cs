@@ -890,7 +890,7 @@ namespace Garnet.server
         /// </summary>
         /// <param name="dbId">DB ID</param>
         /// <param name="tsavoriteLogSettings">Tsavorite log settings</param>
-        public void GetAofSettings(int dbId, out TsavoriteLogSettings tsavoriteLogSettings)
+        public void GetAofSettings(int dbId, LightEpoch epoch, out TsavoriteLogSettings tsavoriteLogSettings)
         {
             tsavoriteLogSettings = new TsavoriteLogSettings
             {
@@ -902,6 +902,7 @@ namespace Garnet.server
                 FastCommitMode = EnableFastCommit,
                 AutoCommit = CommitFrequencyMs == 0,
                 MutableFraction = 0.9,
+                Epoch = epoch
             };
             if (tsavoriteLogSettings.PageSize > tsavoriteLogSettings.MemorySize)
             {
