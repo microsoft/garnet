@@ -51,8 +51,8 @@ namespace Garnet.test.Resp.ACL
                 for (uint i = 0; i < iterationsPerSession; i++)
                 {
                     // Execute two AUTH commands - one that succeeds and one that fails
-                    firstResponseTasks[i] = c.ExecuteForStringResultAsync("AUTH", [ TestUserA, DummyPassword ]);
-                    secondResponseTasks[i] = c.ExecuteForStringResultAsync("AUTH", [ TestUserA, DummyPasswordB ]);
+                    firstResponseTasks[i] = c.ExecuteForStringResultAsync("AUTH", [TestUserA, DummyPassword]);
+                    secondResponseTasks[i] = c.ExecuteForStringResultAsync("AUTH", [TestUserA, DummyPasswordB]);
                 }
 
                 try
@@ -128,7 +128,7 @@ namespace Garnet.test.Resp.ACL
                     var response2 = await c.ExecuteForStringResultAsync("ACL", inactiveUserWithoutGetCommand.Split(" "));
                     ClassicAssert.IsTrue(response2.StartsWith("OK"));
 
-                    var aclListResponse = await c.ExecuteForStringArrayResultAsync("ACL", [ "LIST" ]);
+                    var aclListResponse = await c.ExecuteForStringArrayResultAsync("ACL", ["LIST"]);
 
                     if (aclListResponse.Contains(inactiveUserWithGet))
                     {
