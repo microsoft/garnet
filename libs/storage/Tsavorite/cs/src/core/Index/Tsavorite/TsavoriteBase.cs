@@ -36,7 +36,7 @@ namespace Tsavorite.core
         internal long numPendingChunksToBeSplit;
 
         internal readonly LightEpoch epoch;
-        readonly bool ownedEpoch;
+        readonly bool isEpochOwned;
 
         internal ResizeInfo resizeInfo;
 
@@ -58,7 +58,7 @@ namespace Tsavorite.core
             if (epoch == null)
             {
                 this.epoch = new LightEpoch();
-                ownedEpoch = true;
+                isEpochOwned = true;
             }
             else
                 this.epoch = epoch;
@@ -69,7 +69,7 @@ namespace Tsavorite.core
         {
             Free(0);
             Free(1);
-            if (ownedEpoch)
+            if (isEpochOwned)
                 epoch.Dispose();
             overflowBucketsAllocator.Dispose();
         }

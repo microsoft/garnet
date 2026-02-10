@@ -242,7 +242,7 @@ namespace Tsavorite.core
         }
 
         /// <summary>
-        /// Release epoch if held
+        /// Try to suspend the epoch, if it is currently held
         /// </summary>
         /// <returns></returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
