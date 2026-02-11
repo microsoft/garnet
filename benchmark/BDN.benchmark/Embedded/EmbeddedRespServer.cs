@@ -31,7 +31,7 @@ namespace Embedded.server
                     null,
                     opts.PubSubPageSizeBytes(),
                     opts.SubscriberRefreshFrequencyMs,
-                    null,
+                    pubSubEpoch,
                     true);
         }
 

@@ -54,7 +54,7 @@ namespace Garnet
         private readonly ILoggerFactory loggerFactory;
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
-        private readonly LightEpoch storeEpoch, aofEpoch, pubSubEpoch;
+        protected readonly LightEpoch storeEpoch, aofEpoch, pubSubEpoch;
 
         /// <summary>
         /// Store and associated information used by this Garnet server
