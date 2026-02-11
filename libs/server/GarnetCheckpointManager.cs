@@ -56,6 +56,7 @@ namespace Garnet.server
 
             if (CurrentSafeAofAddress.Length == 1)
             {
+                // Legacy single log serialization
                 var cookie = new byte[sizeof(int) + sizeof(long) + CurrentHistoryId.Length];
                 var primaryReplIdBytes = Encoding.ASCII.GetBytes(CurrentHistoryId);
                 fixed (byte* ptr = cookie)
@@ -69,6 +70,7 @@ namespace Garnet.server
             }
             else
             {
+                // Multi-log serialization
                 using var ms = new MemoryStream();
                 using var writer = new BinaryWriter(ms, Encoding.ASCII);
 

@@ -115,14 +115,37 @@ namespace Garnet.cluster
             var hlri = ConvertMetadata(metadata);
             GetCookieData(hlri, ref recoveredSafeAofAddress, out recoveredReplicationId);
 
-            static unsafe void GetCookieData(HybridLogRecoveryInfo hlri, ref AofAddress checkpointCoveredAddress, out string primaryReplId)
+            unsafe void GetCookieData(HybridLogRecoveryInfo hlri, ref AofAddress checkpointCoveredAddress, out string primaryReplId)
             {
-                using var ms = new MemoryStream(hlri.cookie);
-                using var reader = new BinaryReader(ms, Encoding.ASCII);
-                primaryReplId = reader.ReadInt32() > 0 ? reader.ReadString() : null;
-                checkpointCoveredAddress.DeserializeInPlace(reader);
-                reader.Dispose();
-                ms.Dispose();
+                primaryReplId = null;
+
+                if (RecoveredSafeAofAddress.Length == 1)
+                {
+                    // Legacy single log deserialization for backward compatibility
+                    var bytesRead = sizeof(int);
+                    fixed (byte* ptr = hlri.cookie)
+                    {
+                        if (hlri.cookie.Length < 4) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 4");
+                        var cookieSize = *(int*)ptr;
+                        bytesRead += cookieSize;
+
+                        if (hlri.cookie.Length < 12) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 12");
+                        checkpointCoveredAddress[0] = *(long*)(ptr + 4);
+
+                        if (hlri.cookie.Length < 52) throw new Exception($"invalid metadata length: {hlri.cookie.Length} < 52");
+                        primaryReplId = Encoding.ASCII.GetString(ptr + 12, 40);
+                    }
+                }
+                else
+                {
+                    // Multi-log cookie
+                    using var ms = new MemoryStream(hlri.cookie);
+                    using var reader = new BinaryReader(ms, Encoding.ASCII);
+                    primaryReplId = reader.ReadInt32() > 0 ? reader.ReadString() : null;
+                    checkpointCoveredAddress.DeserializeInPlace(reader);
+                    reader.Dispose();
+                    ms.Dispose();
+                }
             }
         }
 
