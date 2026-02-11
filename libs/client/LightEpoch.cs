@@ -731,12 +731,6 @@ namespace Garnet.client
             [FieldOffset(8)]
             public int threadId;
 
-            [FieldOffset(12)]
-            public int paddding1; // Padding to end of cache line
-
-            [FieldOffset(16)]
-            public fixed long padding2[6]; // Padding to end of cache line
-
             public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}";
         }
 
