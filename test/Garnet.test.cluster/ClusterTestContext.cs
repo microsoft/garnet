@@ -130,7 +130,7 @@ namespace Garnet.test.cluster
                 logger?.LogError("Timed out waiting for DisposeCluster");
                 Assert.Fail("Timed out waiting for DisposeCluster");
             }
-            // Dispose logger factor only after servers are disposed
+            // Dispose logger factory only after servers are disposed
             loggerFactory?.Dispose();
             if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
             {
