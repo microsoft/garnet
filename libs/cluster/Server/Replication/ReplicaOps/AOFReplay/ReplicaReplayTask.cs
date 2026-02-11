@@ -36,7 +36,7 @@ namespace Garnet.cluster
         {
             var physicalSublogIdx = replayDriver.physicalSublogIdx;
             var virtualSublogIdx = appendOnlyFile.GetVirtualSublogIdx(physicalSublogIdx, replayTaskIdx);
-            
+
             while (!cts.Token.IsCancellationRequested)
             {
                 try

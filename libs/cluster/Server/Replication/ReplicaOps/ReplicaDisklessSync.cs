@@ -89,7 +89,7 @@ namespace Garnet.cluster
                     await storeWrapper.SuspendPrimaryOnlyTasks();
 
                     // Stop advance time task when reconfiguring node to be replica
-                    if(storeWrapper.serverOptions.AofPhysicalSublogCount > 1)
+                    if (storeWrapper.serverOptions.AofPhysicalSublogCount > 1)
                         clusterProvider.storeWrapper.TaskManager.Cancel(TaskType.AdvanceTimeReplicaTask).Wait();
 
                     // Send request to primary

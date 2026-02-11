@@ -40,7 +40,7 @@ namespace Garnet.common
         public async Task<bool> WaitCompletedAsync(TimeSpan timeout = default, CancellationToken cancellationToken = default)
         {
             var waitTimeout = timeout == default ? Timeout.InfiniteTimeSpan : timeout;
-            
+
             // Wait for all participants to signal completion
             for (var i = 0; i < participantCount; i++)
             {

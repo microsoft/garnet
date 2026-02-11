@@ -17,7 +17,7 @@ namespace Garnet.common
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public long GetSequenceNumber() => Stopwatch.GetTimestamp() - baseTimestamp + startingOffset;
-        
+
         public override string ToString() => $"{startingOffset},{baseTimestamp},{Stopwatch.GetTimestamp()}";
     }
 }

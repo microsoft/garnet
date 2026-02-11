@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 using System.Collections;
 using System.Globalization;
 using System.Text.Json;

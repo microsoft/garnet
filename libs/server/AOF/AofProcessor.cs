@@ -271,7 +271,7 @@ namespace Garnet.server
             switch (header.opType)
             {
                 case AofEntryType.StoreUpsert:
-                    if(isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
+                    if (isSharded) UpdateKeySequenceNumber(sublogIdx, entryPtr);
                     StoreUpsert(stringContext, AofHeader.SkipHeader(entryPtr));
                     break;
                 case AofEntryType.StoreRMW:
