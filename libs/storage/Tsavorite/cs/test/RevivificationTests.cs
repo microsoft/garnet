@@ -301,7 +301,7 @@ namespace Tsavorite.test.Revivification
             log?.Dispose();
             log = null;
 
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         void Populate()
@@ -761,7 +761,7 @@ namespace Tsavorite.test.Revivification
             log?.Dispose();
             log = null;
 
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         void Populate() => Populate(0, NumRecords);
@@ -1828,7 +1828,7 @@ namespace Tsavorite.test.Revivification
             objlog?.Dispose();
             objlog = null;
 
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         void Populate()
@@ -2002,7 +2002,7 @@ namespace Tsavorite.test.Revivification
             log?.Dispose();
             log = null;
 
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         unsafe void Populate()

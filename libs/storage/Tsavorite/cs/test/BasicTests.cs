@@ -66,7 +66,7 @@ namespace Tsavorite.test
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(TestUtils.MethodTestDir);
+            OnTearDown();
         }
 
         private void AssertCompleted(Status expected, Status actual)

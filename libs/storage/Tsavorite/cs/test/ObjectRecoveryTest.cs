@@ -68,7 +68,7 @@ namespace Tsavorite.test.recovery.objects
             objlog = null;
 
             if (deleteDir)
-                TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+                TestUtils.OnTearDown();
         }
 
         private void PrepareToRecover()

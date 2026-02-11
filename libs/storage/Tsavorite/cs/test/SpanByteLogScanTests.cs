@@ -81,7 +81,7 @@ namespace Tsavorite.test.spanbyte
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         public class ScanFunctions : SpanByteFunctions<Empty>

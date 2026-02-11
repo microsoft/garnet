@@ -556,7 +556,7 @@ namespace Tsavorite.test.Expiration
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         private unsafe void Populate(Random rng)

@@ -95,7 +95,7 @@ namespace Tsavorite.test.SingleWriter
             store = null;
             log?.Dispose();
             log = null;
-            DeleteDirectory(MethodTestDir);
+            OnTearDown();
         }
 
         void Populate()

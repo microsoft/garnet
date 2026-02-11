@@ -224,7 +224,7 @@ namespace Tsavorite.test.LockableUnsafeContext
 
             if (!forRecovery)
             {
-                DeleteDirectory(MethodTestDir);
+                OnTearDown();
             }
         }
 

@@ -53,7 +53,7 @@ namespace Tsavorite.test
             deviceReadOnly = null;
 
             // Clean up log files
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
 
