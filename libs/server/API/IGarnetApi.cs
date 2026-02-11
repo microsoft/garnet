@@ -533,7 +533,7 @@ namespace Garnet.server
         /// <param name="output"></param>
         /// <returns></returns>
         GarnetStatus GeoSearchStore(PinnedSpanByte key, PinnedSpanByte destinationKey, ref GeoSearchOptions opts,
-                                    ref ObjectInput input, ref SpanByteAndMemory output);
+                                    ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Intersects multiple sorted sets and stores the result in the destination key.
@@ -1505,7 +1505,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus GeoSearchReadOnly(PinnedSpanByte key, ref GeoSearchOptions opts, ref ObjectInput input, ref SpanByteAndMemory output);
+        GarnetStatus GeoSearchReadOnly(PinnedSpanByte key, ref GeoSearchOptions opts, ref ObjectInput input, ref ObjectOutput output);
 
         #endregion
 
@@ -1748,7 +1748,7 @@ namespace Garnet.server
         /// <param name="input"></param>
         /// <param name="output"></param>
         /// <returns></returns>
-        GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output);
+        GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output);
 
         /// <summary>
         /// Returns count random fields from the hash value.

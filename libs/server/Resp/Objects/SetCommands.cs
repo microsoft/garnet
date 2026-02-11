@@ -40,6 +40,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SetAdd(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -326,6 +327,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SetRemove(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -369,6 +371,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SetLength(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -412,6 +415,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SetMembers(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -539,6 +543,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SetPop(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -651,6 +656,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.SetRandomMember(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {

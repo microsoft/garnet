@@ -45,6 +45,7 @@ namespace Garnet.server
             var status = command == RespCommand.LPUSH || command == RespCommand.LPUSHX
                 ? storageApi.ListLeftPush(key, ref input, ref output)
                 : storageApi.ListRightPush(key, ref input, ref output);
+            etag = output.Header.etag;
 
             if (status == GarnetStatus.WRONGTYPE)
             {
@@ -105,6 +106,7 @@ namespace Garnet.server
             var statusOp = command == RespCommand.LPOP
                 ? storageApi.ListLeftPop(key, ref input, ref output)
                 : storageApi.ListRightPop(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (statusOp)
             {
@@ -151,7 +153,8 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var statusOp = storageApi.ListPosition(key, ref input, ref output);
-
+            etag = output.Header.etag;
+            
             switch (statusOp)
             {
                 case GarnetStatus.OK:
@@ -416,6 +419,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.ListLength(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -467,6 +471,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.ListTrim(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -518,6 +523,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var statusOp = storageApi.ListRange(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (statusOp)
             {
@@ -568,6 +574,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var statusOp = storageApi.ListIndex(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (statusOp)
             {
@@ -612,6 +619,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var statusOp = storageApi.ListInsert(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (statusOp)
             {
@@ -662,6 +670,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var statusOp = storageApi.ListRemove(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (statusOp)
             {
@@ -814,6 +823,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var statusOp = storageApi.ListSet(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (statusOp)
             {

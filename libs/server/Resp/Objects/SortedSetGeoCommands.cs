@@ -3,7 +3,6 @@
 
 using System;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -89,6 +88,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.GeoAdd(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -167,6 +167,7 @@ namespace Garnet.server
             var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.GeoCommands(key, ref input, ref output);
+            etag = output.Header.etag;
 
             switch (status)
             {
@@ -256,7 +257,7 @@ namespace Garnet.server
                 startIdx: sourceIdx + 1, arg1: (int)command)
             { SortedSetOp = SortedSetOperation.GEOSEARCH };
 
-            var output = SpanByteAndMemory.FromPinnedPointer(dcurr, (int)(dend - dcurr));
+            var output = ObjectOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             if (!input.parseState.TryGetGeoSearchOptions(command, out var searchOpts, out var destIdx, out var errorMessage))
             {
@@ -267,26 +268,23 @@ namespace Garnet.server
             if (destIdx != -1)
             {
                 var destinationKey = parseState.GetArgSliceByRef(destIdx);
-                status = storageApi.GeoSearchStore(sourceKey, destinationKey,
-                                                   ref searchOpts, ref input, ref output);
+                status = storageApi.GeoSearchStore(sourceKey, destinationKey, ref searchOpts, ref input, ref output);
 
                 if (status == GarnetStatus.OK)
                 {
-                    if (!output.IsSpanByte)
-                        SendAndReset(output.Memory, output.Length);
-                    else
-                        dcurr += output.Length;
-
+                    ProcessOutput(output.SpanByteAndMemory);
+                    etag = output.Header.etag;
                     return true;
                 }
             }
             else
             {
                 status = storageApi.GeoSearchReadOnly(sourceKey, ref searchOpts, ref input, ref output);
+                etag = output.Header.etag;
 
                 if (status == GarnetStatus.OK)
                 {
-                    ProcessOutput(output);
+                    ProcessOutput(output.SpanByteAndMemory);
                     return true;
                 }
             }

@@ -212,7 +212,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus GeoSearchReadOnly(PinnedSpanByte key, ref GeoSearchOptions opts,
-                                      ref ObjectInput input, ref SpanByteAndMemory output)
+                                      ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.GeoSearchReadOnly(key, ref opts, ref input, ref output);
@@ -469,10 +469,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashExists(key, ref input, out output);
+            return garnetApi.HashExists(key, ref input, ref output);
         }
 
         /// <inheritdoc />

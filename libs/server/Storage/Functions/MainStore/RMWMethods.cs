@@ -32,7 +32,7 @@ namespace Garnet.server
                         functionsState.CopyDefaultResp(functionsState.nilResp, ref output);
                     }
                     return false;
-                case RespCommand.SET:
+                case RespCommand.SET: 
                 case RespCommand.SETEXNX:
                 case RespCommand.SETKEEPTTL:
                     return true;

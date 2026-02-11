@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
-using Tsavorite.core;
 
 namespace Garnet.server
 {
@@ -164,14 +163,14 @@ namespace Garnet.server
         }
 
         internal void GeoSearch(ref ObjectInput input,
-                                ref SpanByteAndMemory spam,
+                                ref ObjectOutput output,
                                 byte respProtocolVersion,
                                 ref GeoSearchOptions opts,
                                 bool readOnly)
         {
             Debug.Assert(opts.searchType != default);
 
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref spam);
+            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             // FROMMEMBER
             if (opts.origin == GeoOriginType.FromMember)

@@ -4,6 +4,8 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Garnet.common;
+using Microsoft.Extensions.Logging;
 using Tsavorite.core;
 using static Garnet.server.SessionFunctionsUtils;
 
@@ -35,13 +37,25 @@ namespace Garnet.server
             Debug.Assert(logRecord.Info.ValueIsObject || (!logRecord.Info.HasETag && !logRecord.Info.HasExpiration),
                 "Should not have Expiration or ETag on InitialUpdater log records");
 
-            return input.header.cmd switch
+            var updatedEtag = EtagUtils.GetUpdatedEtag(LogRecord.NoETag, ref input.metaCommandInfo, out _, init: true);
+
+            var result =  input.header.cmd switch
             {
                 RespCommand.DELIFEXPIM or
                 RespCommand.PERSIST or
                 RespCommand.EXPIRE => throw new Exception(),
                 _ => true
             };
+
+            // the increment on initial etag is for satisfying the variant that any key with no etag is the same as a zero'd etag
+            if (sizeInfo.FieldInfo.HasETag && !logRecord.TrySetETag(updatedEtag))
+            {
+                functionsState.logger?.LogError("Could not set etag in {methodName}", "InitialUpdater");
+                return false;
+            }
+            ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in logRecord);
+            
+            return result;
         }
 
         /// <inheritdoc />
@@ -70,7 +84,6 @@ namespace Garnet.server
                 return false;
             }
 
-            var metaCmd = input.metaCommandInfo.MetaCommand;
             _ = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd);
 
             switch (input.header.cmd)
@@ -79,6 +92,7 @@ namespace Garnet.server
                     if (execCmd)
                         rmwInfo.Action = RMWAction.ExpireAndStop;
 
+                    output.Header.etag = LogRecord.NoETag;
                     ETagState.ResetState(ref functionsState.etagState);
                     // We always return false because we would rather not create a new record in hybrid log if we don't need to delete the object.
                     // Setting no Action and returning false for non-delete case will shortcircuit the InternalRMW code to not run CU, and return SUCCESS.
@@ -126,7 +140,8 @@ namespace Garnet.server
             }
 
             var cmd = input.header.cmd;
-            var updatedEtag = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out _);
+            var updatedEtag = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd);
+            Debug.Assert(execCmd);
 
             var result = cmd switch
             {
@@ -141,10 +156,12 @@ namespace Garnet.server
             if (shouldUpdateEtag)
             {
                 dstLogRecord.TrySetETag(updatedEtag);
+                output.Header.etag = functionsState.etagState.ETag;
                 ETagState.ResetState(ref functionsState.etagState);
             }
             else if (recordHadEtagPreMutation)
             {
+                output.Header.etag = functionsState.etagState.ETag;
                 // reset etag state that may have been initialized earlier
                 ETagState.ResetState(ref functionsState.etagState);
             }
@@ -255,6 +272,25 @@ namespace Garnet.server
 
             var updatedEtag = EtagUtils.GetUpdatedEtag(logRecord.ETag, ref input.metaCommandInfo, out var execCmd);
 
+            if (!execCmd)
+            {
+                output.Header.etag = functionsState.etagState.ETag;
+                rmwInfo.Action = RMWAction.CancelOperation;
+                if (hadETagPreMutation)
+                {
+                    // reset etag state that may have been initialized earlier
+                    ETagState.ResetState(ref functionsState.etagState);
+                }
+
+                if (!input.header.CheckSkipRespOutputFlag())
+                {
+                    using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+                    writer.WriteNull();
+                }
+
+                return IPUResult.Failed;
+            }
+
             var ipuResult = IPUResult.Succeeded;
             switch (cmd)
             {
@@ -285,10 +321,12 @@ namespace Garnet.server
             if (shouldUpdateEtag)
             {
                 logRecord.TrySetETag(updatedEtag);
+                output.Header.etag = functionsState.etagState.ETag;
                 ETagState.ResetState(ref functionsState.etagState);
             }
             else if (hadETagPreMutation)
             {
+                output.Header.etag = functionsState.etagState.ETag;
                 // reset etag state that may have been initialized earlier
                 ETagState.ResetState(ref functionsState.etagState);
             }

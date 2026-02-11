@@ -17,7 +17,7 @@ namespace Garnet.test.Resp.ETag
         static readonly string[] StringData = ["1", "2", "3"];
 
         [Test]
-        public async Task StringAppendETagAdvancedTestAsync()
+        public async Task AppendETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0], StringData[1] };
 
@@ -30,7 +30,7 @@ namespace Garnet.test.Resp.ETag
         }
 
         [Test]
-        public async Task StringIncrETagAdvancedTestAsync()
+        public async Task IncrETagAdvancedTestAsync()
         {
             var cmdArgs = new object[] { StringKeys[0] };
 

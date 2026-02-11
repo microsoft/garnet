@@ -215,12 +215,12 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus GeoSearchReadOnly(PinnedSpanByte key, ref GeoSearchOptions opts,
-                                      ref ObjectInput input, ref SpanByteAndMemory output)
+                                      ref ObjectInput input, ref ObjectOutput output)
             => storageSession.GeoSearchReadOnly(key, ref opts, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus GeoSearchStore(PinnedSpanByte key, PinnedSpanByte destinationKey, ref GeoSearchOptions opts,
-                                           ref ObjectInput input, ref SpanByteAndMemory output)
+                                           ref ObjectInput input, ref ObjectOutput output)
             => storageSession.GeoSearchStore(key, destinationKey, ref opts, ref input, ref output, ref objectContext);
         #endregion
 
@@ -502,8 +502,8 @@ namespace Garnet.server
             => storageSession.HashExists(key, field, out exists, ref objectContext);
 
         /// <inheritdoc />
-        public GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
-            => storageSession.HashExists(key, ref input, out output, ref objectContext);
+        public GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
+            => storageSession.HashExists(key, ref input, ref output, ref objectContext);
 
         /// <inheritdoc />
         public GarnetStatus HashRandomField(PinnedSpanByte key, out PinnedSpanByte field)
