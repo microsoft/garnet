@@ -27,6 +27,7 @@ namespace Garnet.cluster
         public bool FailoverTimeout => failoverDeadline < DateTime.UtcNow;
 
         readonly ClusterConfig oldConfig;
+        readonly LightEpoch epoch;
 
         /// <summary>
         /// FailoverSession constructor
@@ -54,6 +55,7 @@ namespace Garnet.cluster
             this.clusterTimeout = clusterTimeout;
             this.option = option;
             this.logger = logger;
+            this.epoch = epoch;
             oldConfig = clusterProvider.clusterManager.CurrentConfig.Copy();
             cts = new();
 
