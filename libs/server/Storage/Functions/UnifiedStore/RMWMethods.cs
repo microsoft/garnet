@@ -153,16 +153,11 @@ namespace Garnet.server
             if (!result)
                 return false;
 
-            if (shouldUpdateEtag)
+            updatedEtag = shouldUpdateEtag ? updatedEtag : functionsState.etagState.ETag;
+            if (recordHadEtagPreMutation || shouldUpdateEtag)
             {
                 dstLogRecord.TrySetETag(updatedEtag);
                 output.Header.etag = functionsState.etagState.ETag;
-                ETagState.ResetState(ref functionsState.etagState);
-            }
-            else if (recordHadEtagPreMutation)
-            {
-                output.Header.etag = functionsState.etagState.ETag;
-                // reset etag state that may have been initialized earlier
                 ETagState.ResetState(ref functionsState.etagState);
             }
 
@@ -177,9 +172,16 @@ namespace Garnet.server
         {
             functionsState.watchVersionMap.IncrementVersion(rmwInfo.KeyHash);
 
-            var shouldUpdateEtag = false;
             if (srcLogRecord.Info.ValueIsObject)
             {
+                var recordHadEtagPreMutation = srcLogRecord.Info.HasETag;
+                var shouldUpdateEtag = recordHadEtagPreMutation;
+                if (shouldUpdateEtag)
+                {
+                    // during checkpointing we might skip the inplace calls and go directly to copy update so we need to initialize here if needed
+                    ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
+                }
+
                 // We're performing the object update here (and not in CopyUpdater) so that we are guaranteed that
                 // the record was CASed into the hash chain before it gets modified
                 var value = Unsafe.As<IGarnetObject>(srcLogRecord.ValueObject.Clone());
@@ -190,6 +192,9 @@ namespace Garnet.server
                 var hasExpiration = dstLogRecord.Info.HasExpiration;
                 if (!dstLogRecord.TrySetValueObjectAndPrepareOptionals(value, in sizeInfo))
                     return false;
+
+                var updatedEtag = EtagUtils.GetUpdatedEtag(srcLogRecord.ETag, ref input.metaCommandInfo, out var execCmd);
+                Debug.Assert(execCmd);
 
                 var cmd = input.header.cmd;
                 switch (cmd)
@@ -202,6 +207,14 @@ namespace Garnet.server
                     case RespCommand.PERSIST:
                         HandlePersistInPlaceUpdate(ref dstLogRecord, hasExpiration, ref shouldUpdateEtag, ref output);
                         break;
+                }
+
+                updatedEtag = shouldUpdateEtag ? updatedEtag : functionsState.etagState.ETag;
+                if (recordHadEtagPreMutation || shouldUpdateEtag)
+                {
+                    dstLogRecord.TrySetETag(updatedEtag);
+                    output.Header.etag = functionsState.etagState.ETag;
+                    ETagState.ResetState(ref functionsState.etagState);
                 }
 
                 sizeInfo.AssertOptionals(dstLogRecord.Info);
@@ -354,12 +367,6 @@ namespace Garnet.server
             shouldUpdateEtag = false;
             var expirationWithOption = new ExpirationWithOption(input.arg1);
 
-            if (!logRecord.Info.ValueIsObject)   // TODO ETag for unified store
-            {
-                // reset etag state that may have been initialized earlier, but don't update etag because only the expiration was updated
-                ETagState.ResetState(ref functionsState.etagState);
-            }
-
             return EvaluateExpireInPlace(ref logRecord, expirationWithOption.ExpireOption, expirationWithOption.ExpirationTimeInTicks, hasExpiration, ref output);
         }
 
@@ -383,6 +390,8 @@ namespace Garnet.server
 
         private void HandlePersistInPlaceUpdate(ref LogRecord logRecord, bool hasExpiration, ref bool shouldUpdateEtag, ref UnifiedOutput output)
         {
+            shouldUpdateEtag = false;
+
             if (hasExpiration)
             {
                 logRecord.RemoveExpiration();
@@ -390,13 +399,6 @@ namespace Garnet.server
             }
             else
                 functionsState.CopyDefaultResp(CmdStrings.RESP_RETURN_VAL_0, ref output.SpanByteAndMemory);
-
-            if (!logRecord.Info.ValueIsObject)
-            {
-                // reset etag state that may have been initialized earlier, but don't update etag because only the metadata was updated
-                ETagState.ResetState(ref functionsState.etagState);
-                shouldUpdateEtag = false;
-            }
         }
     }
 }

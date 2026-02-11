@@ -456,6 +456,7 @@ namespace Garnet.server
             var output = UnifiedOutput.FromPinnedPointer(dcurr, (int)(dend - dcurr));
 
             var status = storageApi.PERSIST(key, ref input, ref output);
+            etag = output.Header.etag;
 
             if (status == GarnetStatus.OK)
             {

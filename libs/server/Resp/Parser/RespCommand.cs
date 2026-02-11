@@ -825,6 +825,9 @@ namespace Garnet.server
                     // Last 8 byte word of the command name, for quick comparison
                     var lastWord = *(ulong*)(ptr + length + (lenWithoutCommand - 8));
 
+                    // Pointer to the start of the command
+                    var commandStart = ptr + lenWithoutCommand - 2;
+
                     //
                     // Fast path for common commands with fixed numbers of arguments
                     //
@@ -853,7 +856,7 @@ namespace Garnet.server
                         (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("\r\nDECR\r\n"u8) => RespCommand.DECR,
                         (1 << 4) | 4 when lastWord == MemoryMarshal.Read<ulong>("EXISTS\r\n"u8) => RespCommand.EXISTS,
                         (1 << 4) | 6 when lastWord == MemoryMarshal.Read<ulong>("GETDEL\r\n"u8) => RespCommand.GETDEL,
-                        (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("ERSIST\r\n"u8) && ptr[8] == 'P' => RespCommand.PERSIST,
+                        (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("ERSIST\r\n"u8) && *commandStart == 'P' => RespCommand.PERSIST,
                         (1 << 4) | 7 when lastWord == MemoryMarshal.Read<ulong>("PFCOUNT\r\n"u8) && ptr[8] == 'P' => RespCommand.PFCOUNT,
                         (2 << 4) | 3 when lastWord == MemoryMarshal.Read<ulong>("3\r\nSET\r\n"u8) => RespCommand.SET,
                         (2 << 4) | 5 when lastWord == MemoryMarshal.Read<ulong>("\nPFADD\r\n"u8) => RespCommand.PFADD,

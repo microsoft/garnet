@@ -17,7 +17,7 @@ namespace Garnet.test.Resp.ETag
     {
         private GarnetServer server;
 
-        protected static readonly string[] KeysWithEtag = ["keyWithEtag1", "keyWithEtag2"];
+        protected static readonly string[] KeysWithEtag = ["keyWithEtag1", "keyWithEtag2", "keyWithEtag3", "keyWithEtag4"];
         protected HashSet<RespCommand> NoKeyDataCommands = new();
         protected HashSet<RespCommand> OverwriteCommands = new();
         

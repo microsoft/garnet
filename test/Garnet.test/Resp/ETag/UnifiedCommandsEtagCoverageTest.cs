@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Garnet.server;
@@ -13,11 +14,11 @@ namespace Garnet.test.Resp.ETag
     [TestFixture]
     public class UnifiedCommandsEtagCoverageTest : EtagCoverageTestsBase
     {
-        static readonly RedisKey[] StringKeys = [KeysWithEtag[0], "key2", "key3"];
+        static readonly RedisKey[] StringKeys = [KeysWithEtag[0], KeysWithEtag[1], "key3"];
 
         static readonly string[] StringData = ["1", "2", "3"];
 
-        static readonly RedisKey[] ListKeys = [KeysWithEtag[1], "lKey2", "lKey3"];
+        static readonly RedisKey[] ListKeys = [KeysWithEtag[2], KeysWithEtag[3], "lKey3"];
 
         static readonly RedisValue[][] ListData =
         [
@@ -33,9 +34,45 @@ namespace Garnet.test.Resp.ETag
 
             //await CheckCommandAsync(RespCommand.EXPIRE, cmdArgs, VerifyResult);
 
-            var cmdArgs = new object[] { ListKeys[0], 1 };
+            var cmdArgs = new object[] { ListKeys[0], 100 };
 
-            await CheckCommandAsync(RespCommand.EXPIRE, cmdArgs, VerifyResult);
+            await CheckCommandAsync(RespCommand.EXPIRE, cmdArgs, VerifyResult, [2]);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task ExpireAtETagAdvancedTestAsync()
+        {
+            var expireTimestamp = DateTimeOffset.UtcNow.AddMinutes(1).ToUnixTimeSeconds().ToString();
+
+            //var cmdArgs = new object[] { StringKeys[0], expireTimestamp };
+
+            //await CheckCommandAsync(RespCommand.EXPIREAT, cmdArgs, VerifyResult);
+
+            var cmdArgs = new object[] { ListKeys[0], expireTimestamp };
+
+            await CheckCommandAsync(RespCommand.EXPIREAT, cmdArgs, VerifyResult, [2]);
+
+            static void VerifyResult(RedisResult result)
+            {
+                ClassicAssert.AreEqual(1, (long)result);
+            }
+        }
+
+        [Test]
+        public async Task PersistETagAdvancedTestAsync()
+        {
+            //var cmdArgs = new object[] { StringKeys[0] };
+
+            //await CheckCommandAsync(RespCommand.PERSIST, cmdArgs, VerifyResult);
+
+            var cmdArgs = new object[] { ListKeys[1] };
+
+            await CheckCommandAsync(RespCommand.PERSIST, cmdArgs, VerifyResult, [3]);
 
             static void VerifyResult(RedisResult result)
             {
@@ -56,17 +93,20 @@ namespace Garnet.test.Resp.ETag
 
             //ClassicAssert.AreEqual(1, result); // Etag 1
 
-            var sAddCmdArgs = new object[] { "RPUSH", ListKeys[0] }.Union(ListData[0].Select(d => d.ToString())).ToArray();
-            var results = (string[])db.Execute("EXECWITHETAG", sAddCmdArgs);
+            for (int i = 0; i < 2; i++)
+            {
+                var sAddCmdArgs = new object[] { "RPUSH", ListKeys[i] }.Union(ListData[i].Select(d => d.ToString())).ToArray();
+                var results = (string[])db.Execute("EXECWITHETAG", sAddCmdArgs);
 
-            ClassicAssert.AreEqual(2, results!.Length);
-            ClassicAssert.AreEqual(ListData[0].Length, long.Parse(results[0]!));
-            ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+                ClassicAssert.AreEqual(2, results!.Length);
+                ClassicAssert.AreEqual(ListData[i].Length, long.Parse(results[0]!));
+                ClassicAssert.AreEqual(1, long.Parse(results[1]!)); // Etag 1
+            }
 
-            var result = db.ListRightPush(ListKeys[1], ListData[1]);
-            ClassicAssert.AreEqual(ListData[1].Length, result);
+            var expirationSet = db.KeyExpire(ListKeys[1], TimeSpan.FromMinutes(3));
+            ClassicAssert.IsTrue(expirationSet);
 
-            result = db.ListRightPush(ListKeys[2], ListData[2]);
+            var result = db.ListRightPush(ListKeys[2], ListData[2]);
             ClassicAssert.AreEqual(ListData[2].Length, result);
         }
     }
