@@ -732,12 +732,12 @@ namespace Tsavorite.core
             public int threadId;
 
             [FieldOffset(12)]
-            public int reentrant;
+            public int padding1; // Padding to end of cache line
 
             [FieldOffset(16)]
-            public fixed long padding[6]; // Padding to end of cache line
+            public fixed long padding2[6]; // Padding to end of cache line
 
-            public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}, re-ent {reentrant}";
+            public override string ToString() => $"lce = {localCurrentEpoch}, tid = {threadId}";
         }
 
         /// <summary>
