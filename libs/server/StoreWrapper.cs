@@ -175,6 +175,11 @@ namespace Garnet.server
         public GarnetCheckpointManager StoreCheckpointManager => (GarnetCheckpointManager)store?.CheckpointManager;
 
         /// <summary>
+        /// Get task manager instance
+        /// </summary>
+        public TaskManager TaskManager => taskManager;
+
+        /// <summary>
         /// Constructor
         /// </summary>
         public StoreWrapper(

@@ -145,7 +145,10 @@ namespace Garnet.cluster
 
                 // Update sequence number generator for sharded log if needed
                 if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1)
+                {
                     clusterProvider.storeWrapper.appendOnlyFile.ResetSequenceNumberGenerator();
+                    clusterProvider.storeWrapper.TaskManager.Cancel(TaskType.AdvanceTimeReplicaTask).Wait();
+                }
 
                 // Initialize checkpoint history
                 if (!clusterProvider.replicationManager.InitializeCheckpointStore())

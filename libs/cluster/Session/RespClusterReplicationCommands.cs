@@ -497,8 +497,8 @@ namespace Garnet.cluster
 
             var sequenceNumber = parseState.GetLong(0);
             var tailAddressSpan = parseState.GetArgSliceByRef(1).Span;
-            var converged = clusterProvider.replicationManager.AdvanceTime(sequenceNumber, AofAddress.FromSpan(tailAddressSpan));
-            while (!RespWriteUtils.TryWriteAsciiBulkString(converged.ToString(), ref dcurr, dend))
+            clusterProvider.replicationManager.AdvanceTime(sequenceNumber, AofAddress.FromSpan(tailAddressSpan));
+            while (!RespWriteUtils.TryWriteDirect(CmdStrings.RESP_OK, ref dcurr, dend))
                 SendAndReset();
             return true;
         }

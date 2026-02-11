@@ -45,7 +45,7 @@ namespace Garnet.server
         /// Get snapshot of maximum replayed timestamp for all physical sublogs
         /// </summary>
         /// <returns></returns>
-        public AofAddress GetSublogMaxKeySequenceNumber()
+        public AofAddress GetPhysicalSublogMaxReplayedSequenceNumber()
         {
             var physicalSublogCount = serverOptions.AofPhysicalSublogCount;
             var replayTaskCount = serverOptions.AofReplayTaskCount;

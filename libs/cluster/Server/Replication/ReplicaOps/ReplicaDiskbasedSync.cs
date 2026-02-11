@@ -124,6 +124,10 @@ namespace Garnet.cluster
                     // Suspend background tasks that may interfere with AOF
                     await storeWrapper.SuspendPrimaryOnlyTasks();
 
+                    // Stop advance time task when reconfiguring node to be replica
+                    if (storeWrapper.serverOptions.AofPhysicalSublogCount > 1)
+                        clusterProvider.storeWrapper.TaskManager.Cancel(TaskType.AdvanceTimeReplicaTask).Wait();
+
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data
                     //
@@ -335,6 +339,9 @@ namespace Garnet.cluster
                 // Mark this txn run as a read-write session if we are replaying as a replica
                 // This is necessary to ensure that the stored procedure can perform write operations if needed
                 clusterProvider.replicationManager.aofProcessor.SetReadWriteSession();
+
+                // Start advance time signal processing background task
+                clusterProvider.replicationManager.StartAdvanceTimeBackgroundTask();
 
                 return this.replicationOffset;
             }

@@ -72,13 +72,13 @@ namespace Garnet.server
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(consistentReadCts.Token);
             timeoutCts.CancelAfter(storeWrapper.serverOptions.ReplicaSyncTimeout);
-            storeWrapper.appendOnlyFile.ConsistentReadKeyPrepare(key, ref replicaReadContext, timeoutCts.Token);
+            storeWrapper.appendOnlyFile.readConsistencyManager.ConsistentReadKeyPrepare(key, ref replicaReadContext, timeoutCts.Token);
         }
 
         /// <summary>
         /// Consistent read key update callback
         /// </summary>
         public void UpdateKeySequenceNumber()
-            => storeWrapper.appendOnlyFile.ConsistentReadSequenceNumberUpdate(ref replicaReadContext);
+            => storeWrapper.appendOnlyFile.readConsistencyManager.ConsistentReadSequenceNumberUpdate(ref replicaReadContext);
     }
 }

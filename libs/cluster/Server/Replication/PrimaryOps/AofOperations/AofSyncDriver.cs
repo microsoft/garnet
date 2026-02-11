@@ -36,7 +36,6 @@ namespace Garnet.cluster
         /// </summary>
         public string RemoteNodeId => remoteNodeId;
 
-        SingleWriterMultiReaderLock dispose = new();
         SingleWriterMultiReaderLock activeAofSync = new();
 
         public bool ResumeAofStreaming()
@@ -163,7 +162,7 @@ namespace Garnet.cluster
         }
 
         /// <summary>
-        /// 
+        /// Advance physical sublog time background task.
         /// </summary>
         /// <returns></returns>
         /// <exception cref="GarnetException"></exception>
@@ -192,7 +191,7 @@ namespace Garnet.cluster
                 var appendOnlyFile = clusterProvider.storeWrapper.appendOnlyFile;
                 var previousTailAddress = AofAddress.Create(appendOnlyFile.Log.Size, 0);
 
-                while (true)
+                while (!cts.IsCancellationRequested)
                 {
                     await Task.Delay(clusterProvider.serverOptions.AofTailWitnessFreq, cts.Token);
                     var currentTailAddress = appendOnlyFile.Log.TailAddress;
@@ -200,22 +199,11 @@ namespace Garnet.cluster
 
                     if (newWrites)
                     {
-                        var sequenceNumber = appendOnlyFile.seqNumGen.GetSequenceNumber();
-                        var resp = await client.ExecuteClusterAdvanceTime(sequenceNumber, currentTailAddress.Span).
+                        var sequenceNumber = appendOnlyFile.GetLargerThanMaximumSequenceNumber();
+                        _ = await client.ExecuteClusterAdvanceTime(sequenceNumber, currentTailAddress.Span).
                             WaitAsync(clusterProvider.serverOptions.ReplicaSyncTimeout, cts.Token).
                             ConfigureAwait(false);
-                        // This is a bitmap of flags indicating convergence
-                        var converged = ulong.Parse(resp);
-
-                        // For each converged sublog, advance previousTailAddress to currentTailAddress.
-                        // Convergence means the replica has replayed up to currentTailAddress
-                        // and the sequence number for that sublog has advanced beyond the maximum sequence number
-                        // observed up to currentTailAddress.
-                        while (converged > 0)
-                        {
-                            var physicalSublogIdx = converged.GetNextOffset();
-                            previousTailAddress[physicalSublogIdx] = currentTailAddress[physicalSublogIdx];
-                        }
+                        previousTailAddress.MonotonicUpdate(ref currentTailAddress);
                     }
                 }
             }

@@ -586,24 +586,52 @@ namespace Garnet.cluster
         /// <param name="sequenceNumber">Sequence number associated with observing the given tail address.</param>
         /// <param name="tailAddress">Tail address snapshot</param>
         /// <returns></returns>
-        public long AdvanceTime(long sequenceNumber, AofAddress tailAddress)
+        public void AdvanceTime(long sequenceNumber, AofAddress tailAddress)
         {
-            var replicationOffset = ReplicationOffset;
-            var maxSublogSequenceNumber = storeWrapper.appendOnlyFile.readConsistencyManager.GetSublogMaxKeySequenceNumber();
-            var converged = 0L;
-            for (var i = 0; i < tailAddress.Length; i++)
+            lock (observationLock)
             {
-                // Move logical time forward for sublog if the replay has progressed at least until the tailAddress
-                // and the new logical time is ahead of the maximum as indicated by the replayed operations.
-                if (tailAddress[i] <= replicationOffset[i] && maxSublogSequenceNumber[i] < sequenceNumber)
+                observedTailAddress.MonotonicUpdate(ref tailAddress);
+                _ = Utility.MonotonicUpdate(ref observationSequenceNumber, sequenceNumber, out _);
+            }
+        }
+
+        object observationLock = new();
+        AofAddress observedTailAddress;
+        long observationSequenceNumber;
+
+        /// <summary>
+        /// Starts a background task that advances the replica time if multiple AOF physical sublogs are configured.
+        /// </summary>
+        public void StartAdvanceTimeBackgroundTask()
+        {
+            if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1)
+            {
+                if (!clusterProvider.storeWrapper.TaskManager.RegisterAndRun(TaskType.AdvanceTimeReplicaTask, (token) => AdvanceTimeBackground(token)))
                 {
-                    storeWrapper.appendOnlyFile.readConsistencyManager.UpdatePhysicalSublogMaxSequenceNumber(i, sequenceNumber);
-                    // Signal convergence for this sublig since logical time has moved
-                    // forward beyond the point indicated by the last replayed record
-                    converged |= (1L << i);
+                    logger?.LogError("Failed to register AdvanceTime task at the replica");
+                    throw new GarnetException("Failed to register AdvanceTime task at the replica");
+                }
+                observedTailAddress = AofAddress.Create(clusterProvider.serverOptions.AofPhysicalSublogCount, 0);
+            }
+
+            async Task AdvanceTimeBackground(CancellationToken token)
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    await Task.Delay(clusterProvider.serverOptions.AofTailWitnessFreq, token);
+                    lock (observationLock)
+                    {
+                        for (var i = 0; i < observedTailAddress.Length; i++)
+                        {
+                            // Move logical time forward for sublog if the replay has progressed at least until the tailAddress
+                            if (observedTailAddress[i] <= replicationOffset[i])
+                            {
+                                storeWrapper.appendOnlyFile.readConsistencyManager.UpdatePhysicalSublogMaxSequenceNumber(i, observationSequenceNumber);
+                            }
+                        }
+                    }
                 }
             }
-            return converged;
         }
     }
 }

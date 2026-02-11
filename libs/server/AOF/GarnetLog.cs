@@ -24,6 +24,7 @@ namespace Garnet.server
         readonly SingleLog singleLog;
         readonly ShardedLog shardedLog;
         readonly Func<byte[]> cookieGeneratorCallback;
+        public long[] physicalSublogMaxSequenceNumber;
 
         public static unsafe long GetSequenceNumberFromCookie(byte[] cookie)
         {
@@ -58,7 +59,10 @@ namespace Garnet.server
             if (serverOptions.AofPhysicalSublogCount == 1)
                 this.singleLog = new SingleLog(logSettings[0], logger);
             else
+            {
+                this.physicalSublogMaxSequenceNumber = new long[serverOptions.AofPhysicalSublogCount];
                 this.shardedLog = new ShardedLog(serverOptions.AofPhysicalSublogCount, logSettings, logger: logger);
+            }
         }
 
         public TsavoriteLog SingleLog => singleLog.log;
@@ -551,6 +555,9 @@ namespace Garnet.server
                     epochAccessor,
                     out logicalAddress);
 
+                // Track sequence number progression
+                _ = Utility.MonotonicUpdate(ref physicalSublogMaxSequenceNumber[physicalSublogIdx], shardedHeader.sequenceNumber, out _);
+
                 if (serverOptions.AofAutoCommit)
                     Commit();
             }
@@ -582,6 +589,9 @@ namespace Garnet.server
                     epochAccessor,
                     out logicalAddress);
 
+                // Track sequence number progression
+                _ = Utility.MonotonicUpdate(ref physicalSublogMaxSequenceNumber[physicalSublogIdx], shardedHeader.sequenceNumber, out _);
+
                 if (serverOptions.AofAutoCommit)
                     Commit();
             }
@@ -611,6 +621,9 @@ namespace Garnet.server
                     value,
                     epochAccessor,
                     out logicalAddress);
+
+                // Track sequence number progression
+                _ = Utility.MonotonicUpdate(ref physicalSublogMaxSequenceNumber[physicalSublogIdx], shardedHeader.sequenceNumber, out _);
 
                 if (serverOptions.AofAutoCommit)
                     Commit();
@@ -642,6 +655,8 @@ namespace Garnet.server
                         proc.replayTaskAccessVector[physicalSublogIdx].CopyTo(
                             new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
                         shardedLog.sublog[physicalSublogIdx].Enqueue(header, ref procInput, out _);
+                        // Track sequence number progression
+                        _ = Utility.MonotonicUpdate(ref physicalSublogMaxSequenceNumber[physicalSublogIdx], header.shardedHeader.sequenceNumber, out _);
                     }
                 }
                 finally
@@ -677,6 +692,8 @@ namespace Garnet.server
                         // Update corresponding sublog participating vector before enqueue to related physical sublog
                         virtualSublogAccessVector[physicalSublogIdx].CopyTo(new Span<byte>(header.replayTaskAccessVector, AofTransactionHeader.ReplayTaskAccessVectorBytes));
                         shardedLog.sublog[physicalSublogIdx].Enqueue(header, out _);
+                        // Track sequence number progression
+                        _ = Utility.MonotonicUpdate(ref physicalSublogMaxSequenceNumber[physicalSublogIdx], header.shardedHeader.sequenceNumber, out _);
                     }
                 }
                 finally
@@ -710,6 +727,8 @@ namespace Garnet.server
                     {
                         var physicalSublogIdx = _physicalSublogAccessVector.GetNextOffset();
                         shardedLog.sublog[physicalSublogIdx].Enqueue(header, out _);
+                        // Track sequence number progression
+                        _ = Utility.MonotonicUpdate(ref physicalSublogMaxSequenceNumber[physicalSublogIdx], header.shardedHeader.sequenceNumber, out _);
                     }
                 }
                 finally
@@ -721,6 +740,16 @@ namespace Garnet.server
                 if (serverOptions.AofAutoCommit)
                     Commit();
             }
+        }
+
+        /// <summary>
+        /// Resets the latest sequence number vector.
+        /// </summary>
+        /// <param name="physicalSublogMaxSequenceNumber"></param>
+        public void ResetPhysicalSublogMaxSequenceNumber(AofAddress physicalSublogMaxSequenceNumber)
+        {
+            for (var i = 0; i < physicalSublogMaxSequenceNumber.Length; i++)
+                this.physicalSublogMaxSequenceNumber[i] = physicalSublogMaxSequenceNumber[i];
         }
     }
 }

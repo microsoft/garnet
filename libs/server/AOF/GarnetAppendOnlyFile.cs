@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 
 using System;
+using System.Linq;
 using System.Threading;
 using Garnet.common;
 using Microsoft.Extensions.Logging;
@@ -78,6 +79,19 @@ namespace Garnet.server
         public void Dispose() => Log.Dispose();
 
         /// <summary>
+        /// Get a sequence number that is larger than maximum sequence number already assigned.
+        /// </summary>
+        /// <returns></returns>
+        public long GetLargerThanMaximumSequenceNumber()
+        {
+            var maxAssignedSequenceNumber = Log.physicalSublogMaxSequenceNumber.Max();
+            var sequenceNumber = seqNumGen.GetSequenceNumber();
+            while (maxAssignedSequenceNumber >= sequenceNumber)
+                sequenceNumber = seqNumGen.GetSequenceNumber();
+            return sequenceNumber;
+        }
+
+        /// <summary>
         /// Create or update existing timestamp manager
         /// NOTE: We need to create a new version for consistency manager in order for running sessions to update their context on the next read
         /// </summary>
@@ -91,32 +105,19 @@ namespace Garnet.server
         }
 
         /// <summary>
-        /// Reset sequence number generator
+        /// Reset sequence number generator.
+        /// NOTE: We need to update starting offset when recovering or failing over to ensure time moves forward.
         /// </summary>
         public void ResetSequenceNumberGenerator()
         {
             if (!serverOptions.MultiLogEnabled)
                 return;
-            var start = readConsistencyManager.MaxSequenceNumber;
+            var physicalSublogMaxReplayedSequenceNumber = readConsistencyManager.GetPhysicalSublogMaxReplayedSequenceNumber();
+            Log.ResetPhysicalSublogMaxSequenceNumber(physicalSublogMaxReplayedSequenceNumber);
+            var start = physicalSublogMaxReplayedSequenceNumber.Max();
             var newSeqNumGen = new SequenceNumberGenerator(start);
             _ = Interlocked.CompareExchange(ref seqNumGen, newSeqNumGen, seqNumGen);
         }
-
-        /// <summary>
-        /// Invoke the prepare phase of the consistent read protocol
-        /// </summary>
-        /// <param name="key"></param>
-        /// <param name="replicaReadSessionContext"></param>
-        /// <param name="ct"></param>
-        public void ConsistentReadKeyPrepare(ReadOnlySpan<byte> key, ref ReplicaReadSessionContext replicaReadSessionContext, CancellationToken ct)
-            => readConsistencyManager.ConsistentReadKeyPrepare(key, ref replicaReadSessionContext, ct);
-
-        /// <summary>
-        /// Invoke the update phase of the consistent read protocol
-        /// </summary>
-        /// <param name="replicaReadSessionContext"></param>
-        public void ConsistentReadSequenceNumberUpdate(ref ReplicaReadSessionContext replicaReadSessionContext)
-            => readConsistencyManager.ConsistentReadSequenceNumberUpdate(ref replicaReadSessionContext);
 
         /// <summary>
         /// Compute AOF sync replay address at recovery
