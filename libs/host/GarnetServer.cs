@@ -54,7 +54,7 @@ namespace Garnet
         private readonly ILoggerFactory loggerFactory;
         private readonly bool cleanupDir;
         private bool disposeLoggerFactory;
-        private readonly LightEpoch storeEpoch, aofEpoch;
+        private readonly LightEpoch storeEpoch, aofEpoch, pubSubEpoch;
 
         /// <summary>
         /// Store and associated information used by this Garnet server
@@ -141,6 +141,8 @@ namespace Garnet
             this.storeEpoch = new LightEpoch();
             if (this.opts.EnableAOF)
                 this.aofEpoch = new LightEpoch();
+            if (!this.opts.DisablePubSub)
+                this.pubSubEpoch = new LightEpoch();
             this.InitializeServer();
         }
 
@@ -160,7 +162,19 @@ namespace Garnet
             this.storeEpoch = new LightEpoch();
             if (this.opts.EnableAOF)
                 this.aofEpoch = new LightEpoch();
-            this.InitializeServer();
+            if (!this.opts.DisablePubSub)
+                this.pubSubEpoch = new LightEpoch();
+            try
+            {
+                this.InitializeServer();
+            }
+            catch
+            {
+                storeEpoch?.Dispose();
+                aofEpoch?.Dispose();
+                pubSubEpoch?.Dispose();
+                throw;
+            }
         }
 
         private void InitializeServer()
@@ -238,7 +252,7 @@ namespace Garnet
                 CreateDatabase(dbId, opts, clusterFactory, customCommandManager);
 
             if (!opts.DisablePubSub)
-                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, true, logger);
+                subscribeBroker = new SubscribeBroker(null, opts.PubSubPageSizeBytes(), opts.SubscriberRefreshFrequencyMs, pubSubEpoch, true, logger);
 
             logger?.LogTrace("TLS is {tlsEnabled}", opts.TlsOptions == null ? "disabled" : "enabled");
 
@@ -470,6 +484,7 @@ namespace Garnet
             subscribeBroker?.Dispose();
             storeEpoch?.Dispose();
             aofEpoch?.Dispose();
+            pubSubEpoch?.Dispose();
             opts.AuthSettings?.Dispose();
             if (disposeLoggerFactory)
                 loggerFactory?.Dispose();
