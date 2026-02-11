@@ -16,7 +16,7 @@ namespace Garnet.cluster
     internal class GarnetClusterConnectionStore
     {
         readonly ILogger logger;
-        readonly LightEpoch garnetClientEpoch;
+        readonly LightEpoch epoch;
         GarnetServerNode[] connections;
         Dictionary<string, int> connectionMap;
         int numConnection;
@@ -26,17 +26,17 @@ namespace Garnet.cluster
 
         public int Count => numConnection;
 
-        public LightEpoch GarnetClientEpoch => garnetClientEpoch;
+        public LightEpoch Epoch => epoch;
 
         /// <summary>
         /// Connection store for cluster gossip connections.
         /// </summary>
         /// <param name="initialSize">Size for array of connection (auto-grows as connections are added).</param>
         /// <param name="logger">Logger instance</param>
-        public GarnetClusterConnectionStore(int initialSize = 1, ILogger logger = null)
+        public GarnetClusterConnectionStore(LightEpoch epoch, int initialSize = 1, ILogger logger = null)
         {
+            this.epoch = epoch;
             this.logger = logger;
-            this.garnetClientEpoch = new LightEpoch();
             connections = new GarnetServerNode[initialSize];
             connectionMap = [];
             numConnection = 0;
@@ -192,7 +192,7 @@ namespace Garnet.cluster
                 if (UnsafeGetConnection(nodeId, out conn)) return (false, conn);
 
                 // Create connection to be added
-                conn = new GarnetServerNode(clusterProvider, endpoint, tlsOptions?.TlsClientOptions, garnetClientEpoch, logger: logger)
+                conn = new GarnetServerNode(clusterProvider, endpoint, tlsOptions?.TlsClientOptions, epoch, logger: logger)
                 {
                     NodeId = nodeId
                 };
