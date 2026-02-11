@@ -65,9 +65,9 @@ This PR introduces **multi-log based Append-Only File (AOF)** support to Garnet,
 
 - [ ] **2.3** `AdvanceTime` background task.
   - Primary monitors log changes by comparing last know tail address to the current tail address.
-  - Primary associates the current tail address snapshot with a timestamp and notifies the replica.
-  - Replica reaches convergence once all operations have been replayed until given tail address and the snapshot timestamp exceeds maximum timestamp observed through replay.
-  - Primary advances last known tail address to the observed tail address at convergence per physical sublog.
+  - Primary associates the current tail address snapshot with a sequence number (timestamp) that is strictly larger than all sequence numbers assigned until that moment and notifies the replica.
+  - Replica maintains an advance time background task that updates sublog time using the information from the primary's signal.
+  - Primary advances last known tail address to the observed tail address.
   - The system reaches equilibrium when writes are quiesced and not more signals are send unless a new change is detected.
 
 ### Phase 3: Replica Replay Stream
@@ -118,30 +118,11 @@ This PR introduces **multi-log based Append-Only File (AOF)** support to Garnet,
   - Allow intra-page parallel recovery using scan, BulkConsume interface.
 
 ### Phase 6: Testing & Validation
-- [ ] **6.1** Unit tests for core components
-  - `SequenceNumberGenerator` correctness
-  - Sketch-based frontier computation
-  - Hash-based write sharding
-
-- [ ] **6.2** Integration tests for read consistency
-  - Prefix-consistent read verification
-  - Wait queue signaling correctness
-  - Version-based session transitions
-
-- [ ] **6.3** Integration tests for replication
-  - Single vs multi-sublog sync accuracy
-  - Parallel replay atomicity
-  - Transaction isolation and consistency
-
-- [ ] **6.4** Performance benchmarks
-  - Write throughput comparison
-  - Replay parallelism scalability
-  - Read latency impact from consistency protocol
-
----
+- [ ] **6.1** Replication base tests passing with multi-log enabled
+- [ ] **6.2** Replication diskless sync tests passing with multi-log enabled
 
 TODO:
 - [ ] Ensure transaction replay releases locks in the event of an exception
-- [ ] Add timestamp tracking at primary per physical sublog.
-- [ ] Ensure timestamp tracking is consistent with recovery.
+- [X] Add timestamp tracking at primary per physical sublog.
+- [X] Ensure timestamp tracking is consistent with recovery.
 - [ ] Ensure commit recovery does not recover on boundaries. 
