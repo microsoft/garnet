@@ -8,7 +8,6 @@ using Allure.NUnit;
 using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
-using Tsavorite.core;
 
 namespace Tsavorite.test
 {
