@@ -15,38 +15,8 @@ namespace Tsavorite.core
     public sealed unsafe class LightEpoch : IEpochAccessor
     {
         /// <summary>
-        /// Store for thread-static metadata.
-        /// </summary>
-        private class Metadata
-        {
-            /// <summary>
-            /// Managed thread id of this thread
-            /// </summary>
-            [ThreadStatic]
-            internal static int threadId;
-
-            /// <summary>
-            /// Start offset to reserve entry in the epoch table
-            /// </summary>
-            [ThreadStatic]
-            internal static ushort startOffset1;
-
-            /// <summary>
-            /// Alternate start offset to reserve entry in the epoch table (to reduce probing if <see cref="startOffset1"/> slot is already filled)
-            /// </summary>
-            [ThreadStatic]
-            internal static ushort startOffset2;
-
-            /// <summary>
-            /// Per-instance entry in the epoch table, for this thread
-            /// </summary>
-            [ThreadStatic]
-            internal static InstanceIndexBuffer Entries;
-        }
-
-        /// <summary>
         /// Buffer to track information for LightEpoch instances. This is used:
-        /// (1) in AssignInstance, to assign a unique instance ID to each LightEpoch instance, and
+        /// (1) in AssignInstance, to assign a unique instanceId to each LightEpoch instance, and
         /// (2) in Metadata, to track per-thread epoch table entries for each LightEpoch instance.
         /// </summary>
         [StructLayout(LayoutKind.Explicit, Size = MaxInstances * sizeof(int))]
@@ -72,6 +42,44 @@ namespace Tsavorite.core
                 Debug.Assert(instanceId >= 0 && instanceId < MaxInstances);
                 return ref Unsafe.AsRef<int>((int*)Unsafe.AsPointer(ref field0) + instanceId);
             }
+        }
+
+        /// <summary>
+        /// Store for thread-static metadata.
+        /// </summary>
+        private class Metadata
+        {
+            /// <summary>
+            /// Managed thread id of this thread
+            /// </summary>
+            [ThreadStatic]
+            internal static int threadId;
+
+            /// <summary>
+            /// Start offset to reserve entry in the epoch table
+            /// </summary>
+            [ThreadStatic]
+            internal static ushort startOffset1;
+
+            /// <summary>
+            /// Alternate start offset to reserve entry in the epoch table (to reduce probing if <see cref="startOffset1"/> slot is already filled)
+            /// </summary>
+            [ThreadStatic]
+            internal static ushort startOffset2;
+
+            /// <summary>
+            /// This is the thread-static index for fast access to the tableAligned index 
+            /// that is obtained when each LightEpoch instance calls ReserveEntry.
+            /// The instanceId of the LightEpoch instance (assigned to the instance 
+            /// at constructor time using InstanceTracker) is the lookup offset into 
+            /// Entries.
+            /// 
+            /// Note that Entries effectively gives us ThreadLocal{T} semantics of 
+            /// (instance, thread)-specific metadata, without the overhead of 
+            /// ThreadLocal{T}.
+            /// </summary>
+            [ThreadStatic]
+            internal static InstanceIndexBuffer Entries;
         }
 
         /// <summary>
@@ -144,9 +152,12 @@ namespace Tsavorite.core
         readonly int instanceId;
 
         /// <summary>
-        /// Buffer to track assigned LightEpoch instance IDs
+        /// This is the LightEpoch-level static buffer (array) of available instance slots.
+        /// On LightEpoch instance creation, it is used by SelectInstance() to find an
+        /// available slot in this array; this becomes the LightEpoch instance's instanceId,
+        /// which is the lookup index into the thread-static Metadata.Entries.
         /// </summary>
-        static InstanceIndexBuffer InstanceTracker = default;
+        static InstanceIndexBuffer InstanceTracker;
 
         /// <summary>
         /// Instantiate the epoch table
