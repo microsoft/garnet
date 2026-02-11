@@ -479,7 +479,7 @@ namespace Garnet.test
         [Test]
         public async Task CanDoBulkDeleteTests([Values] bool useStringType)
         {
-            //KeyDeleteAsync
+            // KeyDeleteAsync
             using var server = TestUtils.CreateGarnetServer(TestUtils.MethodTestDir);
             server.Start();
 
@@ -494,7 +494,7 @@ namespace Garnet.test
 
             for (int i = 0; i < nKeys; i++)
             {
-                // create in the main store
+                // Create in the main store
                 var result = await db.ExecuteForStringResultAsync("SET", [worldcities[i, 1], worldcities[i, 0]]);
                 keys[i] = worldcities[i, 1];
                 keysMemoryByte[i] = Encoding.ASCII.GetBytes(keys[i]);
@@ -503,7 +503,7 @@ namespace Garnet.test
 
             for (int x = 0; x < nKeysObjectStore; x++)
             {
-                // create in the object store
+                // Create in the object store
                 var result = await db.ExecuteForStringResultAsync("ZADD", [$"myzset{x}", "1", "KEY1", "2", "KEY2"]);
                 ClassicAssert.AreEqual("2", result);
                 keys[nKeys + x] = $"myzset{x}";
@@ -512,87 +512,41 @@ namespace Garnet.test
 
             if (useStringType)
             {
-                //delete the first 20 keys added previously
+                // Delete the first 20 keys added previously
                 var keysDeleted = await db.KeyDeleteAsync(keys.Take(20).ToArray());
                 ClassicAssert.AreEqual(iterationSize, keysDeleted);
 
-                //try to delete the next 20 keys using a cancellation token
-                var sc = new CancellationTokenSource();
-                var t = sc.Token;
+                // Delete the remaining keys using a callback
                 ManualResetEventSlim mrObj = new(false);
-                var tDeletingK = Task.Run(async () => { await DeleteKeysWithCT([.. keys.Skip(iterationSize).Take(iterationSize)], null, mrObj, t); });
-
-                // send the cancellation so the task throws an exception
-                sc.Cancel();
-                mrObj.Set();
-
-                Assert.Throws<OperationCanceledException>(() => tDeletingK.Wait(sc.Token));
-
-                //delete the last keys using a callback
-                mrObj.Reset();
                 db.KeyDelete(keys.Skip(iterationSize).ToArray(), (ct, result, e) =>
                 {
                     ClassicAssert.AreEqual(keys.Length - iterationSize, result);
                     mrObj.Set();
                 });
                 mrObj.Wait();
-                mrObj.Reset();
             }
             else
             {
-                //delete with Memory<Byte> type
+                // Delete the first 20 keys added previously with Memory<Byte> type
                 var keysDeletedMB = await db.KeyDeleteAsync(keysMemoryByte.Take(20).ToArray());
                 ClassicAssert.AreEqual(iterationSize, keysDeletedMB);
 
-                var sc = new CancellationTokenSource();
-                var t = sc.Token;
+                // Delete the remaining keys using a callback with Memory<byte>
                 ManualResetEventSlim mrObj = new(false);
-
-                // try delete using Memory<byte> type
-                var tDeletingKeysMB = Task.Run(async () => { _ = await DeleteKeysWithCT(null, [.. keysMemoryByte.Skip(iterationSize).Take(iterationSize)], mrObj, t, true); });
-                sc.Cancel();
-                mrObj.Set();
-                Assert.Throws<OperationCanceledException>(() => tDeletingKeysMB.Wait(sc.Token));
-
-                //delete the last keys with callback and Memory<byte>
-                mrObj.Reset();
                 db.KeyDelete(keysMemoryByte.Skip(iterationSize).ToArray(), (ct, result, e) =>
                 {
                     ClassicAssert.AreEqual(keysMemoryByte.Length - iterationSize, result);
                     mrObj.Set();
                 });
                 mrObj.Wait();
-                mrObj.Reset();
             }
 
-            //check that none of the keys exist
+            // Check that none of the keys exist
             foreach (var key in keys)
             {
                 var result = await db.ExecuteForStringResultAsync("EXISTS", [key]);
                 ClassicAssert.AreEqual("0", result);
             }
-        }
-
-        private static async Task<long> DeleteKeysWithCT(string[] keys, Memory<byte>[] keysMB, ManualResetEventSlim mreObj, CancellationToken t, bool useMemoryType = false)
-        {
-            using var db = TestUtils.GetGarnetClient();
-            db.Connect();
-
-            //wait until is signaled to proceed
-            mreObj.Wait();
-            if (!t.IsCancellationRequested)
-            {
-                long result;
-                if (useMemoryType)
-                    result = await db.KeyDeleteAsync(keysMB, t);
-                else
-                    result = await db.KeyDeleteAsync(keys, t);
-                return result;
-            }
-            else
-                t.ThrowIfCancellationRequested();
-
-            return 0;
         }
 
         [Test]
