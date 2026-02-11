@@ -16,12 +16,6 @@ namespace Tsavorite.core
     using static LogAddress;
 
     /// <summary>
-    /// Delegate for callbacks that take a ref parameter of generic type
-    /// </summary>
-    /// <typeparam name="T">The type of the ref parameter</typeparam>
-    public delegate void RefCallback<T>(ref T value) where T : unmanaged;
-
-    /// <summary>
     /// Tsavorite Log
     /// </summary>
     public sealed class TsavoriteLog : IDisposable

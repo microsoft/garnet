@@ -444,7 +444,7 @@ namespace Resp.benchmark
             sw.Start();
             while (!done)
             {
-                byte[] buf = rg.GetRequest(out var len, threadId);
+                byte[] buf = rg.GetRequest(out var len);
                 client.Send(buf, len, (opType == OpType.MSET || opType == OpType.MPFADD) ? 1 : rg.BatchCount);
                 client.CompletePendingRequests();
                 numReqs++;
@@ -536,7 +536,7 @@ namespace Resp.benchmark
             sw.Start();
             while (!done)
             {
-                var buf = rg.GetRequest(out var len, threadId);
+                var buf = rg.GetRequest(out var len);
                 fixed (byte* ptr = buf)
                     _ = sessions[threadId].TryConsumeMessages(ptr, len);
 

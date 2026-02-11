@@ -43,8 +43,6 @@ namespace Resp.benchmark
 
         public int BatchCount;
 
-        List<byte[]> slotKeys = [];
-
         public ReqGen(
             int Start,
             int DbSize,
@@ -109,10 +107,9 @@ namespace Resp.benchmark
         /// <summary>
         /// Get batch of requests to serve
         /// </summary>
-        /// <param name="slot"></param>
         /// <param name="len"></param>
         /// <returns></returns>
-        public byte[] GetRequest(out int len, int slot = -1)
+        public byte[] GetRequest(out int len)
         {
             int offset;
 

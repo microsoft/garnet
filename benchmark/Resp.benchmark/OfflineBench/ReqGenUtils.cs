@@ -19,7 +19,7 @@ namespace Resp.benchmark
             return true;
         }
 
-        private bool WriteOp(int bufferOffset, ref byte* curr, byte* vend, OpType opType)
+        private bool WriteOp(ref byte* curr, byte* vend, OpType opType)
         {
             int n;
 
@@ -46,7 +46,7 @@ namespace Resp.benchmark
                         return false;
                     break;
                 case OpType.PFCOUNT:
-                    if (!WriteKey(bufferOffset, ref curr, vend, out keyData))
+                    if (!WriteKey(ref curr, vend, out keyData))
                         return false;
 
                     if (invalidateHLL)
@@ -96,7 +96,7 @@ namespace Resp.benchmark
                 case OpType.SCRIPTRETKEY:
                 case OpType.PUBLISH:
                 case OpType.SPUBLISH:
-                    if (!WriteKey(bufferOffset, ref curr, vend, out keyData))
+                    if (!WriteKey(ref curr, vend, out keyData))
                         return false;
                     break;
                 case OpType.BITOP_AND:
@@ -351,7 +351,7 @@ namespace Resp.benchmark
             return WriteStringBytes(ref curr, vend, keyData);
         }
 
-        private bool WriteKey(int bufferOffset, ref byte* curr, byte* vend, out byte[] keyData)
+        private bool WriteKey(ref byte* curr, byte* vend, out byte[] keyData)
         {
             int key;
             if (randomGen)

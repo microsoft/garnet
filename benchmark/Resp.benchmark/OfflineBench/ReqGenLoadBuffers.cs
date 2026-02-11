@@ -203,7 +203,7 @@ namespace Resp.benchmark
 
                 for (int c = start; c < end; c++)
                 {
-                    if (!WriteOp(i, ref curr, vend, opType))
+                    if (!WriteOp(ref curr, vend, opType))
                         return false;
                 }
                 lens[i] = (int)(curr - b);
@@ -225,7 +225,7 @@ namespace Resp.benchmark
                     if (!WriteHeader(opHeader, ref curr, vend))
                         return false;
 
-                    if (!WriteOp(i, ref curr, vend, opType))
+                    if (!WriteOp(ref curr, vend, opType))
                         return false;
                 }
                 lens[i] = (int)(curr - b);
