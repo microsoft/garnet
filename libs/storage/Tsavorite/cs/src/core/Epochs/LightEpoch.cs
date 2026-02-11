@@ -189,7 +189,7 @@ namespace Tsavorite.core
         /// Number of active LightEpoch instances. Used for testing and diagnostics.
         /// </summary>
         /// <returns></returns>
-        public static int ActiveInstances()
+        public static int ActiveInstanceCount()
         {
             int count = 0;
             for (var i = 0; i < InstanceIndexBuffer.MaxInstances; i++)
@@ -198,6 +198,17 @@ namespace Tsavorite.core
                     count++;
             }
             return count;
+        }
+
+        /// <summary>
+        /// Reset all instances. Used for testing to reset static LightEpoch state for all instances.
+        /// </summary>
+        public static void ResetAllInstances()
+        {
+            for (var i = 0; i < InstanceIndexBuffer.MaxInstances; i++)
+            {
+                InstanceTracker.GetRef(i) = kInvalidIndex;
+            }
         }
 
         /// <summary>

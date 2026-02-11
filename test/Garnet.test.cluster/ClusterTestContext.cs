@@ -136,11 +136,7 @@ namespace Garnet.test.cluster
                 logger?.LogError("Timed out DeleteDirectory");
                 Assert.Fail("Timed out DeleteDirectory");
             }
-            if (LightEpoch.ActiveInstances() != 0)
-            {
-                logger?.LogError("LightEpoch instances still active: {count}", LightEpoch.ActiveInstances());
-                Assert.Fail($"LightEpoch instances still active: {LightEpoch.ActiveInstances()}");
-            }
+            TestUtils.OnTearDown();
         }
 
         public void RegisterCustomTxn(string name, Func<CustomTransactionProcedure> proc, RespCommandsInfo commandInfo = null, RespCommandDocs commandDocs = null)

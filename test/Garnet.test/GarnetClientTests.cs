@@ -110,7 +110,7 @@ namespace Garnet.test
         [TearDown]
         public void TearDown()
         {
-            TestUtils.DeleteDirectory(TestUtils.MethodTestDir);
+            TestUtils.OnTearDown();
         }
 
         static void WaitAndReset(ManualResetEventSlim e)
