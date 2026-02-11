@@ -124,13 +124,14 @@ namespace Garnet.test.cluster
             logger.LogDebug("0. Dispose <<<<<<<<<<<");
             waiter?.Dispose();
             clusterTestUtils?.Dispose();
-            loggerFactory?.Dispose();
             var timeoutSeconds = 5;
             if (!Task.Run(() => DisposeCluster()).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
             {
                 logger?.LogError("Timed out waiting for DisposeCluster");
                 Assert.Fail("Timed out waiting for DisposeCluster");
             }
+            // Dispose logger factor only after servers are disposed
+            loggerFactory?.Dispose();
             if (!Task.Run(() => TestUtils.DeleteDirectory(TestFolder, true)).Wait(TimeSpan.FromSeconds(timeoutSeconds)))
             {
                 logger?.LogError("Timed out DeleteDirectory");
