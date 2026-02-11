@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.server;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
@@ -12,6 +13,7 @@ namespace Garnet.test.Resp.ACL
     /// <summary>
     /// Tests for Resp ACL commands that don't have subcommands
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
     internal class BasicTests : AclTest
     {

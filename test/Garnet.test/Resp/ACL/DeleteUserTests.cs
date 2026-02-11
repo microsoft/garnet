@@ -3,6 +3,7 @@
 
 using System;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 
@@ -11,6 +12,7 @@ namespace Garnet.test.Resp.ACL
     /// <summary>
     /// Tests for ACL DELUSER operations.
     /// </summary>
+    [AllureNUnit]
     [TestFixture]
     class DeleteUserTests : AclTest
     {

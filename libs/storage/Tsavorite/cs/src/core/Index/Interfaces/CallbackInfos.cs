@@ -6,7 +6,7 @@ namespace Tsavorite.core
     /// <summary>
     /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
-    public enum UpsertAction
+    public enum UpsertAction : byte
     {
         /// <summary>
         /// Execute the default action for the method 'false' return.
@@ -50,6 +50,11 @@ namespace Tsavorite.core
         public UpsertAction Action { get; set; }
 
         /// <summary>
+        /// User-defined byte of data associated with the operation
+        /// </summary>
+        public byte UserData { get; set; }
+
+        /// <summary>
         /// Utility ctor
         /// </summary>
         public UpsertInfo(ref RMWInfo rmwInfo)
@@ -65,7 +70,7 @@ namespace Tsavorite.core
     /// <summary>
     /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
-    public enum RMWAction
+    public enum RMWAction : byte
     {
         /// <summary>
         /// Execute the default action for the method 'false' return.
@@ -133,12 +138,17 @@ namespace Tsavorite.core
         /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public RMWAction Action { get; set; }
+
+        /// <summary>
+        /// User-defined byte of data associated with the operation
+        /// </summary>
+        public byte UserData { get; set; }
     }
 
     /// <summary>
     /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
-    public enum DeleteAction
+    public enum DeleteAction : byte
     {
         /// <summary>
         /// Execute the default action for the method 'false' return.
@@ -179,12 +189,17 @@ namespace Tsavorite.core
         /// What actions Tsavorite should perform on a false return from the ISessionFunctions method
         /// </summary>
         public DeleteAction Action { get; set; }
+
+        /// <summary>
+        /// User-defined byte of data associated with the operation
+        /// </summary>
+        public byte UserData { get; set; }
     }
 
     /// <summary>
     /// What actions to take following the RMW ISessionFunctions method call, such as cancellation or record expiration.
     /// </summary>
-    public enum ReadAction
+    public enum ReadAction : byte
     {
         /// <summary>
         /// Execute the default action for the method 'false' return.

@@ -11,6 +11,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Text;
+using Garnet.server;
 
 namespace Garnet.cluster
 {
@@ -456,10 +457,11 @@ namespace Garnet.cluster
         /// <param name="slot">Slot number.</param>
         /// <returns>Pair of (string,integer) representing endpoint.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (string address, int port) GetEndpointFromSlot(ushort slot)
+        public (string endpoint, int port) GetEndpointFromSlot(ushort slot, ClusterPreferredEndpointType type)
         {
             var workerId = GetWorkerIdFromSlot(slot);
-            return (workers[workerId].Address, workers[workerId].Port);
+
+            return (GetEndpointByPreferredType(workerId, type), workers[workerId].Port);
         }
 
         /// <summary>
@@ -468,10 +470,22 @@ namespace Garnet.cluster
         /// <param name="slot">Slot number.</param>
         /// <returns>Pair of (string,integer) representing endpoint.</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public (string address, int port) AskEndpointFromSlot(ushort slot)
+        public (string endpoint, int port) AskEndpointFromSlot(ushort slot, ClusterPreferredEndpointType type)
         {
             var workerId = slotMap[slot]._workerId;
-            return (workers[workerId].Address, workers[workerId].Port);
+
+            return (GetEndpointByPreferredType(workerId, type), workers[workerId].Port);
+        }
+
+        private string GetEndpointByPreferredType(int workerId, ClusterPreferredEndpointType type)
+        {
+            return type switch
+            {
+                ClusterPreferredEndpointType.Ip => workers[workerId].Address,
+                ClusterPreferredEndpointType.Hostname => string.IsNullOrEmpty(workers[workerId].hostname) ? "?" : workers[workerId].hostname,
+                ClusterPreferredEndpointType.Unknown => "?",
+                _ => "?"
+            };
         }
 
         /// <summary>
@@ -709,32 +723,118 @@ namespace Garnet.cluster
             }
         }
 
-        private string CreateFormattedSlotInfo(int slotStart, int slotEnd, string address, int port, string nodeid, string hostname, List<string> replicaIds)
+        private string CreateFormattedSlotInfo(
+            int slotStart,
+            int slotEnd,
+            string ipAddress,
+            int port,
+            string nodeid,
+            string hostname,
+            List<string> replicaIds,
+            ClusterPreferredEndpointType preferredEndpointType)
         {
             int countA = replicaIds.Count == 0 ? 3 : 3 + replicaIds.Count;
             var rangeInfo = $"*{countA}\r\n";
 
             rangeInfo += $":{slotStart}\r\n";
             rangeInfo += $":{slotEnd}\r\n";
-            rangeInfo += $"*4\r\n${address.Length}\r\n{address}\r\n:{port}\r\n${nodeid.Length}\r\n{nodeid}\r\n";
-            rangeInfo += $"*2\r\n$8\r\nhostname\r\n${hostname.Length}\r\n{hostname}\r\n";
+
+            rangeInfo += CreateNodeNetworkingInfo(ipAddress, port, nodeid, hostname, preferredEndpointType);
 
             foreach (var replicaId in replicaIds)
             {
-                var (replicaAddress, replicaPort) = GetWorkerAddressFromNodeId(replicaId);
+                var (replicaIp, replicaPort) = GetWorkerAddressFromNodeId(replicaId);
                 var replicaHostname = GetHostNameFromNodeId(replicaId);
-
-                rangeInfo += $"*4\r\n${replicaAddress.Length}\r\n{replicaAddress}\r\n:{replicaPort}\r\n${replicaId.Length}\r\n{replicaId}\r\n";
-                rangeInfo += $"*2\r\n$8\r\nhostname\r\n${replicaHostname.Length}\r\n{replicaHostname}\r\n";
+                rangeInfo += CreateNodeNetworkingInfo(replicaIp, replicaPort, replicaId, replicaHostname, preferredEndpointType);
             }
+
             return rangeInfo;
+        }
+
+        private string CreateNodeNetworkingInfo(
+            string ipAddress,
+            int port,
+            string nodeid,
+            string hostname,
+            ClusterPreferredEndpointType preferredEndpointType)
+        {
+            // string: preferred endpoint
+            //  Ip: ip address
+            //  Hostname: hostname, or "?" if hostname is null or empty
+            //  UnknownEndpoint: null
+            // integer: port
+            // string: node id
+            // metadata: map-like key/value pairs
+            //  "ip" is included if preferred endpoint type != Ip
+            //  "hostname" is included if preferred endpoint type != Hostname AND hostname is not null or empty
+
+            var sb = new StringBuilder();
+            sb.Append("*4\r\n");
+            var isNullOrEmptyHostname = string.IsNullOrEmpty(hostname);
+
+            switch (preferredEndpointType)
+            {
+                case ClusterPreferredEndpointType.Ip:
+                    sb.Append(FormatValueOrNull(ipAddress))
+                        .Append(':').Append(port).Append("\r\n")
+                        .Append('$').Append(nodeid.Length).Append("\r\n").Append(nodeid).Append("\r\n")
+                        .Append('*').Append(isNullOrEmptyHostname ? 0 : 2).Append("\r\n");
+
+                    if (!isNullOrEmptyHostname)
+                    {
+                        sb.Append("$8\r\nhostname\r\n")
+                            .Append(FormatValueOrNull(hostname));
+                    }
+
+                    return sb.ToString();
+                case ClusterPreferredEndpointType.Hostname:
+                    var hostnameForResp = isNullOrEmptyHostname ? "?" : hostname;
+
+                    sb.Append(FormatValueOrNull(hostnameForResp))
+                        .Append(':').Append(port).Append("\r\n")
+                        .Append('$').Append(nodeid.Length).Append("\r\n").Append(nodeid).Append("\r\n")
+                        .Append('*').Append(2).Append("\r\n")
+                        .Append("$2\r\nip\r\n")
+                        .Append(FormatValueOrNull(ipAddress));
+
+                    return sb.ToString();
+                case ClusterPreferredEndpointType.Unknown:
+                default:
+                    sb.Append(FormatValueOrNull(null))
+                        .Append(':').Append(port).Append("\r\n")
+                        .Append('$').Append(nodeid.Length).Append("\r\n").Append(nodeid).Append("\r\n")
+                        .Append('*').Append(isNullOrEmptyHostname ? 2 : 4).Append("\r\n")
+                        .Append("$2\r\nip\r\n")
+                        .Append(FormatValueOrNull(ipAddress));
+
+                    if (!isNullOrEmptyHostname)
+                    {
+                        sb.Append("$8\r\nhostname\r\n");
+                        sb.Append(FormatValueOrNull(hostname));
+                    }
+
+                    return sb.ToString();
+            }
+
+            static string FormatValueOrNull(string value)
+            {
+                if (string.IsNullOrEmpty(value)) return CmdStrings.GenericNullValue; // "$-1\r\n"
+                return $"${value.Length}\r\n{value}\r\n";
+            }
         }
 
         /// <summary>
         /// Get formatted (using CLUSTER SLOTS format) cluster config info.
+        /// Ip, endpoint is ip address
+        /// hostname may be null and included in metadata
+        /// Hostname, endpoint is hostname
+        /// if hostname is not existing, endpoint is "?"
+        /// metadata includes ip address
+        /// UnknownEndpoint, endpoint is null
+        /// hostname and ip address are included in metadata
         /// </summary>
         /// <returns>Formatted string.</returns>
-        public string GetSlotsInfo()
+        public string GetSlotsInfo(ClusterPreferredEndpointType preferredEndpointType)
         {
             string completeSlotInfo = "";
             int slotRanges = 0;
@@ -759,7 +859,7 @@ namespace Garnet.cluster
                 var hostname = workers[currSlotWorkerId].hostname;
                 var replicas = GetReplicaIds(nodeid);
                 slotEnd--;
-                completeSlotInfo += CreateFormattedSlotInfo(slotStart, slotEnd, address, port, nodeid, hostname, replicas);
+                completeSlotInfo += CreateFormattedSlotInfo(slotStart, slotEnd, address, port, nodeid, hostname, replicas, preferredEndpointType);
                 slotRanges++;
                 slotStart = slotEnd;
             }

@@ -4,6 +4,8 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -35,8 +37,9 @@ namespace Tsavorite.test
     using StructAllocator = SpanByteAllocator<StoreFunctions<HashModuloKeyStructComparer, SpanByteRecordDisposer>>;
     using StructStoreFunctions = StoreFunctions<HashModuloKeyStructComparer, SpanByteRecordDisposer>;
 
+    [AllureNUnit]
     [TestFixture]
-    public class SpanByteLogCompactionTests
+    public class SpanByteLogCompactionTests : AllureTestBase
     {
         private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
         private IDevice log;

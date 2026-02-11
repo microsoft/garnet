@@ -11,6 +11,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Allure.NUnit;
 using Garnet.common;
 using Garnet.server;
 using Microsoft.Extensions.Logging;
@@ -20,8 +21,10 @@ using StackExchange.Redis;
 
 namespace Garnet.test.cluster
 {
+    [AllureNUnit]
+    [TestFixture]
     [NonParallelizable]
-    public class ClusterReplicationBaseTests
+    public class ClusterReplicationBaseTests : AllureTestBase
     {
         public (Action, string)[] GetUnitTests()
         {
@@ -2051,6 +2054,102 @@ namespace Garnet.test.cluster
             var primaryPInfo = context.clusterTestUtils.GetPersistenceInfo(primaryNodeIndex, context.logger);
             var replicaPInfo = context.clusterTestUtils.GetPersistenceInfo(replicaNodeIndex, context.logger);
             ClassicAssert.AreEqual(primaryPInfo.TailAddress, replicaPInfo.TailAddress);
+        }
+
+        [Test, Order(29)]
+        [Category("REPLICATION")]
+        [CancelAfter(30_000)]
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task ClusterReplicationObjectCollectTest(bool useManualCollect, CancellationToken cancellationToken)
+        {
+            var replica_count = 1;// Per primary
+            var primary_count = 1;
+            var nodes_count = primary_count + (primary_count * replica_count);
+            var primaryNodeIndex = 0;
+            var replicaNodeIndex = 1;
+
+            context.CreateInstances(nodes_count, disableObjects: false, enableAOF: true, useTLS: useTLS, asyncReplay: asyncReplay, expiredObjectCollectionFrequencySecs: !useManualCollect ? 100 : 0);
+            context.CreateConnection(useTLS: useTLS);
+
+            var primaryServer = context.clusterTestUtils.GetServer(primaryNodeIndex);
+            var replicaServer = context.clusterTestUtils.GetServer(replicaNodeIndex);
+
+            // Setup cluster
+            context.clusterTestUtils.AddDelSlotsRange(primaryNodeIndex, [(0, 16383)], addslot: true, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(primaryNodeIndex, primaryNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.SetConfigEpoch(replicaNodeIndex, replicaNodeIndex + 1, logger: context.logger);
+            context.clusterTestUtils.Meet(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(primaryNodeIndex, replicaNodeIndex, logger: context.logger);
+            context.clusterTestUtils.WaitUntilNodeIsKnown(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+
+            var db = context.clusterTestUtils.GetDatabase();
+            HashEntry[] elements = [new HashEntry("field1", "hello"), new HashEntry("field2", "world"), new HashEntry("field3", "value3"), new HashEntry("field4", "value4"), new HashEntry("field5", "value5"), new HashEntry("field6", "value6")];
+            // Attach replica
+            var resp = context.clusterTestUtils.ClusterReplicate(replicaNodeIndex, primaryNodeIndex, logger: context.logger);
+            ClassicAssert.AreEqual("OK", resp);
+
+            // Execute first hash set workload
+            var hashSetKey = "myhash";
+            ExecuteHashSet(hashSetKey, elements);
+            await Task.Delay(3000);
+            ManualCollect();
+            ValidateHashSet(hashSetKey);
+
+            // Execute second hash set workload
+            hashSetKey = "myhash2";
+            ExecuteHashSet(hashSetKey, elements);
+            await Task.Delay(3000);
+            ManualCollect();
+            ValidateHashSet(hashSetKey);
+
+            void ExecuteHashSet(string key, HashEntry[] elements)
+            {
+                db.HashSet(key, elements);
+
+                var result = primaryServer.Execute("HPEXPIRE", key, "500", "FIELDS", "2", "field1", "field2");
+                var results = (RedisResult[])result;
+                ClassicAssert.AreEqual(2, results.Length);
+                ClassicAssert.AreEqual(1, (long)results[0]);
+                ClassicAssert.AreEqual(1, (long)results[1]);
+
+                result = primaryServer.Execute("HPEXPIRE", key, "500", "FIELDS", "2", "field3", "field4");
+                results = (RedisResult[])result;
+                ClassicAssert.AreEqual(2, results.Length);
+                ClassicAssert.AreEqual(1, (long)results[0]);
+                ClassicAssert.AreEqual(1, (long)results[1]);
+            }
+
+            void ValidateHashSet(string key)
+            {
+                // Check expected result at primary
+                var expectedFieldsAndValues = elements.AsSpan().Slice(4).ToArray()
+                    .SelectMany(e => new[] { e.Name.ToString(), e.Value.ToString() })
+                    .ToArray();
+                var fields = (string[])primaryServer.Execute("HGETALL", [key]);
+                ClassicAssert.AreEqual(4, fields.Length);
+                ClassicAssert.AreEqual(expectedFieldsAndValues, fields);
+
+                // Wait to ensure sync
+                context.clusterTestUtils.WaitForReplicaAofSync(primaryNodeIndex, replicaNodeIndex, context.logger, cancellationToken);
+
+                // Check if replica is caught up
+                fields = (string[])replicaServer.Execute("HGETALL", [key]);
+                ClassicAssert.AreEqual(4, fields.Length);
+                ClassicAssert.AreEqual(expectedFieldsAndValues, fields);
+            }
+
+            void ManualCollect()
+            {
+                if (useManualCollect)
+                {
+                    Assert.Throws<RedisServerException>(() => replicaServer.Execute("HCOLLECT", ["*"], CommandFlags.NoRedirect),
+                        $"Expected exception was not thrown");
+
+                    resp = (string)primaryServer.Execute("HCOLLECT", ["*"]);
+                    ClassicAssert.AreEqual("OK", resp);
+                }
+            }
         }
     }
 }

@@ -3,6 +3,8 @@
 
 using System;
 using System.IO;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -12,8 +14,9 @@ namespace Tsavorite.test
     //** Fundamental basic test for TryEnqueue that covers all the parameters in TryEnqueue
     //** Other tests in TsavoriteLog.cs provide more coverage for TryEnqueue
 
+    [AllureNUnit]
     [TestFixture]
-    internal class TryEnqueueTests
+    internal class TryEnqueueTests : AllureTestBase
     {
         private TsavoriteLog log;
         private IDevice device;
