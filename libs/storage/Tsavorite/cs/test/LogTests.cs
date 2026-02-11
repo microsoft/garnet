@@ -1160,6 +1160,7 @@ namespace Tsavorite.test
             catch (TsavoriteException)
             {
             }
+            recoveredLog.Dispose();
 
             // Default argument should recover to most recent, with TryRecoverLatest set to true
             logSettings.TryRecoverLatest = true;

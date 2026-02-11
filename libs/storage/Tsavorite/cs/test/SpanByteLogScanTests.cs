@@ -392,6 +392,9 @@ namespace Tsavorite.test.spanbyte
             DeleteDirectory(MethodTestDir, wait: true);
             using var log = Devices.CreateLogDevice(Path.Join(MethodTestDir, "test.log"), deleteOnClose: true);
 
+            // Dispose existing store as we create a new one in this test
+            store?.Dispose();
+
             store = new(new()
             {
                 IndexSize = 1L << 26,
