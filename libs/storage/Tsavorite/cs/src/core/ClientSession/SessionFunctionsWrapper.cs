@@ -99,6 +99,16 @@ namespace Tsavorite.core
             logRecord.InfoRef.SetDirtyAndModified();
             return true;
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> srcValueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+            => _clientSession.functions.PostUpsertOperation(key, ref input, srcValueSpan, ref upsertInfo, epochAccessor);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, IHeapObject srcValueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+            => _clientSession.functions.PostUpsertOperation(key, ref input, srcValueObject, ref upsertInfo, epochAccessor);
         #endregion Upserts
 
         #region RMWs
@@ -181,6 +191,11 @@ namespace Tsavorite.core
         }
         #endregion InPlaceUpdater
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+            => _clientSession.functions.PostRMWOperation(key, ref input, ref rmwInfo, epochAccessor);
+
         public void RMWCompletionCallback(ref DiskLogRecord diskLogRecord, ref TInput input, ref TOutput output, TContext ctx, Status status, RecordMetadata recordMetadata)
             => _clientSession.functions.RMWCompletionCallback(ref diskLogRecord, ref input, ref output, ctx, status, recordMetadata);
 
@@ -207,6 +222,10 @@ namespace Tsavorite.core
             logRecord.InfoRef.SetDirtyAndModified();
             return true;
         }
+
+        public void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
+            => _clientSession.functions.PostDeleteOperation(key, ref deleteInfo, epochAccessor);
         #endregion Deletes
 
         #region Utilities

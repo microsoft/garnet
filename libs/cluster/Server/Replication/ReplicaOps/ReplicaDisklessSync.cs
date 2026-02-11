@@ -36,7 +36,7 @@ namespace Garnet.cluster
                     return false;
 
                 // Wait for threads to agree configuration change of this node
-                session.UnsafeBumpAndWaitForEpochTransition();
+                session?.UnsafeBumpAndWaitForEpochTransition();
                 if (options.Background)
                     _ = Task.Run(() => TryBeginReplicaSync(options.UpgradeLock));
                 else
@@ -52,7 +52,9 @@ namespace Garnet.cluster
             catch (Exception ex)
             {
                 logger?.LogError(ex, $"{nameof(TryReplicateDisklessSync)}");
+                return false;
             }
+
             return true;
 
             async Task<string> TryBeginReplicaSync(bool downgradeLock)
@@ -76,6 +78,9 @@ namespace Garnet.cluster
                     // otherwise the replica will receive a reset message from primary if needed
                     if (!disklessSync)
                         storeWrapper.Reset();
+
+                    // Suspend background tasks that may interfere with AOF
+                    await storeWrapper.SuspendPrimaryOnlyTasks();
 
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data
