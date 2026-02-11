@@ -4783,11 +4783,8 @@ namespace Garnet.test
             expectedResponse = ":0\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
-            //for this case the boundaries arguments are wrong, in redis this validation occurs
-            //before the validation of a non existing key, but we are not executing the backend until
-            //the key is validated first.
             response = lightClientRequest.SendCommand("ZREMRANGEBYLEX nokey 0 1");
-            expectedResponse = ":0\r\n";
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING)}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             //testing out only a nonexisting key
@@ -4814,7 +4811,7 @@ namespace Garnet.test
             lightClientRequest.SendCommand("ZADD zset1 1 uno 2 due 3 tre 4 quattro 5 cinque 6 sei");
 
             response = lightClientRequest.SendCommand("ZREMRANGEBYLEX zset1 0 1");
-            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING)}\r\n"; ;
+            expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING)}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
         }
 
@@ -5029,7 +5026,7 @@ namespace Garnet.test
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 
             // ZREMRANGEBYLEX
-            response = lightClientRequest.SendCommand($"ZREMRANGEBYLEX {keys[0]} {values[1][0]} {values[1][1]}");
+            response = lightClientRequest.SendCommand($"ZREMRANGEBYLEX {keys[0]} [{values[1][0]} [{values[1][1]}");
             expectedResponse = $"-{Encoding.ASCII.GetString(CmdStrings.RESP_ERR_WRONG_TYPE)}\r\n";
             TestUtils.AssertEqualUpToExpectedLength(expectedResponse, response);
 

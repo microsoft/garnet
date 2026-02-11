@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using Garnet.common;
-
 using Limit = (int offset, int count);
 
 namespace Garnet.server
@@ -29,65 +28,14 @@ namespace Garnet.server
             public Limit Limit { get; set; }
         };
 
-        private enum SpecialRanges : byte
+        internal enum SpecialRanges : byte
         {
             None = 0,
             InfiniteMin = 1,
             InfiniteMax = 2
         }
 
-        bool GetOptions(ref ObjectInput input, ref int currTokenIdx, out SortedSetAddOption options, ref RespMemoryWriter writer)
-        {
-            options = SortedSetAddOption.None;
-
-            while (currTokenIdx < input.parseState.Count)
-            {
-                if (!input.parseState.TryGetSortedSetAddOption(currTokenIdx, out var currOption))
-                    break;
-
-                options |= currOption;
-                currTokenIdx++;
-            }
-
-            // Validate ZADD options combination
-            ReadOnlySpan<byte> optionsError = default;
-
-            // XX & NX are mutually exclusive
-            if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX &&
-                (options & SortedSetAddOption.NX) == SortedSetAddOption.NX)
-                optionsError = CmdStrings.RESP_ERR_XX_NX_NOT_COMPATIBLE;
-
-            // NX, GT & LT are mutually exclusive
-            if (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT &&
-                 (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) ||
-               (((options & SortedSetAddOption.GT) == SortedSetAddOption.GT ||
-                 (options & SortedSetAddOption.LT) == SortedSetAddOption.LT) &&
-                (options & SortedSetAddOption.NX) == SortedSetAddOption.NX))
-                optionsError = CmdStrings.RESP_ERR_GT_LT_NX_NOT_COMPATIBLE;
-
-            // INCR supports only one score-element pair
-            if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR &&
-                (input.parseState.Count - currTokenIdx > 2))
-                optionsError = CmdStrings.RESP_ERR_INCR_SUPPORTS_ONLY_SINGLE_PAIR;
-
-            if (!optionsError.IsEmpty)
-            {
-                writer.WriteError(optionsError);
-                return false;
-            }
-
-            // From here on we expect only score-element pairs
-            // Remaining token count should be positive and even
-            if (currTokenIdx == input.parseState.Count || (input.parseState.Count - currTokenIdx) % 2 != 0)
-            {
-                writer.WriteError(CmdStrings.RESP_SYNTAX_ERROR);
-                return false;
-            }
-
-            return true;
-        }
-
-        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetAdd(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
 
@@ -96,121 +44,126 @@ namespace Garnet.server
 
             var options = SortedSetAddOption.None;
             var currTokenIdx = 0;
-            var parsedOptions = false;
 
-            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
-            try
+            // Try to parse a Score field
+            var isFirstScoreParsed = false;
+            if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
             {
-                while (currTokenIdx < input.parseState.Count)
+                // Try to get and validate options before the Score field, if any
+                options = input.parseState.GetSortedSetAddOptions(currTokenIdx, out var nextIdxStep);
+                currTokenIdx += nextIdxStep;
+            }
+            else
+            {
+                isFirstScoreParsed = true;
+                currTokenIdx++;
+            }
+
+            while (currTokenIdx < input.parseState.Count)
+            {
+                if (!isFirstScoreParsed)
                 {
-                    // Try to parse a Score field
-                    if (!input.parseState.TryGetDouble(currTokenIdx, out var score))
+                    if (!input.parseState.TryGetDouble(currTokenIdx++, out score))
                     {
-                        // Try to get and validate options before the Score field, if any
-                        if (!parsedOptions)
+                        // Invalid Score encountered
+                        writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                        output.OutputFlags |= OutputFlags.ValueUnchanged;
+                        return;
+                    }
+                }
+                else
+                {
+                    isFirstScoreParsed = false;
+                }
+
+                // Member
+                var memberSpan = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
+                var member = memberSpan.ToArray();
+
+                // Add new member
+                if (!sortedSetDict.TryGetValue(member, out var scoreStored))
+                {
+                    // Don't add new member if XX flag is set
+                    if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
+
+                    incrResult = score;
+                    sortedSetDict.Add(member, score);
+                    if (sortedSet.Add((score, member)))
+                        addedOrChanged++;
+
+                    UpdateSize(memberSpan);
+                }
+                // Update existing member
+                else
+                {
+                    // Update new score if INCR flag is set
+                    if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
+                    {
+                        score += scoreStored;
+                        incrResult = score;
+
+                        if (double.IsNaN(score))
                         {
-                            parsedOptions = true;
-                            if (!GetOptions(ref input, ref currTokenIdx, out options, ref writer))
-                                return;
-                            continue; // retry after parsing options
-                        }
-                        else
-                        {
-                            // Invalid Score encountered
-                            writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
+                            output.OutputFlags |= OutputFlags.ValueUnchanged;
+                            writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
                             return;
                         }
                     }
 
-                    parsedOptions = true;
-                    currTokenIdx++;
-
-                    // Member
-                    var memberSpan = input.parseState.GetArgSliceByRef(currTokenIdx++).ReadOnlySpan;
-                    var member = memberSpan.ToArray();
-
-                    // Add new member
-                    if (!sortedSetDict.TryGetValue(member, out var scoreStored))
+                    // No need for update
+                    if (score == scoreStored)
                     {
-                        // Don't add new member if XX flag is set
-                        if ((options & SortedSetAddOption.XX) == SortedSetAddOption.XX) continue;
-
-                        incrResult = score;
-                        sortedSetDict.Add(member, score);
-                        if (sortedSet.Add((score, member)))
-                            addedOrChanged++;
-
-                        UpdateSize(memberSpan);
+                        _ = TryRemoveExpiration(member);
+                        continue;
                     }
-                    // Update existing member
-                    else
+
+                    // Don't update existing member if NX flag is set
+                    // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
+                    if ((options & SortedSetAddOption.NX) == SortedSetAddOption.NX ||
+                        ((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && scoreStored > score) ||
+                        ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score))
                     {
-                        // Update new score if INCR flag is set
                         if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
                         {
-                            score += scoreStored;
-                            incrResult = score;
-
-                            if (double.IsNaN(score))
-                            {
-                                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
-                                return;
-                            }
+                            writer.WriteNull();
+                            output.OutputFlags |= OutputFlags.ValueUnchanged;
+                            return;
                         }
 
-                        // No need for update
-                        if (score == scoreStored)
-                        {
-                            _ = TryRemoveExpiration(member);
-                            continue;
-                        }
-
-                        // Don't update existing member if NX flag is set
-                        // or if GT/LT flag is set and existing score is higher/lower than new score, respectively
-                        if ((options & SortedSetAddOption.NX) == SortedSetAddOption.NX ||
-                            ((options & SortedSetAddOption.GT) == SortedSetAddOption.GT && scoreStored > score) ||
-                            ((options & SortedSetAddOption.LT) == SortedSetAddOption.LT && scoreStored < score))
-                        {
-                            if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
-                            {
-                                writer.WriteNull();
-                                return;
-                            }
-                            continue;
-                        }
-
-                        sortedSetDict[member] = score;
-                        var success = sortedSet.Remove((scoreStored, member));
-                        Debug.Assert(success);
-                        success = sortedSet.Add((score, member));
-                        _ = TryRemoveExpiration(member);
-                        Debug.Assert(success);
-
-                        // If CH flag is set, add changed member to final count
-                        if ((options & SortedSetAddOption.CH) == SortedSetAddOption.CH)
-                            addedOrChanged++;
+                        continue;
                     }
-                }
 
-                if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
-                {
-                    writer.WriteDoubleNumeric(incrResult);
-                }
-                else
-                {
-                    writer.WriteInt32(addedOrChanged);
+                    sortedSetDict[member] = score;
+                    var success = sortedSet.Remove((scoreStored, member));
+                    Debug.Assert(success);
+                    success = sortedSet.Add((score, member));
+                    _ = TryRemoveExpiration(member);
+                    Debug.Assert(success);
+
+                    // If CH flag is set, add changed member to final count
+                    if ((options & SortedSetAddOption.CH) == SortedSetAddOption.CH)
+                        addedOrChanged++;
                 }
             }
-            finally
+
+            if ((options & SortedSetAddOption.INCR) == SortedSetAddOption.INCR)
             {
-                writer.Dispose();
+                writer.WriteDoubleNumeric(incrResult);
+            }
+            else
+            {
+                writer.WriteInt32(addedOrChanged);
+                
+                if (addedOrChanged == 0)
+                    output.OutputFlags |= OutputFlags.ValueUnchanged;
             }
         }
 
-        private void SortedSetRemove(ref ObjectInput input, ref ObjectOutput output)
+        private void SortedSetRemove(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
+
+            var removedItems = 0;
 
             for (var i = 0; i < input.parseState.Count; i++)
             {
@@ -220,45 +173,51 @@ namespace Garnet.server
                 if (!sortedSetDict.Remove(valueArray, out var key))
                     continue;
 
-                output.Header.result1++;
+                removedItems++;
                 sortedSet.Remove((key, valueArray));
                 _ = TryRemoveExpiration(valueArray);
 
                 this.UpdateSize(value, false);
             }
+
+            writer.WriteInt32(removedItems);
+
+            if (removedItems == 0)
+                output.OutputFlags |= OutputFlags.ValueUnchanged;
+
+            output.Header.result1 = removedItems;
         }
 
-        private void SortedSetLength(ref ObjectOutput output)
+        private void SortedSetLength(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             // Check both objects
             Debug.Assert(sortedSetDict.Count == sortedSet.Count, "SortedSet object is not in sync.");
-            output.Header.result1 = Count();
+
+            var length = Count();
+
+            if (!input.header.CheckSkipRespOutputFlag())
+                writer.WriteInt64(length);
+
+            output.Header.result1 = length;
         }
 
-        private void SortedSetScore(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetScore(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             // ZSCORE key member
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             var member = input.parseState.GetArgSliceByRef(0).ToArray();
 
             if (!TryGetScore(member, out var score))
-            {
                 writer.WriteNull();
-            }
             else
-            {
                 writer.WriteDoubleNumeric(score);
-            }
+
             output.Header.result1 = 1;
         }
 
-        private void SortedSetScores(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetScores(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             // ZMSCORE key member
             var count = input.parseState.Count;
-
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             writer.WriteArrayLength(count);
 
@@ -279,21 +238,13 @@ namespace Garnet.server
             output.Header.result1 = count;
         }
 
-        private void SortedSetCount(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetCount(ref ObjectInput input, ref RespMemoryWriter writer)
         {
             // Read min & max
-            var minParamSpan = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            var maxParamSpan = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
-
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
-            // Check if parameters are valid
-            if (!TryParseParameter(minParamSpan, out var minValue, out var minExclusive) ||
-                !TryParseParameter(maxParamSpan, out var maxValue, out var maxExclusive))
-            {
-                writer.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT);
-                return;
-            }
+            var parseSuccessful = input.parseState.TryGetSortedSetMinMaxParameter(0, out var minValue, out var minExclusive);
+            Debug.Assert(parseSuccessful);
+            parseSuccessful = input.parseState.TryGetSortedSetMinMaxParameter(1, out var maxValue, out var maxExclusive);
+            Debug.Assert(parseSuccessful);
 
             // get the elements within the score range and write the result
             var count = 0;
@@ -314,23 +265,12 @@ namespace Garnet.server
             writer.WriteInt32(count);
         }
 
-        private void SortedSetIncrement(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetIncrement(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
 
-            // It's useful to fix RESP2 in the internal API as that just reads back the output.
-            if (input.arg2 > 0)
-                respProtocolVersion = (byte)input.arg2;
-
-            // ZINCRBY key increment member
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
-            // Try to read increment value
-            if (!input.parseState.TryGetDouble(0, out var incrValue))
-            {
-                writer.WriteError(CmdStrings.RESP_ERR_NOT_VALID_FLOAT);
-                return;
-            }
+            // Read increment value
+            var incrValue = input.parseState.GetDouble(0);
 
             // Read member
             var member = input.parseState.GetArgSliceByRef(1).ToArray();
@@ -342,6 +282,7 @@ namespace Garnet.server
                 if (double.IsNaN(result))
                 {
                     writer.WriteError(CmdStrings.RESP_ERR_GENERIC_SCORE_NAN);
+                    output.OutputFlags |= OutputFlags.ValueUnchanged;
                     return;
                 }
 
@@ -361,96 +302,54 @@ namespace Garnet.server
             writer.WriteDoubleNumeric(sortedSetDict[member]);
         }
 
-        private void SortedSetRange(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetRange(ref ObjectInput input, ref RespMemoryWriter writer)
         {
             //ZRANGE key min max [BYSCORE|BYLEX] [REV] [LIMIT offset count] [WITHSCORES]
             //ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]
             //ZREVRANGEBYSCORE key max min [WITHSCORES] [LIMIT offset count]
-            var rangeOpts = (SortedSetRangeOpts)input.arg2;
+            var rangeOpts = (SortedSetRangeOptions)input.arg2;
             var count = input.parseState.Count;
             var currIdx = 0;
-
-            // Read min & max
-            var minSpan = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
-            var maxSpan = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
 
             // read the rest of the arguments
             ZRangeOptions options = new()
             {
-                ByScore = (rangeOpts & SortedSetRangeOpts.ByScore) != 0,
-                ByLex = (rangeOpts & SortedSetRangeOpts.ByLex) != 0,
-                Reverse = (rangeOpts & SortedSetRangeOpts.Reverse) != 0,
-                WithScores = (rangeOpts & SortedSetRangeOpts.WithScores) != 0 || (rangeOpts & SortedSetRangeOpts.Store) != 0
+                ByScore = (rangeOpts & SortedSetRangeOptions.ByScore) != 0,
+                ByLex = (rangeOpts & SortedSetRangeOptions.ByLex) != 0,
+                Reverse = (rangeOpts & SortedSetRangeOptions.Reverse) != 0,
+                WithScores = (rangeOpts & SortedSetRangeOptions.WithScores) != 0 || (rangeOpts & SortedSetRangeOptions.Store) != 0
             };
-
-            // The ZRANGESTORE code will read our output and store it, it's used to RESP2 output.
-            // Since in that case isn't displayed to the user, we can override the version to let it work.
-            if ((respProtocolVersion >= 3) && (rangeOpts & SortedSetRangeOpts.Store) != 0)
-                respProtocolVersion = 2;
-
-            var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             try
             {
-                if (count > 2)
+                if ((rangeOpts & SortedSetRangeOptions.Limit) != 0)
                 {
                     while (currIdx < count)
                     {
                         var tokenSpan = input.parseState.GetArgSliceByRef(currIdx++).ReadOnlySpan;
 
-                        if (tokenSpan.EqualsUpperCaseSpanIgnoringCase("BYSCORE"u8))
+                        if (tokenSpan.EqualsUpperCaseSpanIgnoringCase("LIMIT"u8))
                         {
-                            options.ByScore = true;
-                        }
-                        else if (tokenSpan.EqualsUpperCaseSpanIgnoringCase("BYLEX"u8))
-                        {
-                            options.ByLex = true;
-                        }
-                        else if (tokenSpan.EqualsUpperCaseSpanIgnoringCase("REV"u8))
-                        {
-                            options.Reverse = true;
-                        }
-                        else if (tokenSpan.EqualsUpperCaseSpanIgnoringCase("LIMIT"u8))
-                        {
-                            // Verify that there are at least 2 more tokens to read
-                            if (input.parseState.Count - currIdx < 2)
-                            {
-                                writer.WriteError(CmdStrings.RESP_SYNTAX_ERROR);
-                                return;
-                            }
-
                             // Read the next two tokens
-                            if (!input.parseState.TryGetInt(currIdx++, out var offset) ||
-                                !input.parseState.TryGetInt(currIdx++, out var countLimit))
-                            {
-                                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                                return;
-                            }
-
-                            options.Limit = (offset, countLimit);
+                            options.Limit = (input.parseState.GetInt(currIdx++), input.parseState.GetInt(currIdx++));
                             options.ValidLimit = true;
-                        }
-                        else if (tokenSpan.EqualsUpperCaseSpanIgnoringCase("WITHSCORES"u8))
-                        {
-                            options.WithScores = true;
                         }
                     }
                 }
 
                 if (count >= 2 && ((!options.ByScore && !options.ByLex) || options.ByScore))
                 {
-                    if (!TryParseParameter(minSpan, out var minValue, out var minExclusive) ||
-                        !TryParseParameter(maxSpan, out var maxValue, out var maxExclusive))
-                    {
-                        writer.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT);
-                        return;
-                    }
+                    // Read min & max
+                    var parseSuccessful = input.parseState.TryGetSortedSetMinMaxParameter(0, out var minValue, out var minExclusive);
+                    Debug.Assert(parseSuccessful);
+                    parseSuccessful = input.parseState.TryGetSortedSetMinMaxParameter(1, out var maxValue, out var maxExclusive);
+                    Debug.Assert(parseSuccessful);
 
                     if (options.ByScore)
                     {
                         var scoredElements = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, options.WithScores, options.Reverse, options.ValidLimit, false, options.Limit);
 
-                        WriteSortedSetResult(options.WithScores, scoredElements.Count, respProtocolVersion, scoredElements, ref writer);
+                        WriteSortedSetResult(options.WithScores, scoredElements.Count, scoredElements, ref writer);
                     }
                     else
                     {
@@ -506,7 +405,7 @@ namespace Garnet.server
 
                                 iterator = iterator.Skip(minIndex).Take(n);
 
-                                WriteSortedSetResult(options.WithScores, n, respProtocolVersion, iterator, ref writer);
+                                WriteSortedSetResult(options.WithScores, n, iterator, ref writer);
                             }
                         }
                     }
@@ -515,16 +414,9 @@ namespace Garnet.server
                 // by Lex
                 if (count >= 2 && options.ByLex)
                 {
-                    var elementsInLex = GetElementsInRangeByLex(minSpan, maxSpan, options.Reverse, options.ValidLimit, false, out var errorCode, options.Limit);
+                    var elementsInLex = GetElementsInRangeByLex(ref input.parseState, options.Reverse, options.ValidLimit, false, options.Limit);
 
-                    if (errorCode == int.MaxValue)
-                    {
-                        writer.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_STRING);
-                    }
-                    else
-                    {
-                        WriteSortedSetResult(options.WithScores, elementsInLex.Count, respProtocolVersion, elementsInLex, ref writer);
-                    }
+                    WriteSortedSetResult(options.WithScores, elementsInLex.Count, elementsInLex, ref writer);
                 }
             }
             finally
@@ -533,52 +425,19 @@ namespace Garnet.server
             }
         }
 
-        void WriteSortedSetResult(bool withScores, int count, byte respProtocolVersion, IEnumerable<(double, byte[])> iterator, ref RespMemoryWriter writer)
-        {
-            if (withScores && respProtocolVersion >= 3)
-            {
-                // write the size of the array reply
-                writer.WriteArrayLength(count);
-
-                foreach (var (score, element) in iterator)
-                {
-                    writer.WriteArrayLength(2);
-                    writer.WriteBulkString(element);
-                    writer.WriteDoubleNumeric(score);
-                }
-            }
-            else
-            {
-                // write the size of the array reply
-                writer.WriteArrayLength(withScores ? count * 2 : count);
-
-                foreach (var (score, element) in iterator)
-                {
-                    writer.WriteBulkString(element);
-                    if (withScores)
-                    {
-                        writer.WriteDoubleBulkString(score);
-                    }
-                }
-            }
-        }
-
-        private void SortedSetRemoveRangeByRank(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetRemoveRangeByRank(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
 
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             // ZREMRANGEBYRANK key start stop
-            if (!input.parseState.TryGetInt(0, out var start) ||
-                !input.parseState.TryGetInt(1, out var stop))
-            {
-                writer.WriteError(CmdStrings.RESP_ERR_GENERIC_VALUE_IS_NOT_INTEGER);
-                return;
-            }
+            var start = input.parseState.GetInt(0);
+            var stop = input.parseState.GetInt(1);
 
             if (start > sortedSetDict.Count - 1)
+            {
+                output.OutputFlags |= OutputFlags.ValueUnchanged;
                 return;
+            }
 
             // Shift from the end of the set
             start = start < 0 ? sortedSetDict.Count + start : start;
@@ -605,32 +464,28 @@ namespace Garnet.server
             writer.WriteInt32(elementCount);
         }
 
-        private void SortedSetRemoveRangeByScore(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetRemoveRangeByScore(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
 
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             // ZREMRANGEBYSCORE key min max
             // Read min and max
-            var minParamBytes = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            var maxParamBytes = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
-
-            if (!TryParseParameter(minParamBytes, out var minValue, out var minExclusive) ||
-                !TryParseParameter(maxParamBytes, out var maxValue, out var maxExclusive))
-            {
-                writer.WriteError(CmdStrings.RESP_ERR_MIN_MAX_NOT_VALID_FLOAT);
-                return;
-            }
+            var parseSuccessful = input.parseState.TryGetSortedSetMinMaxParameter(0, out var minValue, out var minExclusive);
+            Debug.Assert(parseSuccessful);
+            parseSuccessful = input.parseState.TryGetSortedSetMinMaxParameter(1, out var maxValue, out var maxExclusive);
+            Debug.Assert(parseSuccessful);
 
             var elementCount = GetElementsInRangeByScore(minValue, maxValue, minExclusive, maxExclusive, false,
                 false, false, true).Count;
+
+            if (elementCount == 0)
+                output.OutputFlags |= OutputFlags.ValueUnchanged;
 
             // Write the number of elements
             writer.WriteInt32(elementCount);
         }
 
-        private void SortedSetRandomMember(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetRandomMember(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             var count = input.arg1 >> 2;
             var withScores = (input.arg1 & 1) == 1;
@@ -641,10 +496,8 @@ namespace Garnet.server
             if (count > 0 && count > sortedSetCount)
                 count = sortedSetCount;
 
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             // The count parameter can have a negative value, but the array length can't
-            var arrayLength = Math.Abs((withScores && respProtocolVersion == 2) ? count * 2 : count);
+            var arrayLength = Math.Abs((withScores && !writer.resp3) ? count * 2 : count);
             if (arrayLength > 1 || (arrayLength == 1 && includedCount))
             {
                 writer.WriteArrayLength(arrayLength);
@@ -660,7 +513,7 @@ namespace Garnet.server
             {
                 var (element, score) = ElementAt(item);
 
-                if (withScores && (respProtocolVersion >= 3))
+                if (withScores && writer.resp3)
                     writer.WriteArrayLength(2);
 
                 writer.WriteBulkString(element);
@@ -675,29 +528,25 @@ namespace Garnet.server
             output.Header.result1 = count;
         }
 
-        private void SortedSetRemoveOrCountRangeByLex(ref ObjectInput input, ref ObjectOutput output, SortedSetOperation op)
+        private void SortedSetRemoveOrCountRangeByLex(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             // ZREMRANGEBYLEX key min max
             // ZLEXCOUNT key min max
 
-            // Using minValue for partial execution detection
-            output.Header.result1 = int.MinValue;
-
-            var minParamBytes = input.parseState.GetArgSliceByRef(0).ReadOnlySpan;
-            var maxParamBytes = input.parseState.GetArgSliceByRef(1).ReadOnlySpan;
-
-            var isRemove = op == SortedSetOperation.ZREMRANGEBYLEX;
+            var isRemove = input.header.SortedSetOp == SortedSetOperation.ZREMRANGEBYLEX;
 
             if (isRemove)
-            {
                 DeleteExpiredItems();
-            }
 
-            var rem = GetElementsInRangeByLex(minParamBytes, maxParamBytes, false, false, isRemove, out int errorCode);
+            var rem = GetElementsInRangeByLex(ref input.parseState, false, false, isRemove);
 
-            output.Header.result1 = errorCode;
-            if (errorCode == 0)
-                output.Header.result1 = rem.Count;
+            if (!input.header.CheckSkipRespOutputFlag())
+                writer.WriteInt32(rem.Count);
+
+            if (isRemove && rem.Count == 0)
+                output.OutputFlags |= OutputFlags.ValueUnchanged;
+
+            output.Header.result1 = rem.Count;
         }
 
         /// <summary>
@@ -705,16 +554,13 @@ namespace Garnet.server
         /// in ascending or descending order
         /// </summary>
         /// <param name="input"></param>
-        /// <param name="output"></param>
-        /// <param name="ascending"></param>
-        private void SortedSetRank(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, bool ascending = true)
+        /// <param name="writer"></param>
+        private void SortedSetRank(ref ObjectInput input, ref RespMemoryWriter writer)
         {
             //ZRANK key member
             var withScore = input.arg1 == 1;
 
             var member = input.parseState.GetArgSliceByRef(0).ToArray();
-
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             if (!TryGetScore(member, out var score))
             {
@@ -735,7 +581,7 @@ namespace Garnet.server
                     rank++;
                 }
 
-                if (!ascending)
+                if (input.header.SortedSetOp == SortedSetOperation.ZREVRANK)
                     rank = Count() - rank - 1;
 
                 if (withScore)
@@ -761,7 +607,9 @@ namespace Garnet.server
             DeleteExpiredItems();
 
             if (sortedSet.Count == 0)
+            {
                 return default;
+            }
 
             var element = popMaxScoreElement ? sortedSet.Max : sortedSet.Min;
             sortedSet.Remove(element);
@@ -777,13 +625,12 @@ namespace Garnet.server
         /// </summary>
         /// <param name="input"></param>
         /// <param name="output"></param>
-        /// <param name="op"></param>
-        private void SortedSetPopMinOrMaxCount(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, SortedSetOperation op)
+        /// <param name="writer"></param>
+        private void SortedSetPopMinOrMaxCount(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
 
             var count = input.arg1;
-            var countDone = 0;
             var withHeader = true;
 
             if (count == -1)
@@ -795,37 +642,32 @@ namespace Garnet.server
             if (sortedSet.Count < count)
                 count = sortedSet.Count;
 
-            if (input.arg2 > 0)
-                respProtocolVersion = (byte)input.arg2;
-
-            // When the output will be read later by ProcessRespArrayOutputAsPairs we force RESP version to 2.
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
-
             if (count == 0)
             {
                 writer.WriteEmptyArray();
                 output.Header.result1 = 0;
+                output.OutputFlags |= OutputFlags.ValueUnchanged;
                 return;
             }
 
             if (withHeader)
             {
-                if (respProtocolVersion >= 3)
-                    writer.WriteArrayLength(count);
-                else
-                    writer.WriteArrayLength(count * 2);
+                var length = writer.resp3 ? count : count * 2;
+                writer.WriteArrayLength(length);
             }
+
+            var countDone = 0;
 
             while (count > 0)
             {
-                var max = op == SortedSetOperation.ZPOPMAX ? sortedSet.Max : sortedSet.Min;
+                var max = input.header.SortedSetOp == SortedSetOperation.ZPOPMAX ? sortedSet.Max : sortedSet.Min;
                 sortedSet.Remove(max);
                 sortedSetDict.Remove(max.Element);
                 TryRemoveExpiration(max.Element);
 
                 UpdateSize(max.Element, false);
 
-                if (!withHeader || respProtocolVersion >= 3)
+                if (!withHeader || writer.resp3)
                     writer.WriteArrayLength(2);
 
                 writer.WriteBulkString(max.Element);
@@ -838,13 +680,10 @@ namespace Garnet.server
             output.Header.result1 = countDone;
         }
 
-        private void SortedSetPersist(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetPersist(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
-
             var numFields = input.parseState.Count;
-
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             writer.WriteArrayLength(numFields);
 
@@ -854,17 +693,17 @@ namespace Garnet.server
                 writer.WriteInt32(result);
                 output.Header.result1++;
             }
+
+            output.OutputFlags |= OutputFlags.ValueUnchanged;
         }
 
-        private void SortedSetTimeToLive(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetTimeToLive(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
 
             var isMilliseconds = input.arg1 == 1;
             var isTimestamp = input.arg2 == 1;
             var numFields = input.parseState.Count;
-
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
 
             writer.WriteArrayLength(numFields);
 
@@ -878,15 +717,15 @@ namespace Garnet.server
                     {
                         result = ConvertUtils.UnixTimeInMillisecondsFromTicks(result);
                     }
-                    else if (isTimestamp && !isMilliseconds)
+                    else if (isTimestamp)
                     {
                         result = ConvertUtils.UnixTimeInSecondsFromTicks(result);
                     }
-                    else if (!isTimestamp && isMilliseconds)
+                    else if (isMilliseconds)
                     {
                         result = ConvertUtils.MillisecondsFromDiffUtcNowTicks(result);
                     }
-                    else if (!isTimestamp && !isMilliseconds)
+                    else
                     {
                         result = ConvertUtils.SecondsFromDiffUtcNowTicks(result);
                     }
@@ -897,28 +736,32 @@ namespace Garnet.server
             }
         }
 
-        private void SortedSetExpire(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion)
+        private void SortedSetExpire(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer)
         {
             DeleteExpiredItems();
 
             var expirationWithOption = new ExpirationWithOption(input.arg1, input.arg2);
 
-            using var writer = new RespMemoryWriter(respProtocolVersion, ref output.SpanByteAndMemory);
             writer.WriteArrayLength(input.parseState.Count);
 
             foreach (var item in input.parseState.Parameters)
             {
-                var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks, expirationWithOption.ExpireOption);
-                writer.WriteInt32(result);
+                var result = SetExpiration(item.ToArray(), expirationWithOption.ExpirationTimeInTicks,
+                    expirationWithOption.ExpireOption);
+
+                writer.WriteInt32((int)result);
                 output.Header.result1++;
             }
+
+            output.OutputFlags |= OutputFlags.ValueUnchanged;
         }
 
-        private void SortedSetCollect(ref ObjectInput input, ref ObjectOutput output)
+        private void SortedSetCollect(ref ObjectOutput output)
         {
             DeleteExpiredItems();
-
+            
             output.Header.result1 = 1;
+            output.OutputFlags |= OutputFlags.ValueUnchanged;
         }
 
         #region CommonMethods
@@ -926,32 +769,27 @@ namespace Garnet.server
         /// <summary>
         /// Gets the elements that belong to the Range using lexicographical order
         /// </summary>
-        /// <param name="minParamByteArray"></param>
-        /// <param name="maxParamByteArray"></param>
+        /// <param name="parseState">Parse state</param>
         /// <param name="doReverse">Perfom reverse order</param>
         /// <param name="validLimit">Use a limit offset count</param>
         /// <param name="rem">Remove elements</param>
-        /// <param name="errorCode">errorCode</param>
         /// <param name="limit">offset and count values</param>
         /// <returns></returns>
         private List<(double, byte[])> GetElementsInRangeByLex(
-            ReadOnlySpan<byte> minParamByteArray,
-            ReadOnlySpan<byte> maxParamByteArray,
+            ref SessionParseState parseState,
             bool doReverse,
             bool validLimit,
             bool rem,
-            out int errorCode,
             Limit limit = default)
         {
             var elementsInLex = new List<(double, byte[])>();
 
             // parse boundaries
-            if (!TryParseLexParameter(minParamByteArray, out var minValueChars, out var minValueExclusive, out var minValueInfinity) ||
-                !TryParseLexParameter(maxParamByteArray, out var maxValueChars, out var maxValueExclusive, out var maxValueInfinity))
-            {
-                errorCode = int.MaxValue;
-                return elementsInLex;
-            }
+            // Read min & max
+            var parseSuccessful = parseState.TryGetSortedSetLexMinMaxParameter(0, out var minValueChars, out var minValueExclusive, out var minValueInfinity);
+            Debug.Assert(parseSuccessful);
+            parseSuccessful = parseState.TryGetSortedSetLexMinMaxParameter(1, out var maxValueChars, out var maxValueExclusive, out var maxValueInfinity);
+            Debug.Assert(parseSuccessful);
 
             if (doReverse)
             {
@@ -967,7 +805,6 @@ namespace Garnet.server
                 maxValueInfinity == SpecialRanges.InfiniteMin ||
                 (validLimit && (limit.offset < 0 || limit.count == 0)))
             {
-                errorCode = 0;
                 return elementsInLex;
             }
 
@@ -1027,7 +864,6 @@ namespace Garnet.server
                              new ReadOnlySpan<byte>(sortedSet.Max.Element).SequenceCompareTo(minValueChars) < 0);
             }
 
-            errorCode = 0;
             return elementsInLex;
         }
 
@@ -1096,74 +932,34 @@ namespace Garnet.server
 
         #region HelperMethods
 
-        /// <summary>
-        /// Helper method to parse parameters min and max and exclusions
-        /// in commands including +inf -inf
-        /// </summary>
-        private static bool TryParseParameter(ReadOnlySpan<byte> val, out double valueDouble, out bool exclusive)
+        void WriteSortedSetResult(bool withScores, int count, IEnumerable<(double, byte[])> iterator, ref RespMemoryWriter writer)
         {
-            exclusive = false;
-
-            // adjust for exclusion
-            if (val[0] == '(')
+            if (withScores && writer.resp3)
             {
-                val = val.Slice(1);
-                exclusive = true;
-            }
+                // write the size of the array reply
+                writer.WriteArrayLength(count);
 
-            if (NumUtils.TryParseWithInfinity(val, out valueDouble))
-            {
-                if (exclusive && double.IsInfinity(valueDouble))
-                    exclusive = false;
-                return true;
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Helper method to parse parameter when using Lexicographical ranges
-        /// </summary>
-        private bool TryParseLexParameter(ReadOnlySpan<byte> val,
-                                          out ReadOnlySpan<byte> limitChars,
-                                          out bool limitExclusive,
-                                          out SpecialRanges infinity)
-        {
-            limitChars = default;
-            limitExclusive = false;
-            infinity = SpecialRanges.None;
-
-            switch (val[0])
-            {
-                case (byte)'-':
-                    infinity = SpecialRanges.InfiniteMin;
-                    return true;
-                case (byte)'+':
-                    infinity = SpecialRanges.InfiniteMax;
-                    return true;
-                case (byte)'[':
-                    limitChars = val.Slice(1);
-                    limitExclusive = false;
-                    break;
-                case (byte)'(':
-                    limitChars = val.Slice(1);
-                    limitExclusive = true;
-                    break;
-                default:
-                    return false;
-            }
-
-            if (limitChars.Length == 1)
-            {
-                if ((limitChars[0] == '-') || (limitChars[0] == '+'))
+                foreach (var (score, element) in iterator)
                 {
-                    // Redis accepts [+ yet in practice seems to treat it as a minimum.
-                    infinity = SpecialRanges.InfiniteMin;
-                    limitChars = default;
+                    writer.WriteArrayLength(2);
+                    writer.WriteBulkString(element);
+                    writer.WriteDoubleNumeric(score);
                 }
             }
+            else
+            {
+                // write the size of the array reply
+                writer.WriteArrayLength(withScores ? count * 2 : count);
 
-            return true;
+                foreach (var (score, element) in iterator)
+                {
+                    writer.WriteBulkString(element);
+                    if (withScores)
+                    {
+                        writer.WriteDoubleBulkString(score);
+                    }
+                }
+            }
         }
 
         #endregion

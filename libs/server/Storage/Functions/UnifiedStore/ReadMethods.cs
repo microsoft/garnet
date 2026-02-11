@@ -30,15 +30,27 @@ namespace Garnet.server
             {
                 RespCommand.EXISTS => true,
                 RespCommand.MIGRATE => HandleMigrate(in srcLogRecord, (int)input.arg1, ref output),
+                RespCommand.GETETAG => HandleGetEtag(in srcLogRecord, ref output),
                 RespCommand.MEMORY_USAGE => HandleMemoryUsage(in srcLogRecord, ref output),
                 RespCommand.TYPE => HandleType(in srcLogRecord, ref output),
                 RespCommand.TTL or
                 RespCommand.PTTL => HandleTtl(in srcLogRecord, ref output, cmd == RespCommand.PTTL),
                 RespCommand.EXPIRETIME or
                 RespCommand.PEXPIRETIME => HandleExpireTime(in srcLogRecord, ref output, cmd == RespCommand.PEXPIRETIME),
-                RespCommand.RENAME => HandleRename(in srcLogRecord, ref output),
+                RespCommand.RENAME or RespCommand.RENAMENX => HandleRename(in srcLogRecord, ref output),
                 _ => throw new NotImplementedException(),
             };
+        }
+
+        private bool HandleGetEtag<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,
+            ref UnifiedOutput output) where TSourceLogRecord : ISourceLogRecord
+        {
+            using var writer = new RespMemoryWriter(functionsState.respProtocolVersion, ref output.SpanByteAndMemory);
+
+            var etag = srcLogRecord.ETag;
+            writer.WriteInt64(etag);
+
+            return true;
         }
 
         private bool HandleMemoryUsage<TSourceLogRecord>(in TSourceLogRecord srcLogRecord,

@@ -51,6 +51,14 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
+        public GarnetStatus GETETAG(PinnedSpanByte key, ref UnifiedInput input,
+            ref UnifiedOutput output)
+        {
+            garnetApi.WATCH(key, StoreType.All);
+            return garnetApi.GETETAG(key, ref input, ref output);
+        }
+
+        /// <inheritdoc />
         public GarnetStatus LCS(PinnedSpanByte key1, PinnedSpanByte key2, ref SpanByteAndMemory output, bool lenOnly = false, bool withIndices = false, bool withMatchLen = false, int minMatchLen = 0)
         {
             garnetApi.WATCH(key1, StoreType.Object);
@@ -99,10 +107,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus SortedSetLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetLength(key, ref input, out output);
+            return garnetApi.SortedSetLength(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -120,10 +128,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus SortedSetLengthByValue(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SortedSetLengthByValue(key, ref input, out output);
+            return garnetApi.SortedSetLengthByValue(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -204,7 +212,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public GarnetStatus GeoSearchReadOnly(PinnedSpanByte key, ref GeoSearchOptions opts,
-                                      ref ObjectInput input, ref SpanByteAndMemory output)
+                                      ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
             return garnetApi.GeoSearchReadOnly(key, ref opts, ref input, ref output);
@@ -263,10 +271,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus ListLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.ListLength(key, ref input, out output);
+            return garnetApi.ListLength(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -295,10 +303,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus SetLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.SetLength(key, ref input, out output);
+            return garnetApi.SetLength(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -454,17 +462,17 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus HashStrLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashStrLength(key, ref input, out output);
+            return garnetApi.HashStrLength(key, ref input, ref output);
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus HashExists(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashExists(key, ref input, out output);
+            return garnetApi.HashExists(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -482,10 +490,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, out OutputHeader output)
+        public GarnetStatus HashLength(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashLength(key, ref input, out output);
+            return garnetApi.HashLength(key, ref input, ref output);
         }
 
         /// <inheritdoc />
@@ -496,10 +504,10 @@ namespace Garnet.server
         }
 
         /// <inheritdoc />
-        public GarnetStatus HashTimeToLive(PinnedSpanByte key, bool isMilliseconds, bool isTimestamp, ref ObjectInput input, ref ObjectOutput output)
+        public GarnetStatus HashTimeToLive(PinnedSpanByte key, ref ObjectInput input, ref ObjectOutput output)
         {
             garnetApi.WATCH(key, StoreType.Object);
-            return garnetApi.HashTimeToLive(key, isMilliseconds, isTimestamp, ref input, ref output);
+            return garnetApi.HashTimeToLive(key, ref input, ref output);
         }
 
         #endregion

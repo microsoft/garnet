@@ -34,16 +34,29 @@ namespace Garnet.server
                 var garnetObject = (IGarnetObject)srcLogRecord.ValueObject;
                 if ((byte)input.header.type < CustomCommandManager.CustomTypeIdStartOffset)
                 {
-                    var opResult = garnetObject.Operate(ref input, ref output, functionsState.respProtocolVersion, out _);
-                    if (output.HasWrongType)
-                        return true;
+                    if (srcLogRecord.Info.HasETag)
+                        ETagState.SetValsForRecordWithEtag(ref functionsState.etagState, in srcLogRecord);
 
-                    return opResult;
+                    _ = HandleMetaCommandAndOperate(garnetObject, ref input, ref output, srcLogRecord.ETag, out _, readOnly: true);
+
+                    if (srcLogRecord.Info.HasETag)
+                    {
+                        output.Header.etag = srcLogRecord.ETag;
+                        ETagState.ResetState(ref functionsState.etagState);
+                    }
+
+                    return true;
                 }
 
-                if (IncorrectObjectType(ref input, garnetObject, ref output.SpanByteAndMemory))
+                if (IncorrectObjectType(ref input, (IGarnetObject)srcLogRecord.ValueObject, ref output.SpanByteAndMemory))
                 {
                     output.OutputFlags |= OutputFlags.WrongType;
+                    return true;
+                }
+
+                if (srcLogRecord.Info.HasETag)
+                {
+                    functionsState.CopyDefaultResp(CmdStrings.RESP_ERR_ETAG_ON_CUSTOM_PROC, ref output.SpanByteAndMemory);
                     return true;
                 }
 
@@ -60,6 +73,7 @@ namespace Garnet.server
                 }
             }
 
+            output.Header.etag = srcLogRecord.ETag;
             output.GarnetObject = (IGarnetObject)srcLogRecord.ValueObject;
             return true;
         }

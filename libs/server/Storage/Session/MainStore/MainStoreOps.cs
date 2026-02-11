@@ -243,38 +243,6 @@ namespace Garnet.server
             }
         }
 
-
-        public unsafe GarnetStatus DEL_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref TStringContext context)
-            where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
-        {
-            Debug.Assert(input.header.cmd is RespCommand.DELIFGREATER);
-
-            Span<byte> outputSpan = stackalloc byte[8];
-            var output = SpanByteAndMemory.FromPinnedSpan(outputSpan);
-            var status = context.RMW(key, ref input, ref output);
-
-            if (status.IsPending)
-            {
-                StartPendingMetrics();
-                CompletePendingForSession(ref status, ref output, ref context);
-                StopPendingMetrics();
-            }
-
-            // Deletions in RMW are done by expiring the record, hence we use expiration as the indicator of success.
-            if (status.IsExpired)
-            {
-                incr_session_found();
-                return GarnetStatus.OK;
-            }
-            else
-            {
-                if (status.NotFound)
-                    incr_session_notfound();
-
-                return GarnetStatus.NOTFOUND;
-            }
-        }
-
         public unsafe GarnetStatus SET_Conditional<TStringContext>(PinnedSpanByte key, ref StringInput input, ref SpanByteAndMemory output, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
@@ -350,10 +318,42 @@ namespace Garnet.server
             return error ? GarnetStatus.OK : GarnetStatus.NOTFOUND;
         }
 
+        /// <summary>
+        /// This SET method is to be used by a command that retrieved an <see cref="IGarnetObject"/> (using GET) then modified it directly.
+        /// This method will then call Upsert in order for the record to update its eTag if needed.
+        /// </summary>
+        /// <typeparam name="TObjectContext"></typeparam>
+        /// <param name="key">Key of the upserted record</param>
+        /// <param name="getOutput">Output obtained by a previous GET command, containing the modified object</param>
+        /// <param name="objectContext">Context</param>
+        /// <returns></returns>
+        public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, in ObjectOutput getOutput, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            // Use the meta-command info to store the existing eTag
+            metaCommandInfo.Initialize();
+            metaCommandInfo.MetaCommand = RespMetaCommand.ExecIfMatch;
+            metaCommandInfo.Arg1 = getOutput.Header.etag;
+
+            ObjectOutput upsertOutput = default;
+
+            var upsertInput = new ObjectInput((GarnetObjectType)getOutput.GarnetObject.Type, ref metaCommandInfo);
+            objectContext.Upsert(key.ReadOnlySpan, ref upsertInput, getOutput.GarnetObject, ref upsertOutput);
+
+            return GarnetStatus.OK;
+        }
+
         public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, IGarnetObject value, ref TObjectContext objectContext)
             where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
         {
             objectContext.Upsert(key.ReadOnlySpan, value);
+            return GarnetStatus.OK;
+        }
+
+        public GarnetStatus SET<TObjectContext>(PinnedSpanByte key, ref ObjectInput input, IGarnetObject value, ref ObjectOutput output, ref TObjectContext objectContext)
+            where TObjectContext : ITsavoriteContext<ObjectInput, ObjectOutput, long, ObjectSessionFunctions, StoreFunctions, StoreAllocator>
+        {
+            objectContext.Upsert(key.ReadOnlySpan, ref input, value, ref output);
             return GarnetStatus.OK;
         }
 
@@ -375,7 +375,8 @@ namespace Garnet.server
         public GarnetStatus SETEX<TStringContext>(PinnedSpanByte key, PinnedSpanByte value, TimeSpan expiry, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, SpanByteAndMemory, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
-            var input = new StringInput(RespCommand.SETEX, ref parseState, arg1: DateTimeOffset.UtcNow.Ticks + expiry.Ticks);
+            metaCommandInfo.Initialize();
+            var input = new StringInput(RespCommand.SETEX, ref metaCommandInfo, ref parseState, arg1: DateTimeOffset.UtcNow.Ticks + expiry.Ticks);
             return SET(key, ref input, value, ref context);
         }
 
@@ -393,8 +394,9 @@ namespace Garnet.server
         {
             var _output = new SpanByteAndMemory(output);
 
+            metaCommandInfo.Initialize();
             parseState.InitializeWithArgument(value);
-            var input = new StringInput(RespCommand.APPEND, ref parseState);
+            var input = new StringInput(RespCommand.APPEND, ref metaCommandInfo, ref parseState);
 
             return APPEND(key, ref input, ref _output, ref context);
         }
@@ -486,7 +488,7 @@ namespace Garnet.server
                 increment = -increment;
             }
 
-            var input = new StringInput(cmd, 0, increment);
+            var input = new StringInput(cmd, arg1: increment);
 
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
             var outputBuffer = stackalloc byte[outputBufferLength];

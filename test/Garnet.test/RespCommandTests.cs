@@ -810,5 +810,30 @@ namespace Garnet.test
             Assert.Throws<RedisServerException>(() => db.Execute("COMMAND", subcommand));
             Assert.Throws<RedisServerException>(() => db.Execute("COMMAND", subcommand, "INVALIDCOMMAND", "key1"));
         }
+
+        /// <summary>
+        /// Check that all multi-key commands are properly marked as such in <see cref="RespCommandExtensions.IsMultiKeyCommand"/>
+        /// </summary>
+        [Test]
+        public void MultiKeyCommandCoverageTest()
+        {
+            var allCommands = Enum.GetValues<RespCommand>().Except(noMetadataCommands).ToHashSet();
+            var nonCoveredMultiKeyCommands = new HashSet<RespCommand>();
+
+            foreach (var cmd in allCommands)
+            {
+                if (!cmd.IsDataCommand())
+                    continue;
+
+                var success = RespCommandsInfo.TryGetSimpleRespCommandInfo(cmd, out var cmdSimpleInfo);
+                ClassicAssert.IsTrue(success);
+
+                if (cmdSimpleInfo.IsMultiKeyCommand() && !cmd.IsMultiKeyCommand())
+                    nonCoveredMultiKeyCommands.Add(cmd);
+            }
+
+            CollectionAssert.IsEmpty(nonCoveredMultiKeyCommands,
+                $"Found multi-key commands that are not properly marked. Please update {nameof(RespCommand)}.{nameof(RespCommandExtensions.IsMultiKeyCommand)}");
+        }
     }
 }

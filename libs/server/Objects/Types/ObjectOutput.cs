@@ -55,5 +55,10 @@ namespace Garnet.server
         {
             // Does not convert to heap when going pending, because we immediately complete pending operations for object store.
         }
+
+        public void Dispose()
+        {
+            SpanByteAndMemory.Dispose();
+        }
     }
 }

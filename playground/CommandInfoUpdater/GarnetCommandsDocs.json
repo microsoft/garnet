@@ -240,24 +240,108 @@
     ]
   },
   {
-    "Command": "DELIFGREATER",
-    "Name": "DELIFGREATER",
-    "Summary": "Deletes a key only if the provided Etag is strictly greater than the existing Etag for the key.",
-    "Group": "Generic",
-    "Complexity": "O(1)",
+    "Command": "EXECIFGREATER",
+    "Name": "EXECIFGREATER",
+    "Group": "Meta",
+    "Summary": "Executes a command if the key(s) etag is greater than the etag specified.",
+    "Complexity": "Depends on the command executed.",
     "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      },
       {
         "TypeDiscriminator": "RespCommandBasicArgument",
         "Name": "ETAG",
         "DisplayText": "etag",
         "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COMMAND",
+        "DisplayText": "command",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "EXECIFMATCH",
+    "Name": "EXECIFMATCH",
+    "Group": "Meta",
+    "Summary": "Executes a command if the key(s) etag matches the etag specified.",
+    "Complexity": "Depends on the command executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COMMAND",
+        "DisplayText": "command",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "EXECIFNOTMATCH",
+    "Name": "EXECIFNOTMATCH",
+    "Group": "Meta",
+    "Summary": "Executes a command if the key(s) etag does not match the etag specified.",
+    "Complexity": "Depends on the command executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ETAG",
+        "DisplayText": "etag",
+        "Type": "Integer"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COMMAND",
+        "DisplayText": "command",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
+      }
+    ]
+  },
+  {
+    "Command": "EXECWITHETAG",
+    "Name": "EXECWITHETAG",
+    "Group": "Meta",
+    "Summary": "Executes a command and adds the key(s) etag(s) at time of execution.",
+    "Complexity": "Depends on the command executed.",
+    "Arguments": [
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "COMMAND",
+        "DisplayText": "command",
+        "Type": "String"
+      },
+      {
+        "TypeDiscriminator": "RespCommandBasicArgument",
+        "Name": "ARG",
+        "DisplayText": "arg",
+        "Type": "String",
+        "ArgumentFlags": "Optional, Multiple"
       }
     ]
   },
@@ -1064,31 +1148,9 @@
     ]
   },
   {
-    "Command": "GETIFNOTMATCH",
-    "Name": "GETIFNOTMATCH",
-    "Summary": "Gets the ETag and value if the key\u0027s current etag does not match the given etag.",
-    "Group": "String",
-    "Complexity": "O(1)",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "ETAG",
-        "DisplayText": "etag",
-        "Type": "Integer"
-      }
-    ]
-  },
-  {
-    "Command": "GETWITHETAG",
-    "Name": "GETWITHETAG",
-    "Summary": "Gets the ETag and value for the key",
+    "Command": "GETETAG",
+    "Name": "GETETAG",
+    "Summary": "Gets the ETag for a key",
     "Group": "String",
     "Complexity": "O(1)",
     "Arguments": [
@@ -1174,14 +1236,6 @@
         "DisplayText": "newkey",
         "Type": "Key",
         "KeySpecIndex": 1
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "WITHETAG",
-        "DisplayText": "WITHETAG",
-        "Type": "PureToken",
-        "ArgumentFlags": "Optional",
-        "Token": "WITHETAG"
       }
     ]
   },
@@ -1205,14 +1259,6 @@
         "DisplayText": "newkey",
         "Type": "Key",
         "KeySpecIndex": 1
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "WITHETAG",
-        "DisplayText": "WITHETAG",
-        "Type": "PureToken",
-        "ArgumentFlags": "Optional",
-        "Token": "WITHETAG"
       }
     ]
   },
@@ -1284,14 +1330,6 @@
         "ArgumentFlags": "Optional"
       },
       {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "WITHETAG",
-        "DisplayText": "WITHETAG",
-        "Type": "PureToken",
-        "ArgumentFlags": "Optional",
-        "Token": "WITHETAG"
-      },
-      {
         "TypeDiscriminator": "RespCommandContainerArgument",
         "Name": "EXPIRATION",
         "Type": "OneOf",
@@ -1333,122 +1371,6 @@
             "Token": "KEEPTTL"
           }
         ]
-      }
-    ]
-  },
-  {
-    "Command": "SETIFMATCH",
-    "Name": "SETIFMATCH",
-    "Summary": "Sets a key value pair with the given etag only if (1) the etag given in the request matches the already existing etag ; or (2) there was no existing value; or (3) the existing value was not associated with any etag and the sent etag was 0.",
-    "Group": "String",
-    "Complexity": "O(1)",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "VALUE",
-        "DisplayText": "value",
-        "Type": "String"
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "ETAG",
-        "DisplayText": "etag",
-        "Type": "Integer"
-      },
-      {
-        "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "EXPIRATION",
-        "Type": "OneOf",
-        "ArgumentFlags": "Optional",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "SECONDS",
-            "DisplayText": "seconds",
-            "Type": "Integer",
-            "Token": "EX"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "MILLISECONDS",
-            "DisplayText": "milliseconds",
-            "Type": "Integer",
-            "Token": "PX"
-          }
-        ]
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "NOGET",
-        "DisplayText": "noget",
-        "Type": "PureToken",
-        "Token": "NOGET",
-        "ArgumentFlags": "Optional"
-      }
-    ]
-  },
-  {
-    "Command": "SETIFGREATER",
-    "Name": "SETIFGREATER",
-    "Summary": "Sets a key value pair with the given etag only if (1) the etag given in the request is greater than the already existing etag ; or (2) there was no existing value; or (3) the existing value was not associated with any etag and the sent etag was greater than 0.",
-    "Group": "String",
-    "Complexity": "O(1)",
-    "Arguments": [
-      {
-        "TypeDiscriminator": "RespCommandKeyArgument",
-        "Name": "KEY",
-        "DisplayText": "key",
-        "Type": "Key",
-        "KeySpecIndex": 0
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "VALUE",
-        "DisplayText": "value",
-        "Type": "String"
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "ETAG",
-        "DisplayText": "etag",
-        "Type": "Integer"
-      },
-      {
-        "TypeDiscriminator": "RespCommandContainerArgument",
-        "Name": "EXPIRATION",
-        "Type": "OneOf",
-        "ArgumentFlags": "Optional",
-        "Arguments": [
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "SECONDS",
-            "DisplayText": "seconds",
-            "Type": "Integer",
-            "Token": "EX"
-          },
-          {
-            "TypeDiscriminator": "RespCommandBasicArgument",
-            "Name": "MILLISECONDS",
-            "DisplayText": "milliseconds",
-            "Type": "Integer",
-            "Token": "PX"
-          }
-        ]
-      },
-      {
-        "TypeDiscriminator": "RespCommandBasicArgument",
-        "Name": "NOGET",
-        "DisplayText": "noget",
-        "Type": "PureToken",
-        "Token": "NOGET",
-        "ArgumentFlags": "Optional"
       }
     ]
   },

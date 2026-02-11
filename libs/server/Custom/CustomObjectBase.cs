@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 using System.IO;
+using Garnet.common;
 using Tsavorite.core;
 
 namespace Garnet.server
@@ -47,7 +48,7 @@ namespace Garnet.server
         /// <inheritdoc />
         public override byte Type => type;
 
-        /// <summary>
+        /// <summary>  
         /// Serialize to giver writer
         /// </summary>
         public abstract void SerializeObject(BinaryWriter writer);
@@ -75,7 +76,7 @@ namespace Garnet.server
 
         /// <inheritdoc />
         public sealed override bool Operate(ref ObjectInput input, ref ObjectOutput output,
-                                            byte respProtocolVersion, out long sizeChange)
+                                            ref RespMemoryWriter writer, out long sizeChange)
         {
             sizeChange = 0;
 
@@ -83,7 +84,7 @@ namespace Garnet.server
             {
                 // Scan Command
                 case RespCommand.COSCAN:
-                    Scan(ref input, ref output, respProtocolVersion);
+                    Scan(ref input, ref output, ref writer);
                     break;
                 default:
                     if ((byte)input.header.type != this.type)

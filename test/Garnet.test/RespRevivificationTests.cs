@@ -87,7 +87,7 @@ namespace Garnet.test
             await db.KeyDeleteAsync("foo");
 
             // now originally the key held a 1 byte value and 8 byte metadata, so inchain revivification of the exact same size should work
-            await db.ExecuteAsync("SETIFGREATER", "foo", "b", "1");
+            await db.ExecuteAsync("EXECIFGREATER", 1, "SET", "foo", "b");
 
             // check for revivification stats
             var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
@@ -102,9 +102,9 @@ namespace Garnet.test
             {
 
                 // should be able to reuse the tombstoned record value is 1 byte and etag space is 8 bytes == 9 bytes
-                var res = (RedisResult[])await db.ExecuteAsync("SETIFGREATER", "foo", "c", "5");
-                ClassicAssert.AreEqual(5, (long)res[0]);
-                ClassicAssert.IsTrue(res[1].IsNull);
+                var res = (RedisResult[])await db.ExecuteAsync("EXECIFGREATER", 5, "SET", "foo", "c");
+                ClassicAssert.IsTrue(res[0].IsNull);
+                ClassicAssert.AreEqual(5, (long)res[1]);
             };
 
             await TestRevivifyAsync(testRmwWorksViaSetIfGreater, defaultInitialArgs, redis);
@@ -197,16 +197,16 @@ namespace Garnet.test
             ClassicAssert.IsTrue(exec.Resp2Type != ResultType.Error);
 
             // Do a new-record operation that will reuse a tombstoned record via FreeRecordPool
-            await db.ExecuteAsync("SETIFGREATER", "the", "terminator", 23);
+            await db.ExecuteAsync("EXECIFGREATER", 23, "SET", "the", "terminator");
 
             // confirm we did indeed use a reviv record
             var stats = await db.ExecuteAsync("INFO", "STOREREVIV");
             ClassicAssert.IsTrue(stats.ToString().Contains("Successful Takes: 1"), "Expected FreeRecord revivification to happen, but it did not.");
 
-            var res = (RedisResult[])await db.ExecuteAsync("GETWITHETAG", "the");
+            var res = (RedisResult[])await db.ExecuteAsync("EXECWITHETAG", "GET", "the");
 
-            ClassicAssert.AreEqual(23, (long)res[0], "Incorrect Etag.");
-            ClassicAssert.AreEqual("terminator", res[1].ToString(), "Expected the value to be updated via RMW operation, but it was not.");
+            ClassicAssert.AreEqual("terminator", res[0].ToString(), "Expected the value to be updated via RMW operation, but it was not.");
+            ClassicAssert.AreEqual(23, (long)res[1], "Incorrect Etag.");
         }
 
         [Test]
@@ -234,8 +234,8 @@ namespace Garnet.test
             long tailAddrAfterDelete = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
             ClassicAssert.IsTrue(tailAddrAfterDelete > tailAddrAfterInsert2, "Expected AOF tail address to move forward on DELETE");
 
-            // inchain revivification of the exact same key should take place 
-            await db.ExecuteAsync("SETIFGREATER", "hoo", "b", "1");
+            // inchain revivification of the exact same key should take place
+            await db.ExecuteAsync("EXECIFGREATER", 1, "SET", "hoo", "b");
             long tailAddrAfterRevivifyRmw = server.Provider.StoreWrapper.appendOnlyFile.TailAddress;
             ClassicAssert.IsTrue(tailAddrAfterRevivifyRmw > tailAddrAfterDelete, "Expected AOF tail address to move forward on revivification RMW");
 

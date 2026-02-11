@@ -182,7 +182,7 @@ namespace Garnet.server
         public override GarnetObjectBase Clone() => new HashObject(hash, expirationTimes, expirationQueue, HeapMemorySize);
 
         /// <inheritdoc />
-        public override bool Operate(ref ObjectInput input, ref ObjectOutput output, byte respProtocolVersion, out long memorySizeChange)
+        public override bool Operate(ref ObjectInput input, ref ObjectOutput output, ref RespMemoryWriter writer, out long memorySizeChange)
         {
             memorySizeChange = 0;
 
@@ -198,64 +198,58 @@ namespace Garnet.server
             switch (input.header.HashOp)
             {
                 case HashOperation.HSET:
-                    HashSet(ref input, ref output);
-                    break;
+                case HashOperation.HSETNX:
                 case HashOperation.HMSET:
-                    HashSet(ref input, ref output);
+                    HashSet(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HGET:
-                    HashGet(ref input, ref output, respProtocolVersion);
+                    HashGet(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HMGET:
-                    HashMultipleGet(ref input, ref output, respProtocolVersion);
+                    HashMultipleGet(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HGETALL:
-                    HashGetAll(ref output, respProtocolVersion);
+                    HashGetAll(ref writer);
                     break;
                 case HashOperation.HDEL:
-                    HashDelete(ref input, ref output);
+                    HashDelete(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HLEN:
-                    HashLength(ref output);
+                    HashLength(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HSTRLEN:
-                    HashStrLength(ref input, ref output);
+                    HashStrLength(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HEXISTS:
-                    HashExists(ref input, ref output);
+                    HashExists(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HEXPIRE:
-                    HashExpire(ref input, ref output, respProtocolVersion);
+                    HashExpire(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HTTL:
-                    HashTimeToLive(ref input, ref output, respProtocolVersion);
+                    HashTimeToLive(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HPERSIST:
-                    HashPersist(ref input, ref output, respProtocolVersion);
+                    HashPersist(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HKEYS:
-                    HashGetKeysOrValues(ref input, ref output, respProtocolVersion);
-                    break;
                 case HashOperation.HVALS:
-                    HashGetKeysOrValues(ref input, ref output, respProtocolVersion);
+                    HashGetKeysOrValues(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HINCRBY:
-                    HashIncrement(ref input, ref output, respProtocolVersion);
+                    HashIncrement(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HINCRBYFLOAT:
-                    HashIncrementFloat(ref input, ref output, respProtocolVersion);
-                    break;
-                case HashOperation.HSETNX:
-                    HashSet(ref input, ref output);
+                    HashIncrementFloat(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HRANDFIELD:
-                    HashRandomField(ref input, ref output, respProtocolVersion);
+                    HashRandomField(ref input, ref output, ref writer);
                     break;
                 case HashOperation.HCOLLECT:
                     HashCollect(ref input, ref output);
                     break;
                 case HashOperation.HSCAN:
-                    Scan(ref input, ref output, respProtocolVersion);
+                    Scan(ref input, ref output, ref writer);
                     break;
                 default:
                     throw new GarnetException($"Unsupported operation {input.header.HashOp} in HashObject.Operate");
@@ -586,25 +580,25 @@ namespace Garnet.server
             return ExpireResult.ExpireUpdated;
         }
 
-        private int Persist(ByteSpan key)
+        private ExpireResult Persist(ByteSpan key)
         {
             if (!ContainsKey(key))
             {
-                return (int)ExpireResult.KeyNotFound;
+                return ExpireResult.KeyNotFound;
             }
 
 #if NET9_0_OR_GREATER
             if (HasExpirableItems && expirationTimeSpanLookup.Remove(key))
 #else
-            if (HasExpirableItems && expirationTimes.Remove(key, out var currentExpiration))
+            if (HasExpirableItems && expirationTimes.Remove(key, out _))
 #endif
             {
                 HeapMemorySize -= IntPtr.Size + sizeof(long) + MemoryUtils.DictionaryEntryOverhead;
                 CleanupExpirationStructuresIfEmpty();
-                return (int)ExpireResult.ExpireUpdated;
+                return ExpireResult.ExpireUpdated;
             }
 
-            return -1;
+            return ExpireResult.ExpirationNotFound;
         }
 
         private long GetExpiration(ByteSpan key)
@@ -645,6 +639,7 @@ namespace Garnet.server
     enum ExpireResult : int
     {
         KeyNotFound = -2,
+        ExpirationNotFound = -1,
         ExpireConditionNotMet = 0,
         ExpireUpdated = 1,
         KeyAlreadyExpired = 2,
