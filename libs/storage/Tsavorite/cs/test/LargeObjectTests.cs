@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-#if LOGRECORD_TODO
-
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -218,5 +216,3 @@ namespace Tsavorite.test.LargeObjects
         }
     }
 }
-
-#endif // LOGRECORD_TODO

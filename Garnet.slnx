@@ -23,16 +23,20 @@
     <Project Path="hosting/Windows/Garnet.worker/Garnet.worker.csproj" />
   </Folder>
   <Folder Name="/libs/">
-    <Project Path="../vazois/libs/cluster/Garnet.cluster.csproj" />
     <Project Path="libs/client/Garnet.client.csproj" />
+    <Project Path="libs/cluster/Garnet.cluster.csproj" />
     <Project Path="libs/common/Garnet.common.csproj" />
     <Project Path="libs/host/Garnet.host.csproj" />
     <Project Path="libs/resources/Garnet.resources.csproj" />
     <Project Path="libs/server/Garnet.server.csproj" />
   </Folder>
   <Folder Name="/libs/Tsavorite/">
-    <Project Path="libs/storage/Tsavorite/cs/src/core/Tsavorite.core.csproj" />
-    <Project Path="libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/Tsavorite.devices.AzureStorageDevice.csproj" />
+    <Project Path="libs/storage/Tsavorite/cs/src/core/Tsavorite.core.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
+    <Project Path="libs/storage/Tsavorite/cs/src/devices/AzureStorageDevice/Tsavorite.devices.AzureStorageDevice.csproj">
+      <Platform Solution="*|x64" Project="x64" />
+    </Project>
   </Folder>
   <Folder Name="/main/">
     <Project Path="main/GarnetServer/GarnetServer.csproj" />
