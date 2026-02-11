@@ -9,18 +9,32 @@ using Microsoft.Extensions.Logging;
 
 namespace Garnet.cluster
 {
-    internal sealed class FailoverManager(ClusterProvider clusterProvider, ILogger logger = null) : IDisposable
+    internal sealed class FailoverManager : IDisposable
     {
         FailoverSession currentFailoverSession = null;
-        readonly ClusterProvider clusterProvider = clusterProvider;
-        readonly TimeSpan clusterTimeout = clusterProvider.serverOptions.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(clusterProvider.serverOptions.ClusterTimeout);
-        readonly ILogger logger = logger;
+        readonly ClusterProvider clusterProvider;
+        readonly TimeSpan clusterTimeout;
+        readonly ILogger logger;
         private SingleWriterMultiReaderLock failoverTaskLock;
         public FailoverStatus lastFailoverStatus = FailoverStatus.NO_FAILOVER;
+
+        /// <summary>
+        /// Shared epoch instance for failover GarnetClient connections
+        /// </summary>
+        readonly client.LightEpoch epoch;
+
+        public FailoverManager(ClusterProvider clusterProvider, ILogger logger = null)
+        {
+            this.clusterProvider = clusterProvider;
+            clusterTimeout = clusterProvider.serverOptions.ClusterTimeout <= 0 ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(clusterProvider.serverOptions.ClusterTimeout);
+            this.logger = logger;
+            this.epoch = new client.LightEpoch();
+        }
 
         public void Dispose()
         {
             Reset();
+            epoch?.Dispose();
         }
 
         /// <summary>
@@ -70,6 +84,7 @@ namespace Garnet.cluster
                 option,
                 clusterTimeout: clusterTimeout,
                 failoverTimeout: failoverTimeout,
+                epoch: epoch,
                 isReplicaSession: true,
                 logger: logger);
             _ = Task.Run(async () =>
@@ -99,6 +114,7 @@ namespace Garnet.cluster
                 option: option,
                 clusterTimeout: clusterTimeout,
                 failoverTimeout: timeout,
+                epoch: epoch,
                 isReplicaSession: false,
                 hostAddress: replicaAddress,
                 hostPort: replicaPort,

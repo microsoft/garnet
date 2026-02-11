@@ -44,6 +44,7 @@ namespace Garnet.cluster
             FailoverOption option,
             TimeSpan clusterTimeout,
             TimeSpan failoverTimeout,
+            LightEpoch epoch,
             bool isReplicaSession = true,
             string hostAddress = "",
             int hostPort = -1,
@@ -69,12 +70,12 @@ namespace Garnet.cluster
                 {
                     for (var i = 0; i < endpoints.Count; i++)
                     {
-                        clients[i] = new GarnetClient(endpoints[i], clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, logger: logger);
+                        clients[i] = new GarnetClient(endpoints[i], clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, epoch: epoch, logger: logger);
                     }
                 }
                 else
                 {
-                    clients[0] = new GarnetClient(new IPEndPoint(IPAddress.Parse(hostAddress), hostPort), clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, logger: logger);
+                    clients[0] = new GarnetClient(new IPEndPoint(IPAddress.Parse(hostAddress), hostPort), clusterProvider.serverOptions.TlsOptions?.TlsClientOptions, authUsername: clusterProvider.ClusterUsername, authPassword: clusterProvider.ClusterPassword, epoch: epoch, logger: logger);
                 }
             }
 

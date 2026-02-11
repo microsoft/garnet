@@ -475,7 +475,6 @@ namespace Garnet.test
             waiter.Set();
         }
 
-
         [Test]
         public async Task CanDoBulkDeleteTests([Values] bool useStringType)
         {
