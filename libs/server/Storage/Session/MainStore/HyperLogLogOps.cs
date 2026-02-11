@@ -21,7 +21,7 @@ namespace Garnet.server
 
             var input = new StringInput(RespCommand.PFADD, ref parseState);
 
-            var output = stackalloc byte[1];
+            byte output = 0;
             byte pfaddUpdated = 0;
 
             foreach (var element in elements)
@@ -29,19 +29,19 @@ namespace Garnet.server
                 var elementSlice = scratchBufferBuilder.CreateArgSlice(element);
                 parseState.SetArgument(0, elementSlice);
 
-                StringOutput o = default;
-                o.SpanByteAndMemory = SpanByteAndMemory.FromPinnedPointer(output, 1);
+                var o = StringOutput.FromPinnedSpan(new Span<byte>(ref output));
+
                 _ = RMW_MainStore(key.ReadOnlySpan, ref input, ref o, ref context);
 
                 scratchBufferBuilder.RewindScratchBuffer(elementSlice);
 
                 //Invalid HLL Type
-                if (*output == (byte)0xFF)
+                if (output == (byte)0xFF)
                 {
                     pfaddUpdated = 0;
                     break;
                 }
-                pfaddUpdated |= *output;
+                pfaddUpdated |= output;
             }
 
             updated = pfaddUpdated > 0;

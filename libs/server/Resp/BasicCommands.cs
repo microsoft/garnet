@@ -696,7 +696,7 @@ namespace Garnet.server
             _ = storageApi.Increment(key, ref input, ref stringOutput);
             output.Length = stringOutput.SpanByteAndMemory.Length;
 
-            if (!stringOutput.HasError())
+            if (!stringOutput.HasError)
             {
                 while (!RespWriteUtils.TryWriteIntegerFromBytes(outputBuffer.Slice(0, output.Length), ref dcurr, dend))
                     SendAndReset();
@@ -734,7 +734,7 @@ namespace Garnet.server
             _ = storageApi.IncrementByFloat(key, ref stringOutput, dbl);
             output.Length = stringOutput.SpanByteAndMemory.Length;
 
-            if (!stringOutput.HasError())
+            if (!stringOutput.HasError)
             {
                 while (!RespWriteUtils.TryWriteBulkString(output.ReadOnlySpan, ref dcurr, dend))
                     SendAndReset();
@@ -769,7 +769,7 @@ namespace Garnet.server
             var input = new StringInput(RespCommand.APPEND, ref parseState, startIdx: 1);
 
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length];
-            var output = new StringOutput(SpanByteAndMemory.FromPinnedSpan(outputBuffer));
+            var output = StringOutput.FromPinnedSpan(outputBuffer);
 
             storageApi.APPEND(sbKey, ref input, ref output);
 

@@ -199,14 +199,13 @@ namespace Garnet.server
         public GarnetStatus IncrementByFloat(PinnedSpanByte key, out double output, double val)
         {
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatDoubleLength + 1];
-            var outputSpan = PinnedSpanByte.FromPinnedSpan(outputBuffer);
-            StringOutput stringOutput = new(new SpanByteAndMemory(outputSpan));
+            var stringOutput = StringOutput.FromPinnedSpan(outputBuffer);
 
             _ = IncrementByFloat(key, ref stringOutput, val);
 
-            if (!stringOutput.HasError())
+            if (!stringOutput.HasError)
             {
-                _ = NumUtils.TryReadDouble(outputSpan.ReadOnlySpan, out output);
+                _ = NumUtils.TryReadDouble(stringOutput.SpanByteAndMemory.Span, out output);
             }
             else
             {

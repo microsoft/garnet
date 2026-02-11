@@ -374,9 +374,7 @@ namespace Garnet.server
             var stringInput = new StringInput();
             _ = stringInput.DeserializeFrom(curr);
 
-            const int stackAllocSize = 32;
-            var pbOutput = stackalloc byte[stackAllocSize];
-            var output = StringOutput.FromPinnedPointer(pbOutput, stackAllocSize);
+            var output = StringOutput.FromPinnedSpan(stackalloc byte[32]);
 
             var status = stringContext.RMW(key, ref stringInput, ref output);
             if (status.IsPending)

@@ -52,7 +52,7 @@ namespace Garnet.server
 
         /// <inheritdoc/>
         public readonly unsafe void GetOutput(int i, out StringOutput output)
-        => output = StringOutput.FromPinnedSpan(MemoryMarshal.CreateSpan(ref Unsafe.AsRef<byte>(session.dcurr), (int)(session.dend - session.dcurr)));
+        => output = StringOutput.FromPinnedPointer(session.dcurr, (int)(session.dend - session.dcurr));
 
         /// <inheritdoc/>
         public void SetStatus(int i, Status status)
@@ -150,7 +150,7 @@ namespace Garnet.server
                 // Attempt to write directly into output buffer
                 unsafe
                 {
-                    output = new StringOutput(SpanByteAndMemory.FromPinnedSpan(MemoryMarshal.CreateSpan(ref Unsafe.AsRef<byte>(session.dcurr), (int)(session.dend - session.dcurr))));
+                    output = StringOutput.FromPinnedPointer(session.dcurr, (int)(session.dend - session.dcurr));
                 }
             }
             else

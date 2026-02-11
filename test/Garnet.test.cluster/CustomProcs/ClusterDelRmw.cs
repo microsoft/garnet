@@ -34,12 +34,11 @@ namespace Garnet.test.cluster
 
             var input = new StringInput(RespCommand.INCRBY, 0, valueToIncrement);
             Span<byte> outputBuffer = stackalloc byte[NumUtils.MaximumFormatInt64Length + 1];
-            var outputSpan = PinnedSpanByte.FromPinnedSpan(outputBuffer);
-            StringOutput stringOutput = new(new SpanByteAndMemory(outputSpan));
+            var stringOutput = StringOutput.FromPinnedSpan(outputBuffer);
 
             // Increment key
             _ = api.Increment(key, ref input, ref stringOutput);
-            Debug.Assert(!stringOutput.HasError());
+            Debug.Assert(!stringOutput.HasError);
 
             WriteSimpleString(ref output, "OK");
         }

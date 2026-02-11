@@ -106,7 +106,7 @@ namespace Garnet.server
                 {
                     var srcKey = keys[i];
                     //Read srcKey
-                    var outputBitmap = new StringOutput(SpanByteAndMemory.FromPinnedSpan(output));
+                    var outputBitmap = StringOutput.FromPinnedSpan(output);
                     status = ReadWithUnsafeContext(srcKey, ref input, ref outputBitmap, localHeadAddress, out bool epochChanged, ref uc);
                     if (epochChanged)
                     {

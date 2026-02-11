@@ -23,6 +23,8 @@ namespace Garnet.server
         /// </summary>
         public StringOutputFlags OutputFlags;
 
+        public bool HasError => (OutputFlags & StringOutputFlags.Error) != 0;
+
         public StringOutput() => SpanByteAndMemory = new(null);
 
         public StringOutput(SpanByteAndMemory span) => SpanByteAndMemory = span;
@@ -59,16 +61,5 @@ namespace Garnet.server
         // Error flags (Error bit always set)
         InvalidTypeError = Error | (1 << 0),
         NaNOrInfinityError = Error | (1 << 1),
-    }
-
-    public static class StringOutputExtensions
-    {
-        /// <summary>
-        /// Check if <see cref="StringOutput"/>.<see cref="StringOutput.OutputFlags"/> has error bit set.
-        /// </summary>
-        /// <param name="output">String output</param>
-        /// <returns>True if <see cref="StringOutput"/>.<see cref="StringOutput.OutputFlags"/> has error bit set.</returns>
-        public static bool HasError(this StringOutput output)
-            => (output.OutputFlags & StringOutputFlags.Error) != 0;
     }
 }

@@ -472,7 +472,7 @@ namespace Garnet.server
             return GarnetStatus.OK;
         }
 
-        public unsafe GarnetStatus Increment<TStringContext>(PinnedSpanByte key, out long output, long increment, ref TStringContext context)
+        public GarnetStatus Increment<TStringContext>(PinnedSpanByte key, out long output, long increment, ref TStringContext context)
             where TStringContext : ITsavoriteContext<StringInput, StringOutput, long, MainSessionFunctions, StoreFunctions, StoreAllocator>
         {
             var cmd = RespCommand.INCRBY;
@@ -485,9 +485,7 @@ namespace Garnet.server
             var input = new StringInput(cmd, 0, increment);
 
             const int outputBufferLength = NumUtils.MaximumFormatInt64Length + 1;
-            var outputBuffer = stackalloc byte[outputBufferLength];
-
-            var stringOutput = StringOutput.FromPinnedPointer(outputBuffer, outputBufferLength);
+            var stringOutput = StringOutput.FromPinnedSpan(stackalloc byte[outputBufferLength]);
 
             var status = context.RMW(key.ReadOnlySpan, ref input, ref stringOutput);
             if (status.IsPending)
@@ -495,7 +493,7 @@ namespace Garnet.server
 
             Debug.Assert(stringOutput.SpanByteAndMemory.IsSpanByte);
 
-            output = NumUtils.ReadInt64(stringOutput.SpanByteAndMemory.Length, outputBuffer);
+            output = NumUtils.ReadInt64(stringOutput.SpanByteAndMemory.Span);
             return GarnetStatus.OK;
         }
 
