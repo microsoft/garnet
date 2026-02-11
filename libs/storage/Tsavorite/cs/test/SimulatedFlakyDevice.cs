@@ -23,7 +23,6 @@ namespace Tsavorite.test
         private ThreadLocal<Random> random;
         private List<long> permanentlyFailedRangesStart, permanentlyFailedRangesEnd;
         private EpochProtectedVersionScheme versionScheme;
-        private readonly LightEpoch epvsEpoch;
 
         public SimulatedFlakyDevice(IDevice underlying, ErrorSimulationOptions options) : base(underlying.FileName, underlying.SectorSize, underlying.Capacity)
         {
@@ -31,8 +30,7 @@ namespace Tsavorite.test
             this.options = options;
             permanentlyFailedRangesStart = new List<long>();
             permanentlyFailedRangesEnd = new List<long>();
-            epvsEpoch = new LightEpoch();
-            versionScheme = new EpochProtectedVersionScheme(epvsEpoch);
+            versionScheme = new EpochProtectedVersionScheme();
             random = new ThreadLocal<Random>(() => new Random());
         }
 
@@ -168,7 +166,7 @@ namespace Tsavorite.test
         public override void Dispose()
         {
             underlying.Dispose();
-            epvsEpoch.Dispose();
+            versionScheme.Dispose();
         }
     }
 }
