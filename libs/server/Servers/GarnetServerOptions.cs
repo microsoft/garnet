@@ -767,7 +767,7 @@ namespace Garnet.server
                 {
                     MemorySizeBits = AofMemorySizeBits(),
                     PageSizeBits = AofPageSizeBits(),
-                    LogDevice = GetAofDevice(dbId, subLogIdx: i),
+                    LogDevice = GetAofDevice(dbId, subLogIdx: AofPhysicalSublogCount == 1 ? -1 : i),
                     TryRecoverLatest = false,
                     SafeTailRefreshFrequencyMs = EnableCluster ? AofReplicationRefreshFrequencyMs : -1,
                     FastCommitMode = EnableFastCommit,
@@ -785,7 +785,7 @@ namespace Garnet.server
                 // We use Tsavorite's default checkpoint manager for AOF, since cookie is not needed for AOF commits
                 tsavoriteLogSettings[i].LogCommitManager = new DeviceLogCommitCheckpointManager(
                     FastAofTruncate ? new NullNamedDeviceFactoryCreator() : DeviceFactoryCreator,
-                        new DefaultCheckpointNamingScheme(aofDir, i),
+                        new DefaultCheckpointNamingScheme(aofDir, AofPhysicalSublogCount == 1 ? -1 : i),
                         removeOutdated: true,
                         fastCommitThrottleFreq: EnableFastCommit ? FastCommitThrottleFreq : 0);
             }

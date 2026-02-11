@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+using System;
 using System.IO;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -52,17 +53,34 @@ namespace Garnet.server
         public override unsafe byte[] GetCookie()
         {
             if (CurrentHistoryId == null) return null;
-            using var ms = new MemoryStream();
-            using var writer = new BinaryWriter(ms, Encoding.ASCII);
 
-            //1. Write history-Id
-            writer.Write(CurrentHistoryId == null ? 0 : 1);
-            if (CurrentHistoryId != null) writer.Write(CurrentHistoryId);
-            //2. Write checkpoint covered aof address
-            CurrentSafeAofAddress.Serialize(writer);
+            if (CurrentSafeAofAddress.Length == 1)
+            {
+                var cookie = new byte[sizeof(int) + sizeof(long) + CurrentHistoryId.Length];
+                var primaryReplIdBytes = Encoding.ASCII.GetBytes(CurrentHistoryId);
+                fixed (byte* ptr = cookie)
+                fixed (byte* pridPtr = primaryReplIdBytes)
+                {
+                    *(int*)ptr = sizeof(long) + CurrentHistoryId.Length;
+                    *(long*)(ptr + 4) = CurrentSafeAofAddress[0];
+                    Buffer.MemoryCopy(pridPtr, ptr + 12, primaryReplIdBytes.Length, primaryReplIdBytes.Length);
+                }
+                return cookie;
+            }
+            else
+            {
+                using var ms = new MemoryStream();
+                using var writer = new BinaryWriter(ms, Encoding.ASCII);
 
-            var byteArray = ms.ToArray();
-            return byteArray;
+                //1. Write history-Id
+                writer.Write(CurrentHistoryId == null ? 0 : 1);
+                if (CurrentHistoryId != null) writer.Write(CurrentHistoryId);
+                //2. Write checkpoint covered aof address
+                CurrentSafeAofAddress.Serialize(writer);
+
+                var byteArray = ms.ToArray();
+                return byteArray;
+            }
         }
     }
 }
