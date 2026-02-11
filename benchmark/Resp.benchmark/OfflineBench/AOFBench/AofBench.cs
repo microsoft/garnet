@@ -87,6 +87,7 @@ namespace Resp.benchmark
                 if (options.AofBenchType is AofBenchType.EnqueueRandom or AofBenchType.EnqueueSharded)
                     aofTailAddress = aofGen.appendOnlyFile.Log.TailAddress;
 
+                var epoch = new LightEpoch();
                 // Run the experiment.
                 for (var idx = 0; idx < threads; ++idx)
                 {
@@ -94,7 +95,7 @@ namespace Resp.benchmark
                     workers[idx] = options.AofBenchType switch
                     {
                         AofBenchType.Replay => new Thread(() => RunAofReplayBench(x)),
-                        AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => new Thread(() => RunAofEnqueBench(x)),
+                        AofBenchType.EnqueueSharded or AofBenchType.EnqueueRandom => new Thread(() => RunAofEnqueBench(x, epoch)),
                         _ => throw new Exception($"AofBenchType {options.AofBenchType} not supported"),
                     };
                 }
@@ -185,7 +186,7 @@ namespace Resp.benchmark
                 _ = Interlocked.Add(ref total_records_replayed, recordsReplayedCount);
             }
 
-            unsafe void RunAofEnqueBench(int threadId)
+            unsafe void RunAofEnqueBench(int threadId, LightEpoch epoch)
             {
                 waiter.Wait();
                 var kvPairs = aofGen.GetKVPairBuffer(threadId);
@@ -219,6 +220,7 @@ namespace Resp.benchmark
                                     key,
                                     value,
                                     ref input,
+                                    epoch,
                                     out _);
                                 bytesEnqueued += sizeof(AofHeader) + key.TotalSize() + value.TotalSize() + input.SerializedLength;
                             }
@@ -241,6 +243,7 @@ namespace Resp.benchmark
                                     key,
                                     value,
                                     ref input,
+                                    epoch,
                                     out _);
                                 bytesEnqueued += sizeof(AofShardedHeader) + key.TotalSize() + value.TotalSize() + input.SerializedLength;
                             }

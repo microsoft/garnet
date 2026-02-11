@@ -19,7 +19,8 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert(ReadOnlySpan<byte> key, ref UnifiedInput input, ReadOnlySpan<byte> value, long version, int sessionID)
+        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref UnifiedInput input, ReadOnlySpan<byte> value, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)
                 return;
@@ -42,6 +43,7 @@ namespace Garnet.server
                     header,
                     key,
                     value,
+                    epochAccessor,
                     out _);
             }
             else
@@ -62,6 +64,7 @@ namespace Garnet.server
                     header,
                     key,
                     value,
+                    epochAccessor,
                     out _);
             }
         }
@@ -71,7 +74,8 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert(ReadOnlySpan<byte> key, ref UnifiedInput input, IGarnetObject value, long version, int sessionID)
+        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref UnifiedInput input, IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)
                 return;
@@ -93,6 +97,7 @@ namespace Garnet.server
                         header,
                         key,
                         new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
+                        epochAccessor,
                         out _);
                 }
                 else
@@ -113,6 +118,7 @@ namespace Garnet.server
                         header,
                         key,
                         new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
+                        epochAccessor,
                         out _);
                 }
             }
@@ -123,7 +129,8 @@ namespace Garnet.server
         ///  a. InPlaceDeleter
         ///  b. PostInitialDeleter
         /// </summary>
-        void WriteLogDelete(ReadOnlySpan<byte> key, long version, int sessionID)
+        void WriteLogDelete<TEpochAccessor>(ReadOnlySpan<byte> key, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)
                 return;
@@ -140,6 +147,7 @@ namespace Garnet.server
                     header,
                     key,
                     item2: default,
+                    epochAccessor,
                     out _);
             }
             else
@@ -160,6 +168,7 @@ namespace Garnet.server
                     header,
                     key,
                     value: default,
+                    epochAccessor,
                     out _);
             }
         }
@@ -170,7 +179,8 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(ReadOnlySpan<byte> key, ref UnifiedInput input, long version, int sessionId)
+        void WriteLogRMW<TEpochAccessor>(ReadOnlySpan<byte> key, ref UnifiedInput input, long version, int sessionId, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
@@ -188,6 +198,7 @@ namespace Garnet.server
                     header,
                     key,
                     ref input,
+                    epochAccessor,
                     out _);
             }
             else
@@ -208,6 +219,7 @@ namespace Garnet.server
                     header,
                     key,
                     ref input,
+                    epochAccessor,
                     out _);
             }
         }

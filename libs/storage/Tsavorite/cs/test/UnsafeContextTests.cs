@@ -8,6 +8,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
@@ -20,8 +22,9 @@ namespace Tsavorite.test.UnsafeContext
 
     //** These tests ensure the basics are fully covered - taken from BasicTests
 
+    [AllureNUnit]
     [TestFixture]
-    internal class BasicUnsafeContextTests
+    internal class BasicUnsafeContextTests : AllureTestBase
     {
         private TsavoriteKV<StructStoreFunctions, StructAllocator> store;
         private ClientSession<InputStruct, OutputStruct, Empty, Functions, StructStoreFunctions, StructAllocator> fullSession;

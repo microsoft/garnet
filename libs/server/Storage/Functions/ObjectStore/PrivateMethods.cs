@@ -17,7 +17,8 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert(ReadOnlySpan<byte> key, ref ObjectInput input, ReadOnlySpan<byte> value, long version, int sessionID)
+        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, ReadOnlySpan<byte> value, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)
                 return;
@@ -35,6 +36,7 @@ namespace Garnet.server
                     header,
                     key,
                     value,
+                    epochAccessor,
                     out _);
             }
             else
@@ -55,6 +57,7 @@ namespace Garnet.server
                     header,
                     key,
                     value,
+                    epochAccessor,
                     out _);
             }
         }
@@ -64,7 +67,8 @@ namespace Garnet.server
         /// a. InPlaceWriter
         /// b. PostInitialWriter
         /// </summary>
-        void WriteLogUpsert(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, long version, int sessionID)
+        void WriteLogUpsert<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, IGarnetObject value, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode)
                 return;
@@ -86,6 +90,7 @@ namespace Garnet.server
                         header,
                         key,
                         new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
+                        epochAccessor,
                         out _);
                 }
                 else
@@ -106,6 +111,7 @@ namespace Garnet.server
                         header,
                         key,
                         new ReadOnlySpan<byte>(valPtr, valueBytes.Length),
+                        epochAccessor,
                         out _);
                 }
             }
@@ -117,7 +123,8 @@ namespace Garnet.server
         /// b. InPlaceUpdater
         /// c. PostCopyUpdater
         /// </summary>
-        void WriteLogRMW(ReadOnlySpan<byte> key, ref ObjectInput input, long version, int sessionID)
+        void WriteLogRMW<TEpochAccessor>(ReadOnlySpan<byte> key, ref ObjectInput input, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
             if (functionsState.StoredProcMode) return;
             input.header.flags |= RespInputFlags.Deterministic;
@@ -140,6 +147,7 @@ namespace Garnet.server
                         header,
                         sbKey,
                         ref input,
+                        epochAccessor,
                         out _);
                 }
                 else
@@ -160,6 +168,7 @@ namespace Garnet.server
                         header,
                         sbKey,
                         ref input,
+                        epochAccessor,
                         out _);
                 }
             }
@@ -170,7 +179,8 @@ namespace Garnet.server
         ///  a. InPlaceDeleter
         ///  b. PostInitialDeleter
         /// </summary>
-        void WriteLogDelete(ReadOnlySpan<byte> key, long version, int sessionID)
+        void WriteLogDelete<TEpochAccessor>(ReadOnlySpan<byte> key, long version, int sessionID, TEpochAccessor epochAccessor)
+            where TEpochAccessor : IEpochAccessor
         {
 
             if (functionsState.StoredProcMode)
@@ -189,6 +199,7 @@ namespace Garnet.server
                     header,
                     key,
                     item2: default,
+                    epochAccessor,
                     out _);
             }
             else
@@ -209,6 +220,7 @@ namespace Garnet.server
                     header,
                     key,
                     value: default,
+                    epochAccessor,
                     out _);
             }
         }
@@ -222,7 +234,7 @@ namespace Garnet.server
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private unsafe bool IncorrectObjectType(ref ObjectInput input, IGarnetObject value, ref SpanByteAndMemory output)
+        private bool IncorrectObjectType(ref ObjectInput input, IGarnetObject value, ref SpanByteAndMemory output)
         {
             var inputType = (byte)input.header.type;
             if (inputType != value.Type) // Indicates an incorrect type of key

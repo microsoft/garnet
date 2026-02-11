@@ -524,8 +524,9 @@ namespace Garnet.server
             }
         }
 
-        internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, out long logicalAddress)
+        internal void Enqueue<TInput, TEpochAccessor>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, ref TInput input, TEpochAccessor epochAccessor, out long logicalAddress)
             where TInput : IStoreInput
+            where TEpochAccessor : IEpochAccessor
         {
             if (serverOptions.AofPhysicalSublogCount == 1)
             {
@@ -535,6 +536,7 @@ namespace Garnet.server
                     key,
                     value,
                     ref input,
+                    epochAccessor,
                     out logicalAddress);
             }
             else
@@ -546,6 +548,7 @@ namespace Garnet.server
                     key,
                     value,
                     ref input,
+                    epochAccessor,
                     out logicalAddress);
 
                 if (serverOptions.AofAutoCommit)
@@ -553,8 +556,9 @@ namespace Garnet.server
             }
         }
 
-        internal void Enqueue<TInput>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ref TInput input, out long logicalAddress)
+        internal void Enqueue<TInput, TEpochAccessor>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ref TInput input, TEpochAccessor epochAccessor, out long logicalAddress)
             where TInput : IStoreInput
+            where TEpochAccessor : IEpochAccessor
         {
             if (serverOptions.AofPhysicalSublogCount == 1)
             {
@@ -564,6 +568,7 @@ namespace Garnet.server
                     shardedHeader,
                     key,
                     ref input,
+                    epochAccessor,
                     out logicalAddress);
             }
             else
@@ -574,6 +579,7 @@ namespace Garnet.server
                     shardedHeader,
                     key,
                     ref input,
+                    epochAccessor,
                     out logicalAddress);
 
                 if (serverOptions.AofAutoCommit)
@@ -581,7 +587,8 @@ namespace Garnet.server
             }
         }
 
-        internal void Enqueue(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, out long logicalAddress)
+        internal void Enqueue<TEpochAccessor>(AofShardedHeader shardedHeader, ReadOnlySpan<byte> key, ReadOnlySpan<byte> value, TEpochAccessor epochAccessor, out long logicalAddress)
+            where TEpochAccessor : IEpochAccessor
         {
             if (serverOptions.AofPhysicalSublogCount == 1)
             {
@@ -591,6 +598,7 @@ namespace Garnet.server
                     shardedHeader,
                     key,
                     value,
+                    epochAccessor,
                     out logicalAddress);
             }
             else
@@ -601,6 +609,7 @@ namespace Garnet.server
                     shardedHeader,
                     key,
                     value,
+                    epochAccessor,
                     out logicalAddress);
 
                 if (serverOptions.AofAutoCommit)

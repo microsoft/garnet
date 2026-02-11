@@ -142,6 +142,7 @@ namespace Garnet.cluster
             }
 
             var current = clusterProvider.clusterManager.CurrentConfig;
+
             if (!parseState.TryGetInt(0, out var slot))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
@@ -346,6 +347,8 @@ namespace Garnet.cluster
             }
 
             var current = clusterProvider.clusterManager.CurrentConfig;
+            var preferredType = clusterProvider.serverOptions.ClusterPreferredEndpointType;
+
             if (!parseState.TryGetInt(0, out var slot))
             {
                 while (!RespWriteUtils.TryWriteError(CmdStrings.RESP_ERR_INVALID_SLOT, ref dcurr, dend))
@@ -614,8 +617,8 @@ namespace Garnet.cluster
                 invalidParameters = true;
                 return true;
             }
-
-            var slotsInfo = clusterProvider.clusterManager.CurrentConfig.GetSlotsInfo();
+            var preferredType = clusterProvider.serverOptions.ClusterPreferredEndpointType;
+            var slotsInfo = clusterProvider.clusterManager.CurrentConfig.GetSlotsInfo(preferredType);
             while (!RespWriteUtils.TryWriteAsciiDirect(slotsInfo, ref dcurr, dend))
                 SendAndReset();
 

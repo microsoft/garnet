@@ -107,6 +107,11 @@ namespace Tsavorite.core
             where TSourceLogRecord : ISourceLogRecord
         { }
 
+        public readonly void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
+        public readonly void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
+        public readonly void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref TInput input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
+        public readonly void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
+
         public readonly void ConvertOutputToHeap(ref TInput input, ref TOutput output) { }
 
         public readonly ConsistentReadContextCallbacks GetContextCallbacks() { return null; }

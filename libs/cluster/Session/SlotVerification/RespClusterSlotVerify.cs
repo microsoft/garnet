@@ -21,10 +21,11 @@ namespace Garnet.cluster
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Redirect(ushort slot, ClusterConfig config)
         {
-            var (address, port) = config.GetEndpointFromSlot(slot);
+            var type = clusterProvider.serverOptions.ClusterPreferredEndpointType;
+            var (endpoint, port) = config.GetEndpointFromSlot(slot, type);
             ReadOnlySpan<byte> errorMessage;
             if (port != 0)
-                errorMessage = Encoding.ASCII.GetBytes($"MOVED {slot} {address}:{port}");
+                errorMessage = Encoding.ASCII.GetBytes($"MOVED {slot} {endpoint}:{port}");
             else
                 errorMessage = CmdStrings.RESP_ERR_CLUSTERDOWN;
 
@@ -45,20 +46,20 @@ namespace Garnet.cluster
             ReadOnlySpan<byte> errorMessage;
             var state = vres.state;
             var slot = vres.slot;
-            string address;
+            string endpoint;
             int port;
             switch (state)
             {
                 case SlotVerifiedState.MOVED:
-                    (address, port) = config.GetEndpointFromSlot(slot);
-                    errorMessage = Encoding.ASCII.GetBytes($"MOVED {slot} {address}:{port}");
+                    (endpoint, port) = config.GetEndpointFromSlot(slot, clusterProvider.serverOptions.ClusterPreferredEndpointType);
+                    errorMessage = Encoding.ASCII.GetBytes($"MOVED {slot} {endpoint}:{port}");
                     break;
                 case SlotVerifiedState.CLUSTERDOWN:
                     errorMessage = CmdStrings.RESP_ERR_CLUSTERDOWN;
                     break;
                 case SlotVerifiedState.ASK:
-                    (address, port) = config.AskEndpointFromSlot(slot);
-                    errorMessage = Encoding.ASCII.GetBytes($"ASK {slot} {address}:{port}");
+                    (endpoint, port) = config.AskEndpointFromSlot(slot, clusterProvider.serverOptions.ClusterPreferredEndpointType);
+                    errorMessage = Encoding.ASCII.GetBytes($"ASK {slot} {endpoint}:{port}");
                     break;
                 case SlotVerifiedState.CROSSSLOT:
                     errorMessage = CmdStrings.RESP_ERR_CROSSSLOT;

@@ -121,6 +121,9 @@ namespace Garnet.cluster
                     // Reset the database in preparation for connecting to primary
                     storeWrapper.Reset();
 
+                    // Suspend background tasks that may interfere with AOF
+                    await storeWrapper.SuspendPrimaryOnlyTasks();
+
                     // Send request to primary
                     //      Primary will initiate background task and start sending checkpoint data
                     //

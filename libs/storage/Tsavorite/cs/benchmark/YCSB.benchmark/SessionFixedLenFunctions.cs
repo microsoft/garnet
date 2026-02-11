@@ -133,6 +133,11 @@ namespace Tsavorite.benchmark
             where TSourceLogRecord : ISourceLogRecord
         { }
 
+        public readonly void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref Input input, ReadOnlySpan<byte> valueSpan, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
+        public readonly void PostUpsertOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref Input input, IHeapObject valueObject, ref UpsertInfo upsertInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
+        public readonly void PostRMWOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref Input input, ref RMWInfo rmwInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
+        public readonly void PostDeleteOperation<TEpochAccessor>(ReadOnlySpan<byte> key, ref DeleteInfo deleteInfo, TEpochAccessor epochAccessor) where TEpochAccessor : IEpochAccessor { }
+
         public readonly void ConvertOutputToHeap(ref Input input, ref Output output) { }
     }
 

@@ -45,6 +45,7 @@ namespace Garnet.cluster
                     clusterProvider.replicationManager.TryUpdateForFailover();
                     clusterProvider.replicationManager.ResetReplicaReplayDriverStore();
                     UnsafeBumpAndWaitForEpochTransition();
+                    clusterProvider.storeWrapper.StartPrimaryTasks();
                 }
                 finally
                 {

@@ -6,14 +6,17 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Allure.NUnit;
+using Garnet.test;
 using NUnit.Framework;
 using NUnit.Framework.Legacy;
 using Tsavorite.core;
 
 namespace Tsavorite.test.recovery
 {
+    [AllureNUnit]
     [TestFixture]
-    public class ComponentRecoveryTests
+    public class ComponentRecoveryTests : AllureTestBase
     {
         private static unsafe void Setup_MallocFixedPageSizeRecoveryTest(out int seed, out IDevice device, out int numBucketsToAdd, out long[] logicalAddresses, out ulong numBytesWritten)
         {
