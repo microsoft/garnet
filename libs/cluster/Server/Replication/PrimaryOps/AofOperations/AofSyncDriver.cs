@@ -136,16 +136,23 @@ namespace Garnet.cluster
 
             try
             {
-                var tasks = new List<Task>();
+                if (clusterProvider.serverOptions.AofPhysicalSublogCount == 1)
+                {
+                    await aofSyncTasks[0].RunAofSyncTask(this);
+                }
+                else
+                {
+                    var tasks = new List<Task>
+                    {
+                        // Create advance physical sublog time task when the instance is configured to use more than one physical sublogs.
+                        AdvancePhysicalSublogTime()
+                    };
 
-                // Create advance physical sublog time task when the instance is configured to use more than one physical sublogs.
-                if (clusterProvider.serverOptions.AofPhysicalSublogCount > 1)
-                    tasks.Add(AdvancePhysicalSublogTime());
+                    for (var i = 0; i < aofSyncTasks.Length; i++)
+                        tasks.Add(aofSyncTasks[i].RunAofSyncTask(this));
 
-                for (var i = 0; i < aofSyncTasks.Length; i++)
-                    tasks.Add(aofSyncTasks[i].RunAofSyncTask(this));
-
-                _ = await Task.WhenAny([.. tasks]);
+                    _ = await Task.WhenAny([.. tasks]);
+                }
             }
             catch (Exception ex)
             {
