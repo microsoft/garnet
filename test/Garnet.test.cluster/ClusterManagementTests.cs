@@ -746,29 +746,77 @@ namespace Garnet.test.cluster
         }
 
         [Test, Order(11)]
-        public void ClusterRoleCommand()
+        public void ClusterRoleCommand([Values] bool useMultiLog)
         {
+            var primaryIndex = 0;
+            var sublogCount = useMultiLog ? 4 : 1;
             var node_count = 3;
             var replica_count = node_count - 1;
-            context.CreateInstances(node_count, enableAOF: true);
+            context.CreateInstances(node_count, enableAOF: true, sublogCount: sublogCount);
             context.CreateConnection();
             var (_, _) = context.clusterTestUtils.SimpleSetupCluster(1, replica_count, logger: context.logger);
 
-            var result = context.clusterTestUtils.GetServer(0).Execute("ROLE");
-            ClassicAssert.AreEqual(3, result.Length);
-            ClassicAssert.AreEqual("master", result[0].ToString());
-            ClassicAssert.True(int.TryParse(result[1].ToString(), out _));
-            ClassicAssert.AreEqual(2, result[2].Length);
-            ClassicAssert.AreEqual("127.0.0.1", result[2][0][0].ToString());
-            ClassicAssert.AreEqual("127.0.0.1", result[2][1][0].ToString());
+            var primaryFormatLength = Enum.GetValues<RoleCommandPrimaryFormat>().Length - (useMultiLog ? 0 : 1);
+            var result = context.clusterTestUtils.GetServer(primaryIndex).Execute("ROLE");
+            ClassicAssert.AreEqual(primaryFormatLength, result.Length);
+            // RoleType
+            ClassicAssert.AreEqual("master", result[(int)RoleCommandPrimaryFormat.RoleType].ToString());
+            // Replication offset
+            ClassicAssert.True(int.TryParse(result[(int)RoleCommandPrimaryFormat.RoleReplicationOffset].ToString(), out var parsed));
+            ClassicAssert.AreEqual(64, parsed);
 
-            result = context.clusterTestUtils.GetServer(1).Execute("ROLE");
-            ClassicAssert.AreEqual(5, result.Length);
-            ClassicAssert.AreEqual("slave", result[0].ToString());
-            ClassicAssert.AreEqual("127.0.0.1", result[1].ToString());
-            ClassicAssert.True(int.TryParse(result[2].ToString(), out _));
-            ClassicAssert.AreEqual("connected", result[3].ToString());
-            ClassicAssert.True(int.TryParse(result[4].ToString(), out _));
+            ClassicAssert.AreEqual(2, result[(int)RoleCommandPrimaryFormat.RoleReplicaInfo].Length);
+            if (useMultiLog)
+            {
+                // ReplicationOffsetVector (MultiLog support)
+                var aofAddress = AofAddress.FromString(result[(int)RoleCommandPrimaryFormat.RoleReplicationOffsetString].ToString());
+                ClassicAssert.AreEqual(sublogCount, aofAddress.Length);
+            }
+
+            for (var i = 0; i < replica_count; i++)
+            {
+                var primaryResultForReplica = result[(int)RoleCommandPrimaryFormat.RoleReplicaInfo][i];
+                var replicaIndex = i + 1;
+                var roleReplicaFormatLength = Enum.GetValues<RoleCommandReplicaFormat>().Length - (useMultiLog ? 0 : 1);
+
+                // NOTE: Role command from primary perspective does not include role type or connection status
+                ClassicAssert.AreEqual(roleReplicaFormatLength - 2, primaryResultForReplica.Length);
+                // Address
+                ClassicAssert.AreEqual("127.0.0.1", primaryResultForReplica[(int)RoleCommandReplicaFormat.RoleAddress - 1].ToString(), "Failed to match replica address");
+                // Port
+                ClassicAssert.True(int.TryParse(primaryResultForReplica[(int)RoleCommandReplicaFormat.RolePort - 1].ToString(), out parsed), "Failed to match replica port");
+                ClassicAssert.AreEqual(7000 + replicaIndex, parsed);
+                // ReplicationOffset
+                ClassicAssert.True(int.TryParse(primaryResultForReplica[(int)RoleCommandReplicaFormat.RoleReplicationOffset - 2].ToString(), out parsed), "Failed to match replica replication offset");
+                ClassicAssert.AreEqual(64, parsed);
+                if (useMultiLog)
+                {
+                    // ReplicationOffsetVector (MultiLog support)
+                    var replicaAofAddress = AofAddress.FromString(primaryResultForReplica[(int)RoleCommandReplicaFormat.RoleReplicationOffsetString - 2].ToString());
+                    ClassicAssert.AreEqual(sublogCount, replicaAofAddress.Length);
+                }
+
+                var replicaResult = context.clusterTestUtils.GetServer(i + 1).Execute("ROLE");
+                ClassicAssert.AreEqual(roleReplicaFormatLength, replicaResult.Length);
+                // RoleType
+                ClassicAssert.AreEqual("slave", replicaResult[(int)RoleCommandReplicaFormat.RoleType].ToString());
+                // Replica Address
+                ClassicAssert.AreEqual("127.0.0.1", replicaResult[(int)RoleCommandReplicaFormat.RoleAddress].ToString());
+                // Replica Port
+                ClassicAssert.True(int.TryParse(replicaResult[(int)RoleCommandReplicaFormat.RolePort].ToString(), out parsed));
+                ClassicAssert.AreEqual(7000, parsed);
+                // Connection State
+                ClassicAssert.AreEqual("connected", replicaResult[(int)RoleCommandReplicaFormat.RoleState].ToString());
+                // ReplicationOffset
+                ClassicAssert.True(int.TryParse(replicaResult[(int)RoleCommandReplicaFormat.RoleReplicationOffset].ToString(), out parsed));
+                ClassicAssert.AreEqual(64, parsed);
+                if (useMultiLog)
+                {
+                    // ReplicationOffsetVector (MultiLog support)
+                    var replicaAofAddress = AofAddress.FromString(replicaResult[(int)RoleCommandReplicaFormat.RoleReplicationOffsetString].ToString());
+                    ClassicAssert.AreEqual(sublogCount, replicaAofAddress.Length);
+                }
+            }
         }
 
         [Test, Order(12)]

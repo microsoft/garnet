@@ -5,7 +5,6 @@ using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
-using System.Linq;
 using System.Text;
 
 namespace Garnet.server
@@ -142,10 +141,37 @@ namespace Garnet.server
         /// <returns></returns>
         public static AofAddress FromString(string input)
         {
-            var _addresses = input.Split(',').Select(long.Parse).ToArray();
-            var aofAddress = new AofAddress(_addresses.Length);
-            for (var i = 0; i < aofAddress.Length; i++)
-                aofAddress[i] = _addresses[i];
+            var span = input.AsSpan();
+
+            // Count commas to determine array size
+            var count = 1;
+            for (var i = 0; i < span.Length; i++)
+                if (span[i] == ',') count++;
+
+            var aofAddress = new AofAddress(count);
+            var idx = 0;
+            var value = 0L;
+
+            for (var i = 0; i < span.Length; i++)
+            {
+                var c = span[i];
+                if (c == ',')
+                {
+                    aofAddress[idx++] = value;
+                    value = 0;
+                }
+                else if (c >= '0' && c <= '9')
+                {
+                    value = value * 10 + (c - '0');
+                }
+                else
+                {
+                    throw new FormatException($"Invalid character '{c}' in AofAddress string.");
+                }
+            }
+
+            // Handle last value
+            aofAddress[idx] = value;
             return aofAddress;
         }
 

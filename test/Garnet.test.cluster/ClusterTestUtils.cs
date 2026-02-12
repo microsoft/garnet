@@ -122,6 +122,24 @@ namespace Garnet.test.cluster
         public AofAddress SafeAofAddress;
     };
 
+    enum RoleCommandPrimaryFormat : byte
+    {
+        RoleType = 0,
+        RoleReplicationOffset = 1,
+        RoleReplicaInfo = 2,
+        RoleReplicationOffsetString = 3,
+    }
+
+    enum RoleCommandReplicaFormat : byte
+    {
+        RoleType = 0,
+        RoleAddress = 1,
+        RolePort = 2,
+        RoleState = 3,
+        RoleReplicationOffset = 4,
+        RoleReplicationOffsetString = 5
+    }
+
     public static class EndpointExtensions
     {
         public static IPEndPoint ToIPEndPoint(this EndPoint endPoint)

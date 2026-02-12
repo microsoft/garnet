@@ -802,20 +802,18 @@ namespace Garnet.server
             }
             else
             {
+                var usingShardedLog = storeWrapper.serverOptions.AofPhysicalSublogCount > 1;
                 if (storeWrapper.clusterProvider.IsPrimary())
-                {
+                {                    
                     var (replication_offset, replicaInfo) = storeWrapper.clusterProvider.GetPrimaryInfo();
 
-                    while (!RespWriteUtils.TryWriteArrayLength(4, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(usingShardedLog ? 4 : 3, ref dcurr, dend))
                         SendAndReset();
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString("master", ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteInt64(replication_offset.Min(), ref dcurr, dend))
-                        SendAndReset();
-
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(replication_offset.ToString(), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt64(replication_offset[0], ref dcurr, dend))
                         SendAndReset();
 
                     while (!RespWriteUtils.TryWriteArrayLength(replicaInfo.Count, ref dcurr, dend))
@@ -823,15 +821,25 @@ namespace Garnet.server
 
                     foreach (var replica in replicaInfo)
                     {
-                        while (!RespWriteUtils.TryWriteArrayLength(4, ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteArrayLength(usingShardedLog ? 4 : 3, ref dcurr, dend))
                             SendAndReset();
                         while (!RespWriteUtils.TryWriteAsciiBulkString(replica.address, ref dcurr, dend))
                             SendAndReset();
                         while (!RespWriteUtils.TryWriteInt32(replica.port, ref dcurr, dend))
                             SendAndReset();
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(replica.replication_offset.Min().ToString(), ref dcurr, dend))
+                        while (!RespWriteUtils.TryWriteInt64(replica.replication_offset[0], ref dcurr, dend))
                             SendAndReset();
-                        while (!RespWriteUtils.TryWriteAsciiBulkString(replica.replication_offset.ToString(), ref dcurr, dend))
+
+                        if (usingShardedLog)
+                        {
+                            while (!RespWriteUtils.TryWriteAsciiBulkString(replica.replication_offset.ToString(), ref dcurr, dend))
+                                SendAndReset();
+                        }
+                    }
+
+                    if (usingShardedLog)
+                    {
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(replication_offset.ToString(), ref dcurr, dend))
                             SendAndReset();
                     }
                 }
@@ -839,7 +847,7 @@ namespace Garnet.server
                 {
                     var role = storeWrapper.clusterProvider.GetReplicaInfo();
 
-                    while (!RespWriteUtils.TryWriteArrayLength(5, ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteArrayLength(usingShardedLog ? 6 : 5, ref dcurr, dend))
                         SendAndReset();
 
                     while (!RespWriteUtils.TryWriteAsciiBulkString("slave", ref dcurr, dend))
@@ -854,8 +862,14 @@ namespace Garnet.server
                     while (!RespWriteUtils.TryWriteAsciiBulkString(role.replication_state, ref dcurr, dend))
                         SendAndReset();
 
-                    while (!RespWriteUtils.TryWriteAsciiBulkString(role.replication_offset.Min().ToString(), ref dcurr, dend))
+                    while (!RespWriteUtils.TryWriteInt64(role.replication_offset[0], ref dcurr, dend))
                         SendAndReset();
+
+                    if (usingShardedLog)
+                    {
+                        while (!RespWriteUtils.TryWriteAsciiBulkString(role.replication_offset.ToString(), ref dcurr, dend))
+                            SendAndReset();
+                    }
                 }
             }
 
